@@ -1,0 +1,24 @@
+---
+title: Introduction
+description: What Mate is and how it is organized.
+---
+
+Mate is an alpha CLI for running coding agents with project-specific context, policies, and capabilities already wired in.
+
+It uses two repositories:
+
+- companion repository: stores Mate configuration, agent instructions, skills, and capability output
+- working repository: stores the project code agents should edit
+
+The default flow is simple: set up Mate in the companion repository, link a working repository, then launch OpenCode or Claude from the working repository.
+
+This documentation intentionally covers only that default flow for now.
+
+import { withBase } from "@/lib/source";
+
+## Read Next
+
+<Cards>
+  <Card title="Quickstart" href={withBase("/docs/getting-started/quickstart")} />
+  <Card title="Capabilities" href={withBase("/docs/capabilities")} />
+</Cards>

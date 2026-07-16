@@ -1,0 +1,70 @@
+---
+title: Quickstart
+description: The default alpha Mate flow.
+---
+
+import { withBase } from "@/lib/source";
+
+Mate uses two repositories:
+
+- companion repository: stores Mate configuration, skills, and capability output
+- working repository: stores the project code agents should edit
+
+The default flow is:
+
+```sh
+cd /path/to/companion-repo
+mate setup
+mate repo link
+
+cd /path/to/working-repo
+mate opencode
+# or
+mate claude
+```
+
+## 1. Set Up The Companion Repository
+
+Run this inside the companion repository:
+
+```sh
+mate setup
+```
+
+## 2. Link The Working Repository
+
+Still inside the companion repository, run:
+
+```sh
+mate repo link
+```
+
+Without `--id` and `--path`, Mate opens the TUI flow. Use it to select or enter:
+
+- repository id
+- working repository path
+- profile
+
+## 3. Launch From The Working Repository
+
+Move to the linked working repository:
+
+```sh
+cd /path/to/working-repo
+```
+
+Start OpenCode:
+
+```sh
+mate opencode
+```
+
+Or start Claude:
+
+```sh
+mate claude
+```
+
+Mate resolves the linked project, syncs the companion instructions and capabilities, then launches the selected agent in the working repository context.
+
+See <a href={withBase("/docs/capabilities")}>Capabilities</a> for the optional tools Mate can wire into the flow.
