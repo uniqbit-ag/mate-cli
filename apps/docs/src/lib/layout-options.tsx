@@ -4,6 +4,7 @@ export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
       title: "Mate Docs",
+      url: "/mate-cli",
     },
   };
 }

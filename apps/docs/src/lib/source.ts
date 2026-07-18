@@ -5,7 +5,7 @@ import { loader, type StaticSource } from "fumadocs-core/source";
 import * as path from "node:path";
 
 export const source = loader({
-  baseUrl: "/",
+  baseUrl: "/mate-cli",
   source: await createSource(),
 });
 
