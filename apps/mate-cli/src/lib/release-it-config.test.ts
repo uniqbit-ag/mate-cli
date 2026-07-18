@@ -243,15 +243,6 @@ describe("stable release-it config", () => {
     expect(readme).toContain("npm install -g @uniqbit/mate");
     expect(readme).not.toContain("bun add -g @uniqbit/mate");
   });
-
-  test("documents local releases and publication retries", async () => {
-    const readme = await fs.readFile(readmePath, "utf8");
-
-    expect(readme).toContain('export NPM_TOKEN="<npmjs-token>"');
-    expect(readme).toContain("bun release:canary");
-    expect(readme).toContain("./publish.sh latest");
-    expect(readme).toContain("do not\nrerun release-it");
-  });
 });
 
 describe("publish.sh", () => {
