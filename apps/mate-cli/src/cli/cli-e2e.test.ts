@@ -679,7 +679,7 @@ async function writeOpenSpecStub(scenario: E2EScenario): Promise<string> {
     "const command = args[0];",
     "const targetPath = args[args.length - 1];",
     "const capturePath = process.env.MATE_E2E_OPENSPEC_CAPTURE_PATH;",
-    "if (capturePath) {",
+    "if (capturePath && command !== '--version') {",
     "  const existing = fs.existsSync(capturePath)",
     "    ? JSON.parse(fs.readFileSync(capturePath, 'utf8'))",
     "    : [];",
