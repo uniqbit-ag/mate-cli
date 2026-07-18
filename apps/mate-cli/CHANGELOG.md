@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.14.0](https://github.com/uniqbit-ag/mate-cli/compare/0.14.0-canary.25...0.14.0) (2026-07-18)
+
+## 0.14.0-canary.25 (2026-07-18)
+
 ## [0.13.1](https://git.uniqbit.de/uniqbit/iq-ai/companion-repos/compare/0.13.0...0.13.1) (2026-07-16)
 
 ### Bug Fixes
