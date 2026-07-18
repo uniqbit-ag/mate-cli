@@ -1,0 +1,75 @@
+---
+title: Quickstart
+description: Install Mate, link a companion, and launch OpenCode.
+---
+
+Mate uses two repositories:
+
+- companion repository: stores Mate configuration, skills, and capability output
+- working repository: stores the project code agents should edit
+
+Install the published CLI once:
+
+```sh
+npm install -g @uniqbit/mate
+```
+
+Then use this default flow in the repository you want an agent to edit:
+
+```sh
+mate install
+mate companion link
+mate opencode
+```
+
+## 1. Install Mate Requirements
+
+Move to the working repository and initialize Mate's core requirements:
+
+```sh
+cd /path/to/working-repo
+mate install
+```
+
+The first install does not require a companion. It verifies Mate's core runtime
+and records the installation state for the current environment.
+
+## 2. Link A Companion
+
+From the same working repository, run:
+
+```sh
+mate companion link
+```
+
+Mate opens the TUI flow. Use it to select an existing companion, paste a local
+companion path, or clone one from Git, then choose a profile. A cloned companion
+is configured when necessary.
+
+The link is stored in the working repository's local `.mate` registry. Mate
+also adds that directory to Git's local exclude file so the link metadata is
+not committed to the working repository. Linking also verifies and installs the
+requirements selected by the companion, so no second `mate install` is needed.
+
+## 3. Launch OpenCode
+
+Start OpenCode:
+
+```sh
+mate opencode
+```
+
+If the companion profile allows Claude, you can launch it instead:
+
+```sh
+mate claude
+```
+
+Mate resolves the linked project, syncs the companion instructions and
+capabilities, refreshes enabled indexes, then launches the selected agent in
+the working repository context.
+
+Run `mate install` again after updating Mate or changing a companion's selected
+package managers or capabilities.
+
+See [Capabilities](/mate-cli/capabilities) for the optional tools Mate can wire into the flow.

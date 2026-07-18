@@ -1,0 +1,86 @@
+---
+title: Overview
+description: Optional alpha integrations that Mate can wire into companion and working repositories.
+---
+
+Capabilities are optional tools that Mate can configure during `mate companion setup` and sync into linked working repositories when you run `mate opencode` or `mate claude`.
+
+Capabilities are selected per companion. They affect the dependency plan used by
+`mate install`; selecting a capability never silently enables another optional
+capability.
+
+## Projects
+
+- [OpenSpec](https://openspec.dev/) for spec-driven change workflows
+- [Graphify](https://github.com/safishamsi/graphify) for repository knowledge graphs
+- [TokenSave](https://github.com/aovestdipaperino/tokensave) for code-graph exploration through MCP
+- [Headroom](https://github.com/chopratejas/headroom) for AI workflow support
+- [React Doctor](https://www.react.doctor/) for React diagnostics
+
+## How They Fit
+
+The default workflow starts with `mate install` in the working repository, then
+`mate companion link`. Linking reads the selected companion capabilities and
+installs their resulting dependency plan automatically.
+
+Use `mate companion setup` in the companion repository when you need to change
+those selections. Run `mate install` afterward to refresh the dependency plan.
+Then `mate opencode` and `mate claude` launch from the working repository with
+the selected companion-managed capabilities available.
+
+## Capability Details
+
+### OpenSpec
+
+OpenSpec commands are routed through the companion context:
+
+```sh
+mate cap openspec <subcommand> [args...]
+```
+
+Setup can use OpenSpec's default schema or Mate's `mate-v1` schema.
+
+### Graphify
+
+Graphify manages a repository knowledge graph and companion-managed agent
+wrappers. Refresh its index directly or through the combined index command:
+
+```sh
+mate cap graphify <subcommand> [args...]
+mate cap index --graphify
+```
+
+### TokenSave
+
+TokenSave provides code-graph exploration through MCP and keeps its native
+`.tokensave` store in the working repository. Refresh it with:
+
+```sh
+mate cap index --tokensave
+```
+
+### Headroom
+
+Headroom wraps supported agent workflows when its binary and the `rtk`
+dependency are installed:
+
+```sh
+mate cap headroom [args...]
+```
+
+### React Doctor
+
+React Doctor installs companion skills and Claude post-edit diagnostics. It is
+configured during setup and does not have a separate `mate cap` command.
+
+## Index Synchronization
+
+Launches automatically refresh enabled code-exploration capabilities. You can
+also refresh them explicitly from a linked working repository:
+
+```sh
+mate cap index
+```
+
+If both Graphify and TokenSave are enabled, Mate refreshes TokenSave and then
+Graphify so Graphify sees the resulting repository state.

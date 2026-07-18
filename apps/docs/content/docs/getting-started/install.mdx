@@ -1,0 +1,134 @@
+---
+title: Installation
+description: Install Mate and keep its runtime requirements current.
+---
+
+## Install The CLI
+
+Mate is published to npm and requires Node.js 24.
+
+```sh
+npm install -g @uniqbit/mate
+```
+
+The published package bootstraps Bun when Bun is not already available. Bun is
+Mate's core runtime package manager.
+
+## Install Core Requirements
+
+Before linking a companion, run Mate's installer from the working repository:
+
+```sh
+cd /path/to/working-repo
+mate install
+```
+
+Without a linked companion, `mate install` verifies the core runtime and saves
+the core installation state. Use the non-interactive form in CI or another
+process without a TTY:
+
+```sh
+mate install --yes
+```
+
+## Link A Companion
+
+```sh
+mate companion link
+```
+
+The link wizard can select a registered companion or clone a Git-backed
+companion. For GitHub URLs, Mate tries SSH before HTTPS. The working repository
+gets local metadata at:
+
+```text
+.mate/config/framework.yaml
+.mate/config/registry.yaml
+```
+
+Mate adds `.mate/` to `.git/info/exclude`, so these machine-local pointers do
+not need to be committed. The repo-local registry is the source of truth when
+Mate resolves a working repository.
+
+Linking builds a dependency plan from the selected companion configuration,
+checks which requirements are already available, installs missing requirements,
+and saves the companion-specific install state. It does not enable capabilities
+that were not selected. This makes the default workflow:
+
+```sh
+mate install
+mate companion link
+mate opencode
+```
+
+Run installation again after any of these changes:
+
+- the Mate package is installed or updated
+- companion capabilities or package managers change
+- the active companion changes
+- a required command is removed from `PATH`
+
+## Create Or Reconfigure A Companion
+
+`mate companion link` can clone and initialize a Git-backed companion. Run
+setup directly only when creating a local companion or changing its policy and
+capability selections:
+
+```sh
+cd /path/to/companion-repo
+mate companion setup
+```
+
+Setup configures allowed agents, package managers, capabilities, the OpenSpec
+schema profile, and optional companion Git auto mode. The interactive picker is
+recommended. Explicit flags are available for repeatable environments:
+
+```sh
+mate companion setup \
+  --allowed-agent claude \
+  --allowed-agent opencode \
+  --capability openspec \
+  --capability react-doctor \
+  --package-manager uv \
+  --openspec-schema default \
+  --git-mode default
+```
+
+Changing setup selections invalidates the companion install state. Run
+`mate install` from that companion or a linked working repository afterward.
+
+## Verify The Context
+
+```sh
+mate doctor
+```
+
+Doctor reports the current context, companion path, repository ID, active
+policy, selected capabilities, and required tool status. It distinguishes:
+
+- `linked-working-repository`
+- `companion-repository`
+- `not-linked`
+
+Once installation is current, launch from the working repository:
+
+```sh
+mate opencode
+# or
+mate claude
+```
+
+## Recovery Commands
+
+Mate allows these commands even when normal commands are blocked by stale or
+missing install state:
+
+```sh
+mate install
+mate doctor
+mate companion setup
+mate companion link
+mate update
+mate --help
+mate --version
+```

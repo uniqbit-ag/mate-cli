@@ -1,0 +1,91 @@
+---
+title: Command Reference
+description: Current Mate CLI commands and their execution contexts.
+---
+
+## Setup And Linking
+
+| Command                        | Context                 | Purpose                                                                    |
+| ------------------------------ | ----------------------- | -------------------------------------------------------------------------- |
+| `mate companion setup`         | Companion root          | Create or reconfigure a companion explicitly.                              |
+| `mate companion link`          | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
+| `mate companion list [--json]` | Linked context          | List linked repositories.                                                  |
+| `mate companion open`          | Linked context          | Add the working repository and companion to the preferred editor.          |
+| `mate companion tui`           | Linked context, TTY     | Open a shell in the resolved companion.                                    |
+
+`mate companion link` does not accept flags. Its selection and any required
+installation confirmation are interactive. The default workflow is:
+
+```sh
+mate install
+mate companion link
+mate opencode
+```
+
+## Installation And Health
+
+| Command                           | Purpose                                                                            |
+| --------------------------------- | ---------------------------------------------------------------------------------- |
+| `mate install [--yes]`            | Install and verify core requirements or refresh the active companion requirements. |
+| `mate doctor`                     | Show context, policy, selected capabilities, and tool status.                      |
+| `mate config [--vscode]`          | Open the global `~/.mate` configuration directory.                                 |
+| `mate report [--days N] [--json]` | Generate a usage and savings report.                                               |
+
+`mate install --yes` skips interactive confirmation and is required when the
+process has no TTY. It can run before a companion is linked; in that context it
+installs only Mate's core requirements.
+
+## Agent Launch
+
+```sh
+mate claude [-- agent-args...]
+mate opencode [-- agent-args...]
+```
+
+Launch commands must run from a linked working repository. The selected
+profile must allow the requested agent.
+
+Mate synchronizes managed companion files before launch. If the companion's
+configuration uses Git auto mode, it also fetches and merges the configured
+upstream first:
+
+```sh
+mate claude -- --no-git
+mate opencode -- --no-git
+```
+
+The `--no-git` switch is Mate's option only when it appears after the `--`
+separator. All other arguments after the separator are forwarded to the agent.
+
+## Capabilities
+
+| Command                                    | Purpose                                         |
+| ------------------------------------------ | ----------------------------------------------- |
+| `mate cap openspec <subcommand> [args...]` | Run OpenSpec through the active context.        |
+| `mate cap graphify <subcommand> [args...]` | Run Graphify through the active context.        |
+| `mate cap headroom [args...]`              | Run Headroom when enabled.                      |
+| `mate cap index`                           | Refresh enabled Graphify and TokenSave indexes. |
+| `mate cap index --graphify`                | Refresh only Graphify.                          |
+| `mate cap index --tokensave`               | Refresh only TokenSave.                         |
+
+The two index flags cannot be combined. When both Graphify and TokenSave are
+enabled, the default index flow refreshes TokenSave and then refreshes Graphify
+against the resulting state.
+
+## Artifacts And Updates
+
+| Command                                        | Purpose                                                              |
+| ---------------------------------------------- | -------------------------------------------------------------------- |
+| `mate artifact finish <change-name> [options]` | Finalize a change artifact workflow.                                 |
+| `mate update`                                  | Upgrade an npm-managed Mate installation and reinstall requirements. |
+| `mate update --check`                          | Check for an update without installing it.                           |
+
+Artifact finish options are `--type openspec`, `--force`, `--no-push`, and
+`--json`. Update also accepts `--yes` to skip its confirmation prompt.
+
+## Exit And Recovery Behavior
+
+Unknown commands print the current usage text and exit non-zero. Missing or
+stale installation state prints the reason and points to `mate install`.
+Doctor, setup, link, update, help, and version remain available so the state
+can be repaired.

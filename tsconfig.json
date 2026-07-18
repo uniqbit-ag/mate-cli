@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "typeRoots": ["./apps/mate-cli/node_modules/@types", "./node_modules/@types"],
+    "types": ["node"]
+  },
+  "include": ["apps/mate-cli/src/**/*.ts", "apps/mate-cli/src/**/*.tsx"],
+  "exclude": [
+    "apps/mate-cli/src/**/*.test.ts",
+    "apps/mate-cli/src/**/*.test.tsx",
+    "apps/mate-cli/src/templates/**"
+  ]
+}

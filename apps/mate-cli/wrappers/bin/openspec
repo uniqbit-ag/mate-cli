@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+[ -n "$MATE_ARTIFACT_PATH" ] || { echo "openspec: must be run via mate claude or mate opencode" >&2; exit 1; }
+_this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_real=""
+IFS=:
+for _dir in $PATH; do
+    [ "$_dir" = "$_this_dir" ] && continue
+    [ -x "$_dir/openspec" ] || continue
+    _real="$_dir/openspec"
+    break
+done
+unset IFS
+[ -n "$_real" ] || { echo "openspec wrapper: real binary not found in PATH" >&2; exit 1; }
+command="${1-}"
+if [ "$command" = "templates" ]; then
+  has_schema=0
+  for arg in "$@"; do
+    if [ "$arg" = "--schema" ]; then
+      has_schema=1
+      break
+    fi
+  done
+  if [ "$has_schema" -eq 0 ]; then
+    _schema=""
+    for _cfg in "$MATE_ARTIFACT_PATH/openspec/config.yaml" "$MATE_ARTIFACT_PATH/openspec/config.yml"; do
+      [ -f "$_cfg" ] || continue
+      while IFS= read -r _line; do
+        case "$_line" in
+          schema:*)
+            _schema="${_line#schema:}"
+            _schema="${_schema#"${_schema%%[![:space:]]*}"}"
+            _schema="${_schema%"${_schema##*[![:space:]]}"}"
+            case "$_schema" in
+              "*") _schema="${_schema#\"}"; _schema="${_schema%\"}" ;;
+              "'*'") _schema="${_schema#'}"; _schema="${_schema%'}" ;;
+            esac
+            [ -n "$_schema" ] && break
+            ;;
+        esac
+      done < "$_cfg"
+      [ -n "$_schema" ] && break
+    done
+    if [ -n "$_schema" ]; then
+      set -- "$command" "--schema" "$_schema" "${@:2}"
+    fi
+  fi
+fi
+exec env -C "$MATE_ARTIFACT_PATH" "$_real" "$@"

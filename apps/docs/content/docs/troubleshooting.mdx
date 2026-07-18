@@ -1,0 +1,133 @@
+---
+title: Troubleshooting
+description: Diagnose installation, linking, launch, Git, and terminal problems.
+---
+
+## Installation Is Required
+
+If a command reports that installation is incomplete, run:
+
+```sh
+mate install
+```
+
+Mate records install state separately for each companion context. A changed
+companion configuration, changed dependency plan, missing tool, or Mate update
+can make that state stale. In a non-interactive process, use:
+
+```sh
+mate install --yes
+```
+
+## Inspect The Active Context
+
+```sh
+mate doctor
+```
+
+Check the reported state, companion path, repository ID, allowed agents,
+capabilities, and missing commands. The expected launch state is
+`linked-working-repository`.
+
+## No Companion Is Found
+
+Run the link wizard from the working repository:
+
+```sh
+cd /path/to/working-repo
+mate companion link
+```
+
+The command requires a TTY. If you are inside a subdirectory, Mate searches
+upward for the nearest `.mate/config/registry.yaml`.
+
+## Multiple Companions Match
+
+The working repository can have more than one valid companion pointer. Run the
+command in a TTY so Mate can prompt for a choice. For scripts, pin the context:
+
+```sh
+MATE_ARTIFACT_PATH=/path/to/companion \
+MATE_REPO_ID=my-repo \
+mate claude
+```
+
+If a pointer refers to a directory that no longer exists, Mate drops that stale
+pointer from the repo-local registry.
+
+## A TTY Is Required
+
+These workflows are interactive:
+
+- `mate companion setup` selection
+- `mate companion link`
+- `mate companion tui`
+
+Run them from a local terminal. Setup can accept explicit selection flags, but
+initializing an unrecognized directory may still ask for confirmation.
+
+## Agent Launch Fails
+
+Launch only from the linked working repository:
+
+```sh
+mate claude
+mate opencode
+```
+
+If the selected profile disallows the requested agent, re-run setup and allow
+that provider. If the agent command itself is missing, use `mate doctor` to
+find the missing requirement.
+
+Forward agent-specific flags after `--`:
+
+```sh
+mate opencode -- --continue
+```
+
+## Companion Git Synchronization Fails
+
+When Git auto mode is enabled, Mate fetches the configured upstream and merges
+it before syncing managed companion files. Resolve unfinished operations or
+conflicts in the companion repository, then retry the launch.
+
+To bypass synchronization for one launch:
+
+```sh
+mate claude -- --no-git
+mate opencode -- --no-git
+```
+
+The switch must appear after the argument separator. Mate protects managed
+paths during conflict recovery, but unrelated conflicts still require manual
+resolution.
+
+## Update Fails
+
+Self-update works only when Mate was installed globally through npm. Check the
+current version without changing anything:
+
+```sh
+mate update --check
+```
+
+If self-update reports that the installation is not npm-managed, reinstall the
+published package:
+
+```sh
+npm install -g @uniqbit/mate
+mate install
+```
+
+## Capability Indexing Fails
+
+Run the indexer explicitly to isolate the failing capability:
+
+```sh
+mate cap index --graphify
+mate cap index --tokensave
+```
+
+Then run `mate doctor` and verify the relevant capability and command are
+selected and installed. TokenSave uses a repo-local `.tokensave` store; Graphify
+and TokenSave cannot be forced together in one command invocation.
