@@ -1,0 +1,32 @@
+---
+title: Introduction
+description: What Mate is and how it is organized.
+---
+
+Mate is an alpha CLI for running coding agents with project-specific context, policies, and capabilities already wired in.
+
+It uses two repositories:
+
+- companion repository: stores Mate configuration, agent instructions, skills, and capability output
+- working repository: stores the project code agents should edit
+
+The default workflow runs from the working repository: `mate install`,
+`mate companion link`, then `mate opencode`. Linking selects or clones a
+companion and completes the installation of its selected requirements before
+the first launch.
+
+Mate resolves the link from the working repository's local `.mate` registry,
+keeps that metadata out of tracked Git files, and synchronizes the companion's
+managed files into the working repository at launch time. The companion and
+working repositories keep separate histories.
+
+## Read Next
+
+<Cards>
+  <Card title="Quickstart" href="/mate-cli/getting-started/quickstart" />
+  <Card title="Installation" href="/mate-cli/getting-started/install" />
+  <Card title="Repository model" href="/mate-cli/concepts/repositories" />
+  <Card title="Capabilities" href="/mate-cli/capabilities" />
+  <Card title="Command reference" href="/mate-cli/reference/commands" />
+  <Card title="Troubleshooting" href="/mate-cli/troubleshooting" />
+</Cards>
