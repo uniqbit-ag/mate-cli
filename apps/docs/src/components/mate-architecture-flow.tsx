@@ -41,9 +41,9 @@ const nodes: Node<MateNodeData>[] = [
 ];
 
 const edges: Edge[] = [
-  edge("companion", "workspace", "mate repo link", "setup"),
+  edge("companion", "workspace", "mate companion link", "setup"),
   edge("workspace", "companion", "MATE_REPO_PATH + MATE_ARTIFACT_PATH", "setup"),
-  edge("ide", "workspace", "mate workspace open", "launch"),
+  edge("ide", "workspace", "mate companion open", "launch"),
   edge("ide", "companion", "open companion root", "launch"),
   edge("companion", "ide", "mate claude / opencode", "launch"),
   edge("ide", "workspace", "edit source + tests", "edit", "ide-workspace-edit"),

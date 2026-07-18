@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": true,
+  "singleQuote": false,
+  "trailingComma": "all",
+  "bracketSpacing": true,
+  "bracketSameLine": false,
+  "importOrder": {
+    "enabled": true
+  },
+  "ignore": ["node_modules", "dist", "_artifacts", "apps/mate-cli/src/templates"]
+}

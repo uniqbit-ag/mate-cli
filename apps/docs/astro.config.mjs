@@ -20,8 +20,6 @@ const remarkPlugins = [
 const rehypePlugins = [rehypeCode];
 
 export default defineConfig({
-  site: "https://uniqbit-ag.github.io",
-  base: "/mate-cli",
   markdown: {
     processor: unified({
       syntaxHighlight: false,

@@ -1,0 +1,98 @@
+---
+title: Repository Model
+description: How companion repositories and working repositories fit together.
+---
+
+Mate separates agent-owned artifacts from product code.
+
+## Companion Repository
+
+The companion repository stores the context that should travel with an agent
+workflow:
+
+- Mate configuration under `.mate/config/`
+- agent instructions and provider files
+- skills and capability-managed files
+- OpenSpec artifacts and other planning output
+- reports such as `REPORT.md`
+
+Companion files are managed by `mate companion setup`, installed when selected
+by `mate companion link`, and synchronized again at launch time. A companion
+can be linked to more than one working repository.
+
+## Working Repository
+
+The working repository contains the product source code and tests. Run these
+commands from it:
+
+```sh
+mate companion link
+mate install
+mate companion list
+mate companion open
+mate companion tui
+mate doctor
+mate claude
+mate opencode
+```
+
+Agent launches are intentionally not valid from the companion root. This keeps
+the repository being edited explicit.
+
+## Link Metadata
+
+Linking creates a local registry in the working repository:
+
+```text
+.mate/config/framework.yaml
+.mate/config/registry.yaml
+```
+
+The registry records the linked companion path, repository ID, source, and
+working-repository metadata. Mate also adds `.mate/` to `.git/info/exclude`.
+This makes the link machine-local without requiring a tracked `.gitignore`
+change.
+
+Mate searches upward from the current directory for this registry, so commands
+can run from a subdirectory of the working repository.
+
+## Resolution Order
+
+For normal local commands, Mate resolves the context in this order:
+
+1. `MATE_ARTIFACT_PATH`, when running inside an agent session.
+2. The nearest repo-local `.mate/config/registry.yaml`.
+3. A local companion configuration in the current directory for commands that
+   support companion-root execution.
+
+Launch commands require a working-repository match. Capability commands may
+also run from the companion root because they can manage companion state.
+
+## Multiple Companions
+
+A working repository may contain pointers to multiple companions. Commands that
+need one companion detect this rather than silently relying on an arbitrary
+global registry order.
+
+In a TTY, Mate prompts for a companion. In scripts or agent-launched sessions,
+pin the context explicitly:
+
+```sh
+MATE_ARTIFACT_PATH=/path/to/companion \
+MATE_REPO_ID=my-repo \
+mate opencode
+```
+
+Use `mate doctor` to inspect the active context and any ambiguity.
+
+## Editor Integration
+
+After linking, Mate can add the companion and working repository to the
+current VS Code or Cursor window. You can repeat that operation later with:
+
+```sh
+mate companion open
+```
+
+`mate companion tui` opens a shell rooted in the companion and exports
+`MATE_ARTIFACT_PATH` for the shell session.

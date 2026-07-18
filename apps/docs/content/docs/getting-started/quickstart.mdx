@@ -1,57 +1,57 @@
 ---
 title: Quickstart
-description: The default alpha Mate flow.
+description: Install Mate, link a companion, and launch OpenCode.
 ---
-
-import { withBase } from "@/lib/source";
 
 Mate uses two repositories:
 
 - companion repository: stores Mate configuration, skills, and capability output
 - working repository: stores the project code agents should edit
 
-The default flow is:
+Install the published CLI once:
 
 ```sh
-cd /path/to/companion-repo
-mate setup
-mate repo link
+npm install -g @uniqbit/mate
+```
 
-cd /path/to/working-repo
+Then use this default flow in the repository you want an agent to edit:
+
+```sh
+mate install
+mate companion link
 mate opencode
-# or
-mate claude
 ```
 
-## 1. Set Up The Companion Repository
+## 1. Install Mate Requirements
 
-Run this inside the companion repository:
-
-```sh
-mate setup
-```
-
-## 2. Link The Working Repository
-
-Still inside the companion repository, run:
-
-```sh
-mate repo link
-```
-
-Without `--id` and `--path`, Mate opens the TUI flow. Use it to select or enter:
-
-- repository id
-- working repository path
-- profile
-
-## 3. Launch From The Working Repository
-
-Move to the linked working repository:
+Move to the working repository and initialize Mate's core requirements:
 
 ```sh
 cd /path/to/working-repo
+mate install
 ```
+
+The first install does not require a companion. It verifies Mate's core runtime
+and records the installation state for the current environment.
+
+## 2. Link A Companion
+
+From the same working repository, run:
+
+```sh
+mate companion link
+```
+
+Mate opens the TUI flow. Use it to select an existing companion, paste a local
+companion path, or clone one from Git, then choose a profile. A cloned companion
+is configured when necessary.
+
+The link is stored in the working repository's local `.mate` registry. Mate
+also adds that directory to Git's local exclude file so the link metadata is
+not committed to the working repository. Linking also verifies and installs the
+requirements selected by the companion, so no second `mate install` is needed.
+
+## 3. Launch OpenCode
 
 Start OpenCode:
 
@@ -59,12 +59,17 @@ Start OpenCode:
 mate opencode
 ```
 
-Or start Claude:
+If the companion profile allows Claude, you can launch it instead:
 
 ```sh
 mate claude
 ```
 
-Mate resolves the linked project, syncs the companion instructions and capabilities, then launches the selected agent in the working repository context.
+Mate resolves the linked project, syncs the companion instructions and
+capabilities, refreshes enabled indexes, then launches the selected agent in
+the working repository context.
 
-See <a href={withBase("/docs/capabilities")}>Capabilities</a> for the optional tools Mate can wire into the flow.
+Run `mate install` again after updating Mate or changing a companion's selected
+package managers or capabilities.
+
+See [Capabilities](/capabilities) for the optional tools Mate can wire into the flow.

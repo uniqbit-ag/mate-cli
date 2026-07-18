@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+[ -n "$MATE_ARTIFACT_PATH" ] || { echo "graphify: must be run via mate claude or mate opencode (MATE_ARTIFACT_PATH not set)" >&2; exit 1; }
+[ -n "$MATE_REPO_PATH" ] || { echo "graphify: must be run via mate claude or mate opencode (MATE_REPO_PATH not set)" >&2; exit 1; }
+
+_this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_real=""
+IFS=:
+for _dir in $PATH; do
+    [ "$_dir" = "$_this_dir" ] && continue
+    [ -x "$_dir/graphify" ] || continue
+    _real="$_dir/graphify"
+    break
+done
+unset IFS
+[ -n "$_real" ] || { echo "graphify wrapper: real graphify binary not found in PATH" >&2; exit 1; }
+
+_repo_id="${MATE_REPO_ID:-unknown}"
+_graphify_out="$MATE_ARTIFACT_PATH/.graphify/$_repo_id/graphify-out"
+_graphify_root="$(dirname "$_graphify_out")"
+_graph_json="$_graphify_out/graph.json"
+export GRAPHIFY_OUT="$_graphify_out"
+
+_cmd="${1:-}"
+case "$_cmd" in
+  build)
+    mkdir -p "$_graphify_out"
+    _rest=()
+    for _a in "${@:2}"; do
+      case "$_a" in
+        --output) _rest+=(--out) ;;
+        --output=*) _rest+=("--out=${_a#--output=}") ;;
+        *) _rest+=("$_a") ;;
+      esac
+    done
+    exec "$_real" extract "$MATE_REPO_PATH" --out "$_graphify_root" "${_rest[@]}"
+    ;;
+  update)
+    if [ "$#" -eq 1 ] || [[ "$2" == -* ]]; then
+      exec "$_real" "$MATE_REPO_PATH" --update "${@:2}"
+    else
+      exec "$_real" "$2" --update "${@:3}"
+    fi
+    ;;
+  extract|watch|cluster-only|label|check-update)
+    if [ "$#" -eq 1 ] || [[ "$2" == -* ]]; then
+      exec "$_real" "$_cmd" "$MATE_REPO_PATH" "${@:2}"
+    else
+      exec "$_real" "$@"
+    fi
+    ;;
+  query|path|explain|affected|tree)
+    _has_graph=false
+    for _a in "$@"; do
+      case "$_a" in --graph|-g|--graph=*) _has_graph=true; break;; esac
+    done
+    if "$_has_graph"; then
+      exec "$_real" "$@"
+    else
+      exec "$_real" "$@" --graph "$_graph_json"
+    fi
+    ;;
+  lookup)
+    _has_graph=false
+    for _a in "${@:2}"; do
+      case "$_a" in --graph|-g|--graph=*) _has_graph=true; break;; esac
+    done
+    if "$_has_graph"; then
+      exec "$_real" query "${@:2}"
+    else
+      exec "$_real" query "${@:2}" --graph "$_graph_json"
+    fi
+    ;;
+  *)
+    exec "$_real" "$@"
+    ;;
+esac

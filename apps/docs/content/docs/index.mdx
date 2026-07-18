@@ -10,15 +10,23 @@ It uses two repositories:
 - companion repository: stores Mate configuration, agent instructions, skills, and capability output
 - working repository: stores the project code agents should edit
 
-The default flow is simple: set up Mate in the companion repository, link a working repository, then launch OpenCode or Claude from the working repository.
+The default workflow runs from the working repository: `mate install`,
+`mate companion link`, then `mate opencode`. Linking selects or clones a
+companion and completes the installation of its selected requirements before
+the first launch.
 
-This documentation intentionally covers only that default flow for now.
-
-import { withBase } from "@/lib/source";
+Mate resolves the link from the working repository's local `.mate` registry,
+keeps that metadata out of tracked Git files, and synchronizes the companion's
+managed files into the working repository at launch time. The companion and
+working repositories keep separate histories.
 
 ## Read Next
 
 <Cards>
-  <Card title="Quickstart" href={withBase("/docs/getting-started/quickstart")} />
-  <Card title="Capabilities" href={withBase("/docs/capabilities")} />
+  <Card title="Quickstart" href="/getting-started/quickstart" />
+  <Card title="Installation" href="/getting-started/install" />
+  <Card title="Repository model" href="/concepts/repositories" />
+  <Card title="Capabilities" href="/capabilities" />
+  <Card title="Command reference" href="/reference/commands" />
+  <Card title="Troubleshooting" href="/troubleshooting" />
 </Cards>

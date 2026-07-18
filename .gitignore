@@ -1,3 +1,20 @@
-.claude/
-.DS_Store
 node_modules/
+.opencode/
+.claude/
+.mate/
+tmp/
+.DS_Store
+coverage/
+.venv/
+__pycache__/
+
+# mate managed: start
+# python / uv
+.venv/
+.uv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+# mate managed: end

@@ -4,16 +4,10 @@ import { structure, type StructuredData } from "fumadocs-core/mdx-plugins";
 import { loader, type StaticSource } from "fumadocs-core/source";
 import * as path from "node:path";
 
-const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 export const source = loader({
-  baseUrl: `${base}/docs`,
+  baseUrl: "/",
   source: await createSource(),
 });
-
-export function withBase(path: string): string {
-  return `${base}${path}`;
-}
 
 export function getStructuredData(entry: CollectionEntry<"docs">): StructuredData {
   return structure(entry.body ?? "");

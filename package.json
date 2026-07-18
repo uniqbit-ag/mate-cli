@@ -1,0 +1,29 @@
+{
+  "name": "mate-workspace",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": "24.x"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "docs": "bun run --filter @uniqbit/mate-docs dev",
+    "docs:build": "bun run --filter @uniqbit/mate-docs build",
+    "docs:check": "bun run --filter @uniqbit/mate-docs check",
+    "prepare": "bun run --filter @uniqbit/mate prepare",
+    "release": "bun run --cwd ./apps/mate-cli release",
+    "release:canary": "bun run --cwd ./apps/mate-cli release:canary",
+    "release:dry-run": "bun run --cwd ./apps/mate-cli release:dry-run",
+    "test": "bun run --filter @uniqbit/mate test",
+    "test:ci": "bun run --filter @uniqbit/mate test:ci",
+    "test:coverage": "bun run --filter @uniqbit/mate test:coverage",
+    "typecheck": "bun run --filter @uniqbit/mate typecheck",
+    "lint": "bunx oxlint apps packages --no-error-on-unmatched-pattern",
+    "lint:fix": "bunx oxlint apps packages --fix --no-error-on-unmatched-pattern",
+    "format": "bunx oxfmt apps packages --no-error-on-unmatched-pattern",
+    "format:check": "bunx oxfmt apps packages --check --no-error-on-unmatched-pattern"
+  }
+}

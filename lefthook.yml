@@ -1,0 +1,9 @@
+pre-commit:
+  skip:
+    - run: '[ "$CI" = "1" ]'
+  commands:
+    format:
+      run: bun run format
+      stage_fixed: true
+    lint:
+      run: bun run lint
