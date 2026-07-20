@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate",
-  "version": "0.14.2-canary.0",
+  "version": "0.14.2-canary.1",
   "license": "MIT",
   "bin": {
     "mate": "src/cli-bootstrap.cjs"
