@@ -462,6 +462,21 @@ describe("createOpenspecPlugin", () => {
     expect(schema).toContain("never use `N/A`");
   });
 
+  test("never rewrites an existing config.yaml, even with user-added keys", async () => {
+    const root = await makeTempDir("mate-openspec-schema-preserve-");
+    const runCommand = mock(async () => {});
+    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
+    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
+    const userConfig = 'schema: mate-v1\nrules:\n  tasks:\n    - "custom task rule"\n';
+    await fs.writeFile(path.join(root, "openspec", "config.yaml"), userConfig, "utf8");
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
+
+    await expect(fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")).resolves.toBe(
+      userConfig,
+    );
+  });
+
   test("default schema profile removes prior mate-v1 managed files", async () => {
     const root = await makeTempDir("mate-openspec-schema-default-");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
