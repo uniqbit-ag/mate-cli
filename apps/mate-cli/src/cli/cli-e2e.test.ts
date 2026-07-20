@@ -1619,6 +1619,27 @@ describe("mate CLI e2e", () => {
     expect(framework.type).toBe("working");
   });
 
+  test("linked no-flag setup preserves companion capabilities and managed files", async () => {
+    const scenario = await createScenario("mate-cli-e2e-setup-preserve-linked-");
+
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    await fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore"));
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+    const result = await runMate(scenario, {
+      cwd: scenario.working,
+      args: ["companion", "setup"],
+    });
+
+    expect(result.exitCode).toBe(0);
+    const config = await fs.readFile(
+      path.join(scenario.companion, ".mate", "config", "framework.yaml"),
+      "utf8",
+    );
+    expect(config).toContain("name: openspec");
+    await fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore"));
+  });
+
   test("claude fails when run from companion directory with no linked working repository", async () => {
     const scenario = await createScenario("mate-cli-e2e-launch-no-repo-");
 

@@ -130,11 +130,29 @@ async function runSetupFlow(
       companion = selected;
     }
 
+    const linkedCapabilities =
+      flagCapabilities ??
+      (flagOpenSpecSchema === undefined
+        ? undefined
+        : getSetupSelectionsFromConfig(
+            await new ConfigStore(
+              path.join(
+                companion.companionPath,
+                `.${frameworkConfig.name}`,
+                "config",
+                "framework.yaml",
+              ),
+            ).load(),
+          ).capabilities);
+
     await runExecuteSetup(
       {
         allowedAgents: flagAllowedAgents,
         packageManagers: flagPackageManagers,
-        capabilities: applyOpenSpecSchemaSelection(flagCapabilities ?? [], flagOpenSpecSchema),
+        capabilities:
+          linkedCapabilities === undefined
+            ? undefined
+            : applyOpenSpecSchemaSelection(linkedCapabilities, flagOpenSpecSchema),
         git: flagGitMode,
       },
       { cwd: companion.companionPath },
