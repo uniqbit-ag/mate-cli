@@ -121,6 +121,45 @@ describe("editor helpers", () => {
       expect(chunks.join("")).toContain("code CLI not found on PATH");
     });
 
+    test("falls back to the VS Code Insiders CLI when the standard CLI is unavailable", async () => {
+      spyOn(editor, "resolveEditorBinary").mockImplementation((cli) =>
+        cli === "code-insiders" ? "/usr/bin/code-insiders" : null,
+      );
+      const spawnCalls: Array<{ command: string; args: string[] }> = [];
+      const spawnProcess = ((command: string, args: string[]) => {
+        spawnCalls.push({ command, args });
+        return {
+          on: () => undefined,
+          unref: () => undefined,
+        } as unknown as EventEmitter & { unref(): void };
+      }) as typeof import("node:child_process").spawn;
+      const root = await makeTempDir("editor-inject-insiders-");
+      const repoPath = path.join(root, "repo");
+      const companionPath = path.join(root, "companion");
+      await fs.mkdir(repoPath, { recursive: true });
+      await fs.mkdir(companionPath, { recursive: true });
+
+      expect(
+        await editor.injectEditorFolder(
+          companionPath,
+          repoPath,
+          "code",
+          spawnProcess,
+          (_workspacePath, cli) => {
+            expect(cli).toBe("code-insiders");
+            return "not-open";
+          },
+        ),
+      ).toBe(true);
+
+      expect(spawnCalls).toEqual([
+        {
+          command: "/usr/bin/code-insiders",
+          args: ["--add", repoPath, companionPath],
+        },
+      ]);
+    });
+
     test("writes workspace metadata and falls back to --add when the workspace is not open", async () => {
       spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
       const spawnCalls: Array<{ command: string; args: string[]; options: object }> = [];

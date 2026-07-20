@@ -13,7 +13,7 @@ interface UpdateState {
   latestVersion: string | null;
 }
 
-const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
 
 export const updateCheckerDeps = {
   now: () => Date.now(),
@@ -70,7 +70,7 @@ export function scheduleBackgroundCheck(store: UpdateStateStore): void {
     try {
       const state = await store.load();
       const lastChecked = state.lastChecked ? new Date(state.lastChecked).getTime() : 0;
-      if (updateCheckerDeps.now() - lastChecked < TWENTY_FOUR_HOURS_MS) return;
+      if (updateCheckerDeps.now() - lastChecked < TWELVE_HOURS_MS) return;
       const latestVersion = await fetchLatestVersion();
       await store.save({ lastChecked: updateCheckerDeps.toIsoString(), latestVersion });
     } catch {

@@ -13,6 +13,14 @@ describe("extractRepoName", () => {
     test("handles SSH URL without .git suffix", () => {
       expect(extractRepoName("git@github.com:user/companion")).toBe("companion");
     });
+
+    test("extracts name from an ssh URL with a custom port", () => {
+      expect(
+        extractRepoName(
+          "ssh://git@git.example.test:22222/example-org/example-group/acme-companion.git",
+        ),
+      ).toBe("acme-companion");
+    });
   });
 
   describe("HTTPS URLs", () => {
