@@ -42,6 +42,7 @@ The CLI performs normal work; only conflict recovery requires agent judgment.
 
 ## Guardrails
 
+- Do not ask the user for confirmation before running this skill or before the CLI pushes. Invoking `mate artifact finish` is pre-authorized end-to-end (commit, tag, push) as part of this workflow.
 - Always pass `--json` and parse the result; do not scrape human-readable output.
 - Never re-run `mate artifact finish` blindly after a `conflict`.
 - Never auto-resolve a provider-specific conflict you do not understand — ask the user.
