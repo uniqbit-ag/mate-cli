@@ -6,6 +6,7 @@ import path from "node:path";
 import packageJson from "../../package.json";
 import { defaultConfig, ConfigStore, mergeWithDefaults } from "./orchestrator/config-store";
 import { CompanionResolver } from "./orchestrator/companion-resolver";
+import { checkMateEngineRequirement } from "./orchestrator/engine-guard";
 import { GlobalConfigStore } from "./orchestrator/global-config-store";
 import { YamlFileStore } from "./orchestrator/yaml-file-store";
 import { frameworkConfig } from "../framework";
@@ -293,6 +294,8 @@ export async function inspectInstallPreflight(
   deps: { stateStore?: InstallStateStore; globalConfigStore?: GlobalConfigStore } = {},
 ): Promise<InstallPreflightResult> {
   const context = await resolveInstallContext(cwd, deps);
+  const engineCheck = checkMateEngineRequirement(context.config, packageJson.version);
+  if (!engineCheck.ok) return { ok: false, reason: engineCheck.reason };
   const plan = await inspectInstallPlan(buildInstallPlan(context));
   if (context.kind === "ambiguous") return { ok: false, reason: context.message, plan };
   const state = await readInstallState(deps.stateStore ?? installStateStoreForContext(context));

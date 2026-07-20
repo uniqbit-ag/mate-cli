@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 
 import { isInstallRecoveryCommand, main } from "./main";
 
@@ -38,6 +38,59 @@ describe("isInstallRecoveryCommand", () => {
     }
 
     expect(preflightSawSelection).toBe(true);
+    expect(process.exitCode).toBe(originalExitCode ?? 0);
+  });
+
+  test("recovery commands still run when the version guard reports an unsatisfied engines.mate", async () => {
+    const originalExitCode = process.exitCode;
+    const engineGuardFailure = {
+      ok: false,
+      reason:
+        "This companion requires mate-cli >=99.0.0, but 0.14.3 is installed. Run `mate update`.",
+    };
+    let preflightCalls = 0;
+    const deps = {
+      ensureUnambiguousCompanion: async () => true,
+      inspectInstallPreflight: async () => {
+        preflightCalls++;
+        return engineGuardFailure;
+      },
+    };
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await main(["node", "mate", "doctor"], deps);
+    } finally {
+      logSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+
+    expect(preflightCalls).toBe(0);
+    expect(process.exitCode).toBe(originalExitCode ?? 0);
+  });
+
+  test("help/--help/-h bypass the version guard entirely", async () => {
+    const originalExitCode = process.exitCode;
+    let preflightCalls = 0;
+    const deps = {
+      ensureUnambiguousCompanion: async () => true,
+      inspectInstallPreflight: async () => {
+        preflightCalls++;
+        return { ok: false, reason: "engines.mate mismatch" };
+      },
+    };
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await main(["node", "mate", "help"], deps);
+      await main(["node", "mate", "--help"], deps);
+      await main(["node", "mate", "-h"], deps);
+    } finally {
+      logSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+
+    expect(preflightCalls).toBe(0);
     expect(process.exitCode).toBe(originalExitCode ?? 0);
   });
 });

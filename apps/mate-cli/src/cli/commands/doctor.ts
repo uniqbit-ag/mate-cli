@@ -1,14 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import packageJson from "../../../package.json";
 import { frameworkConfig } from "../../framework";
 import { CompanionResolver } from "../../lib/orchestrator/companion-resolver";
 import { CompanionStore, resolvePolicyFromConfig } from "../../lib/orchestrator/companion-store";
 import { ConfigStore } from "../../lib/orchestrator/config-store";
+import { checkMateEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { migrateConfigDir } from "../../lib/orchestrator/migration";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repo-local-registry";
-import type { CapabilityConfig } from "../../lib/orchestrator/types";
+import type { CapabilityConfig, FrameworkConfig } from "../../lib/orchestrator/types";
 import { WorkingRepoStore } from "../../lib/orchestrator/working-repo-store";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
@@ -53,6 +55,19 @@ async function hasLocalCompanionConfig(cwd: string): Promise<boolean> {
 
 function renderList(items: string[], empty: string): string {
   return items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : empty;
+}
+
+function renderEngineRequirement(config: FrameworkConfig, currentVersion: string): string {
+  const range = config.engines?.mate;
+  const result = checkMateEngineRequirement(config, currentVersion);
+  return result.ok
+    ? `engines.mate: satisfied (requires ${range}, running ${currentVersion})`
+    : `engines.mate: ${result.reason}`;
+}
+
+function printEngineRequirement(config: FrameworkConfig): void {
+  if (!config.engines?.mate) return;
+  printSection("Version Requirement", renderEngineRequirement(config, packageJson.version));
 }
 
 function renderCapabilities(capabilities: CapabilityConfig[]): string {
@@ -215,6 +230,7 @@ export async function runDoctorCommand(_argv: string[] = [], deps: DoctorDeps = 
     );
     printSection("Capabilities", renderCapabilities(config.capabilities ?? []));
     printSection("Tool Installations", renderToolInstallations(config, pathValue));
+    printEngineRequirement(config);
   } else if (state === "linked-working-repository") {
     printSection("Policy", "No repository ID was provided for the resolved companion.");
   } else if (companionPath) {
@@ -222,6 +238,7 @@ export async function runDoctorCommand(_argv: string[] = [], deps: DoctorDeps = 
     const config = await configStore.load();
     printSection("Capabilities", renderCapabilities(config.capabilities ?? []));
     printSection("Tool Installations", renderToolInstallations(config, pathValue));
+    printEngineRequirement(config);
   }
 
   printSection(
