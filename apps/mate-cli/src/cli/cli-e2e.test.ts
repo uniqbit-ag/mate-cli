@@ -506,6 +506,7 @@ async function writeEditorStub(
     'import fs from "node:fs";',
     "const capturePath = process.env.MATE_E2E_EDITOR_CAPTURE_PATH;",
     "if (!capturePath) process.exit(2);",
+    'if (process.argv[2] === "--status") process.exit(0);',
     "const payload = { cwd: process.cwd(), argv: process.argv.slice(2) };",
     "fs.writeFileSync(capturePath, JSON.stringify(payload, null, 2));",
     "process.exit(0);",

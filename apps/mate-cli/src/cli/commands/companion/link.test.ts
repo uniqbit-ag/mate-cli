@@ -121,7 +121,9 @@ describe("runCompanionLinkCommandWithDeps", () => {
         companionSource: "git",
       },
     );
-    expect(logs.join("\n")).toContain("Workspace: injected into cursor");
+    expect(logs.join("\n")).toContain(
+      'Workspace: updated .mate/workspace.code-workspace for cursor; open it via "Open Workspace"',
+    );
   });
 
   test("tries GitHub SSH before falling back to the pasted HTTPS URL", async () => {
@@ -348,7 +350,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
     expect(runSetup).not.toHaveBeenCalled();
     expect(logs.join("\n")).toContain(`Companion: ${path.resolve(localCompanionPath)}`);
     expect(logs.join("\n")).toContain("Source: git");
-    expect(logs.join("\n")).toContain("manual open");
+    expect(logs.join("\n")).toContain('open .mate/workspace.code-workspace via "Open Workspace"');
     expect(selectedOptions?.existingCompanions).toEqual([path.resolve(localCompanionPath)]);
   });
 
@@ -491,7 +493,9 @@ describe("runCompanionLinkCommandWithDeps", () => {
       [path.resolve(process.cwd()), path.resolve(localCompanionPath)],
       "code",
     );
-    expect(logs.join("\n")).toContain("opened code with working repo and companion");
+    expect(logs.join("\n")).toContain(
+      'opened code with working repo and companion; open .mate/workspace.code-workspace via "Open Workspace"',
+    );
   });
 
   test("writes the workspace-local link metadata without requiring companion-side registry writes", async () => {

@@ -283,10 +283,14 @@ export async function runCompanionLinkCommandWithDeps(
   console.log(`  Source: ${persistedSource}`);
   console.log(`  Profile: ${repository.profile}`);
   if (editorCli && injected) {
-    console.log(`  Workspace: injected into ${editorCli}`);
+    console.log(
+      `  Workspace: updated .mate/workspace.code-workspace for ${editorCli}; open it via "Open Workspace"`,
+    );
   } else if (editorCli && openedWorkspace) {
-    console.log(`  Workspace: opened ${editorCli} with working repo and companion`);
+    console.log(
+      `  Workspace: opened ${editorCli} with working repo and companion; open .mate/workspace.code-workspace via "Open Workspace" for future injections`,
+    );
   } else {
-    console.log("  Workspace: companion path printed for manual open");
+    console.log('  Workspace: open .mate/workspace.code-workspace via "Open Workspace"');
   }
 }
