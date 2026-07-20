@@ -103,7 +103,7 @@ describe("OpenCode companion plugin", () => {
 
         expect(output.env.MATE_WRAPPER_BIN_PATH).toBe("/package/wrappers/bin");
         expect(output.env.MATE_VERSION).toBe("0.14.0-test");
-        expect(output.env.PATH).toBe("/usr/bin");
+        expect(output.env.PATH).toBe("/package/wrappers/bin:/usr/bin");
 
         const transform = plugin["experimental.chat.system.transform"] as
           | ((input: unknown, output: { system: string[] }) => Promise<void>)
