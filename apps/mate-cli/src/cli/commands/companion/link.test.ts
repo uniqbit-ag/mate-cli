@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -10,6 +10,7 @@ import {
 import type { CompanionLinkInputs } from "../../companion-link-wizard";
 import type { CompanionSource, LinkedRepository } from "../../../lib/orchestrator/types";
 import { frameworkConfig } from "../../../framework";
+import * as editor from "../../../lib/orchestrator/editor";
 
 function withProcessExitStub<T>(fn: () => Promise<T>): Promise<{ error: unknown }> {
   const originalExit = process.exit;
@@ -62,8 +63,6 @@ async function runLinkWithShadowScan(
       installCompanion: async () => {},
       registerRepository: async (repository) => repository,
       registerCompanion: async () => {},
-      detectInvokingEditorCli: () => null,
-      injectEditorFolder: async () => true,
       findDescendantRepoLocalRegistries: findShadowedRegistries,
     });
   } finally {
@@ -160,8 +159,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         installCompanion,
         registerRepository,
         registerCompanion: async () => {},
-        detectInvokingEditorCli: () => "cursor",
-        injectEditorFolder: async () => true,
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
@@ -191,7 +188,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
       },
     );
     expect(logs.join("\n")).toContain(
-      'Workspace: updated .mate/workspace.code-workspace for cursor; open it via "Open Workspace"',
+      "Workspace: run `mate companion open` to open the workspace in your editor",
     );
   });
 
@@ -232,8 +229,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         installCompanion: async () => {},
         registerRepository,
         registerCompanion: async () => {},
-        detectInvokingEditorCli: () => null,
-        injectEditorFolder: async () => true,
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
@@ -251,6 +246,100 @@ describe("runCompanionLinkCommandWithDeps", () => {
     );
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(logs.join("\n")).toContain("Source: git");
+  });
+
+  test("tries SSH before HTTPS for non-GitHub repository URLs", async () => {
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    const originalLog = console.log;
+    console.log = () => {};
+
+    const spawn = mockSpawnSync({ status: 0 });
+
+    try {
+      await runCompanionLinkCommandWithDeps([], {
+        selectCompanionLinkInputs: async () => ({
+          source: "git",
+          gitUrl: "https://git.example.test:22222/example-org/example-group/acme-companion.git",
+          profile: "default",
+        }),
+        resolveCompanion: async () => null,
+        stat: async () => {
+          throw new Error("ENOENT");
+        },
+        mkdir: async () => {},
+        spawnSync: spawn,
+        rm: async () => {},
+        inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
+        installCompanion: async () => {},
+        registerRepository: async (repository) => repository,
+        registerCompanion: async () => {},
+      });
+    } finally {
+      Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
+      console.log = originalLog;
+    }
+
+    const expectedCompanionPath = path.join(
+      path.join(process.env.HOME!, ".mate", "companions"),
+      "acme-companion",
+    );
+    expect(spawn).toHaveBeenCalledWith(
+      "git",
+      [
+        "clone",
+        "ssh://git@git.example.test:22222/example-org/example-group/acme-companion.git",
+        expectedCompanionPath,
+      ],
+      expect.any(Object),
+    );
+  });
+
+  test("uses the repository name from an explicit ssh URL", async () => {
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    const originalLog = console.log;
+    console.log = () => {};
+
+    const spawn = mockSpawnSync({ status: 0 });
+
+    try {
+      await runCompanionLinkCommandWithDeps([], {
+        selectCompanionLinkInputs: async () => ({
+          source: "git",
+          gitUrl: "ssh://git@git.example.test:22222/example-org/example-group/acme-companion.git",
+          profile: "default",
+        }),
+        resolveCompanion: async () => null,
+        stat: async () => {
+          throw new Error("ENOENT");
+        },
+        mkdir: async () => {},
+        spawnSync: spawn,
+        rm: async () => {},
+        inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
+        installCompanion: async () => {},
+        registerRepository: async (repository) => repository,
+        registerCompanion: async () => {},
+      });
+    } finally {
+      Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
+      console.log = originalLog;
+    }
+
+    const expectedCompanionPath = path.join(
+      path.join(process.env.HOME!, ".mate", "companions"),
+      "acme-companion",
+    );
+    expect(spawn).toHaveBeenCalledWith(
+      "git",
+      [
+        "clone",
+        "ssh://git@git.example.test:22222/example-org/example-group/acme-companion.git",
+        expectedCompanionPath,
+      ],
+      expect.any(Object),
+    );
   });
 
   test("reuses an existing git companion directory instead of failing or recloning", async () => {
@@ -292,8 +381,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         installCompanion: async () => {},
         registerRepository,
         registerCompanion: async () => {},
-        detectInvokingEditorCli: () => null,
-        injectEditorFolder: async () => true,
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
@@ -350,8 +437,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         installCompanion: async () => {},
         registerRepository: async (repository) => repository,
         registerCompanion: async () => {},
-        detectInvokingEditorCli: () => null,
-        injectEditorFolder: async () => true,
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
@@ -369,7 +454,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
     expect(rm).toHaveBeenCalledTimes(1);
   });
 
-  test("links an existing companion and succeeds without editor injection in unsupported contexts", async () => {
+  test("links an existing companion and succeeds without touching the editor", async () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
 
@@ -406,9 +491,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         installCompanion: async () => {},
         registerRepository: async (repository) => repository,
         registerCompanion: async () => {},
-        detectInvokingEditorCli: () => null,
-        injectEditorFolder: async () => true,
-        openEditorWorkspace: () => true,
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
@@ -419,7 +501,9 @@ describe("runCompanionLinkCommandWithDeps", () => {
     expect(runSetup).not.toHaveBeenCalled();
     expect(logs.join("\n")).toContain(`Companion: ${path.resolve(localCompanionPath)}`);
     expect(logs.join("\n")).toContain("Source: git");
-    expect(logs.join("\n")).toContain('open .mate/workspace.code-workspace via "Open Workspace"');
+    expect(logs.join("\n")).toContain(
+      "Workspace: run `mate companion open` to open the workspace in your editor",
+    );
     expect(selectedOptions?.existingCompanions).toEqual([path.resolve(localCompanionPath)]);
   });
 
@@ -453,8 +537,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         registerRepository,
         registerCompanion,
         installCompanion: async () => {},
-        detectInvokingEditorCli: () => null,
-        injectEditorFolder: async () => true,
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
@@ -503,8 +585,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         installCompanion: async () => {},
         registerRepository,
         registerCompanion: async () => {},
-        detectInvokingEditorCli: () => null,
-        injectEditorFolder: async () => true,
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
@@ -519,13 +599,9 @@ describe("runCompanionLinkCommandWithDeps", () => {
     );
   });
 
-  test("falls back to opening both working repo and companion when editor injection fails", async () => {
+  test("never touches the editor, even inside a VS Code or Cursor session", async () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
-
-    const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (msg?: unknown) => logs.push(String(msg ?? ""));
 
     const localCompanionPath = path.join(
       process.env.HOME!,
@@ -533,7 +609,14 @@ describe("runCompanionLinkCommandWithDeps", () => {
       "companions",
       "local-companion",
     );
-    const openWorkspace = mock(() => true);
+
+    const detectInvokingEditorCli = spyOn(editor, "detectInvokingEditorCli").mockReturnValue(
+      "cursor",
+    );
+    const injectEditorFolder = spyOn(editor, "injectEditorFolder");
+    const openEditorWorkspace = spyOn(editor, "openEditorWorkspace");
+    const originalTermProgram = process.env.TERM_PROGRAM;
+    process.env.TERM_PROGRAM = "cursor";
 
     try {
       await runCompanionLinkCommandWithDeps([], {
@@ -549,22 +632,15 @@ describe("runCompanionLinkCommandWithDeps", () => {
         installCompanion: async () => {},
         registerRepository: async (repository) => repository,
         registerCompanion: async () => {},
-        detectInvokingEditorCli: () => "code",
-        injectEditorFolder: async () => false,
-        openEditorWorkspace: openWorkspace,
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
-      console.log = originalLog;
+      process.env.TERM_PROGRAM = originalTermProgram;
     }
 
-    expect(openWorkspace).toHaveBeenCalledWith(
-      [path.resolve(process.cwd()), path.resolve(localCompanionPath)],
-      "code",
-    );
-    expect(logs.join("\n")).toContain(
-      'opened code with working repo and companion; open .mate/workspace.code-workspace via "Open Workspace"',
-    );
+    expect(detectInvokingEditorCli).not.toHaveBeenCalled();
+    expect(injectEditorFolder).not.toHaveBeenCalled();
+    expect(openEditorWorkspace).not.toHaveBeenCalled();
   });
 
   test("writes the workspace-local link metadata without requiring companion-side registry writes", async () => {
@@ -606,8 +682,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         resolveCompanion: async () => null,
         registerCompanion: async () => {},
         installCompanion: async () => {},
-        detectInvokingEditorCli: () => null,
-        injectEditorFolder: async () => true,
       });
       const workspaceRegistry = await fs.readFile(
         path.join(workingPath, `.${frameworkConfig.name}`, "config", "registry.yaml"),

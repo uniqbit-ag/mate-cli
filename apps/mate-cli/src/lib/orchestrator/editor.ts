@@ -63,6 +63,15 @@ export function resolveEditorBinary(cli: string): string | null {
   }
 }
 
+function resolveEditorCli(cli: string): { cli: string; binary: string } | null {
+  const candidates = cli === "code" ? ["code", "code-insiders"] : [cli];
+  for (const candidate of candidates) {
+    const binary = resolveEditorBinary(candidate);
+    if (binary) return { cli: candidate, binary };
+  }
+  return null;
+}
+
 export function writeMissingEditorCliGuidance(
   cli: string,
   write: (chunk: string) => boolean = process.stderr.write.bind(process.stderr),
@@ -76,7 +85,8 @@ export function editorWorkspacePath(repoPath: string): string {
 }
 
 function editorStoragePath(cli: string): string {
-  const appName = cli === "cursor" ? "Cursor" : "Code";
+  const appName =
+    cli === "cursor" ? "Cursor" : cli === "code-insiders" ? "Code - Insiders" : "Code";
   if (process.platform === "darwin") {
     return path.join(
       process.env.HOME ?? "",
@@ -140,8 +150,8 @@ export async function injectEditorFolder(
     cli: string,
   ) => EditorWorkspaceState = detectEditorWorkspaceState,
 ): Promise<boolean> {
-  const binary = resolveEditorBinary(cli);
-  if (!binary) {
+  const resolved = resolveEditorCli(cli);
+  if (!resolved) {
     process.stderr.write(
       `mate: warning: ${cli} CLI not found on PATH; skipping workspace injection.\n`,
     );
@@ -150,6 +160,8 @@ export async function injectEditorFolder(
     );
     return false;
   }
+
+  const { cli: resolvedCli, binary } = resolved;
 
   const companionPaths = (Array.isArray(companionPath) ? companionPath : [companionPath]).map(
     (candidate) => path.resolve(candidate),
@@ -172,7 +184,7 @@ export async function injectEditorFolder(
     "utf8",
   );
 
-  if (detectWorkspace(workspacePath, cli) === "open") return true;
+  if (detectWorkspace(workspacePath, resolvedCli) === "open") return true;
 
   const child = spawnProcess(binary, ["--add", path.resolve(repoPath), ...companionPaths], {
     stdio: "ignore",

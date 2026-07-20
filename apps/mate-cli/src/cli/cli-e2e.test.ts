@@ -497,7 +497,7 @@ async function writeAdapterStub(
 
 async function writeEditorStub(
   scenario: E2EScenario,
-  toolName: "code" | "cursor",
+  toolName: "code" | "code-insiders" | "cursor",
 ): Promise<string> {
   const capturePath = path.join(scenario.root, `${toolName}-capture.json`);
   const stubPath = path.join(scenario.bin, toolName);
@@ -1683,6 +1683,29 @@ describe("mate CLI e2e", () => {
         path.join(scenario.working, ".mate", "workspace.code-workspace"),
       ),
     ).toEqual({ folders: [{ path: scenario.working }, { path: scenario.companion }] });
+  });
+
+  test("companion open falls back to code-insiders when code is unavailable", async () => {
+    const scenario = await createScenario("mate-cli-e2e-workspace-open-insiders-");
+    const capturePath = await writeEditorStub(scenario, "code-insiders");
+
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+    const result = await runMate(scenario, {
+      cwd: scenario.working,
+      args: ["companion", "open"],
+      env: {
+        PATH: `${scenario.bin}:${pathWithoutCommand("code", process.env.PATH ?? "")}`,
+        MATE_E2E_EDITOR_CAPTURE_PATH: capturePath,
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+
+    await waitForFile(capturePath);
+    const invocation = await readJson<{ argv: string[] }>(capturePath);
+    expect(invocation.argv).toEqual(["--add", scenario.working, scenario.companion]);
   });
 
   test("opencode rejects disallowed tools before any adapter binary is spawned", async () => {

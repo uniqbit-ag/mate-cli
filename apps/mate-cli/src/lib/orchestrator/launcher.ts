@@ -5,7 +5,6 @@ import { ClaudeAdapter } from "./adapters/claude";
 import { OpenCodeAdapter } from "./adapters/opencode";
 import { CompanionStore, resolvePolicyFromConfig } from "./companion-store";
 import { syncCompanionGit } from "./companion-git-sync";
-import { injectEditorFolder, isCursorSession } from "./editor";
 import { resolveForLaunch, type LaunchContext } from "./framework-context";
 import {
   RepositoryNotSelectedError,
@@ -37,7 +36,6 @@ interface ResolvedLaunchState {
 }
 
 export const launcherDeps = {
-  injectVSCodeCompanion: injectEditorFolder,
   syncCompanionFiles,
   syncWorkingRepoClaudeSettings,
   syncCompanionGit,
@@ -75,20 +73,7 @@ export class FrameworkLauncher {
     await state.adapter.validateLaunch(adapterContext);
 
     return {
-      execute: async () => {
-        const termProgram = process.env.TERM_PROGRAM?.toLowerCase() ?? "";
-        const isCursor = isCursorSession();
-        const inVSCode = !!process.env.VSCODE_IPC_HOOK || termProgram === "vscode" || isCursor;
-        if (inVSCode) {
-          await launcherDeps.injectVSCodeCompanion(
-            state.companionPath,
-            state.repository.path,
-            isCursor ? "cursor" : "code",
-          );
-        }
-
-        return state.adapter.run(adapterContext, request.args);
-      },
+      execute: async () => state.adapter.run(adapterContext, request.args),
     };
   }
 

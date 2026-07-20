@@ -1,6 +1,7 @@
 /**
  * Extract repository name from a git URL.
- * Handles SSH (git@host:user/repo.git), HTTPS (https://host/user/repo.git),
+ * Handles SSH (git@host:user/repo.git and ssh://git@host:port/user/repo.git),
+ * HTTPS (https://host/user/repo.git),
  * and URLs without .git suffix.
  */
 export function extractRepoName(url: string): string | null {
@@ -8,26 +9,23 @@ export function extractRepoName(url: string): string | null {
     return null;
   }
 
-  let cleaned = url.trim();
+  const cleaned = url.trim();
+  let repositoryPath: string;
 
-  // Handle SSH URLs: git@github.com:user/repo.git
-  if (cleaned.includes(":") && !cleaned.startsWith("http")) {
-    const afterColon = cleaned.split(":")[1];
-    if (!afterColon) return null;
-    cleaned = afterColon;
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(cleaned)) {
+    try {
+      repositoryPath = new URL(cleaned).pathname;
+    } catch {
+      return null;
+    }
+  } else if (/^[^/\s@]+@[^/\s:]+:.+/.test(cleaned)) {
+    // Handle scp-style SSH URLs: git@github.com:user/repo.git
+    repositoryPath = cleaned.slice(cleaned.indexOf(":") + 1);
+  } else {
+    repositoryPath = cleaned.replace(/^https?:\/\//i, "");
   }
 
-  // Remove protocol prefix for HTTPS URLs
-  cleaned = cleaned.replace(/^https?:\/\//, "");
-
-  // Remove host prefix
-  const parts = cleaned.split("/");
-  if (parts.length < 2) {
-    return null;
-  }
-
-  // Get the last path segment (repo name)
-  const lastPart = parts[parts.length - 1];
+  const lastPart = repositoryPath.split("/").filter(Boolean).at(-1);
   if (!lastPart) {
     return null;
   }
