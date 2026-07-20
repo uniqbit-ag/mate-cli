@@ -45,6 +45,42 @@ describe("editor helpers", () => {
     expect(editor.getPreferredEditorCli({ VSCODE_IPC_HOOK: "/tmp/vscode-ipc" })).toBe("code");
   });
 
+  test("returns a tri-state result from editor status output", () => {
+    spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
+    const workspacePath = "/tmp/repo/.mate/workspace.code-workspace";
+    const statusProcess = (() =>
+      Buffer.from("status ok")) as unknown as typeof import("node:child_process").execFileSync;
+    const openStorage = (() =>
+      Buffer.from(
+        JSON.stringify({
+          windowsState: {
+            openedWindows: [
+              {
+                workspaceIdentifier: {
+                  configURIPath: "file:///tmp/repo/.mate/workspace.code-workspace",
+                },
+              },
+            ],
+          },
+        }),
+      )) as unknown as typeof import("node:fs").readFileSync;
+
+    expect(
+      editor.detectEditorWorkspaceState(workspacePath, "code", statusProcess, openStorage),
+    ).toBe("open");
+    expect(
+      editor.detectEditorWorkspaceState(workspacePath, "code", statusProcess, (() =>
+        Buffer.from(
+          '{"windowsState":{"openedWindows":[]}}',
+        )) as unknown as typeof import("node:fs").readFileSync),
+    ).toBe("not-open");
+    expect(
+      editor.detectEditorWorkspaceState(workspacePath, "code", (() => {
+        throw new Error("status unavailable");
+      }) as unknown as typeof import("node:child_process").execFileSync),
+    ).toBe("undetermined");
+  });
+
   test("writes guidance and returns false when opening a workspace without an editor CLI", () => {
     spyOn(editor, "resolveEditorBinary").mockReturnValue(null);
     const chunks: string[] = [];
@@ -85,7 +121,7 @@ describe("editor helpers", () => {
       expect(chunks.join("")).toContain("code CLI not found on PATH");
     });
 
-    test("writes workspace metadata and injects folders into the invoking window", async () => {
+    test("writes workspace metadata and falls back to --add when the workspace is not open", async () => {
       spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
       const spawnCalls: Array<{ command: string; args: string[]; options: object }> = [];
       const spawnProcess = ((command: string, args: string[], options: object) => {
@@ -101,9 +137,15 @@ describe("editor helpers", () => {
       await fs.mkdir(repoPath, { recursive: true });
       await fs.mkdir(companionPath, { recursive: true });
 
-      expect(await editor.injectEditorFolder(companionPath, repoPath, "code", spawnProcess)).toBe(
-        true,
-      );
+      expect(
+        await editor.injectEditorFolder(
+          companionPath,
+          repoPath,
+          "code",
+          spawnProcess,
+          () => "not-open",
+        ),
+      ).toBe(true);
 
       expect(JSON.parse(await fs.readFile(editor.editorWorkspacePath(repoPath), "utf8"))).toEqual({
         folders: [{ path: repoPath }, { path: companionPath }],
@@ -115,6 +157,59 @@ describe("editor helpers", () => {
           options: { stdio: "ignore", detached: true },
         },
       ]);
+    });
+
+    test("writes workspace metadata without spawning --add when the workspace is open", async () => {
+      spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
+      const spawnProcess = mock(() => {
+        throw new Error("spawn should not be called");
+      }) as unknown as typeof import("node:child_process").spawn;
+      const root = await makeTempDir("editor-inject-open-");
+      const repoPath = path.join(root, "repo");
+      const companionPath = path.join(root, "companion");
+      await fs.mkdir(repoPath, { recursive: true });
+      await fs.mkdir(companionPath, { recursive: true });
+
+      expect(
+        await editor.injectEditorFolder(
+          companionPath,
+          repoPath,
+          "code",
+          spawnProcess,
+          () => "open",
+        ),
+      ).toBe(true);
+
+      expect(JSON.parse(await fs.readFile(editor.editorWorkspacePath(repoPath), "utf8"))).toEqual({
+        folders: [{ path: repoPath }, { path: companionPath }],
+      });
+    });
+
+    test("falls back to --add when workspace detection is undetermined", async () => {
+      spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
+      const spawnCalls: string[][] = [];
+      const spawnProcess = ((command: string, args: string[]) => {
+        spawnCalls.push([command, ...args]);
+        return {
+          on: () => undefined,
+          unref: () => undefined,
+        } as unknown as EventEmitter & { unref(): void };
+      }) as typeof import("node:child_process").spawn;
+      const root = await makeTempDir("editor-inject-unknown-");
+      const repoPath = path.join(root, "repo");
+      const companionPath = path.join(root, "companion");
+      await fs.mkdir(repoPath, { recursive: true });
+      await fs.mkdir(companionPath, { recursive: true });
+
+      await editor.injectEditorFolder(
+        companionPath,
+        repoPath,
+        "code",
+        spawnProcess,
+        () => "undetermined",
+      );
+
+      expect(spawnCalls).toEqual([["/usr/bin/code", "--add", repoPath, companionPath]]);
     });
   });
 });
