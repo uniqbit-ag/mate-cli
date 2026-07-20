@@ -455,11 +455,18 @@ describe("createOpenspecPlugin", () => {
       path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml"),
       "utf8",
     );
-    expect(schema).toContain("version: 1.1");
-    expect(schema).toContain("Every delta and canonical spec MUST include `area: <area>`");
-    expect(schema).toContain("Every requirement MUST also include an inline `**Area:**` marker");
-    expect(schema).toContain("Every change MUST name at least one Area");
-    expect(schema).toContain("never use `N/A`");
+    expect(schema).toContain("version: 2");
+    expect(schema).toContain(
+      "Every delta and canonical spec MUST record a `scopes` frontmatter list",
+    );
+    expect(schema).toContain(
+      "Every requirement MUST include direct inline `**Repository:**` and `**Area:**` markers",
+    );
+    expect(schema).toContain("Every change MUST name at least one scope");
+    expect(schema).toContain("local checkout directory basename");
+    expect(schema).toContain("or `N/A`");
+    expect(schema).toContain("id: explore");
+    expect(schema).toContain("generates: explore-brief.md");
   });
 
   test("never rewrites an existing config.yaml, even with user-added keys", async () => {
