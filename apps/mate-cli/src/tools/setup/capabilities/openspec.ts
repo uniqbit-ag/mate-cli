@@ -299,6 +299,14 @@ async function reconcileOpenSpecSchema(ctx: SetupContext): Promise<void> {
   await mergeDir(MATE_V1_SCHEMA_SOURCE, getMateV1SchemaDir(ctx.companionPath));
   const configPath = getOpenSpecConfigPath(ctx.companionPath);
   await fs.mkdir(path.dirname(configPath), { recursive: true });
+
+  // config.yaml is user-editable once created; never overwrite it on re-sync.
+  const configExists = await fs
+    .access(configPath)
+    .then(() => true)
+    .catch(() => false);
+  if (configExists) return;
+
   await fs.writeFile(configPath, "schema: mate-v1\n", "utf8");
 }
 
