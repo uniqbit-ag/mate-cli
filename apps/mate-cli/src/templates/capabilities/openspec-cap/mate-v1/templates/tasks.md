@@ -1,3 +1,10 @@
+---
+type: change-tasks
+change: <change-name>
+schema: mate-v1
+tags: [openspec/change, openspec/tasks]
+---
+
 ## 1. Setup
 
 - [ ] 1.1 <!-- Task description -->
