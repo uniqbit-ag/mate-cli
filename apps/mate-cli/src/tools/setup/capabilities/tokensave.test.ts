@@ -48,6 +48,78 @@ describe("TOKENSAVE_SUPPORTED_AGENTS", () => {
   });
 });
 
+describe("updateTokensaveInstalledAgents", () => {
+  test("adds missing agents to installed_agents in global config", async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-config-"));
+    const tokensaveDir = path.join(configDir, ".tokensave");
+    const configFile = path.join(tokensaveDir, "config.toml");
+    tempRoots.push(configDir);
+
+    await fs.mkdir(tokensaveDir, { recursive: true });
+    await fs.writeFile(
+      configFile,
+      `upload_enabled = true\ninstalled_agents = ["claude"]\n`,
+      "utf8",
+    );
+
+    const originalHome = process.env.HOME;
+    process.env.HOME = configDir;
+
+    try {
+      await tokensavePlugin.apply({
+        companionPath: configDir,
+        activeProviders: ["claude", "opencode"],
+        mode: "setup",
+        repoPath: configDir,
+        config: {
+          profiles: { default: { name: "default", allowedAgents: ["claude", "opencode"] } },
+          capabilities: [{ name: "tokensave" }],
+        },
+      });
+
+      const content = await fs.readFile(configFile, "utf8");
+      expect(content).toContain('installed_agents = ["claude", "opencode"]');
+    } finally {
+      process.env.HOME = originalHome;
+    }
+  });
+
+  test("is idempotent when agents are already present", async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-config-"));
+    const tokensaveDir = path.join(configDir, ".tokensave");
+    const configFile = path.join(tokensaveDir, "config.toml");
+    tempRoots.push(configDir);
+
+    await fs.mkdir(tokensaveDir, { recursive: true });
+    await fs.writeFile(
+      configFile,
+      `upload_enabled = true\ninstalled_agents = ["claude", "opencode"]\n`,
+      "utf8",
+    );
+
+    const originalHome = process.env.HOME;
+    process.env.HOME = configDir;
+
+    try {
+      await tokensavePlugin.apply({
+        companionPath: configDir,
+        activeProviders: ["claude", "opencode"],
+        mode: "setup",
+        repoPath: configDir,
+        config: {
+          profiles: { default: { name: "default", allowedAgents: ["claude", "opencode"] } },
+          capabilities: [{ name: "tokensave" }],
+        },
+      });
+
+      const content = await fs.readFile(configFile, "utf8");
+      expect(content).toContain('installed_agents = ["claude", "opencode"]');
+    } finally {
+      process.env.HOME = originalHome;
+    }
+  });
+});
+
 describe("tokensavePlugin.apply", () => {
   let runMock: mock.Mock;
   let runCommandMock: mock.Mock;
