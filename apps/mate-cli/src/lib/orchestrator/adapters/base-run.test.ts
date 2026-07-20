@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import path from "node:path";
 import type { spawn as SpawnFn } from "node:child_process";
 import type { AdapterContext, PreparedLaunch } from "./base";
 
@@ -96,6 +97,7 @@ describe("LaunchAdapter runtime", () => {
   test("exposes the default environment and no-op validation hook", async () => {
     const adapter = new TestAdapter();
     const environment = adapter.environment(makeContext());
+    const wrapperBinPath = environment.MATE_WRAPPER_BIN_PATH;
     const plainAdapter = new PlainAdapter();
 
     expect(environment).toMatchObject({
@@ -109,9 +111,24 @@ describe("LaunchAdapter runtime", () => {
       MATE_REPO_PROFILE: "default",
       MATE_POLICY_JSON: JSON.stringify({ allowedAgents: ["claude"] }),
     });
+    expect(environment.PATH?.split(path.delimiter)[0]).toBe(wrapperBinPath);
     expect(adapter.extendEnvironment(makeContext())).toEqual({ EXTRA_ENV: "1" });
     expect(plainAdapter.extendEnvironment(makeContext())).toEqual({});
     await expect(adapter.validateLaunch(makeContext())).resolves.toBeUndefined();
+  });
+
+  test("resolves openspec through the Mate wrapper first", () => {
+    const environment = new TestAdapter().environment(makeContext());
+    const result = Bun.spawnSync(["sh", "-c", "command -v openspec"], {
+      env: environment,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(new TextDecoder().decode(result.stdout).trim()).toBe(
+      `${environment.MATE_WRAPPER_BIN_PATH}/openspec`,
+    );
   });
 
   test("captures stdout and stderr for non-interactive launches", async () => {
