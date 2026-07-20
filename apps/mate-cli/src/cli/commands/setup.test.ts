@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { frameworkConfig } from "../../framework";
+import { ConfigStore } from "../../lib/orchestrator/config-store";
 import { runSetupCommand, runSetupCommandWithDeps, setupCommandDeps } from "./setup";
 import type { SetupSelections } from "../../lib/orchestrator/setup-compatibilities";
 
@@ -399,6 +400,111 @@ describe("runSetupCommandWithDeps", () => {
     );
   });
 
+  test("omits capabilities for no-flag linked setup", async () => {
+    const cwd = await makeTempDir("mate-setup-cli-linked-no-flags-");
+    const executeMock = mock(async () => ({
+      config: {
+        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        packageManagers: ["bun"],
+        capabilities: [{ name: "openspec" }],
+      },
+    }));
+
+    await withCwd(cwd, () =>
+      runSetupCommandWithDeps([], {
+        inspectSetupPreflight: async () => ({
+          kind: "linked-working-repo",
+          match: { companionPath: "/tmp/companion", repositoryId: "repo" },
+        }),
+        executeSetup: executeMock as never,
+      }),
+    );
+
+    expect(executeMock).toHaveBeenCalledWith(
+      {
+        allowedAgents: undefined,
+        packageManagers: undefined,
+        capabilities: undefined,
+        git: undefined,
+      },
+      { cwd: "/tmp/companion" },
+    );
+  });
+
+  test("preserves capabilities for non-capability linked setup flags", async () => {
+    const cwd = await makeTempDir("mate-setup-cli-linked-non-capability-flags-");
+    const executeMock = mock(async () => ({
+      config: {
+        profiles: { default: { name: "default", allowedAgents: ["opencode"] } },
+        packageManagers: ["uv"],
+        capabilities: [{ name: "openspec" }],
+      },
+    }));
+
+    await withCwd(cwd, () =>
+      runSetupCommandWithDeps(
+        ["--allowed-agent", "opencode", "--package-manager", "uv", "--git-mode", "auto"],
+        {
+          inspectSetupPreflight: async () => ({
+            kind: "linked-working-repo",
+            match: { companionPath: "/tmp/companion", repositoryId: "repo" },
+          }),
+          executeSetup: executeMock as never,
+        },
+      ),
+    );
+
+    expect(executeMock).toHaveBeenCalledWith(
+      {
+        allowedAgents: ["opencode"],
+        packageManagers: ["uv"],
+        capabilities: undefined,
+        git: "auto",
+      },
+      { cwd: "/tmp/companion" },
+    );
+  });
+
+  test("applies schema-only linked setup to the saved capability selection", async () => {
+    const cwd = await makeTempDir("mate-setup-cli-linked-schema-only-");
+    const companionPath = await makeTempDir("mate-setup-cli-linked-schema-companion-");
+    await new ConfigStore(
+      path.join(companionPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+    ).save({
+      type: "companion",
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      packageManagers: ["bun"],
+      capabilities: [{ name: "openspec" }, { name: "react-doctor" }],
+    });
+    const executeMock = mock(async () => ({
+      config: {
+        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        packageManagers: ["bun"],
+        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }, { name: "react-doctor" }],
+      },
+    }));
+
+    await withCwd(cwd, () =>
+      runSetupCommandWithDeps(["--openspec-schema", "mate-v1"], {
+        inspectSetupPreflight: async () => ({
+          kind: "linked-working-repo",
+          match: { companionPath, repositoryId: "repo" },
+        }),
+        executeSetup: executeMock as never,
+      }),
+    );
+
+    expect(executeMock).toHaveBeenCalledWith(
+      {
+        allowedAgents: undefined,
+        packageManagers: undefined,
+        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }, { name: "react-doctor" }],
+        git: undefined,
+      },
+      { cwd: companionPath },
+    );
+  });
+
   test("selects a companion before setup when a working repo has multiple links", async () => {
     const cwd = await makeTempDir("mate-setup-cli-ambiguous-working-repo-");
     const selectCompanionMock = mock(async () => ({
@@ -436,7 +542,7 @@ describe("runSetupCommandWithDeps", () => {
       {
         allowedAgents: undefined,
         packageManagers: undefined,
-        capabilities: [],
+        capabilities: undefined,
         git: undefined,
       },
       { cwd: "/tmp/companion-b" },
