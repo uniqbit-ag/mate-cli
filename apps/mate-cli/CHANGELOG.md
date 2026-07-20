@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.3](https://github.com/uniqbit-ag/mate-cli/compare/0.14.2...0.14.3) (2026-07-20)
+
+## [0.14.3-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.14.2...0.14.3) (2026-07-20)
+
+### Bug Fixes
+
+- avoid editor injection during framework launch ([96f14a7](https://github.com/uniqbit-ag/mate-cli/commit/96f14a7364150f86b35dbea86fd7e64136d970da))
+
 ## [0.14.2](https://github.com/uniqbit-ag/mate-cli/compare/0.14.1...0.14.2) (2026-07-20)
 
 ## [0.14.2-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.14.1...0.14.2) (2026-07-20)
