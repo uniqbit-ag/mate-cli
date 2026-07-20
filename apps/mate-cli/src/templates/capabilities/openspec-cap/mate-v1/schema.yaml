@@ -31,7 +31,7 @@ artifacts:
       Sections:
       - **Why**: 1-2 sentences on the problem or opportunity. What problem does this solve? Why now?
       - **What Changes**: Bullet list of changes. Be specific about new capabilities, modifications, or removals. Mark breaking changes with **BREAKING**.
-       - **Scopes**: List one or more paired `{ repository, area }` entries. `repository` MUST be the normalized Git remote identity in `org/repository` form. `area` MUST be an exact path relative to that repository, including `.` for the repository root. Every change MUST name at least one scope.
+       - **Scopes**: List one or more paired `{ repository, area }` entries. `repository` MUST be the normalized Git remote identity in `org/repository` form. For a monorepo, `area` MUST stop at the owning workspace or package root (for example, `acme`, not `acme/src/sub-1/sub-2`). For a non-monorepo repository, `area` MUST be the exact affected repository-relative path (for example, `docs`); use `.` only when the repository root itself is affected. Every change MUST name at least one scope.
       - **Capabilities**: Identify which specs will be created or modified:
          - **New Capabilities**: List capabilities being introduced. Each becomes a new `specs/<capability>/spec.md` using a kebab-case capability name (e.g., `user-auth`, `data-export`). Never place specs under an Area folder. Record the paired scope as `scopes` metadata.
         - **Modified Capabilities**: List existing capabilities whose REQUIREMENTS are changing. Only include if spec-level behavior changes (not just implementation details). Each needs a delta spec file. Check `openspec/specs/` for existing spec names. Leave empty if no requirement changes.
@@ -44,7 +44,7 @@ artifacts:
       This is the foundation - specs, design, and tasks all build on this.
 
        Scope rules:
-       - Every `scopes` entry MUST pair `repository: org/repository` with an exact repository-relative `area`.
+       - Every `scopes` entry MUST pair `repository: org/repository` with an `area` selected according to the repository layout: the owning workspace/package root in a monorepo, or the exact affected path in a non-monorepo repository.
        - Repository identity MUST come from the Git remote. Normalize SSH and HTTPS forms such as `git@github.com:org/repository.git` and `https://github.com/org/repository.git` to `org/repository`.
        - Area identity is metadata, never part of a change or capability folder name.
        - Do not use a local checkout directory basename, Mate's internal repository ID, a synthetic Area token, or `N/A` as durable metadata.
@@ -84,9 +84,10 @@ artifacts:
 
        **Path and scope rules** — spec files are ALWAYS flat; paired scope metadata is required, never a folder:
       - Every spec lives at `specs/<capability>/spec.md`. Never interpose an Area folder. `specs/<area>/<capability>/spec.md` breaks the OpenSpec CLI: it parses spec deltas only at the flat path, so an Area folder makes `openspec show`/`validate` report zero deltas.
-       - Every delta and canonical spec MUST record a `scopes` frontmatter list whose entries pair `repository: org/repository` with an exact repository-relative `area`, such as `apps/web`, `packages/ui`, or `.`.
+       - Every delta and canonical spec MUST record a `scopes` frontmatter list whose entries pair `repository: org/repository` with an `area` selected according to the repository layout. Monorepo Areas stop at workspace/package roots such as `acme` or `packages/ui`; non-monorepo Areas remain exact paths such as `docs` or `.`.
        - Each scope pair is independent. Preserve every repository/Area pair for monorepos and multiple repositories; never use separate parallel `repositories` and `areas` arrays.
-       - Example paired scopes: `{ repository: org/product, area: apps/web }`, `{ repository: org/product, area: packages/api }`, and `{ repository: org/other, area: services/api }`.
+       - Example paired scopes: `{ repository: org/product, area: acme }`, `{ repository: org/product, area: packages/api }`, and `{ repository: org/other, area: docs }`.
+       - Do not split a monorepo Area into deeper entries such as `acme/src` or `acme/public`; those paths remain inside the `acme` Area. A non-monorepo repository may use exact subpaths such as `docs` to identify the affected Area.
        - Every requirement MUST include direct inline `**Repository:**` and `**Area:**` markers, even when they repeat a document-level scope.
        - Do not use a local checkout directory basename, Mate's internal repository ID, a synthetic Area token, or `N/A`.
       - Modified capabilities: match the existing `specs/<capability>/spec.md` path exactly.
@@ -121,7 +122,7 @@ artifacts:
        ### Requirement: User can export data
        The system SHALL allow users to export their data in CSV format.
        **Repository:** `org/product`
-       **Area:** `apps/web`
+       **Area:** `acme`
 
       #### Scenario: Successful export
       - **WHEN** user clicks "Export" button
@@ -133,7 +134,7 @@ artifacts:
        **Reason**: Replaced by new export system
        **Migration**: Use new export endpoint at /api/v2/export
        **Repository:** `org/product`
-       **Area:** `apps/web`
+       **Area:** `acme`
       ```
 
       Specs should be testable - each scenario is a potential test case.
@@ -155,7 +156,7 @@ artifacts:
       After the file's `#` title line, add a backlink on the next line: `← [[proposal]]`. If modifying an existing main spec, add on the line after: `Applies to: [[openspec/specs/<capability>/spec]]`.
 
        Migration rules for existing artifacts and canonical specs:
-       1. Convert a legacy Area to the exact repository-relative path, using `.` only when the repository root is the intended Area.
+       1. Normalize each Area to the owning workspace/package root for monorepos; for non-monorepos, retain the exact affected repository-relative path and use `.` only when the repository root is the intended Area.
        2. Replace local, internal, synthetic, or otherwise non-portable repository and Area values with canonical Git remote identities and exact repository-relative paths.
        3. Add mandatory paired `scopes` frontmatter to every delta and canonical spec that lacks it.
        4. Add mandatory direct `**Repository:**` and `**Area:**` markers to every requirement that lacks them.
@@ -211,7 +212,7 @@ artifacts:
       **IMPORTANT: Follow the template below exactly.** The apply phase parses checkbox format to track progress. Tasks not using `- [ ]` won't be tracked.
 
       Guidelines:
-      - Group tasks by the exact Areas listed in the proposal, then by concern within each Area. Use `## <area>` as the top-level heading (for example, `## apps/web` or `## .`) with numbered sub-sections beneath it.
+       - Group tasks by the exact Areas listed in the proposal, then by concern within each Area. Use `## <area>` as the top-level heading (for example, `## acme` or `## .`) with numbered sub-sections beneath it.
       - Each task MUST be a checkbox: `- [ ] X.Y Task description`
       - Tasks should be small enough to complete in one session
       - Order tasks by dependency (what must be done first?)

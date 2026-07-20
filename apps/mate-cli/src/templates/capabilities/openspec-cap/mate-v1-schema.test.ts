@@ -89,23 +89,28 @@ describe("mate-v1 schema", () => {
     expect(raw).toContain("git@github.com:org/repository.git");
     expect(raw).toContain("https://github.com/org/repository.git");
     expect(raw).toContain("repository: org/repository");
-    expect(raw).toContain("area: apps/web");
+    expect(raw).toContain("area: acme");
     expect(raw).toContain("area: .");
     expect(raw).toContain("local checkout directory basename");
     expect(raw).toContain("N/A");
   });
 
-  test("preserves paired scopes for monorepos and multiple repositories", async () => {
+  test("uses package roots for monorepos and exact paths for non-monorepos", async () => {
     const { raw } = await readSchema();
     const proposal = await fs.readFile(path.join(templatesPath, "proposal.md"), "utf8");
     const spec = await fs.readFile(path.join(templatesPath, "spec.md"), "utf8");
     const design = await fs.readFile(path.join(templatesPath, "design.md"), "utf8");
     const tasks = await fs.readFile(path.join(templatesPath, "tasks.md"), "utf8");
 
-    expect(raw).toContain("apps/web");
+    expect(raw).toContain("area: acme");
     expect(raw).toContain("packages/api");
     expect(raw).toContain("org/other");
-    expect(raw).toContain("services/api");
+    expect(raw).toContain("area: docs");
+    expect(raw).toContain("not `acme/src/sub-1/sub-2`");
+    expect(raw).toContain("acme/src");
+    expect(raw).toContain("acme` Area");
+    expect(raw).not.toContain("area: acme/src");
+    expect(raw).toContain("A non-monorepo repository may use exact subpaths such as `docs`");
     expect(raw).toContain(
       "Every requirement MUST include direct inline `**Repository:**` and `**Area:**`",
     );
