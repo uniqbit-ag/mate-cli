@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.2](https://github.com/uniqbit-ag/mate-cli/compare/0.14.1...0.14.2) (2026-07-20)
+
+## [0.14.2-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.14.1...0.14.2) (2026-07-20)
+
+### Features
+
+- warn about shadowed companion links ([47f47ec](https://github.com/uniqbit-ag/mate-cli/commit/47f47ecc08ff9cecac34d47b41b8b7772218a02a))
+
+## [0.14.2-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.14.1...0.14.2) (2026-07-20)
+
+### Bug Fixes
+
+- force companion CLI wrappers to resolve first ([04b1d38](https://github.com/uniqbit-ag/mate-cli/commit/04b1d389dbd470c82bdb9ab77594cb851b7a2933))
+- target open editor workspace during injection ([da333b5](https://github.com/uniqbit-ag/mate-cli/commit/da333b5f3df237a263661dbc797182aab41663e4))
+
 ## [0.14.1](https://github.com/uniqbit-ag/mate-cli/compare/0.14.0...0.14.1) (2026-07-20)
 
 ## [0.14.1-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.14.0...0.14.1) (2026-07-20)
