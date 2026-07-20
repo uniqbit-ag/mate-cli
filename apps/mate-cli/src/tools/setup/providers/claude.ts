@@ -70,6 +70,7 @@ function getCapabilityPermissionEntries(): Record<string, string[]> {
       "Skill(openspec-propose)",
       "Skill(openspec-apply-change)",
       "Skill(openspec-archive-change)",
+      "Skill(mate-openspec-artifact-finish)",
       "Bash(openspec:*)",
       "Bash(mate cap graphify:*)",
       `Bash(${path.join(wrapperBinPath, "openspec")}:*)`,
