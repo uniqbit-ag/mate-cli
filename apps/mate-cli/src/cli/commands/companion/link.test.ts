@@ -36,6 +36,45 @@ async function makeTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(process.env.TMPDIR ?? "/tmp", prefix));
 }
 
+async function runLinkWithShadowScan(
+  findShadowedRegistries: () => Promise<string[]>,
+): Promise<{ logs: string[]; errors: string[] }> {
+  const originalIsTTY = process.stdin.isTTY;
+  const originalLog = console.log;
+  const originalError = console.error;
+  const logs: string[] = [];
+  const errors: string[] = [];
+  Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+  console.log = (msg?: unknown) => logs.push(String(msg ?? ""));
+  console.error = (msg?: unknown) => errors.push(String(msg ?? ""));
+
+  try {
+    await runCompanionLinkCommandWithDeps([], {
+      selectCompanionLinkInputs: async () => ({
+        source: "existing",
+        companionPaths: [path.join(process.env.HOME!, ".mate", "companions", "test-companion")],
+        profile: "default",
+      }),
+      resolveCompanion: async () => null,
+      listCompanions: async () => [],
+      stat: async () => ({ isDirectory: () => true }) as Awaited<ReturnType<typeof fs.stat>>,
+      inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
+      installCompanion: async () => {},
+      registerRepository: async (repository) => repository,
+      registerCompanion: async () => {},
+      detectInvokingEditorCli: () => null,
+      injectEditorFolder: async () => true,
+      findDescendantRepoLocalRegistries: findShadowedRegistries,
+    });
+  } finally {
+    Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
+    console.log = originalLog;
+    console.error = originalError;
+  }
+
+  return { logs, errors };
+}
+
 describe("runCompanionLinkCommand", () => {
   test("delegates to runCompanionLinkCommandWithDeps via the exported wrapper", async () => {
     const original = companionLinkCommandDeps.runCompanionLinkCommandWithDeps;
@@ -53,6 +92,36 @@ describe("runCompanionLinkCommand", () => {
 });
 
 describe("runCompanionLinkCommandWithDeps", () => {
+  test("prints no warning when no descendant links are found", async () => {
+    const { logs, errors } = await runLinkWithShadowScan(async () => []);
+
+    expect(errors).toEqual([]);
+    expect(logs.join("\n")).toContain("Successfully linked companion");
+  });
+
+  test("warns with every descendant link while still reporting success", async () => {
+    const shadowedPaths = ["/workspace/working-a", "/workspace/nested/working-b"];
+    const { logs, errors } = await runLinkWithShadowScan(async () => shadowedPaths);
+
+    expect(errors.join("\n")).toContain("existing companion links will shadow this new link");
+    for (const shadowedPath of shadowedPaths) {
+      expect(errors.join("\n")).toContain(shadowedPath);
+    }
+    expect(errors.join("\n")).toContain(
+      "Mate commands run from inside these directories will keep resolving to their existing link",
+    );
+    expect(logs.join("\n")).toContain("Successfully linked companion");
+  });
+
+  test("continues successfully when the descendant scan fails", async () => {
+    const { logs, errors } = await runLinkWithShadowScan(async () => {
+      throw new Error("scan failed");
+    });
+
+    expect(errors).toEqual([]);
+    expect(logs.join("\n")).toContain("Successfully linked companion");
+  });
+
   test("clones git-backed companions, bootstraps setup, registers source provenance, and injects the workspace", async () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });

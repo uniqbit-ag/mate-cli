@@ -10,6 +10,7 @@ import { parse } from "yaml";
 import { frameworkConfig } from "../../framework";
 import {
   ensureRepoLocalDirExcluded,
+  findDescendantRepoLocalRegistries,
   findRepoLocalLinkedRepository,
   findRepoLocalRegistryFile,
   listOtherRepoLocalCompanionPaths,
@@ -205,6 +206,62 @@ describe("findRepoLocalRegistryFile", () => {
     await fs.mkdir(repoPath, { recursive: true });
 
     expect(await findRepoLocalRegistryFile(repoPath)).toBeNull();
+  });
+});
+
+describe("findDescendantRepoLocalRegistries", () => {
+  test("returns no paths when no descendant has a repo-local registry", async () => {
+    const root = await makeTempDir("repo-local-descendants-none-");
+    await fs.mkdir(path.join(root, "repo"), { recursive: true });
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(root)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(root), "companions: []\n", "utf8");
+
+    await expect(findDescendantRepoLocalRegistries(root)).resolves.toEqual([]);
+  });
+
+  test("finds one descendant registry and returns its parent directory", async () => {
+    const root = await makeTempDir("repo-local-descendants-one-");
+    const descendant = path.join(root, "workspace", "working-a");
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(descendant)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(descendant), "companions: []\n", "utf8");
+
+    await expect(findDescendantRepoLocalRegistries(root)).resolves.toEqual([descendant]);
+  });
+
+  test("finds multiple descendant registries", async () => {
+    const root = await makeTempDir("repo-local-descendants-many-");
+    const descendants = [path.join(root, "working-a"), path.join(root, "nested", "working-b")];
+    for (const descendant of descendants) {
+      await fs.mkdir(path.dirname(repoLocalRegistryPath(descendant)), { recursive: true });
+      await fs.writeFile(repoLocalRegistryPath(descendant), "companions: []\n", "utf8");
+    }
+
+    await expect(findDescendantRepoLocalRegistries(root)).resolves.toEqual(descendants.sort());
+  });
+
+  test("does not descend into skip-listed directories", async () => {
+    const root = await makeTempDir("repo-local-descendants-skipped-");
+    const skippedDescendant = path.join(root, "node_modules", "working-a");
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(skippedDescendant)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(skippedDescendant), "companions: []\n", "utf8");
+
+    await expect(findDescendantRepoLocalRegistries(root)).resolves.toEqual([]);
+  });
+
+  test("skips unreadable directories without throwing", async () => {
+    const root = await makeTempDir("repo-local-descendants-unreadable-");
+    const unreadable = path.join(root, "unreadable");
+    const readable = path.join(root, "readable");
+    await fs.mkdir(unreadable, { recursive: true });
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(readable)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(readable), "companions: []\n", "utf8");
+
+    await fs.chmod(unreadable, 0o000);
+    try {
+      await expect(findDescendantRepoLocalRegistries(root)).resolves.toEqual([readable]);
+    } finally {
+      await fs.chmod(unreadable, 0o755);
+    }
   });
 });
 

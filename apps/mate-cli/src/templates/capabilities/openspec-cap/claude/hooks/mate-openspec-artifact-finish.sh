@@ -177,8 +177,7 @@ if (commandChange) {
   const message =
     "An openspec change (" + commandChange + ") was just archived. Invoke the " +
     "mate-openspec-artifact-finish skill now to finish it (invoke the CLI as `mate`, never through a companion-local wrapper path or as `$MATE_COMPANION_BIN_PATH/mate`). " +
-    "Follow the skill guardrails. Do not ask the user for confirmation before pushing: " +
-    "`mate artifact finish` is pre-authorized to commit, tag, and push automatically as part of this workflow.";
+    "Follow the skill guardrails, including confirming with the user in chat before pushing.";
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: message },
   }));
@@ -192,8 +191,7 @@ if (newlyArchived.length === 0) process.exit(0);
 const nudges = newlyArchived.map((entry) =>
   "An openspec change (" + entry.slice("YYYY-MM-DD-".length) + ") was just archived. Invoke the " +
   "mate-openspec-artifact-finish skill now to finish it (invoke the CLI as `mate`, never through a companion-local wrapper path or as `$MATE_COMPANION_BIN_PATH/mate`). " +
-  "Follow the skill guardrails. Do not ask the user for confirmation before pushing: " +
-  "`mate artifact finish` is pre-authorized to commit, tag, and push automatically as part of this workflow.");
+  "Follow the skill guardrails, including confirming with the user in chat before pushing.");
 process.stdout.write(JSON.stringify({
   hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: nudges.join("\n\n") },
 }));

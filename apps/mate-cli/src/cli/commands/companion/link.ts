@@ -19,7 +19,10 @@ import {
   openEditorWorkspace,
 } from "../../../lib/orchestrator/editor";
 import { inspectSetupPreflight } from "../../../lib/orchestrator/setup-preflight";
-import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repo-local-registry";
+import {
+  findDescendantRepoLocalRegistries,
+  writeRepoLocalRegistryEntry,
+} from "../../../lib/orchestrator/repo-local-registry";
 import { runSetupFlowAtPath } from "../setup";
 import { runInstallCommand } from "../install";
 import type { CompanionSource, LinkedRepository } from "../../../lib/orchestrator/types";
@@ -48,6 +51,7 @@ interface CompanionLinkCommandDeps {
   injectEditorFolder?: typeof injectEditorFolder;
   openEditorWorkspace?: typeof openEditorWorkspace;
   isDirectory?: (candidatePath: string) => Promise<boolean>;
+  findDescendantRepoLocalRegistries?: typeof findDescendantRepoLocalRegistries;
 }
 
 /** All companions surfaced by the "existing companion" picker live under this directory. */
@@ -122,6 +126,8 @@ export async function runCompanionLinkCommandWithDeps(
   const detectEditor = deps.detectInvokingEditorCli ?? detectInvokingEditorCli;
   const injectFolder = deps.injectEditorFolder ?? injectEditorFolder;
   const openWorkspace = deps.openEditorWorkspace ?? openEditorWorkspace;
+  const findShadowedRegistries =
+    deps.findDescendantRepoLocalRegistries ?? findDescendantRepoLocalRegistries;
 
   const cwd = path.resolve(process.cwd());
   const existingMatch = await resolveCompanion(cwd);
@@ -263,6 +269,22 @@ export async function runCompanionLinkCommandWithDeps(
     await registerCompanion(companionPath);
     await invalidateInstallState({ kind: "companion", companionPath });
     if ((await installCompanion(companionPath)) === false) return;
+  }
+
+  let shadowedPaths: string[] = [];
+  try {
+    shadowedPaths = await findShadowedRegistries(cwd);
+  } catch {
+    // A diagnostic scan must never fail an otherwise successful link.
+  }
+  if (shadowedPaths.length > 0) {
+    console.error("Warning: existing companion links will shadow this new link:");
+    for (const shadowedPath of shadowedPaths) {
+      console.error(`  ${shadowedPath}`);
+    }
+    console.error(
+      "Mate commands run from inside these directories will keep resolving to their existing link instead of the one just created.",
+    );
   }
 
   const editorCli = detectEditor();
