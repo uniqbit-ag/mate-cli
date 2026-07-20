@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.14.1](https://github.com/uniqbit-ag/mate-cli/compare/0.14.0...0.14.1) (2026-07-20)
+
+## [0.14.1-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.14.0...0.14.1) (2026-07-20)
+
+### Features
+
+- streamline artifact finish permissions ([a37fd60](https://github.com/uniqbit-ag/mate-cli/commit/a37fd60e987b5001c663c2d7a215d0b3891deeae))
+
+## [0.14.1-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.14.0...0.14.1) (2026-07-20)
+
+### Features
+
+- update mate-v1 OpenSpec schema metadata ([a2a1a92](https://github.com/uniqbit-ag/mate-cli/commit/a2a1a92401cb17115de3c7ed144c26244020e8af))
+
+### Bug Fixes
+
+- never overwrite an existing openspec/config.yaml on companion sync ([98ddd3f](https://github.com/uniqbit-ag/mate-cli/commit/98ddd3fcdd25b4de5699d7c4e744e8e68e9efedf))
+- preserve capabilities during linked setup ([9cdba0b](https://github.com/uniqbit-ag/mate-cli/commit/9cdba0b02377e95f0fd43c5d4cbeaf98a86ea0ab))
+
 ## [0.14.0](https://github.com/uniqbit-ag/mate-cli/compare/0.14.0-canary.25...0.14.0) (2026-07-18)
 
 ## 0.14.0-canary.25 (2026-07-18)
