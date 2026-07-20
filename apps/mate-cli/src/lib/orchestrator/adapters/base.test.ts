@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { LaunchPreflightError } from "../types";
+import { getWrapperBinPath } from "../../package-paths";
 import { ClaudeAdapter } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
 import type { AdapterContext, ProxyDeps } from "./base";
@@ -149,7 +150,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
       expect(launch.args).not.toContain("wrap");
       expect(launch.args).toContain("--mode");
       expect(launch.args).toContain("chat");
-      expect(launch.env.PATH).toBe(binDir);
+      expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}${binDir}`);
       expect(launch.env.HEADROOM_MEMORY_DB_PATH).toBeUndefined();
       expect(launch.env.HEADROOM_MEMORY_PROJECT_ROOT).toBeUndefined();
       expect(launch.warning).toBeUndefined();
@@ -297,13 +298,13 @@ describe("graphify GRAPHIFY_OUT env injection", () => {
   });
 });
 
-describe("tokensave PATH injection removed", () => {
-  test("does not prepend tokensave wrapper dir when capability is enabled", async () => {
+describe("launch PATH injection", () => {
+  test("prepends only the Mate wrapper dir when tokensave is enabled", async () => {
     const launch = await withEnv("PATH", "/usr/bin", () =>
       new ClaudeAdapter().prepareLaunch(makeContext([{ name: "tokensave" }]), []),
     );
 
-    expect(launch.env.PATH).toBe("/usr/bin");
+    expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}/usr/bin`);
     expect(launch.env.PATH).not.toContain(".tokensave");
   });
 
@@ -312,7 +313,7 @@ describe("tokensave PATH injection removed", () => {
       new ClaudeAdapter().prepareLaunch(makeContext(), []),
     );
 
-    expect(launch.env.PATH).toBe("/usr/bin");
+    expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}/usr/bin`);
   });
 });
 
@@ -624,7 +625,7 @@ describe("Adapter headroom env wiring", () => {
         expect(launch.warning).toContain("headroom proxy failed to become ready");
         expect(launch.warning).toContain("after 3 attempts");
         expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
-        expect(launch.env.PATH).toBe(binDir);
+        expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}${binDir}`);
       }),
     );
   });
