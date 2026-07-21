@@ -455,12 +455,12 @@ describe("createOpenspecPlugin", () => {
       path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml"),
       "utf8",
     );
-    expect(schema).toContain("version: 2");
+    expect(schema).toContain("version: 3");
     expect(schema).toContain(
       "Every delta and canonical spec MUST record a `scopes` frontmatter list",
     );
     expect(schema).toContain(
-      "Every requirement MUST include direct inline `**Repository:**` and `**Area:**` markers",
+      "Scopes cascade: every requirement inherits all frontmatter `scopes` entries",
     );
     expect(schema).toContain("Every change MUST name at least one scope");
     expect(schema).toContain("local checkout directory basename");
