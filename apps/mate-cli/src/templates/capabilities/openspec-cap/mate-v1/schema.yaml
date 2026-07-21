@@ -1,7 +1,26 @@
 name: mate-v1
-version: 1.1
-description: Mate's area-scoped OpenSpec workflow - proposal → specs → design → tasks
+version: 2
+description: Mate's repository- and Area-scoped OpenSpec workflow - explore → proposal → specs → design → tasks
 artifacts:
+  - id: explore
+    generates: explore-brief.md
+    description: Concise exploration brief that resolves high-leverage scope questions before proposal work
+    template: explore-brief.md
+    instruction: |
+      Create a concise exploration brief before starting proposal work for a non-trivial change.
+
+      The brief MUST contain exactly these sections:
+      - **Problem**: State the problem or opportunity.
+      - **Current State**: Summarize the relevant repository, Area, behavior, and constraints.
+      - **Questions**: Record only unanswered, high-leverage questions and their answers.
+      - **Direction**: State the agreed scope and intended direction.
+
+      Ask questions in one batch and do not repeat answers already present in the conversation or repository context.
+      Use an adaptive question budget: target roughly 3 questions for low-complexity changes, 5 for medium-complexity changes, and up to 10 only for high-risk or ambiguous changes. Stop early when the scope is sufficiently clear.
+      Keep the brief concise and resolve scope, repository, Area, and acceptance decisions before proposal work.
+
+      **Obsidian**: Emit YAML frontmatter at the very top with `type: change-exploration`, the actual change name, `schema: mate-v1`, the `openspec/change` and `openspec/explore` tags, and paired `scopes` metadata.
+    requires: []
   - id: proposal
     generates: proposal.md
     description: Initial proposal document outlining the change
@@ -12,9 +31,9 @@ artifacts:
       Sections:
       - **Why**: 1-2 sentences on the problem or opportunity. What problem does this solve? Why now?
       - **What Changes**: Bullet list of changes. Be specific about new capabilities, modifications, or removals. Mark breaking changes with **BREAKING**.
-      - **Affected Areas**: List one or more exact repository-relative paths in that Working Repository (for example, `apps/web`, `packages/ui`, or `.` for the repository root). Every change MUST name at least one Area; never use `N/A`. Confirm each path exists before recording it.
+       - **Scopes**: List one or more paired `{ repository, area }` entries. `repository` MUST be the normalized Git remote identity in `org/repository` form. For a monorepo, `area` MUST stop at the owning workspace or package root (for example, `acme`, not `acme/src/sub-1/sub-2`). For a non-monorepo repository, `area` MUST be the exact affected repository-relative path (for example, `docs`); use `.` only when the repository root itself is affected. Every change MUST name at least one scope.
       - **Capabilities**: Identify which specs will be created or modified:
-         - **New Capabilities**: List capabilities being introduced. Each becomes a new `specs/<capability>/spec.md` using a kebab-case capability name (e.g., `user-auth`, `data-export`). Never place specs under an Area folder. Record the Area as exact-path `area:` metadata.
+         - **New Capabilities**: List capabilities being introduced. Each becomes a new `specs/<capability>/spec.md` using a kebab-case capability name (e.g., `user-auth`, `data-export`). Never place specs under an Area folder. Record the paired scope as `scopes` metadata.
         - **Modified Capabilities**: List existing capabilities whose REQUIREMENTS are changing. Only include if spec-level behavior changes (not just implementation details). Each needs a delta spec file. Check `openspec/specs/` for existing spec names. Leave empty if no requirement changes.
       - **Impact**: Affected code, APIs, dependencies, or systems.
 
@@ -24,10 +43,11 @@ artifacts:
 
       This is the foundation - specs, design, and tasks all build on this.
 
-      Area scope rules:
-      - Every Area MUST be an exact repository-relative path.
-      - Area identity is metadata, never part of a change or capability folder name.
-      - Every delta and canonical spec MUST include `area: <area>` in its YAML frontmatter.
+       Scope rules:
+       - Every `scopes` entry MUST pair `repository: org/repository` with an `area` selected according to the repository layout: the owning workspace/package root in a monorepo, or the exact affected path in a non-monorepo repository.
+       - Repository identity MUST come from the Git remote. Normalize SSH and HTTPS forms such as `git@github.com:org/repository.git` and `https://github.com/org/repository.git` to `org/repository`.
+       - Area identity is metadata, never part of a change or capability folder name.
+       - Do not use a local checkout directory basename, Mate's internal repository ID, a synthetic Area token, or `N/A` as durable metadata.
 
       **Obsidian**: Emit this YAML frontmatter at the very top of the file. Replace `<change-name>` with the actual change folder name (e.g. `my-change`):
 
@@ -38,6 +58,9 @@ artifacts:
       schema: mate-v1
       status: active
       tags: [openspec/change, openspec/proposal]
+      scopes:
+        - repository: org/repository
+          area: .
       ---
       ```
 
@@ -48,7 +71,8 @@ artifacts:
 
       - [[specs/my-capability/spec]]
       ```
-    requires: []
+    requires:
+      - explore
   - id: specs
     generates: specs/**/*.md
     description: Detailed specifications for the change
@@ -58,11 +82,14 @@ artifacts:
 
       Create one spec file per capability listed in the proposal's Capabilities section.
 
-      **Path and scope rules** — spec files are ALWAYS flat; Area is required metadata, never a folder:
+       **Path and scope rules** — spec files are ALWAYS flat; paired scope metadata is required, never a folder:
       - Every spec lives at `specs/<capability>/spec.md`. Never interpose an Area folder. `specs/<area>/<capability>/spec.md` breaks the OpenSpec CLI: it parses spec deltas only at the flat path, so an Area folder makes `openspec show`/`validate` report zero deltas.
-      - Every delta and canonical spec MUST record its Area in the `area:` frontmatter field as an exact repository-relative path, such as `apps/web`, `packages/ui`, or `.`. Do not convert paths to `app_*` or `pkg_*` tokens.
-      - The `area:` field is mandatory even when every requirement in the file belongs to the same Area.
-      - Every requirement MUST also include an inline `**Area:**` marker with one or more exact repository-relative paths. This is required even when it repeats the spec's `area:` metadata.
+       - Every delta and canonical spec MUST record a `scopes` frontmatter list whose entries pair `repository: org/repository` with an `area` selected according to the repository layout. Monorepo Areas stop at workspace/package roots such as `acme` or `packages/ui`; non-monorepo Areas remain exact paths such as `docs` or `.`.
+       - Each scope pair is independent. Preserve every repository/Area pair for monorepos and multiple repositories; never use separate parallel `repositories` and `areas` arrays.
+       - Example paired scopes: `{ repository: org/product, area: acme }`, `{ repository: org/product, area: packages/api }`, and `{ repository: org/other, area: docs }`.
+       - Do not split a monorepo Area into deeper entries such as `acme/src` or `acme/public`; those paths remain inside the `acme` Area. A non-monorepo repository may use exact subpaths such as `docs` to identify the affected Area.
+       - Every requirement MUST include direct inline `**Repository:**` and `**Area:**` markers, even when they repeat a document-level scope.
+       - Do not use a local checkout directory basename, Mate's internal repository ID, a synthetic Area token, or `N/A`.
       - Modified capabilities: match the existing `specs/<capability>/spec.md` path exactly.
 
       Delta operations (use ## headers):
@@ -74,7 +101,7 @@ artifacts:
       Format requirements:
       - Each requirement: `### Requirement: <name>` followed by description
       - Use SHALL/MUST for normative requirements (avoid should/may)
-      - Every requirement MUST include `**Area:** \`<area>\`` after its SHALL/MUST statement and before its first scenario. For a REMOVED requirement without a normative statement, put it after `**Migration**`. Use comma-separated backticked paths when it affects multiple Areas.
+       - Every requirement MUST include `**Repository:** \`org/repository\`` and `**Area:** \`<area>\`` after its SHALL/MUST statement and before its first scenario. For a REMOVED requirement without a normative statement, put them after `**Migration**`. Use one direct repository/Area pair per requirement; repeat the requirement when its effective scope differs.
       - Each scenario: `#### Scenario: <name>` with WHEN/THEN format
       - **CRITICAL**: Scenarios MUST use exactly 4 hashtags (`####`). Using 3 hashtags or bullets will fail silently.
       - Every requirement MUST have at least one scenario.
@@ -92,9 +119,10 @@ artifacts:
       ```
       ## ADDED Requirements
 
-      ### Requirement: User can export data
-      The system SHALL allow users to export their data in CSV format.
-      **Area:** `apps/web`
+       ### Requirement: User can export data
+       The system SHALL allow users to export their data in CSV format.
+       **Repository:** `org/product`
+       **Area:** `acme`
 
       #### Scenario: Successful export
       - **WHEN** user clicks "Export" button
@@ -102,34 +130,37 @@ artifacts:
 
       ## REMOVED Requirements
 
-      ### Requirement: Legacy export
-      **Reason**: Replaced by new export system
-      **Migration**: Use new export endpoint at /api/v2/export
-      **Area:** `apps/web`
+       ### Requirement: Legacy export
+       **Reason**: Replaced by new export system
+       **Migration**: Use new export endpoint at /api/v2/export
+       **Repository:** `org/product`
+       **Area:** `acme`
       ```
 
       Specs should be testable - each scenario is a potential test case.
 
-      **Obsidian**: Emit this YAML frontmatter at the very top of each spec file. Replace `<change-name>`, `<area>`, and `<capability>` with actual values. `area` is mandatory and MUST be the exact repository-relative path that owns the capability:
+       **Obsidian**: Emit this YAML frontmatter at the very top of each spec file. Replace `<change-name>`, `<repository>`, `<area>`, and `<capability>` with actual values. Each `scopes` entry MUST preserve its repository/Area pairing:
 
       ```
       ---
       type: delta-spec
       change: <change-name>
-      area: <area>
       capability: <capability>
       tags: [openspec/change, openspec/spec, openspec/delta]
+      scopes:
+        - repository: org/repository
+          area: .
       ---
       ```
 
       After the file's `#` title line, add a backlink on the next line: `← [[proposal]]`. If modifying an existing main spec, add on the line after: `Applies to: [[openspec/specs/<capability>/spec]]`.
 
-      Migration rules for existing artifacts and canonical specs:
-      1. Convert legacy `N/A` Areas to the explicit repository-relative Area `.` only when the repository root is the intended Area; otherwise inspect the repository and choose the real path.
-      2. Convert legacy `app_*`, `pkg_*`, and similar synthetic Area tokens to their exact repository-relative paths.
-      3. Add mandatory `area:` frontmatter to every delta and canonical spec that lacks it.
-      4. Add the mandatory inline `**Area:**` marker to every requirement that lacks it.
-      5. Preserve Area metadata and inline markers when archiving, validating, displaying, or finishing artifacts.
+       Migration rules for existing artifacts and canonical specs:
+       1. Normalize each Area to the owning workspace/package root for monorepos; for non-monorepos, retain the exact affected repository-relative path and use `.` only when the repository root is the intended Area.
+       2. Replace local, internal, synthetic, or otherwise non-portable repository and Area values with canonical Git remote identities and exact repository-relative paths.
+       3. Add mandatory paired `scopes` frontmatter to every delta and canonical spec that lacks it.
+       4. Add mandatory direct `**Repository:**` and `**Area:**` markers to every requirement that lacks them.
+       5. Preserve paired scope metadata and direct requirement markers when archiving, validating, displaying, or finishing artifacts.
     requires:
       - proposal
   - id: design
@@ -181,7 +212,7 @@ artifacts:
       **IMPORTANT: Follow the template below exactly.** The apply phase parses checkbox format to track progress. Tasks not using `- [ ]` won't be tracked.
 
       Guidelines:
-      - Group tasks by the exact Areas listed in the proposal, then by concern within each Area. Use `## <area>` as the top-level heading (for example, `## apps/web` or `## .`) with numbered sub-sections beneath it.
+       - Group tasks by the exact Areas listed in the proposal, then by concern within each Area. Use `## <area>` as the top-level heading (for example, `## acme` or `## .`) with numbered sub-sections beneath it.
       - Each task MUST be a checkbox: `- [ ] X.Y Task description`
       - Tasks should be small enough to complete in one session
       - Order tasks by dependency (what must be done first?)

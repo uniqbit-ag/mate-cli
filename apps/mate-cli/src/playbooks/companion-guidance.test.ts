@@ -221,6 +221,26 @@ describe("buildCompanionGuidance", () => {
     expect(guidance).toContain('<cli name="mate" type="global" invokeAs="mate" />');
   });
 
+  test("forbids bare invocation of companion-managed CLIs", () => {
+    const guidance = buildCompanionGuidance({
+      companionPath: "/tmp/companion",
+      policy: {},
+      repository: {
+        id: "app",
+        path: "/tmp/working",
+        profile: "default",
+      },
+    } as never);
+
+    expect(guidance).toContain('id="wrapper-only-cli-execution"');
+    expect(guidance).toContain("invoke the exact path in its invokeAs attribute");
+    expect(guidance).toContain("Correct: ");
+    expect(guidance).toContain("Incorrect: openspec status ...");
+    expect(guidance).toContain("Do not run bare openspec or graphify commands");
+    expect(guidance).toContain("do not rely on PATH, aliases, or shell functions");
+    expect(guidance).toContain("If the exact wrapper path is unavailable, stop and report it");
+  });
+
   test("uses mandatory framing", () => {
     const guidance = buildCompanionGuidance({
       companionPath: "/tmp/companion",

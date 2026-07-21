@@ -13,13 +13,11 @@ import { extractRepoName } from "../artifact/extract-repo-name";
 import { defaultConfig } from "../../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { CompanionResolver } from "../../../lib/orchestrator/companion-resolver";
-import {
-  detectInvokingEditorCli,
-  injectEditorFolder,
-  openEditorWorkspace,
-} from "../../../lib/orchestrator/editor";
 import { inspectSetupPreflight } from "../../../lib/orchestrator/setup-preflight";
-import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repo-local-registry";
+import {
+  findDescendantRepoLocalRegistries,
+  writeRepoLocalRegistryEntry,
+} from "../../../lib/orchestrator/repo-local-registry";
 import { runSetupFlowAtPath } from "../setup";
 import { runInstallCommand } from "../install";
 import type { CompanionSource, LinkedRepository } from "../../../lib/orchestrator/types";
@@ -44,10 +42,8 @@ interface CompanionLinkCommandDeps {
   inspectSetupPreflight?: typeof inspectSetupPreflight;
   runSetupFlowAtPath?: typeof runSetupFlowAtPath;
   installCompanion?: (companionPath: string) => Promise<boolean | void>;
-  detectInvokingEditorCli?: typeof detectInvokingEditorCli;
-  injectEditorFolder?: typeof injectEditorFolder;
-  openEditorWorkspace?: typeof openEditorWorkspace;
   isDirectory?: (candidatePath: string) => Promise<boolean>;
+  findDescendantRepoLocalRegistries?: typeof findDescendantRepoLocalRegistries;
 }
 
 /** All companions surfaced by the "existing companion" picker live under this directory. */
@@ -68,10 +64,21 @@ export async function runCompanionLinkCommand(argv: string[]): Promise<void> {
   return companionLinkCommandDeps.runCompanionLinkCommandWithDeps(argv);
 }
 
-function toGithubSshUrl(url: string): string | null {
-  const match = url.trim().match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(\.git)?\/?$/i);
-  if (!match) return null;
-  return `git@github.com:${match[1]}/${match[2]}.git`;
+function toSshUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (!parsed.hostname || parsed.pathname === "/") return null;
+
+    const repositoryPath = parsed.pathname.replace(/^\/+/, "");
+    if (!repositoryPath) return null;
+
+    // Keep the usual scp-style form when no SSH port is specified.
+    if (!parsed.port) return `git@${parsed.hostname}:${repositoryPath}`;
+    return `ssh://git@${parsed.hostname}:${parsed.port}/${repositoryPath}`;
+  } catch {
+    return null;
+  }
 }
 
 function exitWithError(message: string): never {
@@ -119,9 +126,8 @@ export async function runCompanionLinkCommandWithDeps(
   const runSetup = deps.runSetupFlowAtPath ?? runSetupFlowAtPath;
   const installCompanion =
     deps.installCompanion ?? ((companionPath) => runInstallCommand([], companionPath));
-  const detectEditor = deps.detectInvokingEditorCli ?? detectInvokingEditorCli;
-  const injectFolder = deps.injectEditorFolder ?? injectEditorFolder;
-  const openWorkspace = deps.openEditorWorkspace ?? openEditorWorkspace;
+  const findShadowedRegistries =
+    deps.findDescendantRepoLocalRegistries ?? findDescendantRepoLocalRegistries;
 
   const cwd = path.resolve(process.cwd());
   const existingMatch = await resolveCompanion(cwd);
@@ -164,7 +170,7 @@ export async function runCompanionLinkCommandWithDeps(
     const existingTarget = await stat(companionPath).catch(() => null);
     if (!existingTarget?.isDirectory()) {
       await mkdir(companionsDir, { recursive: true });
-      const sshUrl = toGithubSshUrl(gitUrl);
+      const sshUrl = toSshUrl(gitUrl);
       const cloneUrls = sshUrl && sshUrl !== gitUrl ? [sshUrl, gitUrl] : [gitUrl];
       let cloneResult:
         | {
@@ -265,15 +271,20 @@ export async function runCompanionLinkCommandWithDeps(
     if ((await installCompanion(companionPath)) === false) return;
   }
 
-  const editorCli = detectEditor();
-  let injected = false;
-  let openedWorkspace = false;
-  if (editorCli) {
-    injected = await injectFolder(companionPaths, cwd, editorCli);
-    if (!injected) {
-      // Fallback: open both folders together so the working repo stays in the window.
-      openedWorkspace = openWorkspace([cwd, ...companionPaths], editorCli);
+  let shadowedPaths: string[] = [];
+  try {
+    shadowedPaths = await findShadowedRegistries(cwd);
+  } catch {
+    // A diagnostic scan must never fail an otherwise successful link.
+  }
+  if (shadowedPaths.length > 0) {
+    console.error("Warning: existing companion links will shadow this new link:");
+    for (const shadowedPath of shadowedPaths) {
+      console.error(`  ${shadowedPath}`);
     }
+    console.error(
+      "Mate commands run from inside these directories will keep resolving to their existing link instead of the one just created.",
+    );
   }
 
   console.log(`Successfully linked companion for ${repository.id}`);
@@ -282,11 +293,5 @@ export async function runCompanionLinkCommandWithDeps(
   }
   console.log(`  Source: ${persistedSource}`);
   console.log(`  Profile: ${repository.profile}`);
-  if (editorCli && injected) {
-    console.log(`  Workspace: injected into ${editorCli}`);
-  } else if (editorCli && openedWorkspace) {
-    console.log(`  Workspace: opened ${editorCli} with working repo and companion`);
-  } else {
-    console.log("  Workspace: companion path printed for manual open");
-  }
+  console.log("  Workspace: run `mate companion open` to open the workspace in your editor");
 }

@@ -46,6 +46,11 @@ export interface ProxyDeps {
   waitForProxyReachable?: (port: number) => Promise<boolean>;
 }
 
+function prependPathEntry(pathValue: string | undefined, entry: string): string {
+  const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
+  return [entry, ...entries.filter((value) => value !== entry)].join(path.delimiter);
+}
+
 export abstract class LaunchAdapter {
   abstract readonly toolName: string;
   readonly interactive: boolean = false;
@@ -69,12 +74,14 @@ export abstract class LaunchAdapter {
 
   environment(context: AdapterContext): NodeJS.ProcessEnv {
     const reactDoctorEnabled = context.capabilities.some((c) => c.name === "react-doctor");
+    const wrapperBinPath = getWrapperBinPath();
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       MATE_NAME: frameworkConfig.name,
       MATE_VERSION: version,
       MATE_ARTIFACT_PATH: context.companionPath,
-      MATE_WRAPPER_BIN_PATH: getWrapperBinPath(),
+      MATE_WRAPPER_BIN_PATH: wrapperBinPath,
+      PATH: prependPathEntry(process.env.PATH, wrapperBinPath),
       MATE_GRAPHIFY_ENABLED: context.capabilities.some((c) => c.name === "graphify") ? "1" : "0",
       MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
       MATE_GIT_AUTO_MODE: context.git === "auto" ? "1" : "0",

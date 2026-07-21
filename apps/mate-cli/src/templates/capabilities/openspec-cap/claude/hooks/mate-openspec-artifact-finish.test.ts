@@ -154,4 +154,61 @@ describe("mate-openspec-artifact-finish", () => {
       additionalContextOf(runHook({ tool_name: "Read" }, { MATE_ARTIFACT_PATH: companion }).stdout),
     ).toContain("new-change");
   });
+
+  test("two different session_ids for the same companion do not share a baseline", async () => {
+    const { companion, archiveDir } = await makeFixture();
+    const env = { MATE_ARTIFACT_PATH: companion };
+
+    expect(runHook({ tool_name: "Bash", session_id: "session-A" }, env).stdout).toBe("");
+    expect(runHook({ tool_name: "Bash", session_id: "session-B" }, env).stdout).toBe("");
+
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-shared-change"));
+
+    const nudgedA = runHook({ tool_name: "Bash", session_id: "session-A" }, env);
+    expect(additionalContextOf(nudgedA.stdout)).toContain("shared-change");
+
+    const nudgedB = runHook({ tool_name: "Bash", session_id: "session-B" }, env);
+    expect(additionalContextOf(nudgedB.stdout)).toContain("shared-change");
+  });
+
+  test("a brand-new session silently absorbs archive entries that predate it", async () => {
+    const { companion, archiveDir } = await makeFixture();
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-existing-change"));
+    expect(
+      runHook({ tool_name: "Bash", session_id: "fresh-session" }, { MATE_ARTIFACT_PATH: companion })
+        .stdout,
+    ).toBe("");
+  });
+
+  test("nudges once mid-session and not again on a repeat invocation with the same session_id", async () => {
+    const { companion, archiveDir } = await makeFixture();
+    const env = { MATE_ARTIFACT_PATH: companion };
+
+    expect(runHook({ tool_name: "Bash", session_id: "session-C" }, env).stdout).toBe("");
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-mid-session-change"));
+    expect(
+      additionalContextOf(runHook({ tool_name: "Bash", session_id: "session-C" }, env).stdout),
+    ).toContain("mid-session-change");
+    expect(runHook({ tool_name: "Bash", session_id: "session-C" }, env).stdout).toBe("");
+  });
+
+  test("a payload with no session_id falls back to the prior fixed-path behavior", async () => {
+    const { companion, archiveDir } = await makeFixture();
+    const env = { MATE_ARTIFACT_PATH: companion };
+    const fixedStateFile = path.join(
+      companion,
+      ".claude",
+      "state",
+      "mate-openspec-artifact-finish.archive-snapshot.json",
+    );
+
+    expect(runHook({ tool_name: "Bash" }, env).stdout).toBe("");
+    await fs.access(fixedStateFile);
+
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-no-session-change"));
+    expect(additionalContextOf(runHook({ tool_name: "Bash" }, env).stdout)).toContain(
+      "no-session-change",
+    );
+    expect(runHook({ tool_name: "Bash" }, env).stdout).toBe("");
+  });
 });
