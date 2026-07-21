@@ -15,6 +15,11 @@ type GuidanceFile = {
   errors?: string[];
 };
 
+function prependPathEntry(pathValue: string | undefined, entry: string): string {
+  const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
+  return [entry, ...entries.filter((value) => value !== entry)].join(path.delimiter);
+}
+
 function isTemplateSource(): boolean {
   return import.meta.url.includes("/src/templates/providers/opencode/plugins/mate-companion.ts");
 }
@@ -194,7 +199,7 @@ export const CompanionPlugin: Plugin = async () => {
       output.env.MATE_GRAPHIFY_ENABLED = context.graphifyEnabled ? "1" : "0";
       output.env.MATE_GIT_AUTO_MODE = context.gitAutoModeEnabled ? "1" : "0";
 
-      output.env.PATH = process.env.PATH ?? "";
+      output.env.PATH = prependPathEntry(process.env.PATH, wrapperBinPath);
     },
   };
 };

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { LaunchAdapter } from "./adapters/base";
 import { CompanionStore } from "./companion-store";
+import * as editor from "./editor";
 import { FrameworkLauncher, launcherDeps } from "./launcher";
 import type { LaunchContext } from "./framework-context";
 import type { CapabilityConfig, LaunchRequest } from "./types";
@@ -239,5 +240,58 @@ describe("FrameworkLauncher", () => {
     }
 
     expect(adapter.run).toHaveBeenCalledTimes(1);
+  });
+
+  test("execute never injects the editor workspace, even inside a VS Code or Cursor session", async () => {
+    const envVars = [
+      { VSCODE_IPC_HOOK: "/tmp/vscode.sock" },
+      { TERM_PROGRAM: "vscode" },
+      { TERM_PROGRAM: "cursor" },
+      { CURSOR_TRACE_ID: "trace-id" },
+    ];
+
+    const injectEditorFolder = spyOn(editor, "injectEditorFolder");
+    const originalEnv = { ...process.env };
+
+    try {
+      for (const vars of envVars) {
+        const { launcher, adapter } = createLauncher();
+        const syncCompanionFiles = mock(async () => {});
+        const syncWorkingRepoClaudeSettings = mock(async () => {});
+        const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+        const originalSyncWorkingRepoClaudeSettings = launcherDeps.syncWorkingRepoClaudeSettings;
+        launcherDeps.syncCompanionFiles = syncCompanionFiles;
+        launcherDeps.syncWorkingRepoClaudeSettings = syncWorkingRepoClaudeSettings;
+
+        spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+          id: "repo",
+          path: "/tmp/repo",
+          profile: "default",
+        });
+        spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
+          allowedAgents: ["claude"],
+        });
+
+        for (const [key, value] of Object.entries(vars)) {
+          process.env[key] = value;
+        }
+
+        try {
+          const prepared = await launcher.prepare(makeRequest());
+          await prepared.execute();
+        } finally {
+          for (const key of Object.keys(vars)) {
+            delete process.env[key];
+          }
+          launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+          launcherDeps.syncWorkingRepoClaudeSettings = originalSyncWorkingRepoClaudeSettings;
+        }
+
+        expect(adapter.run).toHaveBeenCalledTimes(1);
+        expect(injectEditorFolder).not.toHaveBeenCalled();
+      }
+    } finally {
+      process.env = originalEnv;
+    }
   });
 });

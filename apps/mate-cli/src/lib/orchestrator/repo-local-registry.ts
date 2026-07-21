@@ -21,6 +21,19 @@ export interface RepoLocalRegistry {
 
 const REPO_LOCAL_DIR_NAME = `.${frameworkConfig.name}`;
 const REPO_LOCAL_EXCLUDE_ENTRY = `${REPO_LOCAL_DIR_NAME}/`;
+const REPO_LOCAL_SCAN_SKIP_DIR_NAMES = new Set([
+  ".git",
+  REPO_LOCAL_DIR_NAME,
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".turbo",
+  ".venv",
+  "venv",
+  "target",
+  ".cache",
+]);
 
 export function repoLocalDirPath(repoPath: string): string {
   return path.join(path.resolve(repoPath), REPO_LOCAL_DIR_NAME);
@@ -220,6 +233,49 @@ export async function findRepoLocalRegistryFile(
     if (parent === dir) return null;
     dir = parent;
   }
+}
+
+/** Finds repo-local registries strictly beneath `rootPath`, skipping noisy directories. */
+export async function findDescendantRepoLocalRegistries(rootPath: string): Promise<string[]> {
+  const resolvedRootPath = path.resolve(rootPath);
+  const pending = [resolvedRootPath];
+  const shadowedPaths: string[] = [];
+
+  while (pending.length > 0) {
+    const currentPath = pending.pop();
+    if (!currentPath) continue;
+
+    const entries = await (async () => {
+      try {
+        return await fs.readdir(currentPath, { withFileTypes: true });
+      } catch {
+        return null;
+      }
+    })();
+    if (!entries) continue;
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const entryPath = path.join(currentPath, entry.name);
+      if (entry.name === REPO_LOCAL_DIR_NAME) {
+        try {
+          const stats = await fs.stat(path.join(entryPath, "config", "registry.yaml"));
+          if (stats.isFile() && currentPath !== resolvedRootPath) {
+            shadowedPaths.push(currentPath);
+          }
+        } catch {
+          // A missing or unreadable registry is not a shadowed link.
+        }
+        continue;
+      }
+      if (REPO_LOCAL_SCAN_SKIP_DIR_NAMES.has(entry.name)) continue;
+
+      pending.push(entryPath);
+    }
+  }
+
+  return shadowedPaths.sort();
 }
 
 export async function pathIsDirectory(candidatePath: string): Promise<boolean> {

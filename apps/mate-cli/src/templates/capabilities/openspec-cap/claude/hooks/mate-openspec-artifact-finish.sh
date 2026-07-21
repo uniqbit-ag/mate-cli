@@ -12,14 +12,14 @@ if [ -z "$companion_path" ]; then
 fi
 
 archive_dir="$companion_path/openspec/changes/archive"
-state_file="$companion_path/.claude/state/mate-openspec-artifact-finish.archive-snapshot.json"
+state_dir="$companion_path/.claude/state"
 
 node -e '
 const fs = require("node:fs");
 const path = require("node:path");
 
 const archiveDir = process.argv[1];
-const stateFile = process.argv[2];
+const stateDir = process.argv[2];
 const inputFile = process.argv[3];
 const archiveEntryPattern = /^\d{4}-\d{2}-\d{2}-.+$/;
 const archivePathPattern = /(?:^|[\s\/"\x27`,(])openspec\/changes\/archive\/(\d{4}-\d{2}-\d{2}-[^\/\s"\x27`,)]+)/;
@@ -153,6 +153,11 @@ try {
   input = JSON.parse(fs.readFileSync(inputFile, "utf8") || "{}");
 } catch {}
 
+const sessionId = typeof input.session_id === "string" && input.session_id ? input.session_id : null;
+const stateFile = sessionId
+  ? path.join(stateDir, "mate-openspec-artifact-finish." + sessionId.replace(/[^a-zA-Z0-9_-]/g, "_") + ".json")
+  : path.join(stateDir, "mate-openspec-artifact-finish.archive-snapshot.json");
+
 const currentEntries = readArchiveEntries();
 let previousEntries;
 let validState = false;
@@ -195,5 +200,5 @@ const nudges = newlyArchived.map((entry) =>
 process.stdout.write(JSON.stringify({
   hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: nudges.join("\n\n") },
 }));
-' "$archive_dir" "$state_file" "$input_file"
+' "$archive_dir" "$state_dir" "$input_file"
 exit 0

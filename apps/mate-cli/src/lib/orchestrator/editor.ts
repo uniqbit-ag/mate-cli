@@ -1,9 +1,14 @@
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 type SpawnLike = typeof spawn;
+type StatusProcess = typeof execFileSync;
+type ReadStorage = typeof readFileSync;
+
+export type EditorWorkspaceState = "open" | "not-open" | "undetermined";
 
 const CURSOR_FALLBACK_PATHS = [
   "/usr/local/bin/cursor",
@@ -58,6 +63,15 @@ export function resolveEditorBinary(cli: string): string | null {
   }
 }
 
+function resolveEditorCli(cli: string): { cli: string; binary: string } | null {
+  const candidates = cli === "code" ? ["code", "code-insiders"] : [cli];
+  for (const candidate of candidates) {
+    const binary = resolveEditorBinary(candidate);
+    if (binary) return { cli: candidate, binary };
+  }
+  return null;
+}
+
 export function writeMissingEditorCliGuidance(
   cli: string,
   write: (chunk: string) => boolean = process.stderr.write.bind(process.stderr),
@@ -70,14 +84,74 @@ export function editorWorkspacePath(repoPath: string): string {
   return path.join(path.resolve(repoPath), ".mate", "workspace.code-workspace");
 }
 
+function editorStoragePath(cli: string): string {
+  const appName =
+    cli === "cursor" ? "Cursor" : cli === "code-insiders" ? "Code - Insiders" : "Code";
+  if (process.platform === "darwin") {
+    return path.join(
+      process.env.HOME ?? "",
+      "Library",
+      "Application Support",
+      appName,
+      "User",
+      "globalStorage",
+      "storage.json",
+    );
+  }
+  if (process.platform === "win32") {
+    return path.join(process.env.APPDATA ?? "", appName, "User", "globalStorage", "storage.json");
+  }
+  return path.join(
+    process.env.XDG_CONFIG_HOME ?? path.join(process.env.HOME ?? "", ".config"),
+    appName,
+    "User",
+    "globalStorage",
+    "storage.json",
+  );
+}
+
+export function detectEditorWorkspaceState(
+  workspacePath: string,
+  cli: string,
+  statusProcess: StatusProcess = execFileSync,
+  readStorage: ReadStorage = readFileSync,
+): EditorWorkspaceState {
+  const binary = resolveEditorBinary(cli);
+  if (!binary) return "undetermined";
+
+  try {
+    statusProcess(binary, ["--status"], { stdio: ["ignore", "pipe", "ignore"] });
+    const storage = JSON.parse(readStorage(editorStoragePath(cli), "utf8").toString()) as {
+      windowsState?: {
+        lastActiveWindow?: { workspaceIdentifier?: { configURIPath?: string } };
+        openedWindows?: Array<{ workspaceIdentifier?: { configURIPath?: string } }>;
+      };
+    };
+    const workspaceUri = pathToFileURL(path.resolve(workspacePath)).toString();
+    const windows = [
+      storage.windowsState?.lastActiveWindow,
+      ...(storage.windowsState?.openedWindows ?? []),
+    ];
+    return windows.some((window) => window?.workspaceIdentifier?.configURIPath === workspaceUri)
+      ? "open"
+      : "not-open";
+  } catch {
+    return "undetermined";
+  }
+}
+
 export async function injectEditorFolder(
   companionPath: string | string[],
   repoPath: string,
   cli = "code",
   spawnProcess: SpawnLike = spawn,
+  detectWorkspace: (
+    workspacePath: string,
+    cli: string,
+  ) => EditorWorkspaceState = detectEditorWorkspaceState,
 ): Promise<boolean> {
-  const binary = resolveEditorBinary(cli);
-  if (!binary) {
+  const resolved = resolveEditorCli(cli);
+  if (!resolved) {
     process.stderr.write(
       `mate: warning: ${cli} CLI not found on PATH; skipping workspace injection.\n`,
     );
@@ -86,6 +160,8 @@ export async function injectEditorFolder(
     );
     return false;
   }
+
+  const { cli: resolvedCli, binary } = resolved;
 
   const companionPaths = (Array.isArray(companionPath) ? companionPath : [companionPath]).map(
     (candidate) => path.resolve(candidate),
@@ -107,6 +183,8 @@ export async function injectEditorFolder(
     )}\n`,
     "utf8",
   );
+
+  if (detectWorkspace(workspacePath, resolvedCli) === "open") return true;
 
   const child = spawnProcess(binary, ["--add", path.resolve(repoPath), ...companionPaths], {
     stdio: "ignore",

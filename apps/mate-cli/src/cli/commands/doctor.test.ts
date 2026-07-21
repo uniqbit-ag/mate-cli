@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
+import packageJson from "../../../package.json";
 import { frameworkConfig } from "../../framework";
 import { ConfigStore } from "../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
@@ -197,5 +198,98 @@ describe("runDoctorCommand", () => {
     expect(output).toContain(companionPath);
     expect(output).toContain("Resolution Failures");
     expect(output).toContain("No companion resolution failures encountered.");
+  });
+
+  test("reports engines.mate as satisfied when the running version matches the declared range", async () => {
+    const root = await makeTempDir("doctor-engines-ok-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath, {
+      profiles: {
+        default: { name: "default", allowedAgents: ["claude"] },
+        strict: { name: "strict", allowedAgents: ["claude"] },
+      },
+      packageManagers: [],
+      capabilities: [],
+      engines: { mate: ">=0.0.0" },
+    });
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], { cwd: repoPath, globalConfigStore }),
+    );
+
+    expect(output).toContain("Version Requirement");
+    expect(output).toContain("engines.mate: satisfied");
+    expect(output).toContain(">=0.0.0");
+    expect(output).toContain(packageJson.version);
+  });
+
+  test("reports engines.mate as unsatisfied when the running version misses the declared range", async () => {
+    const root = await makeTempDir("doctor-engines-unsatisfied-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath, {
+      profiles: {
+        default: { name: "default", allowedAgents: ["claude"] },
+        strict: { name: "strict", allowedAgents: ["claude"] },
+      },
+      packageManagers: [],
+      capabilities: [],
+      engines: { mate: ">=99.0.0" },
+    });
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], { cwd: repoPath, globalConfigStore }),
+    );
+
+    expect(output).toContain("Version Requirement");
+    expect(output).toContain(">=99.0.0");
+    expect(output).toContain(packageJson.version);
+    expect(output).not.toContain("engines.mate: satisfied");
+  });
+
+  test("reports engines.mate as an invalid range", async () => {
+    const root = await makeTempDir("doctor-engines-invalid-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath, {
+      profiles: {
+        default: { name: "default", allowedAgents: ["claude"] },
+        strict: { name: "strict", allowedAgents: ["claude"] },
+      },
+      packageManagers: [],
+      capabilities: [],
+      engines: { mate: ">=0.x.y" },
+    });
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], { cwd: repoPath, globalConfigStore }),
+    );
+
+    expect(output).toContain("Version Requirement");
+    expect(output).toContain(">=0.x.y");
+    expect(output).not.toContain("engines.mate: satisfied");
+  });
+
+  test("omits the version requirement section when engines.mate is absent", async () => {
+    const root = await makeTempDir("doctor-engines-absent-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath);
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], { cwd: repoPath, globalConfigStore }),
+    );
+
+    expect(output).not.toContain("Version Requirement");
+    expect(output).not.toContain("engines.mate");
   });
 });

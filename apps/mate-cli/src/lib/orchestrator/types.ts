@@ -74,6 +74,10 @@ export interface CapabilityConfig {
   schemaProfile?: OpenSpecSchemaProfile;
 }
 
+export interface EngineConstraints {
+  mate?: string;
+}
+
 export interface FrameworkConfig {
   type?: "working" | "companion";
   git?: GitModeProfile;
@@ -81,6 +85,7 @@ export interface FrameworkConfig {
   capabilities?: CapabilityConfig[];
   cliTools?: CliToolConfig[];
   packageManagers?: string[];
+  engines?: EngineConstraints;
 }
 
 export interface WorkingRepoConfig {

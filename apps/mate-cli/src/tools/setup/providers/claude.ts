@@ -50,7 +50,11 @@ const MANAGED_HOOK_MARKERS = [
 ];
 
 // Base `permissions.allow` entries that Claude gets for Mate-managed workflows.
-const BASE_MANAGED_PERMISSION_ENTRIES = ["Bash(mate:*)"];
+// Read/Glob are scoped to the companion path so routine reads of skills,
+// specs, and change artifacts don't prompt for approval on every file.
+function getBaseManagedPermissionEntries(companionPath: string): string[] {
+  return ["Bash(mate:*)", `Read(${companionPath}/**)`, `Glob(${companionPath}/**)`];
+}
 
 const LEGACY_MANAGED_PERMISSION_ENTRIES = [
   "Bash($MATE_COMPANION_BIN_PATH/openspec:*)",
@@ -66,6 +70,7 @@ function getCapabilityPermissionEntries(): Record<string, string[]> {
       "Skill(openspec-propose)",
       "Skill(openspec-apply-change)",
       "Skill(openspec-archive-change)",
+      "Skill(mate-openspec-artifact-finish)",
       "Bash(openspec:*)",
       "Bash(mate cap graphify:*)",
       `Bash(${path.join(wrapperBinPath, "openspec")}:*)`,
@@ -86,9 +91,9 @@ function getCapabilityPermissionEntries(): Record<string, string[]> {
   };
 }
 
-function getAllManagedPermissionEntries(): Set<string> {
+function getAllManagedPermissionEntries(companionPath: string): Set<string> {
   return new Set([
-    ...BASE_MANAGED_PERMISSION_ENTRIES,
+    ...getBaseManagedPermissionEntries(companionPath),
     ...Object.values(getCapabilityPermissionEntries()).flat(),
     ...LEGACY_MANAGED_PERMISSION_ENTRIES,
   ]);
@@ -331,9 +336,9 @@ function buildManagedClaudeSettings(
   // Mate-managed base entries and enabled capability entries. Dropping a
   // capability removes only its managed entry.
   const capabilityPermissionEntries = getCapabilityPermissionEntries();
-  const allManagedPermissionEntries = getAllManagedPermissionEntries();
+  const allManagedPermissionEntries = getAllManagedPermissionEntries(companionPath);
   const managedAllow = [
-    ...BASE_MANAGED_PERMISSION_ENTRIES,
+    ...getBaseManagedPermissionEntries(companionPath),
     ...Object.entries(capabilityPermissionEntries)
       .filter(([name]) => enabledNames.has(name))
       .flatMap(([, entries]) => entries),

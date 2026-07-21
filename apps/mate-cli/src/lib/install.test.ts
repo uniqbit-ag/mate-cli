@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
+import packageJson from "../../package.json";
 import {
   buildInstallPlan,
   getInstallStatePath,
@@ -194,5 +195,84 @@ describe("install execution and state", () => {
     await invalidateInstallState(contextA, storeA);
     expect(await readInstallState(storeA)).toBeNull();
     expect((await readInstallState(storeB))?.contextFingerprint).toBe("companion-b");
+  });
+});
+
+describe("engines.mate version guard", () => {
+  async function writeCompanionConfig(root: string, enginesYaml: string): Promise<string> {
+    const configDir = path.join(root, ".mate", "config");
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(
+      path.join(configDir, "framework.yaml"),
+      [
+        "type: companion",
+        "profiles:",
+        "  default:",
+        "    name: default",
+        "    allowedAgents: [claude]",
+        enginesYaml,
+        "",
+      ].join("\n"),
+    );
+    return root;
+  }
+
+  test("blocks when engines.mate is unsatisfied", async () => {
+    const root = await tempRoot();
+    await writeCompanionConfig(root, 'engines:\n  mate: ">=99.0.0"');
+
+    const preflight = await inspectInstallPreflight(root);
+    expect(preflight.ok).toBe(false);
+    expect(preflight.reason).toContain(">=99.0.0");
+    expect(preflight.reason).toContain(packageJson.version);
+    expect(preflight.plan).toBeUndefined();
+  });
+
+  test("blocks with a distinct message when engines.mate is an invalid range", async () => {
+    const root = await tempRoot();
+    await writeCompanionConfig(root, 'engines:\n  mate: ">=0.x.y"');
+
+    const preflight = await inspectInstallPreflight(root);
+    expect(preflight.ok).toBe(false);
+    expect(preflight.reason).toContain(">=0.x.y");
+    expect(preflight.reason).not.toContain(packageJson.version);
+  });
+
+  test("proceeds to existing checks when engines.mate is satisfied", async () => {
+    const root = await tempRoot();
+    await writeCompanionConfig(root, 'engines:\n  mate: ">=0.0.0"');
+
+    const preflight = await inspectInstallPreflight(root);
+    expect(preflight.ok).toBe(false);
+    expect(preflight.plan).toBeDefined();
+    expect(preflight.reason).not.toContain(">=0.0.0");
+  });
+
+  test("proceeds to existing checks when engines.mate is absent", async () => {
+    const root = await tempRoot();
+    await writeCompanionConfig(root, "packageManagers: []");
+
+    const preflight = await inspectInstallPreflight(root);
+    expect(preflight.ok).toBe(false);
+    expect(preflight.plan).toBeDefined();
+  });
+
+  test("version-check reason wins over a simultaneously-stale context fingerprint", async () => {
+    const root = await tempRoot();
+    await writeCompanionConfig(root, 'engines:\n  mate: ">=99.0.0"');
+    const store = new InstallStateStore(path.join(root, "install-state.yaml"));
+    await store.save({
+      contractRevision: INSTALL_CONTRACT_REVISION,
+      mateVersion: packageJson.version,
+      completedAt: new Date().toISOString(),
+      contextFingerprint: "stale-fingerprint",
+      requirementFingerprint: "stale-requirements",
+      requirements: [],
+    });
+
+    const preflight = await inspectInstallPreflight(root, { stateStore: store });
+    expect(preflight.ok).toBe(false);
+    expect(preflight.reason).toContain(">=99.0.0");
+    expect(preflight.reason).not.toContain("installation context has changed");
   });
 });
