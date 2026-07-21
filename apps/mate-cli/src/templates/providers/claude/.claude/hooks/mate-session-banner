@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Show the active Mate companion paths in Claude Code."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+
+def main() -> int:
+    repo_path = os.environ.get("MATE_REPO_PATH")
+    artifact_path = os.environ.get("MATE_ARTIFACT_PATH")
+    if not repo_path or not artifact_path:
+        return 0
+
+    mate_version = os.environ.get("MATE_VERSION", "unknown")
+    message = (
+        f"mate v{mate_version}\n"
+        f"  repo:     {repo_path}\n"
+        f"  mate: {artifact_path}"
+    )
+    print(json.dumps({"systemMessage": message}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

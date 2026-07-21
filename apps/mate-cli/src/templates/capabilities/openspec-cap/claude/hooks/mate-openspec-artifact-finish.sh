@@ -117,6 +117,13 @@ function extractMoveCommand(command) {
   return null;
 }
 
+function extractFinishCommand(command) {
+  const parts = shellSplit(command);
+  return parts.some((part, position) =>
+    part === "finish" && position > 1 && parts[position - 1] === "artifact" &&
+    (parts[position - 2] === "mate" || parts[position - 2].endsWith("/mate")));
+}
+
 function commandSucceeded(value) {
   if (!value || typeof value !== "object") return true;
   const candidates = [value, value.result, value.output, value.tool_output, value.tool_response];
@@ -132,20 +139,31 @@ function commandSucceeded(value) {
   return true;
 }
 
-function commandArchive(input) {
-  if (!input || typeof input !== "object") return null;
+function bashCommands(input) {
+  if (!input || typeof input !== "object") return [];
   const toolName = String(input.tool_name || input.toolName || input.tool || "");
-  if (toolName !== "Bash" || !commandSucceeded(input)) return null;
-  const commands = [
+  if (toolName !== "Bash") return [];
+  return [
     input.command,
     input.args?.command,
     input.tool_input?.command,
   ].filter((command) => typeof command === "string");
-  for (const command of commands) {
+}
+
+function commandArchive(input) {
+  if (!commandSucceeded(input)) return null;
+  for (const command of bashCommands(input)) {
     const change = extractArchiveCommand(command) || extractMoveCommand(command);
     if (change) return change;
   }
   return null;
+}
+
+// `mate artifact finish` archives as part of its own pipeline; new archive entries it
+// creates are already being finished and must not trigger a nudge (its JSON result
+// already tells the agent how to resume after a failure).
+function commandFinish(input) {
+  return bashCommands(input).some((command) => extractFinishCommand(command));
 }
 
 let input = {};
@@ -177,28 +195,42 @@ try {
   process.exit(0);
 }
 
-const commandChange = commandArchive(input);
-if (commandChange) {
-  const message =
-    "An openspec change (" + commandChange + ") was just archived. Invoke the " +
+function nudgeFor(change) {
+  return (
+    "An openspec change (" + change + ") was just archived but not finished. Invoke the " +
     "mate-openspec-artifact-finish skill now to finish it (invoke the CLI as `mate`, never through a companion-local wrapper path or as `$MATE_COMPANION_BIN_PATH/mate`). " +
-    "Follow the skill guardrails, including confirming with the user in chat before pushing.";
-  process.stdout.write(JSON.stringify({
-    hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: message },
-  }));
+    "`mate artifact finish` resumes from the already-archived change and completes the commit, dated tag, and push itself — " +
+    "do not hand-commit, do not hand-tag, and do not re-apply delta specs manually. " +
+    "Follow the skill guardrails, including confirming with the user in chat before pushing."
+  );
+}
+
+const eventName = typeof input.hook_event_name === "string" && input.hook_event_name
+  ? input.hook_event_name
+  : "PostToolUse";
+
+function emit(message) {
+  if (eventName === "Stop") {
+    // Stop hooks deliver instructions via a block decision, not additionalContext.
+    process.stdout.write(JSON.stringify({ decision: "block", reason: message }));
+  } else {
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: { hookEventName: eventName, additionalContext: message },
+    }));
+  }
   process.exit(0);
 }
+
+// A finish run archives and finishes in one pipeline: absorb its entries silently.
+if (commandFinish(input)) process.exit(0);
+
+const commandChange = commandArchive(input);
+if (commandChange) emit(nudgeFor(commandChange));
 
 if (!validState) process.exit(0);
 const newlyArchived = currentEntries.filter((entry) => !previousEntries.has(entry));
 if (newlyArchived.length === 0) process.exit(0);
 
-const nudges = newlyArchived.map((entry) =>
-  "An openspec change (" + entry.slice("YYYY-MM-DD-".length) + ") was just archived. Invoke the " +
-  "mate-openspec-artifact-finish skill now to finish it (invoke the CLI as `mate`, never through a companion-local wrapper path or as `$MATE_COMPANION_BIN_PATH/mate`). " +
-  "Follow the skill guardrails, including confirming with the user in chat before pushing.");
-process.stdout.write(JSON.stringify({
-  hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: nudges.join("\n\n") },
-}));
+emit(newlyArchived.map((entry) => nudgeFor(entry.slice("YYYY-MM-DD-".length))).join("\n\n"));
 ' "$archive_dir" "$state_dir" "$input_file"
 exit 0

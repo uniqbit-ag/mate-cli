@@ -141,6 +141,38 @@ describe("validate-artifact-path", () => {
     }
   });
 
+  test("allows editing files already tracked in the working repo (product code)", async () => {
+    const repo = await makeTempDir("mate-claude-hook-tracked-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    const skillPath = path.join(repo, "src", "templates", "skills", "SKILL.md");
+    await fs.mkdir(path.dirname(skillPath), { recursive: true });
+    await fs.writeFile(skillPath, "packaged skill template\n", "utf8");
+    spawnSync("git", ["add", "."], { cwd: repo, stdio: "ignore" });
+    spawnSync(
+      "git",
+      ["-c", "user.name=Mate", "-c", "user.email=mate@example.test", "commit", "-qm", "initial"],
+      {
+        cwd: repo,
+        stdio: "ignore",
+      },
+    );
+
+    const result = runHook(
+      {
+        tool_name: "Edit",
+        tool_input: { file_path: skillPath },
+      },
+      {
+        MATE_ARTIFACT_PATH: companion,
+        MATE_REPO_PATH: repo,
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+  });
+
   test("still blocks artifact folders under product docs", async () => {
     const repo = await makeTempDir("mate-claude-hook-docs-block-");
     const companion = path.join(repo, "companion");

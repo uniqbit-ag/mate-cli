@@ -151,6 +151,36 @@ describe("defaultGitOps", () => {
     expect(gitOutput(root, ["diff", "--cached", "--name-only"])).toBe("unrelated.txt");
   });
 
+  test("commit tolerates a pathspec for a never-tracked path that was moved away", async () => {
+    // Reproduces a finish over a change dir that was created and archived within one
+    // session: the active dir was never committed, so after `openspec archive` moves it,
+    // its pathspec is unknown to git and must not abort the commit.
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-git-"));
+    tempRoots.push(root);
+    git(root, ["init", "-q"]);
+    configureGit(root);
+    await fs.writeFile(path.join(root, "seed.txt"), "seed\n", "utf8");
+    git(root, ["add", "."]);
+    git(root, ["commit", "-qm", "initial"]);
+
+    const archived = path.join(root, "openspec", "changes", "archive", "2026-07-14-my-change");
+    await fs.mkdir(archived, { recursive: true });
+    await fs.writeFile(path.join(archived, "proposal.md"), "archived\n", "utf8");
+
+    const ops = defaultGitOps(root);
+    const commitPaths = [
+      "openspec/changes/my-change", // never tracked, already moved away by produce
+      "openspec/changes/archive/2026-07-14-my-change",
+    ];
+    await ops.add(commitPaths);
+    await expect(ops.hasStagedChanges(commitPaths)).resolves.toBe(true);
+    await ops.commit("finish", commitPaths);
+
+    expect(gitOutput(root, ["show", "--format=", "--name-only", "HEAD"])).toBe(
+      "openspec/changes/archive/2026-07-14-my-change/proposal.md",
+    );
+  });
+
   test("restorePaths cleans produced tracked and untracked paths only", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-git-"));
     tempRoots.push(root);

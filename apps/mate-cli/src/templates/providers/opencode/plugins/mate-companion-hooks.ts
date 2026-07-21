@@ -214,6 +214,8 @@ function appendOpenSpecFinishNudge(
       `Immediately invoke the mate-openspec-artifact-finish skill to complete the finish pipeline ` +
       "(invoke the CLI as `mate`, never through a companion-local wrapper path or as `" +
       "$MATE_COMPANION_BIN_PATH/mate`). " +
+      "`mate artifact finish` resumes from the already-archived change and completes the commit, dated tag, and push itself — " +
+      "do not hand-commit, do not hand-tag, and do not re-apply delta specs manually. " +
       `Follow the skill's guardrails, completing the non-interactive happy path without asking for confirmation.`,
   );
   output.output = [output.output, ...nudges]

@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""Block artifact writes outside the companion framework path.
+
+Artifact-like files may be written in the working repository only when the
+target path is already ignored by git. That keeps local-only scratch files
+possible without weakening the default repo split.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+from typing import Any
+
+
+KNOWN_ARTIFACT_BASENAMES = {
+    "CLAUDE.md",
+    "CONTEXT.md",
+    "design.md",
+    "explore-brief.md",
+    "proposal.md",
+    "spec.md",
+    "tasks.md",
+}
+
+ARTIFACT_PATH_MARKERS = (
+    "/changes/",
+    "/openspec/",
+    "/specs/",
+    "/docs/adr/",
+    "/docs/adrs/",
+    "/docs/decisions/",
+    "/docs/prd/",
+)
+MD_REDIRECT_RE = re.compile(r">{1,2}\s*([^\s;|&<>]+\.md)\b")
+MD_TEE_RE = re.compile(r"\btee\s+(?:-a\s+)?([^\s;|&<>]+\.md)\b")
+
+
+def read_payload() -> dict[str, Any]:
+    try:
+        return json.load(sys.stdin)
+    except json.JSONDecodeError:
+        return {}
+
+
+def artifact_like_path(file_path: str) -> bool:
+    if not file_path:
+        return False
+
+    basename = os.path.basename(file_path)
+    normalized = "/" + file_path.replace("\\", "/").lstrip("/")
+    if basename in KNOWN_ARTIFACT_BASENAMES:
+        return True
+
+    if any(marker in normalized for marker in ARTIFACT_PATH_MARKERS):
+        return True
+
+    if basename.endswith(".md") and basename != "README.md":
+        return True
+
+    return False
+
+
+def repo_root() -> str:
+    return os.environ.get("MATE_REPO_PATH") or os.getcwd()
+
+
+def companion_root() -> str | None:
+    companion = os.environ.get("MATE_ARTIFACT_PATH")
+    return os.path.normpath(companion) if companion else None
+
+
+def normalize_path(file_path: str) -> str:
+    if os.path.isabs(file_path):
+        return os.path.normpath(file_path)
+    return os.path.normpath(os.path.join(repo_root(), file_path))
+
+
+def is_under(path: str, root: str) -> bool:
+    try:
+        return os.path.commonpath([os.path.normpath(path), os.path.normpath(root)]) == os.path.normpath(root)
+    except ValueError:
+        return False
+
+
+def is_gitignored(path: str) -> bool:
+    root = repo_root()
+    if not is_under(path, root):
+        return False
+
+    rel_path = os.path.relpath(path, root)
+    try:
+        result = subprocess.run(
+            ["git", "-C", root, "check-ignore", "--no-index", "-q", "--", rel_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False
+    return result.returncode == 0
+
+
+def is_git_tracked(path: str) -> bool:
+    """A file already tracked in the working repo is product code being edited,
+    not a new agent artifact (e.g. packaged SKILL.md/spec.md template sources)."""
+    root = repo_root()
+    if not is_under(path, root):
+        return False
+
+    rel_path = os.path.relpath(path, root)
+    try:
+        result = subprocess.run(
+            ["git", "-C", root, "ls-files", "--error-unmatch", "--", rel_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False
+    return result.returncode == 0
+
+
+def is_product_documentation_path(path: str) -> bool:
+    root = repo_root()
+    if not is_under(path, root):
+        return False
+
+    rel_path = os.path.relpath(path, root)
+    parts = pathlib.Path(rel_path).parts
+    for index, part in enumerate(parts):
+        if part in {".storybook", "storybook"}:
+            return True
+
+        if part != "docs":
+            continue
+
+        docs_root = os.path.join(root, *parts[: index + 1])
+        if os.path.exists(os.path.join(docs_root, "package.json")):
+            return True
+
+    return False
+
+
+def block_write(target: str, companion: str) -> None:
+    print("Mate guardrail: artifact writes must go to the companion framework path.", file=sys.stderr)
+    print(f" target: {target}", file=sys.stderr)
+    print(f" companion: {companion}", file=sys.stderr)
+    print("Use an absolute path under MATE_ARTIFACT_PATH instead.", file=sys.stderr)
+
+    if os.path.basename(target) == "CLAUDE.md":
+        print(
+            f"Note: CLAUDE.md already lives in the companion repo at {companion}/CLAUDE.md.",
+            file=sys.stderr,
+        )
+
+    raise SystemExit(2)
+
+
+def check_file_path(file_path: str, companion: str | None) -> None:
+    if not file_path or not companion:
+        return
+
+    normalized = normalize_path(file_path)
+    if normalized.startswith(companion):
+        return
+
+    if is_product_documentation_path(normalized):
+        return
+
+    if not artifact_like_path(file_path):
+        return
+
+    if is_under(normalized, repo_root()) and (
+        is_gitignored(normalized) or is_git_tracked(normalized)
+    ):
+        return
+
+    block_write(file_path, companion)
+
+
+def command_matches(command: str) -> list[str]:
+    targets: list[str] = []
+    for pattern in (MD_REDIRECT_RE, MD_TEE_RE):
+        for match in pattern.finditer(command):
+            target = match.group(1).strip().strip('"\'')
+            if target:
+                targets.append(target)
+    return targets
+
+
+def main() -> int:
+    companion = companion_root()
+    if not companion:
+        return 0
+
+    payload = read_payload()
+    tool_name = payload.get("tool_name", "")
+    tool_input = payload.get("tool_input", {})
+
+    if tool_name in {"Write", "Edit", "MultiEdit"}:
+        check_file_path(str(tool_input.get("file_path", "")), companion)
+        return 0
+
+    if tool_name == "Bash":
+        command = str(tool_input.get("command", ""))
+        for target in command_matches(command):
+            check_file_path(target, companion)
+        return 0
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

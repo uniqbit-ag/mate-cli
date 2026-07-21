@@ -140,7 +140,17 @@ export function defaultGitOps(
       return exec(["diff", "--cached", "--quiet", ...pathspec]).status !== 0;
     },
     async commit(message, paths) {
-      const pathspec = paths && paths.length > 0 ? ["--", ...paths] : [];
+      // A produced path can be unknown to git entirely — e.g. an active change dir that
+      // was never committed and has just been moved into the archive. `git commit` rejects
+      // such pathspecs ("did not match any file(s) known to git"), so keep only paths that
+      // exist in the index or in HEAD (staged deletions match HEAD, new files the index).
+      const known = (paths ?? []).filter(
+        (filePath) =>
+          exec(["ls-files", "--cached", "--", filePath]).out.length > 0 ||
+          exec(["ls-tree", "--name-only", "HEAD", "--", filePath]).out.length > 0,
+      );
+      const pathspec = known.length > 0 ? ["--", ...known] : [];
+      if (paths && paths.length > 0 && known.length === 0) return;
       execOrThrow(["commit", "-m", message, ...pathspec]);
     },
     async restorePaths(ref, paths) {
