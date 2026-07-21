@@ -1,6 +1,6 @@
 import readline from "node:readline";
 import { Box, Text, render as inkRender } from "ink";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 
 import { WizardFooter } from "./wizard-footer";
 

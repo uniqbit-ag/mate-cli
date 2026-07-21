@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach } from "bun:test";
+import { describe, test, beforeEach } from "bun:test";
 import fs from "node:fs/promises";
 import { runReportCommand } from "./index";
 

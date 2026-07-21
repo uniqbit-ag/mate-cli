@@ -1,5 +1,4 @@
 import { Box, Text, render as inkRender } from "ink";
-import React from "react";
 
 import { useSpinnerFrame } from "./spinner";
 import { MIDNIGHT_PURPLE_BRIGHT } from "./theme";

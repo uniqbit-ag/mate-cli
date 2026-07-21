@@ -1,5 +1,5 @@
 import { Box, render as inkRender } from "ink";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 
 import { SelectMenu } from "../lib/components/select-menu";
 import { TextInputDisplay } from "../lib/components/text-input-display";
