@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.14.4](https://github.com/uniqbit-ag/mate-cli/compare/0.14.3...0.14.4) (2026-07-21)
+
+## [0.14.4-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.14.3...0.14.4) (2026-07-21)
+
+### Features
+
+- enforce companion engines.mate version requirement ([f373d7c](https://github.com/uniqbit-ag/mate-cli/commit/f373d7c51d83550dcc8d3feb64079219e9f88aff))
+
+### Bug Fixes
+
+- clarify sanitized Area boundaries ([ab25677](https://github.com/uniqbit-ag/mate-cli/commit/ab25677a79a29b48acc89b1236118423834c1164))
+- **finish:** harden artifact finish pipeline and finish nudge flow ([a4f0e7f](https://github.com/uniqbit-ag/mate-cli/commit/a4f0e7fe03c366b4da3f568d9ac769d19be1741e))
+- **install:** require --yes for all non-TTY installs ([68e1482](https://github.com/uniqbit-ag/mate-cli/commit/68e14824d132e40969669b64308aacf763670e33))
+- **react-doctor:** trigger on stop hook when elligble edit events occured ([b287cc7](https://github.com/uniqbit-ag/mate-cli/commit/b287cc75f9c8730a8617f408e96c92e2c3131749))
+- scope openspec finish hook state per session and sync tokensave agents ([23c623e](https://github.com/uniqbit-ag/mate-cli/commit/23c623ea1a5782cccbf7b5e884aa66c05f7bfde1))
+
 ## [0.14.3](https://github.com/uniqbit-ag/mate-cli/compare/0.14.2...0.14.3) (2026-07-20)
 
 ## [0.14.3-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.14.2...0.14.3) (2026-07-20)
