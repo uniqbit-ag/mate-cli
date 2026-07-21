@@ -13,9 +13,10 @@ import {
   buildCodebaseExplorationGuidanceSection,
   buildCompanionGuidance,
 } from "../../../playbooks/companion-guidance";
+import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
 import type { Plugin, SetupContext } from "../plugin";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
-import { getSetupProvidersRoot } from "./utils";
+import { getSetupProvidersRoot, getSetupRootTemplates } from "./utils";
 
 const LEGACY_PLUGIN_FILES = [
   "kizuna-companion.ts",
@@ -452,7 +453,31 @@ async function syncOpenCodeRuntimeFiles(
   await writeRuntimeManifest(src, dest, cliTools, graphifyEnabled, tokensaveEnabled);
 }
 
-async function teardownOpenCode(companionPath: string): Promise<void> {
+async function configureOpenCodeGuidance(companionPath: string): Promise<void> {
+  await refreshFromTemplate(
+    path.join(companionPath, "AGENTS.md"),
+    path.join(getSetupRootTemplates(), "TEMPLATE_AGENTS.md"),
+  );
+}
+
+async function teardownOpenCodeGuidance(
+  companionPath: string,
+  activeProviders: string[],
+): Promise<void> {
+  // Claude owns the shared root AGENTS.md whenever it is active.
+  if (activeProviders.includes("claude")) return;
+
+  const agentsMdPath = path.join(companionPath, "AGENTS.md");
+  await stripGuidanceBlock(agentsMdPath);
+  try {
+    const content = await fs.readFile(agentsMdPath, "utf8");
+    if (!content.trim()) await fs.unlink(agentsMdPath);
+  } catch {
+    /* not present */
+  }
+}
+
+async function teardownOpenCode(companionPath: string, activeProviders: string[]): Promise<void> {
   try {
     await fs.unlink(path.join(companionPath, ".opencode", RUNTIME_MANIFEST_FILE));
   } catch {
@@ -519,6 +544,7 @@ async function teardownOpenCode(companionPath: string): Promise<void> {
   await pruneEmptyAncestors(path.join(companionPath, ".opencode", "plugins"), companionPath);
   await pruneEmptyAncestors(path.join(companionPath, ".opencode", "skills"), companionPath);
   await pruneEmptyAncestors(path.join(companionPath, ".opencode"), companionPath);
+  await teardownOpenCodeGuidance(companionPath, activeProviders);
 }
 
 export const opencodePlugin: Plugin = {
@@ -537,8 +563,9 @@ export const opencodePlugin: Plugin = {
       hasGraphifyCapability(ctx.config.capabilities),
       hasTokensaveCapability(ctx.config.capabilities),
     );
+    await configureOpenCodeGuidance(ctx.companionPath);
   },
   async teardown(ctx: SetupContext) {
-    await teardownOpenCode(ctx.companionPath);
+    await teardownOpenCode(ctx.companionPath, ctx.activeProviders);
   },
 };

@@ -113,6 +113,41 @@ describe("mate-openspec-artifact-finish", () => {
     expect(additionalContextOf(result.stdout)).toContain("my-change");
   });
 
+  test("absorbs archive entries created by a mate artifact finish run without nudging", async () => {
+    const { companion, archiveDir } = await makeFixture();
+    const env = { MATE_ARTIFACT_PATH: companion };
+    runHook({ tool_name: "Read" }, env);
+
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-finished-change"));
+    const finish = runHook(
+      {
+        tool_name: "Bash",
+        tool_input: { command: 'mate artifact finish "finished-change" --json' },
+        tool_response: { exit_code: 0 },
+      },
+      env,
+    );
+    expect(finish.stdout).toBe("");
+
+    // The entry was absorbed into the snapshot: later tool calls stay silent too.
+    expect(runHook({ tool_name: "Read" }, env).stdout).toBe("");
+  });
+
+  test("delivers the nudge as a block decision when invoked as a Stop hook", async () => {
+    const { companion, archiveDir } = await makeFixture();
+    const env = { MATE_ARTIFACT_PATH: companion };
+    runHook({ hook_event_name: "Stop" }, env);
+
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-stop-change"));
+    const result = runHook({ hook_event_name: "Stop" }, env);
+    const parsed = JSON.parse(result.stdout) as { decision?: string; reason?: string };
+    expect(parsed.decision).toBe("block");
+    expect(parsed.reason).toContain("stop-change");
+    expect(parsed.reason).toContain("mate-openspec-artifact-finish");
+
+    expect(runHook({ hook_event_name: "Stop" }, env).stdout).toBe("");
+  });
+
   test("ignores failed archive commands and unrelated tools", async () => {
     const { companion } = await makeFixture();
     const env = { MATE_ARTIFACT_PATH: companion };

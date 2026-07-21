@@ -993,6 +993,7 @@ describe("mate CLI e2e", () => {
     });
 
     expect(result.exitCode).toBe(0);
+    await fs.access(path.join(scenario.companion, "AGENTS.md"));
     await fs.access(path.join(scenario.companion, ".opencode", "opencode.json"));
     await fs.access(path.join(scenario.companion, ".opencode", "plugins", "mate-add-dir.ts"));
     await fs.access(path.join(scenario.companion, ".opencode", "plugins", "mate-companion.ts"));
@@ -1024,6 +1025,7 @@ describe("mate CLI e2e", () => {
     await expect(
       fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore")),
     ).rejects.toThrow();
+    await fs.access(path.join(scenario.companion, "AGENTS.md"));
   });
 
   test("setup reconciles openspec skills as allowed agents are added and removed", async () => {
@@ -1526,7 +1528,7 @@ describe("mate CLI e2e", () => {
     expect(skillStat.isFile()).toBe(true);
   });
 
-  test("setup does not write graphify guidance to AGENTS.md for opencode", async () => {
+  test("setup writes base guidance but not graphify guidance to AGENTS.md for opencode", async () => {
     const scenario = await createScenario("mate-cli-e2e-graphify-opencode-assets-");
     await writeGraphifyStub(scenario);
 
@@ -1547,7 +1549,9 @@ describe("mate CLI e2e", () => {
     ).rejects.toThrow();
 
     const agentsPath = path.join(scenario.companion, "AGENTS.md");
-    await expect(fs.access(agentsPath)).rejects.toThrow();
+    const agentsContent = await fs.readFile(agentsPath, "utf8");
+    expect(agentsContent).toContain("MATE:COMPANION:START");
+    expect(agentsContent).not.toContain("## graphify");
   });
 
   test("setup composes graphify guidance into OpenCode companion plugin when enabled", async () => {

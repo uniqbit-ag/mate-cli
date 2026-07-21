@@ -2,6 +2,8 @@ node_modules/
 .opencode/
 .claude/
 .mate/
+# packaged provider templates ship dot-dirs that must stay tracked
+!apps/mate-cli/src/templates/**/.claude/
 tmp/
 .DS_Store
 coverage/

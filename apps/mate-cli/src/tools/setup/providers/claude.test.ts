@@ -165,6 +165,17 @@ describe("syncCompanionClaudeSettings", () => {
         ],
       },
     ]);
+    expect(settings.hooks?.Stop).toEqual([
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+            timeout: 10,
+          },
+        ],
+      },
+    ]);
   });
 
   test("preserves an unmanaged hook and unmanaged permissions.allow entry", async () => {

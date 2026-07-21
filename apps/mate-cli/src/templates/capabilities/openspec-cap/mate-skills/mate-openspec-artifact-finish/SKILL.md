@@ -42,6 +42,7 @@ The CLI performs normal work; only conflict recovery requires agent judgment.
 
 ## Guardrails
 
+- **CRITICAL — no manual finishing**: Never hand-commit or hand-tag instead of this skill. For a still-active change the finish pipeline applies delta specs itself (via `openspec archive`) — do not pre-apply them, or produce fails with "already exists". A change whose specs were already synced (e.g. via `openspec-sync-specs`) must be archived first; finish then resumes from the archive without re-applying delta specs.
 - Always pass `--json` and parse the result; do not scrape human-readable output.
 - Never re-run `mate artifact finish` blindly after a `conflict`.
 - Never auto-resolve a provider-specific conflict you do not understand — ask the user.

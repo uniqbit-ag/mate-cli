@@ -278,6 +278,20 @@ function buildManagedClaudeSettings(
       },
       ...(hooks.PostToolUse ?? []),
     ];
+    // End-of-turn catch-all: an archive created by anything other than a matched Bash
+    // command (or as the last action of a turn) still gets a finish nudge on Stop.
+    hooks.Stop = [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+            timeout: 10,
+          },
+        ],
+      },
+      ...(hooks.Stop ?? []),
+    ];
   }
   if (reactDoctorEnabled) {
     // Record edits cheaply, then scan once when the edited turn finishes.

@@ -268,16 +268,31 @@ describe("runFinishEngine — fresh finish", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  test("cap sync failure hard-resets to recorded ref, not upstream", async () => {
+  test("cap sync failure retains the produced artifact for resume", async () => {
     const h = harness({ head: "PRIOR_UNPUSHED" }, { capSync: false });
 
-    await runEngine(h);
+    const result = await runEngine(h);
 
-    expect(h.gitCalls.find((c) => c.op === "restorePaths")?.args).toEqual([
-      "PRIOR_UNPUSHED",
-      COMMIT_PATHS,
-    ]);
+    expect(ops(h)).not.toContain("restorePaths");
     expect(ops(h)).not.toContain("commit");
+    expect(result.step).toBe("cap-sync");
+    expect(result.message).toContain("retained");
+    expect(result.message).toContain("resume");
+  });
+
+  test("commit failure retains the produced artifact for resume", async () => {
+    const h = harness({ failOn: { commit: true } });
+
+    const result = await runEngine(h);
+
+    expect(ops(h)).not.toContain("restorePaths");
+    expect(ops(h)).not.toContain("tag");
+    expect(result.step).toBe("commit");
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("retained");
+    expect(result.message).toContain("resume");
+    expect(result.local.committed).toBe(false);
+    expect(process.exitCode).toBe(1);
   });
 
   test("tag name derives from the produced anchor", async () => {

@@ -81,6 +81,37 @@ describe("buildCompanionGuidance", () => {
     expect(guidance).not.toContain("GRAPH_REPORT.md");
   });
 
+  test("includes the openspec finish rule only when the openspec capability is enabled", () => {
+    const withOpenspec = buildCompanionGuidance({
+      capabilities: [{ name: "openspec" }],
+      companionPath: "/tmp/companion",
+      policy: {},
+      repository: {
+        id: "app",
+        path: "/tmp/working",
+        profile: "default",
+      },
+    } as never);
+
+    expect(withOpenspec).toContain('<rule id="openspec-finish" severity="critical">');
+    expect(withOpenspec).toContain('mate artifact finish "<name>" --json');
+    expect(withOpenspec).toContain("never hand-commit or hand-tag a finish");
+    expect(withOpenspec).toContain("do not pre-apply them to openspec/specs");
+    expect(withOpenspec).toContain("resumes without re-applying delta specs");
+
+    const withoutOpenspec = buildCompanionGuidance({
+      companionPath: "/tmp/companion",
+      policy: {},
+      repository: {
+        id: "app",
+        path: "/tmp/working",
+        profile: "default",
+      },
+    } as never);
+
+    expect(withoutOpenspec).not.toContain('id="openspec-finish"');
+  });
+
   test("omits allowed-agent policy echo from prompt guidance", () => {
     const guidance = buildCompanionGuidance({
       companionPath: "/tmp/companion",

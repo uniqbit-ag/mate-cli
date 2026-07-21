@@ -121,7 +121,10 @@ export async function runFinishEngine(
   const preFinishHead = await git.headRef();
 
   // Never reset the whole companion: unrelated staged, unstaged, and untracked work
-  // belongs to the developer. Restore only paths returned by the finisher.
+  // belongs to the developer. Restore only paths returned by the finisher, and only for
+  // a FAILED produce with partial output. A successful produce may have MOVED data that
+  // exists nowhere else (an active change dir that was never committed), so post-produce
+  // failures must retain the produced paths — they are the resume state, not garbage.
   const rollback = async (paths: string[] | undefined): Promise<void> => {
     if (resuming || !paths || paths.length === 0) return;
     try {
@@ -160,8 +163,11 @@ export async function runFinishEngine(
   if (finisher.capSync) {
     result.step = "cap-sync";
     if (!(await finisher.capSync())) {
-      await rollback(produced.commitPaths);
-      fail("cap-sync", "mate: cap sync failed; produced artifact paths were restored.");
+      // Post-produce failure: retain the produced artifact — it is the resume state.
+      fail(
+        "cap-sync",
+        "mate: cap sync failed; the produced artifact was retained — re-run `mate artifact finish` to resume.",
+      );
       return result;
     }
   }
@@ -178,8 +184,11 @@ export async function runFinishEngine(
       );
     }
   } catch (err) {
-    await rollback(produced.commitPaths);
-    fail("commit", `mate: commit failed: ${String(err)}; produced artifact paths were restored.`);
+    // Post-produce failure: retain the produced artifact — it is the resume state.
+    fail(
+      "commit",
+      `mate: commit failed: ${String(err)}; the produced artifact was retained — re-run \`mate artifact finish\` to resume.`,
+    );
     return result;
   }
   result.local.committed = true;
