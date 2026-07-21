@@ -1828,7 +1828,7 @@ describe("mate CLI e2e", () => {
       );
     expect(hasCommand(first.hooks?.PreToolUse, "validate-artifact-path")).toBe(true);
     expect(hasCommand(first.hooks?.SessionStart, "mate-session-banner")).toBe(true);
-    expect(hasCommand(first.hooks?.PostToolBatch, "react-doctor.sh")).toBe(true);
+    expect(hasCommand(first.hooks?.Stop, "react-doctor.sh")).toBe(true);
     expect(first.permissions?.allow).toContain("Bash(openspec:*)");
     expect(first.permissions?.allow).toContain("Bash(npx react-doctor:*)");
 

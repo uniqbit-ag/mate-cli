@@ -36,6 +36,7 @@
     "headroom-ai": "^0.22.4",
     "ink": "^7.1.0",
     "react": "^19.2.7",
+    "react-doctor": "0.8.1",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

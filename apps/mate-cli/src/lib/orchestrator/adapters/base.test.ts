@@ -9,6 +9,7 @@ import { ClaudeAdapter } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
 import type { AdapterContext, ProxyDeps } from "./base";
 import type { SpawnProxyOpts } from "../headroom/proxy";
+import { getReactDoctorBinPath } from "../../package-paths";
 
 const tempRoots: string[] = [];
 
@@ -294,6 +295,23 @@ describe("graphify GRAPHIFY_OUT env injection", () => {
 
     expect(launch.env.GRAPHIFY_OUT).toBeUndefined();
     expect(launch.env.MATE_GRAPHIFY_ENABLED).toBe("0");
+  });
+});
+
+describe("react-doctor capability env injection", () => {
+  test("marks react-doctor enabled only when the capability is selected", async () => {
+    const enabled = await new ClaudeAdapter().prepareLaunch(
+      makeContext([{ name: "react-doctor" }]),
+      [],
+    );
+    const disabled = await new ClaudeAdapter().prepareLaunch(makeContext(), []);
+
+    expect(enabled.env.MATE_REACT_DOCTOR_ENABLED).toBe("1");
+    expect(enabled.env.MATE_REACT_DOCTOR_BIN_PATH).toBe(getReactDoctorBinPath());
+    expect(getReactDoctorBinPath()).toMatch(/[\\/]react-doctor[\\/]bin[\\/]react-doctor\.js$/);
+    await fs.access(getReactDoctorBinPath());
+    expect(disabled.env.MATE_REACT_DOCTOR_ENABLED).toBe("0");
+    expect(disabled.env.MATE_REACT_DOCTOR_BIN_PATH).toBeUndefined();
   });
 });
 

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { Plugin } from "@opencode-ai/plugin";
+import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
 
 import {
   buildArtifactError,
@@ -222,15 +222,120 @@ function appendOpenSpecFinishNudge(
     .join("\n\n");
 }
 
-export const CompanionHooksPlugin: Plugin = async () => {
+const REACT_DOCTOR_VERSION = "0.8.1";
+
+const REACT_DOCTOR_NON_LINT_FAILURES = [
+  /No React dependency found/i,
+  /Could not resolve config/i,
+  /is not a git repository/i,
+];
+
+const REACT_DOCTOR_EDIT_TOOLS = new Set(["write", "edit", "apply_patch"]);
+const REACT_DOCTOR_ARGS = [
+  "--yes",
+  "--verbose",
+  "--scope",
+  "changed",
+  "--base",
+  "HEAD",
+  "--blocking",
+  "warning",
+  "--no-score",
+  "--max-duration",
+  "30",
+];
+
+async function runReactDoctorScan(
+  context: CompanionContext,
+  client: PluginInput["client"],
+  $: PluginInput["$"],
+  sessionID: string,
+  scansInFlight: Set<string>,
+): Promise<void> {
+  const repo = context.repositoryPath;
+  if (!repo || scansInFlight.has(sessionID)) return;
+  scansInFlight.add(sessionID);
+  try {
+    const localBin = path.join(repo, "node_modules", ".bin", "react-doctor");
+    const mateBin = process.env.MATE_REACT_DOCTOR_BIN_PATH;
+    const doctorBin = mateBin && fs.existsSync(mateBin) ? mateBin : localBin;
+
+    const result = fs.existsSync(doctorBin)
+      ? await $`${doctorBin} ${REACT_DOCTOR_ARGS}`.cwd(repo).nothrow().quiet()
+      : await $`npx --yes ${`react-doctor@${REACT_DOCTOR_VERSION}`} ${REACT_DOCTOR_ARGS}`
+          .cwd(repo)
+          .nothrow()
+          .quiet();
+
+    if (result.exitCode === 0) return;
+
+    const output = `${result.stdout?.toString() ?? ""}${result.stderr?.toString() ?? ""}`.trim();
+    if (!output || REACT_DOCTOR_NON_LINT_FAILURES.some((re) => re.test(output))) return;
+
+    await client.tui
+      .showToast({
+        query: { directory: repo },
+        body: {
+          title: "React Doctor",
+          message: "Found issues in the changed files — review before finishing.",
+          variant: "warning",
+        },
+      })
+      .catch(() => {});
+    await client.session
+      .promptAsync({
+        path: { id: sessionID },
+        query: { directory: repo },
+        body: {
+          parts: [
+            {
+              type: "text",
+              synthetic: true,
+              text:
+                "React Doctor found issues in the changed files. Review this output and fix " +
+                "the regressions before finishing. For confirmed issues that cannot be fixed " +
+                "now, create GitHub issues with the rule, file/line, confidence, impact, and " +
+                `proposed fix.\n\n${output}`,
+            },
+          ],
+        },
+      })
+      .catch(() => {});
+  } catch {
+    // Never break the session because a diagnostic scan failed.
+  } finally {
+    scansInFlight.delete(sessionID);
+  }
+}
+
+type PluginEventInput = Parameters<NonNullable<Hooks["event"]>>[0];
+type ToolAfterInput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[0];
+type ToolAfterOutput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[1];
+
+export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInput) => {
+  const { client, $ } = pluginInput;
   const context = readContext(process.env.MATE_ARTIFACT_PATH ?? "");
   if (!context.companionPath || !context.repositoryPath) return {};
 
   const archiveDir = path.join(context.companionPath, "openspec", "changes", "archive");
   const archiveSnapshot = readArchiveEntries(archiveDir);
   const nudgedCommandChanges = new Set<string>();
+  const dirtyReactDoctorSessions = new Set<string>();
+  const reactDoctorScansInFlight = new Set<string>();
 
   return {
+    event: async ({ event }: PluginEventInput) => {
+      if (event.type !== "session.idle") return;
+      const sessionID = event.properties.sessionID;
+      if (
+        !context.reactDoctorEnabled ||
+        reactDoctorScansInFlight.has(sessionID) ||
+        !dirtyReactDoctorSessions.delete(sessionID)
+      ) {
+        return;
+      }
+      await runReactDoctorScan(context, client, $, sessionID, reactDoctorScansInFlight);
+    },
     "tool.execute.before": async (
       input: { tool: unknown },
       output: { args: { filePath?: unknown; patchText?: unknown } | undefined },
@@ -251,10 +356,10 @@ export const CompanionHooksPlugin: Plugin = async () => {
         }
       }
     },
-    "tool.execute.after": async (
-      input: { tool: unknown },
-      output: { output?: string; metadata?: unknown },
-    ) => {
+    "tool.execute.after": async (input: ToolAfterInput, output: ToolAfterOutput) => {
+      if (context.reactDoctorEnabled && REACT_DOCTOR_EDIT_TOOLS.has(input.tool)) {
+        dirtyReactDoctorSessions.add(input.sessionID);
+      }
       appendOpenSpecFinishNudge(context, archiveSnapshot, nudgedCommandChanges, input, output);
     },
   };

@@ -35,6 +35,7 @@ interface HookCommand {
   type: string;
   command: string;
   args?: string[];
+  timeout?: number;
 }
 interface HookGroup {
   matcher?: string;
@@ -99,7 +100,7 @@ describe("syncCompanionClaudeSettings", () => {
         hooks: [{ type: "command", command: `${companionPath}/.claude/hooks/mate-session-banner` }],
       },
     ]);
-    expect(settings.hooks?.PostToolBatch).toBeUndefined();
+    expect(settings.hooks?.Stop).toBeUndefined();
   });
 
   test("disables auto memory by default", async () => {
@@ -121,10 +122,24 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.PostToolBatch).toEqual([
+    expect(settings.hooks?.PostToolUse).toContainEqual({
+      matcher: "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
+      hooks: [
+        {
+          type: "command",
+          command: `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
+          timeout: 5,
+        },
+      ],
+    });
+    expect(settings.hooks?.Stop).toEqual([
       {
         hooks: [
-          { type: "command", command: `sh "${companionPath}/.claude/hooks/react-doctor.sh"` },
+          {
+            type: "command",
+            command: `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
+            timeout: 45,
+          },
         ],
       },
     ]);
@@ -391,7 +406,14 @@ describe("syncCompanionClaudeSettings", () => {
       capabilities: [{ name: "react-doctor" }],
     });
     let settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.PostToolBatch).toBeDefined();
+    expect(settings.hooks?.Stop).toBeDefined();
+    expect(
+      hasPostToolHook(
+        settings,
+        "PostToolUse",
+        `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
+      ),
+    ).toBe(true);
     expect(hasValidateHook(settings, companionPath)).toBe(true);
 
     await syncCompanionClaudeSettings(companionPath, {
@@ -399,7 +421,14 @@ describe("syncCompanionClaudeSettings", () => {
       capabilities: [],
     });
     settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.PostToolBatch).toBeUndefined();
+    expect(settings.hooks?.Stop).toBeUndefined();
+    expect(
+      hasPostToolHook(
+        settings,
+        "PostToolUse",
+        `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
+      ),
+    ).toBe(false);
     expect(hasValidateHook(settings, companionPath)).toBe(true);
   });
 
@@ -495,6 +524,53 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     expect(exclude).toContain(".claude/settings.local.json\n");
   });
 
+  test("removes obsolete Mate hooks and prunes empty hook containers", async () => {
+    const workingRepoPath = await makeTempDir("mate-claude-remove-hooks-");
+    const companionPath = await makeTempDir("mate-claude-remove-hooks-companion-");
+
+    await seedSettings(workingRepoPath, {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "Write|Edit|MultiEdit|Bash",
+            hooks: [
+              {
+                type: "command",
+                command: `${companionPath}/.claude/hooks/validate-artifact-path`,
+              },
+            ],
+          },
+        ],
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `${companionPath}/.claude/hooks/mate-session-banner`,
+              },
+            ],
+          },
+        ],
+        PostToolBatch: [
+          {
+            hooks: [{ type: "command", command: `${companionPath}/.claude/hooks/react-doctor.sh` }],
+          },
+        ],
+        EmptyEvent: [],
+      },
+    });
+
+    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, {
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      capabilities: [],
+    });
+
+    const after = JSON.parse(
+      await fs.readFile(path.join(workingRepoPath, ".claude", "settings.local.json"), "utf8"),
+    );
+    expect(after.hooks).toBeUndefined();
+  });
+
   test("writes companion additionalDirectories to working-repo Claude settings", async () => {
     const workingRepoPath = await makeTempDir("mate-claude-cleanup-none-");
     const companionPath = await makeTempDir("mate-claude-cleanup-companion-");
@@ -523,7 +599,6 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     const seeded = {
       hooks: {
         PreToolUse: [
-          { matcher: "Bash", hooks: [{ type: "command", command: "echo custom" }] },
           {
             matcher: "Write|Edit|MultiEdit|Bash",
             hooks: [
@@ -533,7 +608,24 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
               },
             ],
           },
+          { matcher: "Bash", hooks: [{ type: "command", command: "echo custom" }] },
         ],
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `${companionPath}/.claude/hooks/mate-session-banner`,
+              },
+            ],
+          },
+        ],
+        PostToolBatch: [
+          {
+            hooks: [{ type: "command", command: `${companionPath}/.claude/hooks/react-doctor.sh` }],
+          },
+        ],
+        EmptyEvent: [],
       },
       permissions: {
         additionalDirectories: ["/tmp/shared"],
@@ -543,7 +635,11 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
         other: { command: "echo", args: ["ok"] },
         tokensave: { command: "tokensave", args: ["serve"] },
       },
+      env: { MATE_TEST_VALUE: "preserve" },
+      customSetting: { keep: true },
     };
+    // Legacy Mate permissions and inline MCP entries are intentionally
+    // preserved; this migration only removes obsolete hook groups.
     await seedSettings(workingRepoPath, seeded);
     await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, {
       profiles: { default: { name: "default", allowedAgents: ["claude"] } },
@@ -555,6 +651,9 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     );
     expect(after).toEqual({
       ...seeded,
+      hooks: {
+        PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo custom" }] }],
+      },
       permissions: {
         additionalDirectories: ["/tmp/shared", path.resolve(companionPath)],
         allow: ["Bash(ls:*)", "mcp__tokensave__*"],
