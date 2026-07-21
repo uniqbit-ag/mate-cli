@@ -98,6 +98,7 @@ interface HookCommand {
   type?: string;
   command?: string;
   args?: string[];
+  timeout?: number;
 }
 interface HookGroup {
   matcher?: string;
@@ -114,6 +115,24 @@ function isManagedHookGroup(group: HookGroup): boolean {
   return (group.hooks ?? []).some((hook) =>
     MANAGED_HOOK_MARKERS.some((marker) => (hook.command ?? "").includes(marker)),
   );
+}
+
+function removeManagedHookGroups(settings: WorkingRepoSettings): WorkingRepoSettings {
+  const hooks: Record<string, HookGroup[]> = {};
+  for (const [event, groups] of Object.entries(settings.hooks ?? {})) {
+    const remainingGroups = (groups ?? []).filter((group) => !isManagedHookGroup(group));
+    if (remainingGroups.length > 0) {
+      hooks[event] = remainingGroups;
+    }
+  }
+
+  const next = { ...settings };
+  if (Object.keys(hooks).length > 0) {
+    next.hooks = hooks;
+  } else {
+    delete next.hooks;
+  }
+  return next;
 }
 
 async function readWorkingRepoSettings(settingsPath: string): Promise<WorkingRepoSettings> {
@@ -225,10 +244,7 @@ function buildManagedClaudeSettings(
   const openspecEnabled = enabledNames.has("openspec") && config.git === "auto";
   const reactDoctorEnabled = enabledNames.has("react-doctor");
 
-  const hooks: Record<string, HookGroup[]> = {};
-  for (const [event, groups] of Object.entries(existing.hooks ?? {})) {
-    hooks[event] = (groups ?? []).filter((group) => !isManagedHookGroup(group));
-  }
+  const hooks = removeManagedHookGroups(existing).hooks ?? {};
   hooks.PreToolUse = [
     {
       matcher: "Write|Edit|MultiEdit|Bash",
@@ -259,13 +275,31 @@ function buildManagedClaudeSettings(
     ];
   }
   if (reactDoctorEnabled) {
-    hooks.PostToolBatch = [
+    // Record edits cheaply, then scan once when the edited turn finishes.
+    hooks.PostToolUse = [
       {
+        matcher: "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
         hooks: [
-          { type: "command", command: `sh "${companionPath}/.claude/hooks/react-doctor.sh"` },
+          {
+            type: "command",
+            command: `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
+            timeout: 5,
+          },
         ],
       },
-      ...(hooks.PostToolBatch ?? []),
+      ...(hooks.PostToolUse ?? []),
+    ];
+    hooks.Stop = [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
+            timeout: 45,
+          },
+        ],
+      },
+      ...(hooks.Stop ?? []),
     ];
   }
   if (enabledNames.has("tokensave")) {
@@ -399,9 +433,10 @@ async function syncCompanionClaudeMcpConfig(
 // Reconcile the working repo for a Claude launch. Mate-managed Claude settings
 // now live in companion settings (see `syncCompanionClaudeSettings`) and are
 // loaded at launch via `--settings`, so Mate no longer writes them into the
-// working repo. Any existing working-repo `.claude/settings.local.json` is left
-// untouched; this only keeps the git exclude for that file current and strips
-// the TokenSave CLAUDE.md append the installer may have added.
+// working repo. Existing Mate-managed hooks are removed during migration;
+// user-authored settings remain in place. This also keeps the git exclude for
+// that file current and strips the TokenSave CLAUDE.md append the installer may
+// have added.
 export async function syncWorkingRepoClaudeSettings(
   workingRepoPath: string,
   companionPath: string,
@@ -423,7 +458,9 @@ async function syncWorkingRepoClaudeAdditionalDirectories(
   globalConfigStore: GlobalConfigStore,
 ): Promise<void> {
   const settingsPath = path.join(workingRepoPath, ".claude", "settings.local.json");
-  const existing = await readWorkingRepoSettings(settingsPath);
+  // Migrate hooks only. Existing permissions and MCP entries stay in the
+  // working repo; additionalDirectories is reconciled below.
+  const existing = removeManagedHookGroups(await readWorkingRepoSettings(settingsPath));
   const permissions = { ...existing.permissions };
   const existingAdditionalDirectories = Array.isArray(permissions.additionalDirectories)
     ? permissions.additionalDirectories

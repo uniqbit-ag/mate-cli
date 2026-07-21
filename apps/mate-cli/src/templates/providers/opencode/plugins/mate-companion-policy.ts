@@ -11,6 +11,7 @@ export type CompanionContext = {
   policyJson: string;
   graphifyEnabled: boolean;
   gitAutoModeEnabled: boolean;
+  reactDoctorEnabled: boolean;
   agentsMd: string;
 };
 
@@ -184,6 +185,7 @@ export function readContext(companionPath: string): CompanionContext {
     policyJson: process.env.MATE_POLICY_JSON ?? "{}",
     graphifyEnabled: process.env.MATE_GRAPHIFY_ENABLED === "1",
     gitAutoModeEnabled: process.env.MATE_GIT_AUTO_MODE === "1",
+    reactDoctorEnabled: process.env.MATE_REACT_DOCTOR_ENABLED === "1",
     agentsMd,
   };
 }

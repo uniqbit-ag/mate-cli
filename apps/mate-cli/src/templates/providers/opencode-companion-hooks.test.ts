@@ -60,6 +60,67 @@ describe("OpenCode companion hooks plugin", () => {
     );
   }
 
+  function makeReactDoctorRuntime(
+    result: Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>,
+  ) {
+    const shellCalls: Array<{ strings: string[]; expressions: unknown[] }> = [];
+    const shell = (strings: TemplateStringsArray, ...expressions: unknown[]) => {
+      shellCalls.push({ strings: [...strings], expressions });
+      const command = {
+        cwd: () => command,
+        nothrow: () => command,
+        quiet: () => result,
+      };
+      return command;
+    };
+    const showToast = mock(async () => true);
+    const promptAsync = mock(async () => undefined);
+    const client = { tui: { showToast }, session: { promptAsync } };
+    return { shell, shellCalls, client, showToast, promptAsync };
+  }
+
+  async function getReactDoctorHooks(
+    companion: string,
+    repo: string,
+    runtime: ReturnType<typeof makeReactDoctorRuntime>,
+  ) {
+    return withEnv(
+      {
+        MATE_ARTIFACT_PATH: companion,
+        MATE_REPO_PATH: repo,
+        MATE_REPO_ID: "app",
+        MATE_REPO_PROFILE: "default",
+        MATE_POLICY_JSON: "{}",
+        MATE_GIT_AUTO_MODE: "0",
+        MATE_REACT_DOCTOR_ENABLED: "1",
+      },
+      () => CompanionHooksPlugin({ client: runtime.client, $: runtime.shell } as never),
+    );
+  }
+
+  test("uses the Mate-owned React Doctor executable when no repo binary exists", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-react-doctor-runtime-");
+    const mateBin = path.join(await makeTempDir("mate-opencode-react-doctor-bin-"), "react-doctor");
+    await fs.writeFile(mateBin, "#!/bin/sh\nexit 0\n", "utf8");
+    await fs.chmod(mateBin, 0o755);
+    const runtime = makeReactDoctorRuntime(
+      Promise.resolve({ exitCode: 0, stdout: Buffer.from(""), stderr: Buffer.from("") }),
+    );
+
+    await withEnv({ MATE_REACT_DOCTOR_BIN_PATH: mateBin }, async () => {
+      const plugin = await getReactDoctorHooks(companion, repo, runtime);
+      await plugin["tool.execute.after"]!(
+        { tool: "edit", sessionID: "one", callID: "call", args: {} },
+        { title: "", output: "", metadata: {} },
+      );
+      await plugin.event!({
+        event: { type: "session.idle", properties: { sessionID: "one" } },
+      } as never);
+    });
+
+    expect(runtime.shellCalls[0]?.expressions.flat()).toContain(mateBin);
+  });
+
   test("nudges once when a new archive entry appears", async () => {
     const { companion, repo, archiveDir } = await setupCompanion();
     const output: { output?: string } = {};
@@ -294,5 +355,140 @@ describe("OpenCode companion hooks plugin", () => {
         ).resolves.toBeUndefined();
       },
     );
+  });
+
+  test("runs one bounded scan only after a successful edit", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-react-doctor-");
+    const runtime = makeReactDoctorRuntime(
+      Promise.resolve({ exitCode: 0, stdout: Buffer.from(""), stderr: Buffer.from("") }),
+    );
+    const plugin = await getReactDoctorHooks(companion, repo, runtime);
+    const event = plugin.event!;
+    const after = plugin["tool.execute.after"]!;
+
+    await event({ event: { type: "session.idle", properties: { sessionID: "one" } } } as never);
+    await after(
+      { tool: "edit", sessionID: "one", callID: "call", args: {} },
+      { title: "", output: "", metadata: {} },
+    );
+    await event({ event: { type: "session.idle", properties: { sessionID: "two" } } } as never);
+    await event({ event: { type: "session.idle", properties: { sessionID: "one" } } } as never);
+    await event({ event: { type: "session.idle", properties: { sessionID: "one" } } } as never);
+
+    expect(runtime.shellCalls).toHaveLength(1);
+    expect(runtime.shellCalls[0]?.expressions.flat()).toEqual(
+      expect.arrayContaining([
+        "--yes",
+        "--scope",
+        "changed",
+        "--base",
+        "HEAD",
+        "--max-duration",
+        "30",
+      ]),
+    );
+    expect(runtime.promptAsync).not.toHaveBeenCalled();
+  });
+
+  test("automatically sends findings to the edited session", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-react-findings-");
+    const runtime = makeReactDoctorRuntime(
+      Promise.resolve({
+        exitCode: 1,
+        stdout: Buffer.from("src/App.tsx:1 warning"),
+        stderr: Buffer.from(""),
+      }),
+    );
+    const plugin = await getReactDoctorHooks(companion, repo, runtime);
+
+    await plugin["tool.execute.after"]!(
+      { tool: "apply_patch", sessionID: "session-a", callID: "call", args: {} },
+      { title: "", output: "", metadata: {} },
+    );
+    await plugin.event!({
+      event: { type: "session.idle", properties: { sessionID: "session-a" } },
+    } as never);
+
+    expect(runtime.showToast).toHaveBeenCalledTimes(1);
+    expect(runtime.promptAsync).toHaveBeenCalledWith({
+      path: { id: "session-a" },
+      query: { directory: repo },
+      body: {
+        parts: [
+          {
+            type: "text",
+            synthetic: true,
+            text: expect.stringContaining("src/App.tsx:1 warning"),
+          },
+        ],
+      },
+    });
+
+    await plugin.event!({
+      event: { type: "session.idle", properties: { sessionID: "session-a" } },
+    } as never);
+    expect(runtime.shellCalls).toHaveLength(1);
+  });
+
+  test("suppresses non-lint failures and command errors", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-react-errors-");
+    const nonLint = makeReactDoctorRuntime(
+      Promise.resolve({
+        exitCode: 1,
+        stdout: Buffer.from("No React dependency found"),
+        stderr: Buffer.from(""),
+      }),
+    );
+    const nonLintPlugin = await getReactDoctorHooks(companion, repo, nonLint);
+    await nonLintPlugin["tool.execute.after"]!(
+      { tool: "edit", sessionID: "one", callID: "1", args: {} },
+      { title: "", output: "", metadata: {} },
+    );
+    await nonLintPlugin.event!({
+      event: { type: "session.idle", properties: { sessionID: "one" } },
+    } as never);
+    expect(nonLint.promptAsync).not.toHaveBeenCalled();
+
+    const failed = makeReactDoctorRuntime(Promise.reject(new Error("spawn failed")));
+    const failedPlugin = await getReactDoctorHooks(companion, repo, failed);
+    await failedPlugin["tool.execute.after"]!(
+      { tool: "write", sessionID: "two", callID: "2", args: {} },
+      { title: "", output: "", metadata: {} },
+    );
+    await expect(
+      failedPlugin.event!({
+        event: { type: "session.idle", properties: { sessionID: "two" } },
+      } as never),
+    ).resolves.toBeUndefined();
+    expect(failed.promptAsync).not.toHaveBeenCalled();
+  });
+
+  test("deduplicates overlapping idle events per session without blocking another session", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-react-concurrent-");
+    let resolveScan!: (result: { exitCode: number; stdout: Buffer; stderr: Buffer }) => void;
+    const scan = new Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>((resolve) => {
+      resolveScan = resolve;
+    });
+    const runtime = makeReactDoctorRuntime(scan);
+    const plugin = await getReactDoctorHooks(companion, repo, runtime);
+    const after = plugin["tool.execute.after"]!;
+    const event = plugin.event!;
+    const output = { title: "", output: "", metadata: {} };
+
+    await after({ tool: "write", sessionID: "one", callID: "1", args: {} }, output);
+    await after({ tool: "write", sessionID: "two", callID: "2", args: {} }, output);
+    const first = event({
+      event: { type: "session.idle", properties: { sessionID: "one" } },
+    } as never);
+    await event({
+      event: { type: "session.idle", properties: { sessionID: "one" } },
+    } as never);
+    const second = event({
+      event: { type: "session.idle", properties: { sessionID: "two" } },
+    } as never);
+
+    expect(runtime.shellCalls).toHaveLength(2);
+    resolveScan({ exitCode: 0, stdout: Buffer.from(""), stderr: Buffer.from("") });
+    await Promise.all([first, second]);
   });
 });
