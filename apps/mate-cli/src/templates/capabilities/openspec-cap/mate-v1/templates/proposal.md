@@ -15,14 +15,7 @@ scopes:
 
 ## What Changes
 
-<!-- Describe the concrete scope of the change. -->
-
-## Scopes
-
-<!-- List paired repository and exact repository-relative Area entries. Do not use local directory IDs, synthetic values, or N/A. -->
-
-- repository: org/repository
-  area: .
+<!-- Describe the concrete scope of the change. Scopes live only in the frontmatter `scopes` list; do not add a Scopes body section. -->
 
 ## Capabilities
 

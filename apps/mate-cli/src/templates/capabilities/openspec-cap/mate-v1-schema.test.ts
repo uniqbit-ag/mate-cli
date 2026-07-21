@@ -42,9 +42,9 @@ describe("mate-v1 schema", () => {
 
     expect(parsed.name).toBe("mate-v1");
     expect(isValidSchemaVersion(parsed.version)).toBe(true);
-    expect(parsed.version).toBe(2);
+    expect(parsed.version).toBe(3);
 
-    const dottedVersion = parse(raw.replace("version: 2", "version: 2.1")) as {
+    const dottedVersion = parse(raw.replace("version: 3", "version: 3.1")) as {
       version?: unknown;
     };
     expect(isValidSchemaVersion(dottedVersion.version)).toBe(false);
@@ -112,8 +112,14 @@ describe("mate-v1 schema", () => {
     expect(raw).not.toContain("area: acme/src");
     expect(raw).toContain("A non-monorepo repository may use exact subpaths such as `docs`");
     expect(raw).toContain(
-      "Every requirement MUST include direct inline `**Repository:**` and `**Area:**`",
+      "Scopes cascade: every requirement inherits all frontmatter `scopes` entries",
     );
+    expect(raw).toContain("ONLY when its effective scope is narrower than the document scopes");
+    expect(raw).toContain("ONLY when the spec's frontmatter names more than one repository");
+    expect(raw).toContain("requirement-level `**Repository:**` markers are forbidden");
+    expect(raw).toContain("Prefer single-repository specs");
+    expect(raw).toContain("no scope semantics");
+    expect(raw).toContain("never from the capability name");
     expect(proposal).toContain("scopes:");
     expect(proposal).toContain("type: change-proposal");
     expect(proposal).toContain("status: active");
@@ -123,8 +129,9 @@ describe("mate-v1 schema", () => {
     expect(spec).toContain("type: delta-spec");
     expect(spec).toContain("capability: <capability>");
     expect(spec).toContain("tags: [openspec/change, openspec/spec, openspec/delta]");
-    expect(spec).toContain("**Repository:** `org/repository`");
+    expect(spec).toContain("inherits every frontmatter `scopes` entry");
     expect(spec).toContain("**Area:** `.`");
+    expect(spec).toContain("allowed only when the frontmatter names more than one");
     expect(design).toContain("type: change-design");
     expect(design).toContain("schema: mate-v1");
     expect(tasks).toContain("type: change-tasks");
