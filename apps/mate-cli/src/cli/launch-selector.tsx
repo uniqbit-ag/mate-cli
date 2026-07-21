@@ -45,13 +45,6 @@ export interface LaunchWizardOptions {
   resolvePreview(target: LaunchTarget): Promise<LaunchPreviewData>;
 }
 
-export interface LaunchSelectorOptions {
-  stdin?: NodeJS.ReadStream;
-  stdout?: NodeJS.WriteStream;
-  stderr?: NodeJS.WriteStream;
-  allowedTargets?: Set<string>;
-}
-
 export const launchSelectorDeps = {
   render: inkRender,
 };
@@ -324,18 +317,4 @@ export async function runLaunchWizard(
       finish(finalResult);
     });
   });
-}
-
-export async function selectLaunchTarget(
-  options: LaunchSelectorOptions = {},
-): Promise<LaunchTarget | null> {
-  const result = await runLaunchWizard({
-    ...options,
-    resolvePreview: async () => ({
-      repositoryId: "",
-      repositoryPath: "",
-      companionPath: "",
-    }),
-  });
-  return result?.target ?? null;
 }

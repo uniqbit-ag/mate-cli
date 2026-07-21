@@ -1,5 +1,4 @@
-import { Text } from "ink";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 export const SPINNER_FRAMES = ["·", "✦", "✧", "✦"];
 export const SPINNER_INTERVAL_MS = 120;
@@ -15,9 +14,4 @@ export function useSpinnerFrame(active: boolean, intervalMs: number = SPINNER_IN
     return () => clearInterval(timer);
   }, [active, intervalMs]);
   return SPINNER_FRAMES[frame];
-}
-
-export function Spinner({ active = true, color }: { active?: boolean; color?: string }) {
-  const frame = useSpinnerFrame(active);
-  return <Text color={color}>{frame}</Text>;
 }

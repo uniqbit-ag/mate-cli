@@ -173,28 +173,6 @@ export async function findRepoLocalLinkedRepository(cwd: string): Promise<Linked
   }
 }
 
-export async function findRepoLocalCompanionPointer(
-  cwd: string,
-  companionPath: string,
-): Promise<RepoLocalCompanionPointer | null> {
-  const found = await findRepoLocalRegistryFile(cwd);
-  if (!found) return null;
-
-  try {
-    const raw = await fs.readFile(found.registryPath, "utf8");
-    const parsed = parse(raw) as Partial<RepoLocalRegistry> | null;
-    if (!parsed || !Array.isArray(parsed.companions)) return null;
-
-    const resolvedCompanionPath = path.resolve(companionPath);
-    const match = parsed.companions.find(
-      (pointer) => path.resolve(pointer.path) === resolvedCompanionPath,
-    );
-    return match ?? null;
-  } catch {
-    return null;
-  }
-}
-
 /** Returns other companion paths this repo is locally linked to, excluding `excludePath`. */
 export async function listOtherRepoLocalCompanionPaths(
   repoPath: string,

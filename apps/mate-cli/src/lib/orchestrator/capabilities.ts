@@ -4,10 +4,6 @@ export function hasGraphifyCapability(capabilities: CapabilityConfig[] = []): bo
   return capabilities.some((capability) => capability.name === "graphify");
 }
 
-export function hasHeadroomCapability(capabilities: CapabilityConfig[] = []): boolean {
-  return capabilities.some((capability) => capability.name === "headroom");
-}
-
 export function hasOpenspecCapability(capabilities: CapabilityConfig[] = []): boolean {
   return capabilities.some((capability) => capability.name === "openspec");
 }

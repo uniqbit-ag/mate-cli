@@ -8,7 +8,6 @@ import {
   getItemsForStep,
   getOpenSpecSchemaStepMessage,
   getSelectableItems,
-  OPENSPEC_GIT_MODE_SKIP_MESSAGE,
   OPENSPEC_SCHEMA_SKIP_MESSAGE,
   parseSelectorInput,
   selectRadioItem,

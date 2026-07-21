@@ -27,6 +27,7 @@
     "import/no-cycle": "error",
     "import/no-duplicates": "error",
     "import/no-self-import": "error",
+    "react/react-in-jsx-scope": "off",
     "react/self-closing-comp": "warn",
     "react/jsx-no-useless-fragment": "warn",
     "react/no-unknown-property": "error",
