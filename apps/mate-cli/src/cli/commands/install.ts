@@ -52,7 +52,7 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     execution = await renderInstallExecution(plan);
   } else {
     printPlanText(plan);
-    if (missing.length > 0 && !skipConfirm) {
+    if (!skipConfirm) {
       process.stderr.write(
         "mate: installation requires confirmation in a TTY. Re-run with `mate install --yes`.\n",
       );

@@ -392,7 +392,7 @@ describe("executeSetup", () => {
         const settings = JSON.parse(
           await fs.readFile(path.join(root, ".claude", "settings.local.json"), "utf8"),
         ) as Record<string, unknown>;
-        expect((settings.hooks as Record<string, unknown>)?.PostToolBatch).toBeUndefined();
+        expect((settings.hooks as Record<string, unknown>)?.Stop).toBeUndefined();
       } catch (error) {
         expect((error as NodeJS.ErrnoException).code).toBe("ENOENT");
       }

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { version } from "../../../../package.json";
 import { frameworkConfig } from "../../../framework";
-import { getWrapperBinPath } from "../../package-paths";
+import { getReactDoctorBinPath, getWrapperBinPath } from "../../package-paths";
 import {
   GRAPHIFY_OUTPUT_SUBDIR,
   GRAPHIFY_STORE_SEGMENT,
@@ -73,6 +73,7 @@ export abstract class LaunchAdapter {
   }
 
   environment(context: AdapterContext): NodeJS.ProcessEnv {
+    const reactDoctorEnabled = context.capabilities.some((c) => c.name === "react-doctor");
     const wrapperBinPath = getWrapperBinPath();
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -82,12 +83,17 @@ export abstract class LaunchAdapter {
       MATE_WRAPPER_BIN_PATH: wrapperBinPath,
       PATH: prependPathEntry(process.env.PATH, wrapperBinPath),
       MATE_GRAPHIFY_ENABLED: context.capabilities.some((c) => c.name === "graphify") ? "1" : "0",
+      MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
       MATE_GIT_AUTO_MODE: context.git === "auto" ? "1" : "0",
       MATE_REPO_ID: context.repository.id,
       MATE_REPO_PATH: context.repository.path,
       MATE_REPO_PROFILE: context.repository.profile,
       MATE_POLICY_JSON: JSON.stringify(context.policy),
     };
+
+    if (reactDoctorEnabled) {
+      env.MATE_REACT_DOCTOR_BIN_PATH = getReactDoctorBinPath();
+    }
 
     // Route launch-session graphify output to the companion store. graphifyy resolves its
     // output dir from GRAPHIFY_OUT at import time (graphify/paths.py) and every
