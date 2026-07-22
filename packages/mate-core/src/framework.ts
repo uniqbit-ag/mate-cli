@@ -16,7 +16,4 @@ export const frameworkConfig = {
   get runtime(): string {
     return getActiveDistribution().config.runtime;
   },
-  get supportedAdapters(): string[] {
-    return getActiveDistribution().config.supportedAdapters;
-  },
 };

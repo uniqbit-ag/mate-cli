@@ -51,7 +51,6 @@ describe("required plugins in the wizard", () => {
     name: "mate",
     legacyNames: [],
     runtime: "bun",
-    supportedAdapters: ["claude"],
     version: "1.0.0",
   };
 

@@ -5,7 +5,6 @@ export interface DistributionConfig {
   name: string;
   legacyNames?: string[];
   runtime: "bun";
-  supportedAdapters: string[];
   version: string;
   /** Asset directories that override the framework defaults, highest precedence first. */
   assetRoots?: string[];

@@ -41,7 +41,6 @@ const acmeConfig = {
   name: "mate",
   legacyNames: [],
   runtime: "bun",
-  supportedAdapters: ["claude"],
   version: "1.0.0",
 };
 
