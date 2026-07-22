@@ -9,7 +9,7 @@ mock.module("@opencode-ai/plugin", () => ({
 }));
 
 const { CompanionPlugin } = await import("./companion");
-const { extractPatchPaths } = await import("./companion-policy");
+const { extractPatchPaths } = await import("@uniqbit/mate-core/opencode");
 
 const tempRoots: string[] = [];
 

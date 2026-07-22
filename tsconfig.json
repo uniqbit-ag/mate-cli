@@ -18,13 +18,15 @@
     "apps/mate-cli/src/**/*.tsx",
     "apps/mate-opencode-plugin/src/**/*.ts",
     "apps/mate-opencode-plugin/src/**/*.tsx",
-    "packages/mate-core/src/**/*.ts"
+    "packages/mate-core/src/**/*.ts",
+    "packages/mate-core/src/**/*.tsx"
   ],
   "exclude": [
     "apps/mate-cli/src/**/*.test.ts",
     "apps/mate-cli/src/**/*.test.tsx",
-    "apps/mate-cli/src/templates/**",
     "apps/mate-opencode-plugin/src/**/*.test.ts",
-    "packages/mate-core/src/**/*.test.ts"
+    "packages/mate-core/src/templates/**",
+    "packages/mate-core/src/**/*.test.ts",
+    "packages/mate-core/src/**/*.test.tsx"
   ]
 }

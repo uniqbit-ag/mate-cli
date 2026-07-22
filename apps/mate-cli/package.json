@@ -6,14 +6,9 @@
     "mate": "src/cli-bootstrap.cjs"
   },
   "files": [
-    "src/",
-    "wrappers/"
+    "src/"
   ],
   "type": "module",
-  "exports": {
-    ".": "./src/lib/orchestrator/launcher.ts",
-    "./docs/reference": "./src/docs/reference.ts"
-  },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
@@ -35,12 +30,7 @@
   "dependencies": {
     "@uniqbit/mate-core": "0.15.0-canary.1",
     "@uniqbit/mate-opencode-plugin": "0.15.0-canary.1",
-    "headroom-ai": "^0.22.4",
-    "ink": "^7.1.0",
-    "react": "^19.2.7",
-    "react-doctor": "0.8.1",
-    "semver": "^7.8.5",
-    "yaml": "^2.9.0"
+    "headroom-ai": "^0.22.4"
   },
   "devDependencies": {
     "@release-it/conventional-changelog": "^11.0.1",
