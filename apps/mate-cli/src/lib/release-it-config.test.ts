@@ -78,24 +78,35 @@ type PublishFixture = {
   scriptPath: string;
 };
 
-async function createPublishFixture(version: string): Promise<PublishFixture> {
+async function createPublishFixture(
+  version: string,
+  overrides: Partial<Record<"core" | "plugin" | "cli", string>> = {},
+): Promise<PublishFixture> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-publish-"));
   tempDirs.push(tempDir);
 
-  const packageDir = path.join(tempDir, "apps/mate-cli");
   const binDir = path.join(tempDir, "bin");
   const scriptPath = path.join(tempDir, "publish.sh");
   const callsPath = path.join(tempDir, "npm-calls.txt");
   const npmrcCapturePath = path.join(tempDir, "captured.npmrc");
 
-  await fs.mkdir(packageDir, { recursive: true });
   await fs.mkdir(binDir);
   await fs.copyFile(publishScriptPath, scriptPath);
-  await fs.writeFile(
-    path.join(packageDir, "package.json"),
-    `${JSON.stringify({ name: "@uniqbit/mate", version })}\n`,
-    "utf8",
-  );
+
+  const workspacePackages: Array<["core" | "plugin" | "cli", string, string]> = [
+    ["core", "packages/mate-core", "@uniqbit/mate-core"],
+    ["plugin", "apps/mate-opencode-plugin", "@uniqbit/mate-opencode-plugin"],
+    ["cli", "apps/mate-cli", "@uniqbit/mate"],
+  ];
+  for (const [key, dir, name] of workspacePackages) {
+    const packageDir = path.join(tempDir, dir);
+    await fs.mkdir(packageDir, { recursive: true });
+    await fs.writeFile(
+      path.join(packageDir, "package.json"),
+      `${JSON.stringify({ name, version: overrides[key] ?? version })}\n`,
+      "utf8",
+    );
+  }
 
   const fakeNpmPath = path.join(binDir, "npm");
   await fs.writeFile(
@@ -245,6 +256,79 @@ describe("stable release-it config", () => {
   });
 });
 
+describe("sync-release-versions", () => {
+  const syncScriptPath = path.join(repoRoot, "apps/mate-cli/scripts/sync-release-versions.ts");
+
+  test("release-it runs the version sync after every bump on both channels", async () => {
+    const stableConfig = JSON.parse(
+      await fs.readFile(stableReleaseConfigPath, "utf8"),
+    ) as ReleaseConfig;
+    const canaryConfig = JSON.parse(
+      await fs.readFile(canaryReleaseConfigPath, "utf8"),
+    ) as ReleaseConfig;
+
+    expect(stableConfig.hooks?.["after:bump"]).toContain("bun scripts/sync-release-versions.ts");
+    expect(canaryConfig.hooks?.["after:bump"]).toContain("bun scripts/sync-release-versions.ts");
+  });
+
+  test("propagates the bumped CLI version to core, plugin, and dependency pins", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-sync-versions-"));
+    tempDirs.push(workspaceDir);
+
+    execFileSync("git", ["init"], { cwd: workspaceDir, stdio: "ignore" });
+    await fs.writeFile(
+      path.join(workspaceDir, "package.json"),
+      `${JSON.stringify({ name: "fixture", private: true, workspaces: ["apps/*", "packages/*"] })}\n`,
+      "utf8",
+    );
+    const fixturePackages = [
+      ["apps/mate-cli", { name: "@uniqbit/mate", version: "1.5.0-canary.2" }],
+      ["apps/mate-opencode-plugin", { name: "@uniqbit/mate-opencode-plugin", version: "1.4.0" }],
+      ["packages/mate-core", { name: "@uniqbit/mate-core", version: "1.4.0" }],
+    ] as const;
+    for (const [dir, contents] of fixturePackages) {
+      await fs.mkdir(path.join(workspaceDir, dir), { recursive: true });
+      await fs.writeFile(
+        path.join(workspaceDir, dir, "package.json"),
+        `${JSON.stringify(contents)}\n`,
+        "utf8",
+      );
+    }
+
+    const result = spawnSync("bun", [syncScriptPath, workspaceDir], {
+      cwd: workspaceDir,
+      encoding: "utf8",
+    });
+    expect(result.stderr).not.toContain("failed");
+    expect(result.status).toBe(0);
+
+    const cli = JSON.parse(
+      await fs.readFile(path.join(workspaceDir, "apps/mate-cli/package.json"), "utf8"),
+    );
+    const plugin = JSON.parse(
+      await fs.readFile(path.join(workspaceDir, "apps/mate-opencode-plugin/package.json"), "utf8"),
+    );
+    const core = JSON.parse(
+      await fs.readFile(path.join(workspaceDir, "packages/mate-core/package.json"), "utf8"),
+    );
+
+    expect(core.version).toBe("1.5.0-canary.2");
+    expect(plugin.version).toBe("1.5.0-canary.2");
+    expect(plugin.dependencies["@uniqbit/mate-core"]).toBe("1.5.0-canary.2");
+    expect(cli.dependencies["@uniqbit/mate-core"]).toBe("1.5.0-canary.2");
+    expect(cli.dependencies["@uniqbit/mate-opencode-plugin"]).toBe("1.5.0-canary.2");
+
+    // The touched manifests are staged so they land in the release commit.
+    const staged = execFileSync("git", ["diff", "--cached", "--name-only"], {
+      cwd: workspaceDir,
+      encoding: "utf8",
+    });
+    expect(staged).toContain("apps/mate-cli/package.json");
+    expect(staged).toContain("apps/mate-opencode-plugin/package.json");
+    expect(staged).toContain("packages/mate-core/package.json");
+  });
+});
+
 describe("publish.sh", () => {
   test("publishes stable and canary versions through npmjs.org without a real registry", async () => {
     for (const [version, tag] of [
@@ -256,14 +340,38 @@ describe("publish.sh", () => {
 
       expect(result.status).toBe(0);
       const calls = await fs.readFile(fixture.callsPath, "utf8");
+      expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-core");
+      expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-opencode-plugin");
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate");
-      expect(calls).toContain(`publish --workspace @uniqbit/mate --access public --tag ${tag}`);
+      for (const name of ["@uniqbit/mate-core", "@uniqbit/mate-opencode-plugin", "@uniqbit/mate"]) {
+        expect(calls).toContain(`publish --workspace ${name} --access public --tag ${tag}`);
+      }
+
+      // Core and plugin must publish before the CLI that pins them.
+      const publishOrder = calls
+        .split("\n")
+        .filter((line) => line.startsWith("publish --workspace"))
+        .map((line) => line.split(" ")[2]);
+      expect(publishOrder).toEqual([
+        "@uniqbit/mate-core",
+        "@uniqbit/mate-opencode-plugin",
+        "@uniqbit/mate",
+      ]);
 
       const npmrc = await fs.readFile(fixture.npmrcCapturePath, "utf8");
       expect(npmrc).toContain("registry=https://registry.npmjs.org/");
       expect(npmrc).toContain("//registry.npmjs.org/:_authToken=test-token");
       expect(npmrc).toContain("@uniqbit:registry=https://registry.npmjs.org/");
     }
+  });
+
+  test("rejects unsynchronized package versions before invoking npm", async () => {
+    const fixture = await createPublishFixture("1.2.3", { plugin: "1.2.2" });
+    const result = runPublish(fixture, "latest");
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("synchronized versions");
+    expect(await fs.stat(fixture.callsPath).catch(() => undefined)).toBeUndefined();
   });
 
   test("rejects unsupported dist-tags before invoking npm", async () => {

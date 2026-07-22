@@ -2,6 +2,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { frameworkConfig } from "../../framework";
+import {
+  OPENCODE_PLUGIN_PACKAGE_NAME,
+  warmOpenCodePluginCache,
+} from "../../lib/opencode-plugin-package";
 import { installPublicPackageSync, isPackageInstalledAtNpmGlobalRoot } from "../../lib/public-npm";
 import { fetchLatestVersion, getCurrentVersion, isNewer } from "../../lib/update-checker";
 import { confirmPrompt } from "../../lib/components/confirm-prompt";
@@ -47,6 +51,7 @@ export const updateCommandDeps = {
     const args = [entrypoint, "install", ...(skipConfirm ? ["--yes"] : [])];
     return spawnSync(process.execPath, args, { stdio: "inherit" }) as InstallResult;
   },
+  warmOpenCodePluginCache: (latest: string) => warmOpenCodePluginCache(latest),
 };
 
 /**
@@ -137,6 +142,20 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
   }
 
   await updateCommandDeps.saveUpdateState(latest);
+
+  // The plugin package is released in lockstep with the CLI; pre-fetch the
+  // newly coordinated version into OpenCode's plugin environment so the next
+  // managed launch does not stall on a registry download. Best effort only.
+  const warmed = await updateCommandDeps.warmOpenCodePluginCache(latest);
+  if (!warmed.ok) {
+    process.stderr.write(
+      [
+        `${frameworkConfig.name}: could not pre-fetch ${OPENCODE_PLUGIN_PACKAGE_NAME}@${latest} for OpenCode.`,
+        "The next managed OpenCode launch will download it (requires registry access).",
+        ...(warmed.detail ? [`Details: ${warmed.detail}`] : []),
+      ].join("\n") + "\n",
+    );
+  }
 
   const postInstall = updateCommandDeps.runPostInstall(skipConfirm);
   if (postInstall.status !== 0 || postInstall.error) {

@@ -43,6 +43,7 @@ beforeEach(() => {
   updateCommandDeps.installLatest = mock(() => ({ status: 0, error: undefined }) as never);
   updateCommandDeps.saveUpdateState = mock(async () => {});
   updateCommandDeps.runPostInstall = mock(() => ({ status: 0, error: undefined }) as never);
+  updateCommandDeps.warmOpenCodePluginCache = mock(async () => ({ ok: true }));
 });
 
 afterEach(() => {
@@ -137,6 +138,41 @@ describe("runUpdateCommand", () => {
     expect(output).toContain("npm is required for self-update but was not found on PATH");
     expect(output).toContain("npm install -g @uniqbit/mate");
     expect(process.exitCode).toBe(1);
+  });
+
+  test("warms the OpenCode plugin cache for the coordinated plugin version", async () => {
+    const logs = captureLogs();
+
+    try {
+      await runUpdateCommand(["--yes"]);
+    } finally {
+      logs.restore();
+    }
+
+    expect(updateCommandDeps.warmOpenCodePluginCache).toHaveBeenCalledWith("9.9.9");
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("warns without failing when the plugin cache pre-fetch is unavailable", async () => {
+    updateCommandDeps.warmOpenCodePluginCache = mock(async () => ({
+      ok: false,
+      detail: "registry unreachable",
+    }));
+    const logs = captureLogs();
+    const stderr = captureStderr();
+
+    try {
+      await runUpdateCommand(["--yes"]);
+    } finally {
+      logs.restore();
+      stderr.restore();
+    }
+
+    const warning = stderr.chunks.join("");
+    expect(warning).toContain("could not pre-fetch @uniqbit/mate-opencode-plugin@9.9.9");
+    expect(warning).toContain("registry unreachable");
+    expect(logs.chunks.join("\n")).toContain("Upgraded to 9.9.9.");
+    expect(process.exitCode).toBe(0);
   });
 
   test("reports an incomplete installation when post-update install fails", async () => {

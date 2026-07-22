@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { LaunchPreflightError } from "../types";
+import { getOpenCodePluginPackageReference } from "../../opencode-plugin-package";
 import { getWrapperBinPath } from "../../package-paths";
 import { ClaudeAdapter } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
@@ -70,39 +71,17 @@ function makeContext(capabilities: AdapterContext["capabilities"] = []): Adapter
 
 async function writeOpenCodeRuntime(
   companionPath: string,
-  guidance: {
-    version?: number;
-    companionGuidance?: string;
-    codebaseExplorationGuidance?: string;
-    errors?: string[];
-  } = {
-    version: 1,
-    companionGuidance:
-      '<companion-policy framework="mate" priority="mandatory"></companion-policy>',
-    codebaseExplorationGuidance: "",
-    errors: [],
-  },
+  pluginReference: string = getOpenCodePluginPackageReference(),
 ): Promise<void> {
-  await fs.mkdir(path.join(companionPath, ".opencode", "plugins"), { recursive: true });
-  await fs.writeFile(path.join(companionPath, ".opencode", "opencode.json"), "{}\n", "utf8");
+  await fs.mkdir(path.join(companionPath, ".opencode"), { recursive: true });
   await fs.writeFile(
-    path.join(companionPath, ".opencode", ".mate-guidance.json"),
-    JSON.stringify(guidance, null, 2) + "\n",
+    path.join(companionPath, ".opencode", "opencode.json"),
+    JSON.stringify({ plugin: [pluginReference] }, null, 2) + "\n",
     "utf8",
   );
   await fs.writeFile(
-    path.join(companionPath, ".opencode", "plugins", "mate-add-dir.ts"),
-    "export {};\n",
-    "utf8",
-  );
-  await fs.writeFile(
-    path.join(companionPath, ".opencode", "plugins", "mate-companion.ts"),
-    "export {};\n",
-    "utf8",
-  );
-  await fs.writeFile(
-    path.join(companionPath, ".opencode", "plugins", "mate-companion-policy.ts"),
-    "export {};\n",
+    path.join(companionPath, ".opencode", "tui.json"),
+    JSON.stringify({ plugin: [pluginReference] }, null, 2) + "\n",
     "utf8",
   );
 }
@@ -235,45 +214,47 @@ describe("LaunchAdapter.prepareLaunch", () => {
     ).rejects.toThrow(/OpenCode companion runtime is incomplete/);
   });
 
-  test("fails OpenCode launch validation when plugin guidance was not injected", async () => {
-    const companionPath = await makeTempDir("mate-opencode-placeholder-");
-    await writeOpenCodeRuntime(companionPath, {
-      version: 1,
-      companionGuidance: "",
-      codebaseExplorationGuidance: "",
-      errors: [],
-    });
+  test("fails OpenCode launch validation when the plugin package reference is missing or stale", async () => {
+    const missingPath = await makeTempDir("mate-opencode-missing-plugin-ref-");
+    await writeOpenCodeRuntime(missingPath);
+    await fs.writeFile(path.join(missingPath, ".opencode", "opencode.json"), "{}\n", "utf8");
 
     await expect(
-      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
-    ).rejects.toThrow(/OpenCode companion runtime is invalid/);
+      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath: missingPath }),
+    ).rejects.toThrow(/Missing Mate plugin package reference in .opencode\/opencode\.json/);
+
+    const stalePath = await makeTempDir("mate-opencode-stale-plugin-ref-");
+    await writeOpenCodeRuntime(stalePath, "@uniqbit/mate-opencode-plugin@0.0.1");
+
     await expect(
-      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
-    ).rejects.toThrow(/Missing injected companion guidance/);
+      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath: stalePath }),
+    ).rejects.toThrow(/Stale Mate plugin package reference/);
+    await expect(
+      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath: stalePath }),
+    ).rejects.toThrow(/Expected Mate plugin package: @uniqbit\/mate-opencode-plugin@/);
   });
 
-  test("fails OpenCode launch validation when enabled codebase guidance was not injected", async () => {
-    const companionPath = await makeTempDir("mate-opencode-codebase-guidance-");
-    await writeOpenCodeRuntime(companionPath, {
-      version: 1,
-      companionGuidance:
-        '<companion-policy framework="mate" priority="mandatory"></companion-policy>',
-      codebaseExplorationGuidance: "",
-      errors: ["codebase exploration guidance was not injected"],
-    });
+  test("injects the companion guidance payload into the OpenCode launch environment", async () => {
+    const adapter = new OpenCodeAdapter();
 
-    await expect(
-      new OpenCodeAdapter().validateLaunch({
-        ...makeContext([{ name: "tokensave" }]),
-        companionPath,
-      }),
-    ).rejects.toThrow(/Missing injected codebase exploration guidance/);
-    await expect(
-      new OpenCodeAdapter().validateLaunch({
-        ...makeContext([{ name: "tokensave" }]),
-        companionPath,
-      }),
-    ).rejects.toThrow(/codebase exploration guidance was not injected/);
+    const baseEnv = adapter.extendEnvironment(makeContext());
+    const baseGuidance = JSON.parse(baseEnv.MATE_GUIDANCE_JSON ?? "{}");
+    expect(baseGuidance.version).toBe(1);
+    expect(baseGuidance.errors).toEqual([]);
+    expect(baseGuidance.companionGuidance).toContain("<companion-policy ");
+    expect(baseGuidance.companionGuidance).toContain("$MATE_ARTIFACT_PATH");
+    expect(baseGuidance.companionGuidance).toContain("$MATE_WRAPPER_BIN_PATH");
+    expect(baseGuidance.codebaseExplorationGuidance).toBe("");
+
+    const tokensaveEnv = adapter.extendEnvironment(makeContext([{ name: "tokensave" }]));
+    const tokensaveGuidance = JSON.parse(tokensaveEnv.MATE_GUIDANCE_JSON ?? "{}");
+    expect(tokensaveGuidance.codebaseExplorationGuidance).toContain("<codebase-exploration-rules ");
+    expect(tokensaveGuidance.codebaseExplorationGuidance).toContain("tokensave_context");
+
+    const graphifyEnv = adapter.extendEnvironment(makeContext([{ name: "graphify" }]));
+    const graphifyGuidance = JSON.parse(graphifyEnv.MATE_GUIDANCE_JSON ?? "{}");
+    expect(graphifyGuidance.codebaseExplorationGuidance).toContain("<codebase-exploration-rules ");
+    expect(graphifyGuidance.codebaseExplorationGuidance).toContain("graphify");
   });
 });
 

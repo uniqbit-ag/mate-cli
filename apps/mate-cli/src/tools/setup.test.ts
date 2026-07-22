@@ -22,6 +22,10 @@ import type { SetupContext } from "./setup/plugin";
 const tempRoots: string[] = [];
 const originalPath = process.env.PATH;
 
+// Setup would otherwise pre-fetch the pinned OpenCode plugin package into the
+// developer's real OpenCode cache via npm.
+process.env.MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH = "1";
+
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   tempRoots.push(dir);
@@ -475,10 +479,16 @@ describe("executeSetup", () => {
 
       await fs.access(path.join(root, ".opencode", "skills", "react-doctor", "SKILL.md"));
       await fs.access(path.join(root, ".opencode", "skills", "openspec-explore", "SKILL.md"));
-      await fs.access(path.join(root, ".opencode", "opencode.json"));
-      await fs.access(path.join(root, ".opencode", "plugins", "mate-add-dir.ts"));
-      await fs.access(path.join(root, ".opencode", "plugins", "mate-companion.ts"));
-      await fs.access(path.join(root, ".opencode", "plugins", "mate-companion-tui.tsx"));
+      const setupConfig = await fs.readFile(path.join(root, ".opencode", "opencode.json"), "utf8");
+      const setupTuiConfig = await fs.readFile(path.join(root, ".opencode", "tui.json"), "utf8");
+      expect(setupConfig).toContain("@uniqbit/mate-opencode-plugin@");
+      expect(setupTuiConfig).toContain("@uniqbit/mate-opencode-plugin@");
+      // Guidance is delivered via the launch environment; setup writes no
+      // guidance file and copies no plugin sources.
+      await expect(
+        fs.access(path.join(root, ".opencode", ".mate-guidance.json")),
+      ).rejects.toThrow();
+      await expect(fs.access(path.join(root, ".opencode", "plugins"))).rejects.toThrow();
 
       await executeSetup(
         {
@@ -514,7 +524,7 @@ describe("executeSetup", () => {
   });
 
   test(
-    "launch-time sync restores the OpenCode companion plugin without removing unrelated files",
+    "launch-time sync restores OpenCode package references without removing unrelated files",
     { timeout: 10000 },
     async () => {
       const root = await makeTempDir("mate-opencode-sync-");
@@ -531,29 +541,32 @@ describe("executeSetup", () => {
         { cwd: root, globalConfigStore },
       );
 
-      const pluginPath = path.join(root, ".opencode", "plugins", "mate-companion.ts");
-      const addDirPluginPath = path.join(root, ".opencode", "plugins", "mate-add-dir.ts");
-      const sessionBannerPluginPath = path.join(
-        root,
-        ".opencode",
-        "plugins",
-        "mate-companion-tui.tsx",
-      );
+      const legacyPluginPath = path.join(root, ".opencode", "plugins", "mate-companion.ts");
       const legacySessionBannerPluginPath = path.join(
         root,
         ".opencode",
         "plugins",
         "mate-session-banner.tsx",
       );
+      const userPluginPath = path.join(root, ".opencode", "plugins", "custom.ts");
       const configPath = path.join(root, ".opencode", "opencode.json");
+      const tuiConfigPath = path.join(root, ".opencode", "tui.json");
+      const guidancePath = path.join(root, ".opencode", ".mate-guidance.json");
       const packagePath = path.join(root, ".opencode", "package.json");
       const userFilePath = path.join(root, ".opencode", "user-notes.txt");
       const dependencyDir = path.join(root, ".opencode", "node_modules", "left-alone");
 
-      await fs.rm(pluginPath);
-      await fs.rm(addDirPluginPath);
-      await fs.rm(sessionBannerPluginPath);
+      // Simulate a companion from the copied-plugin era plus user content.
+      await fs.mkdir(path.dirname(legacyPluginPath), { recursive: true });
+      await fs.writeFile(legacyPluginPath, "legacy copied plugin\n", "utf8");
       await fs.writeFile(legacySessionBannerPluginPath, "legacy\n", "utf8");
+      await fs.writeFile(userPluginPath, "user plugin\n", "utf8");
+      await fs.writeFile(guidancePath, '{"version":1}\n', "utf8");
+      await fs.writeFile(
+        path.join(root, ".opencode", ".mate-runtime.json"),
+        '{"version":5}\n',
+        "utf8",
+      );
       await fs.writeFile(
         configPath,
         JSON.stringify(
@@ -561,8 +574,22 @@ describe("executeSetup", () => {
             instructions: ["./custom.md"],
             compaction: { preserve_recent_tokens: 999 },
             tool_output: { max_lines: 10 },
-            plugin: ["./plugins/custom.ts"],
+            plugin: ["./plugins/custom.ts", "@uniqbit/mate-opencode-plugin@0.0.1"],
           },
+          null,
+          2,
+        ) + "\n",
+        "utf8",
+      );
+      await fs.writeFile(
+        tuiConfigPath,
+        JSON.stringify({ plugin: ["./plugins/mate-companion-tui.tsx"] }, null, 2) + "\n",
+        "utf8",
+      );
+      await fs.writeFile(
+        packagePath,
+        JSON.stringify(
+          { dependencies: { "@opentui/solid": "^0.3.4", "user-dep": "^1.0.0" } },
           null,
           2,
         ) + "\n",
@@ -573,11 +600,19 @@ describe("executeSetup", () => {
 
       await syncCompanionFiles(root, config);
 
-      await expect(fs.access(pluginPath)).resolves.toBeNull();
-      await expect(fs.access(addDirPluginPath)).resolves.toBeNull();
-      await expect(fs.access(sessionBannerPluginPath)).resolves.toBeNull();
+      // Legacy copied Mate plugin files are removed, user plugins preserved.
+      await expect(fs.access(legacyPluginPath)).rejects.toThrow();
       await expect(fs.access(legacySessionBannerPluginPath)).rejects.toThrow();
-      await expect(fs.readFile(configPath, "utf8")).resolves.not.toContain('"../AGENTS.md"');
+      await expect(fs.readFile(userPluginPath, "utf8")).resolves.toBe("user plugin\n");
+
+      const mergedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
+      expect(mergedConfig.plugin).toContain("./plugins/custom.ts");
+      expect(
+        mergedConfig.plugin.filter((entry: string) =>
+          entry.startsWith("@uniqbit/mate-opencode-plugin@"),
+        ),
+      ).toHaveLength(1);
+      expect(mergedConfig.plugin).not.toContain("@uniqbit/mate-opencode-plugin@0.0.1");
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"./custom.md"');
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain(
         '"preserve_recent_tokens": 999',
@@ -586,164 +621,28 @@ describe("executeSetup", () => {
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_lines": 10');
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_bytes": 8192');
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"mate": ".."');
-      await expect(fs.readFile(packagePath, "utf8")).resolves.toContain(
-        '"@opentui/solid": "^0.3.4"',
-      );
+
+      const mergedTuiConfig = JSON.parse(await fs.readFile(tuiConfigPath, "utf8"));
+      expect(
+        mergedTuiConfig.plugin.filter((entry: string) =>
+          entry.startsWith("@uniqbit/mate-opencode-plugin@"),
+        ),
+      ).toHaveLength(1);
+      expect(mergedTuiConfig.plugin).not.toContain("./plugins/mate-companion-tui.tsx");
+
+      // Legacy guidance and manifest files are removed; guidance is delivered
+      // through the launch environment now.
+      await expect(fs.access(guidancePath)).rejects.toThrow();
+      await expect(fs.access(path.join(root, ".opencode", ".mate-runtime.json"))).rejects.toThrow();
+
+      // Legacy Mate-injected TUI dependencies are removed, user metadata kept.
+      const packageJson = JSON.parse(await fs.readFile(packagePath, "utf8"));
+      expect(packageJson.dependencies["@opentui/solid"]).toBeUndefined();
+      expect(packageJson.dependencies["user-dep"]).toBe("^1.0.0");
+
       await expect(fs.readFile(userFilePath, "utf8")).resolves.toBe("keep me\n");
       await expect(fs.access(dependencyDir)).resolves.toBeNull();
     },
-  );
-
-  test(
-    "launch-time sync skips rewriting managed OpenCode runtime files when manifest matches",
-    async () => {
-      const root = await makeTempDir("mate-opencode-sync-manifest-");
-      const globalConfigStore = new GlobalConfigStore(
-        path.join(root, "home", ".mate", "config.yaml"),
-      );
-      await installOpenSpecStub(root);
-
-      const { config } = await executeSetup(
-        {
-          allowedAgents: ["opencode"],
-          capabilities: [{ name: "openspec" }],
-        },
-        { cwd: root, globalConfigStore },
-      );
-
-      const pluginPath = path.join(root, ".opencode", "plugins", "mate-companion.ts");
-      const before = await fs.stat(pluginPath);
-
-      await new Promise((resolve) => setTimeout(resolve, 25));
-      await syncCompanionFiles(root, config);
-
-      const after = await fs.stat(pluginPath);
-      expect(after.mtimeMs).toBe(before.mtimeMs);
-    },
-    { timeout: 10000 },
-  );
-
-  test(
-    "launch-time sync rewrites OpenCode companion plugin when graphify capability state changes",
-    async () => {
-      const root = await makeTempDir("mate-opencode-sync-graphify-toggle-");
-      const globalConfigStore = new GlobalConfigStore(
-        path.join(root, "home", ".mate", "config.yaml"),
-      );
-      await installOpenSpecStub(root);
-      await installGraphifyStub(root);
-
-      let setupResult = await executeSetup(
-        {
-          allowedAgents: ["opencode"],
-          capabilities: [{ name: "openspec" }],
-        },
-        { cwd: root, globalConfigStore },
-      );
-
-      const pluginPath = path.join(root, ".opencode", "plugins", "mate-companion.ts");
-      const guidancePath = path.join(root, ".opencode", ".mate-guidance.json");
-      expect(JSON.parse(await fs.readFile(guidancePath, "utf8")).codebaseExplorationGuidance).toBe(
-        "",
-      );
-
-      setupResult = await executeSetup(
-        {
-          allowedAgents: ["opencode"],
-          capabilities: [{ name: "openspec" }, { name: "graphify" }],
-        },
-        { cwd: root, globalConfigStore },
-      );
-
-      await syncCompanionFiles(root, setupResult.config);
-
-      const guidance = JSON.parse(await fs.readFile(guidancePath, "utf8"));
-      expect(guidance.companionGuidance).toContain(
-        '<companion-policy framework="mate" priority="mandatory">',
-      );
-      expect(guidance.companionGuidance).toContain("$MATE_REPO_PATH");
-      expect(guidance.companionGuidance).toContain("$MATE_ARTIFACT_PATH");
-      expect(guidance.companionGuidance).toContain("$MATE_WRAPPER_BIN_PATH");
-      expect(guidance.companionGuidance).toContain('invokeAs="$MATE_WRAPPER_BIN_PATH/openspec"');
-      expect(guidance.companionGuidance).toContain('invokeAs="$MATE_WRAPPER_BIN_PATH/graphify"');
-      expect(guidance.codebaseExplorationGuidance).toContain(
-        '<codebase-exploration-rules priority="mandatory">',
-      );
-      expect(guidance.codebaseExplorationGuidance).toContain(
-        "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/",
-      );
-      expect(guidance.codebaseExplorationGuidance).toContain("graphify -> grep/glob/read");
-      expect(guidance.codebaseExplorationGuidance).toContain("MUST try graphify before raw source");
-      expect(await fs.readFile(guidancePath, "utf8")).not.toContain("__MATE_");
-    },
-    { timeout: 10000 },
-  );
-
-  test(
-    "launch-time sync injects tokensave-only exploration guidance when graphify is disabled",
-    async () => {
-      const root = await makeTempDir("mate-opencode-sync-tokensave-only-");
-      const globalConfigStore = new GlobalConfigStore(
-        path.join(root, "home", ".mate", "config.yaml"),
-      );
-      await installOpenSpecStub(root);
-
-      let setupResult = await executeSetup(
-        {
-          allowedAgents: ["opencode"],
-          capabilities: [{ name: "openspec" }, { name: "tokensave" }],
-        },
-        { cwd: root, globalConfigStore },
-      );
-
-      await syncCompanionFiles(root, setupResult.config);
-
-      const guidancePath = path.join(root, ".opencode", ".mate-guidance.json");
-      const guidance = JSON.parse(await fs.readFile(guidancePath, "utf8"));
-      expect(guidance.companionGuidance).toContain(
-        '<companion-policy framework="mate" priority="mandatory">',
-      );
-      expect(guidance.codebaseExplorationGuidance).toContain(
-        '<codebase-exploration-rules priority="mandatory">',
-      );
-      expect(guidance.codebaseExplorationGuidance).toContain("tokensave_context");
-      expect(guidance.codebaseExplorationGuidance).toContain("tokensave -> grep/glob/read");
-      expect(guidance.codebaseExplorationGuidance).toContain(
-        "MUST try tokensave before raw source",
-      );
-      expect(guidance.codebaseExplorationGuidance).not.toContain(
-        "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/",
-      );
-      expect(await fs.readFile(guidancePath, "utf8")).not.toContain("__MATE_");
-    },
-    { timeout: 10000 },
-  );
-
-  test(
-    "launch-time sync rewrites managed OpenCode runtime files when manifest detects drift",
-    async () => {
-      const root = await makeTempDir("mate-opencode-sync-drift-");
-      const globalConfigStore = new GlobalConfigStore(
-        path.join(root, "home", ".mate", "config.yaml"),
-      );
-      await installOpenSpecStub(root);
-
-      const { config } = await executeSetup(
-        {
-          allowedAgents: ["opencode"],
-          capabilities: [{ name: "openspec" }],
-        },
-        { cwd: root, globalConfigStore },
-      );
-
-      const pluginPath = path.join(root, ".opencode", "plugins", "mate-companion.ts");
-      await fs.writeFile(pluginPath, "// drifted\n", "utf8");
-
-      await syncCompanionFiles(root, config);
-
-      await expect(fs.readFile(pluginPath, "utf8")).resolves.not.toContain("drifted");
-    },
-    { timeout: 10000 },
   );
 
   test("launch-time sync migrates claude guidance from .claude/CLAUDE.md to root CLAUDE.md", async () => {

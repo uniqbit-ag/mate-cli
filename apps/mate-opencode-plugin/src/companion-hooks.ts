@@ -9,7 +9,7 @@ import {
   readContext,
   shouldBlockArtifactWrite,
   type CompanionContext,
-} from "./mate-companion-policy";
+} from "./companion-policy";
 
 const ARCHIVE_ENTRY_PATTERN = /^\d{4}-\d{2}-\d{2}-.+$/;
 const ARCHIVE_PATH_PATTERN =

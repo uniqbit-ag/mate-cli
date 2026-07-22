@@ -7,7 +7,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("@opencode-ai/plugin", () => ({ tool: (definition: unknown) => definition }));
 
-const { CompanionHooksPlugin } = await import("./opencode/plugins/mate-companion-hooks");
+const { CompanionHooksPlugin } = await import("./companion-hooks");
 const tempRoots: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {

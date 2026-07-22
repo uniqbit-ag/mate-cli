@@ -99,64 +99,6 @@ async function createScenario(prefix: string): Promise<E2EScenario> {
   return { root, home, companion, working, bin };
 }
 
-async function createSetupProvidersRoot(
-  scenario: E2EScenario,
-  { includeOpenCodePlugin = true }: { includeOpenCodePlugin?: boolean } = {},
-): Promise<string> {
-  const root = path.join(scenario.root, "setup-providers");
-  const opencodePluginsDir = path.join(root, "opencode", "plugins");
-  await fs.mkdir(opencodePluginsDir, { recursive: true });
-  await fs.copyFile(
-    path.join(APP_ROOT, "src", "templates", "providers", "opencode", "opencode.json"),
-    path.join(root, "opencode", "opencode.json"),
-  );
-  await fs.copyFile(
-    path.join(APP_ROOT, "src", "templates", "providers", "opencode", "tui.json"),
-    path.join(root, "opencode", "tui.json"),
-  );
-
-  if (includeOpenCodePlugin) {
-    await fs.copyFile(
-      path.join(
-        APP_ROOT,
-        "src",
-        "templates",
-        "providers",
-        "opencode",
-        "plugins",
-        "mate-companion.ts",
-      ),
-      path.join(opencodePluginsDir, "mate-companion.ts"),
-    );
-    await fs.copyFile(
-      path.join(
-        APP_ROOT,
-        "src",
-        "templates",
-        "providers",
-        "opencode",
-        "plugins",
-        "mate-companion-policy.ts",
-      ),
-      path.join(opencodePluginsDir, "mate-companion-policy.ts"),
-    );
-    await fs.copyFile(
-      path.join(
-        APP_ROOT,
-        "src",
-        "templates",
-        "providers",
-        "opencode",
-        "plugins",
-        "mate-add-dir.ts",
-      ),
-      path.join(opencodePluginsDir, "mate-add-dir.ts"),
-    );
-  }
-
-  return root;
-}
-
 async function seedUpdateState(home: string): Promise<void> {
   const updateDir = path.join(home, ".mate");
   await fs.mkdir(updateDir, { recursive: true });
@@ -198,6 +140,9 @@ async function runMate(
         MATE_REPO_PATH: "",
         MATE_REPO_PROFILE: "",
         MATE_POLICY_JSON: "",
+        // Setup would otherwise pre-fetch the pinned OpenCode plugin package
+        // into the developer's real OpenCode cache via npm.
+        MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
         ...env,
       },
       stdio: "pipe",
@@ -327,6 +272,7 @@ async function runMateInTty(
         MATE_REPO_PATH: "",
         MATE_REPO_PROFILE: "",
         MATE_POLICY_JSON: "",
+        MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
         ...env,
       },
       stdio: "pipe",
@@ -478,6 +424,7 @@ async function writeAdapterStub(
     "    MATE_REPO_PATH: process.env.MATE_REPO_PATH ?? null,",
     "    MATE_REPO_PROFILE: process.env.MATE_REPO_PROFILE ?? null,",
     "    MATE_POLICY_JSON: process.env.MATE_POLICY_JSON ?? null,",
+    "    MATE_GUIDANCE_JSON: process.env.MATE_GUIDANCE_JSON ?? null,",
     "    OPENCODE_CONFIG_DIR: process.env.OPENCODE_CONFIG_DIR ?? null,",
     "    ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL ?? null,",
     "    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL ?? null,",
@@ -994,9 +941,30 @@ describe("mate CLI e2e", () => {
 
     expect(result.exitCode).toBe(0);
     await fs.access(path.join(scenario.companion, "AGENTS.md"));
-    await fs.access(path.join(scenario.companion, ".opencode", "opencode.json"));
-    await fs.access(path.join(scenario.companion, ".opencode", "plugins", "mate-add-dir.ts"));
-    await fs.access(path.join(scenario.companion, ".opencode", "plugins", "mate-companion.ts"));
+    const opencodeConfig = JSON.parse(
+      await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
+    );
+    const tuiConfig = JSON.parse(
+      await fs.readFile(path.join(scenario.companion, ".opencode", "tui.json"), "utf8"),
+    );
+    expect(
+      opencodeConfig.plugin.filter((entry: string) =>
+        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      tuiConfig.plugin.filter((entry: string) =>
+        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
+      ),
+    ).toHaveLength(1);
+    // Guidance is delivered through the launch environment; setup writes no
+    // guidance file and copies no plugin sources.
+    await expect(
+      fs.access(path.join(scenario.companion, ".opencode", ".mate-guidance.json")),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(scenario.companion, ".opencode", "plugins")),
+    ).rejects.toThrow();
   });
 
   test("rerun setup removes deselected compatibility artifacts", async () => {
@@ -1554,19 +1522,31 @@ describe("mate CLI e2e", () => {
     expect(agentsContent).not.toContain("## graphify");
   });
 
-  test("setup composes graphify guidance into OpenCode companion plugin when enabled", async () => {
+  test("launch delivers graphify guidance to OpenCode through the launch environment", async () => {
     const enabledScenario = await createScenario("mate-cli-e2e-graphify-opencode-guidance-on-");
     await writeGraphifyStub(enabledScenario);
+    const capturePath = await writeAdapterStub(enabledScenario, "opencode");
 
-    let result = await setupCompanion(enabledScenario, [], {
+    const result = await setupCompanion(enabledScenario, [], {
       allowedAgents: ["opencode"],
       capabilities: ["graphify"],
     });
-
     expect(result.exitCode).toBe(0);
+    expect((await linkRepository(enabledScenario)).exitCode).toBe(0);
 
-    const guidancePath = path.join(enabledScenario.companion, ".opencode", ".mate-guidance.json");
-    const guidance = JSON.parse(await fs.readFile(guidancePath, "utf8"));
+    const launch = await runMate(enabledScenario, {
+      cwd: enabledScenario.working,
+      args: ["opencode", "--mode", "chat"],
+      input: "y\n",
+      env: {
+        MATE_E2E_CAPTURE_PATH: capturePath,
+        MATE_E2E_GRAPHIFY_CAPTURE_PATH: path.join(enabledScenario.root, "graphify-capture.json"),
+      },
+    });
+    expect(launch.exitCode).toBe(0);
+
+    const invocation = await readJson<{ env: { MATE_GUIDANCE_JSON: string | null } }>(capturePath);
+    const guidance = JSON.parse(invocation.env.MATE_GUIDANCE_JSON ?? "{}");
     expect(guidance.codebaseExplorationGuidance).toContain(
       '<codebase-exploration-rules priority="mandatory">',
     );
@@ -1574,7 +1554,7 @@ describe("mate CLI e2e", () => {
       "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/",
     );
     expect(guidance.errors).toEqual([]);
-  });
+  }, 30000);
 
   test("cap rejects unknown capability names", async () => {
     const scenario = await createScenario("mate-cli-e2e-cap-unknown-");
@@ -1992,17 +1972,13 @@ describe("mate CLI e2e", () => {
     ).toBe(0);
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
-    const pluginPath = path.join(scenario.companion, ".opencode", "plugins", "mate-companion.ts");
-    const addDirPluginPath = path.join(
-      scenario.companion,
-      ".opencode",
-      "plugins",
-      "mate-add-dir.ts",
-    );
     const configPath = path.join(scenario.companion, ".opencode", "opencode.json");
-    await fs.rm(pluginPath);
-    await fs.rm(addDirPluginPath);
+    const tuiConfigPath = path.join(scenario.companion, ".opencode", "tui.json");
     await fs.rm(configPath);
+    await fs.rm(tuiConfigPath);
+    // Legacy runtime files from the copied-plugin era are cleaned up by sync.
+    const legacyGuidancePath = path.join(scenario.companion, ".opencode", ".mate-guidance.json");
+    await fs.writeFile(legacyGuidancePath, '{"version":1}\n', "utf8");
 
     const result = await runMate(scenario, {
       cwd: scenario.working,
@@ -2012,10 +1988,23 @@ describe("mate CLI e2e", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    await fs.access(pluginPath);
-    await fs.access(addDirPluginPath);
-    await fs.access(configPath);
-    await fs.access(capturePath);
+    const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
+    const repairedTuiConfig = JSON.parse(await fs.readFile(tuiConfigPath, "utf8"));
+    expect(
+      repairedConfig.plugin.filter((entry: string) =>
+        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      repairedTuiConfig.plugin.filter((entry: string) =>
+        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
+      ),
+    ).toHaveLength(1);
+    await expect(fs.access(legacyGuidancePath)).rejects.toThrow();
+    const invocation = await readJson<{ env: { MATE_GUIDANCE_JSON: string | null } }>(capturePath);
+    const guidance = JSON.parse(invocation.env.MATE_GUIDANCE_JSON ?? "{}");
+    expect(guidance.version).toBe(1);
+    expect(guidance.companionGuidance).toContain("<companion-policy ");
   }, 30000);
 
   test("synchronizes Git-backed companions and consumes both agent bypass commands", async () => {
@@ -2091,12 +2080,9 @@ describe("mate CLI e2e", () => {
     expect(bypassInvocation.argv).not.toContain("--no-git");
   }, 30000);
 
-  test("launch fails early when the OpenCode companion runtime remains incomplete", async () => {
+  test("launch fails early when the OpenCode companion runtime remains invalid", async () => {
     const scenario = await createScenario("mate-cli-e2e-opencode-preflight-");
     const capturePath = await writeAdapterStub(scenario, "opencode");
-    const providersRoot = await createSetupProvidersRoot(scenario, {
-      includeOpenCodePlugin: false,
-    });
 
     expect(
       (
@@ -2108,20 +2094,24 @@ describe("mate CLI e2e", () => {
     ).toBe(0);
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
-    await fs.rm(path.join(scenario.companion, ".opencode", "plugins", "mate-companion.ts"));
+    // Corrupt opencode.json: launch-time sync leaves unparseable user config
+    // untouched, so preflight must fail before spawning OpenCode.
+    await fs.writeFile(
+      path.join(scenario.companion, ".opencode", "opencode.json"),
+      "{ not json\n",
+      "utf8",
+    );
 
     const result = await runMate(scenario, {
       cwd: scenario.working,
       args: ["opencode", "--mode", "chat"],
       input: "y\n",
-      env: {
-        MATE_E2E_CAPTURE_PATH: capturePath,
-        MATE_SETUP_PROVIDERS_ROOT: providersRoot,
-      },
+      env: { MATE_E2E_CAPTURE_PATH: capturePath },
     });
 
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("OpenCode companion runtime is incomplete");
+    expect(result.stderr).toContain("OpenCode companion runtime is invalid");
+    expect(result.stderr).toContain("Unreadable OpenCode configuration");
     expect(result.stderr).toContain("re-running `mate companion setup`");
     await expect(fs.access(capturePath)).rejects.toThrow();
   });

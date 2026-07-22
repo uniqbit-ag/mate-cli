@@ -2,6 +2,13 @@
 const fs = await import("node:fs/promises");
 const path = await import("node:path");
 
+import { MATE_ENV, validateGuidanceData, type MateGuidanceFile } from "@uniqbit/mate-core";
+
+import {
+  getOpenCodePluginPackageReference,
+  isMateOpenCodePluginReference,
+} from "../../opencode-plugin-package";
+import { buildOpenCodeGuidance } from "../opencode-guidance";
 import { LaunchPreflightError } from "../types";
 import { type AdapterContext, LaunchAdapter } from "./base";
 
@@ -59,14 +66,9 @@ export class OpenCodeAdapter extends LaunchAdapter {
   readonly toolName = "opencode";
   readonly interactive = true;
 
-  private readonly guidanceFile = path.join(".opencode", ".mate-guidance.json");
-
   private readonly requiredRuntimeAssets = [
     path.join(".opencode", "opencode.json"),
-    this.guidanceFile,
-    path.join(".opencode", "plugins", "mate-companion.ts"),
-    path.join(".opencode", "plugins", "mate-add-dir.ts"),
-    path.join(".opencode", "plugins", "mate-companion-policy.ts"),
+    path.join(".opencode", "tui.json"),
   ] as const;
 
   buildArgs(context: AdapterContext, args: string[]): string[] {
@@ -92,7 +94,17 @@ export class OpenCodeAdapter extends LaunchAdapter {
         process.env,
         { appendSkillPaths: [path.join(context.companionPath, ".agents", "skills")] },
       ),
+      // Built fresh per launch from the live capability config; always set so
+      // a stale value inherited from an outer Mate session can never leak in.
+      [MATE_ENV.guidanceJson]: JSON.stringify(this.buildGuidance(context)),
     };
+  }
+
+  private buildGuidance(context: AdapterContext): MateGuidanceFile {
+    return buildOpenCodeGuidance(
+      context.capabilities.some((capability) => capability.name === "graphify"),
+      context.capabilities.some((capability) => capability.name === "tokensave"),
+    );
   }
 
   protected headroomEnv(
@@ -140,49 +152,77 @@ export class OpenCodeAdapter extends LaunchAdapter {
       }
     }
 
-    const guidancePath = path.join(context.companionPath, this.guidanceFile);
-    const errors: string[] = [];
-    const guidance = JSON.parse(await fs.readFile(guidancePath, "utf8")) as {
-      version?: number;
-      companionGuidance?: string;
-      codebaseExplorationGuidance?: string;
-      errors?: string[];
-    };
-
-    if (guidance.version !== 1) {
-      errors.push("Unsupported guidance file version.");
-    }
-
-    if (Array.isArray(guidance.errors)) {
-      errors.push(...guidance.errors.filter(Boolean));
-    }
-
-    if (
-      typeof guidance.companionGuidance !== "string" ||
-      !guidance.companionGuidance.includes("<companion-policy ")
-    ) {
-      errors.push("Missing injected companion guidance.");
-    }
-
-    const needsCodebaseExplorationGuidance = context.capabilities.some(
-      (capability) => capability.name === "graphify" || capability.name === "tokensave",
-    );
-    if (
-      needsCodebaseExplorationGuidance &&
-      (typeof guidance.codebaseExplorationGuidance !== "string" ||
-        !guidance.codebaseExplorationGuidance.includes("<codebase-exploration-rules "))
-    ) {
-      errors.push("Missing injected codebase exploration guidance.");
-    }
+    const expectedPluginReference = getOpenCodePluginPackageReference();
+    const errors: string[] = [
+      ...(await this.validatePluginReference(
+        context,
+        path.join(".opencode", "opencode.json"),
+        expectedPluginReference,
+      )),
+      ...(await this.validatePluginReference(
+        context,
+        path.join(".opencode", "tui.json"),
+        expectedPluginReference,
+      )),
+      ...this.validateGuidance(context),
+    ];
 
     if (errors.length > 0) {
       throw new LaunchPreflightError(
         [
           "OpenCode companion runtime is invalid.",
           ...errors.map((error) => `- ${error}`),
+          `Expected Mate plugin package: ${expectedPluginReference}`,
           "Repair the companion runtime by re-running `mate companion setup` in the companion repository or `mate opencode` from the working repository.",
         ].join("\n"),
       );
     }
+  }
+
+  private async validatePluginReference(
+    context: AdapterContext,
+    configFile: string,
+    expectedPluginReference: string,
+  ): Promise<string[]> {
+    const configPath = path.join(context.companionPath, configFile);
+
+    let config: unknown;
+    try {
+      config = JSON.parse(await fs.readFile(configPath, "utf8"));
+    } catch {
+      return [`Unreadable OpenCode configuration: ${configPath}`];
+    }
+
+    const plugins =
+      isRecord(config) && Array.isArray(config.plugin) ? (config.plugin as unknown[]) : [];
+    const mateReferences = plugins.filter(isMateOpenCodePluginReference) as string[];
+
+    if (mateReferences.includes(expectedPluginReference)) {
+      return [];
+    }
+
+    if (mateReferences.length > 0) {
+      return [
+        `Stale Mate plugin package reference in ${configFile}: found ${mateReferences.join(", ")}.`,
+      ];
+    }
+
+    return [`Missing Mate plugin package reference in ${configFile}.`];
+  }
+
+  // Self-check the guidance payload this launch is about to inject so a
+  // broken playbook template fails preflight instead of inside OpenCode.
+  private validateGuidance(context: AdapterContext): string[] {
+    const built = this.buildGuidance(context);
+    const { guidance, errors } = validateGuidanceData(built);
+
+    const needsCodebaseExplorationGuidance = context.capabilities.some(
+      (capability) => capability.name === "graphify" || capability.name === "tokensave",
+    );
+    if (needsCodebaseExplorationGuidance && !guidance.codebaseExplorationGuidance.trim()) {
+      errors.push("missing injected codebase exploration guidance");
+    }
+
+    return errors;
   }
 }

@@ -1,91 +1,38 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin";
+import { MATE_ENV, parseGuidanceContent, type MateGuidanceFile } from "@uniqbit/mate-core";
 
-import { readContext, type CompanionContext } from "./mate-companion-policy";
-
-const GUIDANCE_FILE = ".mate-guidance.json";
-
-type GuidanceFile = {
-  version?: number;
-  companionGuidance?: string;
-  codebaseExplorationGuidance?: string;
-  errors?: string[];
-};
+import { readContext, type CompanionContext } from "./companion-policy";
 
 function prependPathEntry(pathValue: string | undefined, entry: string): string {
   const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
   return [entry, ...entries.filter((value) => value !== entry)].join(path.delimiter);
 }
 
-function isTemplateSource(): boolean {
-  return import.meta.url.includes("/src/templates/providers/opencode/plugins/mate-companion.ts");
+function buildStartupError(details: string[]): Error {
+  return new Error(
+    [
+      "Mate OpenCode companion plugin is incomplete and cannot start.",
+      ...details.map((detail) => `- ${detail}`),
+      "Launch through `mate opencode` so the CLI injects the companion guidance.",
+    ].join("\n"),
+  );
 }
 
-function loadGuidanceFile(context: CompanionContext): Required<GuidanceFile> {
-  const guidancePath = path.join(context.companionPath, ".opencode", GUIDANCE_FILE);
-  let parsed: GuidanceFile;
-
-  try {
-    parsed = JSON.parse(fs.readFileSync(guidancePath, "utf8")) as GuidanceFile;
-  } catch (error) {
-    if (isTemplateSource()) {
-      return {
-        version: 1,
-        companionGuidance: "__MATE_COMPANION_GUIDANCE_PLACEHOLDER__",
-        codebaseExplorationGuidance: "",
-        errors: [],
-      };
-    }
-    throw new Error(
-      [
-        "Mate OpenCode companion plugin is incomplete and cannot start.",
-        `- missing or unreadable guidance file: ${guidancePath}`,
-        "Repair the companion runtime by re-running `mate companion setup` or `mate opencode`.",
-      ].join("\n"),
-      { cause: error },
-    );
+function loadGuidance(): MateGuidanceFile {
+  const raw = process.env[MATE_ENV.guidanceJson];
+  if (!raw || !raw.trim()) {
+    throw buildStartupError([`missing ${MATE_ENV.guidanceJson} in the launch environment`]);
   }
 
-  const errors = Array.isArray(parsed.errors) ? parsed.errors.filter(Boolean) : [];
-
-  if (parsed.version !== 1) {
-    errors.push("unsupported guidance file version");
+  const { guidance, errors } = parseGuidanceContent(raw);
+  if (errors.length > 0) {
+    throw buildStartupError(errors);
   }
 
-  if (typeof parsed.companionGuidance !== "string" || !parsed.companionGuidance.trim()) {
-    errors.push("missing injected companion guidance");
-  } else if (!parsed.companionGuidance.includes("<companion-policy ")) {
-    errors.push("injected companion guidance is malformed");
-  }
-
-  if (typeof parsed.codebaseExplorationGuidance !== "string") {
-    errors.push("missing injected codebase exploration guidance");
-  } else if (
-    parsed.codebaseExplorationGuidance.trim() &&
-    !parsed.codebaseExplorationGuidance.includes("<codebase-exploration-rules ")
-  ) {
-    errors.push("injected codebase exploration guidance is malformed");
-  }
-
-  if (errors.length > 0 && !isTemplateSource()) {
-    throw new Error(
-      [
-        "Mate OpenCode companion plugin is incomplete and cannot start.",
-        ...errors.map((error) => `- ${error}`),
-        "Repair the companion runtime by re-running `mate companion setup` or `mate opencode`.",
-      ].join("\n"),
-    );
-  }
-
-  return {
-    version: 1,
-    companionGuidance: parsed.companionGuidance ?? "",
-    codebaseExplorationGuidance: parsed.codebaseExplorationGuidance ?? "",
-    errors,
-  };
+  return guidance;
 }
 
 function materializeCompanionGuidance(guidance: string, context: CompanionContext): string {
@@ -98,7 +45,7 @@ function materializeCompanionGuidance(guidance: string, context: CompanionContex
     .replaceAll("$MATE_REPO_PROFILE", context.repositoryProfile);
 }
 
-function buildSystemPrompt(context: CompanionContext, guidance: Required<GuidanceFile>): string[] {
+function buildSystemPrompt(context: CompanionContext, guidance: MateGuidanceFile): string[] {
   const lines = [materializeCompanionGuidance(guidance.companionGuidance, context)];
 
   if (guidance.codebaseExplorationGuidance.trim()) {
@@ -118,7 +65,7 @@ export const CompanionPlugin: Plugin = async () => {
     return {};
   }
 
-  const guidance = loadGuidanceFile(context);
+  const guidance = loadGuidance();
 
   const wrapperBinPath = process.env.MATE_WRAPPER_BIN_PATH ?? "$MATE_WRAPPER_BIN_PATH";
 
@@ -170,24 +117,7 @@ export const CompanionPlugin: Plugin = async () => {
     "experimental.session.compacting": async (_input: any, output: { context: string[] }) => {
       output.context.push(buildSystemPrompt(context, guidance).join("\n"));
     },
-    "shell.env": async (
-      _input: any,
-      output: {
-        env: {
-          MATE_NAME: string;
-          MATE_VERSION: string;
-          MATE_ARTIFACT_PATH: string;
-          MATE_WRAPPER_BIN_PATH: string;
-          MATE_REPO_PATH: string;
-          MATE_REPO_ID: string;
-          MATE_REPO_PROFILE: string;
-          MATE_POLICY_JSON: string;
-          MATE_GRAPHIFY_ENABLED: string;
-          MATE_GIT_AUTO_MODE: string;
-          PATH: string;
-        };
-      },
-    ) => {
+    "shell.env": async (_input: any, output: { env: Record<string, string> }) => {
       output.env.MATE_NAME = context.frameworkName;
       output.env.MATE_VERSION = process.env.MATE_VERSION ?? "unknown";
       output.env.MATE_ARTIFACT_PATH = context.companionPath;
@@ -198,6 +128,10 @@ export const CompanionPlugin: Plugin = async () => {
       output.env.MATE_POLICY_JSON = context.policyJson;
       output.env.MATE_GRAPHIFY_ENABLED = context.graphifyEnabled ? "1" : "0";
       output.env.MATE_GIT_AUTO_MODE = context.gitAutoModeEnabled ? "1" : "0";
+      // Session-scoped payload consumed above at plugin startup: mask it so
+      // the multi-KB guidance JSON never leaks into spawned shells (and a
+      // nested `mate` launch can never inherit a stale copy).
+      output.env[MATE_ENV.guidanceJson] = "";
 
       output.env.PATH = prependPathEntry(process.env.PATH, wrapperBinPath);
     },

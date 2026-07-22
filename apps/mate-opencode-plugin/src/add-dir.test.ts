@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Config, Hooks } from "@opencode-ai/plugin";
 
-import { AddDirPlugin } from "./opencode/plugins/mate-add-dir";
+import { AddDirPlugin } from "./add-dir";
 
 type ConfigHook = NonNullable<Hooks["config"]>;
 

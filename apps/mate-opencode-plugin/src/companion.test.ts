@@ -8,8 +8,8 @@ mock.module("@opencode-ai/plugin", () => ({
   tool: (definition: unknown) => definition,
 }));
 
-const { CompanionPlugin } = await import("./opencode/plugins/mate-companion");
-const { extractPatchPaths } = await import("./opencode/plugins/mate-companion-policy");
+const { CompanionPlugin } = await import("./companion");
+const { extractPatchPaths } = await import("./companion-policy");
 
 const tempRoots: string[] = [];
 
@@ -19,24 +19,13 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
-async function writeGuidanceFile(companion: string): Promise<void> {
-  await fs.mkdir(path.join(companion, ".opencode"), { recursive: true });
-  await fs.writeFile(
-    path.join(companion, ".opencode", ".mate-guidance.json"),
-    JSON.stringify(
-      {
-        version: 1,
-        companionGuidance:
-          '<companion-policy framework="mate" priority="mandatory"><context><paths><path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path></paths><cli-tools><cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" /><cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" /><cli name="mate" type="global" invokeAs="mate" /></cli-tools></context><mandatory-rules><rule id="artifact-location" severity="critical">test</rule></mandatory-rules></companion-policy>',
-        codebaseExplorationGuidance: "",
-        errors: [],
-      },
-      null,
-      2,
-    ) + "\n",
-    "utf8",
-  );
-}
+const GUIDANCE_JSON = JSON.stringify({
+  version: 1,
+  companionGuidance:
+    '<companion-policy framework="mate" priority="mandatory"><context><paths><path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path></paths><cli-tools><cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" /><cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" /><cli name="mate" type="global" invokeAs="mate" /></cli-tools></context><mandatory-rules><rule id="artifact-location" severity="critical">test</rule></mandatory-rules></companion-policy>',
+  codebaseExplorationGuidance: "",
+  errors: [],
+});
 
 function withEnv<T>(env: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
   const previous = new Map<string, string | undefined>();
@@ -70,12 +59,12 @@ describe("OpenCode companion plugin", () => {
     const companion = path.join(root, "companion");
     const repo = path.join(root, "repo");
     await fs.mkdir(repo, { recursive: true });
-    await writeGuidanceFile(companion);
 
     await withEnv(
       {
         MATE_ARTIFACT_PATH: companion,
         MATE_REPO_PATH: repo,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
         MATE_VERSION: "0.14.0-test",
         MATE_REPO_ID: "app",
         MATE_REPO_PROFILE: "default",
@@ -104,6 +93,8 @@ describe("OpenCode companion plugin", () => {
         expect(output.env.MATE_WRAPPER_BIN_PATH).toBe("/package/wrappers/bin");
         expect(output.env.MATE_VERSION).toBe("0.14.0-test");
         expect(output.env.PATH).toBe("/package/wrappers/bin:/usr/bin");
+        // The guidance payload is session-scoped and must not leak into shells.
+        expect(output.env.MATE_GUIDANCE_JSON).toBe("");
 
         const transform = plugin["experimental.chat.system.transform"] as
           | ((input: unknown, output: { system: string[] }) => Promise<void>)
@@ -124,7 +115,6 @@ describe("OpenCode companion plugin", () => {
     const repo = path.join(root, "repo");
     await fs.mkdir(companion, { recursive: true });
     await fs.mkdir(repo, { recursive: true });
-    await writeGuidanceFile(companion);
     await fs.writeFile(
       path.join(companion, "AGENTS.md"),
       "# Agent Instructions\nAlways be nice.\n",
@@ -135,6 +125,7 @@ describe("OpenCode companion plugin", () => {
       {
         MATE_ARTIFACT_PATH: companion,
         MATE_REPO_PATH: repo,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
         MATE_REPO_ID: "app",
         MATE_REPO_PROFILE: "default",
         MATE_POLICY_JSON: "{}",
@@ -162,12 +153,12 @@ describe("OpenCode companion plugin", () => {
     const repo = path.join(root, "repo");
     await fs.mkdir(companion, { recursive: true });
     await fs.mkdir(repo, { recursive: true });
-    await writeGuidanceFile(companion);
 
     await withEnv(
       {
         MATE_ARTIFACT_PATH: companion,
         MATE_REPO_PATH: repo,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
         MATE_REPO_ID: "app",
         MATE_REPO_PROFILE: "default",
         MATE_POLICY_JSON: "{}",

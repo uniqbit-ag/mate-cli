@@ -2,7 +2,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PACKAGE_DIR="$ROOT_DIR/apps/mate-cli"
+
+# Publish order matters: core and plugin must exist on the registry before the
+# CLI that pins them, so a partially failed publish never leaves a released
+# @uniqbit/mate referencing an unpublished package version.
+PACKAGE_NAMES=(
+  "@uniqbit/mate-core"
+  "@uniqbit/mate-opencode-plugin"
+  "@uniqbit/mate"
+)
+PACKAGE_DIRS=(
+  "$ROOT_DIR/packages/mate-core"
+  "$ROOT_DIR/apps/mate-opencode-plugin"
+  "$ROOT_DIR/apps/mate-cli"
+)
 
 if [[ $# -ne 1 || -z "${1:-}" ]]; then
   echo "Usage: ./publish.sh <latest|canary>" >&2
@@ -29,7 +42,16 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-VERSION="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version' "$PACKAGE_DIR/package.json")"
+VERSION="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version' "$ROOT_DIR/apps/mate-cli/package.json")"
+
+for DIR in "${PACKAGE_DIRS[@]}"; do
+  PACKAGE_VERSION="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version' "$DIR/package.json")"
+  if [[ "$PACKAGE_VERSION" != "$VERSION" ]]; then
+    echo "Error: $DIR/package.json is at version '$PACKAGE_VERSION' but @uniqbit/mate is at '$VERSION'." >&2
+    echo "All public packages must be released with synchronized versions (run the release pipeline, not npm publish directly)." >&2
+    exit 1
+  fi
+done
 
 if [[ "$TAG" == "latest" && ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "Error: version '$VERSION' cannot be published with dist-tag latest; expected a stable version." >&2
@@ -59,10 +81,13 @@ registry=https://registry.npmjs.org/
 @uniqbit:registry=https://registry.npmjs.org/
 EOF
 
-echo "Previewing @uniqbit/mate@$VERSION publish contents..."
-NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm pack --dry-run --workspace @uniqbit/mate
+for NAME in "${PACKAGE_NAMES[@]}"; do
+  echo "Previewing $NAME@$VERSION publish contents..."
+  NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm pack --dry-run --workspace "$NAME"
+done
 
-echo "Publishing @uniqbit/mate@$VERSION with tag: $TAG"
-NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm publish --workspace @uniqbit/mate --access public --tag "$TAG"
-
-echo "Published @uniqbit/mate@$VERSION with tag: $TAG"
+for NAME in "${PACKAGE_NAMES[@]}"; do
+  echo "Publishing $NAME@$VERSION with tag: $TAG"
+  NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm publish --workspace "$NAME" --access public --tag "$TAG"
+  echo "Published $NAME@$VERSION with tag: $TAG"
+done
