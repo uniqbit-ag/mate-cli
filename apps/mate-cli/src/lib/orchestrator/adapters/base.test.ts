@@ -256,6 +256,31 @@ describe("LaunchAdapter.prepareLaunch", () => {
     expect(graphifyGuidance.codebaseExplorationGuidance).toContain("<codebase-exploration-rules ");
     expect(graphifyGuidance.codebaseExplorationGuidance).toContain("graphify");
   });
+
+  test("propagates real capabilities into companionGuidance, matching the Claude provider", async () => {
+    const adapter = new OpenCodeAdapter();
+
+    // Regression test: buildOpenCodeGuidance previously hardcoded an empty
+    // capabilities array when calling buildCompanionGuidance, so
+    // capability-gated rules (e.g. openspec-finish) never rendered for
+    // OpenCode regardless of what was actually enabled.
+    const openspecEnv = adapter.extendEnvironment(makeContext([{ name: "openspec" }]));
+    const openspecGuidance = JSON.parse(openspecEnv.MATE_GUIDANCE_JSON ?? "{}");
+    expect(openspecGuidance.companionGuidance).toContain("openspec-finish");
+
+    const withoutOpenspecEnv = adapter.extendEnvironment(makeContext([{ name: "tokensave" }]));
+    const withoutOpenspecGuidance = JSON.parse(withoutOpenspecEnv.MATE_GUIDANCE_JSON ?? "{}");
+    expect(withoutOpenspecGuidance.companionGuidance).not.toContain("openspec-finish");
+
+    // codebase-exploration-rules must appear exactly once (as the separate
+    // field), never embedded a second time inside companionGuidance.
+    const allCapsEnv = adapter.extendEnvironment(
+      makeContext([{ name: "openspec" }, { name: "tokensave" }, { name: "react-doctor" }]),
+    );
+    const allCapsGuidance = JSON.parse(allCapsEnv.MATE_GUIDANCE_JSON ?? "{}");
+    expect(allCapsGuidance.companionGuidance).not.toContain("<codebase-exploration-rules");
+    expect(allCapsGuidance.codebaseExplorationGuidance).toContain("<codebase-exploration-rules ");
+  });
 });
 
 describe("graphify GRAPHIFY_OUT env injection", () => {
