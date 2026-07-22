@@ -2,20 +2,24 @@ import { GUIDANCE_FILE_VERSION, type MateGuidanceFile } from "@uniqbit/mate-core
 
 import {
   buildCodebaseExplorationGuidanceSection,
-  buildCompanionGuidance,
+  buildCompanionPolicyXml,
+  hasGraphifyCapability,
+  hasTokensaveCapability,
 } from "../../playbooks/companion-guidance";
+import type { CapabilityConfig } from "./types";
 
 /**
  * Build the companion guidance payload delivered to the OpenCode plugin
  * through the `MATE_GUIDANCE_JSON` launch environment variable. The guidance
  * text carries `$MATE_*` placeholders; the plugin materializes them from the
  * session environment, so the same payload shape serves every companion.
+ *
+ * Real capabilities are passed through (not just the graphify/tokensave
+ * flags) so capability-gated companion-policy rules — e.g. openspec-finish —
+ * render exactly as they do for the Claude provider.
  */
-export function buildOpenCodeGuidance(
-  graphifyEnabled: boolean,
-  tokensaveEnabled: boolean,
-): MateGuidanceFile {
-  const companionGuidance = buildCompanionGuidance(
+export function buildOpenCodeGuidance(capabilities: CapabilityConfig[]): MateGuidanceFile {
+  const companionGuidance = buildCompanionPolicyXml(
     {
       companionPath: "$MATE_ARTIFACT_PATH",
       repository: {
@@ -24,10 +28,12 @@ export function buildOpenCodeGuidance(
         profile: "$MATE_REPO_PROFILE",
       },
       policy: { allowedAgents: [] },
-      capabilities: [],
+      capabilities,
     },
     { wrapperBinPath: "$MATE_WRAPPER_BIN_PATH" },
   );
+  const graphifyEnabled = hasGraphifyCapability(capabilities);
+  const tokensaveEnabled = hasTokensaveCapability(capabilities);
   const codebaseExplorationGuidance = buildCodebaseExplorationGuidanceSection({
     useGraphify: graphifyEnabled,
     useTokensave: tokensaveEnabled,

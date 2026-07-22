@@ -101,10 +101,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
   }
 
   private buildGuidance(context: AdapterContext): MateGuidanceFile {
-    return buildOpenCodeGuidance(
-      context.capabilities.some((capability) => capability.name === "graphify"),
-      context.capabilities.some((capability) => capability.name === "tokensave"),
-    );
+    return buildOpenCodeGuidance(context.capabilities);
   }
 
   protected headroomEnv(

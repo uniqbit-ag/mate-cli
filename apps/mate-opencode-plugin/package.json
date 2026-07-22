@@ -1,7 +1,6 @@
 {
   "name": "@uniqbit/mate-opencode-plugin",
   "version": "0.15.0-canary.0",
-  "description": "Mate OpenCode runtime plugins: aggregate regular plugin (./server) and TUI plugin (./tui).",
   "license": "MIT",
   "files": [
     "src/",

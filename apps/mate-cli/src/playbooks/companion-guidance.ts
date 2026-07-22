@@ -61,7 +61,15 @@ export function buildCodebaseExplorationGuidanceSection(
 </codebase-exploration-rules>`;
 }
 
-export function buildCompanionGuidance(
+/**
+ * Build just the `<companion-policy>` XML block: paths, CLI tools, and
+ * mandatory rules (including the capability-gated `openspec-finish` rule).
+ * Does not include codebase-exploration guidance — see
+ * `buildCompanionGuidance` for the merged single-string form, or call
+ * `buildCodebaseExplorationGuidanceSection` directly when that guidance is
+ * delivered through its own channel (as OpenCode's guidance contract does).
+ */
+export function buildCompanionPolicyXml(
   context: AdapterContext,
   options: { wrapperBinPath?: string } = {},
 ): string {
@@ -103,6 +111,21 @@ export function buildCompanionGuidance(
   lines.push("  </mandatory-rules>");
 
   lines.push("</companion-policy>");
+
+  return lines.join("\n");
+}
+
+/**
+ * Build the merged single-string guidance: the companion-policy XML plus
+ * codebase-exploration guidance appended when graphify or tokensave is
+ * enabled. Used by providers (e.g. Claude) that inject one combined prompt
+ * fragment rather than delivering exploration guidance separately.
+ */
+export function buildCompanionGuidance(
+  context: AdapterContext,
+  options: { wrapperBinPath?: string } = {},
+): string {
+  const lines = [buildCompanionPolicyXml(context, options)];
 
   const graphifyEnabled = hasGraphifyCapability(context.capabilities);
   const tokensaveEnabled = hasTokensaveCapability(context.capabilities);
