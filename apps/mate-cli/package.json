@@ -26,13 +26,15 @@
     "test": "CI=1 bun test",
     "test:ci": "bun scripts/generate-test-reports.ts --junit",
     "test:coverage": "bun scripts/generate-test-reports.ts",
-    "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json && bunx tsc --noEmit -p src/templates/tsconfig.json",
+    "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
     "lint": "oxlint src/",
     "lint:fix": "oxlint src/ --fix",
     "format": "oxfmt src/",
     "format:check": "oxfmt src/ --check"
   },
   "dependencies": {
+    "@uniqbit/mate-core": "0.14.4",
+    "@uniqbit/mate-opencode-plugin": "0.14.4",
     "headroom-ai": "^0.22.4",
     "ink": "^7.1.0",
     "react": "^19.2.7",
@@ -41,7 +43,6 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.18.3",
     "@release-it/conventional-changelog": "^11.0.1",
     "@types/bun": "^1.3.14",
     "@types/node": "^26.0.1",

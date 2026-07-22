@@ -2,16 +2,9 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-export type CompanionContext = {
-  frameworkName: string;
-  companionPath: string;
-  repositoryPath: string;
-  repositoryId: string;
-  repositoryProfile: string;
-  policyJson: string;
-  graphifyEnabled: boolean;
-  gitAutoModeEnabled: boolean;
-  reactDoctorEnabled: boolean;
+import { readCompanionRuntimeContext, type CompanionRuntimeContext } from "@uniqbit/mate-core";
+
+export type CompanionContext = CompanionRuntimeContext & {
   agentsMd: string;
 };
 
@@ -177,15 +170,8 @@ export function readContext(companionPath: string): CompanionContext {
   }
 
   return {
-    frameworkName: process.env.MATE_NAME ?? "mate",
+    ...readCompanionRuntimeContext(process.env),
     companionPath,
-    repositoryPath: process.env.MATE_REPO_PATH ?? "",
-    repositoryId: process.env.MATE_REPO_ID ?? "",
-    repositoryProfile: process.env.MATE_REPO_PROFILE ?? "",
-    policyJson: process.env.MATE_POLICY_JSON ?? "{}",
-    graphifyEnabled: process.env.MATE_GRAPHIFY_ENABLED === "1",
-    gitAutoModeEnabled: process.env.MATE_GIT_AUTO_MODE === "1",
-    reactDoctorEnabled: process.env.MATE_REACT_DOCTOR_ENABLED === "1",
     agentsMd,
   };
 }

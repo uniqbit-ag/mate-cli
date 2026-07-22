@@ -9,7 +9,7 @@ import {
   buildArtifactError,
   shouldBlockArtifactWrite,
   type CompanionContext,
-} from "./opencode/plugins/mate-companion-policy";
+} from "./companion-policy";
 
 const tempRoots: string[] = [];
 

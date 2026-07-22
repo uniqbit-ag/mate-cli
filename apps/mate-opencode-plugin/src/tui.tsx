@@ -2,7 +2,7 @@
 /* oxlint-disable react/no-unknown-property, react/react-in-jsx-scope */
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui";
 
-import { readContext } from "./mate-companion-policy";
+import { readContext } from "./companion-policy";
 
 const MIDNIGHT_PURPLE_BRIGHT = "#c084fc";
 const NARROW_TERMINAL_WIDTH = 80;

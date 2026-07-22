@@ -1,5 +1,0 @@
-{
-  "extends": "../../../../tsconfig.json",
-  "include": ["providers/opencode/plugins/mate-companion-hooks.ts"],
-  "exclude": []
-}
