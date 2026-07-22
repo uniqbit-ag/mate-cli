@@ -2,7 +2,7 @@
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
 
 import { AddDirPlugin } from "./add-dir";
-import { CompanionHooksPlugin } from "./companion-hooks";
+import { CompanionHooksPlugin } from "@uniqbit/mate-core/opencode";
 import { CompanionPlugin } from "./companion";
 
 // Compose the implementation modules in the execution order the previously

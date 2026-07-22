@@ -14,9 +14,6 @@
   "github": {
     "release": false
   },
-  "gitlab": {
-    "release": false
-  },
   "hooks": {
     "before:init": [
       "bun run test",

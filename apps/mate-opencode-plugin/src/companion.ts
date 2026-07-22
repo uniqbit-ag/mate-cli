@@ -2,9 +2,9 @@ import path from "node:path";
 
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin";
-import { MATE_ENV, parseGuidanceContent, type MateGuidanceFile } from "@uniqbit/mate-core";
+import { MATE_ENV, parseGuidanceContent, type MateGuidanceFile } from "@uniqbit/mate-core/runtime";
 
-import { readContext, type CompanionContext } from "./companion-policy";
+import { readContext, type CompanionContext } from "@uniqbit/mate-core/opencode";
 
 function prependPathEntry(pathValue: string | undefined, entry: string): string {
   const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
