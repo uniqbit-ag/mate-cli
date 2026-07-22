@@ -28,6 +28,10 @@ const acmeConfig = {
   legacyNames: [],
   runtime: "bun",
   version: "1.0.0",
+  update: {
+    packageName: "@acme/mate",
+    registry: "https://npm.acme.test/",
+  },
 };
 
 afterEach(() => {
@@ -61,6 +65,10 @@ describe("createMate", () => {
     const active = getActiveDistribution();
     expect(active.config.name).toBe("acme-mate");
     expect(active.config.version).toBe("1.0.0");
+    expect(active.config.update).toEqual({
+      packageName: "@acme/mate",
+      registry: "https://npm.acme.test/",
+    });
     expect(active.registry).toBe(cli.registry);
   });
 

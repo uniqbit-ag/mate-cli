@@ -1,9 +1,4 @@
-import {
-  ensureUnambiguousCompanion,
-  parseDirectLaunchArgs,
-  parseLaunchArgs,
-  runLaunchToolCommand,
-} from "./shared";
+import { makeLaunchCommand } from "./shared";
 
 /**
  * @command mate claude [-- ...agentArgs]
@@ -17,20 +12,4 @@ import {
  * alias), all args before `--` are treated as agent args rather than being
  * parsed as launch options.
  */
-export async function runLaunchClaudeCommand(
-  args: string[],
-  options: { directPassthrough?: boolean } = {},
-): Promise<void> {
-  const parsed = options.directPassthrough ? parseDirectLaunchArgs(args) : parseLaunchArgs(args);
-  if (!parsed) return;
-
-  if (!(await ensureUnambiguousCompanion())) {
-    process.exitCode = 1;
-    return;
-  }
-
-  await runLaunchToolCommand("claude", parsed.agentArgs, {
-    skipConfirmation: !!process.stdin.isTTY,
-    skipGit: parsed.skipGit,
-  });
-}
+export const runLaunchClaudeCommand = makeLaunchCommand("claude");

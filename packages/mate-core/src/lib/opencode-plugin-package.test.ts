@@ -13,6 +13,7 @@ import {
   opencodePluginCacheDeps,
   warmOpenCodePluginCache,
 } from "./opencode-plugin-package";
+import { PUBLIC_NPM_REGISTRY } from "./public-npm";
 import { getCurrentVersion } from "./update-checker";
 
 const tempRoots: string[] = [];
@@ -78,12 +79,23 @@ describe("warmOpenCodePluginCache", () => {
     });
     opencodePluginCacheDeps.runInstall = runInstall;
 
-    const result = await warmOpenCodePluginCache("1.2.3", { XDG_CACHE_HOME: cacheHome });
+    const registry = "https://npm.acme.test/";
+    const result = await warmOpenCodePluginCache("1.2.3", { XDG_CACHE_HOME: cacheHome }, registry);
 
     expect(result.ok).toBe(true);
-    expect(runInstall).toHaveBeenCalledWith(specDir);
+    expect(runInstall).toHaveBeenCalledWith(specDir, registry);
     const manifest = JSON.parse(await fs.readFile(path.join(specDir, "package.json"), "utf8"));
     expect(manifest.dependencies).toEqual({ [OPENCODE_PLUGIN_PACKAGE_NAME]: "1.2.3" });
+  });
+
+  test("uses public npm by default", async () => {
+    const cacheHome = await makeTempDir("mate-opencode-warm-default-");
+    const runInstall = mock(() => ({ error: undefined, status: 1, stderr: "offline" }) as never);
+    opencodePluginCacheDeps.runInstall = runInstall;
+
+    await warmOpenCodePluginCache("1.2.3", { XDG_CACHE_HOME: cacheHome });
+
+    expect(runInstall.mock.calls[0]?.[1]).toBe(PUBLIC_NPM_REGISTRY);
   });
 
   test("reports a failed install without throwing", async () => {

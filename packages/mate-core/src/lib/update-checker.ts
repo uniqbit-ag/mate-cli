@@ -1,9 +1,9 @@
 import os from "node:os";
 import path from "node:path";
 
-import { getActiveDistribution } from "../distribution";
+import { getActiveDistribution, type DistributionUpdateConfig } from "../distribution";
 import { frameworkConfig } from "../framework";
-import { fetchPublicPackageVersion } from "./public-npm";
+import { fetchPublicPackageVersion, PUBLIC_NPM_REGISTRY } from "./public-npm";
 import { YamlFileStore } from "./orchestrator/yaml-file-store";
 
 const parse = (v: string): number[] => v.split(".").slice(0, 3).map(Number);
@@ -34,6 +34,14 @@ export function getCurrentVersion(): string {
   return getActiveDistribution().config.version;
 }
 
+export function getUpdateConfig(): DistributionUpdateConfig {
+  const { name, update } = getActiveDistribution().config;
+  return {
+    packageName: update?.packageName ?? `@uniqbit/${name}`,
+    registry: update?.registry ?? PUBLIC_NPM_REGISTRY,
+  };
+}
+
 export function isCanaryVersion(version: string = getCurrentVersion()): boolean {
   return version.includes("-canary");
 }
@@ -62,7 +70,8 @@ export async function showUpdateBannerIfAvailable(store: UpdateStateStore): Prom
 }
 
 export async function fetchLatestVersion(): Promise<string> {
-  return fetchPublicPackageVersion(`@uniqbit/${frameworkConfig.name}`);
+  const { packageName, registry } = getUpdateConfig();
+  return fetchPublicPackageVersion(packageName, registry);
 }
 
 export function scheduleBackgroundCheck(store: UpdateStateStore): void {

@@ -11,6 +11,7 @@ import { ClaudeAdapter } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
 import type { AdapterContext, ProxyDeps } from "./base";
 import type { SpawnProxyOpts } from "../headroom/proxy";
+import { withEnv } from "../../../../test/helpers";
 
 const tempRoots: string[] = [];
 
@@ -27,29 +28,6 @@ async function withPath<T>(value: string, fn: () => Promise<T> | T): Promise<T> 
     return await fn();
   } finally {
     process.env.PATH = previous;
-  }
-}
-
-async function withEnv<T>(
-  name: string,
-  value: string | undefined,
-  fn: () => Promise<T> | T,
-): Promise<T> {
-  const previous = process.env[name];
-  if (value === undefined) {
-    delete process.env[name];
-  } else {
-    process.env[name] = value;
-  }
-
-  try {
-    return await fn();
-  } finally {
-    if (previous === undefined) {
-      delete process.env[name];
-    } else {
-      process.env[name] = previous;
-    }
   }
 }
 

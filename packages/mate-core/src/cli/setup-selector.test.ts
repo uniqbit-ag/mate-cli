@@ -1,7 +1,6 @@
-import { PassThrough } from "node:stream";
-
 import { describe, expect, test } from "bun:test";
 
+import { createTtyInput, createTtyOutput } from "../../test/helpers";
 import {
   buildWizardSteps,
   getDisabledCapabilityIds,
@@ -14,23 +13,6 @@ import {
   selectSetupCompatibilities,
   toggleSelectableItem,
 } from "./setup-selector";
-
-function createTtyInput(): NodeJS.ReadStream & PassThrough {
-  const stdin = new PassThrough() as NodeJS.ReadStream & PassThrough;
-  stdin.isTTY = true;
-  stdin.setRawMode = () => stdin;
-  stdin.ref = () => stdin;
-  stdin.unref = () => stdin;
-  return stdin;
-}
-
-function createTtyOutput(): NodeJS.WriteStream & PassThrough {
-  const stream = new PassThrough() as NodeJS.WriteStream & PassThrough;
-  stream.isTTY = true;
-  stream.columns = 80;
-  stream.rows = 24;
-  return stream;
-}
 
 function createInitialSelections(overrides: Partial<ReturnType<typeof getInitialSelections>> = {}) {
   return { ...getInitialSelections(), ...overrides };

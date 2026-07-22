@@ -1,7 +1,21 @@
+import { execFileSync } from "node:child_process";
+
 import type { Plugin, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
 import { confirm } from "../../../cli/confirm";
 import { isCommandOnPath, runCommand, runShellCommand } from "../utils";
+
+export function isInstalledViaUvTool(pkgName: string): boolean {
+  try {
+    const output = execFileSync("uv", ["tool", "list"], {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return output.includes(pkgName);
+  } catch {
+    return false;
+  }
+}
 
 export interface PackageManagerSetupDeps {
   confirm?: typeof confirm;

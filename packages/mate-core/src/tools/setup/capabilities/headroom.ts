@@ -1,9 +1,8 @@
-import { execFileSync } from "node:child_process";
-
 import type { CapabilityPlugin, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
 import { isCommandOnPath, runShellCommand, runShellCommandSilently } from "../utils";
 import { confirm } from "../../../cli/confirm";
+import { isInstalledViaUvTool } from "../package-managers/uv";
 
 const HEADROOM_GITIGNORE_ENTRIES = ["# headroom", ".headroom/"];
 
@@ -32,18 +31,6 @@ const RTK_UNINSTALL_COMMANDS: Record<string, string> = {
   opencode: "rtk init -g --uninstall --opencode",
 };
 
-function defaultIsInstalledViaUvTool(pkgName: string): boolean {
-  try {
-    const output = execFileSync("uv", ["tool", "list"], {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return output.includes(pkgName);
-  } catch {
-    return false;
-  }
-}
-
 type HeadroomDeps = {
   confirm?: typeof confirm;
   isCommandOnPath?: typeof isCommandOnPath;
@@ -57,7 +44,7 @@ type HeadroomDeps = {
 export function createHeadroomPlugin(deps: HeadroomDeps = {}): CapabilityPlugin {
   const askConfirm = deps.confirm ?? confirm;
   const checkPath = deps.isCommandOnPath ?? isCommandOnPath;
-  const checkUvTool = deps.isInstalledViaUvTool ?? defaultIsInstalledViaUvTool;
+  const checkUvTool = deps.isInstalledViaUvTool ?? isInstalledViaUvTool;
   const checkRtkPath = deps.isRtkOnPath ?? defaultIsRtkOnPath;
   const checkBrew = deps.isBrewAvailable ?? defaultIsBrewAvailable;
   const runRtkInstall = deps.runRtkInstallCmd ?? runShellCommand;

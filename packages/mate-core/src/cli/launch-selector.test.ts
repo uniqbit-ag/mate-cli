@@ -1,23 +1,6 @@
-import { PassThrough } from "node:stream";
 import { describe, expect, mock, test } from "bun:test";
 import { runLaunchWizard } from "./launch-selector";
-
-function createTtyInput(): NodeJS.ReadStream & PassThrough {
-  const stdin = new PassThrough() as NodeJS.ReadStream & PassThrough;
-  stdin.isTTY = true;
-  stdin.setRawMode = () => stdin;
-  (stdin as unknown as { ref: () => typeof stdin }).ref = () => stdin;
-  (stdin as unknown as { unref: () => typeof stdin }).unref = () => stdin;
-  return stdin;
-}
-
-function createTtyOutput(): NodeJS.WriteStream & PassThrough {
-  const stream = new PassThrough() as NodeJS.WriteStream & PassThrough;
-  stream.isTTY = true;
-  stream.columns = 80;
-  stream.rows = 24;
-  return stream;
-}
+import { createTtyInput, createTtyOutput } from "../../test/helpers";
 
 async function runWizard(
   keys: string[],

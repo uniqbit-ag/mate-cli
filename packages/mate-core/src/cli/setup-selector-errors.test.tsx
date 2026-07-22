@@ -1,6 +1,6 @@
-import { PassThrough } from "node:stream";
-
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
+import { createTtyInput, createTtyOutput } from "../../test/helpers";
 
 type RenderResult = {
   rerender: (tree: unknown) => void;
@@ -11,23 +11,6 @@ type RenderResult = {
 let renderImpl: (tree: unknown, options: unknown) => RenderResult;
 const { selectSetupCompatibilities, setupSelectorDeps } = await import("./setup-selector");
 const originalRender = setupSelectorDeps.render;
-
-function createTtyInput(): NodeJS.ReadStream & PassThrough {
-  const stdin = new PassThrough() as NodeJS.ReadStream & PassThrough;
-  stdin.isTTY = true;
-  stdin.setRawMode = () => stdin;
-  stdin.ref = () => stdin;
-  stdin.unref = () => stdin;
-  return stdin;
-}
-
-function createTtyOutput(): NodeJS.WriteStream & PassThrough {
-  const stream = new PassThrough() as NodeJS.WriteStream & PassThrough;
-  stream.isTTY = true;
-  stream.columns = 80;
-  stream.rows = 24;
-  return stream;
-}
 
 beforeEach(() => {
   renderImpl = () => ({

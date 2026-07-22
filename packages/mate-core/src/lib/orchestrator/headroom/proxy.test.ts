@@ -9,28 +9,7 @@ import {
   spawnProxyBackground,
   waitForProxyReachable,
 } from "./proxy";
-
-async function withEnv<T>(
-  name: string,
-  value: string | undefined,
-  fn: () => Promise<T> | T,
-): Promise<T> {
-  const previous = process.env[name];
-  if (value === undefined) {
-    delete process.env[name];
-  } else {
-    process.env[name] = value;
-  }
-  try {
-    return await fn();
-  } finally {
-    if (previous === undefined) {
-      delete process.env[name];
-    } else {
-      process.env[name] = previous;
-    }
-  }
-}
+import { withEnv } from "../../../../test/helpers";
 
 describe("resolveHeadroomPort", () => {
   test("returns 8787 when HEADROOM_PORT is not set", async () => {

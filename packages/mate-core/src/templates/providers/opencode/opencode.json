@@ -3,12 +3,11 @@
   "compaction": {
     "auto": true,
     "prune": true,
-    "preserve_recent_tokens": 1500,
-    "reserved": 8000
+    "reserved": 15000
   },
   "tool_output": {
-    "max_lines": 200,
-    "max_bytes": 8192
+    "max_lines": 500,
+    "max_bytes": 20000
   },
   "references": {
     "mate": ".."

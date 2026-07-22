@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
 import path from "node:path";
 
 import { version } from "../../../../package.json";
+import { isCommandOnPath } from "../../fs-utils";
 import { frameworkConfig } from "../../../framework";
 import { getReactDoctorBinPath, getWrapperBinPath } from "../../package-paths";
 import {
@@ -228,20 +228,4 @@ export abstract class LaunchAdapter {
       });
     });
   }
-}
-
-function isCommandOnPath(command: string, pathValue: string): boolean {
-  if (!pathValue) return false;
-
-  for (const dir of pathValue.split(path.delimiter)) {
-    if (!dir) continue;
-    try {
-      accessSync(path.join(dir, command), constants.X_OK);
-      return true;
-    } catch {
-      // continue
-    }
-  }
-
-  return false;
 }

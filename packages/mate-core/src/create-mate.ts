@@ -26,9 +26,9 @@ export interface MateCli {
  */
 export function createMate({ config, plugins }: CreateMateOptions): MateCli {
   const registry = new PluginRegistry([
+    ...plugins,
     { plugin: createBunPlugin(), policy: "required" },
     { plugin: createUvPlugin(), policy: "required" },
-    ...plugins,
     createGitignorePlugin(config.name),
   ]);
   setActiveDistribution({ config, registry });

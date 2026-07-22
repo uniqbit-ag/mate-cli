@@ -7,20 +7,30 @@ import {
   warmOpenCodePluginCache,
 } from "../../lib/opencode-plugin-package";
 import { installPublicPackageSync, isPackageInstalledAtNpmGlobalRoot } from "../../lib/public-npm";
-import { fetchLatestVersion, getCurrentVersion, isNewer } from "../../lib/update-checker";
+import {
+  fetchLatestVersion,
+  getCurrentVersion,
+  getUpdateConfig,
+  isNewer,
+} from "../../lib/update-checker";
 import { confirmPrompt } from "../../lib/components/confirm-prompt";
 
 type InstallResult = ReturnType<typeof installPublicPackageSync>;
 
 function writeNpmOnlyRecoveryMessage(): void {
+  const { packageName, registry } = getUpdateConfig();
   process.stderr.write(
     `${frameworkConfig.name}: self-update is only supported for npm-installed Mate.\n`,
   );
+  if (packageName.startsWith("@uniqbit/")) {
+    process.stderr.write(
+      "If you previously configured the legacy GitLab registry override, remove it first:\n",
+    );
+    process.stderr.write("  npm config delete @uniqbit:registry --global\n");
+  }
   process.stderr.write(
-    "If you previously configured the legacy GitLab registry override, remove it first:\n",
+    `Then reinstall with: npm install -g ${packageName} --registry ${registry}\n`,
   );
-  process.stderr.write("  npm config delete @uniqbit:registry --global\n");
-  process.stderr.write(`Then reinstall with: npm install -g @uniqbit/${frameworkConfig.name}\n`);
 }
 
 export const updateCommandDeps = {
@@ -31,10 +41,12 @@ export const updateCommandDeps = {
   isNpmManagedInstall: () =>
     isPackageInstalledAtNpmGlobalRoot(
       path.resolve(import.meta.dirname, "../../.."),
-      `@uniqbit/${frameworkConfig.name}`,
+      getUpdateConfig().packageName,
     ),
-  installLatest: (latest: string): InstallResult =>
-    installPublicPackageSync(`@uniqbit/${frameworkConfig.name}@${latest}`),
+  installLatest: (latest: string): InstallResult => {
+    const { packageName, registry } = getUpdateConfig();
+    return installPublicPackageSync(`${packageName}@${latest}`, registry);
+  },
   saveUpdateState: async (latest: string) => {
     const { UpdateStateStore } = await import("../../lib/update-checker");
     const store = new UpdateStateStore();
@@ -51,7 +63,8 @@ export const updateCommandDeps = {
     const args = [entrypoint, "install", ...(skipConfirm ? ["--yes"] : [])];
     return spawnSync(process.execPath, args, { stdio: "inherit" }) as InstallResult;
   },
-  warmOpenCodePluginCache: (latest: string) => warmOpenCodePluginCache(latest),
+  warmOpenCodePluginCache: (latest: string) =>
+    warmOpenCodePluginCache(latest, process.env, getUpdateConfig().registry),
 };
 
 /**

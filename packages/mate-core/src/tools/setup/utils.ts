@@ -35,19 +35,7 @@ export async function pruneEmptyAncestors(dir: string, stopAt: string): Promise<
   }
 }
 
-export function isCommandOnPath(command: string, pathValue: string): boolean {
-  if (!pathValue) return false;
-  for (const dir of pathValue.split(path.delimiter)) {
-    if (!dir) continue;
-    try {
-      accessSync(path.join(dir, command), constants.X_OK);
-      return true;
-    } catch {
-      // continue
-    }
-  }
-  return false;
-}
+export { isCommandOnPath } from "../../lib/fs-utils";
 
 export function resolveCommandOnPath(command: string, pathValue: string): string | undefined {
   if (!pathValue) return undefined;
