@@ -13,6 +13,7 @@ export {
   setFallbackDistribution,
   type ActiveDistribution,
   type DistributionConfig,
+  type DistributionUpdateConfig,
 } from "./distribution";
 export {
   normalizeRegistration,

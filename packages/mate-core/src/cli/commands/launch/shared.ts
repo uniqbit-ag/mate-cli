@@ -128,3 +128,28 @@ export async function runLaunchToolCommand(
     throw error;
   }
 }
+
+/**
+ * Builds the `mate <tool>` command handler: parses launch args (direct
+ * passthrough or flagged), guards against ambiguous companions, then launches
+ * via {@link runLaunchToolCommand} with confirmation skipped in a TTY.
+ */
+export function makeLaunchCommand(tool: LaunchTarget) {
+  return async function runLaunchCommand(
+    args: string[],
+    options: { directPassthrough?: boolean } = {},
+  ): Promise<void> {
+    const parsed = options.directPassthrough ? parseDirectLaunchArgs(args) : parseLaunchArgs(args);
+    if (!parsed) return;
+
+    if (!(await ensureUnambiguousCompanion())) {
+      process.exitCode = 1;
+      return;
+    }
+
+    await runLaunchToolCommand(tool, parsed.agentArgs, {
+      skipConfirmation: !!process.stdin.isTTY,
+      skipGit: parsed.skipGit,
+    });
+  };
+}

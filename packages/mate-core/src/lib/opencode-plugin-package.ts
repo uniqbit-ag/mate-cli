@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { PUBLIC_NPM_REGISTRY } from "./public-npm";
 import { getCurrentVersion } from "./update-checker";
 
 export const OPENCODE_PLUGIN_PACKAGE_NAME = "@uniqbit/mate-opencode-plugin";
@@ -35,8 +36,8 @@ export interface WarmPluginCacheResult {
 }
 
 export const opencodePluginCacheDeps = {
-  runInstall: (cwd: string) =>
-    spawnSync("npm", ["install", "--no-audit", "--no-fund", "--silent"], {
+  runInstall: (cwd: string, registry: string) =>
+    spawnSync("npm", ["install", "--no-audit", "--no-fund", "--silent", "--registry", registry], {
       cwd,
       encoding: "utf8" as const,
       stdio: ["ignore", "pipe", "pipe"] as const,
@@ -52,6 +53,7 @@ export const opencodePluginCacheDeps = {
 export async function warmOpenCodePluginCache(
   version: string = getCurrentVersion(),
   env: NodeJS.ProcessEnv = process.env,
+  registry = PUBLIC_NPM_REGISTRY,
 ): Promise<WarmPluginCacheResult> {
   // Escape hatch for tests and intentionally offline environments: skip the
   // pre-fetch entirely instead of attempting a registry install.
@@ -70,7 +72,7 @@ export async function warmOpenCodePluginCache(
       "utf8",
     );
 
-    const result = opencodePluginCacheDeps.runInstall(specDir);
+    const result = opencodePluginCacheDeps.runInstall(specDir, registry);
     if (result.error) {
       return { ok: false, detail: result.error.message };
     }

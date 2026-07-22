@@ -27,15 +27,33 @@ export const publicNpmDeps = {
   rmSync: fs.rmSync,
 };
 
-function getPublicNpmUserConfig(): string {
-  return `registry=${PUBLIC_NPM_REGISTRY}\n@uniqbit:registry=${PUBLIC_NPM_REGISTRY}\n`;
+function packageNameFromSpec(packageSpec: string): string {
+  const separator = packageSpec.startsWith("@")
+    ? packageSpec.indexOf("@", 1)
+    : packageSpec.indexOf("@");
+  return separator === -1 ? packageSpec : packageSpec.slice(0, separator);
 }
 
-async function withPublicNpmConfig<T>(run: (env: NodeJS.ProcessEnv) => Promise<T>): Promise<T> {
+function getPublicNpmUserConfig(packageName: string, registry: string): string {
+  const scope = packageName.startsWith("@") ? packageName.slice(0, packageName.indexOf("/")) : null;
+  return [`registry=${registry}`, ...(scope ? [`${scope}:registry=${registry}`] : []), ""].join(
+    "\n",
+  );
+}
+
+async function withPublicNpmConfig<T>(
+  packageName: string,
+  registry: string,
+  run: (env: NodeJS.ProcessEnv) => Promise<T>,
+): Promise<T> {
   const tempDir = await publicNpmDeps.mkdtemp(path.join(os.tmpdir(), "mate-public-npm-"));
   const userConfigPath = path.join(tempDir, ".npmrc");
 
-  await publicNpmDeps.writeFile(userConfigPath, getPublicNpmUserConfig(), "utf8");
+  await publicNpmDeps.writeFile(
+    userConfigPath,
+    getPublicNpmUserConfig(packageName, registry),
+    "utf8",
+  );
 
   try {
     return await run({
@@ -47,11 +65,19 @@ async function withPublicNpmConfig<T>(run: (env: NodeJS.ProcessEnv) => Promise<T
   }
 }
 
-function withPublicNpmConfigSync<T>(run: (env: NodeJS.ProcessEnv) => T): T {
+function withPublicNpmConfigSync<T>(
+  packageName: string,
+  registry: string,
+  run: (env: NodeJS.ProcessEnv) => T,
+): T {
   const tempDir = publicNpmDeps.mkdtempSync(path.join(os.tmpdir(), "mate-public-npm-"));
   const userConfigPath = path.join(tempDir, ".npmrc");
 
-  publicNpmDeps.writeFileSync(userConfigPath, getPublicNpmUserConfig(), "utf8");
+  publicNpmDeps.writeFileSync(
+    userConfigPath,
+    getPublicNpmUserConfig(packageName, registry),
+    "utf8",
+  );
 
   try {
     return run({
@@ -63,8 +89,11 @@ function withPublicNpmConfigSync<T>(run: (env: NodeJS.ProcessEnv) => T): T {
   }
 }
 
-export async function fetchPublicPackageVersion(packageName: string): Promise<string> {
-  const { stdout } = await withPublicNpmConfig((env) =>
+export async function fetchPublicPackageVersion(
+  packageName: string,
+  registry = PUBLIC_NPM_REGISTRY,
+): Promise<string> {
+  const { stdout } = await withPublicNpmConfig(packageName, registry, (env) =>
     publicNpmDeps.execFile("npm", ["view", packageName, "version"], {
       timeout: 10_000,
       env,
@@ -74,8 +103,8 @@ export async function fetchPublicPackageVersion(packageName: string): Promise<st
   return stdout.trim();
 }
 
-export function installPublicPackageSync(packageSpec: string) {
-  return withPublicNpmConfigSync((env) =>
+export function installPublicPackageSync(packageSpec: string, registry = PUBLIC_NPM_REGISTRY) {
+  return withPublicNpmConfigSync(packageNameFromSpec(packageSpec), registry, (env) =>
     publicNpmDeps.spawnSync("npm", ["install", "-g", packageSpec], {
       stdio: "inherit",
       env,

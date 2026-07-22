@@ -1,3 +1,4 @@
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
@@ -11,7 +12,8 @@ import {
   showUpdateBannerIfAvailable,
   updateCheckerDeps,
 } from "./update-checker";
-import { publicNpmDeps, PUBLIC_NPM_REGISTRY } from "./public-npm";
+import { installPublicPackageSync, publicNpmDeps, PUBLIC_NPM_REGISTRY } from "./public-npm";
+import { getActiveDistribution, setActiveDistribution } from "../distribution";
 
 beforeEach(() => {
   publicNpmDeps.execFile = mock(async () => ({ stdout: "9.9.9\n", stderr: "" }));
@@ -160,6 +162,58 @@ describe("update helpers", () => {
     });
 
     await expect(fetchLatestVersion()).resolves.toBe("1.2.3");
+  });
+
+  test("uses the distribution update package and registry", async () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: {
+        ...previous.config,
+        update: {
+          packageName: "@acme/mate",
+          registry: "https://npm.acme.test/",
+        },
+      },
+    });
+
+    publicNpmDeps.execFile = mock(async (command, args, options) => {
+      expect(command).toBe("npm");
+      expect(args).toEqual(["view", "@acme/mate", "version"]);
+      const userConfigPath = options?.env?.NPM_CONFIG_USERCONFIG;
+      expect(userConfigPath).toBeTruthy();
+      await expect(fs.readFile(userConfigPath!, "utf8")).resolves.toBe(
+        "registry=https://npm.acme.test/\n@acme:registry=https://npm.acme.test/\n",
+      );
+      return { stdout: "2.3.4\n", stderr: "" };
+    });
+
+    try {
+      await expect(fetchLatestVersion()).resolves.toBe("2.3.4");
+    } finally {
+      setActiveDistribution(previous);
+    }
+  });
+
+  test("uses the configured registry for global installation", () => {
+    const originalSpawnSync = publicNpmDeps.spawnSync;
+    const spawnSync = mock((command, args, options) => {
+      expect(command).toBe("npm");
+      expect(args).toEqual(["install", "-g", "@acme/mate@2.3.4"]);
+      const userConfigPath = options?.env?.NPM_CONFIG_USERCONFIG;
+      expect(userConfigPath).toBeTruthy();
+      expect(fsSync.readFileSync(userConfigPath!, "utf8")).toBe(
+        "registry=https://npm.acme.test/\n@acme:registry=https://npm.acme.test/\n",
+      );
+      return { status: 0, error: undefined } as never;
+    });
+    publicNpmDeps.spawnSync = spawnSync;
+
+    try {
+      expect(installPublicPackageSync("@acme/mate@2.3.4", "https://npm.acme.test/").status).toBe(0);
+    } finally {
+      publicNpmDeps.spawnSync = originalSpawnSync;
+    }
   });
 
   test("schedules and saves a background update check when the cache is stale", async () => {

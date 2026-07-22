@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { lcovToCobertura, parseLcov } from "../../../packages/mate-core/src/lib/lcov-to-cobertura";
+import { lcovToCobertura, parseLcov } from "./lcov-to-cobertura";
 
 const coverageDir = path.join(process.cwd(), "coverage");
 const coverageLcovPath = path.join(coverageDir, "lcov.info");

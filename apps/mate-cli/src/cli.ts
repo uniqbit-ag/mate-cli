@@ -28,6 +28,10 @@ const cli = createMate({
     name: "mate",
     runtime: "bun",
     version,
+    update: {
+      packageName: "@uniqbit/mate",
+      registry: "https://registry.npmjs.org/",
+    },
   },
   plugins: [
     { plugin: opencode, policy: "required" },

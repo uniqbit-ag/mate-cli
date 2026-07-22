@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import YAML from "yaml";
 
 const tempDirs: string[] = [];
-const repoRoot = path.resolve(import.meta.dirname, "../../../..");
+const repoRoot = path.resolve(import.meta.dirname, "../../..");
 const workspacePackageJsonPath = path.join(repoRoot, "package.json");
 const stableReleaseConfigPath = path.join(repoRoot, ".release-it.json");
 const canaryReleaseConfigPath = path.join(repoRoot, ".release-it.canary.json");

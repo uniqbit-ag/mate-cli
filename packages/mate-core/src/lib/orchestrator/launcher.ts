@@ -81,21 +81,6 @@ export class FrameworkLauncher {
     return (await this.prepare(request)).execute();
   }
 
-  async getAllowedTargets(): Promise<Set<string> | null> {
-    try {
-      const { configStore, workingRepoStore, repositoryId, repository } =
-        await this.resolveConfig();
-      const config = await configStore.load();
-      const store = new CompanionStore(configStore, workingRepoStore);
-      const policy = repository
-        ? resolvePolicyFromConfig(config, [repository], repository.id)
-        : await store.resolvePolicy(repositoryId);
-      return new Set(policy.allowedAgents);
-    } catch {
-      return null;
-    }
-  }
-
   private async resolveLaunchState(request: LaunchRequest): Promise<ResolvedLaunchState> {
     const {
       configStore,

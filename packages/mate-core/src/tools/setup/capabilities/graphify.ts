@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -12,18 +11,7 @@ import {
 } from "../utils";
 import { confirm } from "../../../cli/confirm";
 import { frameworkConfig } from "../../../framework";
-
-function defaultIsInstalledViaUvTool(pkgName: string): boolean {
-  try {
-    const output = execFileSync("uv", ["tool", "list"], {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    return output.includes(pkgName);
-  } catch {
-    return false;
-  }
-}
+import { isInstalledViaUvTool } from "../package-managers/uv";
 
 // Storage contract: <companionPath>/.graphify/<repositoryId>/graphify-out/
 export const GRAPHIFY_STORE_SEGMENT = ".graphify";
@@ -336,7 +324,7 @@ export interface GraphifyPluginDeps {
 export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityPlugin {
   const askConfirm = deps.confirm ?? confirm;
   const checkPath = deps.isCommandOnPath ?? isCommandOnPath;
-  const checkUvTool = deps.isInstalledViaUvTool ?? defaultIsInstalledViaUvTool;
+  const checkUvTool = deps.isInstalledViaUvTool ?? isInstalledViaUvTool;
   const runCommand = deps.runCommand ?? runShellCommand;
   const runProviderInstall = deps.runProviderInstall ?? runCommandSilently;
 
