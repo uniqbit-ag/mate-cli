@@ -27,7 +27,6 @@ const cli = createMate({
   config: {
     name: "mate",
     runtime: "bun",
-    supportedAdapters: ["claude", "opencode"],
     version,
   },
   plugins: [

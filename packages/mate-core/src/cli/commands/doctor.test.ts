@@ -182,7 +182,6 @@ describe("runDoctorCommand", () => {
         name: "mate",
         legacyNames: [],
         runtime: "bun",
-        supportedAdapters: [],
         version: "1.0.0",
       },
       plugins: [
@@ -231,7 +230,6 @@ describe("runDoctorCommand", () => {
         name: "mate",
         legacyNames: [],
         runtime: "bun",
-        supportedAdapters: [],
         version: "1.0.0",
       },
       plugins: [

@@ -42,7 +42,6 @@ setFallbackDistribution(() => ({
     name: "mate",
     legacyNames: ["kizuna", "axon"],
     runtime: "bun",
-    supportedAdapters: ["claude", "opencode"],
     version,
   },
   registry: new PluginRegistry(buildTestPluginEntries()),
