@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import {
   UpdateStateStore,
+  enforceUpdateIfRequired,
   fetchLatestVersion,
   getCurrentVersion,
   isCanaryVersion,
@@ -216,6 +217,17 @@ describe("update helpers", () => {
     }
   });
 
+  test("schedules a background update check once the cache is older than six hours", async () => {
+    const staleDate = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
+    const store = createStore({ lastChecked: staleDate, latestVersion: null });
+    updateCheckerDeps.toIsoString = () => "2026-01-01T00:00:00.000Z";
+
+    scheduleBackgroundCheck(store as never);
+    await flushBackgroundWork();
+
+    expect(store.save).toHaveBeenCalledTimes(1);
+  });
+
   test("schedules and saves a background update check when the cache is stale", async () => {
     const staleDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
     const store = createStore({ lastChecked: staleDate, latestVersion: null });
@@ -240,6 +252,73 @@ describe("update helpers", () => {
 
     expect(store.load).toHaveBeenCalledTimes(1);
     expect(store.save).not.toHaveBeenCalled();
+  });
+
+  test("enforceUpdateIfRequired blocks when the distribution enforces updates and a newer version is cached", async () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, update: { enforce: true } },
+    });
+    const store = createStore({ lastChecked: "", latestVersion: "999.0.0" });
+    const stderrChunks: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderrChunks.push(chunk.toString());
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await expect(enforceUpdateIfRequired(store as never)).resolves.toBe(true);
+    } finally {
+      process.stderr.write = originalWrite;
+      setActiveDistribution(previous);
+    }
+
+    expect(stderrChunks.join("")).toContain("update required");
+    expect(stderrChunks.join("")).toContain("Run `mate update`");
+  });
+
+  test("enforceUpdateIfRequired does not block when the distribution does not enforce updates", async () => {
+    const store = createStore({ lastChecked: "", latestVersion: "999.0.0" });
+
+    await expect(enforceUpdateIfRequired(store as never)).resolves.toBe(false);
+    expect(store.load).not.toHaveBeenCalled();
+  });
+
+  test("enforceUpdateIfRequired does not block when already up to date", async () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, update: { enforce: true } },
+    });
+    const store = createStore({ lastChecked: "", latestVersion: getCurrentVersion() });
+
+    try {
+      await expect(enforceUpdateIfRequired(store as never)).resolves.toBe(false);
+    } finally {
+      setActiveDistribution(previous);
+    }
+  });
+
+  test("enforceUpdateIfRequired never blocks on state-load failures", async () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, update: { enforce: true } },
+    });
+
+    try {
+      await expect(
+        enforceUpdateIfRequired({
+          load: async () => {
+            throw new Error("boom");
+          },
+        } as never),
+      ).resolves.toBe(false);
+    } finally {
+      setActiveDistribution(previous);
+    }
   });
 
   test("swallows background check failures", async () => {
