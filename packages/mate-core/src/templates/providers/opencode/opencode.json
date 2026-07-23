@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 15000
+  },
+  "tool_output": {
+    "max_lines": 500,
+    "max_bytes": 20000
+  },
+  "references": {
+    "mate": ".."
+  }
+}

@@ -14,13 +14,13 @@
   "github": {
     "release": false
   },
-  "gitlab": {
-    "release": false
-  },
   "hooks": {
     "before:init": [
       "bun run test",
       "bun run typecheck"
+    ],
+    "after:bump": [
+      "bun scripts/sync-release-versions.ts"
     ]
   },
   "plugins": {

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-import { isCiEnvironment } from "../src/lib/ci-env";
+import { isCiEnvironment } from "../../../packages/mate-core/src/lib/ci-env";
 
 if (isCiEnvironment(process.env.CI)) {
   console.log("Skipping lefthook install because CI is enabled.");

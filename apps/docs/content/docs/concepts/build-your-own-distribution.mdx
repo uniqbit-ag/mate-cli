@@ -1,0 +1,192 @@
+---
+title: Build Your Own Distribution
+description: Assemble a custom Mate CLI from the @uniqbit/mate-core framework.
+---
+
+> **Experimental API.** The framework extension surface (`createMate`,
+> `Plugin`, `CapabilityPlugin`, `SetupContext` services, and plugin
+> registration entries) is experimental. Breaking changes may occur in **any**
+> release until the API is declared stable. Pin the exact
+> `@uniqbit/mate-core` version your distribution was built against.
+
+Mate is split into a framework and a distribution:
+
+- `@uniqbit/mate-core` is the framework: the orchestrator, adapters, setup
+  engine, plugin contract, CLI building blocks, and default assets
+  (templates, playbooks, wrapper scripts).
+- `@uniqbit/mate` is the reference distribution: a thin bin that assembles
+  the framework with the mate identity and the default builtin plugins.
+
+An enterprise distribution is a package of its own — code, not configuration.
+Enforcement is only meaningful when end users cannot edit it away, so a
+distribution ships its own bin that calls `createMate`.
+
+## A minimal distribution
+
+```ts
+#!/usr/bin/env bun
+import { createMate, type PluginRegistration } from "@uniqbit/mate-core";
+import {
+  createClaudePlugin,
+  createOpenCodePlugin,
+  createOpenspecPlugin,
+} from "@uniqbit/mate-core/plugins";
+
+import { createAcmeMcpPlugin } from "./plugins/acme-mcp";
+import { version } from "../package.json";
+
+const claude = createClaudePlugin();
+const opencode = createOpenCodePlugin();
+const openspec = createOpenspecPlugin();
+const acmeMcp = createAcmeMcpPlugin();
+
+const plugins: PluginRegistration[] = [
+  claude,
+  opencode,
+  openspec,
+  { plugin: acmeMcp, policy: "required" },
+];
+
+const cli = createMate({
+  config: {
+    name: "acme-mate",
+    runtime: "bun",
+    supportedAdapters: ["claude", "opencode"],
+    version,
+  },
+  plugins,
+});
+
+cli.run();
+```
+
+`createMate` registers the plugins you pass, plus three built-ins: bun and uv
+as required runtime substrate, and a gitignore management plugin named after
+`config.name`. Beyond that, nothing is added implicitly and there is no
+bundled "default set" — a distribution imports each builtin it wants from
+`@uniqbit/mate-core/plugins` and lists it explicitly. The identity config
+drives configuration directory naming, legacy-name migration, supported
+adapters, and the companion version guard.
+
+## Publishing your distribution
+
+A distribution is a normal npm package with a bin entry — publish it the same
+way you'd publish any CLI.
+
+```json title="package.json"
+{
+  "name": "acme-mate",
+  "version": "1.2.0",
+  "bin": {
+    "acme-mate": "./src/cli.ts"
+  },
+  "dependencies": {
+    "@uniqbit/mate-core": "1.4.0"
+  }
+}
+```
+
+A few things matter specifically because you're wrapping `@uniqbit/mate-core`:
+
+- **Pin the exact core version.** The framework extension surface is
+  experimental (see the warning at the top of this page) — use an exact
+  version (`"1.4.0"`, not `"^1.4.0"`) so a core release can't silently change
+  your distribution's behavior. Bump it deliberately and re-test.
+- **Ship runnable source, not a build step.** `cli.ts` runs directly under
+  `#!/usr/bin/env bun` — the reference distribution (`@uniqbit/mate`) ships
+  the same way. There's no compilation step to keep in sync with core.
+- **If you override assets** (`assetRoots`, custom `templates/**` or
+  `wrappers/bin/*`), make sure those files are included in the published
+  package (check `files` in `package.json` or your `.npmignore`) — they're
+  read from disk at runtime, not bundled into a single file.
+- **Version your own package independently of core.** End users run
+  `engines.<distribution-name>` checks (see the version guard below) against
+  _your_ package's version, not core's, so your own SemVer is what companions
+  actually depend on.
+
+Publish like any other package:
+
+```bash
+npm publish --access public
+```
+
+End users then install and run it like any global CLI:
+
+```bash
+npm install -g acme-mate
+acme-mate setup
+```
+
+## Package layout
+
+`@uniqbit/mate-core` ships source and exposes four subpaths:
+
+| Subpath      | Contents                                                                                            |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `.`          | `createMate`, `FrameworkConfig`, `Plugin`, `CapabilityPlugin`, `SetupContext`, `PluginRegistration` |
+| `./plugins`  | Builtin plugins, exported but never auto-registered                                                 |
+| `./runtime`  | Session-runtime env and guidance helpers (import-isolated from the rest of core)                    |
+| `./opencode` | Building blocks for authoring OpenCode plugins (TUI, guidance hooks, companion policy)              |
+
+Session-time consumers (such as OpenCode plugins) must import only
+`./runtime` and `./opencode`; both subpaths are guarded by import-isolation
+tests so they stay light.
+
+## Plugin policy: what "required" guarantees
+
+Every plugin registration entry carries a policy: `"required"`,
+`"default"`, or `"optional"`. Bare plugins derive it from `defaultSelected`
+(`true` → `"default"`, `false` → `"optional"`). Policy belongs to the
+registration entry, so the same plugin can be optional in one distribution
+and required in another.
+
+For `"required"` plugins the framework guarantees **setup-time state**:
+
+- pre-selected and locked in the setup wizard, with an explanation
+- included in persisted selections even when explicit flags omit them
+- always applied by the engine, in setup and sync modes
+- never torn down by user deselection
+- re-applied at launch-time sync when artifacts drift
+- reported by `doctor` as drift when missing from a companion
+
+**Session-time usage is best-effort by design.** The `"required"` policy does
+not — and cannot — guarantee that an agent actually uses a tool during a
+session. Session-time steering is delivered through instruction injection
+(`ctx.instructions.append`) and, where applicable, custom OpenCode plugin
+hooks. Do not present `"required"` to stakeholders as a session-time
+enforcement mechanism.
+
+## Provider-mediated setup services
+
+Capabilities integrate with providers through `SetupContext` services instead
+of hand-written provider knowledge:
+
+- `ctx.mcp.register(descriptor)` registers an MCP server with every active
+  provider's native config; teardown bookkeeping removes exactly the
+  registered entries.
+- `ctx.instructions.append(content)` contributes idempotent managed blocks to
+  each provider's instruction surface (e.g. `CLAUDE.md`, `AGENTS.md`).
+- `ctx.templates.render(templatePath, destination, data?)` renders templates
+  through the asset-override chain.
+
+When no active provider can host a request, the engine warns on stderr and
+continues. `CapabilityPlugin.forProvider` remains available for
+provider-specific work the services do not cover.
+
+## Version guard
+
+Companions declare `engines.<distribution-name>` in `framework.yaml`
+(e.g. `engines.acme-mate: ">=1.2.0"`). The running CLI checks only the key
+matching its own distribution name against its own version; keys for other
+distributions are ignored. Core's version is intentionally not checked —
+core compatibility is your build-time concern (your lockfile), not the
+companion's runtime concern.
+
+## Asset overrides
+
+Templates, playbooks, and the `openspec`/`graphify` wrapper scripts ship
+inside `@uniqbit/mate-core` as defaults. A distribution can override them by
+passing `assetRoots` in its `createMate` config. An asset root mirrors core's
+layout — `templates/**` and `wrappers/bin/*` below the root — and wins over
+the core default for the same asset path. A distribution that overrides the
+wrapper directory must ship a complete `wrappers/bin`.
