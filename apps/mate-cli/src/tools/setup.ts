@@ -21,6 +21,7 @@ import {
   type FrameworkConfig,
 } from "../lib/orchestrator/types";
 import { syncWorkingRepoClaudeSettings } from "./setup/providers/claude";
+import { syncWorkingRepoCodexState } from "./setup/providers/codex";
 import {
   collectManagedGitignoreEntries,
   writeManagedGitignoreBlock,
@@ -36,7 +37,7 @@ import {
   type SetupInstallationOutcome,
 } from "./setup/engine";
 
-export { syncWorkingRepoClaudeSettings };
+export { syncWorkingRepoClaudeSettings, syncWorkingRepoCodexState };
 
 export interface SetupInput {
   allowedAgents?: string[];
@@ -84,6 +85,7 @@ export async function syncCompanionFiles(
   repoPath?: string,
 ): Promise<void> {
   await applySetupCompatibilities(companionPath, config, "sync", registry.getAll(), repoPath);
+  if (repoPath) await syncWorkingRepoCodexState(repoPath, companionPath, config);
 }
 
 function mateFolderReadme(): string {
@@ -104,10 +106,10 @@ function mateFolderReadme(): string {
     `| \`${n} companion link\` | Link a working repository to a companion |`,
     `| \`${n} companion list\` | List linked repositories for the active working repo context |`,
     `| \`${n} companion open\` | Inject the resolved companion into the current editor window |`,
-    `| \`${n} claude\` / \`${n} opencode\` | Launch an allowed agent from a linked working repository |`,
+    `| \`${n} claude\` / \`${n} codex\` / \`${n} opencode\` | Launch an allowed agent from a linked working repository |`,
     `| \`${n} doctor\` | Check current link state, installed tools, and active capabilities |`,
     ``,
-    `Run \`${n} claude\` or \`${n} opencode\` from any linked working repository directory.`,
+    `Run \`${n} claude\`, \`${n} codex\`, or \`${n} opencode\` from any linked working repository directory.`,
     ``,
     `## Configuration`,
     ``,

@@ -24,11 +24,13 @@ function defaultIsBrewAvailable(): boolean {
 
 const RTK_INIT_COMMANDS: Record<string, string> = {
   claude: "rtk init -g --auto-patch",
+  codex: "rtk init -g --codex",
   opencode: "rtk init -g --opencode --auto-patch",
 };
 
 const RTK_UNINSTALL_COMMANDS: Record<string, string> = {
   claude: "rtk init -g --uninstall",
+  codex: "rtk init -g --uninstall --codex",
   opencode: "rtk init -g --uninstall --opencode",
 };
 
@@ -144,6 +146,19 @@ export function createHeadroomPlugin(deps: HeadroomDeps = {}): CapabilityPlugin 
         async teardown(ctx: SetupContext) {
           if (checkRtkPath() && !hasOtherActiveRtkProvider("claude", ctx.activeProviders)) {
             await runRtkInstall(RTK_UNINSTALL_COMMANDS.claude);
+          }
+        },
+      },
+      codex: {
+        async apply(ctx: SetupContext) {
+          if (checkRtkPath()) {
+            const exec = ctx.mode === "sync" ? runSilently : runRtkInstall;
+            await exec(RTK_INIT_COMMANDS.codex);
+          }
+        },
+        async teardown(ctx: SetupContext) {
+          if (checkRtkPath() && !hasOtherActiveRtkProvider("codex", ctx.activeProviders)) {
+            await runRtkInstall(RTK_UNINSTALL_COMMANDS.codex);
           }
         },
       },
