@@ -28,9 +28,12 @@
     "format:check": "oxfmt src/ --check"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@uniqbit/mate-core": "0.15.0-canary.2",
     "@uniqbit/mate-opencode-plugin": "0.15.0-canary.2",
-    "headroom-ai": "^0.22.4"
+    "headroom-ai": "^0.22.4",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@release-it/conventional-changelog": "^11.0.1",

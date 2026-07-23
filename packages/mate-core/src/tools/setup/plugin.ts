@@ -60,6 +60,20 @@ export interface ProviderPlugin extends Plugin {
   hosting?: ProviderHosting;
 }
 
+/**
+ * A CLI subcommand contributed by a plugin. `createMate` mounts each entry on
+ * the distribution binary as `<distribution> cap <namespace> <name>` (the
+ * namespace defaults to the plugin id, overridable via `cliNamespace`),
+ * independent of plugin selection — commands guard their own preconditions
+ * (see `ensureCapabilityEnabled`). Framework `cap` subcommands always win
+ * over plugin namespaces.
+ */
+export interface PluginCliCommand {
+  name: string;
+  description: string;
+  run(argv: string[]): Promise<void>;
+}
+
 export interface Plugin {
   id: string;
   kind: "provider" | "capability" | "packageManager" | "integration" | "root";
@@ -72,6 +86,9 @@ export interface Plugin {
   gitignoreEntries?(ctx: SetupContext): string[];
   persistGitignoreEntries?: boolean;
   getInstallRequirements?(ctx: InstallRequirementContext): InstallRequirement[];
+  cliCommands?: PluginCliCommand[];
+  /** CLI namespace for `cliCommands` under `<distribution> cap`; defaults to `id`. */
+  cliNamespace?: string;
 }
 
 /**
