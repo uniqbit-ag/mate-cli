@@ -36,6 +36,7 @@ const cli = createMate({
     update: {
       packageName: "@uniqbit/mate",
       registry: "https://registry.npmjs.org/",
+      enforce: true,
     },
   },
   plugins: [

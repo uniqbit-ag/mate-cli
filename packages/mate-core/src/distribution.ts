@@ -1,10 +1,17 @@
 import type { PluginRegistry } from "./tools/setup/registry";
 
 export interface DistributionUpdateConfig {
-  /** npm package whose versions are checked and installed by `mate update`. */
-  packageName: string;
-  /** npm registry used for update checks and downloads. */
-  registry: string;
+  /** npm package whose versions are checked and installed by `mate update`. Defaults to `@uniqbit/<name>`. */
+  packageName?: string;
+  /** npm registry used for update checks and downloads. Defaults to public npm. */
+  registry?: string;
+  /**
+   * Refuse to run commands while a newer version is available, instead of
+   * only printing a banner. Install-recovery commands (`install`, `update`,
+   * `doctor`, `help`, `companion setup|link`) stay available so the user can
+   * actually upgrade.
+   */
+  enforce?: boolean;
 }
 
 /** Identity and version of the distribution assembled through `createMate`. */

@@ -1,5 +1,6 @@
 import { getActiveDistribution } from "../distribution";
 import {
+  enforceUpdateIfRequired,
   scheduleBackgroundCheck,
   showUpdateBannerIfAvailable,
   UpdateStateStore,
@@ -56,8 +57,15 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     command === "cap" && findPluginCliCommand(subcommand, rest[0]) !== undefined;
   if (!isPluginCommand) {
     const updateStore = new UpdateStateStore();
-    await showUpdateBannerIfAvailable(updateStore);
     scheduleBackgroundCheck(updateStore);
+    if (
+      !isInstallRecoveryCommand(command, subcommand) &&
+      (await enforceUpdateIfRequired(updateStore))
+    ) {
+      process.exitCode = 1;
+      return;
+    }
+    await showUpdateBannerIfAvailable(updateStore);
   }
 
   if (!command || command === "help" || command === "--help" || command === "-h") {

@@ -13,7 +13,7 @@ interface UpdateState {
   latestVersion: string | null;
 }
 
-const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 export const updateCheckerDeps = {
   now: () => Date.now(),
@@ -34,11 +34,12 @@ export function getCurrentVersion(): string {
   return getActiveDistribution().config.version;
 }
 
-export function getUpdateConfig(): DistributionUpdateConfig {
+export function getUpdateConfig(): Required<DistributionUpdateConfig> {
   const { name, update } = getActiveDistribution().config;
   return {
     packageName: update?.packageName ?? `@uniqbit/${name}`,
     registry: update?.registry ?? PUBLIC_NPM_REGISTRY,
+    enforce: update?.enforce ?? false,
   };
 }
 
@@ -69,6 +70,28 @@ export async function showUpdateBannerIfAvailable(store: UpdateStateStore): Prom
   }
 }
 
+/**
+ * Distributions that set `update.enforce` refuse to run further commands while
+ * a cached newer version is available. Returns true when the current command
+ * must stop; state-load failures never block.
+ */
+export async function enforceUpdateIfRequired(store: UpdateStateStore): Promise<boolean> {
+  if (!getUpdateConfig().enforce) return false;
+  try {
+    const state = await store.load();
+    if (!state.latestVersion) return false;
+    const current = getCurrentVersion();
+    if (!isNewer(state.latestVersion, current)) return false;
+    process.stderr.write(
+      `\n${frameworkConfig.name}: update required (${current} → ${state.latestVersion})\n`,
+    );
+    process.stderr.write(`  Run \`${frameworkConfig.name} update\` before continuing.\n\n`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchLatestVersion(): Promise<string> {
   const { packageName, registry } = getUpdateConfig();
   return fetchPublicPackageVersion(packageName, registry);
@@ -79,7 +102,7 @@ export function scheduleBackgroundCheck(store: UpdateStateStore): void {
     try {
       const state = await store.load();
       const lastChecked = state.lastChecked ? new Date(state.lastChecked).getTime() : 0;
-      if (updateCheckerDeps.now() - lastChecked < TWELVE_HOURS_MS) return;
+      if (updateCheckerDeps.now() - lastChecked < SIX_HOURS_MS) return;
       const latestVersion = await fetchLatestVersion();
       await store.save({ lastChecked: updateCheckerDeps.toIsoString(), latestVersion });
     } catch {
