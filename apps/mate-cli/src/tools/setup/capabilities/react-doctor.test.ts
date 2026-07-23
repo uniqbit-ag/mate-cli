@@ -3,11 +3,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
 import { CLAUDE_HOOK_SRC, reactDoctorPlugin } from "./react-doctor";
 
 const tempRoots: string[] = [];
+setDefaultTimeout(20_000);
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -30,6 +31,8 @@ function runHook(
       TMPDIR: tempDir,
       ...env,
     },
+    timeout: 10_000,
+    killSignal: "SIGKILL",
   });
 }
 
@@ -56,6 +59,51 @@ afterEach(async () => {
 });
 
 describe("reactDoctorPlugin", () => {
+  test("Codex apply_patch creates a marker consumed by the Stop hook", async () => {
+    const { repo, tempDir, fakeDoctor } = await setupHookFixture();
+    await fs.writeFile(path.join(repo, "changed.tsx"), "export {};\n");
+    const companion = await makeTempDir("mate-react-doctor-codex-");
+    const codex = reactDoctorPlugin.forProvider?.codex;
+    await codex?.apply({
+      companionPath: companion,
+      config: {
+        profiles: { default: { name: "default", allowedAgents: ["codex"] } },
+        capabilities: [{ name: "react-doctor" }],
+      },
+      mode: "setup",
+      activeProviders: ["codex"],
+      repoPath: repo,
+    });
+    const hook = path.join(companion, ".codex", "hooks", "react-doctor.cjs");
+    const env = {
+      ...process.env,
+      TMPDIR: tempDir,
+      MATE_REPO_PATH: repo,
+      MATE_REACT_DOCTOR_BIN_PATH: fakeDoctor,
+      REACT_DOCTOR_TEST_EXIT: "1",
+      REACT_DOCTOR_TEST_OUTPUT: "warning: test issue",
+    };
+    spawnSync("node", [hook], {
+      input: JSON.stringify({
+        hook_event_name: "PostToolUse",
+        session_id: "codex",
+        tool_name: "apply_patch",
+      }),
+      env,
+      timeout: 10_000,
+      killSignal: "SIGKILL",
+    });
+    const stop = spawnSync("node", [hook], {
+      input: JSON.stringify({ hook_event_name: "Stop", session_id: "codex" }),
+      env,
+      encoding: "utf8",
+      timeout: 10_000,
+      killSignal: "SIGKILL",
+    });
+    expect(stop.status).toBe(0);
+    expect(stop.stdout).toContain("React Doctor found issues");
+  });
+
   test("coalesces edits into one bounded scan and skips repeated stops", async () => {
     const { repo, tempDir, logPath } = await setupHookFixture();
     const env = { REACT_DOCTOR_TEST_LOG: logPath };

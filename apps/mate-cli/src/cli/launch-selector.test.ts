@@ -83,7 +83,7 @@ describe("runLaunchWizard", () => {
   test("navigates to a different target before review", async () => {
     const { result, output } = await runWizard(["[B", "\r", "\r"]);
 
-    expect(result?.target).toBe("opencode");
+    expect(result?.target).toBe("codex");
     expect(output).toContain("Companion:");
   });
 

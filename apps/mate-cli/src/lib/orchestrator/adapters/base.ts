@@ -72,6 +72,14 @@ export abstract class LaunchAdapter {
     return {};
   }
 
+  protected headroomWrapper(
+    _context: AdapterContext,
+    _args: string[],
+    _env: NodeJS.ProcessEnv,
+  ): PreparedLaunch | undefined {
+    return undefined;
+  }
+
   environment(context: AdapterContext): NodeJS.ProcessEnv {
     const reactDoctorEnabled = context.capabilities.some((c) => c.name === "react-doctor");
     const wrapperBinPath = getWrapperBinPath();
@@ -149,6 +157,9 @@ export abstract class LaunchAdapter {
         warning: `${frameworkConfig.name}: headroom capability enabled but \`headroom\` was not found on PATH; install with \`uv tool install "headroom-ai[all]"\`; launching ${this.toolName} directly\n`,
       };
     }
+
+    const wrappedLaunch = this.headroomWrapper(context, builtArgs, env);
+    if (wrappedLaunch) return wrappedLaunch;
 
     const probeProxy = proxyDeps.isProxyReachable ?? defaultIsProxyReachable;
     const spawnProxy = proxyDeps.spawnProxyBackground ?? defaultSpawnProxyBackground;

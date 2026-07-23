@@ -53,6 +53,7 @@ function isBinaryOnPath(command: string): boolean {
 
 const isCI = Boolean(process.env.CI);
 const hasClaude = isBinaryOnPath("claude");
+const hasCodex = isBinaryOnPath("codex");
 const hasOpenCode = isBinaryOnPath("opencode");
 
 interface CliRunResult {
@@ -299,7 +300,7 @@ async function writeOpenSpecStub(scenario: E2EScenario): Promise<void> {
     'import path from "node:path";',
     "const args = process.argv.slice(2);",
     "const skills = ['openspec-explore', 'openspec-propose', 'openspec-apply-change', 'openspec-archive-change'];",
-    "const runtimeDirs = { claude: '.claude', opencode: '.opencode' };",
+    "const runtimeDirs = { claude: '.claude', codex: '.codex', opencode: '.opencode' };",
     "const command = args[0];",
     "const targetPath = args[args.length - 1];",
     "if (command === 'init') {",
@@ -429,6 +430,15 @@ function flattenSystemPrompt(body: string): string {
   return flattenContent(system);
 }
 
+function flattenCodexInstructions(body: string): string {
+  try {
+    const instructions = (JSON.parse(body) as { instructions?: unknown }).instructions;
+    return flattenContent(instructions);
+  } catch {
+    return "";
+  }
+}
+
 // Claude's `system` field is an array of content blocks; OpenCode's is a
 // single `{ type: "text", text: ... }` object rather than a one-element
 // array — accept both shapes (and a plain string) uniformly.
@@ -471,6 +481,43 @@ async function startMockModelServer(): Promise<MockModelServer> {
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
       const raw = Buffer.concat(chunks).toString("utf8");
+
+      if (req.url?.includes("/responses")) {
+        let model: string | null = null;
+        try {
+          const parsed = JSON.parse(raw) as { model?: string };
+          model = typeof parsed.model === "string" ? parsed.model : null;
+        } catch {
+          // Keep the raw request for diagnostics below.
+        }
+        requests.push({ url: req.url ?? "", body: raw, model });
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        });
+        const response = {
+          id: "resp_mock",
+          object: "response",
+          created_at: Math.floor(Date.now() / 1000),
+          status: "completed",
+          model: model ?? "mock-model",
+          output: [
+            {
+              id: "msg_mock",
+              type: "message",
+              status: "completed",
+              role: "assistant",
+              content: [{ type: "output_text", text: "hi", annotations: [] }],
+            },
+          ],
+          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+        };
+        res.end(
+          `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response })}\n\n`,
+        );
+        return;
+      }
 
       if (!req.url?.includes("/messages")) {
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -592,6 +639,61 @@ describe.skipIf(isCI || !hasClaude)("real claude agent — system prompt injecti
       expect(result.exitCode).toBe(0);
       expect(mock.requests.length).toBeGreaterThan(0);
       assertMarkersAppearExactlyOnce(mock.requests[0]!.body);
+    } finally {
+      await mock.close();
+    }
+  });
+});
+
+describe.skipIf(isCI || !hasCodex)("real codex agent — Responses API integration", () => {
+  test("uses isolated CODEX_HOME and sends companion guidance exactly once", async () => {
+    const scenario = await createScenario("mate-cli-e2e-real-codex-");
+    const codexHome = path.join(scenario.root, "codex-home");
+    await fs.mkdir(codexHome, { recursive: true });
+    await fs.writeFile(path.join(codexHome, "user-state"), "preserve me\n", "utf8");
+    initWorkingRepoGit(scenario);
+    const mock = await startMockModelServer();
+
+    try {
+      expect((await setupCompanion(scenario, ["codex"])).exitCode).toBe(0);
+      expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+      const result = await runMate(scenario, {
+        cwd: scenario.working,
+        args: [
+          "codex",
+          "exec",
+          "--skip-git-repo-check",
+          "--model",
+          "gpt-5.3-codex",
+          "--config",
+          'model_provider="mate_mock"',
+          "--config",
+          'model_providers.mate_mock.name="Mate Mock"',
+          "--config",
+          `model_providers.mate_mock.base_url="${mock.baseUrl}"`,
+          "--config",
+          'model_providers.mate_mock.env_key="OPENAI_API_KEY"',
+          "--config",
+          'model_providers.mate_mock.wire_api="responses"',
+          "say hi",
+        ],
+        env: {
+          CODEX_HOME: codexHome,
+          OPENAI_API_KEY: "sk-dummy-test-key",
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      const responseRequest = mock.requests.find((request) => request.url.includes("/responses"));
+      expect(responseRequest).toBeDefined();
+      const instructions = flattenCodexInstructions(responseRequest!.body);
+      for (const marker of COMPANION_GUIDANCE_MARKERS) {
+        expect(countOccurrences(instructions, marker)).toBe(1);
+      }
+      expect(await fs.readFile(path.join(codexHome, "user-state"), "utf8")).toBe("preserve me\n");
+      await fs.access(path.join(scenario.working, ".agents", "skills"));
+      await fs.access(path.join(scenario.working, ".codex", "hooks.json"));
     } finally {
       await mock.close();
     }

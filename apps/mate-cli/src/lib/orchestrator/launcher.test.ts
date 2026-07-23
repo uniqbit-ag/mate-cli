@@ -56,6 +56,34 @@ afterEach(() => {
 });
 
 describe("FrameworkLauncher", () => {
+  test("disallowed Codex launch reconciles stale working-repo state before rejecting", async () => {
+    const { launcher } = createLauncher();
+    const cleanup = mock(async () => {});
+    const original = launcherDeps.syncWorkingRepoCodexState;
+    launcherDeps.syncWorkingRepoCodexState = cleanup;
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+      profile: "default",
+    });
+    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
+      allowedAgents: ["claude"],
+    });
+
+    try {
+      await expect(launcher.prepare({ tool: "codex", args: [] })).rejects.toThrow(
+        /Tool is disallowed/,
+      );
+    } finally {
+      launcherDeps.syncWorkingRepoCodexState = original;
+    }
+    expect(cleanup).toHaveBeenCalledWith(
+      "/tmp/repo",
+      "/tmp/companion",
+      expect.objectContaining({ profiles: {} }),
+    );
+  });
+
   test("resolveLaunchPreview is side-effect free", async () => {
     const { launcher, adapter } = createLauncher();
     const syncCompanionGit = mock(async () => {});

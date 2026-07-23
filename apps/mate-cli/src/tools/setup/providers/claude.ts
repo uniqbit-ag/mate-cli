@@ -553,7 +553,7 @@ async function configureClaude(src: string, companionPath: string): Promise<void
   }
 }
 
-async function teardownClaude(companionPath: string, _allowedAgents: string[]): Promise<void> {
+async function teardownClaude(companionPath: string, allowedAgents: string[]): Promise<void> {
   try {
     await fs.unlink(path.join(companionPath, ".claude", "hooks", "validate-artifact-path"));
   } catch {
@@ -604,10 +604,12 @@ async function teardownClaude(companionPath: string, _allowedAgents: string[]): 
   }
   await pruneEmptyAncestors(path.join(companionPath, ".claude"), companionPath);
 
-  try {
-    await fs.unlink(path.join(companionPath, "AGENTS.md"));
-  } catch {
-    /* not present */
+  if (!allowedAgents.some((agent) => agent === "codex" || agent === "opencode")) {
+    try {
+      await fs.unlink(path.join(companionPath, "AGENTS.md"));
+    } catch {
+      /* not present */
+    }
   }
 }
 

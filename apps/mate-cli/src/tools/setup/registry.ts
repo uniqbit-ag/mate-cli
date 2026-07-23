@@ -8,6 +8,7 @@ import { createUvPlugin } from "./package-managers/uv";
 import { createGitignorePlugin } from "./plugins/gitignore";
 import type { Plugin } from "./plugin";
 import { claudePlugin } from "./providers/claude";
+import { codexPlugin } from "./providers/codex";
 import { opencodePlugin } from "./providers/opencode";
 import { frameworkConfig } from "../../framework";
 
@@ -29,7 +30,7 @@ export class PluginRegistry {
 }
 
 function buildBuiltinPlugins(): Plugin[] {
-  const providers: Plugin[] = [claudePlugin, opencodePlugin];
+  const providers: Plugin[] = [claudePlugin, codexPlugin, opencodePlugin];
   const packageManagers: Plugin[] = [bunPlugin, createUvPlugin()];
   const capabilities: Plugin[] = [
     createOpenspecPlugin(),

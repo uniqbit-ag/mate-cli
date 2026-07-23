@@ -21,7 +21,7 @@ Then run the default workflow from the repository you want an agent to edit:
 ```sh
 mate install
 mate companion link
-mate opencode
+mate claude
 ```
 
 The first `mate install` verifies Mate's core requirements without requiring a
@@ -30,8 +30,9 @@ clone a Git companion, select an existing managed companion, or link a local
 companion repository by pasted path. Linking installs the requirements selected
 by that companion, so no second `mate install` is needed before launch.
 
-Use `mate claude` instead of `mate opencode` when the selected companion profile
-allows Claude.
+Use `mate claude`, `mate codex`, or `mate opencode` according to the agents allowed
+by the selected companion profile. Codex is opt-in during companion setup; enable
+it with `--allowed-agent codex` before using `mate codex`.
 
 ## Repository Model
 
@@ -134,17 +135,21 @@ instead.
 
 ```sh
 mate claude
+mate codex
 mate opencode
 ```
 
 Launch from a linked working repository. Mate resolves the companion, applies
 the selected provider and capability configuration, refreshes enabled indexes,
-and then starts the agent. The active profile must allow the selected agent.
+and then starts the agent. The active profile must allow the selected agent. Codex
+0.145.0 or newer is required; Mate preserves global Codex authentication, profiles,
+sandbox, approval, plugin, history, and `CODEX_HOME` settings.
 
 Forward agent arguments after `--`:
 
 ```sh
 mate claude -- --model sonnet
+mate codex -- --model gpt-5.3-codex
 mate opencode -- --continue
 ```
 
@@ -153,6 +158,7 @@ one launch with:
 
 ```sh
 mate claude -- --no-git
+mate codex -- --no-git
 mate opencode -- --no-git
 ```
 
@@ -173,7 +179,7 @@ Graphify and TokenSave indexes; without a flag it chooses the enabled default,
 and the flags restrict the run to one indexer.
 
 The available capabilities are OpenSpec, React Doctor, TokenSave, Headroom,
-and Graphify. Providers are Claude and OpenCode. Bun is always part of the core
+and Graphify. Providers are Claude, Codex, and OpenCode. Bun is always part of the core
 runtime; uv is selected for Python-backed capability workflows.
 
 ### Artifacts And Updates

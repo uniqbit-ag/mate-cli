@@ -12,7 +12,11 @@ if [ -z "$companion_path" ]; then
 fi
 
 archive_dir="$companion_path/openspec/changes/archive"
-state_dir="$companion_path/.claude/state"
+if [ "${MATE_HOOK_PROVIDER:-claude}" = "codex" ]; then
+  state_dir="$companion_path/.codex/state"
+else
+  state_dir="$companion_path/.claude/state"
+fi
 
 node -e '
 const fs = require("node:fs");
@@ -210,6 +214,10 @@ const eventName = typeof input.hook_event_name === "string" && input.hook_event_
   : "PostToolUse";
 
 function emit(message) {
+  if (process.env.MATE_HOOK_PROVIDER === "codex") {
+    process.stdout.write(JSON.stringify({ systemMessage: message }));
+    process.exit(0);
+  }
   if (eventName === "Stop") {
     // Stop hooks deliver instructions via a block decision, not additionalContext.
     process.stdout.write(JSON.stringify({ decision: "block", reason: message }));
