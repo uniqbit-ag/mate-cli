@@ -33,14 +33,14 @@
     },
     "apps/mate-cli": {
       "name": "@uniqbit/mate",
-      "version": "0.15.0-canary.3",
+      "version": "0.15.0-canary.4",
       "bin": {
         "mate": "src/cli-bootstrap.cjs",
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.29.0",
-        "@uniqbit/mate-core": "0.15.0-canary.3",
-        "@uniqbit/mate-opencode-plugin": "0.15.0-canary.3",
+        "@uniqbit/mate-core": "0.15.0-canary.4",
+        "@uniqbit/mate-opencode-plugin": "0.15.0-canary.4",
         "headroom-ai": "^0.22.4",
         "yaml": "^2.9.0",
         "zod": "^4.4.3",
@@ -60,13 +60,13 @@
     },
     "apps/mate-opencode-plugin": {
       "name": "@uniqbit/mate-opencode-plugin",
-      "version": "0.15.0-canary.3",
+      "version": "0.15.0-canary.4",
       "dependencies": {
         "@opencode-ai/plugin": "^1.18.3",
         "@opentui/core": "^0.4.5",
         "@opentui/keymap": "^0.4.5",
         "@opentui/solid": "^0.4.5",
-        "@uniqbit/mate-core": "0.15.0-canary.3",
+        "@uniqbit/mate-core": "0.15.0-canary.4",
       },
       "devDependencies": {
         "@types/bun": "^1.3.14",
@@ -74,7 +74,7 @@
     },
     "packages/mate-core": {
       "name": "@uniqbit/mate-core",
-      "version": "0.15.0-canary.3",
+      "version": "0.15.0-canary.4",
       "dependencies": {
         "@opencode-ai/plugin": "^1.18.3",
         "@opentui/core": "^0.4.5",
