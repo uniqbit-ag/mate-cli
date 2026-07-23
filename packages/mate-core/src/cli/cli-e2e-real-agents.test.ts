@@ -22,7 +22,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 // of what happens to be on a runner's PATH), and skipped per-tool when the
 // real `claude`/`opencode` binary isn't resolvable on PATH locally.
 
-const APP_ROOT = path.resolve(import.meta.dirname, "../..");
+const APP_ROOT = path.resolve(import.meta.dirname, "../../../../apps/mate-cli");
 const E2E_TMP_ROOT = path.join(os.tmpdir(), "mate-cli-e2e");
 const tempRoots: string[] = [];
 
@@ -146,6 +146,7 @@ async function runMate(
         MATE_REPO_PATH: "",
         MATE_REPO_PROFILE: "",
         MATE_POLICY_JSON: "",
+        MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
         ...env,
       },
       stdio: "pipe",
@@ -249,6 +250,7 @@ async function runMateInTty(
         MATE_REPO_PATH: "",
         MATE_REPO_PROFILE: "",
         MATE_POLICY_JSON: "",
+        MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
         ...env,
       },
       stdio: "pipe",
