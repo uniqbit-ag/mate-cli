@@ -16,6 +16,7 @@ import { runUpdateCommand } from "./commands/update";
 import { runInstallCommand } from "./commands/install";
 import { inspectInstallPreflight } from "../lib/install";
 import { ensureUnambiguousCompanion } from "./commands/shared/companion-selection";
+import { findPluginCliCommand } from "./plugin-commands";
 import { usage } from "./usage";
 
 export function isInstallRecoveryCommand(command?: string, subcommand?: string): boolean {
@@ -48,9 +49,16 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     return;
   }
 
-  const updateStore = new UpdateStateStore();
-  await showUpdateBannerIfAvailable(updateStore);
-  scheduleBackgroundCheck(updateStore);
+  // Plugin commands (`mate cap <namespace> <command>`) own their stdout (an
+  // MCP server speaks JSON-RPC over it), so banners and background chatter
+  // are suppressed for them.
+  const isPluginCommand =
+    command === "cap" && findPluginCliCommand(subcommand, rest[0]) !== undefined;
+  if (!isPluginCommand) {
+    const updateStore = new UpdateStateStore();
+    await showUpdateBannerIfAvailable(updateStore);
+    scheduleBackgroundCheck(updateStore);
+  }
 
   if (!command || command === "help" || command === "--help" || command === "-h") {
     console.log(usage());

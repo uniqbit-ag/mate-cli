@@ -996,6 +996,80 @@ describe("mate CLI e2e", () => {
     await fs.access(path.join(scenario.companion, "AGENTS.md"));
   });
 
+  test("setup with remote-discovery registers MCP, instructions, and provider commands; deselection removes all three", async () => {
+    const scenario = await createScenario("mate-cli-e2e-remote-discovery-");
+
+    expect(
+      (
+        await setupCompanion(scenario, [], {
+          allowedAgents: ["claude", "opencode"],
+          capabilities: ["openspec", "remote-discovery"],
+        })
+      ).exitCode,
+    ).toBe(0);
+
+    const claudeMcp = JSON.parse(
+      await fs.readFile(path.join(scenario.companion, ".mcp.json"), "utf8"),
+    ) as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
+    expect(claudeMcp.mcpServers?.["remote-discovery"]).toEqual({
+      command: "mate",
+      args: ["cap", "remote", "mcp"],
+    });
+
+    const opencodeConfig = await fs.readFile(
+      path.join(scenario.companion, ".opencode", "opencode.json"),
+      "utf8",
+    );
+    expect(opencodeConfig).toContain("remote-discovery");
+
+    for (const agentFile of ["CLAUDE.md", "AGENTS.md"]) {
+      const content = await fs.readFile(path.join(scenario.companion, agentFile), "utf8");
+      expect(content).toContain("Cross-repo context (remote-discovery)");
+    }
+
+    for (const commandsDir of [
+      [".claude", "commands"],
+      [".opencode", "commands"],
+    ]) {
+      await fs.access(path.join(scenario.companion, ...commandsDir, "check-other-repos.md"));
+    }
+
+    expect(
+      (
+        await setupCompanion(scenario, [], {
+          allowedAgents: ["claude", "opencode"],
+          capabilities: ["openspec"],
+        })
+      ).exitCode,
+    ).toBe(0);
+
+    const claudeMcpAfter = JSON.parse(
+      await fs.readFile(path.join(scenario.companion, ".mcp.json"), "utf8").catch(() => "{}"),
+    ) as { mcpServers?: Record<string, unknown> };
+    expect(claudeMcpAfter.mcpServers?.["remote-discovery"]).toBeUndefined();
+
+    const opencodeConfigAfter = await fs
+      .readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8")
+      .catch(() => "");
+    expect(opencodeConfigAfter).not.toContain('"remote-discovery"');
+
+    for (const agentFile of ["CLAUDE.md", "AGENTS.md"]) {
+      const content = await fs
+        .readFile(path.join(scenario.companion, agentFile), "utf8")
+        .catch(() => "");
+      expect(content).not.toContain("Cross-repo context (remote-discovery)");
+    }
+
+    for (const commandsDir of [
+      [".claude", "commands"],
+      [".opencode", "commands"],
+    ]) {
+      await expect(
+        fs.access(path.join(scenario.companion, ...commandsDir, "check-other-repos.md")),
+      ).rejects.toThrow();
+    }
+  });
+
   test("setup reconciles openspec skills as allowed agents are added and removed", async () => {
     const scenario = await createScenario("mate-cli-e2e-openspec-reconcile-");
     const capturePath = await writeOpenSpecStub(scenario);

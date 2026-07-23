@@ -20,12 +20,14 @@ export {
   PluginRegistry,
   type NormalizedRegistration,
 } from "./tools/setup/registry";
+export { ensureCapabilityEnabled, type EnsureCapabilityEnabledDeps } from "./cli/plugin-commands";
 export type {
   CapabilityPlugin,
   InstructionsService,
   McpServerDescriptor,
   McpService,
   Plugin,
+  PluginCliCommand,
   PluginPolicy,
   PluginRegistration,
   ProviderHosting,
