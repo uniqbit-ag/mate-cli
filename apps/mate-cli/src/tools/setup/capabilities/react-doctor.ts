@@ -76,6 +76,74 @@ export const reactDoctorPlugin: CapabilityPlugin = {
         );
       },
     },
+    codex: {
+      async apply(ctx: SetupContext) {
+        await applyReactDoctorSkills(
+          path.join(ctx.companionPath, ".codex", "skills", "react-doctor"),
+        );
+        const hookDest = path.join(ctx.companionPath, ".codex", "hooks", "react-doctor.cjs");
+        await fs.mkdir(path.dirname(hookDest), { recursive: true });
+        await fs.copyFile(
+          path.join(
+            import.meta.dirname,
+            "../../../templates/capabilities/react-doctor/codex/hooks/react-doctor.cjs",
+          ),
+          hookDest,
+        );
+        const { reconcileCompanionCodexHookGroup } = await import("../providers/codex");
+        await reconcileCompanionCodexHookGroup(
+          ctx.companionPath,
+          "PostToolUse",
+          "/.codex/hooks/react-doctor",
+          {
+            matcher: "Edit|Write|apply_patch",
+            hooks: [
+              {
+                type: "command",
+                command: `node "${hookDest}"`,
+                timeout: 5,
+              },
+            ],
+          },
+        );
+        await reconcileCompanionCodexHookGroup(
+          ctx.companionPath,
+          "Stop",
+          "/.codex/hooks/react-doctor",
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `node "${hookDest}"`,
+                timeout: 45,
+              },
+            ],
+          },
+        );
+      },
+      async teardown(ctx: SetupContext) {
+        await teardownReactDoctorSkills(
+          path.join(ctx.companionPath, ".codex", "skills", "react-doctor"),
+          ctx.companionPath,
+        );
+        await fs.rm(path.join(ctx.companionPath, ".codex", "hooks", "react-doctor.cjs"), {
+          force: true,
+        });
+        if (ctx.activeProviders.includes("codex")) {
+          const { reconcileCompanionCodexHookGroup } = await import("../providers/codex");
+          await reconcileCompanionCodexHookGroup(
+            ctx.companionPath,
+            "PostToolUse",
+            "/.codex/hooks/react-doctor",
+          );
+          await reconcileCompanionCodexHookGroup(
+            ctx.companionPath,
+            "Stop",
+            "/.codex/hooks/react-doctor",
+          );
+        }
+      },
+    },
     opencode: {
       async apply(ctx: SetupContext) {
         await applyReactDoctorSkills(

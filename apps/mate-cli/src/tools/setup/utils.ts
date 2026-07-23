@@ -80,18 +80,18 @@ function waitForClose(child: ChildProcess, formatError: (code: number) => string
 export async function runCommand(
   command: string,
   args: string[],
-  options: { cwd?: string } = {},
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
 ): Promise<void> {
-  const child = spawn(command, args, { cwd: options.cwd, stdio: "inherit" });
+  const child = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: "inherit" });
   await waitForClose(child, (code) => `${command} ${args.join(" ")} exited with code ${code}`);
 }
 
 export async function runCommandSilently(
   command: string,
   args: string[],
-  options: { cwd?: string } = {},
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
 ): Promise<void> {
-  const child = spawn(command, args, { cwd: options.cwd, stdio: "pipe" });
+  const child = spawn(command, args, { cwd: options.cwd, env: options.env, stdio: "pipe" });
   await waitForClose(child, (code) => `${command} ${args.join(" ")} exited with code ${code}`);
 }
 

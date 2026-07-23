@@ -131,6 +131,15 @@ export const BUILTIN_SETUP_COMPATIBILITIES: SetupCompatibility[] = [
     templateRoot: "setup-providers/claude",
   },
   {
+    id: "codex",
+    kind: "provider",
+    agent: "codex",
+    label: "Codex",
+    description: "Install Codex companion skills, hooks, and guidance.",
+    defaultSelected: false,
+    templateRoot: "setup-providers/codex",
+  },
+  {
     id: "opencode",
     kind: "provider",
     agent: "opencode",

@@ -242,7 +242,13 @@ describe("RTK install in apply()", () => {
 });
 
 describe("RTK provider init/uninstall in forProvider", () => {
-  const providers = ["claude", "opencode"] as const;
+  const providers = ["claude", "codex", "opencode"] as const;
+
+  function expectedInitCommand(provider: (typeof providers)[number]): string {
+    if (provider === "claude") return "rtk init -g --auto-patch";
+    if (provider === "codex") return "rtk init -g --codex";
+    return "rtk init -g --opencode --auto-patch";
+  }
 
   for (const provider of providers) {
     test(`${provider}: apply runs RTK init when RTK is on PATH and mode is setup`, async () => {
@@ -260,11 +266,7 @@ describe("RTK provider init/uninstall in forProvider", () => {
       const ctx = { ...makeCtx(companionDir), activeProviders: [provider] };
       await plugin.forProvider![provider].apply(ctx);
 
-      const expectedCmd =
-        provider === "claude"
-          ? "rtk init -g --auto-patch"
-          : `rtk init -g --${provider} --auto-patch`;
-      expect(runRtkMock).toHaveBeenCalledWith(expectedCmd);
+      expect(runRtkMock).toHaveBeenCalledWith(expectedInitCommand(provider));
     });
 
     test(`${provider}: apply runs RTK init silently during sync mode`, async () => {
@@ -279,11 +281,7 @@ describe("RTK provider init/uninstall in forProvider", () => {
       const ctx = { ...makeCtx("/tmp/companion"), mode: "sync", activeProviders: [provider] };
       await plugin.forProvider![provider].apply(ctx);
 
-      const expectedCmd =
-        provider === "claude"
-          ? "rtk init -g --auto-patch"
-          : `rtk init -g --${provider} --auto-patch`;
-      expect(runRtkMock).toHaveBeenCalledWith(expectedCmd);
+      expect(runRtkMock).toHaveBeenCalledWith(expectedInitCommand(provider));
     });
 
     test(`${provider}: apply skips RTK init when RTK not on PATH`, async () => {

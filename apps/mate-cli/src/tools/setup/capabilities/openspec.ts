@@ -48,6 +48,7 @@ const CLAUDE_HOOK_SOURCE = path.join(
 
 const OPENSPEC_TOOL_DIRS = {
   claude: ".claude",
+  codex: ".codex",
   opencode: ".opencode",
 } as const;
 
@@ -152,11 +153,16 @@ async function reconcileOpenSpecTools(
   const tools = deriveOpenSpecTools(ctx.activeProviders);
   if (tools.length === 0) return;
 
+  const codexEnv = tools.includes("codex")
+    ? { env: { ...process.env, CODEX_HOME: path.join(ctx.companionPath, ".codex") } }
+    : {};
   await runCommand("openspec", ["init", "--tools", tools.join(","), "--force", ctx.companionPath], {
     cwd: ctx.companionPath,
+    ...codexEnv,
   });
   await runCommand("openspec", ["update", "--force", ctx.companionPath], {
     cwd: ctx.companionPath,
+    ...codexEnv,
   });
 
   // The openspec CLI generates its own workflow skills above; layer the
@@ -384,6 +390,56 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
             ctx.companionPath,
           );
           await teardownToolRuntime(ctx.companionPath, "claude");
+        },
+      },
+      codex: {
+        async apply(ctx: SetupContext) {
+          if (ctx.config.git !== "auto") return;
+          const hookDest = path.join(
+            ctx.companionPath,
+            ".codex",
+            "hooks",
+            "mate-openspec-artifact-finish.cjs",
+          );
+          await fs.mkdir(path.dirname(hookDest), { recursive: true });
+          await fs.copyFile(
+            path.join(
+              import.meta.dirname,
+              "../../../templates/capabilities/openspec-cap/codex/hooks/mate-openspec-artifact-finish.cjs",
+            ),
+            hookDest,
+          );
+          const { reconcileCompanionCodexHookGroup } = await import("../providers/codex");
+          await reconcileCompanionCodexHookGroup(
+            ctx.companionPath,
+            "PostToolUse",
+            "/.codex/hooks/mate-openspec-artifact-finish",
+            {
+              matcher: "Bash|exec_command",
+              hooks: [
+                {
+                  type: "command",
+                  command: `node "${hookDest}"`,
+                  timeout: 30,
+                },
+              ],
+            },
+          );
+        },
+        async teardown(ctx: SetupContext) {
+          await fs.rm(
+            path.join(ctx.companionPath, ".codex", "hooks", "mate-openspec-artifact-finish.cjs"),
+            { force: true },
+          );
+          if (ctx.activeProviders.includes("codex")) {
+            const { reconcileCompanionCodexHookGroup } = await import("../providers/codex");
+            await reconcileCompanionCodexHookGroup(
+              ctx.companionPath,
+              "PostToolUse",
+              "/.codex/hooks/mate-openspec-artifact-finish",
+            );
+          }
+          await teardownToolRuntime(ctx.companionPath, "codex");
         },
       },
       opencode: {

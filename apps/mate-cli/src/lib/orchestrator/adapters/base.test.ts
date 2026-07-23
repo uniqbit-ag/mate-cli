@@ -7,6 +7,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { LaunchPreflightError } from "../types";
 import { getWrapperBinPath } from "../../package-paths";
 import { ClaudeAdapter } from "./claude";
+import { assertSupportedCodexVersion, CodexAdapter } from "./codex";
 import { OpenCodeAdapter } from "./opencode";
 import type { AdapterContext, ProxyDeps } from "./base";
 import type { SpawnProxyOpts } from "../headroom/proxy";
@@ -67,6 +68,127 @@ function makeContext(capabilities: AdapterContext["capabilities"] = []): Adapter
     capabilities,
   };
 }
+
+describe("Codex launch integration", () => {
+  test("requires Codex 0.145.0 or newer", () => {
+    expect(() => assertSupportedCodexVersion("codex-cli 0.144.0")).toThrow(/codex update/);
+    expect(() => assertSupportedCodexVersion("codex-cli 0.145.0")).not.toThrow();
+  });
+
+  test("injects guidance, companion access, and preserves passthrough arguments", async () => {
+    const companionPath = await makeTempDir("mate-codex-companion-");
+    await fs.writeFile(path.join(companionPath, "AGENTS.md"), "# Companion instructions\n", "utf8");
+    const launch = await new CodexAdapter().prepareLaunch({ ...makeContext(), companionPath }, [
+      "--sandbox",
+      "danger-full-access",
+      "prompt",
+    ]);
+
+    expect(launch.command).toBe("codex");
+    expect(launch.args.filter((arg) => arg === "--add-dir")).toHaveLength(1);
+    expect(launch.args).toContain(companionPath);
+    expect(launch.args.join("\n")).toContain("Companion instructions");
+    expect(launch.args.slice(-3)).toEqual(["--sandbox", "danger-full-access", "prompt"]);
+  });
+
+  test("does not duplicate a caller-supplied companion add-dir", () => {
+    const adapter = new CodexAdapter();
+    const args = adapter.buildArgs(makeContext(), ["--add-dir", "/tmp/companion"]);
+    expect(args.filter((arg) => arg === "--add-dir")).toHaveLength(1);
+  });
+
+  test("adds launch-scoped TokenSave MCP configuration only when enabled", () => {
+    const adapter = new CodexAdapter();
+    expect(adapter.buildArgs(makeContext(), []).join(" ")).not.toContain("mcp_servers.tokensave");
+    expect(adapter.buildArgs(makeContext([{ name: "tokensave" }]), []).join(" ")).toContain(
+      "mcp_servers.tokensave.command",
+    );
+  });
+
+  test.each([
+    ["--config", 'developer_instructions="replacement"'],
+    ['--config=developer_instructions="replacement"'],
+    ["-c", 'developer_instructions="replacement"'],
+    ['-c=mcp_servers.tokensave.command="replacement"'],
+    ['--config=mcp_servers.tokensave={"command":"replacement"}'],
+    ['--config="mcp_servers"."tokensave".command="replacement"'],
+    ['--config=mcp_servers={"tokensave":{"command":"replacement"}}'],
+  ])("rejects caller overrides of Mate-managed Codex config using %s", (...args) => {
+    const adapter = new CodexAdapter();
+    expect(() => adapter.buildArgs(makeContext([{ name: "tokensave" }]), args)).toThrow(
+      /managed by Mate/,
+    );
+  });
+
+  test("allows unrelated Codex config and caller TokenSave config when Mate does not own it", () => {
+    const adapter = new CodexAdapter();
+    expect(() =>
+      adapter.buildArgs(makeContext(), [
+        "--config",
+        'model_reasoning_effort="high"',
+        '--config=mcp_servers.tokensave.command="custom"',
+      ]),
+    ).not.toThrow();
+  });
+
+  test("does not interpret config-looking positional input after -- as an override", () => {
+    const adapter = new CodexAdapter();
+    expect(() =>
+      adapter.buildArgs(makeContext([{ name: "tokensave" }]), [
+        "exec",
+        "--",
+        "--config",
+        'developer_instructions="example"',
+      ]),
+    ).not.toThrow();
+  });
+
+  test.each([
+    ['[mcp_servers]\ntokensave = { command = "custom", args = ["serve"] }\n'],
+    ['[mcp_servers."tokensave"]\ncommand = "custom"\nargs = ["serve"]\n'],
+  ])("rejects conflicting project TokenSave TOML representations", async (config) => {
+    const root = await makeTempDir("mate-codex-project-config-");
+    const binDir = await makeTempDir("mate-codex-bin-");
+    await fs.mkdir(path.join(root, ".codex"), { recursive: true });
+    await fs.writeFile(path.join(root, ".codex", "config.toml"), config, "utf8");
+    await fs.writeFile(
+      path.join(binDir, "codex"),
+      "#!/usr/bin/env bun\nconsole.log('codex-cli 0.145.0');\n",
+      "utf8",
+    );
+    await fs.chmod(path.join(binDir, "codex"), 0o755);
+
+    await withPath(binDir, async () => {
+      await expect(
+        new CodexAdapter().validateLaunch({
+          ...makeContext([{ name: "tokensave" }]),
+          repository: { ...makeContext().repository, path: root },
+        }),
+      ).rejects.toThrow(/conflicting TokenSave MCP server/);
+    });
+  });
+
+  test("uses the native Headroom wrapper contract", async () => {
+    const binDir = await makeTempDir("mate-codex-headroom-");
+    await fs.writeFile(path.join(binDir, "headroom"), "#!/bin/sh\nexit 0\n", "utf8");
+    await fs.chmod(path.join(binDir, "headroom"), 0o755);
+    await withPath(binDir, async () => {
+      const launch = await new CodexAdapter().prepareLaunch(makeContext([{ name: "headroom" }]), [
+        "prompt",
+      ]);
+      expect(launch.command).toBe("headroom");
+      expect(launch.args.slice(0, 5)).toEqual([
+        "wrap",
+        "codex",
+        "--no-context-tool",
+        "--",
+        "--config",
+      ]);
+      expect(launch.env.HEADROOM_TELEMETRY).toBe("off");
+      expect(launch.env.HEADROOM_OUTPUT_SHAPER).toBe("1");
+    });
+  });
+});
 
 async function writeOpenCodeRuntime(
   companionPath: string,

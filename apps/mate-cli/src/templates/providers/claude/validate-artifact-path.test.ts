@@ -86,6 +86,26 @@ describe("validate-artifact-path", () => {
     expect(result.stderr).toContain("artifact writes must go to the companion framework path");
   });
 
+  test("blocks Codex apply_patch artifact targets", async () => {
+    const repo = await makeTempDir("mate-codex-hook-patch-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+
+    const result = runHook(
+      {
+        tool_name: "apply_patch",
+        tool_input: {
+          patch: "*** Begin Patch\n*** Add File: docs/decisions/new.md\n+artifact\n*** End Patch",
+        },
+      },
+      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+    );
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("artifact writes must go to the companion framework path");
+  });
+
   test("allows gitignored bash tee targets in the working repo", async () => {
     const repo = await makeTempDir("mate-claude-hook-bash-");
     const companion = path.join(repo, "companion");

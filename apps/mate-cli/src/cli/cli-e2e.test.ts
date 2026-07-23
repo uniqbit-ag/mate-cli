@@ -458,13 +458,15 @@ async function initCompanionGit(scenario: E2EScenario): Promise<string> {
 
 async function writeAdapterStub(
   scenario: E2EScenario,
-  toolName: "claude" | "opencode",
+  toolName: "claude" | "codex" | "opencode",
+  version = "0.145.0",
 ): Promise<string> {
   const capturePath = path.join(scenario.root, `${toolName}-capture.json`);
   const stubPath = path.join(scenario.bin, toolName);
   const source = [
     "#!/usr/bin/env bun",
     'import fs from "node:fs";',
+    `if (process.argv[2] === "--version") { console.log("${toolName} ${version}"); process.exit(0); }`,
     "const capturePath = process.env.MATE_E2E_CAPTURE_PATH;",
     "if (!capturePath) process.exit(2);",
     "const payload = {",
@@ -1751,6 +1753,29 @@ describe("mate CLI e2e", () => {
       },
     },
     {
+      tool: "codex" as const,
+      allowedAgents: ["codex"],
+      setupSelections: { allowedAgents: ["codex"], capabilities: ["openspec"] },
+      launchArgs: ["codex", "exec", "--model", "gpt-5.3-codex", "hello"],
+      assertInvocation(
+        invocation: {
+          cwd: string;
+          argv: string[];
+          env: Record<string, string | null>;
+        },
+        scenario: E2EScenario,
+      ) {
+        expect(invocation.argv[0]).toBe("--config");
+        expect(invocation.argv[1]).toStartWith("developer_instructions=");
+        expect(invocation.argv).toContain("--add-dir");
+        expect(invocation.argv).toContain(scenario.companion);
+        expect(invocation.argv).toContain("exec");
+        expect(invocation.argv).toContain("--model");
+        expect(invocation.argv).toContain("gpt-5.3-codex");
+        expect(invocation.argv).toContain("hello");
+      },
+    },
+    {
       tool: "opencode" as const,
       allowedAgents: ["opencode"],
       setupSelections: { allowedAgents: ["opencode"], capabilities: ["openspec"] },
@@ -1812,8 +1837,62 @@ describe("mate CLI e2e", () => {
         "utf8",
       );
       expect(exclude).toContain(".claude/settings.local.json");
+      if (testCase.tool === "codex") {
+        expect(exclude).toContain(".codex/hooks.json");
+        await fs.access(path.join(scenario.working, ".agents", "skills"));
+      }
     });
   }
+
+  test("codex reports a missing executable before launch", async () => {
+    const scenario = await createScenario("mate-cli-e2e-codex-missing-");
+    initWorkingRepoGit(scenario);
+
+    expect(
+      (
+        await setupCompanion(scenario, [], {
+          allowedAgents: ["codex"],
+          capabilities: ["openspec"],
+        })
+      ).exitCode,
+    ).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+    const result = await runMate(scenario, {
+      cwd: scenario.working,
+      args: ["codex", "exec", "hello"],
+      env: { PATH: pathWithoutCommand("codex", process.env.PATH ?? "") },
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      "Codex CLI was not found. Install Codex, authenticate it, then retry `mate codex`.",
+    );
+  });
+
+  test("codex reports an outdated executable before launch", async () => {
+    const scenario = await createScenario("mate-cli-e2e-codex-outdated-");
+    await writeAdapterStub(scenario, "codex", "0.144.0");
+    initWorkingRepoGit(scenario);
+
+    expect(
+      (
+        await setupCompanion(scenario, [], {
+          allowedAgents: ["codex"],
+          capabilities: ["openspec"],
+        })
+      ).exitCode,
+    ).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+    const result = await runMate(scenario, {
+      cwd: scenario.working,
+      args: ["codex", "exec", "hello"],
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Codex CLI 0.145.0 or newer is required (found 0.144.0)");
+  });
 
   test("launch pre-seeds companion Claude hooks and permissions, git-excluded and un-duplicated", async () => {
     const scenario = await createScenario("mate-cli-e2e-launch-claude-settings-");

@@ -4,7 +4,7 @@ import { SelectMenu, type SelectMenuItem } from "../lib/components/select-menu";
 import { WizardFooter } from "../lib/components/wizard-footer";
 import { WizardHeader } from "../lib/components/wizard-header";
 
-export const LAUNCH_TARGETS = ["claude", "opencode"] as const;
+export const LAUNCH_TARGETS = ["claude", "codex", "opencode"] as const;
 export type LaunchTarget = (typeof LAUNCH_TARGETS)[number];
 
 export interface LaunchPreviewData {
@@ -51,6 +51,7 @@ export const launchSelectorDeps = {
 
 const TARGET_ITEMS: SelectMenuItem[] = [
   { key: "claude", label: "claude" },
+  { key: "codex", label: "codex" },
   { key: "opencode", label: "opencode" },
 ];
 

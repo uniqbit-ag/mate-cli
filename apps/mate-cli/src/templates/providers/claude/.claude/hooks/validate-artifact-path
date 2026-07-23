@@ -38,6 +38,7 @@ ARTIFACT_PATH_MARKERS = (
 )
 MD_REDIRECT_RE = re.compile(r">{1,2}\s*([^\s;|&<>]+\.md)\b")
 MD_TEE_RE = re.compile(r"\btee\s+(?:-a\s+)?([^\s;|&<>]+\.md)\b")
+PATCH_FILE_RE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 
 
 def read_payload() -> dict[str, Any]:
@@ -210,6 +211,12 @@ def main() -> int:
         command = str(tool_input.get("command", ""))
         for target in command_matches(command):
             check_file_path(target, companion)
+        return 0
+
+    if tool_name == "apply_patch":
+        patch = str(tool_input.get("patch", tool_input.get("input", "")))
+        for target in PATCH_FILE_RE.findall(patch):
+            check_file_path(target.strip(), companion)
         return 0
 
     return 0

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 
@@ -63,6 +64,28 @@ describe("deriveOpenSpecTools", () => {
 });
 
 describe("createOpenspecPlugin", () => {
+  test("Codex hook reads exec_command cmd and ignores failed archive commands", async () => {
+    const companion = await makeTempDir("mate-openspec-codex-hook-");
+    const hook = path.resolve(
+      import.meta.dirname,
+      "../../../templates/capabilities/openspec-cap/codex/hooks/mate-openspec-artifact-finish.cjs",
+    );
+    const run = (status: number, session: string) =>
+      spawnSync("node", [hook], {
+        encoding: "utf8",
+        env: { ...process.env, MATE_ARTIFACT_PATH: companion },
+        input: JSON.stringify({
+          session_id: session,
+          tool_name: "exec_command",
+          tool_input: { cmd: "openspec archive my-change" },
+          tool_response: { exit_code: status },
+        }),
+      });
+
+    expect(run(1, "failed").stdout).toBe("");
+    expect(run(0, "success").stdout).toContain("my-change");
+  });
+
   test("runs openspec init and update for active supported providers", async () => {
     const runCommand = mock(async () => {});
     const installCommand = mock(async () => {});

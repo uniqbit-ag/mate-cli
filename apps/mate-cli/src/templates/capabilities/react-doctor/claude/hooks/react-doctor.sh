@@ -140,5 +140,9 @@ if (/^react-doctor: executable unavailable/i.test(scanOutput)) {
 }
 
 const message = `React Doctor found issues in the changed files. Review this output and fix the regressions before finishing. For confirmed issues that cannot be fixed now, create GitHub issues with the rule, file/line, confidence, impact, and proposed fix.\n\n${scanOutput}`;
+if (process.env.MATE_HOOK_PROVIDER === 'codex') {
+  console.log(JSON.stringify({ continue: false, stopReason: message, systemMessage: message }));
+  process.exit(0);
+}
 console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'Stop', additionalContext: message } }));
 NODE
