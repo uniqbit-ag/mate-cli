@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate-core",
-  "version": "0.15.0-canary.5",
+  "version": "0.15.0-canary.6",
   "license": "MIT",
   "files": [
     "src/",
