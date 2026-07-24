@@ -1,10 +1,6 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 let mainImpl: (argv?: string[]) => Promise<void> = async () => {};
-
-mock.module("./cli/main", () => ({
-  main: (argv?: string[]) => mainImpl(argv),
-}));
 
 const { createMate } = await import("./create-mate");
 const { getActiveDistribution, resetActiveDistribution } = await import("./distribution");
@@ -48,7 +44,7 @@ describe("createMate", () => {
     });
 
     const all = cli.registry.getAll();
-    expect(all.map((plugin) => plugin.id)).toEqual(["bun", "uv", "acme-a", "acme-b", "gitignore"]);
+    expect(all.map((plugin) => plugin.id)).toEqual(["acme-a", "acme-b", "bun", "uv", "gitignore"]);
     expect(cli.registry.getPolicy("bun")).toBe("required");
     expect(cli.registry.getPolicy("uv")).toBe("required");
     expect(cli.registry.getPolicy("acme-b")).toBe("required");
@@ -82,7 +78,7 @@ describe("createMate", () => {
       throw new Error("boom");
     };
 
-    const cli = createMate({ config: acmeConfig, plugins: [] });
+    const cli = createMate({ config: acmeConfig, plugins: [], main: (argv) => mainImpl(argv) });
     const errors: unknown[] = [];
     const originalConsoleError = console.error;
     const originalExitCode = process.exitCode;

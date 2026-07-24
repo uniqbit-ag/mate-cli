@@ -313,9 +313,9 @@ async function setupCompanion(
 ): Promise<CliRunResult> {
   // uv is locked into every setup configuration, so always stub it out
   await writeUvStub(scenario);
-  if ((selections.capabilities ?? []).includes("openspec")) {
-    await writeOpenSpecStub(scenario);
-  }
+  // OpenSpec is a required capability in the CLI distribution, so every
+  // setup fixture must provide its binary even when the test omits it.
+  await writeOpenSpecStub(scenario);
   const hasHeadroom =
     (selections.capabilities ?? []).includes("headroom") || extraArgs.includes("headroom");
   if (hasHeadroom) {
@@ -967,7 +967,7 @@ describe("mate CLI e2e", () => {
     ).rejects.toThrow();
   });
 
-  test("rerun setup removes deselected compatibility artifacts", async () => {
+  test("rerun setup removes deselected optional artifacts", async () => {
     const scenario = await createScenario("mate-cli-e2e-setup-deselect-");
 
     expect(
@@ -990,20 +990,20 @@ describe("mate CLI e2e", () => {
       ).exitCode,
     ).toBe(0);
 
-    await expect(
-      fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore")),
-    ).rejects.toThrow();
+    // OpenSpec is required by the CLI distribution, so its skills remain
+    // installed even when it is omitted from the explicit capability flags.
+    await fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore"));
     await fs.access(path.join(scenario.companion, "AGENTS.md"));
   });
 
-  test("setup with remote-discovery registers MCP, instructions, and provider commands; deselection removes all three", async () => {
-    const scenario = await createScenario("mate-cli-e2e-remote-discovery-");
+  test("context7 registers MCP entries for both active providers and reconciles deselection", async () => {
+    const scenario = await createScenario("mate-cli-e2e-context7-");
 
     expect(
       (
         await setupCompanion(scenario, [], {
           allowedAgents: ["claude", "opencode"],
-          capabilities: ["openspec", "remote-discovery"],
+          capabilities: ["openspec", "context7"],
         })
       ).exitCode,
     ).toBe(0);
@@ -1011,28 +1011,16 @@ describe("mate CLI e2e", () => {
     const claudeMcp = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".mcp.json"), "utf8"),
     ) as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
-    expect(claudeMcp.mcpServers?.["remote-discovery"]).toEqual({
-      command: "mate",
-      args: ["cap", "remote", "mcp"],
+    expect(claudeMcp.mcpServers?.context7).toEqual({
+      command: "npx",
+      args: ["-y", "@upstash/context7-mcp"],
     });
 
     const opencodeConfig = await fs.readFile(
       path.join(scenario.companion, ".opencode", "opencode.json"),
       "utf8",
     );
-    expect(opencodeConfig).toContain("remote-discovery");
-
-    for (const agentFile of ["CLAUDE.md", "AGENTS.md"]) {
-      const content = await fs.readFile(path.join(scenario.companion, agentFile), "utf8");
-      expect(content).toContain("Cross-repo context (remote-discovery)");
-    }
-
-    for (const commandsDir of [
-      [".claude", "commands"],
-      [".opencode", "commands"],
-    ]) {
-      await fs.access(path.join(scenario.companion, ...commandsDir, "check-other-repos.md"));
-    }
+    expect(opencodeConfig).toContain('"context7"');
 
     expect(
       (
@@ -1046,28 +1034,12 @@ describe("mate CLI e2e", () => {
     const claudeMcpAfter = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".mcp.json"), "utf8").catch(() => "{}"),
     ) as { mcpServers?: Record<string, unknown> };
-    expect(claudeMcpAfter.mcpServers?.["remote-discovery"]).toBeUndefined();
+    expect(claudeMcpAfter.mcpServers?.context7).toBeUndefined();
 
     const opencodeConfigAfter = await fs
       .readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8")
       .catch(() => "");
-    expect(opencodeConfigAfter).not.toContain('"remote-discovery"');
-
-    for (const agentFile of ["CLAUDE.md", "AGENTS.md"]) {
-      const content = await fs
-        .readFile(path.join(scenario.companion, agentFile), "utf8")
-        .catch(() => "");
-      expect(content).not.toContain("Cross-repo context (remote-discovery)");
-    }
-
-    for (const commandsDir of [
-      [".claude", "commands"],
-      [".opencode", "commands"],
-    ]) {
-      await expect(
-        fs.access(path.join(scenario.companion, ...commandsDir, "check-other-repos.md")),
-      ).rejects.toThrow();
-    }
+    expect(opencodeConfigAfter).not.toContain('"context7"');
   });
 
   test("setup reconciles openspec skills as allowed agents are added and removed", async () => {
@@ -1768,14 +1740,21 @@ describe("mate CLI e2e", () => {
 
   test("opencode rejects disallowed tools before any adapter binary is spawned", async () => {
     const scenario = await createScenario("mate-cli-e2e-launch-disallowed-");
-    const capturePath = await writeAdapterStub(scenario, "opencode");
+    const capturePath = await writeAdapterStub(scenario, "claude");
 
-    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    expect(
+      (
+        await setupCompanion(scenario, [], {
+          allowedAgents: ["opencode"],
+          capabilities: ["openspec"],
+        })
+      ).exitCode,
+    ).toBe(0);
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
     const result = await runMate(scenario, {
       cwd: scenario.working,
-      args: ["opencode", "--"],
+      args: ["claude", "--"],
     });
 
     expect(result.exitCode).toBe(1);
@@ -1857,7 +1836,7 @@ describe("mate CLI e2e", () => {
       expect(invocation.env.MATE_REPO_PATH).toBe(scenario.working);
       expect(invocation.env.MATE_REPO_PROFILE).toBe("default");
       expect(JSON.parse(invocation.env.MATE_POLICY_JSON ?? "{}")).toEqual({
-        allowedAgents: testCase.allowedAgents ?? ["claude"],
+        allowedAgents: testCase.allowedAgents ?? ["claude", "opencode"],
       });
 
       testCase.assertInvocation(invocation, scenario);

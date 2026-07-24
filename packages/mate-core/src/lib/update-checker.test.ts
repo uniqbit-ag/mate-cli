@@ -33,12 +33,6 @@ function createStore(state: { lastChecked: string; latestVersion: string | null 
   };
 }
 
-async function flushBackgroundWork(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  await new Promise((resolve) => setTimeout(resolve, 0));
-}
-
 describe("isNewer", () => {
   test("major version upgrade", () => {
     expect(isNewer("2.0.0", "1.9.9")).toBe(true);
@@ -222,8 +216,7 @@ describe("update helpers", () => {
     const store = createStore({ lastChecked: staleDate, latestVersion: null });
     updateCheckerDeps.toIsoString = () => "2026-01-01T00:00:00.000Z";
 
-    scheduleBackgroundCheck(store as never);
-    await flushBackgroundWork();
+    await scheduleBackgroundCheck(store as never);
 
     expect(store.save).toHaveBeenCalledTimes(1);
   });
@@ -233,8 +226,7 @@ describe("update helpers", () => {
     const store = createStore({ lastChecked: staleDate, latestVersion: null });
     updateCheckerDeps.toIsoString = () => "2026-01-01T00:00:00.000Z";
 
-    scheduleBackgroundCheck(store as never);
-    await flushBackgroundWork();
+    await scheduleBackgroundCheck(store as never);
 
     expect(store.load).toHaveBeenCalledTimes(1);
     expect(store.save).toHaveBeenCalledTimes(1);
@@ -247,8 +239,7 @@ describe("update helpers", () => {
   test("skips the background update check when it ran recently", async () => {
     const store = createStore({ lastChecked: new Date().toISOString(), latestVersion: null });
 
-    scheduleBackgroundCheck(store as never);
-    await flushBackgroundWork();
+    await scheduleBackgroundCheck(store as never);
 
     expect(store.load).toHaveBeenCalledTimes(1);
     expect(store.save).not.toHaveBeenCalled();
@@ -327,8 +318,7 @@ describe("update helpers", () => {
     });
     const store = createStore({ lastChecked: "", latestVersion: null });
 
-    scheduleBackgroundCheck(store as never);
-    await flushBackgroundWork();
+    await scheduleBackgroundCheck(store as never);
 
     expect(store.load).toHaveBeenCalledTimes(1);
     expect(store.save).not.toHaveBeenCalled();

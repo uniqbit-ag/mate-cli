@@ -93,6 +93,8 @@ export abstract class LaunchAdapter {
 
     if (reactDoctorEnabled) {
       env.MATE_REACT_DOCTOR_BIN_PATH = getReactDoctorBinPath();
+    } else {
+      delete env.MATE_REACT_DOCTOR_BIN_PATH;
     }
 
     // Route launch-session graphify output to the companion store. graphifyy resolves its

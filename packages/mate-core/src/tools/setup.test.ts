@@ -613,9 +613,9 @@ describe("executeSetup", () => {
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain(
         '"preserve_recent_tokens": 999',
       );
-      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"reserved": 8000');
+      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"reserved": 15000');
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_lines": 10');
-      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_bytes": 8192');
+      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_bytes": 20000');
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"mate": ".."');
 
       const mergedTuiConfig = JSON.parse(await fs.readFile(tuiConfigPath, "utf8"));

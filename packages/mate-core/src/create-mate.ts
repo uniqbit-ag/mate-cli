@@ -9,6 +9,8 @@ import { PluginRegistry } from "./tools/setup/registry";
 export interface CreateMateOptions {
   config: DistributionConfig;
   plugins: PluginRegistration[];
+  /** Optional entry-point override for embedders that need to control CLI execution. */
+  main?: typeof main;
 }
 
 export interface MateCli {
@@ -24,7 +26,7 @@ export interface MateCli {
  * after `config.name` (built last since it reads the full plugin set).
  * Returns the runnable CLI.
  */
-export function createMate({ config, plugins }: CreateMateOptions): MateCli {
+export function createMate({ config, plugins, main: runMain = main }: CreateMateOptions): MateCli {
   const registry = new PluginRegistry([
     ...plugins,
     { plugin: createBunPlugin(), policy: "required" },
@@ -36,7 +38,7 @@ export function createMate({ config, plugins }: CreateMateOptions): MateCli {
     config,
     registry,
     run: (argv = process.argv) =>
-      main(argv).catch((error) => {
+      runMain(argv).catch((error) => {
         console.error(error instanceof Error ? error.message : String(error));
         process.exitCode = 1;
       }),
