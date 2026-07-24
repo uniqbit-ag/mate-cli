@@ -1,6 +1,7 @@
 {
   "name": "@uniqbit/mate-opencode-plugin",
   "version": "0.15.0-canary.7",
+  "description": "OpenCode plugin integration for Mate.",
   "license": "MIT",
   "files": [
     "src/",
