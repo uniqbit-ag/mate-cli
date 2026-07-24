@@ -30,6 +30,7 @@ function runHook(
       ...process.env,
       CLAUDE_PROJECT_DIR: repo,
       TMPDIR: tempDir,
+      MATE_REACT_DOCTOR_BIN_PATH: path.join(repo, "node_modules", ".bin", "react-doctor"),
       ...env,
     },
   });

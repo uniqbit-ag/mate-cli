@@ -97,8 +97,8 @@ export async function fetchLatestVersion(): Promise<string> {
   return fetchPublicPackageVersion(packageName, registry);
 }
 
-export function scheduleBackgroundCheck(store: UpdateStateStore): void {
-  void (async () => {
+export function scheduleBackgroundCheck(store: UpdateStateStore): Promise<void> {
+  return (async () => {
     try {
       const state = await store.load();
       const lastChecked = state.lastChecked ? new Date(state.lastChecked).getTime() : 0;
