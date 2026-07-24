@@ -34,6 +34,7 @@ async function configureClaudeGuidance(companionPath: string): Promise<void> {
 }
 
 const BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES = [".claude/settings.local.json"];
+const COMPANION_GITIGNORE_ENTRIES = [...BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES, ".claude/state/"];
 // Union of all managed exclude entries — used to identify which lines we own.
 const ALL_MANAGED_EXCLUDE_ENTRIES = new Set([
   ...BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES,
@@ -670,7 +671,7 @@ export function createClaudePlugin(): ProviderPlugin {
     description: "Install Claude companion files, hooks, and guidance.",
     defaultSelected: true,
     isEnabled: (config) => (config.profiles.default?.allowedAgents ?? []).includes("claude"),
-    gitignoreEntries: () => BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES,
+    gitignoreEntries: () => COMPANION_GITIGNORE_ENTRIES,
     hosting: {
       mcp: {
         async register(ctx: SetupContext, descriptor: McpServerDescriptor) {

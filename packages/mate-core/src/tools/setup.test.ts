@@ -1460,6 +1460,7 @@ describe("updateProjectGitignore", () => {
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain(".claude/settings.local.json");
+    expect(gitignore).toContain(".claude/state/");
   });
 
   test("keeps sticky managed entries when no features are enabled", async () => {
