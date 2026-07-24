@@ -50,11 +50,14 @@ export async function runSetupCommand(argv: string[]): Promise<void> {
  * @description Drives the `mate companion setup` flow. Detects what kind of directory the
  * command is run in (unrecognized, existing companion, or linked working repo) via
  * {@link inspectSetupPreflight}, prompting to confirm initialization for an
- * unrecognized directory. Resolves agent/package-manager/capability selections
- * either from CLI flags (non-interactive) or from the interactive
- * `selectSetupCompatibilities` picker, seeded from the existing config when one
- * exists. Writes the resulting config via `setup.execute` and prints a summary
- * table of profiles, package managers, and capabilities.
+ * unrecognized directory. A linked working repo delegates to its companion —
+ * prompting with the companion selector first when multiple companions link the
+ * repo — and then runs the exact same flow as running inside that companion.
+ * Resolves agent/package-manager/capability selections either from CLI flags
+ * (non-interactive) or from the interactive `selectSetupCompatibilities` picker,
+ * seeded from the existing config when one exists. Writes the resulting config
+ * via `setup.execute` and prints a summary table of profiles, package managers,
+ * and capabilities.
  * @flags
  * - `--agents <list>` — parsed via `parseAllowedAgents`.
  * - `--package-managers <list>` — parsed via `parsePackageManagers`.
@@ -105,6 +108,36 @@ async function runSetupFlow(
     }
   }
 
+  // A linked working repo delegates setup to its companion and then follows
+  // the exact same flow as running inside that companion directory.
+  let targetCwd = cwd;
+  if (preflight.kind === "linked-working-repo") {
+    let companion = preflight.match;
+    const ambiguousMatches = preflight.ambiguousMatches ?? [];
+    if (ambiguousMatches.length > 1) {
+      // `main` pins the user's choice into MATE_ARTIFACT_PATH via
+      // ensureUnambiguousCompanion before commands run; honor that pin so the
+      // user is not prompted a second time.
+      const pinnedPath = process.env.MATE_ARTIFACT_PATH;
+      const pinned = pinnedPath
+        ? ambiguousMatches.find(
+            (match) => path.resolve(match.companionPath) === path.resolve(pinnedPath),
+          )
+        : undefined;
+      if (pinned) {
+        companion = pinned;
+      } else {
+        const selected = await chooseCompanion(ambiguousMatches);
+        if (!selected) {
+          process.stderr.write("Aborted.\n");
+          process.exit(1);
+        }
+        companion = selected;
+      }
+    }
+    targetCwd = path.resolve(companion.companionPath);
+  }
+
   const flags = parseFlags(argv);
   const flagAllowedAgents = parseAllowedAgents(flags);
   const flagPackageManagers = parsePackageManagers(flags);
@@ -118,56 +151,14 @@ async function runSetupFlow(
     flagOpenSpecSchema !== undefined ||
     flagGitMode !== undefined;
 
-  if (preflight.kind === "linked-working-repo") {
-    let companion = preflight.match;
-    const ambiguousMatches = preflight.ambiguousMatches ?? [];
-    if (ambiguousMatches.length > 1) {
-      const selected = await chooseCompanion(ambiguousMatches);
-      if (!selected) {
-        process.stderr.write("Aborted.\n");
-        process.exit(1);
-      }
-      companion = selected;
-    }
-
-    const linkedCapabilities =
-      flagCapabilities ??
-      (flagOpenSpecSchema === undefined
-        ? undefined
-        : getSetupSelectionsFromConfig(
-            await new ConfigStore(
-              path.join(
-                companion.companionPath,
-                `.${frameworkConfig.name}`,
-                "config",
-                "framework.yaml",
-              ),
-            ).load(),
-          ).capabilities);
-
-    await runExecuteSetup(
-      {
-        allowedAgents: flagAllowedAgents,
-        packageManagers: flagPackageManagers,
-        capabilities:
-          linkedCapabilities === undefined
-            ? undefined
-            : applyOpenSpecSchemaSelection(linkedCapabilities, flagOpenSpecSchema),
-        git: flagGitMode,
-      },
-      { cwd: companion.companionPath },
-    );
-    return;
-  }
-
   const currentSelections =
-    preflight.kind === "existing-companion"
-      ? getSetupSelectionsFromConfig(
+    preflight.kind === "unrecognized"
+      ? getSetupSelectionsFromConfig(defaultConfig())
+      : getSetupSelectionsFromConfig(
           await new ConfigStore(
-            path.join(cwd, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+            path.join(targetCwd, `.${frameworkConfig.name}`, "config", "framework.yaml"),
           ).load(),
-        )
-      : getSetupSelectionsFromConfig(defaultConfig());
+        );
 
   const selections = hasExplicitSelections
     ? {
@@ -195,7 +186,7 @@ async function runSetupFlow(
       capabilities: selections.capabilities,
       git: selections.selectedGitMode,
     },
-    { cwd },
+    { cwd: targetCwd },
   );
 
   const { config } = result;

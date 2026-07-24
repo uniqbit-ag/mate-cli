@@ -364,6 +364,7 @@ describe("runSetupCommandWithDeps", () => {
 
   test("passes explicit selections straight through for linked working repositories", async () => {
     const cwd = await makeTempDir("mate-setup-cli-linked-working-repo-");
+    const companionPath = await makeTempDir("mate-setup-cli-linked-working-repo-companion-");
     const selectorMock = mock(async () => {
       throw new Error("selector should not run");
     });
@@ -381,7 +382,7 @@ describe("runSetupCommandWithDeps", () => {
         {
           inspectSetupPreflight: async () => ({
             kind: "linked-working-repo",
-            match: { companionPath: "/tmp/companion", repositoryId: "repo" },
+            match: { companionPath, repositoryId: "repo" },
           }),
           selectSetupCompatibilities: selectorMock,
           executeSetup: executeMock as never,
@@ -391,22 +392,41 @@ describe("runSetupCommandWithDeps", () => {
 
     expect(selectorMock).not.toHaveBeenCalled();
     expect(executeMock).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         allowedAgents: ["opencode"],
         packageManagers: ["uv"],
         capabilities: [{ name: "headroom" }],
-      },
-      expect.objectContaining({ cwd: "/tmp/companion" }),
+      }),
+      expect.objectContaining({ cwd: companionPath }),
     );
   });
 
-  test("omits capabilities for no-flag linked setup", async () => {
+  test("runs the interactive picker seeded from the companion config for no-flag linked setup", async () => {
     const cwd = await makeTempDir("mate-setup-cli-linked-no-flags-");
+    const companionPath = await makeTempDir("mate-setup-cli-linked-no-flags-companion-");
+    await new ConfigStore(
+      path.join(companionPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+    ).save({
+      type: "companion",
+      profiles: { default: { name: "default", allowedAgents: ["opencode"] } },
+      packageManagers: ["bun"],
+      capabilities: [{ name: "headroom" }],
+    });
+    const selectorMock = mock(
+      async () =>
+        ({
+          allowedAgents: ["opencode"],
+          packageManagers: ["bun"],
+          capabilities: [{ name: "headroom" }],
+          selectedOpenSpecSchema: "default",
+          selectedGitMode: "default",
+        }) satisfies SetupSelections,
+    );
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        profiles: { default: { name: "default", allowedAgents: ["opencode"] } },
         packageManagers: ["bun"],
-        capabilities: [{ name: "openspec" }],
+        capabilities: [{ name: "headroom" }],
       },
     }));
 
@@ -414,25 +434,41 @@ describe("runSetupCommandWithDeps", () => {
       runSetupCommandWithDeps([], {
         inspectSetupPreflight: async () => ({
           kind: "linked-working-repo",
-          match: { companionPath: "/tmp/companion", repositoryId: "repo" },
+          match: { companionPath, repositoryId: "repo" },
         }),
+        selectSetupCompatibilities: selectorMock,
         executeSetup: executeMock as never,
       }),
     );
 
+    expect(selectorMock).toHaveBeenCalledWith({
+      initialSelections: expect.objectContaining({
+        allowedAgents: ["opencode"],
+        capabilities: [{ name: "headroom" }],
+      }),
+    });
     expect(executeMock).toHaveBeenCalledWith(
       {
-        allowedAgents: undefined,
-        packageManagers: undefined,
-        capabilities: undefined,
-        git: undefined,
+        allowedAgents: ["opencode"],
+        packageManagers: ["bun"],
+        capabilities: [{ name: "headroom" }],
+        git: "default",
       },
-      { cwd: "/tmp/companion" },
+      { cwd: companionPath },
     );
   });
 
   test("preserves capabilities for non-capability linked setup flags", async () => {
     const cwd = await makeTempDir("mate-setup-cli-linked-non-capability-flags-");
+    const companionPath = await makeTempDir("mate-setup-cli-linked-non-capability-companion-");
+    await new ConfigStore(
+      path.join(companionPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+    ).save({
+      type: "companion",
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      packageManagers: ["bun"],
+      capabilities: [{ name: "openspec" }],
+    });
     const executeMock = mock(async () => ({
       config: {
         profiles: { default: { name: "default", allowedAgents: ["opencode"] } },
@@ -447,7 +483,7 @@ describe("runSetupCommandWithDeps", () => {
         {
           inspectSetupPreflight: async () => ({
             kind: "linked-working-repo",
-            match: { companionPath: "/tmp/companion", repositoryId: "repo" },
+            match: { companionPath, repositoryId: "repo" },
           }),
           executeSetup: executeMock as never,
         },
@@ -455,13 +491,13 @@ describe("runSetupCommandWithDeps", () => {
     );
 
     expect(executeMock).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         allowedAgents: ["opencode"],
         packageManagers: ["uv"],
-        capabilities: undefined,
+        capabilities: [{ name: "openspec" }],
         git: "auto",
-      },
-      { cwd: "/tmp/companion" },
+      }),
+      expect.objectContaining({ cwd: companionPath }),
     );
   });
 
@@ -495,22 +531,32 @@ describe("runSetupCommandWithDeps", () => {
     );
 
     expect(executeMock).toHaveBeenCalledWith(
-      {
-        allowedAgents: undefined,
-        packageManagers: undefined,
+      expect.objectContaining({
+        allowedAgents: ["claude"],
         capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }, { name: "react-doctor" }],
-        git: undefined,
-      },
-      { cwd: companionPath },
+      }),
+      expect.objectContaining({ cwd: companionPath }),
     );
   });
 
   test("selects a companion before setup when a working repo has multiple links", async () => {
     const cwd = await makeTempDir("mate-setup-cli-ambiguous-working-repo-");
+    const companionA = await makeTempDir("mate-setup-cli-ambiguous-companion-a-");
+    const companionB = await makeTempDir("mate-setup-cli-ambiguous-companion-b-");
     const selectCompanionMock = mock(async () => ({
-      companionPath: "/tmp/companion-b",
+      companionPath: companionB,
       repositoryId: "repo-b",
     }));
+    const selectorMock = mock(
+      async () =>
+        ({
+          allowedAgents: ["claude"],
+          packageManagers: ["bun"],
+          capabilities: [],
+          selectedOpenSpecSchema: "default",
+          selectedGitMode: "default",
+        }) satisfies SetupSelections,
+    );
     const executeMock = mock(async () => ({
       config: {
         profiles: { default: { name: "default", allowedAgents: ["claude"] } },
@@ -523,29 +569,77 @@ describe("runSetupCommandWithDeps", () => {
       runSetupCommandWithDeps([], {
         inspectSetupPreflight: async () => ({
           kind: "linked-working-repo",
-          match: { companionPath: "/tmp/companion-a", repositoryId: "repo-a" },
+          match: { companionPath: companionA, repositoryId: "repo-a" },
           ambiguousMatches: [
-            { companionPath: "/tmp/companion-a", repositoryId: "repo-a" },
-            { companionPath: "/tmp/companion-b", repositoryId: "repo-b" },
+            { companionPath: companionA, repositoryId: "repo-a" },
+            { companionPath: companionB, repositoryId: "repo-b" },
           ],
         }),
         selectCompanion: selectCompanionMock,
+        selectSetupCompatibilities: selectorMock,
         executeSetup: executeMock as never,
       }),
     );
 
     expect(selectCompanionMock).toHaveBeenCalledWith([
-      { companionPath: "/tmp/companion-a", repositoryId: "repo-a" },
-      { companionPath: "/tmp/companion-b", repositoryId: "repo-b" },
+      { companionPath: companionA, repositoryId: "repo-a" },
+      { companionPath: companionB, repositoryId: "repo-b" },
     ]);
+    expect(selectorMock).toHaveBeenCalledTimes(1);
     expect(executeMock).toHaveBeenCalledWith(
-      {
-        allowedAgents: undefined,
-        packageManagers: undefined,
-        capabilities: undefined,
-        git: undefined,
+      expect.objectContaining({
+        allowedAgents: ["claude"],
+        packageManagers: ["bun"],
+        capabilities: [],
+      }),
+      expect.objectContaining({ cwd: companionB }),
+    );
+  });
+
+  test("honors a pinned MATE_ARTIFACT_PATH instead of prompting again on multiple links", async () => {
+    const cwd = await makeTempDir("mate-setup-cli-pinned-working-repo-");
+    const companionA = await makeTempDir("mate-setup-cli-pinned-companion-a-");
+    const companionB = await makeTempDir("mate-setup-cli-pinned-companion-b-");
+    const selectCompanionMock = mock(async () => {
+      throw new Error("companion selector should not run");
+    });
+    const executeMock = mock(async () => ({
+      config: {
+        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        packageManagers: ["bun"],
+        capabilities: [],
       },
-      { cwd: "/tmp/companion-b" },
+    }));
+
+    const previousPin = process.env.MATE_ARTIFACT_PATH;
+    process.env.MATE_ARTIFACT_PATH = companionB;
+    try {
+      await withCwd(cwd, () =>
+        runSetupCommandWithDeps(["--allowed-agent", "claude"], {
+          inspectSetupPreflight: async () => ({
+            kind: "linked-working-repo",
+            match: { companionPath: companionA, repositoryId: "repo-a" },
+            ambiguousMatches: [
+              { companionPath: companionA, repositoryId: "repo-a" },
+              { companionPath: companionB, repositoryId: "repo-b" },
+            ],
+          }),
+          selectCompanion: selectCompanionMock,
+          executeSetup: executeMock as never,
+        }),
+      );
+    } finally {
+      if (previousPin === undefined) {
+        delete process.env.MATE_ARTIFACT_PATH;
+      } else {
+        process.env.MATE_ARTIFACT_PATH = previousPin;
+      }
+    }
+
+    expect(selectCompanionMock).not.toHaveBeenCalled();
+    expect(executeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedAgents: ["claude"] }),
+      expect.objectContaining({ cwd: companionB }),
     );
   });
 });

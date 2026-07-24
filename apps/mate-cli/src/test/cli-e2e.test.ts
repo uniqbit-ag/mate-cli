@@ -1638,7 +1638,7 @@ describe("mate CLI e2e", () => {
 
     const result = await runMate(scenario, {
       cwd: scenario.working,
-      args: ["companion", "setup"],
+      args: ["companion", "setup", "--allowed-agent", "claude"],
     });
 
     expect(result.exitCode).toBe(0);
@@ -1650,7 +1650,27 @@ describe("mate CLI e2e", () => {
     expect(framework.type).toBe("working");
   });
 
-  test("linked no-flag setup preserves companion capabilities and managed files", async () => {
+  test("linked no-flag setup requires a TTY for the interactive picker", async () => {
+    const scenario = await createScenario("mate-cli-e2e-setup-linked-no-tty-");
+
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+    const result = await runMate(scenario, {
+      cwd: scenario.working,
+      args: ["companion", "setup"],
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Interactive setup selection requires a TTY.");
+    const config = await fs.readFile(
+      path.join(scenario.companion, ".mate", "config", "framework.yaml"),
+      "utf8",
+    );
+    expect(config).toContain("name: openspec");
+  });
+
+  test("linked non-capability-flag setup preserves companion capabilities and managed files", async () => {
     const scenario = await createScenario("mate-cli-e2e-setup-preserve-linked-");
 
     expect((await setupCompanion(scenario)).exitCode).toBe(0);
@@ -1659,7 +1679,7 @@ describe("mate CLI e2e", () => {
 
     const result = await runMate(scenario, {
       cwd: scenario.working,
-      args: ["companion", "setup"],
+      args: ["companion", "setup", "--allowed-agent", "claude"],
     });
 
     expect(result.exitCode).toBe(0);
