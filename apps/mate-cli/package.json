@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate",
-  "version": "0.15.0-canary.9",
+  "version": "0.15.0-canary.10",
   "license": "MIT",
   "bin": {
     "mate": "src/cli-bootstrap.cjs"
@@ -29,8 +29,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@uniqbit/mate-core": "0.15.0-canary.9",
-    "@uniqbit/mate-opencode-plugin": "0.15.0-canary.9",
+    "@uniqbit/mate-core": "0.15.0-canary.10",
+    "@uniqbit/mate-opencode-plugin": "0.15.0-canary.10",
     "headroom-ai": "^0.22.4",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
