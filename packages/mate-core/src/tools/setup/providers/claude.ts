@@ -267,7 +267,7 @@ function buildManagedClaudeSettings(
     ...(hooks.SessionStart ?? []),
   ];
   if (openspecEnabled) {
-    hooks.PostToolUse = [
+    hooks.PreToolUse = [
       {
         matcher: "Bash",
         hooks: [
@@ -277,21 +277,7 @@ function buildManagedClaudeSettings(
           },
         ],
       },
-      ...(hooks.PostToolUse ?? []),
-    ];
-    // End-of-turn catch-all: an archive created by anything other than a matched Bash
-    // command (or as the last action of a turn) still gets a finish nudge on Stop.
-    hooks.Stop = [
-      {
-        hooks: [
-          {
-            type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
-            timeout: 10,
-          },
-        ],
-      },
-      ...(hooks.Stop ?? []),
+      ...(hooks.PreToolUse ?? []),
     ];
   }
   if (reactDoctorEnabled) {

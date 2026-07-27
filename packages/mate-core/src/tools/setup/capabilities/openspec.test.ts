@@ -386,6 +386,24 @@ describe("createOpenspecPlugin", () => {
     ).resolves.toBeNull();
   });
 
+  test("removes only legacy Claude archive snapshot state", async () => {
+    const root = await makeTempDir("mate-openspec-claude-state-");
+    const stateDir = path.join(root, ".claude", "state");
+    await fs.mkdir(stateDir, { recursive: true });
+    await fs.writeFile(path.join(stateDir, "mate-artifact-finish.session.json"), "{}\n");
+    await fs.writeFile(path.join(stateDir, "other.json"), "{}\n");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+
+    await plugin.forProvider!.claude.apply(
+      makeCtx(root, ["claude"], [{ name: "openspec" }], "setup", "auto"),
+    );
+
+    await expect(
+      fs.access(path.join(stateDir, "mate-artifact-finish.session.json")),
+    ).rejects.toThrow();
+    await expect(fs.readFile(path.join(stateDir, "other.json"), "utf8")).resolves.toBe("{}\n");
+  });
+
   test("does not install the Claude openspec auto-finish hook when Git auto mode is off", async () => {
     const root = await makeTempDir("mate-openspec-claude-hook-off-");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });

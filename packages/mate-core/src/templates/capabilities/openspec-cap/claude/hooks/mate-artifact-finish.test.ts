@@ -8,38 +8,35 @@ import { afterEach, describe, expect, test } from "bun:test";
 const HOOK_PATH = path.resolve(import.meta.dirname, "./mate-artifact-finish.sh");
 const tempRoots: string[] = [];
 
-async function makeTempDir(prefix: string): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
-  tempRoots.push(dir);
-  return dir;
+async function makeFixture() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-artifact-finish-"));
+  tempRoots.push(root);
+  const companion = path.join(root, "companion");
+  const archiveDir = path.join(companion, "openspec", "changes", "archive");
+  await fs.mkdir(archiveDir, { recursive: true });
+  return { companion, archiveDir };
 }
 
-function runHook(
-  payload: Record<string, unknown>,
-  env: NodeJS.ProcessEnv,
-): { exitCode: number; stdout: string; stderr: string } {
+function runHook(payload: Record<string, unknown>, companion: string) {
   const result = spawnSync("sh", [HOOK_PATH], {
-    env: { ...process.env, ...env },
+    env: { ...process.env, MATE_ARTIFACT_PATH: companion },
     input: JSON.stringify(payload),
     encoding: "utf8",
   });
   return { exitCode: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
 }
 
-function additionalContextOf(stdout: string): string {
+function denialReason(stdout: string): string {
   const parsed = JSON.parse(stdout) as {
-    hookSpecificOutput?: { hookEventName?: string; additionalContext?: string };
+    hookSpecificOutput?: {
+      hookEventName?: string;
+      permissionDecision?: string;
+      permissionDecisionReason?: string;
+    };
   };
-  expect(parsed.hookSpecificOutput?.hookEventName).toBe("PostToolUse");
-  return parsed.hookSpecificOutput?.additionalContext ?? "";
-}
-
-async function makeFixture() {
-  const root = await makeTempDir("mate-artifact-finish-");
-  const companion = path.join(root, "companion");
-  const archiveDir = path.join(companion, "openspec", "changes", "archive");
-  await fs.mkdir(archiveDir, { recursive: true });
-  return { companion, archiveDir };
+  expect(parsed.hookSpecificOutput?.hookEventName).toBe("PreToolUse");
+  expect(parsed.hookSpecificOutput?.permissionDecision).toBe("deny");
+  return parsed.hookSpecificOutput?.permissionDecisionReason ?? "";
 }
 
 afterEach(async () => {
@@ -47,203 +44,84 @@ afterEach(async () => {
 });
 
 describe("mate-artifact-finish", () => {
-  test("nudges when a new archive entry appears and not on repeat invocation", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    const env = { MATE_ARTIFACT_PATH: companion };
-
-    expect(runHook({ tool_name: "Read" }, env).stdout).toBe("");
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-my-change"));
-    const detected = runHook({ tool_name: "ApplyPatch" }, env);
-    expect(detected.exitCode).toBe(0);
-    const context = additionalContextOf(detected.stdout);
-    expect(context).toContain("mate-artifact-finish");
-    expect(context).toContain("my-change");
-    expect(context).toContain("never through a companion-local wrapper path");
-    expect(context).toContain("$MATE_COMPANION_BIN_PATH/mate");
-    expect(runHook({ tool_name: "Bash" }, env).stdout).toBe("");
-  });
-
-  test("is tool-agnostic and emits one nudge per new archive entry", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    const env = { MATE_ARTIFACT_PATH: companion };
-    runHook({ tool_name: "Read" }, env);
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-first-change"));
-    await fs.mkdir(path.join(archiveDir, "2026-07-15-second-change"));
-    await fs.writeFile(path.join(archiveDir, "README.md"), "ignored");
-    await fs.mkdir(path.join(archiveDir, "not-an-archive"));
-
-    const result = runHook({ tool_name: "Write" }, env);
-    const context = additionalContextOf(result.stdout);
-    expect(context.match(/An openspec change/g)).toHaveLength(2);
-    expect(context).toContain("first-change");
-    expect(context).toContain("second-change");
-    expect(context).not.toContain("README");
-  });
-
-  const archiveMoveCommands = [
-    'mv -v "my-change" "openspec/changes/archive/2026-07-14-my-change"',
-    'mv -t "openspec/changes/archive/2026-07-14-my-change" "my-change"',
-    "move my-change openspec\\changes\\archive\\2026-07-14-my-change",
-    "cmd /c move my-change openspec\\changes\\archive\\2026-07-14-my-change",
-    'powershell -Command "Move-Item my-change openspec/changes/archive/2026-07-14-my-change"',
-    "python3 -c \"import shutil; shutil.move('my-change', 'openspec/changes/archive/2026-07-14-my-change')\"",
-    "python -c \"import os; os.rename('my-change', 'openspec/changes/archive/2026-07-14-my-change')\"",
-  ];
-
-  for (const command of archiveMoveCommands) {
-    test(`nudges after archive move form: ${command}`, async () => {
-      const { companion } = await makeFixture();
-      const result = runHook(
-        { tool_name: "Bash", tool_input: { command }, tool_response: { exit_code: 0 } },
-        { MATE_ARTIFACT_PATH: companion },
-      );
-      expect(result.exitCode).toBe(0);
-      const context = additionalContextOf(result.stdout);
-      expect(context).toContain("mate-artifact-finish");
-      expect(context).toContain("my-change");
-    });
-  }
-
-  test("nudges after a direct openspec archive command", async () => {
+  test.each([
+    "openspec archive acme --json --yes",
+    'openspec archive --store local "acme" --yes',
+    '"/opt/mate wrappers/openspec" archive acme --yes',
+  ])("denies direct archive command: %s", async (command) => {
     const { companion } = await makeFixture();
     const result = runHook(
-      { tool_name: "Bash", tool_input: { command: "openspec archive my-change --json --yes" } },
-      { MATE_ARTIFACT_PATH: companion },
+      { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } },
+      companion,
     );
-    expect(additionalContextOf(result.stdout)).toContain("my-change");
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    const reason = denialReason(result.stdout);
+    expect(reason).toContain("acme");
+    expect(reason).toContain("mate-artifact-finish");
+    expect(reason).toContain('mate artifact finish "acme" --json');
   });
 
-  test("absorbs archive entries created by a mate artifact finish run without nudging", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    const env = { MATE_ARTIFACT_PATH: companion };
-    runHook({ tool_name: "Read" }, env);
-
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-finished-change"));
-    const finish = runHook(
-      {
-        tool_name: "Bash",
-        tool_input: { command: 'mate artifact finish "finished-change" --json' },
-        tool_response: { exit_code: 0 },
-      },
-      env,
-    );
-    expect(finish.stdout).toBe("");
-
-    // The entry was absorbed into the snapshot: later tool calls stay silent too.
-    expect(runHook({ tool_name: "Read" }, env).stdout).toBe("");
-  });
-
-  test("delivers the nudge as a block decision when invoked as a Stop hook", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    const env = { MATE_ARTIFACT_PATH: companion };
-    runHook({ hook_event_name: "Stop" }, env);
-
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-stop-change"));
-    const result = runHook({ hook_event_name: "Stop" }, env);
-    const parsed = JSON.parse(result.stdout) as { decision?: string; reason?: string };
-    expect(parsed.decision).toBe("block");
-    expect(parsed.reason).toContain("stop-change");
-    expect(parsed.reason).toContain("mate-artifact-finish");
-
-    expect(runHook({ hook_event_name: "Stop" }, env).stdout).toBe("");
-  });
-
-  test("ignores failed archive commands and unrelated tools", async () => {
+  test.each([
+    'mv -v "acme" "openspec/changes/archive/2099-01-01-acme"',
+    'mv -t "openspec/changes/archive/2099-01-01-acme" "acme"',
+    "move acme openspec\\changes\\archive\\2099-01-01-acme",
+    "cmd /c move acme openspec\\changes\\archive\\2099-01-01-acme",
+    'powershell -Command "Move-Item acme openspec/changes/archive/2099-01-01-acme"',
+    "python3 -c \"import shutil; shutil.move('acme', 'openspec/changes/archive/2099-01-01-acme')\"",
+    "python -c \"import os; os.rename('acme', 'openspec/changes/archive/2099-01-01-acme')\"",
+  ])("denies archive move command: %s", async (command) => {
     const { companion } = await makeFixture();
-    const env = { MATE_ARTIFACT_PATH: companion };
+    const result = runHook(
+      { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } },
+      companion,
+    );
+    expect(denialReason(result.stdout)).toContain('mate artifact finish "acme" --json');
+  });
+
+  test.each(['mate artifact finish "acme" --json', "printf hello", "mv acme somewhere-else"])(
+    "allows command: %s",
+    async (command) => {
+      const { companion } = await makeFixture();
+      expect(
+        runHook(
+          { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } },
+          companion,
+        ).stdout,
+      ).toBe("");
+    },
+  );
+
+  test("ignores non-Bash and Stop events", async () => {
+    const { companion } = await makeFixture();
+    expect(runHook({ hook_event_name: "Stop" }, companion).stdout).toBe("");
     expect(
       runHook(
         {
-          tool_name: "Bash",
-          tool_input: { command: "openspec archive my-change --json --yes" },
-          tool_response: { exit_code: 1 },
+          hook_event_name: "PreToolUse",
+          tool_name: "Read",
+          tool_input: { command: "openspec archive acme" },
         },
-        env,
+        companion,
       ).stdout,
     ).toBe("");
+  });
+
+  test("external archive changes do not affect Bash or Stop and create no state", async () => {
+    const { companion, archiveDir } = await makeFixture();
+    await fs.mkdir(path.join(archiveDir, "2099-01-01-external"));
+
     expect(
-      runHook({ tool_name: "Bash", tool_input: { command: "printf hello" } }, env).stdout,
+      runHook(
+        {
+          hook_event_name: "PreToolUse",
+          tool_name: "Bash",
+          tool_input: { command: "printf hello" },
+        },
+        companion,
+      ).stdout,
     ).toBe("");
-  });
-
-  test("does not nudge entries present in the initial state baseline", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-existing-change"));
-    expect(runHook({ tool_name: "Bash" }, { MATE_ARTIFACT_PATH: companion }).stdout).toBe("");
-  });
-
-  test("fails open for a corrupt state file", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    const stateFile = path.join(
-      companion,
-      ".claude",
-      "state",
-      "mate-artifact-finish.archive-snapshot.json",
-    );
-    await fs.mkdir(path.dirname(stateFile), { recursive: true });
-    await fs.writeFile(stateFile, "not json");
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-existing-change"));
-    expect(runHook({ tool_name: "Bash" }, { MATE_ARTIFACT_PATH: companion }).stdout).toBe("");
-    await fs.mkdir(path.join(archiveDir, "2026-07-15-new-change"));
-    expect(
-      additionalContextOf(runHook({ tool_name: "Read" }, { MATE_ARTIFACT_PATH: companion }).stdout),
-    ).toContain("new-change");
-  });
-
-  test("two different session_ids for the same companion do not share a baseline", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    const env = { MATE_ARTIFACT_PATH: companion };
-
-    expect(runHook({ tool_name: "Bash", session_id: "session-A" }, env).stdout).toBe("");
-    expect(runHook({ tool_name: "Bash", session_id: "session-B" }, env).stdout).toBe("");
-
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-shared-change"));
-
-    const nudgedA = runHook({ tool_name: "Bash", session_id: "session-A" }, env);
-    expect(additionalContextOf(nudgedA.stdout)).toContain("shared-change");
-
-    const nudgedB = runHook({ tool_name: "Bash", session_id: "session-B" }, env);
-    expect(additionalContextOf(nudgedB.stdout)).toContain("shared-change");
-  });
-
-  test("a brand-new session silently absorbs archive entries that predate it", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-existing-change"));
-    expect(
-      runHook({ tool_name: "Bash", session_id: "fresh-session" }, { MATE_ARTIFACT_PATH: companion })
-        .stdout,
-    ).toBe("");
-  });
-
-  test("nudges once mid-session and not again on a repeat invocation with the same session_id", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    const env = { MATE_ARTIFACT_PATH: companion };
-
-    expect(runHook({ tool_name: "Bash", session_id: "session-C" }, env).stdout).toBe("");
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-mid-session-change"));
-    expect(
-      additionalContextOf(runHook({ tool_name: "Bash", session_id: "session-C" }, env).stdout),
-    ).toContain("mid-session-change");
-    expect(runHook({ tool_name: "Bash", session_id: "session-C" }, env).stdout).toBe("");
-  });
-
-  test("a payload with no session_id falls back to the prior fixed-path behavior", async () => {
-    const { companion, archiveDir } = await makeFixture();
-    const env = { MATE_ARTIFACT_PATH: companion };
-    const fixedStateFile = path.join(
-      companion,
-      ".claude",
-      "state",
-      "mate-artifact-finish.archive-snapshot.json",
-    );
-
-    expect(runHook({ tool_name: "Bash" }, env).stdout).toBe("");
-    await fs.access(fixedStateFile);
-
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-no-session-change"));
-    expect(additionalContextOf(runHook({ tool_name: "Bash" }, env).stdout)).toContain(
-      "no-session-change",
-    );
-    expect(runHook({ tool_name: "Bash" }, env).stdout).toBe("");
+    expect(runHook({ hook_event_name: "Stop" }, companion).stdout).toBe("");
+    await expect(fs.access(path.join(companion, ".claude", "state"))).rejects.toThrow();
   });
 });
