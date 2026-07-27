@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-const HOOK_PATH = path.resolve(import.meta.dirname, "./mate-openspec-artifact-finish.sh");
+const HOOK_PATH = path.resolve(import.meta.dirname, "./mate-artifact-finish.sh");
 const tempRoots: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -35,7 +35,7 @@ function additionalContextOf(stdout: string): string {
 }
 
 async function makeFixture() {
-  const root = await makeTempDir("mate-openspec-artifact-finish-");
+  const root = await makeTempDir("mate-artifact-finish-");
   const companion = path.join(root, "companion");
   const archiveDir = path.join(companion, "openspec", "changes", "archive");
   await fs.mkdir(archiveDir, { recursive: true });
@@ -46,7 +46,7 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-describe("mate-openspec-artifact-finish", () => {
+describe("mate-artifact-finish", () => {
   test("nudges when a new archive entry appears and not on repeat invocation", async () => {
     const { companion, archiveDir } = await makeFixture();
     const env = { MATE_ARTIFACT_PATH: companion };
@@ -56,7 +56,7 @@ describe("mate-openspec-artifact-finish", () => {
     const detected = runHook({ tool_name: "ApplyPatch" }, env);
     expect(detected.exitCode).toBe(0);
     const context = additionalContextOf(detected.stdout);
-    expect(context).toContain("mate-openspec-artifact-finish");
+    expect(context).toContain("mate-artifact-finish");
     expect(context).toContain("my-change");
     expect(context).toContain("never through a companion-local wrapper path");
     expect(context).toContain("$MATE_COMPANION_BIN_PATH/mate");
@@ -99,7 +99,7 @@ describe("mate-openspec-artifact-finish", () => {
       );
       expect(result.exitCode).toBe(0);
       const context = additionalContextOf(result.stdout);
-      expect(context).toContain("mate-openspec-artifact-finish");
+      expect(context).toContain("mate-artifact-finish");
       expect(context).toContain("my-change");
     });
   }
@@ -143,7 +143,7 @@ describe("mate-openspec-artifact-finish", () => {
     const parsed = JSON.parse(result.stdout) as { decision?: string; reason?: string };
     expect(parsed.decision).toBe("block");
     expect(parsed.reason).toContain("stop-change");
-    expect(parsed.reason).toContain("mate-openspec-artifact-finish");
+    expect(parsed.reason).toContain("mate-artifact-finish");
 
     expect(runHook({ hook_event_name: "Stop" }, env).stdout).toBe("");
   });
@@ -178,7 +178,7 @@ describe("mate-openspec-artifact-finish", () => {
       companion,
       ".claude",
       "state",
-      "mate-openspec-artifact-finish.archive-snapshot.json",
+      "mate-artifact-finish.archive-snapshot.json",
     );
     await fs.mkdir(path.dirname(stateFile), { recursive: true });
     await fs.writeFile(stateFile, "not json");
@@ -234,7 +234,7 @@ describe("mate-openspec-artifact-finish", () => {
       companion,
       ".claude",
       "state",
-      "mate-openspec-artifact-finish.archive-snapshot.json",
+      "mate-artifact-finish.archive-snapshot.json",
     );
 
     expect(runHook({ tool_name: "Bash" }, env).stdout).toBe("");

@@ -11,6 +11,7 @@ import { createGitignorePlugin } from "./plugins/gitignore";
 import { applySetupCompatibilities } from "../setup";
 import { createClaudePlugin } from "./providers/claude";
 import { createHeadroomPlugin } from "./capabilities/headroom";
+import { createRtkPlugin } from "./capabilities/rtk";
 
 const claudePlugin = createClaudePlugin();
 
@@ -149,7 +150,7 @@ describe("SetupContext — activeProviders", () => {
 
   test("engine computes activeProviders from enabled provider plugins", async () => {
     const root = await makeTempDir("mate-active-providers-");
-    const headroomNoRtk = createHeadroomPlugin({ isRtkOnPath: () => false });
+    const headroomNoRtk = createHeadroomPlugin();
     await applySetupCompatibilities(
       root,
       {
@@ -162,6 +163,41 @@ describe("SetupContext — activeProviders", () => {
     // Verifies no crash — claude is active, others not
     await fs.access(path.join(root, ".claude")); // claude dir should exist
     await expect(fs.access(path.join(root, ".opencode"))).rejects.toThrow(); // opencode not active
+  });
+
+  test("Headroom and RTK activation remains independent", async () => {
+    const cases = [
+      { capabilities: [], rtkOnPath: false, shouldInitializeRtk: false },
+      { capabilities: [{ name: "headroom" }], rtkOnPath: false, shouldInitializeRtk: false },
+      { capabilities: [{ name: "rtk" }], rtkOnPath: true, shouldInitializeRtk: true },
+      {
+        capabilities: [{ name: "headroom" }, { name: "rtk" }],
+        rtkOnPath: true,
+        shouldInitializeRtk: true,
+      },
+    ];
+
+    for (const testCase of cases) {
+      const runRtk = mock(async () => {});
+      const root = await makeTempDir("mate-capability-matrix-");
+      await applySetupCompatibilities(
+        root,
+        {
+          profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+          capabilities: testCase.capabilities,
+        },
+        "setup",
+        [
+          claudePlugin,
+          createHeadroomPlugin({ confirm: async () => false }),
+          createRtkPlugin({ isRtkOnPath: () => testCase.rtkOnPath, runRtkInstallCmd: runRtk }),
+        ],
+      );
+
+      expect(runRtk.mock.calls.some(([command]) => command.includes("--auto-patch"))).toBe(
+        testCase.shouldInitializeRtk,
+      );
+    }
   });
 });
 

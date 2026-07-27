@@ -145,7 +145,7 @@ describe("OpenCode companion hooks plugin", () => {
         await after({ tool: "bash" }, output);
       },
     );
-    expect(output.output).toContain("mate-openspec-artifact-finish");
+    expect(output.output).toContain("mate-artifact-finish");
     expect(output.output).toContain("my-change");
     expect(output.output).toContain("without asking for confirmation");
     expect(output.output?.match(/ACTION REQUIRED:/g)).toHaveLength(1);

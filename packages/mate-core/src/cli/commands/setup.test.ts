@@ -444,7 +444,7 @@ describe("runSetupCommandWithDeps", () => {
     expect(selectorMock).toHaveBeenCalledWith({
       initialSelections: expect.objectContaining({
         allowedAgents: ["opencode"],
-        capabilities: [{ name: "headroom" }],
+        capabilities: [{ name: "headroom" }, { name: "rtk" }],
       }),
     });
     expect(executeMock).toHaveBeenCalledWith(

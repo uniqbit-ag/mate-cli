@@ -160,7 +160,7 @@ describe("syncCompanionClaudeSettings", () => {
         hooks: [
           {
             type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
           },
         ],
       },
@@ -170,7 +170,7 @@ describe("syncCompanionClaudeSettings", () => {
         hooks: [
           {
             type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
             timeout: 10,
           },
         ],
@@ -324,7 +324,7 @@ describe("syncCompanionClaudeSettings", () => {
 
   test.each([
     ["openspec", "Bash(openspec:*)"],
-    ["headroom", "Bash(rtk:*)"],
+    ["rtk", "Bash(rtk:*)"],
     ["graphify", "Bash(graphify:*)"],
     ["react-doctor", "Bash(npx react-doctor:*)"],
   ])("pre-seeds %s permission allowance %s", async (name, entry) => {
@@ -455,7 +455,7 @@ describe("syncCompanionClaudeSettings", () => {
       hasPostToolHook(
         settings,
         "PostToolUse",
-        `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+        `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
       ),
     ).toBe(true);
     expect(hasValidateHook(settings, companionPath)).toBe(true);
@@ -469,7 +469,7 @@ describe("syncCompanionClaudeSettings", () => {
       hasPostToolHook(
         settings,
         "PostToolUse",
-        `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+        `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
       ),
     ).toBe(false);
     expect(hasValidateHook(settings, companionPath)).toBe(true);

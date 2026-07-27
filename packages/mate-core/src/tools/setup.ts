@@ -121,7 +121,7 @@ function mateFolderReadme(): string {
     `Edit \`.${n}/config/framework.yaml\` to configure:`,
     ``,
     `- **profiles** — per-profile allowed agents list`,
-    `- **capabilities** — skill and CLI tool capabilities (e.g. react-doctor, openspec, tokensave, headroom)`,
+    `- **capabilities** — skill and CLI tool capabilities (e.g. react-doctor, openspec, tokensave, headroom, rtk)`,
     `- **git** — set to \`auto\` to synchronize the companion before agent launches`,
     ``,
   ].join("\n");

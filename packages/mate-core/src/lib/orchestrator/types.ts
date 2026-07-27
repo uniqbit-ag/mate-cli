@@ -86,6 +86,7 @@ export interface FrameworkConfig {
   git?: GitModeProfile;
   profiles: Record<string, PolicyProfile>;
   capabilities?: CapabilityConfig[];
+  migrations?: string[];
   cliTools?: CliToolConfig[];
   packageManagers?: string[];
   engines?: EngineConstraints;

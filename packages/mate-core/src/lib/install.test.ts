@@ -78,6 +78,25 @@ describe("install context and planning", () => {
     expect(ids).toContain("capability:openspec");
     expect(ids).not.toContain("capability:graphify");
     expect(ids).not.toContain("capability:headroom");
+    expect(ids).not.toContain("capability:rtk");
+  });
+
+  test("plans RTK only when the RTK capability is selected", async () => {
+    const root = await tempRoot();
+    const context = {
+      kind: "companion" as const,
+      companionPath: root,
+      config: {
+        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        packageManagers: ["bun", "uv"],
+        capabilities: [{ name: "rtk" }],
+      },
+      fingerprint: "rtk-context",
+    };
+
+    const ids = buildInstallPlan(context).requirements.map((requirement) => requirement.id);
+    expect(ids).toContain("capability:rtk");
+    expect(ids).not.toContain("capability:headroom");
   });
 });
 

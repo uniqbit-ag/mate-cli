@@ -211,7 +211,7 @@ function appendOpenSpecFinishNudge(
   const nudges = uniqueChanges.map(
     (change) =>
       `ACTION REQUIRED: An openspec change (${change}) was just archived. ` +
-      `Immediately invoke the mate-openspec-artifact-finish skill to complete the finish pipeline ` +
+      `Immediately invoke the mate-artifact-finish skill to complete the finish pipeline ` +
       "(invoke the CLI as `mate`, never through a companion-local wrapper path or as `" +
       "$MATE_COMPANION_BIN_PATH/mate`). " +
       "`mate artifact finish` resumes from the already-archived change and completes the commit, dated tag, and push itself — " +
