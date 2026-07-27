@@ -50,7 +50,7 @@ async function readJson(filePath: string): Promise<Record<string, any>> {
   return JSON.parse(await fs.readFile(filePath, "utf8"));
 }
 
-function instructionsCapability(content: string): CapabilityPlugin {
+function instructionsCapability(content: string, providers?: string[]): CapabilityPlugin {
   return {
     id: "acme-rules",
     kind: "capability",
@@ -59,7 +59,7 @@ function instructionsCapability(content: string): CapabilityPlugin {
     defaultSelected: false,
     isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "acme-rules"),
     async apply(ctx) {
-      await ctx.instructions?.append(content);
+      await ctx.instructions?.append(content, providers ? { providers } : undefined);
     },
     async teardown() {},
   };
@@ -161,6 +161,46 @@ describe("ctx.instructions.append", () => {
     expect(claudeMd).toContain(content);
     const agentsMd = await fs.readFile(path.join(root, "AGENTS.md"), "utf8");
     expect(agentsMd).toContain(content);
+  });
+
+  test("provider targeting writes only to the requested active provider", async () => {
+    const root = await makeTempDir("mate-instr-targeted-");
+    const capability = instructionsCapability(content, ["opencode"]);
+
+    await applySetupCompatibilities(root, configWith(["acme-rules"]), "sync", [
+      claudePlugin,
+      opencodePlugin,
+      capability,
+    ]);
+    await applySetupCompatibilities(root, configWith(["acme-rules"]), "sync", [
+      claudePlugin,
+      opencodePlugin,
+      capability,
+    ]);
+
+    const claudeMd = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
+    expect(claudeMd).not.toContain(content);
+    const agentsMd = await fs.readFile(path.join(root, "AGENTS.md"), "utf8");
+    expect(countOccurrences(agentsMd, content)).toBe(1);
+  });
+
+  test("inactive provider targets do not create or track instruction blocks", async () => {
+    const root = await makeTempDir("mate-instr-inactive-target-");
+    const capability = instructionsCapability(content, ["opencode"]);
+
+    await applySetupCompatibilities(root, configWith(["acme-rules"], ["claude"]), "sync", [
+      claudePlugin,
+      opencodePlugin,
+      capability,
+    ]);
+
+    const agentsMd = await fs.readFile(path.join(root, "AGENTS.md"), "utf8");
+    expect(agentsMd).not.toContain(content);
+    const claudeMd = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
+    expect(claudeMd).not.toContain(content);
+    await expect(
+      fs.access(path.join(root, ".mate", "state", "context-services.json")),
+    ).rejects.toThrow();
   });
 
   test("re-running apply is idempotent — block appears exactly once", async () => {

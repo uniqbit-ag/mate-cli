@@ -68,6 +68,18 @@ function hasValidateHook(settings: ClaudeSettings, companionPath: string): boole
   );
 }
 
+function hasArtifactFinishHook(
+  settings: ClaudeSettings,
+  event: string,
+  companionPath: string,
+): boolean {
+  return (settings.hooks?.[event] ?? []).some((group) =>
+    (group.hooks ?? []).some(
+      (hook) => hook.command === `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
+    ),
+  );
+}
+
 function hasPostToolHook(
   settings: ClaudeSettings,
   event: "PostToolUse" | "PostToolBatch",
@@ -145,7 +157,7 @@ describe("syncCompanionClaudeSettings", () => {
     ]);
   });
 
-  test("adds openspec pre-tool guard when capability enabled", async () => {
+  test("adds openspec post-archive nudge hook when capability enabled with git auto", async () => {
     const companionPath = await makeTempDir("mate-companion-openspec-");
     await syncCompanionClaudeSettings(companionPath, {
       profiles: { default: { name: "default", allowedAgents: ["claude"] } },
@@ -154,7 +166,7 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.PreToolUse).toContainEqual({
+    expect(settings.hooks?.PostToolUse).toContainEqual({
       matcher: "Bash",
       hooks: [
         {
@@ -163,8 +175,49 @@ describe("syncCompanionClaudeSettings", () => {
         },
       ],
     });
-    expect(settings.hooks?.PostToolUse).toBeUndefined();
+    expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
     expect(settings.hooks?.Stop).toBeUndefined();
+  });
+
+  test("does not register the openspec nudge hook when git auto mode is disabled", async () => {
+    const companionPath = await makeTempDir("mate-companion-openspec-no-auto-");
+    await syncCompanionClaudeSettings(companionPath, {
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      capabilities: [{ name: "openspec" }],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(false);
+    expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
+  });
+
+  test("resync replaces a stale PreToolUse deny registration with the PostToolUse nudge", async () => {
+    const companionPath = await makeTempDir("mate-companion-openspec-migrate-");
+    await seedSettings(companionPath, {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "Bash",
+            hooks: [
+              {
+                type: "command",
+                command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await syncCompanionClaudeSettings(companionPath, {
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      git: "auto",
+      capabilities: [{ name: "openspec" }],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(true);
   });
 
   test("preserves an unmanaged hook and unmanaged permissions.allow entry", async () => {
@@ -440,13 +493,7 @@ describe("syncCompanionClaudeSettings", () => {
       capabilities: [{ name: "openspec" }],
     });
     let settings = await readCompanionSettings(companionPath);
-    expect(
-      (settings.hooks?.PreToolUse ?? []).some((group) =>
-        (group.hooks ?? []).some(
-          (hook) => hook.command === `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
-        ),
-      ),
-    ).toBe(true);
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(true);
     expect(hasValidateHook(settings, companionPath)).toBe(true);
 
     await syncCompanionClaudeSettings(companionPath, {
@@ -454,13 +501,7 @@ describe("syncCompanionClaudeSettings", () => {
       capabilities: [],
     });
     settings = await readCompanionSettings(companionPath);
-    expect(
-      (settings.hooks?.PreToolUse ?? []).some((group) =>
-        (group.hooks ?? []).some(
-          (hook) => hook.command === `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
-        ),
-      ),
-    ).toBe(false);
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(false);
     expect(hasValidateHook(settings, companionPath)).toBe(true);
   });
 });

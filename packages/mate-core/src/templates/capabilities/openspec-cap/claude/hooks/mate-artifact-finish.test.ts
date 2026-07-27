@@ -26,17 +26,29 @@ function runHook(payload: Record<string, unknown>, companion: string) {
   return { exitCode: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
 }
 
-function denialReason(stdout: string): string {
+function postToolUsePayload(
+  command: string,
+  toolResponse: Record<string, unknown> = { stdout: "ok", stderr: "", interrupted: false },
+): Record<string, unknown> {
+  return {
+    hook_event_name: "PostToolUse",
+    tool_name: "Bash",
+    tool_input: { command },
+    tool_response: toolResponse,
+  };
+}
+
+function nudgeContext(stdout: string): string {
   const parsed = JSON.parse(stdout) as {
     hookSpecificOutput?: {
       hookEventName?: string;
+      additionalContext?: string;
       permissionDecision?: string;
-      permissionDecisionReason?: string;
     };
   };
-  expect(parsed.hookSpecificOutput?.hookEventName).toBe("PreToolUse");
-  expect(parsed.hookSpecificOutput?.permissionDecision).toBe("deny");
-  return parsed.hookSpecificOutput?.permissionDecisionReason ?? "";
+  expect(parsed.hookSpecificOutput?.hookEventName).toBe("PostToolUse");
+  expect(parsed.hookSpecificOutput?.permissionDecision).toBeUndefined();
+  return parsed.hookSpecificOutput?.additionalContext ?? "";
 }
 
 afterEach(async () => {
@@ -48,18 +60,15 @@ describe("mate-artifact-finish", () => {
     "openspec archive acme --json --yes",
     'openspec archive --store local "acme" --yes',
     '"/opt/mate wrappers/openspec" archive acme --yes',
-  ])("denies direct archive command: %s", async (command) => {
+  ])("nudges after archive command: %s", async (command) => {
     const { companion } = await makeFixture();
-    const result = runHook(
-      { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } },
-      companion,
-    );
+    const result = runHook(postToolUsePayload(command), companion);
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
-    const reason = denialReason(result.stdout);
-    expect(reason).toContain("acme");
-    expect(reason).toContain("mate-artifact-finish");
-    expect(reason).toContain('mate artifact finish "acme" --json');
+    const context = nudgeContext(result.stdout);
+    expect(context).toContain("acme");
+    expect(context).toContain("mate-artifact-finish");
+    expect(context).toContain('mate artifact finish "acme" --json');
   });
 
   test.each([
@@ -70,27 +79,113 @@ describe("mate-artifact-finish", () => {
     'powershell -Command "Move-Item acme openspec/changes/archive/2099-01-01-acme"',
     "python3 -c \"import shutil; shutil.move('acme', 'openspec/changes/archive/2099-01-01-acme')\"",
     "python -c \"import os; os.rename('acme', 'openspec/changes/archive/2099-01-01-acme')\"",
-  ])("denies archive move command: %s", async (command) => {
+  ])("nudges after archive move command: %s", async (command) => {
     const { companion } = await makeFixture();
-    const result = runHook(
-      { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } },
-      companion,
-    );
-    expect(denialReason(result.stdout)).toContain('mate artifact finish "acme" --json');
+    const result = runHook(postToolUsePayload(command), companion);
+    expect(nudgeContext(result.stdout)).toContain('mate artifact finish "acme" --json');
   });
 
   test.each(['mate artifact finish "acme" --json', "printf hello", "mv acme somewhere-else"])(
-    "allows command: %s",
+    "stays silent for unrelated command: %s",
     async (command) => {
       const { companion } = await makeFixture();
-      expect(
-        runHook(
-          { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } },
-          companion,
-        ).stdout,
-      ).toBe("");
+      expect(runHook(postToolUsePayload(command), companion).stdout).toBe("");
     },
   );
+
+  test.each([
+    "openspec archive --help",
+    "openspec archive --help 2>&1",
+    "openspec archive --json > out.txt",
+    "openspec archive 2> errors.log",
+  ])("stays silent for archive invocation without a change name: %s", async (command) => {
+    const { companion } = await makeFixture();
+    expect(runHook(postToolUsePayload(command), companion).stdout).toBe("");
+  });
+
+  test.each([
+    ["openspec archive acme --json 2>&1", "acme"],
+    ["openspec archive acme --yes | tail -n 5", "acme"],
+    ["openspec archive acme > archive.log 2>&1 && echo done", "acme"],
+    ["openspec archive acme&&printf done", "acme"],
+    ["openspec archive acme||printf failed", "acme"],
+    ["openspec archive acme;printf done", "acme"],
+    ["openspec archive acme|tail -n 5", "acme"],
+    ['mv "acme" "openspec/changes/archive/2099-01-01-acme" 2>&1 | cat', "acme"],
+    ['mv "acme" "openspec/changes/archive/2099-01-01-acme" >> moves.log', "acme"],
+  ])("extracts the change name past shell syntax tokens: %s", async (command, expectedChange) => {
+    const { companion } = await makeFixture();
+    const context = nudgeContext(runHook(postToolUsePayload(command), companion).stdout);
+    expect(context).toContain(`mate artifact finish "${expectedChange}" --json`);
+  });
+
+  test("does not treat a token after a pipe as the change name", async () => {
+    const { companion } = await makeFixture();
+    expect(
+      runHook(postToolUsePayload("openspec archive --help | head -n 20"), companion).stdout,
+    ).toBe("");
+  });
+
+  test.each([
+    { exit_code: 1 },
+    { exitCode: 2, stdout: "", stderr: "boom" },
+    { success: false },
+    { is_error: true },
+    { error: "Change not found" },
+    { interrupted: true },
+  ])("suppresses the nudge when the tool response indicates failure: %o", async (toolResponse) => {
+    const { companion } = await makeFixture();
+    expect(
+      runHook(postToolUsePayload("openspec archive acme --yes", toolResponse), companion).stdout,
+    ).toBe("");
+  });
+
+  test.each([
+    { stdout: "archived", stderr: "", interrupted: false },
+    { exit_code: 0 },
+    {},
+    undefined,
+  ])(
+    "nudges when the tool response indicates success or is indeterminate: %o",
+    async (toolResponse) => {
+      const { companion } = await makeFixture();
+      const payload = postToolUsePayload("openspec archive acme --yes");
+      if (toolResponse === undefined) {
+        delete payload.tool_response;
+      } else {
+        payload.tool_response = toolResponse;
+      }
+      expect(nudgeContext(runHook(payload, companion).stdout)).toContain("acme");
+    },
+  );
+
+  test("repeated invocations across archival and non-archival commands create no state", async () => {
+    const { companion } = await makeFixture();
+    for (const command of [
+      "openspec archive acme --yes",
+      "printf hello",
+      'mv "acme" "openspec/changes/archive/2099-01-01-acme"',
+      "openspec archive acme --yes",
+    ]) {
+      runHook(postToolUsePayload(command), companion);
+    }
+    await expect(fs.access(path.join(companion, ".claude", "state"))).rejects.toThrow();
+  });
+
+  test("does not deny archival commands before execution", async () => {
+    const { companion } = await makeFixture();
+    for (const command of [
+      "openspec archive acme --yes",
+      'mv "acme" "openspec/changes/archive/2099-01-01-acme"',
+    ]) {
+      const result = runHook(
+        { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } },
+        companion,
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe("");
+    }
+  });
 
   test("ignores non-Bash and Stop events", async () => {
     const { companion } = await makeFixture();
@@ -98,9 +193,10 @@ describe("mate-artifact-finish", () => {
     expect(
       runHook(
         {
-          hook_event_name: "PreToolUse",
+          hook_event_name: "PostToolUse",
           tool_name: "Read",
           tool_input: { command: "openspec archive acme" },
+          tool_response: { stdout: "ok" },
         },
         companion,
       ).stdout,
@@ -111,16 +207,7 @@ describe("mate-artifact-finish", () => {
     const { companion, archiveDir } = await makeFixture();
     await fs.mkdir(path.join(archiveDir, "2099-01-01-external"));
 
-    expect(
-      runHook(
-        {
-          hook_event_name: "PreToolUse",
-          tool_name: "Bash",
-          tool_input: { command: "printf hello" },
-        },
-        companion,
-      ).stdout,
-    ).toBe("");
+    expect(runHook(postToolUsePayload("printf hello"), companion).stdout).toBe("");
     expect(runHook({ hook_event_name: "Stop" }, companion).stdout).toBe("");
     await expect(fs.access(path.join(companion, ".claude", "state"))).rejects.toThrow();
   });
