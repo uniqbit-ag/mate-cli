@@ -172,9 +172,11 @@ requires the Headroom capability to be enabled. `cap index` refreshes enabled
 Graphify and TokenSave indexes; without a flag it chooses the enabled default,
 and the flags restrict the run to one indexer.
 
-The available capabilities are OpenSpec, React Doctor, TokenSave, Headroom,
-and Graphify. Providers are Claude and OpenCode. Bun is always part of the core
-runtime; uv is selected for Python-backed capability workflows.
+The available capabilities are OpenSpec, React Doctor, TokenSave, Headroom, RTK,
+and Graphify. Headroom and RTK are independently selectable: Headroom wraps
+launches through its proxy, while RTK patches supported provider integrations.
+Providers are Claude and OpenCode. Bun is always part of the core runtime; uv is
+selected for Python-backed capability workflows.
 
 ### Artifacts And Updates
 

@@ -46,7 +46,7 @@ const MANAGED_HOOK_MARKERS = [
   "validate-artifact-path",
   "mate-session-banner",
   "react-doctor.sh",
-  "mate-openspec-artifact-finish.sh",
+  "mate-artifact-finish.sh",
   "tokensave",
 ];
 
@@ -71,12 +71,12 @@ function getCapabilityPermissionEntries(): Record<string, string[]> {
       "Skill(openspec-propose)",
       "Skill(openspec-apply-change)",
       "Skill(openspec-archive-change)",
-      "Skill(mate-openspec-artifact-finish)",
+      "Skill(mate-artifact-finish)",
       "Bash(openspec:*)",
       "Bash(mate cap graphify:*)",
       `Bash(${path.join(wrapperBinPath, "openspec")}:*)`,
     ],
-    headroom: ["Bash(rtk:*)"],
+    rtk: ["Bash(rtk:*)"],
     graphify: [
       "Skill(graphify)",
       "Bash(graphify:*)",
@@ -273,7 +273,7 @@ function buildManagedClaudeSettings(
         hooks: [
           {
             type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
           },
         ],
       },
@@ -286,7 +286,7 @@ function buildManagedClaudeSettings(
         hooks: [
           {
             type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
             timeout: 10,
           },
         ],

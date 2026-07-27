@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import packageJson from "../../../package.json";
 import { frameworkConfig } from "../../framework";
-import { ConfigStore } from "../../lib/orchestrator/config-store";
+import { ConfigStore, RTK_CAPABILITY_SPLIT_MIGRATION } from "../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
@@ -124,6 +124,7 @@ describe("runDoctorCommand", () => {
       },
       packageManagers: ["uv"],
       capabilities: [{ name: "openspec" }, { name: "headroom" }],
+      migrations: [RTK_CAPABILITY_SPLIT_MIGRATION],
     });
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
     await globalConfigStore.register(companionPath);
@@ -136,11 +137,37 @@ describe("runDoctorCommand", () => {
     expect(output).toContain("uv");
     expect(output).toContain("openspec");
     expect(output).toContain("headroom");
-    expect(output).toContain("rtk");
+    expect(output).not.toContain("rtk");
     expect(output).toContain("ok");
     expect(output).toContain("missing");
     expect(output).not.toContain("tokensave");
     expect(output).not.toContain("graphify");
+  });
+
+  test("checks RTK independently without reporting Headroom", async () => {
+    const root = await makeTempDir("doctor-rtk-only-");
+    const repoPath = path.join(root, "working");
+    const binPath = path.join(root, "bin");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(binPath, { recursive: true });
+    await makeExecutable(binPath, "rtk");
+    const companionPath = await setupCompanion(root, repoPath, {
+      profiles: {
+        default: { name: "default", allowedAgents: ["claude"] },
+        strict: { name: "strict", allowedAgents: ["claude"] },
+      },
+      packageManagers: [],
+      capabilities: [{ name: "rtk" }],
+    });
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], { cwd: repoPath, globalConfigStore, pathValue: binPath }),
+    );
+
+    expect(output).toContain("rtk");
+    expect(output).not.toContain("headroom");
   });
 
   test("reports companion repository state for a local companion config", async () => {

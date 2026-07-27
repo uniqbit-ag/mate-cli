@@ -127,10 +127,10 @@ function getSelectedToolChecks(config: {
     checks.push({ name: "tokensave", command: "tokensave", source: "capability" });
   }
   if (selectedCapabilities.has("headroom")) {
-    checks.push(
-      { name: "headroom", command: "headroom", source: "capability" },
-      { name: "rtk", command: "rtk", source: "headroom dependency" },
-    );
+    checks.push({ name: "headroom", command: "headroom", source: "capability" });
+  }
+  if (selectedCapabilities.has("rtk")) {
+    checks.push({ name: "rtk", command: "rtk", source: "capability" });
   }
   if (selectedCapabilities.has("graphify")) {
     checks.push({ name: "graphify", command: "graphify", source: "capability" });

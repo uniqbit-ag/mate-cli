@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-input_file=$(mktemp "${TMPDIR:-/tmp}/mate-openspec-artifact-finish.XXXXXX")
+input_file=$(mktemp "${TMPDIR:-/tmp}/mate-artifact-finish.XXXXXX")
 trap 'rm -f "$input_file"' EXIT
 cat >"$input_file"
 
@@ -173,8 +173,8 @@ try {
 
 const sessionId = typeof input.session_id === "string" && input.session_id ? input.session_id : null;
 const stateFile = sessionId
-  ? path.join(stateDir, "mate-openspec-artifact-finish." + sessionId.replace(/[^a-zA-Z0-9_-]/g, "_") + ".json")
-  : path.join(stateDir, "mate-openspec-artifact-finish.archive-snapshot.json");
+  ? path.join(stateDir, "mate-artifact-finish." + sessionId.replace(/[^a-zA-Z0-9_-]/g, "_") + ".json")
+  : path.join(stateDir, "mate-artifact-finish.archive-snapshot.json");
 
 const currentEntries = readArchiveEntries();
 let previousEntries;
@@ -198,7 +198,7 @@ try {
 function nudgeFor(change) {
   return (
     "An openspec change (" + change + ") was just archived but not finished. Invoke the " +
-    "mate-openspec-artifact-finish skill now to finish it (invoke the CLI as `mate`, never through a companion-local wrapper path or as `$MATE_COMPANION_BIN_PATH/mate`). " +
+    "mate-artifact-finish skill now to finish it (invoke the CLI as `mate`, never through a companion-local wrapper path or as `$MATE_COMPANION_BIN_PATH/mate`). " +
     "`mate artifact finish` resumes from the already-archived change and completes the commit, dated tag, and push itself — " +
     "do not hand-commit, do not hand-tag, and do not re-apply delta specs manually. " +
     "Follow the skill guardrails, including confirming with the user in chat before pushing."

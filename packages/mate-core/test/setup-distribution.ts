@@ -2,6 +2,7 @@ import { version } from "../package.json";
 import { setFallbackDistribution } from "../src/distribution";
 import { createGraphifyPlugin } from "../src/tools/setup/capabilities/graphify";
 import { createHeadroomPlugin } from "../src/tools/setup/capabilities/headroom";
+import { createRtkPlugin } from "../src/tools/setup/capabilities/rtk";
 import { createOpenspecPlugin } from "../src/tools/setup/capabilities/openspec";
 import { createReactDoctorPlugin } from "../src/tools/setup/capabilities/react-doctor";
 import { createTokensavePlugin } from "../src/tools/setup/capabilities/tokensave";
@@ -26,6 +27,7 @@ function buildTestPluginEntries(): PluginRegistration[] {
     createReactDoctorPlugin(),
     createTokensavePlugin(),
     createHeadroomPlugin(),
+    createRtkPlugin(),
     createGraphifyPlugin(),
   ];
   return [

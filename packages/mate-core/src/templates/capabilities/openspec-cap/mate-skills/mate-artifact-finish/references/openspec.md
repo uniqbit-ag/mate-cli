@@ -1,6 +1,6 @@
 # OpenSpec Finish Reference
 
-Use this reference when you need the OpenSpec-specific parts of `mate-openspec-artifact-finish`: change lookup, resumable archive behavior, JSON field meanings, and conflict recovery.
+Use this reference when you need the OpenSpec-specific parts of `mate-artifact-finish`: change lookup, resumable archive behavior, JSON field meanings, and conflict recovery.
 
 ## OpenSpec Input Rules
 

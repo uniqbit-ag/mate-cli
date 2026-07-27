@@ -1,5 +1,5 @@
 ---
-name: mate-openspec-artifact-finish
+name: mate-artifact-finish
 description: Finish a completed artifact in one step via `mate artifact finish`. Use when the user wants to finish, ship, or archive-and-push a completed artifact and anchor it with a dated revert tag.
 allowed-tools: Bash(mate:*), Bash(git:*), Bash(openspec:*)
 license: MIT

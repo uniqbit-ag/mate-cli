@@ -72,7 +72,7 @@ const CLAUDE_MANAGED_HOOK_COMMAND_SUFFIXES = new Set([
   "/.claude/hooks/validate-artifact-path",
   "/.claude/hooks/mate-session-banner",
   "/.claude/hooks/react-doctor.sh",
-  "/.claude/hooks/mate-openspec-artifact-finish.sh",
+  "/.claude/hooks/mate-artifact-finish.sh",
 ]);
 
 export function deriveGraphifyProviders(activeProviders: string[]): string[] {

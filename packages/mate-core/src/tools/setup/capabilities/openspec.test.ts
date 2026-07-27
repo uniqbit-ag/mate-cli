@@ -8,7 +8,7 @@ import type { SetupContext } from "../plugin";
 import {
   createOpenspecPlugin,
   deriveOpenSpecTools,
-  MATE_OPENSPEC_SKILLS,
+  MATE_ARTIFACT_SKILLS,
   OPENSPEC_SKILLS,
 } from "./openspec";
 
@@ -365,7 +365,7 @@ describe("createOpenspecPlugin", () => {
     );
 
     for (const runtimeDir of [".claude", ".opencode"]) {
-      for (const skill of MATE_OPENSPEC_SKILLS) {
+      for (const skill of MATE_ARTIFACT_SKILLS) {
         await expect(
           fs.readFile(path.join(root, runtimeDir, "skills", skill, "SKILL.md"), "utf8"),
         ).resolves.toContain("mate artifact finish");
@@ -382,7 +382,7 @@ describe("createOpenspecPlugin", () => {
     );
 
     await expect(
-      fs.access(path.join(root, ".claude", "hooks", "mate-openspec-artifact-finish.sh")),
+      fs.access(path.join(root, ".claude", "hooks", "mate-artifact-finish.sh")),
     ).resolves.toBeNull();
   });
 
@@ -393,7 +393,7 @@ describe("createOpenspecPlugin", () => {
     await plugin.forProvider!.claude.apply(makeCtx(root, ["claude"]));
 
     await expect(
-      fs.access(path.join(root, ".claude", "hooks", "mate-openspec-artifact-finish.sh")),
+      fs.access(path.join(root, ".claude", "hooks", "mate-artifact-finish.sh")),
     ).rejects.toThrow();
   });
 
@@ -412,7 +412,7 @@ describe("createOpenspecPlugin", () => {
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}) });
 
     for (const runtimeDir of [".claude", ".opencode"]) {
-      for (const skill of MATE_OPENSPEC_SKILLS) {
+      for (const skill of MATE_ARTIFACT_SKILLS) {
         await fs.mkdir(path.join(root, runtimeDir, "skills", skill), { recursive: true });
         await fs.writeFile(
           path.join(root, runtimeDir, "skills", skill, "SKILL.md"),
