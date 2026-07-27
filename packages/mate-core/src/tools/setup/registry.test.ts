@@ -48,6 +48,33 @@ function makeProvider(id: string): Plugin {
 }
 
 describe("PluginRegistry", () => {
+  test("accepts capability provider hooks with or without preflight", async () => {
+    const legacy: CapabilityPlugin = {
+      ...makePlugin("legacy", "capability"),
+      kind: "capability",
+      forProvider: { claude: { async apply() {}, async teardown() {} } },
+    };
+    const diagnostics = mock(async () => ["acme diagnostic"]);
+    const withPreflight: CapabilityPlugin = {
+      ...legacy,
+      id: "with-preflight",
+      forProvider: {
+        claude: { async apply() {}, async teardown() {}, preflight: diagnostics },
+      },
+    };
+    const registry = new PluginRegistry([legacy, withPreflight]);
+
+    expect(registry.getAll()).toEqual([legacy, withPreflight]);
+    await expect(
+      withPreflight.forProvider?.claude?.preflight?.({
+        companionPath: "/tmp/acme",
+        config: { profiles: {} },
+        repository: { id: "acme", path: "/tmp/acme", profile: "default" },
+        providerId: "claude",
+      }),
+    ).resolves.toEqual(["acme diagnostic"]);
+  });
+
   test("register() appends plugin and getAll() returns it", () => {
     const reg = new PluginRegistry([]);
     const plugin = makePlugin("test-a");

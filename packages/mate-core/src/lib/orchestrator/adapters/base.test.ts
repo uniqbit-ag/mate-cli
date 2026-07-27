@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { LaunchPreflightError } from "../types";
+import { getContextModePackageRoot } from "../../context-mode-package";
 import { getOpenCodePluginPackageReference } from "../../opencode-plugin-package";
 import { getReactDoctorBinPath, getWrapperBinPath } from "../../package-paths";
 import { ClaudeAdapter } from "./claude";
@@ -211,6 +212,19 @@ describe("LaunchAdapter.prepareLaunch", () => {
     ).rejects.toThrow(/Expected Mate plugin package: @uniqbit\/mate-opencode-plugin@/);
   });
 
+  test("leaves context-mode package validation to the capability plugin", async () => {
+    const companionPath = await makeTempDir("mate-opencode-context-mode-");
+    await writeOpenCodeRuntime(companionPath);
+    const context = { ...makeContext([{ name: "context-mode" }]), companionPath };
+
+    await expect(new OpenCodeAdapter().validateLaunch(context)).resolves.toBeUndefined();
+    await fs.writeFile(
+      path.join(companionPath, ".opencode", "opencode.json"),
+      JSON.stringify({ plugin: [getOpenCodePluginPackageReference(), "context-mode@0.0.1"] }),
+    );
+    await expect(new OpenCodeAdapter().validateLaunch(context)).resolves.toBeUndefined();
+  });
+
   test("injects the companion guidance payload into the OpenCode launch environment", async () => {
     const adapter = new OpenCodeAdapter();
 
@@ -366,6 +380,19 @@ describe("Claude companion settings launch flags", () => {
     expect(launch.args[mcpIndex + 1]).toBe(mcpConfigPath);
     // Passthrough args stay after the managed flags.
     expect(launch.args.slice(-2)).toEqual(["--print", "hello"]);
+  });
+
+  test("adds the local context-mode plugin directory only when enabled", async () => {
+    const companionPath = await makeTempDir("mate-claude-context-mode-flag-");
+    const enabled = new ClaudeAdapter().buildArgs(
+      { ...makeContext([{ name: "context-mode" }]), companionPath },
+      [],
+    );
+    const disabled = new ClaudeAdapter().buildArgs({ ...makeContext(), companionPath }, []);
+
+    const pluginIndex = enabled.indexOf("--plugin-dir");
+    expect(enabled[pluginIndex + 1]).toBe(getContextModePackageRoot(companionPath));
+    expect(disabled).not.toContain("--plugin-dir");
   });
 });
 

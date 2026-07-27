@@ -267,7 +267,7 @@ function buildManagedClaudeSettings(
     ...(hooks.SessionStart ?? []),
   ];
   if (openspecEnabled) {
-    hooks.PreToolUse = [
+    hooks.PostToolUse = [
       {
         matcher: "Bash",
         hooks: [
@@ -277,7 +277,7 @@ function buildManagedClaudeSettings(
           },
         ],
       },
-      ...(hooks.PreToolUse ?? []),
+      ...(hooks.PostToolUse ?? []),
     ];
   }
   if (reactDoctorEnabled) {

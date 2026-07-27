@@ -44,6 +44,39 @@ export const opencodePluginCacheDeps = {
     }),
 };
 
+export async function warmOpenCodePackageCache(
+  packageName: string,
+  packageReference: string,
+  env: NodeJS.ProcessEnv = process.env,
+  registry = PUBLIC_NPM_REGISTRY,
+): Promise<WarmPluginCacheResult> {
+  if (env.MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH === "1") {
+    return { ok: true, detail: "pre-fetch disabled via MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH" };
+  }
+  const version = packageReference.slice(packageName.length + 1);
+  const specDir = path.join(getOpenCodeCacheDir(env), "packages", packageReference);
+  try {
+    await fs.mkdir(specDir, { recursive: true });
+    await fs.writeFile(
+      path.join(specDir, "package.json"),
+      JSON.stringify({ dependencies: { [packageName]: version } }, null, 2) + "\n",
+      "utf8",
+    );
+    const result = opencodePluginCacheDeps.runInstall(specDir, registry);
+    if (result.error) return { ok: false, detail: result.error.message };
+    if (result.status !== 0) {
+      return {
+        ok: false,
+        detail: `${result.stderr ?? ""}`.trim() || `npm install exited with ${result.status}`,
+      };
+    }
+    await fs.access(path.join(specDir, "node_modules", ...packageName.split("/"), "package.json"));
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, detail: (error as Error).message };
+  }
+}
+
 /**
  * Pre-fetch the pinned plugin package into OpenCode's npm plugin environment
  * (`<cache>/packages/<spec>/`), mirroring OpenCode's own on-demand install
@@ -55,42 +88,6 @@ export async function warmOpenCodePluginCache(
   env: NodeJS.ProcessEnv = process.env,
   registry = PUBLIC_NPM_REGISTRY,
 ): Promise<WarmPluginCacheResult> {
-  // Escape hatch for tests and intentionally offline environments: skip the
-  // pre-fetch entirely instead of attempting a registry install.
-  if (env.MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH === "1") {
-    return { ok: true, detail: "pre-fetch disabled via MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH" };
-  }
-
   const reference = getOpenCodePluginPackageReference(version);
-  const specDir = path.join(getOpenCodeCacheDir(env), "packages", reference);
-
-  try {
-    await fs.mkdir(specDir, { recursive: true });
-    await fs.writeFile(
-      path.join(specDir, "package.json"),
-      JSON.stringify({ dependencies: { [OPENCODE_PLUGIN_PACKAGE_NAME]: version } }, null, 2) + "\n",
-      "utf8",
-    );
-
-    const result = opencodePluginCacheDeps.runInstall(specDir, registry);
-    if (result.error) {
-      return { ok: false, detail: result.error.message };
-    }
-    if (result.status !== 0) {
-      const output = `${result.stderr ?? ""}`.trim() || `npm install exited with ${result.status}`;
-      return { ok: false, detail: output };
-    }
-
-    await fs.access(
-      path.join(
-        specDir,
-        "node_modules",
-        ...OPENCODE_PLUGIN_PACKAGE_NAME.split("/"),
-        "package.json",
-      ),
-    );
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, detail: (error as Error).message };
-  }
+  return warmOpenCodePackageCache(OPENCODE_PLUGIN_PACKAGE_NAME, reference, env, registry);
 }
