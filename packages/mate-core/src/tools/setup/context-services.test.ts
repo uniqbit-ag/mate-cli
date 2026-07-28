@@ -11,6 +11,9 @@ import { createOpenCodePlugin } from "./providers/opencode";
 
 const claudePlugin = createClaudePlugin();
 const opencodePlugin = createOpenCodePlugin();
+const conciseReportingPolicy =
+  "When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.";
+const jsdocBoundary = "Apply this same preference to JSDoc.";
 
 const tempRoots: string[] = [];
 
@@ -100,6 +103,25 @@ describe("ctx.templates.render", () => {
 
     const rendered = await fs.readFile(path.join(root, "scaffold", "AGENTS.md"), "utf8");
     expect(rendered.trim().length).toBeGreaterThan(0);
+  });
+
+  test("provider setup renders concise reporting and JSDoc guidance in both root templates", async () => {
+    const root = await makeTempDir("mate-tpl-root-guidance-");
+
+    await applySetupCompatibilities(root, configWith([], ["claude", "opencode"]), "sync", [
+      claudePlugin,
+      opencodePlugin,
+    ]);
+
+    const [agents, claude] = await Promise.all([
+      fs.readFile(path.join(root, "AGENTS.md"), "utf8"),
+      fs.readFile(path.join(root, "CLAUDE.md"), "utf8"),
+    ]);
+    for (const guidance of [agents, claude]) {
+      expect(guidance).toContain(conciseReportingPolicy);
+      expect(guidance).toContain(jsdocBoundary);
+      expect(guidance).not.toContain("smallest correct implementation");
+    }
   });
 
   test("distribution asset root overrides the core template and data is substituted", async () => {
