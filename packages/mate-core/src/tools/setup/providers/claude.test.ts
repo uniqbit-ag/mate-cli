@@ -243,6 +243,39 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.permissions?.allow).toContain("Bash(ls:*)");
   });
 
+  test("seeds Read and Edit companion permissions and never an ineffective Glob rule", async () => {
+    const companionPath = await makeTempDir("mate-companion-permissions-");
+    await syncCompanionClaudeSettings(companionPath, {
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      capabilities: [],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.allow).toContain(`Read(${companionPath}/**)`);
+    expect(settings.permissions?.allow).toContain(`Edit(${companionPath}/**)`);
+    expect(settings.permissions?.allow).not.toContain(`Glob(${companionPath}/**)`);
+  });
+
+  test("resync removes the legacy Glob companion permission entry", async () => {
+    const companionPath = await makeTempDir("mate-companion-glob-migrate-");
+    await seedSettings(companionPath, {
+      permissions: {
+        allow: ["Bash(ls:*)", `Read(${companionPath}/**)`, `Glob(${companionPath}/**)`],
+      },
+    });
+
+    await syncCompanionClaudeSettings(companionPath, {
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      capabilities: [],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.allow).toContain("Bash(ls:*)");
+    expect(settings.permissions?.allow).toContain(`Read(${companionPath}/**)`);
+    expect(settings.permissions?.allow).toContain(`Edit(${companionPath}/**)`);
+    expect(settings.permissions?.allow).not.toContain(`Glob(${companionPath}/**)`);
+  });
+
   test("resync preserves user-authored SessionStart hooks alongside the managed banner", async () => {
     const companionPath = await makeTempDir("mate-companion-session-start-");
     await seedSettings(companionPath, {
@@ -369,6 +402,8 @@ describe("syncCompanionClaudeSettings", () => {
     ["rtk", "Bash(rtk:*)"],
     ["graphify", "Bash(graphify:*)"],
     ["react-doctor", "Bash(npx react-doctor:*)"],
+    ["context-mode", "Skill(context-mode:context-mode)"],
+    ["context-mode", "mcp__plugin_context-mode_context-mode__*"],
   ])("pre-seeds %s permission allowance %s", async (name, entry) => {
     const companionPath = await makeTempDir("mate-companion-perm-");
     await syncCompanionClaudeSettings(companionPath, {
