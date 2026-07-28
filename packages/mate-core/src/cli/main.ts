@@ -22,16 +22,13 @@ import { hydrateDynamicPlugins } from "../tools/setup/dynamic-plugins/hydrate";
 import { findPluginCliCommand } from "./plugin-commands";
 import { usage } from "./usage";
 
-export function isInstallRecoveryCommand(command?: string, subcommand?: string): boolean {
-  return (
-    command === "install" ||
-    command === "update" ||
-    command === "doctor" ||
-    command === "help" ||
-    command === "--help" ||
-    command === "-h" ||
-    (command === "companion" && (subcommand === "setup" || subcommand === "link"))
-  );
+export interface GateNeeds {
+  /** Block the command while an enforced update is pending. */
+  updateGuard?: boolean;
+  /** Require an unambiguous companion (selection wizard on ambiguity) before dispatch. */
+  companion?: boolean;
+  /** Require a complete installation (install preflight) before dispatch. */
+  install?: boolean;
 }
 
 export interface MainDeps {
@@ -54,6 +51,11 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     return;
   }
 
+  if (!command || command === "help" || command === "--help" || command === "-h") {
+    console.log(usage());
+    return;
+  }
+
   // Companion-declared plugins register before cap-command detection so
   // their commands route like compiled-in ones (including MCP servers whose
   // command is their own cap subcommand). Diagnostics stay on stderr; a
@@ -65,73 +67,102 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // are suppressed for them.
   const isPluginCommand =
     command === "cap" && findPluginCliCommand(subcommand, rest[0]) !== undefined;
-  if (!isPluginCommand) {
-    const updateStore = new UpdateStateStore();
-    scheduleBackgroundCheck(updateStore);
-    if (
-      !isInstallRecoveryCommand(command, subcommand) &&
-      (await enforceUpdateIfRequired(updateStore))
-    ) {
-      process.exitCode = 1;
-      return;
+
+  // Every dispatch case opens with a gate() call declaring what the command
+  // needs before it may run. Declared gates run in fixed order — update
+  // enforcement, companion selection, install preflight — and a blocked gate
+  // sets the exit code, so callers only need `if (!(await gate(...))) return`.
+  const gate = async (needs: GateNeeds): Promise<boolean> => {
+    if (!isPluginCommand) {
+      const updateStore = new UpdateStateStore();
+      scheduleBackgroundCheck(updateStore);
+      if (needs.updateGuard && (await enforceUpdateIfRequired(updateStore))) {
+        process.exitCode = 1;
+        return false;
+      }
+      await showUpdateBannerIfAvailable(updateStore);
     }
-    await showUpdateBannerIfAvailable(updateStore);
-  }
 
-  if (!command || command === "help" || command === "--help" || command === "-h") {
-    console.log(usage());
-    return;
-  }
-
-  if (!(await deps.ensureUnambiguousCompanion())) {
-    process.exitCode = 1;
-    return;
-  }
-
-  if (!isInstallRecoveryCommand(command, subcommand)) {
-    const preflight = await deps.inspectInstallPreflight();
-    if (!preflight.ok) {
-      console.error(
-        `${frameworkCommandName()}: ${preflight.reason ?? "installation is incomplete"}`,
-      );
-      console.error(`Run \`${frameworkCommandName()} install\` before continuing.`);
+    if (needs.companion && !(await deps.ensureUnambiguousCompanion())) {
       process.exitCode = 1;
-      return;
+      return false;
     }
-  }
+
+    if (needs.install) {
+      const preflight = await deps.inspectInstallPreflight();
+      if (!preflight.ok) {
+        console.error(
+          `${frameworkCommandName()}: ${preflight.reason ?? "installation is incomplete"}`,
+        );
+        console.error(`Run \`${frameworkCommandName()} install\` before continuing.`);
+        process.exitCode = 1;
+        return false;
+      }
+    }
+
+    return true;
+  };
 
   switch (command) {
     case "install":
+      // Builds a companion-scoped context, so it needs an unambiguous
+      // companion — but must stay runnable when installation is incomplete.
+      if (!(await gate({ companion: true }))) return;
       await runInstallCommand(argv.slice(3));
       return;
     case "artifact":
+      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runArtifactCommand(subcommand, rest);
       return;
     case "companion":
+      switch (subcommand) {
+        // setup/link are recovery paths and must never be gated on the
+        // state they exist to repair.
+        case "setup":
+        case "link":
+          if (!(await gate({}))) return;
+          break;
+        // open/tui consume a companion context.
+        case "open":
+        case "tui":
+          if (!(await gate({ updateGuard: true, companion: true }))) return;
+          break;
+        // list and unknown subcommands (which fail inside the command).
+        default:
+          if (!(await gate({ updateGuard: true }))) return;
+      }
       await runCompanionCommand(subcommand, rest);
       return;
     case "claude":
+      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runLaunchClaudeCommand(argv.slice(3), { directPassthrough: true });
       return;
     case "opencode":
+      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runLaunchOpenCodeCommand(argv.slice(3), { directPassthrough: true });
       return;
     case "report":
+      if (!(await gate({ updateGuard: true }))) return;
       await runReportCommand(argv.slice(3));
       return;
     case "config":
+      if (!(await gate({ updateGuard: true }))) return;
       await runConfigCommand(argv.slice(3));
       return;
     case "doctor":
+      if (!(await gate({}))) return;
       await runDoctorCommand(argv.slice(3));
       return;
     case "cap":
+      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runCapCommand(subcommand, rest);
       return;
     case "update":
+      if (!(await gate({}))) return;
       await runUpdateCommand(argv.slice(3));
       return;
     default:
+      // Unknown commands fail fast: no case matched, so no gate ever ran.
       console.error(`Unknown command: ${command}`);
       console.error(usage());
       process.exitCode = 1;
