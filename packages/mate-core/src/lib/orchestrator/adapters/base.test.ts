@@ -434,14 +434,15 @@ describe("Adapter headroom env wiring", () => {
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
 
-  test("OpenCodeAdapter injects the mate reference through OPENCODE_CONFIG_CONTENT", async () => {
+  test("OpenCodeAdapter injects permissions without deprecated config keys", async () => {
     const launch = await withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
       new OpenCodeAdapter().prepareLaunch(makeContext(), []),
     );
 
     expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeDefined();
     const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.references.mate).toBe("/tmp/companion");
+    expect(config.references).toBeUndefined();
+    expect(config.tool_output).toBeUndefined();
     expect(config.permission.external_directory["/tmp/companion"]).toBe("allow");
     expect(config.permission.external_directory["/tmp/companion/**"]).toBe("allow");
     expect(config.skills.paths).toEqual(["/tmp/companion/.agents/skills"]);
@@ -454,6 +455,7 @@ describe("Adapter headroom env wiring", () => {
         model: "anthropic/test",
         permission: { external_directory: { "../docs/**": "allow" } },
         references: { docs: "../docs" },
+        tool_output: { max_lines: 10 },
         skills: { paths: ["../team-skills"] },
       }),
       () => new OpenCodeAdapter().prepareLaunch(makeContext(), []),
@@ -463,8 +465,8 @@ describe("Adapter headroom env wiring", () => {
     expect(config.permission.external_directory["../docs/**"]).toBe("allow");
     expect(config.permission.external_directory["/tmp/companion"]).toBe("allow");
     expect(config.permission.external_directory["/tmp/companion/**"]).toBe("allow");
-    expect(config.references.docs).toBe("../docs");
-    expect(config.references.mate).toBe("/tmp/companion");
+    expect(config.references).toBeUndefined();
+    expect(config.tool_output).toBeUndefined();
     expect(config.skills.paths).toEqual(["../team-skills", "/tmp/companion/.agents/skills"]);
     expect(config.model).toBe("anthropic/test");
   });
@@ -495,7 +497,7 @@ describe("Adapter headroom env wiring", () => {
     expect(launch.env.OPENAI_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/p\/app\/v1$/);
     expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeDefined();
     const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.references.mate).toBe(companionPath);
+    expect(config.references).toBeUndefined();
     expect(config.permission.external_directory[companionPath]).toBe("allow");
     expect(config.permission.external_directory[`${companionPath}/**`]).toBe("allow");
     expect(config.provider.anthropic.options.baseURL).toMatch(
@@ -570,7 +572,7 @@ describe("Adapter headroom env wiring", () => {
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(launch.env.OPENAI_BASE_URL).toBeUndefined();
     const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.references.mate).toBe("/tmp/companion");
+    expect(config.references).toBeUndefined();
     expect(config.permission.external_directory["/tmp/companion"]).toBe("allow");
     expect(config.permission.external_directory["/tmp/companion/**"]).toBe("allow");
   });

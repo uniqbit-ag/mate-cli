@@ -50,6 +50,11 @@ function mergeOpenCodeConfigContent(
 
   mergeConfig(config, overlay);
 
+  // These keys were removed from OpenCode's schema. Strip inherited values so
+  // an older shell environment cannot make the launch config invalid.
+  delete config.tool_output;
+  delete config.references;
+
   if (options.appendSkillPaths && options.appendSkillPaths.length > 0) {
     const skills = isRecord(config.skills) ? config.skills : {};
     const paths = Array.isArray(skills.paths) ? skills.paths : [];
@@ -88,9 +93,6 @@ export class OpenCodeAdapter extends LaunchAdapter {
               [context.companionPath]: "allow",
               [`${context.companionPath}/**`]: "allow",
             },
-          },
-          references: {
-            mate: context.companionPath,
           },
         },
         process.env,

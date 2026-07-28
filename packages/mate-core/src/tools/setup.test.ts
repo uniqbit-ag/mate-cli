@@ -571,6 +571,7 @@ describe("executeSetup", () => {
             instructions: ["./custom.md"],
             compaction: { preserve_recent_tokens: 999 },
             tool_output: { max_lines: 10 },
+            references: { old: ".." },
             plugin: ["./plugins/custom.ts", "@uniqbit/mate-opencode-plugin@0.0.1"],
           },
           null,
@@ -615,9 +616,9 @@ describe("executeSetup", () => {
         '"preserve_recent_tokens": 999',
       );
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"reserved": 15000');
-      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_lines": 10');
-      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_bytes": 20000');
-      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"mate": ".."');
+      const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
+      expect(repairedConfig.tool_output).toBeUndefined();
+      expect(repairedConfig.references).toBeUndefined();
 
       const mergedTuiConfig = JSON.parse(await fs.readFile(tuiConfigPath, "utf8"));
       expect(

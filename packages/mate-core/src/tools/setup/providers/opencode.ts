@@ -46,6 +46,9 @@ const LEGACY_TUI_DEPENDENCIES = {
   "@opentui/keymap": "^0.3.4",
   "@opentui/solid": "^0.3.4",
 };
+// OpenCode no longer accepts these keys. Remove them from existing companion
+// configs during setup so upgrading repairs already-materialized files.
+const UNSUPPORTED_OPENCODE_CONFIG_KEYS = ["tool_output", "references"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -109,6 +112,12 @@ function ensureMatePluginReference(config: Record<string, unknown>, pluginRefere
   config.plugin = [...preserved, pluginReference];
 }
 
+function removeUnsupportedOpenCodeConfigKeys(config: Record<string, unknown>): void {
+  for (const key of UNSUPPORTED_OPENCODE_CONFIG_KEYS) {
+    delete config[key];
+  }
+}
+
 function stripMatePluginReference(config: Record<string, unknown>): void {
   if (!Array.isArray(config.plugin)) return;
 
@@ -140,6 +149,7 @@ async function syncOpenCodeConfigFile(
   }
 
   mergeConfigDefaults(existing, defaults);
+  removeUnsupportedOpenCodeConfigKeys(existing);
   ensureMatePluginReference(existing, pluginReference);
   await fs.writeFile(destPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
 }
