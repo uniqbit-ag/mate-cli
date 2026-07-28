@@ -20,9 +20,24 @@ export const updateCheckerDeps = {
   toIsoString: () => new Date().toISOString(),
 };
 
+const updateStateFileSlug = (packageName: string): string =>
+  packageName.replace(/^@/, "").replace(/[^a-zA-Z0-9._-]+/g, "-");
+
+/**
+ * Every distribution built on mate-core shares `~/.mate`, but each checks its
+ * own update package — so the cached state is scoped per package. A shared
+ * file would let the default distribution's public-npm check poison a custom
+ * distribution's banner with a version it can never install.
+ */
 export class UpdateStateStore extends YamlFileStore<UpdateState> {
-  constructor() {
-    super(path.join(os.homedir(), `.${FRAMEWORK_NAME}`, "update-state.yaml"));
+  constructor(packageName: string = getUpdateConfig().packageName) {
+    super(
+      path.join(
+        os.homedir(),
+        `.${FRAMEWORK_NAME}`,
+        `update-state-${updateStateFileSlug(packageName)}.yaml`,
+      ),
+    );
   }
 
   protected onMissing(): Promise<UpdateState> {

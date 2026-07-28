@@ -1,9 +1,4 @@
 {
   "title": "Mate CLI",
-  "pages": [
-    "index",
-    "getting-started",
-    "capabilities",
-    "[Enterprise](/mate-cli/concepts/build-your-own-distribution)"
-  ]
+  "pages": ["index", "getting-started", "capabilities"]
 }

@@ -103,7 +103,7 @@ async function seedUpdateState(home: string): Promise<void> {
   const updateDir = path.join(home, ".mate");
   await fs.mkdir(updateDir, { recursive: true });
   await fs.writeFile(
-    path.join(updateDir, "update-state.yaml"),
+    path.join(updateDir, "update-state-uniqbit-mate.yaml"),
     ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: null", ""].join("\n"),
     "utf8",
   );

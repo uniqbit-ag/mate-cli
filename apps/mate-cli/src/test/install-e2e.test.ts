@@ -28,13 +28,13 @@ async function scenario(): Promise<{ root: string; companion: string; working: s
   await fs.mkdir(path.join(root, "home"), { recursive: true });
   await fs
     .writeFile(
-      path.join(root, "home", ".mate", "update-state.yaml"),
+      path.join(root, "home", ".mate", "update-state-uniqbit-mate.yaml"),
       "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: null\n",
     )
     .catch(async () => {
       await fs.mkdir(path.join(root, "home", ".mate"), { recursive: true });
       await fs.writeFile(
-        path.join(root, "home", ".mate", "update-state.yaml"),
+        path.join(root, "home", ".mate", "update-state-uniqbit-mate.yaml"),
         "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: null\n",
       );
     });

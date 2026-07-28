@@ -16,10 +16,6 @@ const TOKENSAVE_CARGO_INSTALL_CMD = "cargo install tokensave";
 const TOKENSAVE_SCOOP_INSTALL_CMD =
   "scoop bucket add tokensave https://github.com/aovestdipaperino/scoop-bucket && scoop install tokensave";
 
-function getTokensaveConfigPath(): string {
-  return path.join(process.env.HOME ?? "", ".tokensave", "config.toml");
-}
-
 interface CompanionOpenCodeSettings {
   mcp?: Record<string, unknown>;
   [key: string]: unknown;
@@ -132,47 +128,23 @@ async function tokensaveInstalled(repoPath: string): Promise<boolean> {
   return result.ok;
 }
 
-async function readTokensaveConfig(): Promise<string | null> {
-  try {
-    return await fs.readFile(getTokensaveConfigPath(), "utf8");
-  } catch {
-    return null;
-  }
-}
-
-async function writeTokensaveConfig(content: string): Promise<void> {
-  await fs.mkdir(path.dirname(getTokensaveConfigPath()), { recursive: true });
-  await fs.writeFile(getTokensaveConfigPath(), content, "utf8");
-}
-
-async function updateTokensaveInstalledAgents(providers: string[]): Promise<void> {
-  const content = await readTokensaveConfig();
-  if (!content) return;
-
+// Global agent integration (MCP entry, session hooks, wildcard permission grant, and
+// tokensave's own config bookkeeping) is owned by tokensave's installer — Mate never
+// hand-edits ~/.tokensave/config.toml. Runs in setup mode only; the installer is
+// idempotent, so re-running on every setup doubles as repair for stale global state.
+function installTokensaveAgentIntegrations(providers: string[], cwd: string): void {
   const agents = providers.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).sort();
-  if (agents.length === 0) return;
-
-  const existingLine = content.match(/^installed_agents\s*=\s*\[([^\]]*)\]/m);
-  if (!existingLine) return;
-
-  const existingStr = existingLine[1];
-  const existing = new Set(
-    existingStr
-      .split(",")
-      .map((s) => s.trim().replace(/^"|"$/g, ""))
-      .filter(Boolean),
-  );
-
   for (const agent of agents) {
-    existing.add(agent);
-  }
-
-  const sorted = [...existing].sort();
-  const newValue = `installed_agents = [${sorted.map((a) => `"${a}"`).join(", ")}]`;
-  const updated = content.replace(existingLine[0], newValue);
-
-  if (updated !== content) {
-    await writeTokensaveConfig(updated);
+    const result = tokensaveDeps.run(
+      ["install", "--agent", agent, "--git-hook", "no", "--wildcard-permissions"],
+      cwd,
+    );
+    if (!result.ok) {
+      const detail = result.stderr.trim();
+      process.stderr.write(
+        `tokensave: \`tokensave install --agent ${agent}\` failed${detail ? `: ${detail}` : ""} - continuing without global ${agent} integration\n`,
+      );
+    }
   }
 }
 
@@ -329,7 +301,9 @@ export function createTokensavePlugin(): CapabilityPlugin {
       if (!(await ensureTokensaveInstalled(targetPath))) {
         return;
       }
-      await updateTokensaveInstalledAgents(ctx.activeProviders);
+      if (ctx.mode === "setup") {
+        installTokensaveAgentIntegrations(ctx.activeProviders, targetPath);
+      }
     },
     async teardown(ctx) {
       if (!ctx.repoPath) return;

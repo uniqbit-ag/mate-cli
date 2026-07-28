@@ -50,78 +50,6 @@ describe("TOKENSAVE_SUPPORTED_AGENTS", () => {
   });
 });
 
-describe("updateTokensaveInstalledAgents", () => {
-  test("adds missing agents to installed_agents in global config", async () => {
-    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-config-"));
-    const tokensaveDir = path.join(configDir, ".tokensave");
-    const configFile = path.join(tokensaveDir, "config.toml");
-    tempRoots.push(configDir);
-
-    await fs.mkdir(tokensaveDir, { recursive: true });
-    await fs.writeFile(
-      configFile,
-      `upload_enabled = true\ninstalled_agents = ["claude"]\n`,
-      "utf8",
-    );
-
-    const originalHome = process.env.HOME;
-    process.env.HOME = configDir;
-
-    try {
-      await tokensavePlugin.apply({
-        companionPath: configDir,
-        activeProviders: ["claude", "opencode"],
-        mode: "setup",
-        repoPath: configDir,
-        config: {
-          profiles: { default: { name: "default", allowedAgents: ["claude", "opencode"] } },
-          capabilities: [{ name: "tokensave" }],
-        },
-      });
-
-      const content = await fs.readFile(configFile, "utf8");
-      expect(content).toContain('installed_agents = ["claude", "opencode"]');
-    } finally {
-      process.env.HOME = originalHome;
-    }
-  });
-
-  test("is idempotent when agents are already present", async () => {
-    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-config-"));
-    const tokensaveDir = path.join(configDir, ".tokensave");
-    const configFile = path.join(tokensaveDir, "config.toml");
-    tempRoots.push(configDir);
-
-    await fs.mkdir(tokensaveDir, { recursive: true });
-    await fs.writeFile(
-      configFile,
-      `upload_enabled = true\ninstalled_agents = ["claude", "opencode"]\n`,
-      "utf8",
-    );
-
-    const originalHome = process.env.HOME;
-    process.env.HOME = configDir;
-
-    try {
-      await tokensavePlugin.apply({
-        companionPath: configDir,
-        activeProviders: ["claude", "opencode"],
-        mode: "setup",
-        repoPath: configDir,
-        config: {
-          profiles: { default: { name: "default", allowedAgents: ["claude", "opencode"] } },
-          capabilities: [{ name: "tokensave" }],
-        },
-      });
-
-      const content = await fs.readFile(configFile, "utf8");
-      expect(content).toContain('installed_agents = ["claude", "opencode"]');
-    } finally {
-      process.env.HOME = originalHome;
-    }
-  });
-});
-
 describe("tokensavePlugin.apply", () => {
   let runMock: mock.Mock;
   let runCommandMock: mock.Mock;
@@ -171,8 +99,107 @@ describe("tokensavePlugin.apply", () => {
     expect(runShellCommandMock).not.toHaveBeenCalled();
 
     // The graph build (init/sync) is the job of `mate cap index`, never plugin apply.
-    expect(calls.map((c) => c[0][0])).toEqual(["--version"]);
+    expect(calls.map((c) => c[0][0])).toEqual(["--version", "install", "install"]);
     expect(calls[0][1]).toBe(repoDir);
+  });
+
+  test("runs the native agent installer per active provider in sorted order during setup", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+
+    const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["opencode", "claude"] });
+    await tokensavePlugin.apply(ctx);
+
+    const installCalls = runMock.mock.calls.filter((c) => c[0][0] === "install");
+    expect(installCalls.map((c) => c[0])).toEqual([
+      ["install", "--agent", "claude", "--git-hook", "no", "--wildcard-permissions"],
+      ["install", "--agent", "opencode", "--git-hook", "no", "--wildcard-permissions"],
+    ]);
+    for (const call of installCalls) {
+      expect(call[1]).toBe(repoDir);
+    }
+  });
+
+  test("skips the native agent installer for unsupported providers", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+
+    const ctx = makeCtx(companionDir, {
+      repoPath: repoDir,
+      providers: ["claude", "unknown-agent"],
+    });
+    await tokensavePlugin.apply(ctx);
+
+    const installCalls = runMock.mock.calls.filter((c) => c[0][0] === "install");
+    expect(installCalls.map((c) => c[0])).toEqual([
+      ["install", "--agent", "claude", "--git-hook", "no", "--wildcard-permissions"],
+    ]);
+  });
+
+  test("reports a failed native agent install on stderr without failing setup", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+
+    runMock = mock((args: string[]) => {
+      if (args[0] === "install") {
+        return { ok: false, stderr: "boom", stdout: "" };
+      }
+      return { ok: true, stderr: "", stdout: "" };
+    });
+    tokensaveDeps.run = runMock;
+
+    const stderrWrites: string[] = [];
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderrWrites.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["claude", "opencode"] });
+      await tokensavePlugin.apply(ctx);
+    } finally {
+      process.stderr.write = originalStderrWrite;
+    }
+
+    // Both providers are still attempted despite the first failure.
+    const installCalls = runMock.mock.calls.filter((c) => c[0][0] === "install");
+    expect(installCalls.length).toBe(2);
+    expect(stderrWrites.join("")).toContain("claude");
+    expect(stderrWrites.join("")).toContain("opencode");
+    expect(stderrWrites.join("")).toContain("boom");
+  });
+
+  test("never creates or modifies the global tokensave config itself", async () => {
+    const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-home-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(homeDir, repoDir);
+
+    const configFile = path.join(homeDir, ".tokensave", "config.toml");
+    const originalHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      // Absent config stays absent.
+      await tokensavePlugin.apply(
+        makeCtx(homeDir, { repoPath: repoDir, providers: ["claude", "opencode"] }),
+      );
+      await expect(fs.access(configFile)).rejects.toThrow();
+
+      // Pre-existing config stays byte-identical.
+      const original = `upload_enabled = true\ninstalled_agents = ["claude"]\n`;
+      await fs.mkdir(path.dirname(configFile), { recursive: true });
+      await fs.writeFile(configFile, original, "utf8");
+      await tokensavePlugin.apply(
+        makeCtx(homeDir, { repoPath: repoDir, providers: ["claude", "opencode"] }),
+      );
+      expect(await fs.readFile(configFile, "utf8")).toBe(original);
+    } finally {
+      process.env.HOME = originalHome;
+    }
   });
 
   test("skips unsupported agents", async () => {
@@ -212,7 +239,11 @@ describe("tokensavePlugin.apply", () => {
       "aovestdipaperino/tap/tokensave",
     ]);
     // Verifies install then re-checks the binary; no init/sync — that is `mate cap index`.
-    expect(runMock.mock.calls.map((call) => call[0][0])).toEqual(["--version", "--version"]);
+    expect(runMock.mock.calls.map((call) => call[0][0])).toEqual([
+      "--version",
+      "--version",
+      "install",
+    ]);
   });
 
   test("stops before init when tokensave is missing and no installer is available", async () => {
@@ -248,7 +279,7 @@ describe("tokensavePlugin.apply", () => {
     }
   });
 
-  test("does not run local Claude install during sync", async () => {
+  test("does not run the native agent installer during sync", async () => {
     const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
     tempRoots.push(companionDir, repoDir);
