@@ -33,6 +33,7 @@ const MANAGED_HOOK_MARKERS = [
   "/.codex/hooks/validate-artifact-path",
   "/.codex/hooks/react-doctor",
   "/.codex/hooks/mate-openspec-artifact-finish",
+  "graphify hook-check",
 ];
 
 async function readHooks(filePath: string): Promise<HooksDocument> {
@@ -58,6 +59,14 @@ export async function reconcileCompanionCodexHookGroup(
   group?: HookGroup,
 ): Promise<void> {
   const hooksPath = getCompanionCodexHooksPath(companionPath);
+  if (!group) {
+    try {
+      await fs.access(hooksPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+  }
   const document = await readHooks(hooksPath);
   const hooks = { ...document.hooks };
   const remaining = (hooks[event] ?? []).filter(
@@ -433,8 +442,43 @@ export async function syncWorkingRepoCodexState(
 }
 
 async function teardownCodex(companionPath: string, _config: FrameworkConfig): Promise<void> {
-  await fs.rm(path.join(companionPath, ".codex"), { recursive: true, force: true });
-  await pruneEmptyAncestors(path.join(companionPath, ".codex"), companionPath);
+  const codexDir = path.join(companionPath, ".codex");
+  const hooksPath = getCompanionCodexHooksPath(companionPath);
+
+  try {
+    const document = await readHooks(hooksPath);
+    const hooks = Object.fromEntries(
+      Object.entries(document.hooks ?? {})
+        .map(([event, groups]) => [event, groups.filter((group) => !isManagedGroup(group))])
+        .filter(([, groups]) => groups.length > 0),
+    );
+    const next: HooksDocument = { ...document };
+    if (Object.keys(hooks).length > 0) next.hooks = hooks;
+    else delete next.hooks;
+    if (next.description === "Mate-managed Codex hooks.") delete next.description;
+
+    if (Object.keys(next).length === 0) await fs.rm(hooksPath, { force: true });
+    else await fs.writeFile(hooksPath, JSON.stringify(next, null, 2) + "\n", "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  const managedHookDir = path.join(codexDir, "hooks");
+  const templateHookDir = path.join(getSetupProvidersRoot(), "codex", ".codex", "hooks");
+  for (const name of ["mate-session-banner.cjs", "validate-artifact-path.cjs"]) {
+    const destination = path.join(managedHookDir, name);
+    try {
+      const [current, template] = await Promise.all([
+        fs.readFile(destination, "utf8"),
+        fs.readFile(path.join(templateHookDir, name), "utf8"),
+      ]);
+      if (current === template) await fs.rm(destination, { force: true });
+    } catch {
+      // Missing or modified files are preserved as user-owned content.
+    }
+  }
+
+  await pruneEmptyAncestors(managedHookDir, companionPath);
 }
 
 export function createCodexPlugin(): ProviderPlugin {

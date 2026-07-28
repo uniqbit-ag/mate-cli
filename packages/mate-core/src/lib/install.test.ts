@@ -98,6 +98,31 @@ describe("install context and planning", () => {
     expect(ids).toContain("capability:rtk");
     expect(ids).not.toContain("capability:headroom");
   });
+
+  test("plans the pinned native package when Context Mode is selected", async () => {
+    const root = await tempRoot();
+    const context = {
+      kind: "companion" as const,
+      companionPath: root,
+      config: {
+        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        packageManagers: ["bun"],
+        capabilities: [{ name: "context-mode" }],
+      },
+      fingerprint: "context-mode-context",
+    };
+
+    const requirement = buildInstallPlan(context).requirements.find(
+      (item) => item.id === "capability:context-mode",
+    );
+    expect(requirement).toEqual(
+      expect.objectContaining({
+        label: "Context Mode",
+        group: "companion",
+        command: expect.stringContaining("context-mode@"),
+      }),
+    );
+  });
 });
 
 describe("install execution and state", () => {

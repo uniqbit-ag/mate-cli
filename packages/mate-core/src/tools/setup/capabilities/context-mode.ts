@@ -11,6 +11,7 @@ import {
   validateContextModePackage,
 } from "../../../lib/context-mode-package";
 import { warmOpenCodePackageCache } from "../../../lib/opencode-plugin-package";
+import type { InstallRequirement } from "../install-contract";
 import type { CapabilityPlugin, LaunchPreflightContext, SetupContext } from "../plugin";
 import { pruneEmptyAncestors } from "../utils";
 
@@ -49,7 +50,7 @@ async function writeOwnership(companionPath: string, state: OwnershipState): Pro
     return;
   }
   await fs.mkdir(path.dirname(statePath), { recursive: true });
-  await fs.writeFile(statePath, JSON.stringify(state, null, 2) + "\n", "utf8");
+  await fs.writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
 function isRecord(value: unknown): value is Config {
@@ -66,11 +67,12 @@ async function readConfig(filePath: string): Promise<Config> {
 }
 
 function hasContextModeMcp(config: Config): boolean {
-  const servers = isRecord(config.mcpServers)
-    ? config.mcpServers
-    : isRecord(config.mcp)
-      ? config.mcp
-      : {};
+  let servers: Config = {};
+  if (isRecord(config.mcpServers)) {
+    servers = config.mcpServers;
+  } else if (isRecord(config.mcp)) {
+    servers = config.mcp;
+  }
   return Object.entries(servers).some(
     ([name, value]) =>
       name.toLowerCase().includes("context-mode") || JSON.stringify(value).includes("context-mode"),
@@ -116,7 +118,7 @@ async function updateOpenCodeConfig(ctx: SetupContext, enabled: boolean): Promis
       delete config.plugin;
     }
     await fs.mkdir(path.dirname(configPath), { recursive: true });
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
+    await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   }
   if (!enabled) ownership.opencodeConfigs = [];
   await writeOwnership(ctx.companionPath, ownership);
@@ -150,6 +152,36 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
     defaultSelected: false,
     isEnabled: (config) =>
       (config.capabilities ?? []).some((capability) => capability.name === "context-mode"),
+    getInstallRequirements: ({ companionPath }): InstallRequirement[] => {
+      if (!companionPath) return [];
+      return [
+        {
+          id: "capability:context-mode",
+          label: "Context Mode",
+          group: "companion",
+          source: "Context Mode capability",
+          command: `npm install ${getContextModePackageReference()}`,
+          fingerprint: `context-mode:${getContextModePackageReference()}`,
+          detect: async () => {
+            try {
+              await validatePackage(companionPath);
+              return true;
+            } catch {
+              return false;
+            }
+          },
+          install: () => installPackage(companionPath),
+          verify: async () => {
+            try {
+              await validatePackage(companionPath);
+              return true;
+            } catch {
+              return false;
+            }
+          },
+        },
+      ];
+    },
     async apply(ctx) {
       if (ctx.mode === "setup") {
         await installPackage(ctx.companionPath);

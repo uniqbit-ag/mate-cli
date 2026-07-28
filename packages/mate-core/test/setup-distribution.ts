@@ -1,5 +1,6 @@
 import { version } from "../package.json";
 import { setFallbackDistribution } from "../src/distribution";
+import { createContextModePlugin } from "../src/tools/setup/capabilities/context-mode";
 import { createGraphifyPlugin } from "../src/tools/setup/capabilities/graphify";
 import { createHeadroomPlugin } from "../src/tools/setup/capabilities/headroom";
 import { createRtkPlugin } from "../src/tools/setup/capabilities/rtk";
@@ -29,6 +30,7 @@ function buildTestPluginEntries(): PluginRegistration[] {
     createHeadroomPlugin(),
     createRtkPlugin(),
     createGraphifyPlugin(),
+    createContextModePlugin(),
   ];
   return [
     ...providers,
