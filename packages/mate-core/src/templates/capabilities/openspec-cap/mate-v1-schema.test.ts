@@ -20,6 +20,9 @@ type MateSchema = {
 const profilePath = path.join(import.meta.dir, "mate-v1");
 const schemaPath = path.join(profilePath, "schema.yaml");
 const templatesPath = path.join(profilePath, "templates");
+const conciseReportingPolicy =
+  "When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.";
+const jsdocBoundary = "Apply this same preference to JSDoc.";
 
 async function readSchema(): Promise<{ raw: string; parsed: MateSchema }> {
   const raw = await fs.readFile(schemaPath, "utf8");
@@ -81,6 +84,14 @@ describe("mate-v1 schema", () => {
     expect(explore.instruction).toContain("5 for medium-complexity changes");
     expect(explore.instruction).toContain("up to 10");
     expect(explore.instruction).toContain("Stop early");
+  });
+
+  test("keeps reporting and JSDoc concise without changing implementation style", async () => {
+    const { raw } = await readSchema();
+
+    expect(raw).toContain(conciseReportingPolicy);
+    expect(raw).toContain(jsdocBoundary);
+    expect(raw).not.toContain("smallest correct implementation");
   });
 
   test("documents normalized remote identities and repository-relative Areas", async () => {
