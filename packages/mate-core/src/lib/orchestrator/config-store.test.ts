@@ -148,6 +148,106 @@ describe("mergeWithDefaults", () => {
   });
 });
 
+describe("plugins parsing", () => {
+  test("framework.yaml with a plugins entry preserves it verbatim", async () => {
+    const root = await makeTempDir("config-store-plugins-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      [
+        "profiles:",
+        "  default:",
+        "    name: default",
+        "    allowedAgents: []",
+        "plugins:",
+        '  - package: "@acme/custom-plugin"',
+        '    version: "^1.0.0"',
+        "    config:",
+        "      companions:",
+        "        - git: git@acme.example:foo-companion.git",
+        "      token: ${ACME_TOKEN}",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const config = await new ConfigStore(configPath).load();
+    expect(config.plugins).toEqual([
+      {
+        package: "@acme/custom-plugin",
+        version: "^1.0.0",
+        config: {
+          companions: [{ git: "git@acme.example:foo-companion.git" }],
+          token: "${ACME_TOKEN}",
+        },
+      },
+    ]);
+  });
+
+  test("framework.yaml without plugins loads with plugins undefined", async () => {
+    const root = await makeTempDir("config-store-plugins-none-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      "profiles:\n  default:\n    name: default\n    allowedAgents: []\n",
+      "utf8",
+    );
+
+    const config = await new ConfigStore(configPath).load();
+    expect(config.plugins).toBeUndefined();
+  });
+
+  test("plugins entry with policy required is rejected", async () => {
+    const root = await makeTempDir("config-store-plugins-required-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      [
+        "profiles:",
+        "  default:",
+        "    name: default",
+        "    allowedAgents: []",
+        "plugins:",
+        '  - package: "@acme/custom-plugin"',
+        '    version: "1.0.0"',
+        "    policy: required",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    expect(new ConfigStore(configPath).load()).rejects.toThrow(
+      /"@acme\/custom-plugin".*required.*(default|optional)/,
+    );
+  });
+
+  test("plugins entry with an optional or default policy is accepted", async () => {
+    const root = await makeTempDir("config-store-plugins-policy-ok-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      [
+        "profiles:",
+        "  default:",
+        "    name: default",
+        "    allowedAgents: []",
+        "plugins:",
+        '  - package: "@acme/a"',
+        '    version: "1.0.0"',
+        "    policy: default",
+        '  - package: "@acme/b"',
+        "    version: latest",
+        "    policy: optional",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const config = await new ConfigStore(configPath).load();
+    expect(config.plugins?.map((plugin) => plugin.policy)).toEqual(["default", "optional"]);
+  });
+});
+
 describe("ConfigStore", () => {
   test("creates and returns default config when file is missing", async () => {
     const root = await makeTempDir("config-store-");

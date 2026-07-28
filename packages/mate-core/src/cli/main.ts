@@ -18,6 +18,7 @@ import { runUpdateCommand } from "./commands/update";
 import { runInstallCommand } from "./commands/install";
 import { inspectInstallPreflight } from "../lib/install";
 import { ensureUnambiguousCompanion } from "./commands/shared/companion-selection";
+import { hydrateDynamicPlugins } from "../tools/setup/dynamic-plugins/hydrate";
 import { findPluginCliCommand } from "./plugin-commands";
 import { usage } from "./usage";
 
@@ -36,11 +37,13 @@ export function isInstallRecoveryCommand(command?: string, subcommand?: string):
 export interface MainDeps {
   ensureUnambiguousCompanion: typeof ensureUnambiguousCompanion;
   inspectInstallPreflight: typeof inspectInstallPreflight;
+  hydrateDynamicPlugins: typeof hydrateDynamicPlugins;
 }
 
 const mainDeps: MainDeps = {
   ensureUnambiguousCompanion,
   inspectInstallPreflight,
+  hydrateDynamicPlugins,
 };
 
 export async function main(argv = process.argv, deps: MainDeps = mainDeps): Promise<void> {
@@ -50,6 +53,12 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     console.log(getActiveDistribution().config.version);
     return;
   }
+
+  // Companion-declared plugins register before cap-command detection so
+  // their commands route like compiled-in ones (including MCP servers whose
+  // command is their own cap subcommand). Diagnostics stay on stderr; a
+  // missing or ambiguous companion makes this a no-op.
+  await deps.hydrateDynamicPlugins();
 
   // Plugin commands (`mate cap <namespace> <command>`) own their stdout (an
   // MCP server speaks JSON-RPC over it), so banners and background chatter

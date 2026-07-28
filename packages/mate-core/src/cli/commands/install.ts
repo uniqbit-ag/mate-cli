@@ -9,6 +9,23 @@ import {
   resolveInstallContext,
 } from "../../lib/install";
 import { renderInstallExecution } from "../install-plan";
+import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
+import {
+  installDeclaredPlugins,
+  type PluginInstallResult,
+} from "../../tools/setup/dynamic-plugins/install";
+
+export function reportPluginInstallResults(results: PluginInstallResult[]): void {
+  for (const result of results) {
+    if (result.status === "failed") {
+      process.stderr.write(
+        `${frameworkCommandName()}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}\n`,
+      );
+    } else if (result.status === "installed") {
+      console.log(`  installed plugin ${result.package}@${result.resolvedVersion}`);
+    }
+  }
+}
 
 function printPlanText(plan: Awaited<ReturnType<typeof inspectInstallPlan>>): void {
   if (plan.context.message) process.stderr.write(`${plan.context.message}\n\n`);
@@ -36,6 +53,15 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     process.stderr.write(`${context.message}\n`);
     process.exitCode = 1;
     return false;
+  }
+  // Companion-declared plugins install first and hydrate into the registry
+  // before the plan is built, so one run goes install → load → plan and their
+  // own install requirements are part of the plan.
+  if (context.kind === "companion" && context.companionPath && context.config.plugins?.length) {
+    reportPluginInstallResults(
+      await installDeclaredPlugins(context.companionPath, context.config.plugins),
+    );
+    await hydrateDynamicPlugins({ companionPath: context.companionPath });
   }
   const plan = await inspectInstallPlan(buildInstallPlan(context));
   const missing = plan.requirements.filter((item) => !item.satisfied);

@@ -35,6 +35,7 @@ describe("isInstallRecoveryCommand", () => {
           preflightSawSelection = selected;
           return { ok: false, reason: "test preflight" };
         },
+        hydrateDynamicPlugins: async () => {},
       });
     } finally {
       process.exitCode = originalExitCode ?? 0;
@@ -58,6 +59,7 @@ describe("isInstallRecoveryCommand", () => {
         preflightCalls++;
         return engineGuardFailure;
       },
+      hydrateDynamicPlugins: async () => {},
     };
     const logSpy = spyOn(console, "log").mockImplementation(() => {});
 
@@ -81,6 +83,7 @@ describe("isInstallRecoveryCommand", () => {
         preflightCalls++;
         return { ok: false, reason: "engines.mate mismatch" };
       },
+      hydrateDynamicPlugins: async () => {},
     };
     const logSpy = spyOn(console, "log").mockImplementation(() => {});
 
@@ -102,6 +105,7 @@ describe("plugin CLI commands", () => {
   const okDeps: MainDeps = {
     ensureUnambiguousCompanion: async () => true,
     inspectInstallPreflight: async () => ({ ok: true }),
+    hydrateDynamicPlugins: async () => {},
   };
 
   function makePlugin(id: string, cliCommands?: PluginCliCommand[], cliNamespace?: string): Plugin {
