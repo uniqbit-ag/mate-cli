@@ -1,4 +1,5 @@
 import { getActiveDistribution } from "../distribution";
+import { frameworkCommandName } from "../framework";
 import { resolveInstallContext } from "../lib/install";
 import type { FrameworkConfig } from "../lib/orchestrator/types";
 import type { Plugin, PluginCliCommand } from "../tools/setup/plugin";
@@ -85,7 +86,7 @@ export async function ensureCapabilityEnabled(
   const loadConfig = deps.loadConfig ?? (async () => (await resolveInstallContext()).config);
   if (plugin?.isEnabled(await loadConfig())) return true;
 
-  const name = distribution.config.name;
+  const name = frameworkCommandName();
   console.error(
     `${name}: the "${pluginId}" capability is not enabled for this companion. ` +
       `Enable it via \`${name} companion setup\`.`,
@@ -95,7 +96,7 @@ export async function ensureCapabilityEnabled(
 }
 
 function usageFor(plugin: Plugin): string {
-  const distributionName = getActiveDistribution().config.name;
+  const distributionName = frameworkCommandName();
   const namespace = namespaceOf(plugin);
   const lines = (plugin.cliCommands ?? []).map(
     (command) => `  ${distributionName} cap ${namespace} ${command.name}  ${command.description}`,

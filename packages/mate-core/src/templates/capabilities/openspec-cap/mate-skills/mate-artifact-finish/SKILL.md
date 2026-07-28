@@ -1,9 +1,9 @@
 ---
 name: mate-artifact-finish
-description: Finish a completed artifact in one step via `mate artifact finish`. Use when the user wants to finish, ship, or archive-and-push a completed artifact and anchor it with a dated revert tag.
-allowed-tools: Bash(mate:*), Bash(git:*), Bash(openspec:*)
+description: Finish a completed artifact in one step via `{{MATE_COMMAND}} artifact finish`. Use when the user wants to finish, ship, or archive-and-push a completed artifact and anchor it with a dated revert tag.
+allowed-tools: Bash({{MATE_COMMAND}}:*), Bash(git:*), Bash(openspec:*)
 license: MIT
-compatibility: Requires the mate CLI and the openspec capability enabled.
+compatibility: Requires the {{MATE_COMMAND}} CLI and the openspec capability enabled.
 metadata:
   author: mate
   version: "1.2"
@@ -13,7 +13,7 @@ Finish a completed artifact as one deterministic mate workflow and leave a dated
 
 ## Workflow
 
-`mate artifact finish` is the deterministic, non-interactive finish pipeline.
+`{{MATE_COMMAND}} artifact finish` is the deterministic, non-interactive finish pipeline.
 
 The CLI performs normal work; only conflict recovery requires agent judgment.
 
@@ -24,10 +24,10 @@ The CLI performs normal work; only conflict recovery requires agent judgment.
 2. **Run the CLI.**
 
    ```bash
-   mate artifact finish "<artifact-name>" --json
+   {{MATE_COMMAND}} artifact finish "<artifact-name>" --json
    ```
 
-   Run it from the companion repository. Finish mutates only that repository; the linked working repository is capability-indexing context. Do not manually invoke `mate cap index`.
+   Run it from the companion repository. Finish mutates only that repository; the linked working repository is capability-indexing context. Do not manually invoke `{{MATE_COMMAND}} cap index`.
 
    Add `--force` only if the user explicitly wants to override the not-complete guard (validation is never bypassable). Unrelated companion changes are preserved and do not require `--force`. Add `--no-push` for a local-only finish.
 
@@ -44,8 +44,8 @@ The CLI performs normal work; only conflict recovery requires agent judgment.
 
 - **CRITICAL — no manual finishing**: Never hand-commit or hand-tag instead of this skill. For a still-active change the finish pipeline applies delta specs itself (via `openspec archive`) — do not pre-apply them, or produce fails with "already exists". A change whose specs were already synced (e.g. via `openspec-sync-specs`) must be archived first; finish then resumes from the archive without re-applying delta specs.
 - Always pass `--json` and parse the result; do not scrape human-readable output.
-- Never re-run `mate artifact finish` blindly after a `conflict`.
+- Never re-run `{{MATE_COMMAND}} artifact finish` blindly after a `conflict`.
 - Never auto-resolve a provider-specific conflict you do not understand — ask the user.
 - Use the JSON fields the CLI returns; do not recompute names, dates, or tags by hand.
-- Invoke the CLI as `mate`, never through a companion-local wrapper.
+- Invoke the CLI as `{{MATE_COMMAND}}`, never through a companion-local wrapper.
 - Only the companion repository is a finish Git target; the working repository is an index input.

@@ -1,4 +1,5 @@
 import { getActiveDistribution } from "../distribution";
+import { frameworkCommandName } from "../framework";
 import {
   enforceUpdateIfRequired,
   scheduleBackgroundCheck,
@@ -81,8 +82,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   if (!isInstallRecoveryCommand(command, subcommand)) {
     const preflight = await deps.inspectInstallPreflight();
     if (!preflight.ok) {
-      console.error(`mate: ${preflight.reason ?? "installation is incomplete"}`);
-      console.error("Run `mate install` before continuing.");
+      console.error(
+        `${frameworkCommandName()}: ${preflight.reason ?? "installation is incomplete"}`,
+      );
+      console.error(`Run \`${frameworkCommandName()} install\` before continuing.`);
       process.exitCode = 1;
       return;
     }

@@ -17,9 +17,17 @@ async function makeFixture() {
   return { companion, archiveDir };
 }
 
-function runHook(payload: Record<string, unknown>, companion: string) {
+function runHook(
+  payload: Record<string, unknown>,
+  companion: string,
+  env: Record<string, string> = {},
+) {
+  // Pin MATE_COMMAND: the surrounding session may be mate-managed and export
+  // it, and the default-distribution assertions rely on the `mate` fallback.
+  const spawnEnv = { ...process.env, MATE_ARTIFACT_PATH: companion, ...env };
+  if (!("MATE_COMMAND" in env)) delete spawnEnv.MATE_COMMAND;
   const result = spawnSync("sh", [HOOK_PATH], {
-    env: { ...process.env, MATE_ARTIFACT_PATH: companion },
+    env: spawnEnv,
     input: JSON.stringify(payload),
     encoding: "utf8",
   });
@@ -83,6 +91,20 @@ describe("mate-artifact-finish", () => {
     const { companion } = await makeFixture();
     const result = runHook(postToolUsePayload(command), companion);
     expect(nudgeContext(result.stdout)).toContain('mate artifact finish "acme" --json');
+  });
+
+  test("builds the finish instruction from MATE_COMMAND when set", async () => {
+    const { companion } = await makeFixture();
+    const result = runHook(postToolUsePayload("openspec archive sample-change --yes"), companion, {
+      MATE_COMMAND: "acme",
+    });
+    expect(nudgeContext(result.stdout)).toContain('acme artifact finish "sample-change" --json');
+  });
+
+  test("falls back to mate when MATE_COMMAND is unset", async () => {
+    const { companion } = await makeFixture();
+    const result = runHook(postToolUsePayload("openspec archive sample-change --yes"), companion);
+    expect(nudgeContext(result.stdout)).toContain('mate artifact finish "sample-change" --json');
   });
 
   test.each(['mate artifact finish "acme" --json', "printf hello", "mv acme somewhere-else"])(

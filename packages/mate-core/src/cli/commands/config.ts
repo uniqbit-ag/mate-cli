@@ -1,9 +1,9 @@
 import os from "node:os";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 
-const getGlobalConfigDir = () => path.join(os.homedir(), `.${frameworkConfig.name}`);
+const getGlobalConfigDir = () => path.join(os.homedir(), `.${FRAMEWORK_NAME}`);
 
 /**
  * @command mate config

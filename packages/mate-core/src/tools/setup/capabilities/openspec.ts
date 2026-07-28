@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { frameworkCommandName } from "../../../framework";
 import { getOpenSpecSchemaSelection } from "../../../lib/orchestrator/setup-compatibilities";
 import { fetchPublicPackageVersion } from "../../../lib/public-npm";
 import { isNewer } from "../../../lib/update-checker";
@@ -134,6 +135,33 @@ async function teardownToolRuntime(companionPath: string, tool: OpenSpecTool): P
   await teardownOpenspecSkills(getSkillsDir(companionPath, tool), companionPath);
 }
 
+const MATE_COMMAND_PLACEHOLDER = "{{MATE_COMMAND}}";
+
+// Like mergeDir, but renders the invocation-name placeholder at deploy time.
+// Files without the placeholder are copied byte-identical.
+export async function deployMateSkillDir(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await deployMateSkillDir(srcPath, destPath);
+      continue;
+    }
+    const content = await fs.readFile(srcPath, "utf8");
+    if (content.includes(MATE_COMMAND_PLACEHOLDER)) {
+      await fs.writeFile(
+        destPath,
+        content.replaceAll(MATE_COMMAND_PLACEHOLDER, frameworkCommandName()),
+        "utf8",
+      );
+    } else {
+      await fs.copyFile(srcPath, destPath);
+    }
+  }
+}
+
 async function applyMateOpenspecSkills(
   companionPath: string,
   tools: OpenSpecTool[],
@@ -141,7 +169,7 @@ async function applyMateOpenspecSkills(
   for (const tool of tools) {
     const skillsDir = getSkillsDir(companionPath, tool);
     for (const skill of MATE_ARTIFACT_SKILLS) {
-      await mergeDir(path.join(MATE_SKILLS_SOURCE, skill), path.join(skillsDir, skill));
+      await deployMateSkillDir(path.join(MATE_SKILLS_SOURCE, skill), path.join(skillsDir, skill));
     }
   }
 }

@@ -71,6 +71,8 @@ describe("OpenCode companion plugin", () => {
         MATE_POLICY_JSON: "{}",
         MATE_GIT_AUTO_MODE: "0",
         MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
+        MATE_NAME: "mate",
+        MATE_COMMAND: "acme",
         PATH: "/usr/bin",
       },
       async () => {
@@ -92,6 +94,9 @@ describe("OpenCode companion plugin", () => {
 
         expect(output.env.MATE_WRAPPER_BIN_PATH).toBe("/package/wrappers/bin");
         expect(output.env.MATE_VERSION).toBe("0.14.0-test");
+        // Identity and invocation name are exposed separately.
+        expect(output.env.MATE_NAME).toBe("mate");
+        expect(output.env.MATE_COMMAND).toBe("acme");
         expect(output.env.PATH).toBe("/package/wrappers/bin:/usr/bin");
         // The guidance payload is session-scoped and must not leak into shells.
         expect(output.env.MATE_GUIDANCE_JSON).toBe("");
@@ -105,6 +110,36 @@ describe("OpenCode companion plugin", () => {
         expect(prompt.system[0]).toContain("/package/wrappers/bin/openspec");
         expect(prompt.system[0]).toContain("<cli-tools>");
         expect(prompt.system[0]).toContain('name="mate" type="global"');
+      },
+    );
+  });
+
+  test("falls back to mate for MATE_COMMAND when the launch env omits it", async () => {
+    const root = await makeTempDir("mate-opencode-command-fallback-");
+    const companion = path.join(root, "companion");
+    const repo = path.join(root, "repo");
+    await fs.mkdir(repo, { recursive: true });
+
+    await withEnv(
+      {
+        MATE_ARTIFACT_PATH: companion,
+        MATE_REPO_PATH: repo,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+        MATE_REPO_ID: "app",
+        MATE_REPO_PROFILE: "default",
+        MATE_POLICY_JSON: "{}",
+        MATE_GIT_AUTO_MODE: "0",
+        MATE_COMMAND: undefined,
+      },
+      async () => {
+        const plugin = await CompanionPlugin();
+        const envHook = plugin["shell.env"] as
+          | ((input: unknown, output: { env: Record<string, string> }) => Promise<void>)
+          | undefined;
+        const output = { env: {} as Record<string, string> };
+        await envHook?.({}, output);
+
+        expect(output.env.MATE_COMMAND).toBe("mate");
       },
     );
   });

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { parse, stringify } from "yaml";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { resolveGitInfoExcludePath } from "../../tools/setup/git-utils";
 import { YamlFileStore } from "./yaml-file-store";
 import type { CompanionSource, LinkedRepository } from "./types";
@@ -19,8 +19,7 @@ export interface RepoLocalRegistry {
   companions: RepoLocalCompanionPointer[];
 }
 
-// Lazy: the distribution name is only known once createMate has run.
-const repoLocalDirName = () => `.${frameworkConfig.name}`;
+const repoLocalDirName = () => `.${FRAMEWORK_NAME}`;
 const repoLocalExcludeEntry = () => `${repoLocalDirName()}/`;
 const repoLocalScanSkipDirNames = () =>
   new Set([
