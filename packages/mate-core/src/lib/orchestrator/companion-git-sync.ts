@@ -86,7 +86,7 @@ export const companionGitSyncDeps: { runGit: GitRunner } = {
   },
 };
 
-const MANAGED_ROOTS = [".mate", ".opencode", ".claude", ".agents", ".graphify"];
+const MANAGED_ROOTS = [".mate", ".opencode", ".claude", ".codex", ".agents", ".graphify"];
 
 interface SyncTarget {
   remote: string;

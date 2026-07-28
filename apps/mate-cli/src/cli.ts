@@ -2,6 +2,7 @@
 import { createMate } from "@uniqbit/mate-core";
 import {
   createClaudePlugin,
+  createCodexPlugin,
   createGraphifyPlugin,
   createHeadroomPlugin,
   createOpenCodePlugin,
@@ -19,6 +20,7 @@ if (!cliName) {
 }
 
 const claude = createClaudePlugin();
+const codex = createCodexPlugin();
 const opencode = createOpenCodePlugin();
 
 const openspec = createOpenspecPlugin();
@@ -42,6 +44,7 @@ const cli = createMate({
   plugins: [
     { plugin: opencode, policy: "required" },
     { plugin: claude, policy: "optional" },
+    { plugin: codex, policy: "optional" },
     { plugin: openspec, policy: "required" },
     { plugin: reactDoctor, policy: "optional" },
     { plugin: tokensave, policy: "optional" },

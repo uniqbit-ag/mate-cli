@@ -72,18 +72,35 @@ Launch only from the linked working repository:
 
 ```sh
 mate claude
+mate codex
 mate opencode
 ```
 
-If the selected profile disallows the requested agent, re-run setup and allow
-that provider. If the agent command itself is missing, use `mate doctor` to
-find the missing requirement.
+Mate checks the linked repository's selected profile and
+`overrides.allowedAgents`; the global `default` profile does not decide a
+repository launch when another profile or override is selected. If the
+requested agent is disallowed, re-run setup or update the repository policy.
+If the agent command itself is missing, use `mate doctor` to find the missing
+requirement.
 
 Forward agent-specific flags after `--`:
 
 ```sh
 mate opencode -- --continue
+mate codex -- --sandbox workspace-write
 ```
+
+### Codex Shows A Large `Extra args` Block
+
+When the Headroom capability is enabled, `mate codex` runs through
+`headroom wrap codex`. Headroom prints its launch environment and forwarded
+arguments, including the long `developer_instructions` value. That value
+contains Mate's companion policy and companion `AGENTS.md` instructions; the
+TokenSave `--config` entries are also managed launch arguments.
+
+This output is diagnostic from Headroom, not an error or an additional user
+prompt. The arguments are required for the managed Codex launch and are not
+persisted into user-owned Codex configuration.
 
 ## Companion Git Synchronization Fails
 

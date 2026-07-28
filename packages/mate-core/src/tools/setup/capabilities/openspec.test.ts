@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 
@@ -63,6 +64,49 @@ describe("deriveOpenSpecTools", () => {
 });
 
 describe("createOpenspecPlugin", () => {
+  test("uses companion CODEX_HOME and installs the Codex finish hook", async () => {
+    const companion = await makeTempDir("mate-openspec-codex-");
+    const runCommand = mock(async () => {});
+    const plugin = createOpenspecPlugin({
+      runCommand,
+      isCommandOnPath: (command) => command === "openspec",
+      getInstalledVersion: async () => undefined,
+    });
+    const ctx = makeCtx(companion, ["codex"], [{ name: "openspec" }], "setup", "auto");
+
+    await plugin.apply(ctx);
+    expect(runCommand).toHaveBeenNthCalledWith(
+      1,
+      "openspec",
+      ["init", "--tools", "codex", "--force", companion],
+      {
+        cwd: companion,
+        env: expect.objectContaining({ CODEX_HOME: path.join(companion, ".codex") }),
+      },
+    );
+    await plugin.forProvider?.codex?.apply(ctx);
+    const hooks = JSON.parse(
+      await fs.readFile(path.join(companion, ".codex", "hooks.json"), "utf8"),
+    ) as { hooks: Record<string, unknown[]> };
+    expect(hooks.hooks.PostToolUse).toHaveLength(1);
+    expect(
+      spawnSync(
+        "node",
+        [path.join(companion, ".codex", "hooks", "mate-openspec-artifact-finish.cjs")],
+        {
+          input: JSON.stringify({
+            tool_name: "exec_command",
+            tool_input: { cmd: "openspec archive x" },
+            tool_response: { exit_code: 0 },
+            session_id: "test",
+          }),
+          env: { ...process.env, MATE_ARTIFACT_PATH: companion },
+          encoding: "utf8",
+        },
+      ).stdout,
+    ).toContain("x");
+  });
+
   test("runs openspec init and update for active supported providers", async () => {
     const runCommand = mock(async () => {});
     const installCommand = mock(async () => {});

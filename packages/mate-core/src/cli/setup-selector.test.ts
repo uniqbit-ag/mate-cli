@@ -234,6 +234,7 @@ describe("selectSetupCompatibilities", () => {
 
     stdin.write("x");
     stdin.write("\u001b[B");
+    stdin.write("\u001b[B");
     stdin.write(" ");
     stdin.write("\r");
 
