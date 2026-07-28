@@ -1,12 +1,12 @@
 import path from "node:path";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME, frameworkCommandName } from "../../framework";
 import { migrateRegistryData } from "./migration";
 import { YamlFileStore } from "./yaml-file-store";
 import { ConfigError, type WorkingRepoConfig } from "./types";
 
 export function getDefaultWorkingRepoPath(): string {
-  return `.${frameworkConfig.name}/config/registry.yaml`;
+  return `.${FRAMEWORK_NAME}/config/registry.yaml`;
 }
 
 export class WorkingRepoStore extends YamlFileStore<WorkingRepoConfig> {
@@ -21,7 +21,7 @@ export class WorkingRepoStore extends YamlFileStore<WorkingRepoConfig> {
 
   protected async onMissing(): Promise<WorkingRepoConfig> {
     throw new ConfigError(
-      `Working repo config not found. Please run \`${frameworkConfig.name} companion setup\` to initialize the framework.`,
+      `Working repo config not found. Please run \`${frameworkCommandName()} companion setup\` to initialize the framework.`,
     );
   }
 

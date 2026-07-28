@@ -3,7 +3,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 
-import { frameworkConfig } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import {
   selectCompanionLinkInputs,
   type CompanionLinkInputs,
@@ -48,7 +48,7 @@ interface CompanionLinkCommandDeps {
 
 /** All companions surfaced by the "existing companion" picker live under this directory. */
 function companionsHomeDir(): string {
-  return path.join(os.homedir(), `.${frameworkConfig.name}`, "companions");
+  return path.join(os.homedir(), `.${FRAMEWORK_NAME}`, "companions");
 }
 
 function isInsideDir(parentDir: string, candidatePath: string): boolean {

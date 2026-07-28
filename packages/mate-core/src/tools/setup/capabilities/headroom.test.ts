@@ -1,17 +1,7 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 
 import type { SetupContext } from "../plugin";
 import { createHeadroomPlugin } from "./headroom";
-
-const tempRoots: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
-});
 
 function makeCtx(companionPath: string): SetupContext {
   return {
@@ -33,7 +23,6 @@ describe("createHeadroomPlugin apply()", () => {
     const plugin = createHeadroomPlugin({
       confirm: confirmMock,
       isCommandOnPath: checkPathMock,
-      isRtkOnPath: () => true,
     });
 
     await plugin.apply(makeCtx("/tmp/companion"));
@@ -50,7 +39,6 @@ describe("createHeadroomPlugin apply()", () => {
       confirm: confirmMock,
       isCommandOnPath: checkPathMock,
       isInstalledViaUvTool: checkUvToolMock,
-      isRtkOnPath: () => true,
     });
 
     await plugin.apply(makeCtx("/tmp/companion"));
@@ -71,7 +59,6 @@ describe("createHeadroomPlugin apply()", () => {
         confirm: confirmMock,
         isCommandOnPath: checkPathMock,
         isInstalledViaUvTool: checkUvToolMock,
-        isRtkOnPath: () => false,
       });
 
       await plugin.apply(makeCtx("/tmp/companion"));
@@ -98,7 +85,6 @@ describe("createHeadroomPlugin apply()", () => {
         confirm: confirmMock,
         isCommandOnPath: checkPathMock,
         isInstalledViaUvTool: checkUvToolMock,
-        isRtkOnPath: () => false,
       });
 
       await plugin.apply(makeCtx("/tmp/companion"));
@@ -119,7 +105,6 @@ describe("createHeadroomPlugin apply()", () => {
       confirm: confirmMock,
       isCommandOnPath: checkPathMock,
       isInstalledViaUvTool: checkUvToolMock,
-      isRtkOnPath: () => false,
     });
 
     await plugin.apply({ ...makeCtx("/tmp/companion"), mode: "sync" });
@@ -129,223 +114,9 @@ describe("createHeadroomPlugin apply()", () => {
 
   test("teardown is a no-op", async () => {
     const confirmMock = mock(async (_: string) => false);
-    const plugin = createHeadroomPlugin({ confirm: confirmMock, isRtkOnPath: () => false });
+    const plugin = createHeadroomPlugin({ confirm: confirmMock });
 
     await expect(plugin.teardown(makeCtx("/tmp/companion"))).resolves.toBeUndefined();
     expect(confirmMock).not.toHaveBeenCalled();
   });
-});
-
-describe("RTK install in apply()", () => {
-  test("prompts RTK install when RTK is missing (brew available)", async () => {
-    const confirmMock = mock(async (_: string) => false);
-    const checkPathMock = mock((_command: string, _path: string) => true);
-
-    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
-
-    try {
-      const plugin = createHeadroomPlugin({
-        confirm: confirmMock,
-        isCommandOnPath: checkPathMock,
-        isInstalledViaUvTool: () => false,
-        isRtkOnPath: () => false,
-        isBrewAvailable: () => true,
-      });
-
-      await plugin.apply(makeCtx("/tmp/companion"));
-
-      expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining("brew install rtk-ai/tap/rtk"),
-      );
-      expect(confirmMock).toHaveBeenCalledTimes(1);
-    } finally {
-      stdoutSpy.mockRestore();
-    }
-  });
-
-  test("falls back to curl installer when brew is not available", async () => {
-    const confirmMock = mock(async (_: string) => false);
-    const checkPathMock = mock((_command: string, _path: string) => true);
-
-    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
-
-    try {
-      const plugin = createHeadroomPlugin({
-        confirm: confirmMock,
-        isCommandOnPath: checkPathMock,
-        isInstalledViaUvTool: () => false,
-        isRtkOnPath: () => false,
-        isBrewAvailable: () => false,
-      });
-
-      await plugin.apply(makeCtx("/tmp/companion"));
-
-      expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining("curl -fsSL https://rtk.ai/install | bash"),
-      );
-    } finally {
-      stdoutSpy.mockRestore();
-    }
-  });
-
-  test("runs RTK install command when user confirms", async () => {
-    const confirmMock = mock(async (_: string) => true);
-    const runRtkMock = mock(async () => {});
-    const checkPathMock = mock((_command: string, _path: string) => true);
-
-    const plugin = createHeadroomPlugin({
-      confirm: confirmMock,
-      isCommandOnPath: checkPathMock,
-      isInstalledViaUvTool: () => false,
-      isRtkOnPath: () => false,
-      isBrewAvailable: () => true,
-      runRtkInstallCmd: runRtkMock,
-    });
-
-    await plugin.apply(makeCtx("/tmp/companion"));
-
-    expect(runRtkMock).toHaveBeenCalledWith("brew install rtk-ai/tap/rtk");
-  });
-
-  test("skips RTK install prompt in sync mode", async () => {
-    const confirmMock = mock(async (_: string) => false);
-    const checkPathMock = mock((_command: string, _path: string) => true);
-
-    const plugin = createHeadroomPlugin({
-      confirm: confirmMock,
-      isCommandOnPath: checkPathMock,
-      isInstalledViaUvTool: () => false,
-      isRtkOnPath: () => false,
-      isBrewAvailable: () => true,
-    });
-
-    await plugin.apply({ ...makeCtx("/tmp/companion"), mode: "sync" });
-
-    expect(confirmMock).not.toHaveBeenCalled();
-  });
-
-  test("skips RTK install prompt when RTK already on PATH", async () => {
-    const confirmMock = mock(async (_: string) => false);
-    const checkPathMock = mock((_command: string, _path: string) => true);
-
-    const plugin = createHeadroomPlugin({
-      confirm: confirmMock,
-      isCommandOnPath: checkPathMock,
-      isInstalledViaUvTool: () => false,
-      isRtkOnPath: () => true,
-    });
-
-    await plugin.apply(makeCtx("/tmp/companion"));
-
-    expect(confirmMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("RTK provider init/uninstall in forProvider", () => {
-  const providers = ["claude", "codex", "opencode"] as const;
-
-  function expectedInitCommand(provider: (typeof providers)[number]): string {
-    if (provider === "claude") return "rtk init -g --auto-patch";
-    if (provider === "codex") return "rtk init -g --codex";
-    return "rtk init -g --opencode --auto-patch";
-  }
-
-  function expectedUninstallCommand(provider: (typeof providers)[number]): string {
-    if (provider === "claude") return "rtk init -g --uninstall";
-    if (provider === "codex") return "rtk init -g --uninstall --codex";
-    return "rtk init -g --uninstall --opencode";
-  }
-
-  for (const provider of providers) {
-    test(`${provider}: apply runs RTK init when RTK is on PATH and mode is setup`, async () => {
-      const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), `mate-rtk-${provider}-`));
-      tempRoots.push(companionDir);
-
-      const runRtkMock = mock(async () => {});
-      const plugin = createHeadroomPlugin({
-        isCommandOnPath: () => true,
-        isInstalledViaUvTool: () => false,
-        isRtkOnPath: () => true,
-        runRtkInstallCmd: runRtkMock,
-      });
-
-      const ctx = { ...makeCtx(companionDir), activeProviders: [provider] };
-      await plugin.forProvider![provider].apply(ctx);
-
-      expect(runRtkMock).toHaveBeenCalledWith(expectedInitCommand(provider));
-    });
-
-    test(`${provider}: apply runs RTK init silently during sync mode`, async () => {
-      const runRtkMock = mock(async () => {});
-      const plugin = createHeadroomPlugin({
-        isCommandOnPath: () => true,
-        isInstalledViaUvTool: () => false,
-        isRtkOnPath: () => true,
-        runRtkInstallCmd: runRtkMock,
-      });
-
-      const ctx = { ...makeCtx("/tmp/companion"), mode: "sync", activeProviders: [provider] };
-      await plugin.forProvider![provider].apply(ctx);
-
-      expect(runRtkMock).toHaveBeenCalledWith(expectedInitCommand(provider));
-    });
-
-    test(`${provider}: apply skips RTK init when RTK not on PATH`, async () => {
-      const runRtkMock = mock(async () => {});
-      const plugin = createHeadroomPlugin({
-        isCommandOnPath: () => true,
-        isInstalledViaUvTool: () => false,
-        isRtkOnPath: () => false,
-        runRtkInstallCmd: runRtkMock,
-      });
-
-      await plugin.forProvider![provider].apply(makeCtx("/tmp/companion"));
-      expect(runRtkMock).not.toHaveBeenCalled();
-    });
-
-    test(`${provider}: teardown runs RTK uninstall when RTK is on PATH`, async () => {
-      const runRtkMock = mock(async () => {});
-      const plugin = createHeadroomPlugin({
-        isCommandOnPath: () => true,
-        isInstalledViaUvTool: () => false,
-        isRtkOnPath: () => true,
-        runRtkInstallCmd: runRtkMock,
-      });
-
-      await plugin.forProvider![provider].teardown(makeCtx("/tmp/companion"));
-
-      expect(runRtkMock).toHaveBeenCalledWith(expectedUninstallCommand(provider));
-    });
-
-    test(`${provider}: teardown skips RTK uninstall when RTK not on PATH`, async () => {
-      const runRtkMock = mock(async () => {});
-      const plugin = createHeadroomPlugin({
-        isCommandOnPath: () => true,
-        isInstalledViaUvTool: () => false,
-        isRtkOnPath: () => false,
-        runRtkInstallCmd: runRtkMock,
-      });
-
-      await plugin.forProvider![provider].teardown(makeCtx("/tmp/companion"));
-      expect(runRtkMock).not.toHaveBeenCalled();
-    });
-
-    test(`${provider}: teardown skips RTK uninstall when another active provider needs RTK`, async () => {
-      const runRtkMock = mock(async () => {});
-      const plugin = createHeadroomPlugin({
-        isCommandOnPath: () => true,
-        isInstalledViaUvTool: () => false,
-        isRtkOnPath: () => true,
-        runRtkInstallCmd: runRtkMock,
-      });
-
-      // Simulate: this provider is being torn down but another active provider
-      // still needs RTK, so uninstall must be skipped to avoid breaking it.
-      const otherProvider =
-        provider === "claude" ? "opencode" : provider === "opencode" ? "claude" : "claude";
-      const ctx = { ...makeCtx("/tmp/companion"), activeProviders: [otherProvider] };
-      await plugin.forProvider![provider].teardown(ctx);
-      expect(runRtkMock).not.toHaveBeenCalled();
-    });
-  }
 });

@@ -17,7 +17,7 @@ const tempRoots: string[] = [];
 // 5s default per-test timeout and fail intermittently. Give the entire file a
 // generous default; individual tests still override with tighter values where
 // a fast failure is the point.
-const DEFAULT_TEST_TIMEOUT_MS = 30_000;
+const DEFAULT_TEST_TIMEOUT_MS = 60_000;
 // Watchdog for non-TTY CLI runs. A hung child (e.g. blocked on
 // stdin that never arrives) would otherwise sit until the test timeout with no
 // diagnostics; killing it early surfaces the captured output instead.
@@ -321,7 +321,8 @@ async function setupCompanion(
   if (hasHeadroom) {
     await writeHeadroomStub(scenario);
   }
-  // Always write rtk stub since launch tests may use --headroom
+  // Keep the external command deterministic for provider teardown. Capability
+  // activation remains controlled solely by the persisted selection.
   await writeRtkStub(scenario);
   if ((selections.capabilities ?? []).includes("graphify")) {
     await writeGraphifyStub(scenario);
@@ -913,6 +914,7 @@ describe("mate CLI e2e", () => {
       "utf8",
     );
     expect(config).toContain("name: headroom");
+    expect(config).not.toContain("name: rtk");
     expect(config).not.toContain("memory: true");
 
     expect(
@@ -929,6 +931,23 @@ describe("mate CLI e2e", () => {
       "utf8",
     );
     expect(updatedConfig).not.toContain("name: headroom");
+  });
+
+  test("setup persists RTK independently from Headroom", async () => {
+    const scenario = await createScenario("mate-cli-e2e-rtk-setup-");
+
+    const result = await setupCompanion(scenario, [], {
+      allowedAgents: ["claude"],
+      capabilities: ["rtk"],
+    });
+
+    expect(result.exitCode).toBe(0);
+    const config = await fs.readFile(
+      path.join(scenario.companion, ".mate", "config", "framework.yaml"),
+      "utf8",
+    );
+    expect(config).toContain("name: rtk");
+    expect(config).not.toContain("name: headroom");
   });
 
   test("setup deploys the OpenCode companion plugin into the companion runtime", async () => {

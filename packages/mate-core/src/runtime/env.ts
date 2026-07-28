@@ -6,6 +6,7 @@
  */
 export const MATE_ENV = {
   frameworkName: "MATE_NAME",
+  commandName: "MATE_COMMAND",
   version: "MATE_VERSION",
   companionPath: "MATE_ARTIFACT_PATH",
   wrapperBinPath: "MATE_WRAPPER_BIN_PATH",

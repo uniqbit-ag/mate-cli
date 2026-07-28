@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { frameworkConfig } from "../../../framework";
+import { FRAMEWORK_NAME, frameworkConfig } from "../../../framework";
 import { removeGraphifySection } from "../capabilities/graphify";
 
-// Lazy: marker names derive from the active distribution's identity.
-const upperName = () => frameworkConfig.name.toUpperCase();
+// Marker names derive from the framework identity, never the invocation name.
+const upperName = () => FRAMEWORK_NAME.toUpperCase();
 
 function allMateStarts(): string[] {
   return [

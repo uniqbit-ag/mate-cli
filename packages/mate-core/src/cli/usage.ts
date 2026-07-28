@@ -1,9 +1,12 @@
-import { frameworkConfig } from "../framework";
+import { getActiveDistribution } from "../distribution";
+import { FRAMEWORK_NAME, frameworkCommandName } from "../framework";
 
 export function usage(): string {
-  const n = frameworkConfig.name;
+  const n = frameworkCommandName();
+  const packageName =
+    getActiveDistribution().config.update?.packageName ?? `@uniqbit/${FRAMEWORK_NAME}`;
   return [
-    `${n.charAt(0).toUpperCase() + n.slice(1)} CLI (@uniqbit/${n})`,
+    `${n.charAt(0).toUpperCase() + n.slice(1)} CLI (${packageName})`,
     "",
     "Commands:",
     ` ${n} install [--yes]`,

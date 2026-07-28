@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME, frameworkConfig } from "../../framework";
 import { YamlFileStore } from "./yaml-file-store";
 import { migrateConfigDir } from "./migration";
 
@@ -21,9 +21,8 @@ function normalizeGlobalConfig(config: GlobalConfig | null): GlobalConfig {
   };
 }
 
-// Lazy: the distribution name is only known once createMate has run.
 function defaultGlobalConfigPath(): string {
-  return path.join(os.homedir(), `.${frameworkConfig.name}`, "config.yaml");
+  return path.join(os.homedir(), `.${FRAMEWORK_NAME}`, "config.yaml");
 }
 
 export class GlobalConfigStore extends YamlFileStore<GlobalConfig> {

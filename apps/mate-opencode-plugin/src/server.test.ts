@@ -9,6 +9,7 @@ mock.module("@opencode-ai/plugin", () => ({
 }));
 
 const { MateOpenCodePlugin } = await import("./server");
+const { ContextModePlugin } = await import("context-mode/plugin");
 
 const tempRoots: string[] = [];
 
@@ -141,6 +142,63 @@ describe("aggregate Mate OpenCode plugin", () => {
         await expect(MateOpenCodePlugin({} as never)).rejects.toThrow(
           "missing MATE_GUIDANCE_JSON in the launch environment",
         );
+      },
+    );
+  });
+
+  test("composes policy, routing, capture, guidance, and compaction hooks with context-mode", async () => {
+    const root = await makeTempDir("mate-opencode-context-mode-");
+    const companion = path.join(root, "companion");
+    const repo = path.join(root, "repo");
+    await fs.mkdir(repo, { recursive: true });
+
+    await withEnv(
+      {
+        HOME: root,
+        MATE_ARTIFACT_PATH: companion,
+        MATE_REPO_PATH: repo,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+        MATE_REPO_ID: "acme",
+        MATE_REPO_PROFILE: "default",
+        MATE_POLICY_JSON: JSON.stringify({ forbiddenPaths: ["private/**"] }),
+        MATE_GIT_AUTO_MODE: "0",
+        MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
+      },
+      async () => {
+        const mate = (await MateOpenCodePlugin({} as never)) as Record<string, unknown>;
+        const contextMode = (await ContextModePlugin({
+          directory: repo,
+          client: { app: { log: async () => {} } },
+        })) as Record<string, unknown>;
+
+        // OpenCode invokes each configured plugin independently, so matching
+        // hook keys must remain present in both modules rather than being merged.
+        for (const hook of [
+          "tool.execute.before",
+          "tool.execute.after",
+          "experimental.chat.system.transform",
+          "experimental.session.compacting",
+        ]) {
+          expect(mate[hook]).toBeFunction();
+          expect(contextMode[hook]).toBeFunction();
+        }
+        expect(contextMode.tool).toBeObject();
+
+        const system = { system: ["base"] };
+        await (
+          mate["experimental.chat.system.transform"] as (
+            input: unknown,
+            output: { system: string[] },
+          ) => Promise<void>
+        )({ sessionID: "session-acme", model: {} }, system);
+        await (
+          contextMode["experimental.chat.system.transform"] as (
+            input: unknown,
+            output: { system: string[] },
+          ) => Promise<void>
+        )({ sessionID: "session-acme", model: {} }, system);
+        expect(system.system.join("\n")).toContain("<companion-policy ");
+        expect(system.system.join("\n")).toContain("context-mode");
       },
     );
   });

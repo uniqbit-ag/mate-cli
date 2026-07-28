@@ -1,7 +1,7 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { frameworkConfig } from "../../framework";
+import { frameworkCommandName } from "../../framework";
 import {
   OPENCODE_PLUGIN_PACKAGE_NAME,
   warmOpenCodePluginCache,
@@ -20,7 +20,7 @@ type InstallResult = ReturnType<typeof installPublicPackageSync>;
 function writeNpmOnlyRecoveryMessage(): void {
   const { packageName, registry } = getUpdateConfig();
   process.stderr.write(
-    `${frameworkConfig.name}: self-update is only supported for npm-installed Mate.\n`,
+    `${frameworkCommandName()}: self-update is only supported for npm-installed Mate.\n`,
   );
   if (packageName.startsWith("@uniqbit/")) {
     process.stderr.write(
@@ -88,7 +88,7 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
     latest = await updateCommandDeps.fetchLatestVersion();
   } catch {
     process.stderr.write(
-      `${frameworkConfig.name}: could not reach registry to check for updates\n`,
+      `${frameworkCommandName()}: could not reach registry to check for updates\n`,
     );
     process.exitCode = 1;
     return;
@@ -96,7 +96,7 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
 
   if (checkOnly) {
     if (updateCommandDeps.isNewer(latest, current)) {
-      console.log(`${frameworkConfig.name}: update available (${current} → ${latest})`);
+      console.log(`${frameworkCommandName()}: update available (${current} → ${latest})`);
       process.exitCode = 1;
     } else {
       console.log("Up to date.");
@@ -127,11 +127,11 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       process.stderr.write(
-        `${frameworkConfig.name}: npm is required for self-update but was not found on PATH\n`,
+        `${frameworkCommandName()}: npm is required for self-update but was not found on PATH\n`,
       );
     } else {
       process.stderr.write(
-        `${frameworkConfig.name}: could not verify the npm installation used for self-update\n`,
+        `${frameworkCommandName()}: could not verify the npm installation used for self-update\n`,
       );
     }
     writeNpmOnlyRecoveryMessage();
@@ -148,7 +148,7 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
   const result = updateCommandDeps.installLatest(latest);
   if (result.status !== 0 || result.error) {
     process.stderr.write(
-      `${frameworkConfig.name}: upgrade command exited with status ${result.status ?? 1}\n`,
+      `${frameworkCommandName()}: upgrade command exited with status ${result.status ?? 1}\n`,
     );
     process.exitCode = 1;
     return;
@@ -163,7 +163,7 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
   if (!warmed.ok) {
     process.stderr.write(
       [
-        `${frameworkConfig.name}: could not pre-fetch ${OPENCODE_PLUGIN_PACKAGE_NAME}@${latest} for OpenCode.`,
+        `${frameworkCommandName()}: could not pre-fetch ${OPENCODE_PLUGIN_PACKAGE_NAME}@${latest} for OpenCode.`,
         "The next managed OpenCode launch will download it (requires registry access).",
         ...(warmed.detail ? [`Details: ${warmed.detail}`] : []),
       ].join("\n") + "\n",
@@ -173,7 +173,7 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
   const postInstall = updateCommandDeps.runPostInstall(skipConfirm);
   if (postInstall.status !== 0 || postInstall.error) {
     process.stderr.write(
-      `\nUpgraded to ${latest}, but installation is incomplete. Run \`mate install\`.\n`,
+      `\nUpgraded to ${latest}, but installation is incomplete. Run \`${frameworkCommandName()} install\`.\n`,
     );
     process.exitCode = 1;
     return;

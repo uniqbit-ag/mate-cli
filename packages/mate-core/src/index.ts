@@ -24,6 +24,7 @@ export { ensureCapabilityEnabled, type EnsureCapabilityEnabledDeps } from "./cli
 export type {
   CapabilityPlugin,
   InstructionsService,
+  LaunchPreflightContext,
   McpServerDescriptor,
   McpService,
   Plugin,

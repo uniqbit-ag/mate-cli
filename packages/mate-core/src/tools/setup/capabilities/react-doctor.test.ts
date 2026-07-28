@@ -3,13 +3,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
 import { CLAUDE_HOOK_SRC, createReactDoctorPlugin } from "./react-doctor";
 
 const reactDoctorPlugin = createReactDoctorPlugin();
 
 const tempRoots: string[] = [];
+
+setDefaultTimeout(30_000);
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));

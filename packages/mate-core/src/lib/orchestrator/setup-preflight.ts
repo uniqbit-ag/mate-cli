@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { parse } from "yaml";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME, frameworkCommandName, frameworkConfig } from "../../framework";
 import { fileExists } from "../fs-utils";
 import { GlobalConfigStore } from "./global-config-store";
 import { CompanionResolver, type CompanionMatch } from "./companion-resolver";
@@ -127,7 +127,7 @@ export async function looksLikeWorkingRepo(cwd: string): Promise<boolean> {
 export async function hasLocalCompanionConfig(cwd: string): Promise<boolean> {
   const resolvedCwd = path.resolve(cwd);
   const candidatePaths = [
-    path.join(resolvedCwd, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+    path.join(resolvedCwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
     ...frameworkConfig.legacyNames.map((name) =>
       path.join(resolvedCwd, `.${name}`, "config", "framework.yaml"),
     ),
@@ -145,7 +145,7 @@ export async function hasLocalCompanionConfig(cwd: string): Promise<boolean> {
 async function hasWorkingRepoConfig(cwd: string): Promise<boolean> {
   try {
     const raw = await fs.readFile(
-      path.join(path.resolve(cwd), `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(path.resolve(cwd), `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "utf8",
     );
     const config = parse(raw) as { type?: unknown } | null;
@@ -190,7 +190,7 @@ export async function inspectSetupPreflight(
 
 export function formatSetupGuardrailError(cwd: string, match: CompanionMatch): string {
   return [
-    `\`${frameworkConfig.name} setup\` cannot run here: ${path.resolve(cwd)} is inside linked working repo \`${match.repositoryId}\`.`,
-    `Run \`${frameworkConfig.name} setup\` from the companion repo instead: ${match.companionPath}`,
+    `\`${frameworkCommandName()} setup\` cannot run here: ${path.resolve(cwd)} is inside linked working repo \`${match.repositoryId}\`.`,
+    `Run \`${frameworkCommandName()} setup\` from the companion repo instead: ${match.companionPath}`,
   ].join("\n");
 }

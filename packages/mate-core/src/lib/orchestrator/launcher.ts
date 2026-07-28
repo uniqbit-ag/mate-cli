@@ -4,6 +4,8 @@ import {
   syncWorkingRepoClaudeSettings,
   syncWorkingRepoCodexState,
 } from "../../tools/setup";
+import { getActiveDistribution } from "../../distribution";
+import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
 import type { LaunchAdapter, AdapterContext } from "./adapters/base";
 import { ClaudeAdapter } from "./adapters/claude";
 import { CodexAdapter } from "./adapters/codex";
@@ -13,6 +15,7 @@ import { syncCompanionGit } from "./companion-git-sync";
 import { resolveForLaunch, type LaunchContext } from "./framework-context";
 import {
   RepositoryNotSelectedError,
+  LaunchPreflightError,
   ToolNotAllowedError,
   type FrameworkConfig,
   type LaunchRequest,
@@ -83,6 +86,7 @@ export class FrameworkLauncher {
       state.config,
       state.policy.allowedAgents.includes("codex"),
     );
+    await this.runCapabilityPreflight(state, request.tool);
     await state.adapter.validateLaunch(adapterContext);
 
     return {
@@ -141,6 +145,54 @@ export class FrameworkLauncher {
       capabilities: state.config.capabilities ?? [],
       git: state.config.git,
     };
+  }
+
+  private async runCapabilityPreflight(
+    state: ResolvedLaunchState,
+    providerId: string,
+  ): Promise<void> {
+    const context: LaunchPreflightContext = {
+      companionPath: state.companionPath,
+      config: state.config,
+      repository: state.repository,
+      providerId,
+    };
+    const preflights = getActiveDistribution()
+      .registry.getAll()
+      .reduce<
+        Array<{
+          capability: CapabilityPlugin;
+          preflight: NonNullable<NonNullable<CapabilityPlugin["forProvider"]>[string]["preflight"]>;
+        }>
+      >((entries, plugin) => {
+        if (plugin.kind !== "capability" || !plugin.isEnabled(state.config)) return entries;
+        const capability = plugin as CapabilityPlugin;
+        const preflight = capability.forProvider?.[providerId]?.preflight;
+        if (preflight) entries.push({ capability, preflight });
+        return entries;
+      }, []);
+    const results = await Promise.all(
+      preflights.map(async ({ capability, preflight }) => {
+        try {
+          return await preflight(context);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          throw new LaunchPreflightError(
+            `Capability preflight failed for ${capability.id} on ${providerId}: ${detail}`,
+            { cause: error },
+          );
+        }
+      }),
+    );
+    const diagnostics = results.flat();
+
+    if (diagnostics.length > 0) {
+      throw new LaunchPreflightError(
+        ["Capability launch preflight failed.", ...diagnostics.map((item) => `- ${item}`)].join(
+          "\n",
+        ),
+      );
+    }
   }
 
   private async resolveConfig(): Promise<LaunchContext> {

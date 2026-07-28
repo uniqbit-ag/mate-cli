@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME, frameworkConfig } from "../../framework";
 import { getActiveDistribution } from "../../distribution";
 import { CompanionResolver } from "../../lib/orchestrator/companion-resolver";
 import { CompanionStore, resolvePolicyFromConfig } from "../../lib/orchestrator/companion-store";
@@ -34,7 +34,7 @@ interface ToolCheck {
 }
 
 function storesForCompanion(companionPath: string): CompanionStores {
-  const configDir = path.join(companionPath, `.${frameworkConfig.name}`, "config");
+  const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   return {
     configStore: new ConfigStore(path.join(configDir, "framework.yaml")),
     workingRepoStore: new WorkingRepoStore(path.join(configDir, "registry.yaml")),
@@ -42,7 +42,7 @@ function storesForCompanion(companionPath: string): CompanionStores {
 }
 
 async function hasLocalCompanionConfig(cwd: string): Promise<boolean> {
-  const localDir = path.join(cwd, `.${frameworkConfig.name}`);
+  const localDir = path.join(cwd, `.${FRAMEWORK_NAME}`);
   const localLegacyDirs = frameworkConfig.legacyNames.map((name) => path.join(cwd, `.${name}`));
   await migrateConfigDir(localDir, localLegacyDirs);
 
@@ -127,10 +127,10 @@ function getSelectedToolChecks(config: {
     checks.push({ name: "tokensave", command: "tokensave", source: "capability" });
   }
   if (selectedCapabilities.has("headroom")) {
-    checks.push(
-      { name: "headroom", command: "headroom", source: "capability" },
-      { name: "rtk", command: "rtk", source: "headroom dependency" },
-    );
+    checks.push({ name: "headroom", command: "headroom", source: "capability" });
+  }
+  if (selectedCapabilities.has("rtk")) {
+    checks.push({ name: "rtk", command: "rtk", source: "capability" });
   }
   if (selectedCapabilities.has("graphify")) {
     checks.push({ name: "graphify", command: "graphify", source: "capability" });

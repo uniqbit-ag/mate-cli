@@ -203,6 +203,14 @@ export const BUILTIN_SETUP_COMPATIBILITIES: SetupCompatibility[] = [
     defaultSelected: false,
   },
   {
+    id: "rtk",
+    kind: "capability",
+    capability: { name: "rtk" },
+    label: "RTK",
+    description: "Patch supported agent providers with RTK independently from Headroom.",
+    defaultSelected: false,
+  },
+  {
     id: "graphify",
     kind: "capability",
     capability: { name: "graphify" },

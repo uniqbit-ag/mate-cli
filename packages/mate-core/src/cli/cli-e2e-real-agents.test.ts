@@ -36,7 +36,11 @@ const DUMMY_API_KEY = "sk-ant-dummy-test-key";
 // `-m provider/model` CLI selector vs. the bare id the API request body actually carries.
 const OPENCODE_MODEL = "anthropic/claude-sonnet-4-5";
 const OPENCODE_MODEL_ID = "claude-sonnet-4-5";
-const COMPANION_GUIDANCE_MARKERS = ["<companion-policy", "<codebase-exploration-rules"] as const;
+const COMPANION_GUIDANCE_MARKERS = [
+  "\n<companion-policy ",
+  "\n<codebase-exploration-rules",
+] as const;
+const CONTEXT_MODE_GUIDANCE_MARKER = "\n## Context Mode\n";
 
 function isBinaryOnPath(command: string): boolean {
   const pathEnv = process.env.PATH ?? "";
@@ -370,6 +374,8 @@ async function setupCompanion(
       "openspec",
       "--capability",
       "graphify",
+      "--capability",
+      "context-mode",
     ],
     input: "y\n",
   });
@@ -594,6 +600,9 @@ describe.skipIf(isCI || !hasClaude)("real claude agent — system prompt injecti
       expect(result.exitCode).toBe(0);
       expect(mock.requests.length).toBeGreaterThan(0);
       assertMarkersAppearExactlyOnce(mock.requests[0]!.body);
+      expect(
+        countOccurrences(flattenSystemPrompt(mock.requests[0]!.body), CONTEXT_MODE_GUIDANCE_MARKER),
+      ).toBe(0);
     } finally {
       await mock.close();
     }
@@ -645,6 +654,9 @@ describe.skipIf(isCI || !hasOpenCode)("real opencode agent — system prompt inj
       const mainRequest = mock.requests.find((r) => r.model === OPENCODE_MODEL_ID);
       expect(mainRequest).toBeDefined();
       assertMarkersAppearExactlyOnce(mainRequest!.body);
+      expect(
+        countOccurrences(flattenSystemPrompt(mainRequest!.body), CONTEXT_MODE_GUIDANCE_MARKER),
+      ).toBe(1);
     } finally {
       await mock.close();
     }

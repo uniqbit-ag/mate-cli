@@ -3,11 +3,13 @@ import { createMate } from "@uniqbit/mate-core";
 import {
   createClaudePlugin,
   createCodexPlugin,
+  createContextModePlugin,
   createGraphifyPlugin,
   createHeadroomPlugin,
   createOpenCodePlugin,
   createOpenspecPlugin,
   createReactDoctorPlugin,
+  createRtkPlugin,
   createTokensavePlugin,
 } from "@uniqbit/mate-core/plugins";
 
@@ -27,8 +29,10 @@ const openspec = createOpenspecPlugin();
 const reactDoctor = createReactDoctorPlugin();
 const tokensave = createTokensavePlugin();
 const headroom = createHeadroomPlugin();
+const rtk = createRtkPlugin();
 const graphify = createGraphifyPlugin();
 const context7 = createContext7Plugin();
+const contextMode = createContextModePlugin();
 
 const cli = createMate({
   config: {
@@ -49,8 +53,10 @@ const cli = createMate({
     { plugin: reactDoctor, policy: "optional" },
     { plugin: tokensave, policy: "optional" },
     { plugin: headroom, policy: "optional" },
+    { plugin: rtk, policy: "optional" },
     { plugin: graphify, policy: "optional" },
     { plugin: context7, policy: "optional" },
+    { plugin: contextMode, policy: "optional" },
   ],
 });
 

@@ -1,4 +1,4 @@
-import { describe, test, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import type { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import { runReportCommand } from "./index";
@@ -29,6 +29,25 @@ const makeSpawn =
     ({ stdout, status, error: null }) as ReturnType<typeof spawnSync>;
 
 describe("runReportCommand", () => {
+  test("does not invoke RTK savings when RTK is disabled", async () => {
+    const calls: string[][] = [];
+    const deps = {
+      resolveFrameworkContext: makeResolveContext,
+      spawn: (command: string, args: string[]) => {
+        calls.push([command, ...args]);
+        return {
+          stdout: JSON.stringify({ daily: [{ modelBreakdowns: [] }] }),
+          status: 0,
+          error: null,
+        } as ReturnType<typeof spawnSync>;
+      },
+    };
+
+    await runReportCommand([], deps);
+
+    expect(calls.some((args) => args[0] === "rtk")).toBe(false);
+  });
+
   test("generates report with mocked dependencies", async () => {
     const deps = {
       resolveFrameworkContext: makeResolveContext,

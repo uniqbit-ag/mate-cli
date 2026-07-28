@@ -173,6 +173,89 @@ describe("validate-artifact-path", () => {
     expect(result.exitCode).toBe(0);
   });
 
+  test("allows editing existing working-repo artifact files, but still blocks Write", async () => {
+    const repo = await makeTempDir("mate-claude-hook-existing-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    const notePath = path.join(repo, "scratch", "note.md");
+    await fs.mkdir(path.dirname(notePath), { recursive: true });
+    await fs.writeFile(notePath, "existing untracked artifact\n", "utf8");
+    const env = {
+      MATE_ARTIFACT_PATH: companion,
+      MATE_REPO_PATH: repo,
+    };
+
+    const editResult = runHook(
+      {
+        tool_name: "Edit",
+        tool_input: { file_path: notePath },
+      },
+      env,
+    );
+    expect(editResult.exitCode).toBe(0);
+
+    const writeResult = runHook(
+      {
+        tool_name: "Write",
+        tool_input: { file_path: notePath },
+      },
+      env,
+    );
+    expect(writeResult.exitCode).toBe(2);
+
+    const missingResult = runHook(
+      {
+        tool_name: "Edit",
+        tool_input: { file_path: path.join(repo, "scratch", "missing.md") },
+      },
+      env,
+    );
+    expect(missingResult.exitCode).toBe(2);
+  });
+
+  test("allows writes into Claude Code's own config directory (plan files)", async () => {
+    const repo = await makeTempDir("mate-claude-hook-config-dir-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    const home = await makeTempDir("mate-claude-hook-home-");
+    const configDir = await makeTempDir("mate-claude-hook-config-");
+    const env = {
+      MATE_ARTIFACT_PATH: companion,
+      MATE_REPO_PATH: repo,
+      HOME: home,
+    };
+
+    const defaultDirResult = runHook(
+      {
+        tool_name: "Write",
+        tool_input: { file_path: path.join(home, ".claude", "plans", "my-plan.md") },
+      },
+      env,
+    );
+    expect(defaultDirResult.exitCode).toBe(0);
+
+    const configuredDirResult = runHook(
+      {
+        tool_name: "Write",
+        tool_input: { file_path: path.join(configDir, "plans", "my-plan.md") },
+      },
+      { ...env, CLAUDE_CONFIG_DIR: configDir },
+    );
+    expect(configuredDirResult.exitCode).toBe(0);
+
+    // An overridden config dir must not leave the default ~/.claude allowed.
+    const outsideConfiguredDirResult = runHook(
+      {
+        tool_name: "Write",
+        tool_input: { file_path: path.join(home, ".claude", "plans", "my-plan.md") },
+      },
+      { ...env, CLAUDE_CONFIG_DIR: configDir },
+    );
+    expect(outsideConfiguredDirResult.exitCode).toBe(2);
+  });
+
   test("still blocks artifact folders under product docs", async () => {
     const repo = await makeTempDir("mate-claude-hook-docs-block-");
     const companion = path.join(repo, "companion");
