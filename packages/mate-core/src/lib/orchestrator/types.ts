@@ -81,11 +81,34 @@ export interface CapabilityConfig {
  */
 export type EngineConstraints = Record<string, string>;
 
+/**
+ * Registration policy for a companion-declared plugin. `required` is a
+ * distribution prerogative and is rejected for declared plugins.
+ */
+export type PluginDeclarationPolicy = "default" | "optional";
+
+/**
+ * A companion-declared npm plugin: installed by setup/install into
+ * `.mate/dependencies/plugins/` and loaded on every invocation. Declaration
+ * registers the plugin; enablement stays in the `capabilities` list.
+ */
+export interface PluginDeclaration {
+  /** npm package name (e.g. `@acme/custom-plugin`). */
+  package: string;
+  /** Exact version, semver range, or the literal `latest`. */
+  version: string;
+  /** Registration policy; absent means `optional`. */
+  policy?: PluginDeclarationPolicy;
+  /** Opaque plugin parameters, passed to the plugin factory after resolution. */
+  config?: unknown;
+}
+
 export interface FrameworkConfig {
   type?: "working" | "companion";
   git?: GitModeProfile;
   profiles: Record<string, PolicyProfile>;
   capabilities?: CapabilityConfig[];
+  plugins?: PluginDeclaration[];
   migrations?: string[];
   cliTools?: CliToolConfig[];
   packageManagers?: string[];

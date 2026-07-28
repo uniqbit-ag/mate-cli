@@ -31,6 +31,8 @@ import { createUvPlugin } from "./setup/package-managers/uv";
 import type { PackageManagerSetupDeps } from "./setup/package-managers/uv";
 import { applyRequiredSelectionsToConfig } from "./setup/policy";
 import { invalidateInstallState } from "../lib/install";
+import { hydrateDynamicPlugins } from "./setup/dynamic-plugins/hydrate";
+import { installDeclaredPlugins } from "./setup/dynamic-plugins/install";
 import {
   buildSetupInstallationPlan,
   executeSetupInstallationPlan,
@@ -181,6 +183,19 @@ export async function executeSetup(
   await configStore.save(config);
 
   const companionPath = path.resolve(cwd);
+  // Declared plugin packages install and hydrate before the setup plan runs,
+  // so a fresh clone reaches a fully applied state from one setup run
+  // (install → load → plan).
+  if (config.plugins?.length) {
+    for (const result of await installDeclaredPlugins(companionPath, config.plugins)) {
+      if (result.status === "failed") {
+        process.stderr.write(
+          `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}\n`,
+        );
+      }
+    }
+    await hydrateDynamicPlugins({ companionPath });
+  }
   await applySetupCompatibilities(companionPath, config, "setup");
   await invalidateInstallState({ kind: "companion", companionPath });
 

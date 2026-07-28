@@ -21,6 +21,16 @@ export {
   type NormalizedRegistration,
 } from "./tools/setup/registry";
 export { ensureCapabilityEnabled, type EnsureCapabilityEnabledDeps } from "./cli/plugin-commands";
+// Dynamic plugin authors: import from this package as TYPES ONLY. Runtime
+// imports resolve a second, uninitialized copy of mate-core inside the
+// plugin's own node_modules; all runtime behavior flows through PluginHost.
+export {
+  createPluginHost,
+  PLUGIN_API_VERSION,
+  SUPPORTED_PLUGIN_API_VERSIONS,
+  type CreatePlugin,
+  type PluginHost,
+} from "./tools/setup/dynamic-plugins/host";
 export type {
   CapabilityPlugin,
   InstructionsService,
@@ -36,4 +46,8 @@ export type {
   SetupContext,
   TemplatesService,
 } from "./tools/setup/plugin";
-export type { FrameworkConfig } from "./lib/orchestrator/types";
+export type {
+  FrameworkConfig,
+  PluginDeclaration,
+  PluginDeclarationPolicy,
+} from "./lib/orchestrator/types";

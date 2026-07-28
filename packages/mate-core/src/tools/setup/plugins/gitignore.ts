@@ -1,4 +1,8 @@
 import { getActiveDistribution } from "../../../distribution";
+import {
+  PLUGIN_DEPENDENCIES_GITIGNORE_ENTRY,
+  PLUGIN_LOCAL_OVERRIDES_GITIGNORE_ENTRY,
+} from "../dynamic-plugins/paths";
 import type { Plugin, SetupContext } from "../plugin";
 
 const MANAGED_START = (name: string) => `# ${name} managed: start`;
@@ -55,9 +59,16 @@ export async function writeManagedGitignoreBlock(
 }
 
 export function collectManagedGitignoreEntries(ctx: SetupContext, plugins: Plugin[]): string[] {
-  return plugins
+  const entries = plugins
     .filter((p) => p.kind !== "root" && (p.isEnabled(ctx.config) || p.persistGitignoreEntries))
     .flatMap((p) => p.gitignoreEntries?.(ctx) ?? []);
+  // Dynamic-plugin loading artifacts: the local override file and installed
+  // trees never version; the pin file (plugins.lock.yaml) stays committed and
+  // is deliberately not listed here.
+  if (ctx.config.plugins?.length) {
+    entries.push(PLUGIN_LOCAL_OVERRIDES_GITIGNORE_ENTRY, PLUGIN_DEPENDENCIES_GITIGNORE_ENTRY);
+  }
+  return entries;
 }
 
 export function createGitignorePlugin(

@@ -3,7 +3,7 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../framework";
 import { getDefaultSetupSelections } from "./setup-compatibilities";
 import { YamlFileStore } from "./yaml-file-store";
-import { type FrameworkConfig } from "./types";
+import { ConfigError, type FrameworkConfig } from "./types";
 
 export const RTK_CAPABILITY_SPLIT_MIGRATION = "rtk-capability-split-v1";
 
@@ -54,6 +54,23 @@ export function migrateRtkCapabilitySplit(config: FrameworkConfig): FrameworkCon
   };
 }
 
+export const PLUGIN_DECLARATION_POLICIES = ["default", "optional"] as const;
+
+/**
+ * Validates the `plugins` list of a loaded config. Declared plugins may not
+ * claim `required` — required-ness is a distribution prerogative.
+ */
+export function validatePluginDeclarations(config: FrameworkConfig): void {
+  for (const declaration of config.plugins ?? []) {
+    const policy = declaration.policy as string | undefined;
+    if (policy !== undefined && !PLUGIN_DECLARATION_POLICIES.includes(policy as never)) {
+      throw new ConfigError(
+        `plugins entry "${declaration.package}": policy "${policy}" is not allowed for declared plugins (allowed: ${PLUGIN_DECLARATION_POLICIES.join(", ")}).`,
+      );
+    }
+  }
+}
+
 export class ConfigStore extends YamlFileStore<FrameworkConfig> {
   constructor(configPath = process.env.MATE_CONFIG ?? defaultConfigPath()) {
     super(path.resolve(configPath));
@@ -61,6 +78,7 @@ export class ConfigStore extends YamlFileStore<FrameworkConfig> {
 
   override async load(): Promise<FrameworkConfig> {
     const merged = mergeWithDefaults(await super.load());
+    validatePluginDeclarations(merged);
     const needsMigration = !(merged.migrations ?? []).includes(RTK_CAPABILITY_SPLIT_MIGRATION);
     const config = migrateRtkCapabilitySplit(merged);
     if (needsMigration) await this.save(config);
