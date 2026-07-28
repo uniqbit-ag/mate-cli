@@ -95,6 +95,59 @@ describe("syncWorkingRepoCodexState", () => {
     expect(commands.join(" ")).not.toMatch(/python3|\bsh\b|MATE_HOOK_PROVIDER=/);
   });
 
+  test("teardown preserves user-owned companion Codex content", async () => {
+    const companion = await temp("mate-codex-teardown-");
+    await codexPlugin.apply({
+      companionPath: companion,
+      config: enabled,
+      mode: "setup",
+      activeProviders: ["codex"],
+    });
+
+    const userSkill = path.join(companion, ".codex", "skills", "user-skill", "SKILL.md");
+    const userHook = path.join(companion, ".codex", "hooks", "user-hook.cjs");
+    const userState = path.join(companion, ".codex", "state", "user.json");
+    await fs.mkdir(path.dirname(userSkill), { recursive: true });
+    await fs.mkdir(path.dirname(userState), { recursive: true });
+    await fs.writeFile(userSkill, "# user skill\n");
+    await fs.writeFile(userHook, "// user hook\n");
+    await fs.writeFile(userState, "{}\n");
+    const hooksPath = path.join(companion, ".codex", "hooks.json");
+    const hooks = JSON.parse(await fs.readFile(hooksPath, "utf8"));
+    hooks.hooks.SessionStart.push({ hooks: [{ command: "node user-hook.cjs" }] });
+    await fs.writeFile(hooksPath, JSON.stringify(hooks));
+
+    await codexPlugin.teardown({
+      companionPath: companion,
+      config: enabled,
+      mode: "sync",
+      activeProviders: [],
+    });
+
+    await expect(fs.readFile(userSkill, "utf8")).resolves.toBe("# user skill\n");
+    await expect(fs.readFile(userHook, "utf8")).resolves.toBe("// user hook\n");
+    await expect(fs.readFile(userState, "utf8")).resolves.toBe("{}\n");
+    const remainingHooks = JSON.parse(await fs.readFile(hooksPath, "utf8"));
+    expect(remainingHooks.hooks.SessionStart).toEqual([
+      { hooks: [{ command: "node user-hook.cjs" }] },
+    ]);
+    await expect(
+      fs.access(path.join(companion, ".codex", "hooks", "mate-session-banner.cjs")),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(companion, ".codex", "hooks", "validate-artifact-path.cjs")),
+    ).rejects.toThrow();
+  });
+
+  test("does not recreate an absent companion hooks file during hook removal", async () => {
+    const companion = await temp("mate-codex-empty-teardown-");
+
+    const { reconcileCompanionCodexHookGroup } = await import("./codex");
+    await reconcileCompanionCodexHookGroup(companion, "PreToolUse", "graphify hook-check");
+
+    await expect(fs.access(path.join(companion, ".codex", "hooks.json"))).rejects.toThrow();
+  });
+
   test("links skills, merges hooks, and is idempotent", async () => {
     const working = await temp("mate-codex-working-");
     const companion = await temp("mate-codex-companion-");
