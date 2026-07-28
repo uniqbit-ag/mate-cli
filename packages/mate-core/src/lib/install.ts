@@ -8,7 +8,7 @@ import { CompanionResolver } from "./orchestrator/companion-resolver";
 import { checkEngineRequirement } from "./orchestrator/engine-guard";
 import { GlobalConfigStore } from "./orchestrator/global-config-store";
 import { YamlFileStore } from "./orchestrator/yaml-file-store";
-import { frameworkConfig } from "../framework";
+import { FRAMEWORK_NAME } from "../framework";
 import type { FrameworkConfig } from "./orchestrator/types";
 import { getActiveDistribution } from "../distribution";
 import { createBunPlugin } from "../tools/setup/package-managers/bun";
@@ -55,7 +55,7 @@ export interface InstallState {
 }
 
 function defaultInstallStateRoot(): string {
-  return path.join(os.homedir(), `.${frameworkConfig.name}`, "install-state");
+  return path.join(os.homedir(), `.${FRAMEWORK_NAME}`, "install-state");
 }
 
 export function getInstallStatePath(
@@ -107,12 +107,7 @@ function coreContext(): InstallContext {
 }
 
 async function contextForCompanion(companionPath: string): Promise<InstallContext> {
-  const configPath = path.join(
-    companionPath,
-    `.${frameworkConfig.name}`,
-    "config",
-    "framework.yaml",
-  );
+  const configPath = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
   const config = mergeWithDefaults(await new ConfigStore(configPath).load());
   return {
     kind: "companion",
@@ -124,7 +119,7 @@ async function contextForCompanion(companionPath: string): Promise<InstallContex
 
 async function hasLocalConfig(cwd: string): Promise<boolean> {
   try {
-    await fs.access(path.join(cwd, `.${frameworkConfig.name}`, "config", "framework.yaml"));
+    await fs.access(path.join(cwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
     return true;
   } catch {
     return false;

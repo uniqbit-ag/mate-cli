@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { getActiveDistribution, type DistributionUpdateConfig } from "../distribution";
-import { frameworkConfig } from "../framework";
+import { FRAMEWORK_NAME, frameworkCommandName } from "../framework";
 import { fetchPublicPackageVersion, PUBLIC_NPM_REGISTRY } from "./public-npm";
 import { YamlFileStore } from "./orchestrator/yaml-file-store";
 
@@ -22,7 +22,7 @@ export const updateCheckerDeps = {
 
 export class UpdateStateStore extends YamlFileStore<UpdateState> {
   constructor() {
-    super(path.join(os.homedir(), `.${frameworkConfig.name}`, "update-state.yaml"));
+    super(path.join(os.homedir(), `.${FRAMEWORK_NAME}`, "update-state.yaml"));
   }
 
   protected onMissing(): Promise<UpdateState> {
@@ -35,9 +35,9 @@ export function getCurrentVersion(): string {
 }
 
 export function getUpdateConfig(): Required<DistributionUpdateConfig> {
-  const { name, update } = getActiveDistribution().config;
+  const { update } = getActiveDistribution().config;
   return {
-    packageName: update?.packageName ?? `@uniqbit/${name}`,
+    packageName: update?.packageName ?? `@uniqbit/${FRAMEWORK_NAME}`,
     registry: update?.registry ?? PUBLIC_NPM_REGISTRY,
     enforce: update?.enforce ?? false,
   };
@@ -62,9 +62,9 @@ export async function showUpdateBannerIfAvailable(store: UpdateStateStore): Prom
     const current = getCurrentVersion();
     if (!isNewer(state.latestVersion, current)) return;
     process.stderr.write(
-      `\n${frameworkConfig.name}: update available (${current} → ${state.latestVersion})\n`,
+      `\n${frameworkCommandName()}: update available (${current} → ${state.latestVersion})\n`,
     );
-    process.stderr.write(`  Run \`${frameworkConfig.name} update\` to upgrade.\n\n`);
+    process.stderr.write(`  Run \`${frameworkCommandName()} update\` to upgrade.\n\n`);
   } catch {
     // never block the main command
   }
@@ -83,9 +83,9 @@ export async function enforceUpdateIfRequired(store: UpdateStateStore): Promise<
     const current = getCurrentVersion();
     if (!isNewer(state.latestVersion, current)) return false;
     process.stderr.write(
-      `\n${frameworkConfig.name}: update required (${current} → ${state.latestVersion})\n`,
+      `\n${frameworkCommandName()}: update required (${current} → ${state.latestVersion})\n`,
     );
-    process.stderr.write(`  Run \`${frameworkConfig.name} update\` before continuing.\n\n`);
+    process.stderr.write(`  Run \`${frameworkCommandName()} update\` before continuing.\n\n`);
     return true;
   } catch {
     return false;

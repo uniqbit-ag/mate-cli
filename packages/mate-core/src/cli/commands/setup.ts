@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME, frameworkCommandName } from "../../framework";
 import { ConfigStore, defaultConfig } from "../../lib/orchestrator/config-store";
 import { executeSetup } from "../../tools/setup";
 import {
@@ -98,7 +98,7 @@ async function runSetupFlow(
     if (await checkWorkingRepo(cwd)) {
       process.stderr.write(
         `Warning: this directory looks like a working repository (project files detected).\n` +
-          `Initializing it as a ${frameworkConfig.name} companion here may not be what you want.\n`,
+          `Initializing it as a ${frameworkCommandName()} companion here may not be what you want.\n`,
       );
     }
     const ok = await askConfirm("Initialize this directory as a Mate companion repository? [y/N] ");
@@ -156,7 +156,7 @@ async function runSetupFlow(
       ? getSetupSelectionsFromConfig(defaultConfig())
       : getSetupSelectionsFromConfig(
           await new ConfigStore(
-            path.join(targetCwd, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+            path.join(targetCwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
           ).load(),
         );
 

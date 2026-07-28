@@ -1,4 +1,5 @@
 import { getActiveDistribution } from "../../distribution";
+import { FRAMEWORK_NAME } from "../../framework";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
 import { collectHostingProviders, ContextServiceMediator } from "./context-services";
 import type { CapabilityPlugin, Plugin, PluginRegistration, SetupContext } from "./plugin";
@@ -106,7 +107,7 @@ export async function executeSetupInstallationPlan(
   const distribution = getActiveDistribution();
   const mediator = new ContextServiceMediator({
     ctx,
-    frameworkName: distribution.config.name,
+    frameworkName: FRAMEWORK_NAME,
     hostingProviders: collectHostingProviders(plugins, plan.activeProviders),
     assetOverrideRoots: distribution.config.assetRoots,
     warn: (message) => {

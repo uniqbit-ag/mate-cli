@@ -2,7 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { frameworkConfig } from "../framework";
+import { FRAMEWORK_NAME, frameworkCommandName } from "../framework";
 import { ConfigStore, mergeWithDefaults } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import {
@@ -72,11 +72,7 @@ export async function updateProjectGitignore(
   const ctx: SetupContext = { companionPath, config, mode: "sync", activeProviders: [] };
   const plugins = getActiveDistribution().registry.getAll();
   const entries = collectManagedGitignoreEntries(ctx, plugins);
-  await writeManagedGitignoreBlock(
-    path.join(companionPath, ".gitignore"),
-    frameworkConfig.name,
-    entries,
-  );
+  await writeManagedGitignoreBlock(path.join(companionPath, ".gitignore"), FRAMEWORK_NAME, entries);
 }
 
 export async function syncCompanionFiles(
@@ -93,14 +89,17 @@ export async function syncCompanionFiles(
   );
 }
 
-function mateFolderReadme(): string {
-  const n = frameworkConfig.name;
+// Exported for the distribution-identity tests.
+export function mateFolderReadme(): string {
+  const n = frameworkCommandName();
+  const packageName =
+    getActiveDistribution().config.update?.packageName ?? `@uniqbit/${FRAMEWORK_NAME}`;
   return [
-    `# .${n}`,
+    `# .${FRAMEWORK_NAME}`,
     ``,
-    `This directory is managed by the **${n}** companion framework (\`@uniqbit/${n}\`).`,
+    `This directory is managed by the **${FRAMEWORK_NAME}** companion framework (\`${packageName}\`).`,
     ``,
-    `The ${n} framework keeps your AI agent's companion artifacts separate from the code it works on.`,
+    `The ${FRAMEWORK_NAME} framework keeps your AI agent's companion artifacts separate from the code it works on.`,
     `Specs, notes, and agent config live here; code stays in the linked working repository.`,
     ``,
     `## Common commands`,
@@ -118,7 +117,7 @@ function mateFolderReadme(): string {
     ``,
     `## Configuration`,
     ``,
-    `Edit \`.${n}/config/framework.yaml\` to configure:`,
+    `Edit \`.${FRAMEWORK_NAME}/config/framework.yaml\` to configure:`,
     ``,
     `- **profiles** — per-profile allowed agents list`,
     `- **capabilities** — skill and CLI tool capabilities (e.g. react-doctor, openspec, tokensave, headroom, rtk)`,
@@ -128,7 +127,7 @@ function mateFolderReadme(): string {
 }
 
 async function writeMateReadme(companionPath: string): Promise<void> {
-  const readmePath = path.join(companionPath, `.${frameworkConfig.name}`, "README.md");
+  const readmePath = path.join(companionPath, `.${FRAMEWORK_NAME}`, "README.md");
   await fs.mkdir(path.dirname(readmePath), { recursive: true });
   await fs.writeFile(readmePath, mateFolderReadme(), "utf8");
 }
@@ -158,7 +157,7 @@ export async function executeSetup(
 
   const configStore =
     deps.configStore ??
-    new ConfigStore(path.join(cwd, `.${frameworkConfig.name}`, "config", "framework.yaml"));
+    new ConfigStore(path.join(cwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
   const config = mergeWithDefaults(await configStore.load());
   const defaultProfile = config.profiles.default;
 

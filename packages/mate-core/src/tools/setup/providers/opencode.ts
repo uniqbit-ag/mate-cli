@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { frameworkCommandName } from "../../../framework";
 import {
   OPENCODE_PLUGIN_PACKAGE_NAME,
   getOpenCodePluginPackageReference,
@@ -243,9 +244,9 @@ async function warmPluginCacheForSetup(pluginReference: string): Promise<void> {
 
   process.stderr.write(
     [
-      `mate: could not pre-fetch ${pluginReference} into OpenCode's plugin environment.`,
+      `${frameworkCommandName()}: could not pre-fetch ${pluginReference} into OpenCode's plugin environment.`,
       "The first managed OpenCode launch will download it, which requires registry access.",
-      "Re-run `mate companion setup` with network access to warm the cache ahead of time.",
+      `Re-run \`${frameworkCommandName()} companion setup\` with network access to warm the cache ahead of time.`,
       ...(warmed.detail ? [`Details: ${warmed.detail}`] : []),
     ].join("\n") + "\n",
   );

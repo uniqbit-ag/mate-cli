@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { getDefaultSetupSelections } from "./setup-compatibilities";
 import { YamlFileStore } from "./yaml-file-store";
 import { type FrameworkConfig } from "./types";
@@ -8,7 +8,7 @@ import { type FrameworkConfig } from "./types";
 export const RTK_CAPABILITY_SPLIT_MIGRATION = "rtk-capability-split-v1";
 
 function defaultConfigPath(): string {
-  return `.${frameworkConfig.name}/config/framework.yaml`;
+  return `.${FRAMEWORK_NAME}/config/framework.yaml`;
 }
 
 export function defaultConfig(): FrameworkConfig {

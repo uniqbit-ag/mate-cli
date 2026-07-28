@@ -1,4 +1,5 @@
 import { confirm } from "../confirm";
+import { frameworkCommandName } from "../../framework";
 import {
   buildInstallPlan,
   inspectInstallPlan,
@@ -44,7 +45,9 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     if (missing.length > 0 && !skipConfirm) {
       const ok = await confirm("Install the missing requirements? [y/N] ");
       if (!ok) {
-        process.stderr.write("Installation declined. Run `mate install --yes` to continue.\n");
+        process.stderr.write(
+          `Installation declined. Run \`${frameworkCommandName()} install --yes\` to continue.\n`,
+        );
         process.exitCode = 1;
         return false;
       }
@@ -54,7 +57,7 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     printPlanText(plan);
     if (!skipConfirm) {
       process.stderr.write(
-        "mate: installation requires confirmation in a TTY. Re-run with `mate install --yes`.\n",
+        `${frameworkCommandName()}: installation requires confirmation in a TTY. Re-run with \`${frameworkCommandName()} install --yes\`.\n`,
       );
       process.exitCode = 1;
       return false;
@@ -73,9 +76,13 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
   }
   if (!execution.ok) {
     for (const result of execution.results.filter((item) => item.status === "failed")) {
-      process.stderr.write(`mate: ${result.id} failed: ${result.error ?? "unknown error"}\n`);
+      process.stderr.write(
+        `${frameworkCommandName()}: ${result.id} failed: ${result.error ?? "unknown error"}\n`,
+      );
     }
-    process.stderr.write("Installation is incomplete. Re-run `mate install` after remediation.\n");
+    process.stderr.write(
+      `Installation is incomplete. Re-run \`${frameworkCommandName()} install\` after remediation.\n`,
+    );
     process.exitCode = 1;
     return false;
   }
@@ -85,9 +92,11 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     await saveCompleteInstallState(plan, execution.results);
   } catch (error) {
     process.stderr.write(
-      `mate: installation completed but companion reconciliation failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      `${frameworkCommandName()}: installation completed but companion reconciliation failed: ${error instanceof Error ? error.message : String(error)}\n`,
     );
-    process.stderr.write("Installation is incomplete. Re-run `mate install`.\n");
+    process.stderr.write(
+      `Installation is incomplete. Re-run \`${frameworkCommandName()} install\`.\n`,
+    );
     process.exitCode = 1;
     return false;
   }
