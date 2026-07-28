@@ -51,10 +51,12 @@ const MANAGED_HOOK_MARKERS = [
 ];
 
 // Base `permissions.allow` entries that Claude gets for Mate-managed workflows.
-// Read/Glob are scoped to the companion path so routine reads of skills,
-// specs, and change artifacts don't prompt for approval on every file.
+// Read/Edit are scoped to the companion path so routine reads and artifact
+// writes of skills, specs, and change artifacts don't prompt for approval on
+// every file. Claude Code ignores `Glob()` rules for file-permission checks
+// (only Read/Edit rules gate file tools), so no Glob entry is emitted.
 function getBaseManagedPermissionEntries(companionPath: string): string[] {
-  return ["Bash(mate:*)", `Read(${companionPath}/**)`, `Glob(${companionPath}/**)`];
+  return ["Bash(mate:*)", `Read(${companionPath}/**)`, `Edit(${companionPath}/**)`];
 }
 
 const LEGACY_MANAGED_PERMISSION_ENTRIES = [
@@ -89,6 +91,12 @@ function getCapabilityPermissionEntries(): Record<string, string[]> {
       "Bash(npx react-doctor@latest *)",
     ],
     tokensave: ["mcp__tokensave__*"],
+    // The context-mode Claude plugin exposes its skill and MCP tools under the
+    // plugin namespace; pre-seed both so routine routing doesn't prompt.
+    "context-mode": [
+      "Skill(context-mode:context-mode)",
+      "mcp__plugin_context-mode_context-mode__*",
+    ],
   };
 }
 
@@ -97,6 +105,10 @@ function getAllManagedPermissionEntries(companionPath: string): Set<string> {
     ...getBaseManagedPermissionEntries(companionPath),
     ...Object.values(getCapabilityPermissionEntries()).flat(),
     ...LEGACY_MANAGED_PERMISSION_ENTRIES,
+    // Legacy base entry: Claude Code never matched Glob() rules for file
+    // permission checks and warns about them, so setup no longer emits it.
+    // Keep it managed so re-running setup strips it from existing installs.
+    `Glob(${companionPath}/**)`,
   ]);
 }
 
