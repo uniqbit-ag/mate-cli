@@ -87,6 +87,29 @@ describe("update helpers", () => {
     });
   });
 
+  test("UpdateStateStore scopes its state file to the update package", () => {
+    expect(new UpdateStateStore("@acme/mate").configPath).toContain("update-state-acme-mate.yaml");
+  });
+
+  test("distributions with different update packages use separate state files", () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: {
+        ...previous.config,
+        update: { packageName: "@acme/mate", registry: "https://npm.acme.test/" },
+      },
+    });
+
+    try {
+      expect(new UpdateStateStore().configPath).not.toBe(
+        new UpdateStateStore("@uniqbit/mate").configPath,
+      );
+    } finally {
+      setActiveDistribution(previous);
+    }
+  });
+
   test("shows an update banner when a newer version is available", async () => {
     const store = createStore({ lastChecked: "", latestVersion: "999.0.0" });
     const stderrChunks: string[] = [];
