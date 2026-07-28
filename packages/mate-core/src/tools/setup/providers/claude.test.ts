@@ -68,6 +68,18 @@ function hasValidateHook(settings: ClaudeSettings, companionPath: string): boole
   );
 }
 
+function hasArtifactFinishHook(
+  settings: ClaudeSettings,
+  event: string,
+  companionPath: string,
+): boolean {
+  return (settings.hooks?.[event] ?? []).some((group) =>
+    (group.hooks ?? []).some(
+      (hook) => hook.command === `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
+    ),
+  );
+}
+
 function hasPostToolHook(
   settings: ClaudeSettings,
   event: "PostToolUse" | "PostToolBatch",
@@ -145,7 +157,7 @@ describe("syncCompanionClaudeSettings", () => {
     ]);
   });
 
-  test("adds openspec post hook when capability enabled", async () => {
+  test("adds openspec post-archive nudge hook when capability enabled with git auto", async () => {
     const companionPath = await makeTempDir("mate-companion-openspec-");
     await syncCompanionClaudeSettings(companionPath, {
       profiles: { default: { name: "default", allowedAgents: ["claude"] } },
@@ -154,28 +166,58 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.PostToolUse).toEqual([
-      {
-        matcher: "Bash",
-        hooks: [
+    expect(settings.hooks?.PostToolUse).toContainEqual({
+      matcher: "Bash",
+      hooks: [
+        {
+          type: "command",
+          command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
+        },
+      ],
+    });
+    expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
+    expect(settings.hooks?.Stop).toBeUndefined();
+  });
+
+  test("does not register the openspec nudge hook when git auto mode is disabled", async () => {
+    const companionPath = await makeTempDir("mate-companion-openspec-no-auto-");
+    await syncCompanionClaudeSettings(companionPath, {
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      capabilities: [{ name: "openspec" }],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(false);
+    expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
+  });
+
+  test("resync replaces a stale PreToolUse deny registration with the PostToolUse nudge", async () => {
+    const companionPath = await makeTempDir("mate-companion-openspec-migrate-");
+    await seedSettings(companionPath, {
+      hooks: {
+        PreToolUse: [
           {
-            type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+            matcher: "Bash",
+            hooks: [
+              {
+                type: "command",
+                command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
+              },
+            ],
           },
         ],
       },
-    ]);
-    expect(settings.hooks?.Stop).toEqual([
-      {
-        hooks: [
-          {
-            type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
-            timeout: 10,
-          },
-        ],
-      },
-    ]);
+    });
+
+    await syncCompanionClaudeSettings(companionPath, {
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      git: "auto",
+      capabilities: [{ name: "openspec" }],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(true);
   });
 
   test("preserves an unmanaged hook and unmanaged permissions.allow entry", async () => {
@@ -199,6 +241,39 @@ describe("syncCompanionClaudeSettings", () => {
     });
     expect(hasValidateHook(settings, companionPath)).toBe(true);
     expect(settings.permissions?.allow).toContain("Bash(ls:*)");
+  });
+
+  test("seeds Read and Edit companion permissions and never an ineffective Glob rule", async () => {
+    const companionPath = await makeTempDir("mate-companion-permissions-");
+    await syncCompanionClaudeSettings(companionPath, {
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      capabilities: [],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.allow).toContain(`Read(${companionPath}/**)`);
+    expect(settings.permissions?.allow).toContain(`Edit(${companionPath}/**)`);
+    expect(settings.permissions?.allow).not.toContain(`Glob(${companionPath}/**)`);
+  });
+
+  test("resync removes the legacy Glob companion permission entry", async () => {
+    const companionPath = await makeTempDir("mate-companion-glob-migrate-");
+    await seedSettings(companionPath, {
+      permissions: {
+        allow: ["Bash(ls:*)", `Read(${companionPath}/**)`, `Glob(${companionPath}/**)`],
+      },
+    });
+
+    await syncCompanionClaudeSettings(companionPath, {
+      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      capabilities: [],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.allow).toContain("Bash(ls:*)");
+    expect(settings.permissions?.allow).toContain(`Read(${companionPath}/**)`);
+    expect(settings.permissions?.allow).toContain(`Edit(${companionPath}/**)`);
+    expect(settings.permissions?.allow).not.toContain(`Glob(${companionPath}/**)`);
   });
 
   test("resync preserves user-authored SessionStart hooks alongside the managed banner", async () => {
@@ -324,9 +399,11 @@ describe("syncCompanionClaudeSettings", () => {
 
   test.each([
     ["openspec", "Bash(openspec:*)"],
-    ["headroom", "Bash(rtk:*)"],
+    ["rtk", "Bash(rtk:*)"],
     ["graphify", "Bash(graphify:*)"],
     ["react-doctor", "Bash(npx react-doctor:*)"],
+    ["context-mode", "Skill(context-mode:context-mode)"],
+    ["context-mode", "mcp__plugin_context-mode_context-mode__*"],
   ])("pre-seeds %s permission allowance %s", async (name, entry) => {
     const companionPath = await makeTempDir("mate-companion-perm-");
     await syncCompanionClaudeSettings(companionPath, {
@@ -451,13 +528,7 @@ describe("syncCompanionClaudeSettings", () => {
       capabilities: [{ name: "openspec" }],
     });
     let settings = await readCompanionSettings(companionPath);
-    expect(
-      hasPostToolHook(
-        settings,
-        "PostToolUse",
-        `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
-      ),
-    ).toBe(true);
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(true);
     expect(hasValidateHook(settings, companionPath)).toBe(true);
 
     await syncCompanionClaudeSettings(companionPath, {
@@ -465,13 +536,7 @@ describe("syncCompanionClaudeSettings", () => {
       capabilities: [],
     });
     settings = await readCompanionSettings(companionPath);
-    expect(
-      hasPostToolHook(
-        settings,
-        "PostToolUse",
-        `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
-      ),
-    ).toBe(false);
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(false);
     expect(hasValidateHook(settings, companionPath)).toBe(true);
   });
 });

@@ -74,6 +74,7 @@ export async function runReportCommand(
 
   const tokensaveEnabled = enabledCapabilities.includes("tokensave");
   const headroomEnabled = enabledCapabilities.includes("headroom");
+  const rtkEnabled = enabledCapabilities.includes("rtk");
 
   // Collect spending via ccusage (covers all agents: Claude, OpenCode, Codex, etc.)
   const ccusageResult = await collectCcusageSpending(options.days, deps);
@@ -92,7 +93,7 @@ export async function runReportCommand(
   };
   let rtkResult: Awaited<ReturnType<typeof collectRTKSavings>> = {
     entry: null,
-    status: { name: "rtk", enabled: false, status: "not installed" },
+    status: { name: "rtk", enabled: false, status: "not enabled" },
   };
   let headroomResult: Awaited<ReturnType<typeof collectHeadroomSavings>> = {
     entry: null,
@@ -106,8 +107,9 @@ export async function runReportCommand(
     ]);
   }
 
-  // RTK savings
-  rtkResult = await collectRTKSavings(workingRepoPath, deps);
+  if (rtkEnabled) {
+    rtkResult = await collectRTKSavings(workingRepoPath, deps);
+  }
 
   if (headroomEnabled) {
     headroomResult = await collectHeadroomSavings(options.days, deps);

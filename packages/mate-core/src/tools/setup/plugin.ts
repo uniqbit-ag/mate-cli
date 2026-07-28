@@ -1,4 +1,4 @@
-import type { FrameworkConfig } from "../../lib/orchestrator/types";
+import type { FrameworkConfig, LinkedRepository } from "../../lib/orchestrator/types";
 import type { InstallRequirement, InstallRequirementContext } from "./install-contract";
 
 export interface SetupContext {
@@ -18,6 +18,13 @@ export interface SetupContext {
   templates?: TemplatesService;
 }
 
+export interface LaunchPreflightContext {
+  companionPath: string;
+  config: FrameworkConfig;
+  repository: LinkedRepository;
+  providerId: string;
+}
+
 /** Provider-agnostic description of an MCP server to register. */
 export interface McpServerDescriptor {
   name: string;
@@ -32,7 +39,7 @@ export interface McpService {
 }
 
 export interface InstructionsService {
-  append(content: string): Promise<void>;
+  append(content: string, options?: { providers?: string[] }): Promise<void>;
 }
 
 export interface TemplatesService {
@@ -113,6 +120,7 @@ export interface CapabilityPlugin extends Plugin {
     {
       apply(ctx: SetupContext): Promise<void>;
       teardown(ctx: SetupContext): Promise<void>;
+      preflight?(ctx: LaunchPreflightContext): Promise<string[]>;
     }
   >;
 }

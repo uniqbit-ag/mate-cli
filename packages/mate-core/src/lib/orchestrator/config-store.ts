@@ -1,12 +1,14 @@
 import path from "node:path";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { getDefaultSetupSelections } from "./setup-compatibilities";
 import { YamlFileStore } from "./yaml-file-store";
 import { type FrameworkConfig } from "./types";
 
+export const RTK_CAPABILITY_SPLIT_MIGRATION = "rtk-capability-split-v1";
+
 function defaultConfigPath(): string {
-  return `.${frameworkConfig.name}/config/framework.yaml`;
+  return `.${FRAMEWORK_NAME}/config/framework.yaml`;
 }
 
 export function defaultConfig(): FrameworkConfig {
@@ -38,17 +40,35 @@ export function mergeWithDefaults(existing: FrameworkConfig): FrameworkConfig {
   };
 }
 
+export function migrateRtkCapabilitySplit(config: FrameworkConfig): FrameworkConfig {
+  const migrations = config.migrations ?? [];
+  if (migrations.includes(RTK_CAPABILITY_SPLIT_MIGRATION)) return config;
+
+  const capabilities = config.capabilities ?? [];
+  const hasHeadroom = capabilities.some((capability) => capability.name === "headroom");
+  const hasRtk = capabilities.some((capability) => capability.name === "rtk");
+  return {
+    ...config,
+    capabilities: hasHeadroom && !hasRtk ? [...capabilities, { name: "rtk" }] : capabilities,
+    migrations: [...migrations, RTK_CAPABILITY_SPLIT_MIGRATION],
+  };
+}
+
 export class ConfigStore extends YamlFileStore<FrameworkConfig> {
   constructor(configPath = process.env.MATE_CONFIG ?? defaultConfigPath()) {
     super(path.resolve(configPath));
   }
 
   override async load(): Promise<FrameworkConfig> {
-    return mergeWithDefaults(await super.load());
+    const merged = mergeWithDefaults(await super.load());
+    const needsMigration = !(merged.migrations ?? []).includes(RTK_CAPABILITY_SPLIT_MIGRATION);
+    const config = migrateRtkCapabilitySplit(merged);
+    if (needsMigration) await this.save(config);
+    return config;
   }
 
   protected async onMissing(): Promise<FrameworkConfig> {
-    const config = defaultConfig();
+    const config = migrateRtkCapabilitySplit(defaultConfig());
     await this.save(config);
     return config;
   }

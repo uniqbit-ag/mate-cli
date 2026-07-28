@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 
 import { buildCompanionGuidance } from "../../../playbooks/companion-guidance";
+import { getContextModePackageRoot, validateContextModePackage } from "../../context-mode-package";
 import {
   getCompanionClaudeMcpConfigPath,
   getCompanionClaudeSettingsPath,
@@ -10,6 +11,19 @@ import { type AdapterContext, LaunchAdapter } from "./base";
 export class ClaudeAdapter extends LaunchAdapter {
   readonly toolName = "claude";
   readonly interactive = true;
+
+  async validateLaunch(context: AdapterContext): Promise<void> {
+    if (context.capabilities.some((capability) => capability.name === "context-mode")) {
+      try {
+        await validateContextModePackage(context.companionPath);
+      } catch (error) {
+        throw new Error(
+          `Claude context-mode plugin is unavailable: ${(error as Error).message} Repair it with \`mate companion setup\`.`,
+          { cause: error },
+        );
+      }
+    }
+  }
 
   buildArgs(context: AdapterContext, args: string[]): string[] {
     // Load Mate-managed Claude config from companion settings when present,
@@ -29,6 +43,11 @@ export class ClaudeAdapter extends LaunchAdapter {
     const mcpConfigArgs = existsSync(companionMcpConfigPath)
       ? ["--mcp-config", companionMcpConfigPath]
       : [];
+    const contextModeArgs = context.capabilities.some(
+      (capability) => capability.name === "context-mode",
+    )
+      ? ["--plugin-dir", getContextModePackageRoot(context.companionPath)]
+      : [];
 
     return [
       "--add-dir",
@@ -37,6 +56,7 @@ export class ClaudeAdapter extends LaunchAdapter {
       buildCompanionGuidance(context),
       ...settingsArgs,
       ...mcpConfigArgs,
+      ...contextModeArgs,
       ...args,
     ];
   }

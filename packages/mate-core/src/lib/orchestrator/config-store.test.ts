@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { ConfigStore, mergeWithDefaults } from "./config-store";
+import { ConfigStore, mergeWithDefaults, RTK_CAPABILITY_SPLIT_MIGRATION } from "./config-store";
 import type { FrameworkConfig } from "./types";
 
 const tempRoots: string[] = [];
@@ -162,7 +162,7 @@ describe("ConfigStore", () => {
     await fs.access(configPath);
   });
 
-  test("does not rewrite file when loading a normal config", async () => {
+  test("marks a normal config as migrated without adding RTK", async () => {
     const root = await makeTempDir("config-store-migrate-");
     const configPath = path.join(root, "framework.yaml");
     const original =
@@ -173,7 +173,47 @@ describe("ConfigStore", () => {
     const config = await store.load();
 
     const afterLoad = await fs.readFile(configPath, "utf8");
-    expect(afterLoad).toBe(original);
+    expect(afterLoad).toContain(`- ${RTK_CAPABILITY_SPLIT_MIGRATION}`);
+    expect(config.capabilities).not.toContainEqual({ name: "rtk" });
     expect(config.packageManagers).toEqual(["bun", "uv"]);
+  });
+
+  test("migrates legacy Headroom configs once", async () => {
+    const root = await makeTempDir("config-store-rtk-migration-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      "profiles:\n  default:\n    name: default\n    allowedAgents: []\ncapabilities:\n  - name: headroom\n",
+      "utf8",
+    );
+
+    const store = new ConfigStore(configPath);
+    const migrated = await store.load();
+    expect(migrated.capabilities?.map((capability) => capability.name)).toEqual([
+      "headroom",
+      "rtk",
+    ]);
+    expect(migrated.migrations).toContain(RTK_CAPABILITY_SPLIT_MIGRATION);
+
+    await store.save({
+      ...migrated,
+      capabilities: [{ name: "headroom" }],
+    });
+    const reloaded = await store.load();
+    expect(reloaded.capabilities?.map((capability) => capability.name)).toEqual(["headroom"]);
+  });
+
+  test("does not add RTK to an already migrated non-Headroom config", async () => {
+    const root = await makeTempDir("config-store-rtk-no-headroom-");
+    const configPath = path.join(root, "framework.yaml");
+    const store = new ConfigStore(configPath);
+    await store.save({
+      profiles: { default: { name: "default", allowedAgents: [] } },
+      capabilities: [],
+      migrations: [RTK_CAPABILITY_SPLIT_MIGRATION],
+    });
+
+    const config = await store.load();
+    expect(config.capabilities).toEqual([]);
   });
 });

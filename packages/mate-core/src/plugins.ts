@@ -13,5 +13,7 @@ export { createOpenspecPlugin } from "./tools/setup/capabilities/openspec";
 export { createReactDoctorPlugin } from "./tools/setup/capabilities/react-doctor";
 export { createTokensavePlugin } from "./tools/setup/capabilities/tokensave";
 export { createHeadroomPlugin } from "./tools/setup/capabilities/headroom";
+export { createRtkPlugin } from "./tools/setup/capabilities/rtk";
 export { createGraphifyPlugin } from "./tools/setup/capabilities/graphify";
+export { createContextModePlugin } from "./tools/setup/capabilities/context-mode";
 export { createGitignorePlugin } from "./tools/setup/plugins/gitignore";

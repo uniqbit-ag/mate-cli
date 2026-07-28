@@ -171,7 +171,6 @@ export class OpenCodeAdapter extends LaunchAdapter {
       )),
       ...this.validateGuidance(context),
     ];
-
     if (errors.length > 0) {
       throw new LaunchPreflightError(
         [
@@ -197,9 +196,11 @@ export class OpenCodeAdapter extends LaunchAdapter {
     } catch {
       return [`Unreadable OpenCode configuration: ${configPath}`];
     }
+    if (!isRecord(config)) {
+      return [`Unreadable OpenCode configuration: ${configPath}`];
+    }
 
-    const plugins =
-      isRecord(config) && Array.isArray(config.plugin) ? (config.plugin as unknown[]) : [];
+    const plugins = Array.isArray(config.plugin) ? (config.plugin as unknown[]) : [];
     const mateReferences = plugins.filter(isMateOpenCodePluginReference) as string[];
 
     if (mateReferences.includes(expectedPluginReference)) {

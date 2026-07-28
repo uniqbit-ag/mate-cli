@@ -119,6 +119,8 @@ export const CompanionPlugin: Plugin = async () => {
     },
     "shell.env": async (_input: any, output: { env: Record<string, string> }) => {
       output.env.MATE_NAME = context.frameworkName;
+      // Invocation name from the launch environment; identity stays MATE_NAME.
+      output.env[MATE_ENV.commandName] = process.env[MATE_ENV.commandName] ?? "mate";
       output.env.MATE_VERSION = process.env.MATE_VERSION ?? "unknown";
       output.env.MATE_ARTIFACT_PATH = context.companionPath;
       output.env.MATE_WRAPPER_BIN_PATH = wrapperBinPath;

@@ -10,7 +10,7 @@ import {
   runShellCommand,
 } from "../utils";
 import { confirm } from "../../../cli/confirm";
-import { frameworkConfig } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { isInstalledViaUvTool } from "../package-managers/uv";
 
 // Storage contract: <companionPath>/.graphify/<repositoryId>/graphify-out/
@@ -44,9 +44,9 @@ const GRAPHIFY_PROVIDER_DIRS: Record<string, string> = {
 export const GRAPHIFY_COMPANION_OUT_PREFIX =
   "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/";
 
-// Lazy: marker names derive from the active distribution's identity.
-const GRAPHIFY_START = () => `<!-- ${frameworkConfig.name.toUpperCase()}:GRAPHIFY:START -->`;
-const GRAPHIFY_END = () => `<!-- ${frameworkConfig.name.toUpperCase()}:GRAPHIFY:END -->`;
+// Marker names derive from the framework identity, never the invocation name.
+const GRAPHIFY_START = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:START -->`;
+const GRAPHIFY_END = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:END -->`;
 
 // Per-provider root agent instruction files used for graphify cleanup on teardown.
 const GRAPHIFY_AGENT_FILES: Record<string, string> = {
@@ -74,7 +74,7 @@ const CLAUDE_MANAGED_HOOK_COMMAND_SUFFIXES = new Set([
   "/.claude/hooks/validate-artifact-path",
   "/.claude/hooks/mate-session-banner",
   "/.claude/hooks/react-doctor.sh",
-  "/.claude/hooks/mate-openspec-artifact-finish.sh",
+  "/.claude/hooks/mate-artifact-finish.sh",
 ]);
 
 export function deriveGraphifyProviders(activeProviders: string[]): string[] {

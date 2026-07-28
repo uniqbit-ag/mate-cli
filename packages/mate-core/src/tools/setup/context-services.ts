@@ -234,8 +234,12 @@ export class ContextServiceMediator {
     };
 
     const instructions: InstructionsService = {
-      append: async (content: string) => {
-        const hosts = hostingProviders.filter((provider) => provider.hosting.instructions);
+      append: async (content: string, options) => {
+        const hosts = hostingProviders.filter(
+          (provider) =>
+            provider.hosting.instructions &&
+            (options?.providers === undefined || options.providers.includes(provider.id)),
+        );
         if (hosts.length === 0) {
           warn(`${pluginId}: no active provider hosts instruction injection; skipping append`);
           return;

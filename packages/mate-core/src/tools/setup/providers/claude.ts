@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { frameworkCommandName } from "../../../framework";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { getWrapperBinPath } from "../../../lib/package-paths";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
@@ -46,15 +47,21 @@ const MANAGED_HOOK_MARKERS = [
   "validate-artifact-path",
   "mate-session-banner",
   "react-doctor.sh",
-  "mate-openspec-artifact-finish.sh",
+  "mate-artifact-finish.sh",
   "tokensave",
 ];
 
 // Base `permissions.allow` entries that Claude gets for Mate-managed workflows.
-// Read/Glob are scoped to the companion path so routine reads of skills,
-// specs, and change artifacts don't prompt for approval on every file.
+// Read/Edit are scoped to the companion path so routine reads and artifact
+// writes of skills, specs, and change artifacts don't prompt for approval on
+// every file. Claude Code ignores `Glob()` rules for file-permission checks
+// (only Read/Edit rules gate file tools), so no Glob entry is emitted.
 function getBaseManagedPermissionEntries(companionPath: string): string[] {
-  return ["Bash(mate:*)", `Read(${companionPath}/**)`, `Glob(${companionPath}/**)`];
+  return [
+    `Bash(${frameworkCommandName()}:*)`,
+    `Read(${companionPath}/**)`,
+    `Edit(${companionPath}/**)`,
+  ];
 }
 
 const LEGACY_MANAGED_PERMISSION_ENTRIES = [
@@ -71,16 +78,16 @@ function getCapabilityPermissionEntries(): Record<string, string[]> {
       "Skill(openspec-propose)",
       "Skill(openspec-apply-change)",
       "Skill(openspec-archive-change)",
-      "Skill(mate-openspec-artifact-finish)",
+      "Skill(mate-artifact-finish)",
       "Bash(openspec:*)",
-      "Bash(mate cap graphify:*)",
+      `Bash(${frameworkCommandName()} cap graphify:*)`,
       `Bash(${path.join(wrapperBinPath, "openspec")}:*)`,
     ],
-    headroom: ["Bash(rtk:*)"],
+    rtk: ["Bash(rtk:*)"],
     graphify: [
       "Skill(graphify)",
       "Bash(graphify:*)",
-      "Bash(mate cap graphify:*)",
+      `Bash(${frameworkCommandName()} cap graphify:*)`,
       `Bash(${path.join(wrapperBinPath, "graphify")}:*)`,
     ],
     "react-doctor": [
@@ -89,6 +96,12 @@ function getCapabilityPermissionEntries(): Record<string, string[]> {
       "Bash(npx react-doctor@latest *)",
     ],
     tokensave: ["mcp__tokensave__*"],
+    // The context-mode Claude plugin exposes its skill and MCP tools under the
+    // plugin namespace; pre-seed both so routine routing doesn't prompt.
+    "context-mode": [
+      "Skill(context-mode:context-mode)",
+      "mcp__plugin_context-mode_context-mode__*",
+    ],
   };
 }
 
@@ -97,6 +110,10 @@ function getAllManagedPermissionEntries(companionPath: string): Set<string> {
     ...getBaseManagedPermissionEntries(companionPath),
     ...Object.values(getCapabilityPermissionEntries()).flat(),
     ...LEGACY_MANAGED_PERMISSION_ENTRIES,
+    // Legacy base entry: Claude Code never matched Glob() rules for file
+    // permission checks and warns about them, so setup no longer emits it.
+    // Keep it managed so re-running setup strips it from existing installs.
+    `Glob(${companionPath}/**)`,
   ]);
 }
 
@@ -273,25 +290,11 @@ function buildManagedClaudeSettings(
         hooks: [
           {
             type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
+            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
           },
         ],
       },
       ...(hooks.PostToolUse ?? []),
-    ];
-    // End-of-turn catch-all: an archive created by anything other than a matched Bash
-    // command (or as the last action of a turn) still gets a finish nudge on Stop.
-    hooks.Stop = [
-      {
-        hooks: [
-          {
-            type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-openspec-artifact-finish.sh"`,
-            timeout: 10,
-          },
-        ],
-      },
-      ...(hooks.Stop ?? []),
     ];
   }
   if (reactDoctorEnabled) {

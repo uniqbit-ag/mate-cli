@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME, frameworkConfig } from "../../framework";
 import { CompanionResolver } from "./companion-resolver";
 import { ConfigStore } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
@@ -45,7 +45,7 @@ function makeContext(
   contextKind: FrameworkContext["contextKind"],
   repository?: LinkedRepository,
 ): FrameworkContext {
-  const configDir = path.join(companionPath, `.${frameworkConfig.name}`, "config");
+  const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   return {
     configStore: new ConfigStore(path.join(configDir, "framework.yaml")),
     workingRepoStore: new WorkingRepoStore(path.join(configDir, "registry.yaml")),
@@ -79,7 +79,7 @@ export async function resolveFrameworkContext(
     );
   }
 
-  const localDir = path.join(cwd, `.${frameworkConfig.name}`);
+  const localDir = path.join(cwd, `.${FRAMEWORK_NAME}`);
   const localLegacyDirs = frameworkConfig.legacyNames.map((n) => path.join(cwd, `.${n}`));
   await migrateConfigDir(localDir, localLegacyDirs);
 
@@ -170,7 +170,7 @@ export async function resolveForCapability(
 
   // Fallback: cwd is the companion directory — resolve from its local config.
   // This is specific to mate cap; resolveForLaunch does NOT get this fallback.
-  const localDir = path.join(cwd, `.${frameworkConfig.name}`);
+  const localDir = path.join(cwd, `.${FRAMEWORK_NAME}`);
   const localLegacyDirs = frameworkConfig.legacyNames.map((n) => path.join(cwd, `.${n}`));
   await migrateConfigDir(localDir, localLegacyDirs);
 
