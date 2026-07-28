@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Install Mate, link a companion, and launch OpenCode.
+description: Install Mate, link a companion, and launch a coding agent.
 ---
 
 Mate uses two repositories:
@@ -51,21 +51,20 @@ also adds that directory to Git's local exclude file so the link metadata is
 not committed to the working repository. Linking also verifies and installs the
 requirements selected by the companion, so no second `mate install` is needed.
 
-## 3. Launch OpenCode
+## 3. Launch An Agent
 
-Start OpenCode:
+Start an allowed provider from the working repository:
 
 ```sh
 mate opencode
-```
-
-If the companion profile allows Claude, you can launch it instead:
-
-```sh
+# or
 mate claude
+# or
+mate codex
 ```
 
-Mate resolves the linked project, syncs the companion instructions and
+Mate resolves the linked project, applies the repository's selected profile
+and any `overrides.allowedAgents`, syncs the companion instructions and
 capabilities, refreshes enabled indexes, then launches the selected agent in
 the working repository context.
 

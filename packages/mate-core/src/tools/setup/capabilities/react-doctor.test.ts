@@ -59,6 +59,27 @@ afterEach(async () => {
 });
 
 describe("reactDoctorPlugin", () => {
+  test("installs Codex hooks for PostToolUse and Stop", async () => {
+    const companion = await makeTempDir("mate-react-doctor-codex-");
+    await reactDoctorPlugin.forProvider?.codex?.apply({
+      companionPath: companion,
+      config: {
+        profiles: { default: { name: "default", allowedAgents: ["codex"] } },
+        capabilities: [{ name: "react-doctor" }],
+      },
+      mode: "setup",
+      activeProviders: ["codex"],
+    });
+
+    const hooks = JSON.parse(
+      await fs.readFile(path.join(companion, ".codex", "hooks.json"), "utf8"),
+    ) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> };
+    for (const event of ["PostToolUse", "Stop"]) {
+      expect(hooks.hooks[event]).toHaveLength(1);
+      expect(hooks.hooks[event][0]?.hooks[0]?.command).toContain("react-doctor.cjs");
+    }
+  });
+
   test("coalesces edits into one bounded scan and skips repeated stops", async () => {
     const { repo, tempDir, logPath } = await setupHookFixture();
     const env = { REACT_DOCTOR_TEST_LOG: logPath };

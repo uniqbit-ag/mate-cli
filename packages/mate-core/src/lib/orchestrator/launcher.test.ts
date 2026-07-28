@@ -4,7 +4,7 @@ import { CompanionStore } from "./companion-store";
 import * as editor from "./editor";
 import { FrameworkLauncher, launcherDeps } from "./launcher";
 import type { LaunchContext } from "./framework-context";
-import type { CapabilityConfig, LaunchRequest } from "./types";
+import type { CapabilityConfig, FrameworkConfig, LaunchRequest, LinkedRepository } from "./types";
 
 class TestAdapter extends LaunchAdapter {
   readonly toolName = "claude";
@@ -24,23 +24,25 @@ function createLauncher(
   adapter = new TestAdapter(),
   capabilities: CapabilityConfig[] = [{ name: "headroom" }],
   git?: "auto",
+  configOverrides: Partial<FrameworkConfig> = {},
+  repository?: LinkedRepository,
 ) {
-  const launcher = new FrameworkLauncher() as FrameworkLauncher & {
-    adapters: Map<string, LaunchAdapter>;
-    resolveConfig(): Promise<LaunchContext>;
+  const launcher = new FrameworkLauncher();
+  (launcher as unknown as { adapters: Map<string, LaunchAdapter> }).adapters = new Map([
+    ["claude", adapter],
+  ]);
+  const config: FrameworkConfig = {
+    profiles: {},
+    capabilities,
+    git,
+    ...configOverrides,
   };
-  launcher.adapters = new Map([["claude", adapter]]);
-  launcher.resolveConfig = async () =>
+  (launcher as unknown as { resolveConfig(): Promise<LaunchContext> }).resolveConfig = async () =>
     ({
       companionPath: "/tmp/companion",
       repositoryId: "repo",
-      configStore: {
-        load: async () => ({
-          profiles: {},
-          capabilities,
-          git,
-        }),
-      },
+      repository,
+      configStore: { load: async () => config },
       workingRepoStore: {},
     }) as LaunchContext;
 
@@ -56,9 +58,132 @@ afterEach(() => {
 });
 
 describe("FrameworkLauncher", () => {
+  test("disallowed Codex launch reconciles stale working-repo state before rejecting", async () => {
+    const { launcher } = createLauncher();
+    const cleanup = mock(async () => {});
+    const original = launcherDeps.syncWorkingRepoCodexState;
+    launcherDeps.syncWorkingRepoCodexState = cleanup;
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+      profile: "default",
+    });
+    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
+      allowedAgents: ["claude"],
+    });
+
+    try {
+      await expect(launcher.prepare({ tool: "codex", args: [] })).rejects.toThrow(
+        /Tool is disallowed/,
+      );
+    } finally {
+      launcherDeps.syncWorkingRepoCodexState = original;
+    }
+    expect(cleanup).toHaveBeenCalledWith(
+      "/tmp/repo",
+      "/tmp/companion",
+      expect.objectContaining({ profiles: {} }),
+      false,
+    );
+  });
+
+  test("passes the resolved repository profile and overrides to Codex synchronization", async () => {
+    const scenarios: Array<{
+      name: string;
+      profiles: FrameworkConfig["profiles"];
+      repository: LinkedRepository;
+      allowed: boolean;
+    }> = [
+      {
+        name: "selected profile disallows Codex",
+        profiles: {
+          default: { name: "default", allowedAgents: ["claude", "codex"] },
+          restricted: { name: "restricted", allowedAgents: ["claude"] },
+        },
+        repository: { id: "repo", path: "/tmp/repo", profile: "restricted" },
+        allowed: false,
+      },
+      {
+        name: "repository override disallows Codex",
+        profiles: {
+          default: { name: "default", allowedAgents: ["claude", "codex"] },
+        },
+        repository: {
+          id: "repo",
+          path: "/tmp/repo",
+          profile: "default",
+          overrides: { allowedAgents: ["claude"] },
+        },
+        allowed: false,
+      },
+      {
+        name: "selected profile allows Codex",
+        profiles: {
+          default: { name: "default", allowedAgents: ["claude"] },
+          codex: { name: "codex", allowedAgents: ["claude", "codex"] },
+        },
+        repository: { id: "repo", path: "/tmp/repo", profile: "codex" },
+        allowed: true,
+      },
+      {
+        name: "repository override allows Codex",
+        profiles: {
+          default: { name: "default", allowedAgents: ["claude"] },
+        },
+        repository: {
+          id: "repo",
+          path: "/tmp/repo",
+          profile: "default",
+          overrides: { allowedAgents: ["claude", "codex"] },
+        },
+        allowed: true,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const { launcher } = createLauncher(
+        new TestAdapter(),
+        [],
+        undefined,
+        { profiles: scenario.profiles },
+        scenario.repository,
+      );
+      const syncCompanionFiles = mock(async () => {});
+      const syncWorkingRepoClaudeSettings = mock(async () => {});
+      const syncCodex = mock(async () => {});
+      const originals = {
+        companionFiles: launcherDeps.syncCompanionFiles,
+        claudeSettings: launcherDeps.syncWorkingRepoClaudeSettings,
+        codex: launcherDeps.syncWorkingRepoCodexState,
+      };
+      launcherDeps.syncCompanionFiles = syncCompanionFiles;
+      launcherDeps.syncWorkingRepoClaudeSettings = syncWorkingRepoClaudeSettings;
+      launcherDeps.syncWorkingRepoCodexState = syncCodex;
+
+      try {
+        await launcher.prepare(makeRequest());
+      } finally {
+        launcherDeps.syncCompanionFiles = originals.companionFiles;
+        launcherDeps.syncWorkingRepoClaudeSettings = originals.claudeSettings;
+        launcherDeps.syncWorkingRepoCodexState = originals.codex;
+      }
+
+      expect(syncCodex).toHaveBeenCalledWith(
+        "/tmp/repo",
+        "/tmp/companion",
+        expect.objectContaining({ profiles: scenario.profiles }),
+        scenario.allowed,
+      );
+    }
+  });
+
   test("resolveLaunchPreview is side-effect free", async () => {
     const { launcher, adapter } = createLauncher();
-    const syncCompanionGit = mock(async () => {});
+    const syncCompanionGit = mock(async () => ({
+      skipped: false,
+      changed: false,
+      companionPath: "/tmp/companion",
+    }));
     const syncCompanionFiles = mock(async () => {});
     const syncWorkingRepoClaudeSettings = mock(async () => {});
 
@@ -103,6 +228,7 @@ describe("FrameworkLauncher", () => {
     const events: string[] = [];
     const syncCompanionGit = mock(async () => {
       events.push("git");
+      return { skipped: false, changed: false, companionPath: "/tmp/companion" };
     });
     const syncCompanionFiles = mock(async () => {
       events.push("setup");
@@ -153,7 +279,11 @@ describe("FrameworkLauncher", () => {
 
   test("does not run Git preflight when Git auto mode is disabled", async () => {
     const { launcher, adapter } = createLauncher();
-    const syncCompanionGit = mock(async () => {});
+    const syncCompanionGit = mock(async () => ({
+      skipped: false,
+      changed: false,
+      companionPath: "/tmp/companion",
+    }));
     const syncCompanionFiles = mock(async () => {});
     const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
     const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
@@ -214,7 +344,11 @@ describe("FrameworkLauncher", () => {
 
   test("skipGit bypasses only the Git preflight", async () => {
     const { launcher, adapter } = createLauncher(new TestAdapter(), [{ name: "headroom" }], "auto");
-    const syncCompanionGit = mock(async () => {});
+    const syncCompanionGit = mock(async () => ({
+      skipped: false,
+      changed: false,
+      companionPath: "/tmp/companion",
+    }));
     const syncCompanionFiles = mock(async () => {});
     const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
     const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;

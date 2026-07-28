@@ -7,7 +7,7 @@ import type { CapabilityPlugin } from "../plugin";
 import { isCommandOnPath, resolveCommandOnPath, runCommand, runShellCommand } from "../utils";
 export { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "./tokensave-shared";
 
-export const TOKENSAVE_SUPPORTED_AGENTS = new Set(["claude", "opencode"]);
+export const TOKENSAVE_SUPPORTED_AGENTS = new Set(["claude", "codex", "opencode"]);
 export const TOKENSAVE_STORE_DIR = ".tokensave";
 const TOKENSAVE_CLAUDE_MD_MARKER = "## MANDATORY: No Explore Agents When Tokensave Is Available";
 const TOKENSAVE_STORE_EXCLUDE_ENTRY = `${TOKENSAVE_STORE_DIR}/`;
@@ -337,6 +337,10 @@ export function createTokensavePlugin(): CapabilityPlugin {
     },
     forProvider: {
       claude: {
+        async apply(_ctx) {},
+        async teardown(_ctx) {},
+      },
+      codex: {
         async apply(_ctx) {},
         async teardown(_ctx) {},
       },

@@ -17,6 +17,7 @@ export function usage(): string {
     ` ${n} report [--days N] [--json]`,
     ` ${n} config`,
     ` ${n} claude [args...] (use -- --no-git to bypass companion Git sync)`,
+    ` ${n} codex [args...] (use -- --no-git to bypass companion Git sync)`,
     ` ${n} opencode [args...] (use -- --no-git to bypass companion Git sync)`,
     ` ${n} cap openspec <subcommand> [args...]`,
     ` ${n} cap graphify <subcommand> [args...]`,

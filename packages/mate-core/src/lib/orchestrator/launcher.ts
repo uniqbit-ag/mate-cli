@@ -1,7 +1,12 @@
 // oxlint-disable no-underscore-dangle
-import { syncCompanionFiles, syncWorkingRepoClaudeSettings } from "../../tools/setup";
+import {
+  syncCompanionFiles,
+  syncWorkingRepoClaudeSettings,
+  syncWorkingRepoCodexState,
+} from "../../tools/setup";
 import type { LaunchAdapter, AdapterContext } from "./adapters/base";
 import { ClaudeAdapter } from "./adapters/claude";
+import { CodexAdapter } from "./adapters/codex";
 import { OpenCodeAdapter } from "./adapters/opencode";
 import { CompanionStore, resolvePolicyFromConfig } from "./companion-store";
 import { syncCompanionGit } from "./companion-git-sync";
@@ -38,12 +43,14 @@ interface ResolvedLaunchState {
 export const launcherDeps = {
   syncCompanionFiles,
   syncWorkingRepoClaudeSettings,
+  syncWorkingRepoCodexState,
   syncCompanionGit,
 };
 
 export class FrameworkLauncher {
   private readonly adapters = new Map<string, LaunchAdapter>([
     ["claude", new ClaudeAdapter()],
+    ["codex", new CodexAdapter()],
     ["opencode", new OpenCodeAdapter()],
   ]);
 
@@ -69,6 +76,12 @@ export class FrameworkLauncher {
       state.repository.path,
       state.companionPath,
       state.config,
+    );
+    await launcherDeps.syncWorkingRepoCodexState(
+      state.repository.path,
+      state.companionPath,
+      state.config,
+      state.policy.allowedAgents.includes("codex"),
     );
     await state.adapter.validateLaunch(adapterContext);
 
@@ -100,6 +113,9 @@ export class FrameworkLauncher {
       ? resolvePolicyFromConfig(config, [repository], repository.id)
       : await store.resolvePolicy(repository.id);
     if (!policy.allowedAgents.includes(request.tool)) {
+      if (request.tool === "codex") {
+        await launcherDeps.syncWorkingRepoCodexState(repository.path, companionPath, config, false);
+      }
       throw new ToolNotAllowedError(`Tool is disallowed by policy: ${request.tool}`);
     }
 

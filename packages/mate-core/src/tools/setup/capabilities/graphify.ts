@@ -35,6 +35,7 @@ const GRAPHIFY_GITIGNORE_ENTRIES = [
 
 const GRAPHIFY_PROVIDER_DIRS: Record<string, string> = {
   claude: ".claude",
+  codex: ".codex",
   opencode: ".opencode",
 };
 
@@ -50,6 +51,7 @@ const GRAPHIFY_END = () => `<!-- ${frameworkConfig.name.toUpperCase()}:GRAPHIFY:
 // Per-provider root agent instruction files used for graphify cleanup on teardown.
 const GRAPHIFY_AGENT_FILES: Record<string, string> = {
   claude: "CLAUDE.md",
+  codex: "AGENTS.md",
   opencode: "AGENTS.md",
 };
 
@@ -273,7 +275,7 @@ async function removeGraphifyClaudeHooks(companionPath: string): Promise<void> {
     }
 
     if (Object.keys(existingHooks).length === 0) {
-      if (Object.prototype.hasOwnProperty.call(settings, "hooks")) changed = true;
+      if (Object.hasOwn(settings, "hooks")) changed = true;
       delete settings.hooks;
     } else {
       settings.hooks = existingHooks;
@@ -529,6 +531,13 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
             } else if (providerId === "claude") {
               await removeGraphifyClaudeHooks(ctx.companionPath);
               await stripLegacyClaudeGraphifyFile(ctx.companionPath);
+            } else if (providerId === "codex") {
+              const { reconcileCompanionCodexHookGroup } = await import("../providers/codex");
+              await reconcileCompanionCodexHookGroup(
+                ctx.companionPath,
+                "PreToolUse",
+                "graphify hook-check",
+              );
             }
           },
         },

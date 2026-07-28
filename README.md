@@ -30,8 +30,8 @@ clone a Git companion, select an existing managed companion, or link a local
 companion repository by pasted path. Linking installs the requirements selected
 by that companion, so no second `mate install` is needed before launch.
 
-Use `mate claude` instead of `mate opencode` when the selected companion profile
-allows Claude.
+Use `mate claude`, `mate codex`, or `mate opencode` when the selected
+companion profile allows that provider.
 
 ## Repository Model
 
@@ -134,12 +134,15 @@ instead.
 
 ```sh
 mate claude
+mate codex
 mate opencode
 ```
 
 Launch from a linked working repository. Mate resolves the companion, applies
 the selected provider and capability configuration, refreshes enabled indexes,
-and then starts the agent. The active profile must allow the selected agent.
+and then starts the agent. The repository's selected profile controls whether
+the agent is allowed; per-repository `overrides.allowedAgents` take precedence
+over the profile and the global default profile.
 
 Forward agent arguments after `--`:
 
@@ -173,8 +176,8 @@ Graphify and TokenSave indexes; without a flag it chooses the enabled default,
 and the flags restrict the run to one indexer.
 
 The available capabilities are OpenSpec, React Doctor, TokenSave, Headroom,
-and Graphify. Providers are Claude and OpenCode. Bun is always part of the core
-runtime; uv is selected for Python-backed capability workflows.
+and Graphify. Providers are Claude, Codex, and OpenCode. Bun is always part of
+the core runtime; uv is selected for Python-backed capability workflows.
 
 ### Artifacts And Updates
 
