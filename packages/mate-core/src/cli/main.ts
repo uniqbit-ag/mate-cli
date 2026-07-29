@@ -142,7 +142,7 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runLaunchOpenCodeCommand(argv.slice(3), { directPassthrough: true });
       return;
     case "report":
-      if (!(await gate({ updateGuard: true }))) return;
+      if (!(await gate({ updateGuard: true, install: true }))) return;
       await runReportCommand(argv.slice(3));
       return;
     case "config":
