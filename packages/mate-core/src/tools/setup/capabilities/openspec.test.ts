@@ -456,6 +456,34 @@ describe("createOpenspecPlugin", () => {
     expect(runCommand).not.toHaveBeenCalled();
   });
 
+  test("setup installs openspec even when no supported providers are active", async () => {
+    const runCommand = mock(async () => {});
+    const installCommand = mock(async () => {});
+    const confirm = mock(async () => true);
+    let openspecAvailable = false;
+    const plugin = createOpenspecPlugin({
+      runCommand,
+      installCommand: async (...args) => {
+        await installCommand(...args);
+        openspecAvailable = true;
+      },
+      confirm,
+      isCommandOnPath: (command) =>
+        command === "npm" || (command === "openspec" && openspecAvailable),
+    });
+
+    const root = await makeTempDir("mate-openspec-install-without-provider-");
+    await plugin.apply(makeCtx(root, ["custom"]));
+
+    expect(confirm).toHaveBeenCalledWith("Run this install command now?");
+    expect(installCommand).toHaveBeenCalledWith(
+      "npm",
+      ["install", "-g", "@fission-ai/openspec@latest"],
+      { cwd: root },
+    );
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
   test("seeds mate-v1 schema files and config when the schema profile is selected", async () => {
     const root = await makeTempDir("mate-openspec-schema-seed-");
     const runCommand = mock(async () => {});
