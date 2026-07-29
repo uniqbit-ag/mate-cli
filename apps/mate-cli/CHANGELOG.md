@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.3](https://github.com/uniqbit-ag/mate-cli/compare/0.15.2...0.15.3) (2026-07-29)
+
+## [0.15.3-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.15.2...0.15.3) (2026-07-29)
+
+### Bug Fixes
+
+- correct RTK install fallback URL ([080b3fd](https://github.com/uniqbit-ag/mate-cli/commit/080b3fd92a2ff0a8960056a83edc77f8643c9729))
+
 ## [0.15.2](https://github.com/uniqbit-ag/mate-cli/compare/0.15.1...0.15.2) (2026-07-29)
 
 ## [0.15.2-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.15.1...0.15.2) (2026-07-29)
