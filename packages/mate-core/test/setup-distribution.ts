@@ -12,6 +12,7 @@ import type { Plugin, PluginRegistration } from "../src/tools/setup/plugin";
 import { createGitignorePlugin } from "../src/tools/setup/plugins/gitignore";
 import { createClaudePlugin } from "../src/tools/setup/providers/claude";
 import { createOpenCodePlugin } from "../src/tools/setup/providers/opencode";
+import { createPiPlugin } from "../src/tools/setup/providers/pi";
 import { PluginRegistry } from "../src/tools/setup/registry";
 
 // Test-harness default: a mate-shaped distribution (mirroring the
@@ -19,7 +20,7 @@ import { PluginRegistry } from "../src/tools/setup/registry";
 // distribution work without each test calling createMate. Production bins
 // never rely on this — they call createMate first.
 function buildTestPluginEntries(): PluginRegistration[] {
-  const providers: Plugin[] = [createClaudePlugin(), createOpenCodePlugin()];
+  const providers: Plugin[] = [createClaudePlugin(), createOpenCodePlugin(), createPiPlugin()];
   const bun = createBunPlugin();
   const uv = createUvPlugin();
   const capabilities: Plugin[] = [

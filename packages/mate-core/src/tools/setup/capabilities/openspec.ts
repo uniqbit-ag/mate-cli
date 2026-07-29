@@ -433,6 +433,10 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
           await teardownToolRuntime(ctx.companionPath, "opencode");
         },
       },
+      pi: {
+        async apply() {},
+        async teardown() {},
+      },
     },
   };
 }

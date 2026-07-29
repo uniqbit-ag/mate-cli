@@ -5,6 +5,7 @@ import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup
 import type { LaunchAdapter, AdapterContext } from "./adapters/base";
 import { ClaudeAdapter } from "./adapters/claude";
 import { OpenCodeAdapter } from "./adapters/opencode";
+import { PiAdapter } from "./adapters/pi";
 import { CompanionStore, resolvePolicyFromConfig } from "./companion-store";
 import { syncCompanionGit } from "./companion-git-sync";
 import { resolveForLaunch, type LaunchContext } from "./framework-context";
@@ -48,6 +49,7 @@ export class FrameworkLauncher {
   private readonly adapters = new Map<string, LaunchAdapter>([
     ["claude", new ClaudeAdapter()],
     ["opencode", new OpenCodeAdapter()],
+    ["pi", new PiAdapter()],
   ]);
 
   async resolveLaunchPreview(request: LaunchRequest): Promise<LaunchPreview> {

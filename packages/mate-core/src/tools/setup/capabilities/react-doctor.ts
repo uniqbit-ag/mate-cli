@@ -93,6 +93,19 @@ export function createReactDoctorPlugin(): CapabilityPlugin {
           );
         },
       },
+      pi: {
+        async apply(ctx: SetupContext) {
+          await applyReactDoctorSkills(
+            path.join(ctx.companionPath, ".pi", "skills", "react-doctor"),
+          );
+        },
+        async teardown(ctx: SetupContext) {
+          await teardownReactDoctorSkills(
+            path.join(ctx.companionPath, ".pi", "skills", "react-doctor"),
+            ctx.companionPath,
+          );
+        },
+      },
     },
   };
 }

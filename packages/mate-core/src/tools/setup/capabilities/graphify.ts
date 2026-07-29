@@ -36,6 +36,7 @@ const GRAPHIFY_GITIGNORE_ENTRIES = [
 const GRAPHIFY_PROVIDER_DIRS: Record<string, string> = {
   claude: ".claude",
   opencode: ".opencode",
+  pi: ".pi",
 };
 
 // Companion-local graphify-out path prefix using Mate-injected env vars.
@@ -51,6 +52,7 @@ const GRAPHIFY_END = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:END --
 const GRAPHIFY_AGENT_FILES: Record<string, string> = {
   claude: "CLAUDE.md",
   opencode: "AGENTS.md",
+  pi: "AGENTS.md",
 };
 
 export const GRAPHIFY_SUPPORTED_PROVIDERS = Object.keys(GRAPHIFY_PROVIDER_DIRS);

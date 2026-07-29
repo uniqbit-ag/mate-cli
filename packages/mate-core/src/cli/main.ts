@@ -13,6 +13,7 @@ import { runConfigCommand } from "./commands/config";
 import { runDoctorCommand } from "./commands/doctor";
 import { runLaunchClaudeCommand } from "./commands/launch/claude";
 import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
+import { runLaunchPiCommand } from "./commands/launch/pi";
 import { runReportCommand } from "./commands/report";
 import { runUpdateCommand } from "./commands/update";
 import { runInstallCommand } from "./commands/install";
@@ -141,6 +142,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     case "opencode":
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runLaunchOpenCodeCommand(argv.slice(3), { directPassthrough: true });
+      return;
+    case "pi":
+      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
+      await runLaunchPiCommand(argv.slice(3), { directPassthrough: true });
       return;
     case "report":
       if (!(await gate({ updateGuard: true, install: true }))) return;
