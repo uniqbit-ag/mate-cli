@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { SetupContext } from "../plugin";
 import {
   TOKENSAVE_SUPPORTED_AGENTS,
+  TOKENSAVE_MIN_RUST_VERSION,
   TOKENSAVE_STORE_DIR,
   TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
   tokensaveDeps,
@@ -54,6 +55,7 @@ describe("tokensavePlugin.apply", () => {
   let runMock: mock.Mock;
   let runCommandMock: mock.Mock;
   let runShellCommandMock: mock.Mock;
+  let rustcVersionMock: mock.Mock;
   let originalDeps: typeof tokensaveDeps;
 
   beforeEach(() => {
@@ -61,9 +63,11 @@ describe("tokensavePlugin.apply", () => {
     runMock = mock(() => ({ ok: true, stderr: "", stdout: "" }));
     runCommandMock = mock(async () => {});
     runShellCommandMock = mock(async () => {});
+    rustcVersionMock = mock(() => ({ ok: true, stderr: "", stdout: "rustc 1.91.0" }));
     tokensaveDeps.run = runMock;
     tokensaveDeps.runCommand = runCommandMock;
     tokensaveDeps.runShellCommand = runShellCommandMock;
+    tokensaveDeps.rustcVersion = rustcVersionMock;
     tokensaveDeps.isCommandOnPath = () => false;
     tokensaveDeps.platform = () => "darwin";
     tokensaveDeps.pathValue = () => "";
@@ -74,6 +78,7 @@ describe("tokensavePlugin.apply", () => {
     tokensaveDeps.isCommandOnPath = originalDeps.isCommandOnPath;
     tokensaveDeps.runCommand = originalDeps.runCommand;
     tokensaveDeps.runShellCommand = originalDeps.runShellCommand;
+    tokensaveDeps.rustcVersion = originalDeps.rustcVersion;
     tokensaveDeps.platform = originalDeps.platform;
     tokensaveDeps.pathValue = originalDeps.pathValue;
   });
@@ -244,6 +249,76 @@ describe("tokensavePlugin.apply", () => {
       "--version",
       "install",
     ]);
+  });
+
+  test("installs tokensave with cargo using its lockfile", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+
+    let versionChecks = 0;
+    runMock = mock((args: string[]) => {
+      if (args[0] === "--version") {
+        versionChecks += 1;
+        return { ok: versionChecks > 1, stderr: "", stdout: "" };
+      }
+      return { ok: true, stderr: "", stdout: "" };
+    });
+    tokensaveDeps.run = runMock;
+    tokensaveDeps.isCommandOnPath = (command) => command === "cargo";
+    tokensaveDeps.pathValue = () => "/usr/bin";
+
+    await tokensavePlugin.apply(
+      makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] }),
+    );
+
+    expect(runCommandMock).toHaveBeenCalledWith("cargo", ["install", "--locked", "tokensave"]);
+    expect(
+      tokensavePlugin.getInstallRequirements?.({
+        companionPath: companionDir,
+        config: makeCtx(companionDir).config,
+      })[0]?.command,
+    ).toBe("cargo install --locked tokensave");
+  });
+
+  test("rejects cargo installation when Rust is below the minimum", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+
+    runMock = mock((args: string[]) => {
+      if (args[0] === "--version") return { ok: false, stderr: "", stdout: "" };
+      return { ok: true, stderr: "", stdout: "" };
+    });
+    tokensaveDeps.run = runMock;
+    tokensaveDeps.rustcVersion = () => ({
+      ok: true,
+      stderr: "",
+      stdout: "rustc 1.90.0 (abc 2026-01-01)",
+    });
+    tokensaveDeps.isCommandOnPath = (command) => command === "cargo";
+    tokensaveDeps.pathValue = () => "/usr/bin";
+
+    const stderrWrites: string[] = [];
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderrWrites.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await tokensavePlugin.apply(
+        makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] }),
+      );
+    } finally {
+      process.stderr.write = originalStderrWrite;
+    }
+
+    expect(runCommandMock).not.toHaveBeenCalled();
+    expect(stderrWrites.join("")).toContain(
+      `TokenSave requires Rust ${TOKENSAVE_MIN_RUST_VERSION} or newer`,
+    );
+    expect(stderrWrites.join("")).toContain("Upgrade Rust");
   });
 
   test("stops before init when tokensave is missing and no installer is available", async () => {
