@@ -9,6 +9,7 @@ import {
   createOpenspecPlugin,
   deriveOpenSpecTools,
   MATE_ARTIFACT_SKILLS,
+  MATE_SKILLS,
   OPENSPEC_SKILLS,
 } from "./openspec";
 
@@ -365,10 +366,10 @@ describe("createOpenspecPlugin", () => {
     );
 
     for (const runtimeDir of [".claude", ".opencode"]) {
-      for (const skill of MATE_ARTIFACT_SKILLS) {
+      for (const skill of MATE_SKILLS) {
         await expect(
           fs.readFile(path.join(root, runtimeDir, "skills", skill, "SKILL.md"), "utf8"),
-        ).resolves.toContain("mate artifact finish");
+        ).resolves.toContain(skill === "mate-create-report" ? "report --input" : "artifact finish");
       }
     }
   });

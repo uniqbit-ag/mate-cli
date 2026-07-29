@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderHTML, renderJSON, renderMarkdown } from "./renderer";
-import type { ReportData } from "./types";
+import { REPORT_DOCUMENT_VERSION, type ReportData, type ReportDocument } from "./types";
 
 const makeReport = (overrides: Partial<ReportData> = {}): ReportData => ({
   days: 7,
@@ -208,5 +208,48 @@ describe("renderHTML", () => {
     expect(html).toContain("&quot;broken&quot;");
     expect(html).toContain('data-working-repository="/tmp/&lt;work&gt;&amp;&quot;&#39;"');
     expect(html).not.toContain("<model>");
+  });
+
+  test("renders generic mixed sections, print control, and print styles", () => {
+    const document: ReportDocument = {
+      version: REPORT_DOCUMENT_VERSION,
+      title: "Mixed <Report>",
+      generatedAt: "2026-01-01T00:00:00Z",
+      metadata: [{ label: "Owner", value: "acme" }],
+      summary: [{ label: "Count", value: 3 }],
+      sections: [
+        {
+          id: "metadata",
+          title: "Metadata",
+          type: "metadata",
+          items: [{ label: "Tag", value: "<tag>" }],
+        },
+        { id: "metrics", title: "Metrics", type: "metrics", items: [{ label: "Score", value: 9 }] },
+        {
+          id: "pairs",
+          title: "Pairs",
+          type: "key-value",
+          items: [{ label: "Key", value: "Value" }],
+        },
+        { id: "table", title: "Table", type: "table", columns: ["Name"], rows: [["<name>"]] },
+        {
+          id: "statuses",
+          title: "Statuses",
+          type: "statuses",
+          items: [{ label: "Build", status: "ok" }],
+        },
+        { id: "text", title: "Text", type: "text", content: "Line one\nLine two" },
+        { id: "empty", title: "Empty", type: "table", columns: ["Value"], rows: [] },
+      ],
+    };
+    const html = renderHTML(document);
+
+    expect(html).toContain("Mixed &lt;Report&gt;");
+    expect(html).toContain("&lt;name&gt;");
+    expect(html).toContain("Print / Save as PDF");
+    expect(html).toContain("window.print()");
+    expect(html).toContain("@media print");
+    expect(html).toContain(".print-control, .interactive-only");
+    expect(html).toContain("No data available");
   });
 });

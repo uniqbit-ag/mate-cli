@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import { runReportCommand } from "./index";
+import { REPORT_DOCUMENT_VERSION } from "./types";
 
 const COMPANION_PATH = "/tmp/test-companion";
 
@@ -34,6 +35,59 @@ const makeDelivery = () => ({
 });
 
 describe("runReportCommand", () => {
+  const structuredDocument = JSON.stringify({
+    version: REPORT_DOCUMENT_VERSION,
+    title: "Structured report",
+    generatedAt: "2026-01-01T00:00:00Z",
+    metadata: [{ label: "Owner", value: "acme" }],
+    summary: [{ label: "Count", value: 1 }],
+    sections: [{ id: "notes", title: "Notes", type: "text", content: "Supplied" }],
+  });
+
+  test("accepts structured JSON from a file input and preserves JSON mode", async () => {
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const spawn = () => {
+      throw new Error("structured input must not run collectors");
+    };
+    await runReportCommand(["--input", "report.json", "--json"], {
+      ensureUnambiguousCompanion: async () => true,
+      readInput: async (input) => {
+        expect(input).toBe("report.json");
+        return structuredDocument;
+      },
+      spawn,
+    });
+    const parsed = JSON.parse(String(logSpy.mock.calls[0]?.[0]));
+    expect(parsed.title).toBe("Structured report");
+    expect(parsed.sections[0].type).toBe("text");
+    logSpy.mockRestore();
+  });
+
+  test("rejects invalid structured input without opening a report", async () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const writeTemporaryReport = spyOn(console, "log");
+    await runReportCommand(["--input", "-"], {
+      ensureUnambiguousCompanion: async () => true,
+      readInput: async () => JSON.stringify({ version: REPORT_DOCUMENT_VERSION }),
+      writeTemporaryReport: async () => {
+        throw new Error("must not write");
+      },
+    });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("title"));
+    expect(writeTemporaryReport).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+    writeTemporaryReport.mockRestore();
+  });
+
+  test("rejects days and structured input mode conflicts", async () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    await runReportCommand(["--days", "7", "--input", "-"], {
+      ensureUnambiguousCompanion: async () => true,
+    });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("cannot be combined"));
+    errorSpy.mockRestore();
+  });
+
   test("does not invoke RTK savings when RTK is disabled", async () => {
     const calls: string[][] = [];
     const deps = {
