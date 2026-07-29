@@ -29,6 +29,7 @@ async function makeRepository(): Promise<{ root: string; companion: string; upst
   git(companion, "init", "-q", "--initial-branch=main");
   git(companion, "config", "user.email", "mate-tests@example.com");
   git(companion, "config", "user.name", "Mate Tests");
+  git(companion, "config", "core.excludesFile", "/dev/null");
   await Promise.all(managedRoots.map((root) => fs.mkdir(path.join(companion, root))));
   await Promise.all(
     managedRoots.map((root) => fs.writeFile(path.join(companion, root, "managed.md"), "base\n")),
@@ -45,6 +46,7 @@ async function makeRepository(): Promise<{ root: string; companion: string; upst
   git(root, "clone", "-q", remote, upstream);
   git(upstream, "config", "user.email", "mate-tests@example.com");
   git(upstream, "config", "user.name", "Mate Tests");
+  git(upstream, "config", "core.excludesFile", "/dev/null");
 
   return { root, companion, upstream };
 }

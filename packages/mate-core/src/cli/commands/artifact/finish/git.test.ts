@@ -27,6 +27,7 @@ function gitOutput(cwd: string, args: string[]): string {
 function configureGit(cwd: string): void {
   git(cwd, ["config", "user.name", "Mate"]);
   git(cwd, ["config", "user.email", "mate@example.test"]);
+  git(cwd, ["config", "core.excludesFile", "/dev/null"]);
 }
 
 afterEach(async () => {
