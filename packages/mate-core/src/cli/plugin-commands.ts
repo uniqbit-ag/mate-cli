@@ -95,11 +95,36 @@ export async function ensureCapabilityEnabled(
   return false;
 }
 
+function formatCommand(
+  distributionName: string,
+  namespace: string,
+  command: PluginCliCommand,
+): string {
+  return `  ${distributionName} cap ${namespace} ${command.name}  ${command.description}`;
+}
+
 function usageFor(plugin: Plugin): string {
   const distributionName = frameworkCommandName();
   const namespace = namespaceOf(plugin);
-  const lines = (plugin.cliCommands ?? []).map(
-    (command) => `  ${distributionName} cap ${namespace} ${command.name}  ${command.description}`,
+  const lines = (plugin.cliCommands ?? []).map((command) =>
+    formatCommand(distributionName, namespace, command),
   );
   return ["Available commands:", ...lines].join("\n");
+}
+
+/**
+ * Cap-command lines contributed by every registered plugin that declares
+ * `cliCommands` (compiled-in or companion-declared/dynamic), formatted as
+ * ` <n> cap <namespace> <name>  <description>`. Used by `usage()` so plugin
+ * commands show up in `mate help` alongside framework builtins.
+ */
+export function pluginCliCommandLines(): string[] {
+  const distributionName = frameworkCommandName();
+  return getActiveDistribution()
+    .registry.getAll()
+    .flatMap((plugin) =>
+      (plugin.cliCommands ?? []).map((command) =>
+        formatCommand(distributionName, namespaceOf(plugin), command),
+      ),
+    );
 }

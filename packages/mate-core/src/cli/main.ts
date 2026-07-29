@@ -51,16 +51,17 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     return;
   }
 
+  // Companion-declared plugins register before cap-command detection and
+  // before help text is printed, so their commands route like compiled-in
+  // ones (including MCP servers whose command is their own cap subcommand)
+  // and show up in `mate help`. Diagnostics stay on stderr; a missing or
+  // ambiguous companion makes this a no-op.
+  await deps.hydrateDynamicPlugins();
+
   if (!command || command === "help" || command === "--help" || command === "-h") {
     console.log(usage());
     return;
   }
-
-  // Companion-declared plugins register before cap-command detection so
-  // their commands route like compiled-in ones (including MCP servers whose
-  // command is their own cap subcommand). Diagnostics stay on stderr; a
-  // missing or ambiguous companion makes this a no-op.
-  await deps.hydrateDynamicPlugins();
 
   // Plugin commands (`mate cap <namespace> <command>`) own their stdout (an
   // MCP server speaks JSON-RPC over it), so banners and background chatter

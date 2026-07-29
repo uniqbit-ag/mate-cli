@@ -64,6 +64,7 @@ export function collectManagedGitignoreEntries(ctx: SetupContext, plugins: Plugi
   const entries = [
     "node_modules/",
     `.${FRAMEWORK_NAME}/dependencies/`,
+    ".mcp.json*",
     ...plugins
       .filter((p) => p.kind !== "root" && (p.isEnabled(ctx.config) || p.persistGitignoreEntries))
       .flatMap((p) => p.gitignoreEntries?.(ctx) ?? []),

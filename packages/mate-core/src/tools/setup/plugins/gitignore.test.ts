@@ -31,6 +31,7 @@ describe("collectManagedGitignoreEntries with declared plugins", () => {
     expect(collectManagedGitignoreEntries(makeContext({}), [])).toEqual([
       "node_modules/",
       ".mate/dependencies/",
+      ".mcp.json*",
     ]);
   });
 });

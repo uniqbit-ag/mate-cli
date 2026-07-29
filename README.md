@@ -126,9 +126,12 @@ capabilities, and required tool installations.
 `config` opens Mate's global configuration directory (`~/.mate`) in the OS file
 manager. Use `--vscode` to open it in VS Code.
 
-`report` aggregates configured usage and savings tools. It writes `REPORT.md`
-to the companion repository by default; `--json` prints machine-readable output
-instead.
+`report` aggregates configured usage and savings tools, renders a temporary HTML
+report, and opens it in the default browser. The temporary report path is
+printed after it opens. Use `--json` for machine-readable output; this mode does
+not create a file or open a browser. If HTML creation or browser launch fails,
+Mate warns on stderr and prints the collected report as JSON to stdout. Existing
+`REPORT.md` files are not modified or deleted.
 
 ### Agent Launch
 

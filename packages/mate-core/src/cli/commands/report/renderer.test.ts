@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { renderJSON, renderMarkdown } from "./renderer";
+import { renderHTML, renderJSON, renderMarkdown } from "./renderer";
 import type { ReportData } from "./types";
 
 const makeReport = (overrides: Partial<ReportData> = {}): ReportData => ({
@@ -158,5 +158,55 @@ describe("renderJSON", () => {
     expect(parsed).toHaveProperty("totalSpending");
     expect(parsed).toHaveProperty("totalSavings");
     expect(parsed).toHaveProperty("netSpend");
+  });
+});
+
+describe("renderHTML", () => {
+  test("renders structured sections in a self-contained responsive document", () => {
+    const html = renderHTML(makeReport());
+
+    expect(html).toContain('<meta name="viewport"');
+    expect(html).toContain("<style>");
+    expect(html).toContain('<section id="summary">');
+    expect(html).toContain('<section id="spending">');
+    expect(html).toContain('<section id="savings">');
+    expect(html).toContain('<section id="tool-status">');
+    expect(html).toContain("claude-sonnet-5");
+    expect(html).toContain("tokensave");
+    expect(html).not.toContain("https://");
+  });
+
+  test("shows explicit messages for empty collections", () => {
+    const html = renderHTML(makeReport({ spending: [], savings: [] }));
+
+    expect(html).toContain("No spending data available.");
+    expect(html).toContain("No savings data available.");
+  });
+
+  test("escapes report values in text and attributes", () => {
+    const html = renderHTML(
+      makeReport({
+        workingRepoPath: "/tmp/<work>&\"'",
+        companionRepoPath: "/tmp/<companion>",
+        enabledCapabilities: ["<capability>"],
+        spending: [
+          {
+            model: "<model>&",
+            inputTokens: 1,
+            outputTokens: 2,
+            cacheReadTokens: 3,
+            cacheWriteTokens: 4,
+            cost: 5,
+          },
+        ],
+        toolStatus: [{ name: "<tool>", enabled: true, status: '"broken"' }],
+      }),
+    );
+
+    expect(html).toContain("&lt;model&gt;&amp;");
+    expect(html).toContain("&lt;capability&gt;");
+    expect(html).toContain("&quot;broken&quot;");
+    expect(html).toContain('data-working-repository="/tmp/&lt;work&gt;&amp;&quot;&#39;"');
+    expect(html).not.toContain("<model>");
   });
 });

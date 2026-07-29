@@ -1,5 +1,6 @@
 import { getActiveDistribution } from "../distribution";
 import { FRAMEWORK_NAME, frameworkCommandName } from "../framework";
+import { pluginCliCommandLines } from "./plugin-commands";
 
 export function usage(): string {
   const n = frameworkCommandName();
@@ -24,6 +25,7 @@ export function usage(): string {
     ` ${n} cap openspec <subcommand> [args...]`,
     ` ${n} cap graphify <subcommand> [args...]`,
     ` ${n} cap index [--graphify] [--tokensave]`,
+    ...pluginCliCommandLines(),
     ` ${n} update`,
     ` ${n} update --check`,
     "",

@@ -1,6 +1,3 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
 import { ensureUnambiguousCompanion } from "../shared/companion-selection";
 import {
@@ -10,13 +7,16 @@ import {
   collectTokenSaveSavings,
   mergeResults,
 } from "./collector";
-import { renderJSON, renderMarkdown } from "./renderer";
+import { openReportInBrowser, writeTemporaryReport } from "./delivery";
+import { renderHTML, renderJSON } from "./renderer";
 import type { CollectorDeps } from "./collector";
 import type { ReportData, ReportOptions } from "./types";
 
 interface ReportCommandDeps extends CollectorDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
   resolveFrameworkContext?: typeof resolveFrameworkContext;
+  writeTemporaryReport?: typeof writeTemporaryReport;
+  openReportInBrowser?: typeof openReportInBrowser;
 }
 
 function parseOptions(argv: string[]): ReportOptions {
@@ -41,7 +41,7 @@ function parseOptions(argv: string[]): ReportOptions {
  * @command mate report [--days N] [--json]
  * @description Generates a token usage report aggregating spending (via ccusage)
  * and savings (via TokenSave/Headroom), merged across working and companion repos.
- * Writes REPORT.md to companion repo by default. Use --json for machine-readable stdout.
+ * Opens a temporary HTML report by default. Use --json for machine-readable stdout.
  */
 export async function runReportCommand(
   argv: string[] = [],
@@ -151,8 +151,15 @@ export async function runReportCommand(
     return;
   }
 
-  const markdown = renderMarkdown(reportData);
-  const reportPath = path.join(companionRepoPath, "REPORT.md");
-  await fs.writeFile(reportPath, markdown);
-  console.log(`Report written to ${reportPath}`);
+  let reportPath: string | undefined;
+  try {
+    reportPath = await (deps.writeTemporaryReport ?? writeTemporaryReport)(renderHTML(reportData));
+    await (deps.openReportInBrowser ?? openReportInBrowser)(reportPath);
+    console.log(`Report opened from ${reportPath}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const location = reportPath ? ` at ${reportPath}` : "";
+    console.warn(`Unable to open HTML report${location}: ${message}`);
+    console.log(renderJSON(reportData));
+  }
 }
