@@ -1,110 +1,116 @@
-import type { ReportData } from "./types";
-import { formatCost, formatTokens } from "./formatter";
+import { reportDataToDocument } from "./adapter";
+import { validateReportDocument } from "./contract";
+import type {
+  ReportData,
+  ReportDocument,
+  ReportKeyValue,
+  ReportSection,
+  ReportValue,
+} from "./types";
+
+type RenderInput = ReportDocument | ReportData;
+
+function isReportDocument(input: RenderInput): input is ReportDocument {
+  return "version" in input;
+}
+
+function normalize(input: RenderInput): ReportDocument {
+  return validateReportDocument(isReportDocument(input) ? input : reportDataToDocument(input));
+}
+
+function valueToString(value: ReportValue): string {
+  if (value === null) return "N/A";
+  return String(value);
+}
 
 function renderTable(headers: string[], rows: string[][]): string {
-  if (rows.length === 0) {
-    return `| ${headers.join(" | ")} |\n`;
-  }
+  if (rows.length === 0) return `| ${headers.join(" | ")} |`;
 
   const widths = headers.map((header, index) =>
     Math.max(header.length, ...rows.map((row) => (row[index] ?? "").length)),
   );
-
   const renderRow = (row: string[]): string =>
     `| ${row.map((value, index) => value.padEnd(widths[index])).join(" | ")} |`;
-
   const divider = `| ${widths.map((width) => "-".repeat(width)).join(" | ")} |`;
   return [renderRow(headers), divider, ...rows.map(renderRow)].join("\n");
 }
 
-function renderKeyValueTable(rows: Array<[string, string]>): string {
-  return renderTable(["Field", "Value"], rows);
+function renderKeyValueTable(rows: ReportKeyValue[]): string {
+  return renderTable(
+    ["Field", "Value"],
+    rows.map((row) => [row.label, valueToString(row.value)]),
+  );
 }
 
 function printSection(title: string, body: string): string {
   return `${title}\n\n${body}\n`;
 }
 
-export function renderMarkdown(data: ReportData): string {
-  const sections: string[] = [];
+function emptyTableMessage(title: string): string {
+  const normalized = title.toLowerCase();
+  return normalized === "spending" || normalized === "savings"
+    ? `No ${normalized} data available.`
+    : "No data available.";
+}
 
-  // Header
-  sections.push(`# Token Usage Report\n`);
-  sections.push(
-    renderKeyValueTable([
-      ["Window", `Last ${data.days} days`],
-      ["Generated", data.generatedAt],
-      ["Capabilities", data.enabledCapabilities.join(", ") || "None"],
-    ]),
-  );
+function sectionMarkdown(section: ReportSection): string {
+  switch (section.type) {
+    case "metadata":
+    case "key-value":
+      return renderKeyValueTable(section.items);
+    case "metrics":
+      return renderTable(
+        ["Metric", "Value"],
+        section.items.map((item) => [item.label, valueToString(item.value)]),
+      );
+    case "table":
+      return section.rows.length
+        ? renderTable(
+            section.columns,
+            section.rows.map((row) => row.map(valueToString)),
+          )
+        : emptyTableMessage(section.title);
+    case "statuses":
+      return section.items.length
+        ? renderTable(
+            ["Status", "Value"],
+            section.items.map((item) => [
+              item.label,
+              item.detail ? `${item.status}: ${item.detail}` : item.status,
+            ]),
+          )
+        : "No data available.";
+    case "text":
+      return section.content;
+  }
+}
 
-  // Summary
+export function renderMarkdown(input: RenderInput): string {
+  const data = normalize(input);
+  const sections: string[] = [`# ${data.title}\n`];
+  const metadata = [...data.metadata];
+  if (data.period) metadata.unshift({ label: "Period", value: data.period });
+  if (data.context) metadata.push({ label: "Context", value: data.context });
+  sections.push(renderKeyValueTable(metadata));
   sections.push(
     "\n" +
       printSection(
         "## Summary",
-        renderKeyValueTable([
-          ["Total Spending", formatCost(data.totalSpending)],
-          ["Total Savings", formatCost(data.totalSavings)],
-          ["Net Spend", formatCost(data.netSpend)],
-        ]),
-      ),
-  );
-
-  // Spending
-  if (data.spending.length > 0) {
-    const spendingRows = data.spending.map((entry) => [
-      entry.model,
-      formatTokens(entry.inputTokens),
-      formatTokens(entry.outputTokens),
-      formatTokens(entry.cacheReadTokens),
-      formatTokens(entry.cacheWriteTokens),
-      formatCost(entry.cost),
-    ]);
-    sections.push(
-      printSection(
-        "## Spending",
         renderTable(
-          ["Model", "Input", "Output", "Cache Read", "Cache Write", "Cost (est.)"],
-          spendingRows,
+          ["Metric", "Value"],
+          data.summary.map((item) => [item.label, valueToString(item.value)]),
         ),
       ),
-    );
-  } else {
-    sections.push(printSection("## Spending", "No spending data available."));
+  );
+  for (const section of data.sections) {
+    sections.push(printSection(`## ${section.title}`, sectionMarkdown(section)));
   }
-
-  // Savings
-  if (data.savings.length > 0) {
-    const savingsRows = data.savings.map((entry) => [
-      entry.tool,
-      entry.tokensSaved === 0 ? "N/A" : formatTokens(entry.tokensSaved),
-      String(entry.calls),
-      entry.costSaved === 0 ? "N/A" : formatCost(entry.costSaved),
-      entry.efficiency,
-    ]);
-    sections.push(
-      printSection(
-        "## Savings",
-        renderTable(["Tool", "Tokens Saved", "Calls", "Cost Saved", "Efficiency"], savingsRows),
-      ),
-    );
-  } else {
-    sections.push(printSection("## Savings", "No savings data available."));
-  }
-
-  // Tool Status
-  const toolStatusRows = data.toolStatus.map((entry) => {
-    const icon = entry.enabled ? "✅" : "⏸️";
-    return [entry.name, `${icon} ${entry.status}`];
-  });
-  sections.push(printSection("## Tool Status", renderTable(["Tool", "Status"], toolStatusRows)));
-
   return sections.join("\n");
 }
 
-export function renderJSON(data: ReportData): string {
-  return JSON.stringify(data, null, 2);
+export function renderJSON(input: RenderInput): string {
+  if (!isReportDocument(input)) return JSON.stringify(input, null, 2);
+  return JSON.stringify(normalize(input), null, 2);
 }
 
 function escapeHTML(value: string): string {
@@ -134,70 +140,82 @@ function renderHTMLTable(headers: string[], rows: string[][]): string {
   return `<div class="table-wrap"><table><thead><tr>${headerHTML}</tr></thead><tbody>${rowsHTML}</tbody></table></div>`;
 }
 
-function renderHTMLSection(id: string, title: string, body: string): string {
-  return `<section id="${id}"><h2>${title}</h2>${body}</section>`;
+function emptyHTML(message: string): string {
+  return `<p class="empty">${escapeHTML(message)}</p>`;
 }
 
-export function renderHTML(data: ReportData): string {
-  const spending = data.spending.length
+function renderHTMLKeyValues(items: ReportKeyValue[]): string {
+  return items.length
     ? renderHTMLTable(
-        ["Model", "Input", "Output", "Cache Read", "Cache Write", "Cost (est.)"],
-        data.spending.map((entry) => [
-          entry.model,
-          formatTokens(entry.inputTokens),
-          formatTokens(entry.outputTokens),
-          formatTokens(entry.cacheReadTokens),
-          formatTokens(entry.cacheWriteTokens),
-          formatCost(entry.cost),
-        ]),
+        ["Field", "Value"],
+        items.map((item) => [item.label, valueToString(item.value)]),
       )
-    : '<p class="empty">No spending data available.</p>';
+    : emptyHTML("No metadata available.");
+}
 
-  const savings = data.savings.length
-    ? renderHTMLTable(
-        ["Tool", "Tokens Saved", "Calls", "Cost Saved", "Efficiency"],
-        data.savings.map((entry) => [
-          entry.tool,
-          entry.tokensSaved === 0 ? "N/A" : formatTokens(entry.tokensSaved),
-          String(entry.calls),
-          entry.costSaved === 0 ? "N/A" : formatCost(entry.costSaved),
-          entry.efficiency,
-        ]),
-      )
-    : '<p class="empty">No savings data available.</p>';
+function renderHTMLSectionBody(section: ReportSection): string {
+  switch (section.type) {
+    case "metadata":
+    case "key-value":
+      return renderHTMLKeyValues(section.items);
+    case "metrics":
+      return section.items.length
+        ? renderHTMLTable(
+            ["Metric", "Value"],
+            section.items.map((item) => [item.label, valueToString(item.value)]),
+          )
+        : emptyHTML("No metrics available.");
+    case "table":
+      return section.rows.length
+        ? renderHTMLTable(
+            section.columns,
+            section.rows.map((row) => row.map(valueToString)),
+          )
+        : emptyHTML(emptyTableMessage(section.title));
+    case "statuses":
+      return section.items.length
+        ? renderHTMLTable(
+            ["Status", "Value"],
+            section.items.map((item) => [
+              item.label,
+              item.detail ? `${item.status}: ${item.detail}` : item.status,
+            ]),
+          )
+        : emptyHTML("No status data available.");
+    case "text":
+      return section.content
+        ? `<p class="report-text">${escapeHTML(section.content).replaceAll("\n", "<br>")}</p>`
+        : emptyHTML("No text available.");
+  }
+}
 
-  const toolStatus = renderHTMLTable(
-    ["Tool", "Status"],
-    data.toolStatus.map((entry) => [entry.name, entry.status]),
-  );
+function renderHTMLSection(section: ReportSection): string {
+  return `<section id="${escapeHTML(section.id)}"><h2>${escapeHTML(section.title)}</h2>${renderHTMLSectionBody(section)}</section>`;
+}
 
-  const metadata = renderHTMLTable(
-    ["Field", "Value"],
-    [
-      ["Window", `Last ${data.days} days`],
-      ["Generated", data.generatedAt],
-      ["Working repository", data.workingRepoPath],
-      ["Companion repository", data.companionRepoPath],
-      ["Active agents", data.activeAgents.join(", ") || "None"],
-      ["Capabilities", data.enabledCapabilities.join(", ") || "None"],
-    ],
-  );
+export function renderHTML(input: RenderInput): string {
+  const data = normalize(input);
+  const legacy = isReportDocument(input) ? undefined : input;
+  const metadata = [...data.metadata];
+  if (data.period) metadata.unshift({ label: "Period", value: data.period });
+  if (data.context) metadata.push({ label: "Context", value: data.context });
+  const summary: ReportMetricsSection = {
+    id: "summary",
+    title: "Summary",
+    type: "metrics",
+    items: data.summary,
+  };
 
-  const summary = renderHTMLTable(
-    ["Metric", "Value"],
-    [
-      ["Total spending", formatCost(data.totalSpending)],
-      ["Total savings", formatCost(data.totalSavings)],
-      ["Net spend", formatCost(data.netSpend)],
-    ],
-  );
+  const repositoryAttributes = legacy
+    ? ` data-working-repository="${escapeHTML(legacy.workingRepoPath)}" data-companion-repository="${escapeHTML(legacy.companionRepoPath)}"`
+    : "";
 
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Token Usage Report</title>
+  <title>${escapeHTML(data.title)}</title>
   <style>
     :root { color-scheme: light; font-family: system-ui, sans-serif; background: #f4f6f8; color: #18212b; }
     body { margin: 0; }
@@ -207,26 +225,39 @@ export function renderHTML(data: ReportData): string {
     h1 { margin-bottom: 8px; }
     h2 { font-size: 1.15rem; }
     .eyebrow { color: #536273; font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .print-control { background: #18212b; border: 0; border-radius: 8px; color: #fff; cursor: pointer; padding: 10px 14px; }
     .table-wrap { overflow-x: auto; }
     table { border-collapse: collapse; min-width: 100%; }
     th, td { border-bottom: 1px solid #e8edf1; padding: 10px 12px; text-align: left; vertical-align: top; }
     th { color: #536273; font-size: .8rem; text-transform: uppercase; }
     .empty { color: #536273; margin: 0; }
     @media (max-width: 640px) { .report { padding: 16px 12px 32px; } header, section { padding: 16px; } }
+    @media print {
+      :root, body { background: #fff; color: #000; }
+      .report { max-width: none; padding: 0; }
+      header, section { border: 0; border-radius: 0; box-shadow: none; margin-bottom: 16px; padding: 0; }
+      .print-control, .interactive-only { display: none !important; }
+      .table-wrap { overflow: visible; }
+      table { width: 100%; }
+      th, td { color: #000; }
+    }
   </style>
 </head>
 <body>
-  <main class="report" data-working-repository="${escapeHTML(data.workingRepoPath)}" data-companion-repository="${escapeHTML(data.companionRepoPath)}">
+  <main class="report" data-report-version="${data.version}"${repositoryAttributes}>
     <header>
       <p class="eyebrow">Mate report</p>
-      <h1>Token Usage Report</h1>
-      ${metadata}
+      <h1>${escapeHTML(data.title)}</h1>
+      ${renderHTMLKeyValues(metadata)}
+      <button class="print-control interactive-only" type="button" onclick="window.print()">Print / Save as PDF</button>
     </header>
-    ${renderHTMLSection("summary", "Summary", summary)}
-    ${renderHTMLSection("spending", "Spending", spending)}
-    ${renderHTMLSection("savings", "Savings", savings)}
-    ${renderHTMLSection("tool-status", "Tool Status", toolStatus)}
+    ${renderHTMLSection(summary)}
+    ${data.sections.map(renderHTMLSection).join("\n    ")}
   </main>
 </body>
 </html>`;
 }
+
+type ReportMetricsSection = Extract<ReportSection, { type: "metrics" }>;
+
+export { escapeHTML };

@@ -24,16 +24,31 @@ mate opencode
 
 ## Installation And Health
 
-| Command                           | Purpose                                                                            |
-| --------------------------------- | ---------------------------------------------------------------------------------- |
-| `mate install [--yes]`            | Install and verify core requirements or refresh the active companion requirements. |
-| `mate doctor`                     | Show context, policy, selected capabilities, and tool status.                      |
-| `mate config [--vscode]`          | Open the global `~/.mate` configuration directory.                                 |
-| `mate report [--days N] [--json]` | Generate a usage and savings report.                                               |
+| Command                                             | Purpose                                                                            |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `mate install [--yes]`                              | Install and verify core requirements or refresh the active companion requirements. |
+| `mate doctor`                                       | Show context, policy, selected capabilities, and tool status.                      |
+| `mate config [--vscode]`                            | Open the global `~/.mate` configuration directory.                                 |
+| `mate report [--days N] [--input FILE\|-] [--json]` | Generate a built-in or structured report.                                          |
 
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
 installs only Mate's core requirements.
+
+### Reports
+
+Without `--input`, `mate report` collects configured usage and savings data. To
+create a report from a skill or script, pass a versioned JSON `ReportDocument`
+with `--input FILE`, or use `--input -` to read JSON from stdin. The document
+contains `version: 1`, `title`, `generatedAt`, `metadata`, `summary`, and typed
+sections: `metadata`, `metrics`, `key-value`, `table`, `statuses`, or `text`.
+Section IDs must be unique and dynamic values are limited to JSON scalar values.
+
+Use `--json` with either path for normalized JSON output. Otherwise Mate writes
+self-contained HTML to a temporary file and opens it in the default browser.
+The HTML includes a browser-native `Print / Save as PDF` control; selecting
+`Save as PDF` in the print dialog creates the PDF. No PDF runtime or server is
+required.
 
 ## Agent Launch
 

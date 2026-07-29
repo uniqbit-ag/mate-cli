@@ -116,7 +116,7 @@ companion directory and sets `MATE_ARTIFACT_PATH` for that shell.
 ```sh
 mate doctor
 mate config [--vscode]
-mate report [--days N] [--json]
+mate report [--days N] [--input FILE|-] [--json]
 ```
 
 `doctor` reports whether the current directory is a linked working repository,
@@ -126,12 +126,15 @@ capabilities, and required tool installations.
 `config` opens Mate's global configuration directory (`~/.mate`) in the OS file
 manager. Use `--vscode` to open it in VS Code.
 
-`report` aggregates configured usage and savings tools, renders a temporary HTML
-report, and opens it in the default browser. The temporary report path is
-printed after it opens. Use `--json` for machine-readable output; this mode does
-not create a file or open a browser. If HTML creation or browser launch fails,
-Mate warns on stderr and prints the collected report as JSON to stdout. Existing
-`REPORT.md` files are not modified or deleted.
+`report` aggregates configured usage and savings tools, adapts the result to a
+versioned `ReportDocument`, renders a temporary HTML report, and opens it in the
+default browser. Use `--input FILE` or `--input -` to submit an explicit JSON
+`ReportDocument` from a file or stdin; `--days` cannot be combined with this
+mode. Both paths accept `--json` for normalized machine-readable output and do
+not create a file or open a browser. Browser reports include a `Print / Save as
+PDF` control backed by the browser's native print dialog. If HTML creation or
+browser launch fails, Mate warns on stderr and prints the complete report
+document as JSON to stdout. Existing `REPORT.md` files are not modified.
 
 ### Agent Launch
 
