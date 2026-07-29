@@ -10,6 +10,7 @@ import { ensureUnambiguousCompanion, launchAmbiguityDeps } from "../shared/compa
 import { runIndexCapCommand } from "../cap/index-cmd";
 import { confirm } from "../../confirm";
 import type { LaunchTarget } from "../../launch-selector";
+import { ensurePiMcpAdapter } from "../../../tools/setup/providers/pi";
 
 const STEP_LABELS = {
   sync: "Syncing mate",
@@ -77,6 +78,9 @@ export async function runLaunchToolCommand(
 
   try {
     progress?.start("sync", STEP_LABELS.sync);
+    if (tool === "pi") {
+      await ensurePiMcpAdapter({ interactive: !!process.stdin.isTTY });
+    }
     const prepared = await new FrameworkLauncher().prepare({
       tool,
       args,

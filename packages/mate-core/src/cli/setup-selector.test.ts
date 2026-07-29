@@ -338,7 +338,7 @@ describe("selectSetupCompatibilities", () => {
     stdin.write("\r");
 
     await expect(selectionPromise).resolves.toEqual({
-      allowedAgents: ["claude", "opencode"],
+      allowedAgents: ["claude", "pi"],
       packageManagers: ["bun", "uv"],
       capabilities: [],
       selectedOpenSpecSchema: "default",

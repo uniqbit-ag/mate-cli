@@ -6,6 +6,7 @@
  */
 export { createClaudePlugin } from "./tools/setup/providers/claude";
 export { createOpenCodePlugin } from "./tools/setup/providers/opencode";
+export { createPiPlugin } from "./tools/setup/providers/pi";
 export { createBunPlugin } from "./tools/setup/package-managers/bun";
 export { createUvPlugin } from "./tools/setup/package-managers/uv";
 export { createOpenspecPlugin } from "./tools/setup/capabilities/openspec";

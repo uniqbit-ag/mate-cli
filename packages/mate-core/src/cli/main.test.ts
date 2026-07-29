@@ -12,6 +12,7 @@ import * as doctorCmd from "./commands/doctor";
 import * as installCmd from "./commands/install";
 import * as claudeCmd from "./commands/launch/claude";
 import * as opencodeCmd from "./commands/launch/opencode";
+import * as piCmd from "./commands/launch/pi";
 import * as reportCmd from "./commands/report";
 import * as updateCmd from "./commands/update";
 import { main, type MainDeps } from "./main";
@@ -22,6 +23,7 @@ const BUILT_IN_COMMANDS = [
   "companion",
   "claude",
   "opencode",
+  "pi",
   "report",
   "config",
   "doctor",
@@ -46,6 +48,7 @@ describe("command gating", () => {
       spyOn(reportCmd, "runReportCommand").mockImplementation(record("report")),
       spyOn(claudeCmd, "runLaunchClaudeCommand").mockImplementation(record("claude")),
       spyOn(opencodeCmd, "runLaunchOpenCodeCommand").mockImplementation(record("opencode")),
+      spyOn(piCmd, "runLaunchPiCommand").mockImplementation(record("pi")),
       spyOn(artifactCmd, "runArtifactCommand").mockImplementation(record("artifact")),
       spyOn(capCmd, "runCapCommand").mockImplementation(record("cap")),
       spyOn(installCmd, "runInstallCommand").mockImplementation(async () => {

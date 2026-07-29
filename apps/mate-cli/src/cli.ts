@@ -6,6 +6,7 @@ import {
   createGraphifyPlugin,
   createHeadroomPlugin,
   createOpenCodePlugin,
+  createPiPlugin,
   createOpenspecPlugin,
   createReactDoctorPlugin,
   createRtkPlugin,
@@ -22,6 +23,7 @@ if (!cliName) {
 
 const claude = createClaudePlugin();
 const opencode = createOpenCodePlugin();
+const pi = createPiPlugin();
 
 const openspec = createOpenspecPlugin();
 const reactDoctor = createReactDoctorPlugin();
@@ -45,6 +47,7 @@ const cli = createMate({
   },
   plugins: [
     { plugin: opencode, policy: "required" },
+    { plugin: pi, policy: "optional" },
     { plugin: claude, policy: "optional" },
     { plugin: openspec, policy: "required" },
     { plugin: reactDoctor, policy: "optional" },
