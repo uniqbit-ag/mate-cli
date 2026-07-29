@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.15.2](https://github.com/uniqbit-ag/mate-cli/compare/0.15.1...0.15.2) (2026-07-29)
+
+## [0.15.2-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.15.1...0.15.2) (2026-07-29)
+
+### Bug Fixes
+
+- install OpenSpec when capability is enabled ([6e1ca68](https://github.com/uniqbit-ag/mate-cli/commit/6e1ca68cf611131fe73b5e00186d2c3a0d3e9961))
+- isolate test git configs from global excludesFile ([e825306](https://github.com/uniqbit-ag/mate-cli/commit/e82530605a22c6895d59e9c03df0d6aa1ac82be8))
+- validate Rust before TokenSave install ([72e0fcd](https://github.com/uniqbit-ag/mate-cli/commit/72e0fcd3bb5321efc7d6eff40964372040b4a1bf))
+
+## [0.15.2-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.15.1...0.15.2) (2026-07-29)
+
+### Features
+
+- improve reports and dynamic plugin command discovery ([eb5254a](https://github.com/uniqbit-ag/mate-cli/commit/eb5254ace0b8bde95a2f489472640a4e27435c51))
+- support structured report documents ([e1aaeb9](https://github.com/uniqbit-ag/mate-cli/commit/e1aaeb9de38c6f6ecaab91affaa154af1cfc5dba))
+
 ## [0.15.1](https://github.com/uniqbit-ag/mate-cli/compare/0.15.0...0.15.1) (2026-07-29)
 
 ### Bug Fixes
