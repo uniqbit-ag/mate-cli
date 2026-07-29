@@ -9,10 +9,11 @@ export { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "./tokensave-shared";
 
 export const TOKENSAVE_SUPPORTED_AGENTS = new Set(["claude", "opencode"]);
 export const TOKENSAVE_STORE_DIR = ".tokensave";
+export const TOKENSAVE_MIN_RUST_VERSION = "1.91.0";
 const TOKENSAVE_CLAUDE_MD_MARKER = "## MANDATORY: No Explore Agents When Tokensave Is Available";
 const TOKENSAVE_STORE_EXCLUDE_ENTRY = `${TOKENSAVE_STORE_DIR}/`;
 const TOKENSAVE_BREW_INSTALL_CMD = "brew install aovestdipaperino/tap/tokensave";
-const TOKENSAVE_CARGO_INSTALL_CMD = "cargo install tokensave";
+const TOKENSAVE_CARGO_INSTALL_CMD = "cargo install --locked tokensave";
 const TOKENSAVE_SCOOP_INSTALL_CMD =
   "scoop bucket add tokensave https://github.com/aovestdipaperino/scoop-bucket && scoop install tokensave";
 
@@ -52,6 +53,17 @@ export const tokensaveDeps = {
   },
   async runShellCommand(command: string): Promise<void> {
     await runShellCommand(command);
+  },
+  rustcVersion(): TokensaveRunResult {
+    const result = spawnSync("rustc", ["--version"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return {
+      ok: result.status === 0 && !result.error,
+      stderr: result.stderr ?? "",
+      stdout: result.stdout ?? "",
+    };
   },
   platform(): NodeJS.Platform {
     return process.platform;
@@ -148,6 +160,22 @@ function installTokensaveAgentIntegrations(providers: string[], cwd: string): vo
   }
 }
 
+function getCargoRustVersionError(): string | undefined {
+  const result = tokensaveDeps.rustcVersion();
+  const version = `${result.stdout}\n${result.stderr}`.match(/\brustc\s+(\d+)\.(\d+)\.(\d+)/);
+  if (!result.ok || !version) {
+    return `TokenSave requires Rust ${TOKENSAVE_MIN_RUST_VERSION} or newer. Install or upgrade Rust via https://rustup.rs.`;
+  }
+
+  const installed = version.slice(1, 4).map(Number);
+  const minimum = TOKENSAVE_MIN_RUST_VERSION.split(".").map(Number);
+  const firstDifference = installed.findIndex((part, index) => part !== minimum[index]);
+  if (firstDifference !== -1 && installed[firstDifference] < minimum[firstDifference]) {
+    return `TokenSave requires Rust ${TOKENSAVE_MIN_RUST_VERSION} or newer, but rustc ${version[1]}.${version[2]}.${version[3]} is installed. Upgrade Rust via https://rustup.rs.`;
+  }
+  return undefined;
+}
+
 function getTokensaveInstallPlan(): { command: string; run: () => Promise<void> } | undefined {
   const pathValue = tokensaveDeps.pathValue();
   const platform = tokensaveDeps.platform();
@@ -169,7 +197,11 @@ function getTokensaveInstallPlan(): { command: string; run: () => Promise<void> 
   if (tokensaveDeps.isCommandOnPath("cargo", pathValue)) {
     return {
       command: TOKENSAVE_CARGO_INSTALL_CMD,
-      run: () => tokensaveDeps.runCommand("cargo", ["install", "tokensave"]),
+      run: async () => {
+        const rustVersionError = getCargoRustVersionError();
+        if (rustVersionError) throw new Error(rustVersionError);
+        await tokensaveDeps.runCommand("cargo", ["install", "--locked", "tokensave"]);
+      },
     };
   }
 
@@ -192,9 +224,10 @@ export async function ensureTokensaveInstalled(repoPath: string): Promise<boolea
   process.stdout.write(`tokensave binary not found. Installing with:\n  ${installPlan.command}\n`);
   try {
     await installPlan.run();
-  } catch {
+  } catch (error) {
+    const detail = error instanceof Error ? `: ${error.message}` : "";
     process.stderr.write(
-      `tokensave: install failed - install manually with \`${installPlan.command}\`\n`,
+      `tokensave: install failed${detail} - install manually with \`${installPlan.command}\`\n`,
     );
     return false;
   }
