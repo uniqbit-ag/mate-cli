@@ -330,8 +330,12 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
     ],
     async apply(ctx) {
       const tools = deriveOpenSpecTools(ctx.activeProviders);
-      if (tools.length > 0 && (await ensureOpenSpecInstalled(ctx, depsWithDefaults))) {
-        await reconcileOpenSpecTools(ctx, depsWithDefaults.runCommand);
+      if (ctx.mode === "setup" || tools.length > 0) {
+        if (await ensureOpenSpecInstalled(ctx, depsWithDefaults)) {
+          if (tools.length > 0) {
+            await reconcileOpenSpecTools(ctx, depsWithDefaults.runCommand);
+          }
+        }
       }
       await reconcileOpenSpecSchema(ctx);
     },
