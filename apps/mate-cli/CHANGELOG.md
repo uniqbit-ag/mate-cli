@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.15.1](https://github.com/uniqbit-ag/mate-cli/compare/0.15.0...0.15.1) (2026-07-29)
+
+### Bug Fixes
+
+- gate report command on installation ([89b5ed1](https://github.com/uniqbit-ag/mate-cli/commit/89b5ed1476d3ce2be07b264a75681155e9957f64))
+
+## [0.15.1-canary.4](https://github.com/uniqbit-ag/mate-cli/compare/0.15.0...0.15.1) (2026-07-28)
+
+### Bug Fixes
+
+- apply command-specific CLI gates ([cd92791](https://github.com/uniqbit-ag/mate-cli/commit/cd9279124991cd09b99d73883785a7659c69d715))
+- standardize setup guidance and dependency ignores ([46cbb2d](https://github.com/uniqbit-ag/mate-cli/commit/46cbb2dba96217ef6db05aeb3b310872ed960163))
+
+## [0.15.1-canary.3](https://github.com/uniqbit-ag/mate-cli/compare/0.15.0...0.15.1) (2026-07-28)
+
+### Features
+
+- support companion-declared dynamic plugins ([e522fd5](https://github.com/uniqbit-ag/mate-cli/commit/e522fd5116740e4bf7ba9c517a61bff2ab83aeb5))
+
+### Bug Fixes
+
+- scope update state and delegate tokensave setup ([c82cacc](https://github.com/uniqbit-ag/mate-cli/commit/c82caccc7904448c11cac457e5f7a342c351d406))
+
+## [0.15.1-canary.2](https://github.com/uniqbit-ag/mate-cli/compare/0.15.0...0.15.1) (2026-07-28)
+
+### Features
+
+- separate framework identity from invocation command name ([9467630](https://github.com/uniqbit-ag/mate-cli/commit/946763071344705bba3f6a39bdc9b6fb1c44770f))
+
+### Bug Fixes
+
+- allow Claude config writes and existing artifact edits ([a1d55cb](https://github.com/uniqbit-ag/mate-cli/commit/a1d55cb06b71031ebf09a445b0b7a97f9041d8fb))
+
+## [0.15.1-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.15.0...0.15.1) (2026-07-27)
+
+### Features
+
+- add context-mode capability and launch preflight ([bc73844](https://github.com/uniqbit-ag/mate-cli/commit/bc73844632ba16e88788315ada59f6fbbec1454a))
+
+## [0.15.1-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.15.0...0.15.1) (2026-07-27)
+
+### Features
+
+- add RTK capability, rename artifact-finish, simplify headroom ([e6f6378](https://github.com/uniqbit-ag/mate-cli/commit/e6f63786f147f7d3fea7ca9d765d3b894aee2f53))
+
+### Bug Fixes
+
+- guard direct OpenSpec archive commands ([8ec05c6](https://github.com/uniqbit-ag/mate-cli/commit/8ec05c608434244100ab4d5f046fbb693e57696c))
+
 ## [0.15.0](https://github.com/uniqbit-ag/mate-cli/compare/0.14.4...0.15.0) (2026-07-27)
 
 ## [0.15.0-canary.10](https://github.com/uniqbit-ag/mate-cli/compare/0.14.4...0.15.0) (2026-07-24)
