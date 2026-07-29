@@ -56,7 +56,9 @@ describe("createRtkPlugin", () => {
       await plugin.apply(makeCtx());
 
       expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining("curl -fsSL https://rtk.ai/install | bash"),
+        expect.stringContaining(
+          "curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh",
+        ),
       );
     } finally {
       stdoutSpy.mockRestore();
