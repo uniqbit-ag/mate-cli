@@ -172,13 +172,27 @@ describe("command gating", () => {
     }
   });
 
-  test("config, report, and companion list dispatch when installation is incomplete", async () => {
-    for (const argv of [["config"], ["report"], ["companion", "list"]]) {
+  test("config and companion list dispatch when installation is incomplete", async () => {
+    for (const argv of [["config"], ["companion", "list"]]) {
       const { gateCalls, deps } = recordingDeps({ installOk: false });
       await main(["node", "mate", ...argv], deps);
       expect(gateCalls).not.toContain("install");
     }
-    expect(dispatched).toEqual(["config", "report", "companion"]);
+    expect(dispatched).toEqual(["config", "companion"]);
+  });
+
+  test("report is blocked when installation is incomplete", async () => {
+    const originalExitCode = process.exitCode;
+    try {
+      const { gateCalls, deps } = recordingDeps({ installOk: false });
+      process.exitCode = 0;
+      await main(["node", "mate", "report"], deps);
+      expect(gateCalls).toEqual(["install"]);
+      expect(dispatched).toEqual([]);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = originalExitCode ?? 0;
+    }
   });
 
   test("install-gated commands are blocked when installation is incomplete", async () => {
