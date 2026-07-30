@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { resolveGitInfoExcludePath } from "../git-utils";
 import type { CapabilityPlugin } from "../plugin";
-import { isCommandOnPath, resolveCommandOnPath, runCommand, runShellCommand } from "../utils";
+import { isCommandOnPath, runCommand, runShellCommand } from "../utils";
 export { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "./tokensave-shared";
 
 export const TOKENSAVE_SUPPORTED_AGENTS = new Set(["claude", "opencode"]);
@@ -322,11 +322,11 @@ export function createTokensavePlugin(): CapabilityPlugin {
 
       // MCP access is provider-mediated: every active hosting provider gets the
       // server in its native config, and teardown bookkeeping removes it again.
-      const tokensaveCommandPath =
-        resolveCommandOnPath("tokensave", process.env.PATH ?? "") ?? "tokensave";
+      // The bare command name is resolved against PATH at spawn time by each
+      // provider, so the registration never pins a since-moved/upgraded binary.
       await ctx.mcp?.register({
         name: "tokensave",
-        command: tokensaveCommandPath,
+        command: "tokensave",
         args: ["serve"],
       });
 

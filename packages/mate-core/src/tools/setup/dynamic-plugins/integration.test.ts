@@ -10,7 +10,6 @@ import { ConfigStore } from "../../../lib/orchestrator/config-store";
 import { PluginRegistry } from "../registry";
 import { hydrateDynamicPlugins, resetDynamicPluginHydration } from "./hydrate";
 import { installDeclaredPlugins, type BunInstallRunner } from "./install";
-import { PluginPinStore } from "./pin-store";
 
 const tempRoots: string[] = [];
 
@@ -149,13 +148,6 @@ describe("dynamic plugins end to end", () => {
     expect(installResults).toEqual([
       { package: PACKAGE, status: "installed", resolvedVersion: "1.2.0" },
     ]);
-    const pins = await new PluginPinStore(companionPath).load();
-    expect(pins.plugins[0]).toMatchObject({
-      package: PACKAGE,
-      declaredVersion: "^1.0.0",
-      resolvedVersion: "1.2.0",
-      integrity: "sha512-fixture",
-    });
 
     // Full CLI path: hydration happens inside main, then cap routing.
     await main(

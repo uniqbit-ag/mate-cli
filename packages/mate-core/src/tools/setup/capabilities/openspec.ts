@@ -127,7 +127,7 @@ async function applyMateOpenspecSkills(
 ): Promise<void> {
   for (const tool of tools) {
     const skillsDir = getSkillsDir(companionPath, tool);
-    await applyMateSkills(skillsDir);
+    await applyMateSkills(skillsDir, tool);
   }
 }
 

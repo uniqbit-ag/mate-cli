@@ -7,8 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
 import type { PluginHost } from "./host";
 import { loadDynamicPlugin } from "./loader";
-import { pluginInstallDir, pluginPackageRoot } from "./paths";
-import type { PluginPin } from "./pin-store";
+import { pluginPackageRoot } from "./paths";
 
 const tempRoots: string[] = [];
 
@@ -79,13 +78,6 @@ const declaration = (overrides: Partial<PluginDeclaration> = {}): PluginDeclarat
   ...overrides,
 });
 
-const pin = (overrides: Partial<PluginPin> = {}): PluginPin => ({
-  package: PACKAGE,
-  declaredVersion: "^1.0.0",
-  resolvedVersion: "1.2.0",
-  ...overrides,
-});
-
 const fakeHost: PluginHost = {
   apiVersion: 1,
   distribution: { name: "acme-mate", version: "0.0.1" },
@@ -100,7 +92,6 @@ describe("loadDynamicPlugin", () => {
     const result = await loadDynamicPlugin(
       companionPath,
       declaration({ config: { token: "${ACME_TOKEN}" } }),
-      [pin()],
       { host: fakeHost, env: { ACME_TOKEN: "secret" } },
     );
 
@@ -119,55 +110,17 @@ describe("loadDynamicPlugin", () => {
       source: `export function createPlugin() { return { id: "acme-custom", kind: "capability", label: "x", description: "x", defaultSelected: false, isEnabled: () => false, apply: async () => {}, teardown: async () => {} }; }`,
     });
 
-    const result = await loadDynamicPlugin(companionPath, declaration(), [pin()], {
-      host: fakeHost,
-    });
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
     expect(result.ok).toBe(true);
   });
 
   test("uninstalled package warns and points at install", async () => {
     const companionPath = await makeTempDir("plugin-load-uninstalled-");
-    const result = await loadDynamicPlugin(companionPath, declaration(), [pin()], {
-      host: fakeHost,
-    });
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
     expect(result).toMatchObject({ ok: false });
     if (result.ok) return;
     expect(result.warning).toContain(PACKAGE);
     expect(result.warning).toContain("not installed");
-  });
-
-  test("missing pin is refused", async () => {
-    const companionPath = await makeTempDir("plugin-load-nopin-");
-    await writeInstalledPlugin(companionPath);
-    const result = await loadDynamicPlugin(companionPath, declaration(), [], { host: fakeHost });
-    if (result.ok) throw new Error("expected refusal");
-    expect(result.warning).toContain("pin");
-  });
-
-  test("installed version differing from the pin is refused", async () => {
-    const companionPath = await makeTempDir("plugin-load-pinmismatch-");
-    await writeInstalledPlugin(companionPath, { version: "1.3.0" });
-    const result = await loadDynamicPlugin(companionPath, declaration(), [pin()], {
-      host: fakeHost,
-    });
-    if (result.ok) throw new Error("expected refusal");
-    expect(result.warning).toContain("1.3.0");
-    expect(result.warning).toContain("1.2.0");
-  });
-
-  test("edited declaration invalidates the pin at load time", async () => {
-    const companionPath = await makeTempDir("plugin-load-declchange-");
-    await writeInstalledPlugin(companionPath);
-    const result = await loadDynamicPlugin(
-      companionPath,
-      declaration({ version: "^2.0.0" }),
-      [pin()],
-      {
-        host: fakeHost,
-      },
-    );
-    if (result.ok) throw new Error("expected refusal");
-    expect(result.warning).toContain("^2.0.0");
   });
 
   test("unsupported plugin API version is refused before import", async () => {
@@ -177,9 +130,7 @@ describe("loadDynamicPlugin", () => {
       source: `throw new Error("must never execute");`,
     });
 
-    const result = await loadDynamicPlugin(companionPath, declaration(), [pin()], {
-      host: fakeHost,
-    });
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
     if (result.ok) throw new Error("expected refusal");
     expect(result.warning).toContain("99");
     expect(result.warning).toContain("1");
@@ -188,18 +139,14 @@ describe("loadDynamicPlugin", () => {
   test("missing pluginApiVersion defaults to 1 and loads", async () => {
     const companionPath = await makeTempDir("plugin-load-apidefault-");
     await writeInstalledPlugin(companionPath);
-    const result = await loadDynamicPlugin(companionPath, declaration(), [pin()], {
-      host: fakeHost,
-    });
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
     expect(result.ok).toBe(true);
   });
 
   test("import errors are isolated into a warning", async () => {
     const companionPath = await makeTempDir("plugin-load-importerror-");
     await writeInstalledPlugin(companionPath, { source: `throw new Error("boom at import");` });
-    const result = await loadDynamicPlugin(companionPath, declaration(), [pin()], {
-      host: fakeHost,
-    });
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
     if (result.ok) throw new Error("expected refusal");
     expect(result.warning).toContain("boom at import");
   });
@@ -207,9 +154,7 @@ describe("loadDynamicPlugin", () => {
   test("entry point without a factory export is an invalid plugin", async () => {
     const companionPath = await makeTempDir("plugin-load-nofactory-");
     await writeInstalledPlugin(companionPath, { source: `export const nothing = 1;` });
-    const result = await loadDynamicPlugin(companionPath, declaration(), [pin()], {
-      host: fakeHost,
-    });
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
     if (result.ok) throw new Error("expected refusal");
     expect(result.warning).toContain("createPlugin");
   });
@@ -220,7 +165,6 @@ describe("loadDynamicPlugin", () => {
     const result = await loadDynamicPlugin(
       companionPath,
       declaration({ config: { token: "${ACME_TOKEN}" } }),
-      [pin()],
       { host: fakeHost, env: {} },
     );
     if (result.ok) throw new Error("expected refusal");
@@ -233,22 +177,44 @@ describe("loadDynamicPlugin", () => {
     const result = await loadDynamicPlugin(
       companionPath,
       declaration({ config: { reject: true } }),
-      [pin()],
-      { host: fakeHost },
+      {
+        host: fakeHost,
+      },
     );
     if (result.ok) throw new Error("expected refusal");
     expect(result.warning).toContain("rejected its configuration");
     expect(result.warning).toContain("companions must be a non-empty list");
   });
 
-  test("resolves the entry point from an exports map", async () => {
+  test("resolves the entry point via real module resolution from an exports map", async () => {
     const companionPath = await makeTempDir("plugin-load-exports-");
     await writeInstalledPlugin(companionPath, {
-      entryField: { exports: { ".": { default: "./index.js" } } },
+      entryField: {
+        exports: { ".": { types: "./index.d.ts", require: "./index.js", import: "./index.js" } },
+      },
     });
-    const result = await loadDynamicPlugin(companionPath, declaration(), [pin()], {
-      host: fakeHost,
-    });
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
     expect(result.ok).toBe(true);
+  });
+
+  test("entry point that cannot be resolved by the package manager's resolver is refused", async () => {
+    const companionPath = await makeTempDir("plugin-load-badentry-");
+    // No fallback index.js in the package directory, and `main` points nowhere
+    // — resolution must fail rather than silently picking something else up.
+    const root = pluginPackageRoot(companionPath, PACKAGE);
+    await fs.mkdir(root, { recursive: true });
+    await fs.writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({
+        name: PACKAGE,
+        version: "1.2.0",
+        type: "module",
+        main: "does-not-exist.js",
+      }),
+      "utf8",
+    );
+    const result = await loadDynamicPlugin(companionPath, declaration(), { host: fakeHost });
+    if (result.ok) throw new Error("expected refusal");
+    expect(result.warning).toContain("could not be resolved");
   });
 });

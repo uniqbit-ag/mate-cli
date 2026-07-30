@@ -9,7 +9,6 @@ import type { Plugin } from "../plugin";
 import type { PluginHost } from "./host";
 import { hydrateDynamicPlugins, resetDynamicPluginHydration } from "./hydrate";
 import { pluginPackageRoot } from "./paths";
-import { PluginPinStore } from "./pin-store";
 
 const tempRoots: string[] = [];
 
@@ -55,7 +54,6 @@ export default function createPlugin(config, host) {
 async function writeCompanion(options: {
   pluginsYaml?: string[];
   installed?: boolean;
-  pinned?: boolean;
   source?: string;
 }): Promise<string> {
   const companionPath = await makeTempDir("hydrate-companion-");
@@ -82,11 +80,6 @@ async function writeCompanion(options: {
       "utf8",
     );
     await fs.writeFile(path.join(root, "index.js"), options.source ?? FACTORY_SOURCE, "utf8");
-  }
-  if (options.pinned !== false) {
-    await new PluginPinStore(companionPath).save({
-      plugins: [{ package: PACKAGE, declaredVersion: "^1.0.0", resolvedVersion: "1.2.0" }],
-    });
   }
   return companionPath;
 }
@@ -130,7 +123,6 @@ describe("hydrateDynamicPlugins", () => {
     const companionPath = await writeCompanion({
       pluginsYaml: [],
       installed: false,
-      pinned: false,
     });
     const registry = makeRegistry();
     const warnings: string[] = [];

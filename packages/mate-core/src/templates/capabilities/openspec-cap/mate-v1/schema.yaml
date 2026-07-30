@@ -44,7 +44,7 @@ artifacts:
 
        Scope rules:
        - Scopes are recorded ONLY in the frontmatter `scopes` list — do not add a `## Scopes` body section. Every change MUST name at least one scope.
-       - Every `scopes` entry MUST pair `repository: org/repository` with an `area` selected according to the repository layout: the owning workspace/package root in a monorepo (for example, `acme`, not `acme/src/sub-1/sub-2`), or the exact affected path in a non-monorepo repository (for example, `docs`); use `.` only when the repository root itself is affected.
+       - Every `scopes` entry MUST pair `repository: org/repository` with an `area` selected according to the repository layout: the owning workspace/package root in a monorepo — the directory containing that package's manifest (`package.json`, `Cargo.toml`, `go.mod`, etc.) nearest the affected path (for example, `acme`, `apps/storefront`, or `packages/ui`, not `acme/src/sub-1/sub-2` or `apps/storefront/src/features/checkout`), or the exact affected path in a non-monorepo repository (for example, `docs`); use `.` only when the repository root itself is affected.
        - Repository identity MUST come from the Git remote. Normalize SSH and HTTPS forms such as `git@github.com:org/repository.git` and `https://github.com/org/repository.git` to `org/repository`.
        - Area identity is metadata, never part of a change or capability folder name.
        - Do not use a local checkout directory basename, Mate's internal repository ID, a synthetic Area token, or `N/A` as durable metadata.
@@ -84,10 +84,10 @@ artifacts:
 
        **Path and scope rules** — spec files are ALWAYS flat; paired scope metadata is required, never a folder:
       - Every spec lives at `specs/<capability>/spec.md`. Never interpose an Area folder. `specs/<area>/<capability>/spec.md` breaks the OpenSpec CLI: it parses spec deltas only at the flat path, so an Area folder makes `openspec show`/`validate` report zero deltas.
-       - Every delta and canonical spec MUST record a `scopes` frontmatter list whose entries pair `repository: org/repository` with an `area` selected according to the repository layout. Monorepo Areas stop at workspace/package roots such as `acme` or `packages/ui`; non-monorepo Areas remain exact paths such as `docs` or `.`.
+       - Every delta and canonical spec MUST record a `scopes` frontmatter list whose entries pair `repository: org/repository` with an `area` selected according to the repository layout. Monorepo Areas stop at workspace/package roots such as `acme`, `apps/storefront`, or `packages/ui` — the directory containing that package's manifest (`package.json`, `Cargo.toml`, `go.mod`, etc.) nearest the affected path; non-monorepo Areas remain exact paths such as `docs` or `.`.
        - Each scope pair is independent. Preserve every repository/Area pair for monorepos and multiple repositories; never use separate parallel `repositories` and `areas` arrays.
-       - Example paired scopes: `{ repository: org/product, area: acme }`, `{ repository: org/product, area: packages/api }`, and `{ repository: org/other, area: docs }`.
-       - Do not split a monorepo Area into deeper entries such as `acme/src` or `acme/public`; those paths remain inside the `acme` Area. A non-monorepo repository may use exact subpaths such as `docs` to identify the affected Area.
+       - Example paired scopes: `{ repository: org/product, area: acme }`, `{ repository: org/product, area: apps/storefront }`, `{ repository: org/product, area: packages/api }`, and `{ repository: org/other, area: docs }`.
+       - Do not split a monorepo Area into deeper entries such as `acme/src`, `acme/public`, or `apps/storefront/src/features/checkout`; those paths remain inside the `acme` Area (or `apps/storefront`, `packages/ui`, etc.) regardless of how many source subfolders the change touches. A non-monorepo repository may use exact subpaths such as `docs` to identify the affected Area.
        - Scopes cascade: every requirement inherits all frontmatter `scopes` entries by default and needs no inline markers.
        - Add a direct `**Area:**` marker to a requirement ONLY when its effective scope is narrower than the document scopes. The marker may list multiple Areas as backtick-quoted, comma-separated values (for example, `**Area:** \`acme\`, \`packages/api\``), and every listed Area MUST appear in the frontmatter `scopes`.
        - Add a direct `**Repository:**` marker ONLY when the spec's frontmatter names more than one repository and the requirement binds fewer of them; every listed value MUST appear in the frontmatter `scopes`. In a single-repository spec, requirement-level `**Repository:**` markers are forbidden — the frontmatter already says it.
@@ -157,7 +157,7 @@ artifacts:
       After the file's `#` title line, add a backlink on the next line: `← [[proposal]]`. If modifying an existing main spec, add on the line after: `Applies to: [[openspec/specs/<capability>/spec]]`.
 
        Migration rules for existing artifacts and canonical specs:
-       1. Normalize each Area to the owning workspace/package root for monorepos; for non-monorepos, retain the exact affected repository-relative path and use `.` only when the repository root is the intended Area.
+       1. Normalize each Area to the owning workspace/package root for monorepos — the directory containing that package's manifest (`package.json`, `Cargo.toml`, `go.mod`, etc.) nearest the affected path, e.g. collapse `apps/storefront/src/features/checkout` to `apps/storefront`; for non-monorepos, retain the exact affected repository-relative path and use `.` only when the repository root is the intended Area.
        2. Replace local, internal, synthetic, or otherwise non-portable repository and Area values with canonical Git remote identities and exact repository-relative paths.
        3. Add mandatory paired `scopes` frontmatter to every delta and canonical spec that lacks it.
        4. Remove requirement-level `**Repository:**` markers and any `**Area:**` marker that merely repeats the full document scope; keep or add `**Area:**` markers only where a requirement's effective scope is narrower than the frontmatter `scopes`.
