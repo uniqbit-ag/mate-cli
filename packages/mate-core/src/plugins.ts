@@ -5,6 +5,7 @@
  * distribution passes to `createMate`.
  */
 export { createClaudePlugin } from "./tools/setup/providers/claude";
+export { createCodexPlugin } from "./tools/setup/providers/codex";
 export { createOpenCodePlugin } from "./tools/setup/providers/opencode";
 export { createBunPlugin } from "./tools/setup/package-managers/bun";
 export { createUvPlugin } from "./tools/setup/package-managers/uv";

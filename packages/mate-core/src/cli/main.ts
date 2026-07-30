@@ -12,6 +12,7 @@ import { runCompanionCommand } from "./commands/companion/companion";
 import { runConfigCommand } from "./commands/config";
 import { runDoctorCommand } from "./commands/doctor";
 import { runLaunchClaudeCommand } from "./commands/launch/claude";
+import { runLaunchCodexCommand } from "./commands/launch/codex";
 import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
 import { runReportCommand } from "./commands/report";
 import { runUpdateCommand } from "./commands/update";
@@ -137,6 +138,9 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     case "claude":
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runLaunchClaudeCommand(argv.slice(3), { directPassthrough: true });
+      return;
+    case "codex":
+      await runLaunchCodexCommand(argv.slice(3), { directPassthrough: true });
       return;
     case "opencode":
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;

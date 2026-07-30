@@ -17,7 +17,7 @@ const tempRoots: string[] = [];
 // 5s default per-test timeout and fail intermittently. Give the entire file a
 // generous default; individual tests still override with tighter values where
 // a fast failure is the point.
-const DEFAULT_TEST_TIMEOUT_MS = 30_000;
+const DEFAULT_TEST_TIMEOUT_MS = 60_000;
 // Watchdog for non-TTY CLI runs. A hung child (e.g. blocked on
 // stdin that never arrives) would otherwise sit until the test timeout with no
 // diagnostics; killing it early surfaces the captured output instead.

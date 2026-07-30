@@ -45,8 +45,9 @@ describe("TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES", () => {
 });
 
 describe("TOKENSAVE_SUPPORTED_AGENTS", () => {
-  test("includes claude and opencode", () => {
+  test("includes claude, codex, and opencode", () => {
     expect(TOKENSAVE_SUPPORTED_AGENTS.has("claude")).toBe(true);
+    expect(TOKENSAVE_SUPPORTED_AGENTS.has("codex")).toBe(true);
     expect(TOKENSAVE_SUPPORTED_AGENTS.has("opencode")).toBe(true);
   });
 });

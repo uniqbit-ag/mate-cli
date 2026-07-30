@@ -86,6 +86,7 @@ recommended. Explicit flags are available for repeatable environments:
 ```sh
 mate companion setup \
   --allowed-agent claude \
+  --allowed-agent codex \
   --allowed-agent opencode \
   --capability openspec \
   --capability react-doctor \
@@ -110,12 +111,16 @@ policy, selected capabilities, and required tool status. It distinguishes:
 - `companion-repository`
 - `not-linked`
 
-Once installation is current, launch from the working repository:
+Once installation is current, launch from the working repository. The linked
+repository's selected profile controls which provider is allowed; a repository
+`overrides.allowedAgents` list takes precedence over that profile:
 
 ```sh
 mate opencode
 # or
 mate claude
+# or
+mate codex
 ```
 
 ## Recovery Commands

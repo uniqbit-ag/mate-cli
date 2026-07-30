@@ -55,6 +55,28 @@ describe("createContextModePlugin", () => {
     expect(validatePackage).toHaveBeenCalledTimes(1);
   });
 
+  test("exposes the native package as an install requirement", async () => {
+    const ctx = await makeContext();
+    let installed = false;
+    const plugin = createContextModePlugin({
+      installPackage: async () => {
+        installed = true;
+      },
+      validatePackage: async () => {
+        if (!installed) throw new Error("package is missing");
+      },
+    });
+    const requirement = plugin.getInstallRequirements?.({
+      companionPath: ctx.companionPath,
+      config: ctx.config,
+    })[0];
+
+    expect(requirement).toBeDefined();
+    expect(await requirement?.detect()).toBe(false);
+    await requirement?.install();
+    expect(await requirement?.verify?.()).toBe(true);
+  });
+
   test("adds the exact OpenCode reference after existing plugins idempotently", async () => {
     const ctx = await makeContext();
     const configPath = path.join(ctx.companionPath, ".opencode", "opencode.json");
