@@ -33,6 +33,14 @@ by that companion, so no second `mate install` is needed before launch.
 Use `mate claude` instead of `mate opencode` when the selected companion profile
 allows Claude.
 
+Pi is also supported. Select Pi during companion setup, then run `mate pi`. Mate
+requires Pi `0.82.0` or newer and the `pi-mcp-adapter` package `2.15.0` or newer.
+If the adapter is missing, Mate asks before installing it globally with:
+
+```sh
+pi install npm:pi-mcp-adapter
+```
+
 ## Repository Model
 
 - **Companion repository**: Mate configuration, agent instructions, skills,
@@ -141,6 +149,7 @@ document as JSON to stdout. Existing `REPORT.md` files are not modified.
 ```sh
 mate claude
 mate opencode
+mate pi
 ```
 
 Launch from a linked working repository. Mate resolves the companion, applies
@@ -152,6 +161,7 @@ Forward agent arguments after `--`:
 ```sh
 mate claude -- --model sonnet
 mate opencode -- --continue
+mate pi -- --mode rpc
 ```
 
 If companion Git auto mode is enabled, skip its pre-launch synchronization for
@@ -160,6 +170,7 @@ one launch with:
 ```sh
 mate claude -- --no-git
 mate opencode -- --no-git
+mate pi -- --no-git
 ```
 
 `--no-git` must appear after the argument separator.
@@ -181,7 +192,7 @@ and the flags restrict the run to one indexer.
 The available capabilities are OpenSpec, React Doctor, TokenSave, Headroom, RTK,
 Graphify, Context7, and Context Mode. Headroom and RTK are independently selectable: Headroom wraps
 launches through its proxy, while RTK patches supported provider integrations.
-Providers are Claude and OpenCode. Bun is always part of the core runtime; uv is
+Providers are Claude, OpenCode, and Pi. Bun is always part of the core runtime; uv is
 selected for Python-backed capability workflows.
 
 Context Mode is opt-in and pins `context-mode@1.0.169` (Elastic License 2.0,
@@ -192,7 +203,7 @@ after Mate's policy plugin. Mate does not add a separate context-mode MCP entry.
 
 Context Mode retains session and memory data in its provider defaults (normally
 `~/.claude/context-mode/` for Claude and `~/.config/opencode/context-mode/` for
-OpenCode). Disabling the capability removes only Mate-owned activation and
+OpenCode and Pi). Disabling the capability removes only Mate-owned activation and
 package files, not this potentially sensitive provider data. Remove those data
 directories manually when their retained content is no longer needed. Upgrades
 must update the single pin in `context-mode-package.ts`, confirm the package's

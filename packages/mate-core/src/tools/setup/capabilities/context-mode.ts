@@ -192,6 +192,12 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
           await updateOpenCodeConfig(ctx, false);
         },
       },
+      pi: {
+        async apply(ctx) {
+          await ctx.instructions?.append(CONTEXT_MODE_OPENCODE_GUIDANCE, { providers: ["pi"] });
+        },
+        async teardown() {},
+      },
     },
   };
 }

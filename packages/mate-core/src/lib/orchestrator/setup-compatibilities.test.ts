@@ -38,6 +38,17 @@ describe("setup compatibilities", () => {
     );
   });
 
+  test("lists Pi as an optional provider", () => {
+    expect(BUILTIN_SETUP_COMPATIBILITIES).toContainEqual(
+      expect.objectContaining({
+        id: "pi",
+        kind: "provider",
+        agent: "pi",
+        defaultSelected: false,
+      }),
+    );
+  });
+
   test("default selections include bun and uv package managers", () => {
     expect(getDefaultSetupSelections().packageManagers).toEqual(["bun", "uv"]);
   });

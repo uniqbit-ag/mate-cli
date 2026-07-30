@@ -10,11 +10,13 @@ export const RTK_INSTALL_CMD_FALLBACK =
 const RTK_INIT_COMMANDS: Record<string, string> = {
   claude: "rtk init -g --auto-patch",
   opencode: "rtk init -g --opencode --auto-patch",
+  pi: "rtk init -g --agent pi --auto-patch",
 };
 
 const RTK_UNINSTALL_COMMANDS: Record<string, string> = {
   claude: "rtk init -g --uninstall",
   opencode: "rtk init -g --uninstall --opencode",
+  pi: "rtk init -g --agent pi --uninstall",
 };
 
 function defaultIsRtkOnPath(): boolean {
@@ -100,6 +102,18 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
         async teardown(ctx: SetupContext) {
           if (checkRtkPath() && !hasOtherActiveRtkProvider("opencode", ctx.activeProviders)) {
             await runRtkInstall(RTK_UNINSTALL_COMMANDS.opencode);
+          }
+        },
+      },
+      pi: {
+        async apply(ctx: SetupContext) {
+          if (!checkRtkPath()) return;
+          const run = ctx.mode === "sync" ? runSilently : runRtkInstall;
+          await run(RTK_INIT_COMMANDS.pi);
+        },
+        async teardown(ctx: SetupContext) {
+          if (checkRtkPath() && !hasOtherActiveRtkProvider("pi", ctx.activeProviders)) {
+            await runRtkInstall(RTK_UNINSTALL_COMMANDS.pi);
           }
         },
       },

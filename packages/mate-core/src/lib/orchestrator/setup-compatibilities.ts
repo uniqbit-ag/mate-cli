@@ -140,6 +140,15 @@ export const BUILTIN_SETUP_COMPATIBILITIES: SetupCompatibility[] = [
     templateRoot: "setup-providers/opencode",
   },
   {
+    id: "pi",
+    kind: "provider",
+    agent: "pi",
+    label: "Pi",
+    description: "Load Mate's bundled Pi extension and MCP integration.",
+    defaultSelected: false,
+    templateRoot: "providers/pi",
+  },
+  {
     id: "bun",
     kind: "packageManager",
     packageManager: "bun",

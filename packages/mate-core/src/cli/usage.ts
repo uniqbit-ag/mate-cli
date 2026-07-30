@@ -22,6 +22,7 @@ export function usage(): string {
     ` ${n} config`,
     ` ${n} claude [args...] (use -- --no-git to bypass companion Git sync)`,
     ` ${n} opencode [args...] (use -- --no-git to bypass companion Git sync)`,
+    ` ${n} pi [args...] (use -- --no-git to bypass companion Git sync)`,
     ` ${n} cap openspec <subcommand> [args...]`,
     ` ${n} cap graphify <subcommand> [args...]`,
     ` ${n} cap index [--graphify] [--tokensave]`,

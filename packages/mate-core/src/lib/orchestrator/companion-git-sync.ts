@@ -43,7 +43,7 @@ export class CompanionGitSyncError extends LaunchPreflightError {
         `  ${reason}`,
         conflicts,
         `  ${recovery}`,
-        "  Bypass: `mate claude -- --no-git` or `mate opencode -- --no-git`.",
+        "  Bypass: `mate claude -- --no-git`, `mate opencode -- --no-git`, or `mate pi -- --no-git`.",
       ]
         .filter(Boolean)
         .join("\n"),
@@ -86,7 +86,7 @@ export const companionGitSyncDeps: { runGit: GitRunner } = {
   },
 };
 
-const MANAGED_ROOTS = [".mate", ".opencode", ".claude", ".agents", ".graphify"];
+const MANAGED_ROOTS = [".mate", ".opencode", ".claude", ".agents", ".graphify", ".pi", ".mcp.json"];
 
 interface SyncTarget {
   remote: string;
