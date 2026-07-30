@@ -5,9 +5,8 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
-import { installDeclaredPlugins, type BunInstallRunner } from "./install";
-import { pluginInstallDir, pluginPackageRoot } from "./paths";
-import { PluginPinStore } from "./pin-store";
+import { installDeclaredPlugins, type BunInstallRunner, type BunUpdateRunner } from "./install";
+import { dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
 
 const tempRoots: string[] = [];
 
@@ -21,7 +20,7 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-/** Simulates `bun install` by materializing the declared dependency at a fixed version. */
+/** Simulates `bun install` by materializing every declared dependency at a fixed version. */
 function fakeBunInstall(resolveTo: (pkg: string, declared: string) => string): {
   runner: BunInstallRunner;
   calls: string[];
@@ -29,23 +28,43 @@ function fakeBunInstall(resolveTo: (pkg: string, declared: string) => string): {
   const calls: string[] = [];
   return {
     calls,
-    runner: async (installDir) => {
-      calls.push(installDir);
+    runner: async (workspaceRoot) => {
+      calls.push(workspaceRoot);
       const manifest = JSON.parse(
-        await fs.readFile(path.join(installDir, "package.json"), "utf8"),
+        await fs.readFile(path.join(workspaceRoot, "package.json"), "utf8"),
       ) as { dependencies: Record<string, string> };
       for (const [pkg, declared] of Object.entries(manifest.dependencies)) {
         const version = resolveTo(pkg, declared);
-        const root = path.join(installDir, "node_modules", ...pkg.split("/"));
+        const root = path.join(workspaceRoot, "node_modules", ...pkg.split("/"));
         await fs.mkdir(root, { recursive: true });
         await fs.writeFile(
           path.join(root, "package.json"),
           JSON.stringify({ name: pkg, version }),
           "utf8",
         );
+      }
+      return { ok: true };
+    },
+  };
+}
+
+/** Simulates `bun update <pkg...>` by re-materializing only the named packages. */
+function fakeBunUpdate(resolveTo: (pkg: string) => string): {
+  runner: BunUpdateRunner;
+  calls: string[][];
+} {
+  const calls: string[][] = [];
+  return {
+    calls,
+    runner: async (workspaceRoot, packages) => {
+      calls.push(packages);
+      for (const pkg of packages) {
+        const version = resolveTo(pkg);
+        const root = path.join(workspaceRoot, "node_modules", ...pkg.split("/"));
+        await fs.mkdir(root, { recursive: true });
         await fs.writeFile(
-          path.join(installDir, "bun.lock"),
-          `{\n  "packages": {\n    "${pkg}": ["${pkg}@${version}", "", {}, "sha512-fake-${version}"],\n  }\n}`,
+          path.join(root, "package.json"),
+          JSON.stringify({ name: pkg, version }),
           "utf8",
         );
       }
@@ -61,7 +80,7 @@ const declaration = (overrides: Partial<PluginDeclaration> = {}): PluginDeclarat
 });
 
 describe("installDeclaredPlugins", () => {
-  test("fresh declaration installs and records a pin with integrity", async () => {
+  test("fresh declaration installs into the shared workspace", async () => {
     const companionPath = await makeTempDir("plugin-install-fresh-");
     const { runner } = fakeBunInstall(() => "1.2.0");
 
@@ -72,15 +91,16 @@ describe("installDeclaredPlugins", () => {
     expect(results).toEqual([
       { package: "@acme/custom-plugin", status: "installed", resolvedVersion: "1.2.0" },
     ]);
-    const pins = await new PluginPinStore(companionPath).load();
-    expect(pins.plugins).toEqual([
-      {
-        package: "@acme/custom-plugin",
-        declaredVersion: "^1.0.0",
-        resolvedVersion: "1.2.0",
-        integrity: "sha512-fake-1.2.0",
-      },
-    ]);
+    const manifest = JSON.parse(
+      await fs.readFile(
+        path.join(dynamicPluginsWorkspaceRoot(companionPath), "package.json"),
+        "utf8",
+      ),
+    ) as { private: boolean; dependencies: Record<string, string> };
+    expect(manifest).toEqual({
+      private: true,
+      dependencies: { "@acme/custom-plugin": "^1.0.0" },
+    });
     const installed = JSON.parse(
       await fs.readFile(
         path.join(pluginPackageRoot(companionPath, "@acme/custom-plugin"), "package.json"),
@@ -90,14 +110,37 @@ describe("installDeclaredPlugins", () => {
     expect(installed.version).toBe("1.2.0");
   });
 
-  test("matching pin and installed tree are left untouched", async () => {
-    const companionPath = await makeTempDir("plugin-install-pinned-");
-    const first = fakeBunInstall(() => "1.2.0");
-    await installDeclaredPlugins(companionPath, [declaration()], {
-      runBunInstall: first.runner,
-    });
+  test("multiple declared plugins install together in a single run", async () => {
+    const companionPath = await makeTempDir("plugin-install-multi-");
+    const { runner, calls } = fakeBunInstall((pkg) => (pkg === "@acme/a" ? "1.0.0" : "2.0.0"));
 
-    // A newer version exists now, but the pinned range must stay put.
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [declaration({ package: "@acme/b", version: "^2.0.0" }), declaration({ package: "@acme/a" })],
+      { runBunInstall: runner },
+    );
+
+    expect(calls.length).toBe(1);
+    expect(results).toEqual([
+      { package: "@acme/a", status: "installed", resolvedVersion: "1.0.0" },
+      { package: "@acme/b", status: "installed", resolvedVersion: "2.0.0" },
+    ]);
+    const manifest = JSON.parse(
+      await fs.readFile(
+        path.join(dynamicPluginsWorkspaceRoot(companionPath), "package.json"),
+        "utf8",
+      ),
+    ) as { dependencies: Record<string, string> };
+    // Sorted by package name for a stable diff.
+    expect(Object.keys(manifest.dependencies)).toEqual(["@acme/a", "@acme/b"]);
+  });
+
+  test("unchanged declarations are left untouched", async () => {
+    const companionPath = await makeTempDir("plugin-install-unchanged-");
+    const first = fakeBunInstall(() => "1.2.0");
+    await installDeclaredPlugins(companionPath, [declaration()], { runBunInstall: first.runner });
+
+    // A newer version exists now, but the declared range must stay put.
     const second = fakeBunInstall(() => "1.3.0");
     const results = await installDeclaredPlugins(companionPath, [declaration()], {
       runBunInstall: second.runner,
@@ -109,29 +152,49 @@ describe("installDeclaredPlugins", () => {
     ]);
   });
 
-  test("latest re-resolves on every run", async () => {
+  test("latest re-resolves via bun update on every run, even when nothing else changed", async () => {
     const companionPath = await makeTempDir("plugin-install-latest-");
     const decl = declaration({ version: "latest" });
     await installDeclaredPlugins(companionPath, [decl], {
       runBunInstall: fakeBunInstall(() => "1.2.0").runner,
     });
 
-    const second = fakeBunInstall(() => "1.3.0");
+    const install = fakeBunInstall(() => "1.2.0");
+    const update = fakeBunUpdate(() => "1.3.0");
     const results = await installDeclaredPlugins(companionPath, [decl], {
-      runBunInstall: second.runner,
+      runBunInstall: install.runner,
+      runBunUpdate: update.runner,
     });
 
-    expect(second.calls.length).toBe(1);
-    expect(results[0]).toEqual({
-      package: "@acme/custom-plugin",
-      status: "installed",
-      resolvedVersion: "1.3.0",
-    });
-    const pins = await new PluginPinStore(companionPath).load();
-    expect(pins.plugins[0]?.resolvedVersion).toBe("1.3.0");
+    expect(update.calls).toEqual([["@acme/custom-plugin"]]);
+    expect(results).toEqual([
+      { package: "@acme/custom-plugin", status: "installed", resolvedVersion: "1.3.0" },
+    ]);
   });
 
-  test("edited declared version invalidates the pin and re-resolves", async () => {
+  test("bun update only targets the latest-declared subset", async () => {
+    const companionPath = await makeTempDir("plugin-install-latest-subset-");
+    const pinned = declaration({ package: "@acme/pinned", version: "^1.0.0" });
+    const latest = declaration({ package: "@acme/latest", version: "latest" });
+    await installDeclaredPlugins(companionPath, [pinned, latest], {
+      runBunInstall: fakeBunInstall(() => "1.0.0").runner,
+    });
+
+    const install = fakeBunInstall(() => "1.0.0");
+    const update = fakeBunUpdate(() => "1.1.0");
+    const results = await installDeclaredPlugins(companionPath, [pinned, latest], {
+      runBunInstall: install.runner,
+      runBunUpdate: update.runner,
+    });
+
+    expect(update.calls).toEqual([["@acme/latest"]]);
+    expect(results).toEqual([
+      { package: "@acme/latest", status: "installed", resolvedVersion: "1.1.0" },
+      { package: "@acme/pinned", status: "installed", resolvedVersion: "1.0.0" },
+    ]);
+  });
+
+  test("edited declared version invalidates the diff and re-resolves", async () => {
     const companionPath = await makeTempDir("plugin-install-edited-");
     await installDeclaredPlugins(companionPath, [declaration({ version: "^1.0.0" })], {
       runBunInstall: fakeBunInstall(() => "1.2.0").runner,
@@ -141,23 +204,19 @@ describe("installDeclaredPlugins", () => {
     const results = await installDeclaredPlugins(
       companionPath,
       [declaration({ version: "^2.0.0" })],
-      {
-        runBunInstall: second.runner,
-      },
+      { runBunInstall: second.runner },
     );
 
     expect(second.calls.length).toBe(1);
     expect(results[0]?.resolvedVersion).toBe("2.1.0");
-    const pins = await new PluginPinStore(companionPath).load();
-    expect(pins.plugins[0]).toMatchObject({ declaredVersion: "^2.0.0", resolvedVersion: "2.1.0" });
   });
 
-  test("missing installed tree with a matching pin reinstalls", async () => {
+  test("missing installed tree reinstalls even though the manifest is unchanged", async () => {
     const companionPath = await makeTempDir("plugin-install-repair-");
     await installDeclaredPlugins(companionPath, [declaration()], {
       runBunInstall: fakeBunInstall(() => "1.2.0").runner,
     });
-    await fs.rm(pluginInstallDir(companionPath, "@acme/custom-plugin"), {
+    await fs.rm(pluginPackageRoot(companionPath, "@acme/custom-plugin"), {
       recursive: true,
       force: true,
     });
@@ -171,7 +230,7 @@ describe("installDeclaredPlugins", () => {
     expect(results[0]?.status).toBe("installed");
   });
 
-  test("failed install reports the failure and records no pin", async () => {
+  test("failed install reports the failure for every declared plugin", async () => {
     const companionPath = await makeTempDir("plugin-install-failed-");
     const results = await installDeclaredPlugins(companionPath, [declaration()], {
       runBunInstall: async () => ({ ok: false, detail: "registry unreachable" }),
@@ -179,21 +238,35 @@ describe("installDeclaredPlugins", () => {
 
     expect(results[0]?.status).toBe("failed");
     expect(results[0]?.error).toContain("registry unreachable");
-    const pins = await new PluginPinStore(companionPath).load();
-    expect(pins.plugins).toEqual([]);
   });
 
-  test("pins for undeclared packages are pruned", async () => {
+  test("undeclared packages are pruned from the shared workspace on the next run", async () => {
     const companionPath = await makeTempDir("plugin-install-prune-");
     await installDeclaredPlugins(companionPath, [declaration()], {
       runBunInstall: fakeBunInstall(() => "1.2.0").runner,
     });
 
-    await installDeclaredPlugins(companionPath, [], {
-      runBunInstall: fakeBunInstall(() => "9.9.9").runner,
-    });
+    const second = fakeBunInstall(() => "9.9.9");
+    await installDeclaredPlugins(companionPath, [], { runBunInstall: second.runner });
 
-    const pins = await new PluginPinStore(companionPath).load();
-    expect(pins.plugins).toEqual([]);
+    expect(second.calls.length).toBe(1);
+    const manifest = JSON.parse(
+      await fs.readFile(
+        path.join(dynamicPluginsWorkspaceRoot(companionPath), "package.json"),
+        "utf8",
+      ),
+    ) as { dependencies: Record<string, string> };
+    expect(manifest.dependencies).toEqual({});
+  });
+
+  test("no declared plugins and no prior workspace is a no-op", async () => {
+    const companionPath = await makeTempDir("plugin-install-empty-");
+    const { runner, calls } = fakeBunInstall(() => "1.0.0");
+
+    const results = await installDeclaredPlugins(companionPath, [], { runBunInstall: runner });
+
+    expect(results).toEqual([]);
+    expect(calls).toEqual([]);
+    await expect(fs.access(dynamicPluginsWorkspaceRoot(companionPath))).rejects.toThrow();
   });
 });

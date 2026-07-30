@@ -96,7 +96,27 @@ export async function deployMateSkillDir(src: string, dest: string): Promise<voi
   }
 }
 
-export async function applyMateSkills(skillsDir: string): Promise<void> {
+const DEFAULT_MATE_SKILLS_BUCKET = "agents";
+
+/**
+ * A skill's source lives under a provider bucket so its folder name always
+ * matches its `name:` frontmatter: `<tool>/<skill>/` when that tool needs its
+ * own behavior (e.g. Claude Code always confirms before `mate artifact
+ * finish` pushes, since a push is a shared-state action), falling back to
+ * `agents/<skill>/` — the shared default every other tool (e.g. opencode,
+ * which pushes automatically) uses.
+ */
+async function resolveMateSkillSource(skill: string, tool: string): Promise<string> {
+  const providerDir = path.join(MATE_SKILLS_SOURCE, tool, skill);
+  try {
+    await fs.access(providerDir);
+    return providerDir;
+  } catch {
+    return path.join(MATE_SKILLS_SOURCE, DEFAULT_MATE_SKILLS_BUCKET, skill);
+  }
+}
+
+export async function applyMateSkills(skillsDir: string, tool: string): Promise<void> {
   for (const skill of MATE_SKILLS) {
     const destination = path.join(skillsDir, skill);
     if (skill === "mate-create-report") {
@@ -107,7 +127,7 @@ export async function applyMateSkills(skillsDir: string): Promise<void> {
         "utf8",
       );
     } else {
-      await deployMateSkillDir(path.join(MATE_SKILLS_SOURCE, skill), destination);
+      await deployMateSkillDir(await resolveMateSkillSource(skill, tool), destination);
     }
   }
 }

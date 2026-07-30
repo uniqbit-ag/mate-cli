@@ -131,6 +131,13 @@ describe("mate-v1 schema", () => {
     expect(raw).toContain("Prefer single-repository specs");
     expect(raw).toContain("no scope semantics");
     expect(raw).toContain("never from the capability name");
+    expect(raw).toContain("area: apps/storefront");
+    expect(raw).not.toContain("area: apps/storefront/src");
+    expect(raw).toContain(
+      "the directory containing that package's manifest (`package.json`, `Cargo.toml`, `go.mod`, etc.) nearest the affected path",
+    );
+    expect(raw).toContain("not `acme/src/sub-1/sub-2` or `apps/storefront/src/features/checkout`");
+    expect(raw).toContain("collapse `apps/storefront/src/features/checkout` to `apps/storefront`");
     expect(proposal).toContain("scopes:");
     expect(proposal).toContain("type: change-proposal");
     expect(proposal).toContain("status: active");

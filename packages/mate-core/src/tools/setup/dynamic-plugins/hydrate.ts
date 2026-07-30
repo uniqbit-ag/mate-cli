@@ -11,7 +11,6 @@ import { PLUGIN_DECLARATION_POLICIES } from "../../../lib/orchestrator/config-st
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
 import type { PluginRegistry } from "../registry";
 import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
-import { PluginPinStore } from "./pin-store";
 
 // Packages already registered in this process; re-hydration (e.g. right after
 // an install inside the same run) only picks up plugins that failed before.
@@ -117,7 +116,6 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
     const entries = await readDeclarations(companionPath);
     if (entries.length === 0) return;
 
-    const pins = (await new PluginPinStore(companionPath).load()).plugins;
     const registry = deps.registry ?? getActiveDistribution().registry;
 
     for (const entry of entries) {
@@ -129,7 +127,7 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
       if (hydratedPackages.has(declaration.package)) continue;
 
       // oxlint-disable-next-line no-await-in-loop -- declared order is part of the contract
-      const result = await loadDynamicPlugin(companionPath, declaration, pins, deps);
+      const result = await loadDynamicPlugin(companionPath, declaration, deps);
       if (!result.ok) {
         warn(result.warning);
         continue;

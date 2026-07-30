@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -12,14 +13,9 @@ import {
   type CreatePlugin,
   type PluginHost,
 } from "./host";
-import { pluginPackageRoot } from "./paths";
-import type { PluginPin } from "./pin-store";
+import { dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
 
 interface PluginManifest {
-  version?: string;
-  main?: string;
-  module?: string;
-  exports?: unknown;
   mate?: { pluginApiVersion?: unknown };
 }
 
@@ -43,30 +39,17 @@ function commandName(): string {
   }
 }
 
-function resolveEntryFromExports(exportsField: unknown): string | undefined {
-  if (typeof exportsField === "string") return exportsField;
-  if (!isRecord(exportsField)) return undefined;
-  const dot = "." in exportsField ? exportsField["."] : exportsField;
-  if (typeof dot === "string") return dot;
-  if (!isRecord(dot)) return undefined;
-  for (const condition of ["bun", "import", "default", "require"]) {
-    const candidate = dot[condition];
-    if (typeof candidate === "string") return candidate;
-    if (isRecord(candidate) && typeof candidate.default === "string") return candidate.default;
-  }
-  return undefined;
-}
-
 /**
- * Loads one declared plugin from its installed tree: pin verification, API
- * version gate before import, dynamic import, factory resolution, effective
- * config, factory invocation. Every failure class returns a single warning
- * instead of throwing, so one broken plugin never takes down the CLI.
+ * Loads one declared plugin from the shared workspace: installed-presence
+ * check, API version gate before import, entry-point resolution via the
+ * shared workspace's own module resolver, dynamic import, factory
+ * resolution, effective config, factory invocation. Every failure class
+ * returns a single warning instead of throwing, so one broken plugin never
+ * takes down the CLI.
  */
 export async function loadDynamicPlugin(
   companionPath: string,
   declaration: PluginDeclaration,
-  pins: PluginPin[],
   deps: DynamicPluginLoadDeps = {},
 ): Promise<DynamicPluginLoadResult> {
   const name = declaration.package;
@@ -81,26 +64,6 @@ export async function loadDynamicPlugin(
     return {
       ok: false,
       warning: `plugin "${name}" is not installed; run \`${commandName()} install\`.`,
-    };
-  }
-
-  const pin = pins.find((candidate) => candidate.package === name);
-  if (!pin) {
-    return {
-      ok: false,
-      warning: `plugin "${name}" has no recorded pin; run \`${commandName()} install\`.`,
-    };
-  }
-  if (pin.declaredVersion !== declaration.version) {
-    return {
-      ok: false,
-      warning: `plugin "${name}" declares version "${declaration.version}" but was pinned from "${pin.declaredVersion}"; run \`${commandName()} install\`.`,
-    };
-  }
-  if (manifest.version !== pin.resolvedVersion) {
-    return {
-      ok: false,
-      warning: `plugin "${name}" has version ${manifest.version ?? "unknown"} installed but ${pin.resolvedVersion} pinned; run \`${commandName()} install\`.`,
     };
   }
 
@@ -121,9 +84,19 @@ export async function loadDynamicPlugin(
     };
   }
 
-  const entryRelative =
-    resolveEntryFromExports(manifest.exports) ?? manifest.module ?? manifest.main ?? "index.js";
-  const entryPath = path.resolve(packageRoot, entryRelative);
+  let entryPath: string;
+  try {
+    const workspaceRequire = createRequire(
+      pathToFileURL(path.join(dynamicPluginsWorkspaceRoot(companionPath), "package.json")),
+    );
+    entryPath = workspaceRequire.resolve(name);
+  } catch (error) {
+    return {
+      ok: false,
+      warning: `plugin "${name}" could not be resolved: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
   const importModule =
     deps.importModule ??
     ((specifier: string) => import(specifier) as Promise<Record<string, unknown>>);

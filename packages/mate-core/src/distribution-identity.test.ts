@@ -196,7 +196,11 @@ describe("default mate distribution output", () => {
 describe("skill template deploy substitution", () => {
   const SKILL_TEMPLATE_DIR = path.join(
     import.meta.dirname,
-    "templates/capabilities/openspec-cap/mate-skills/mate-artifact-finish",
+    "templates/capabilities/openspec-cap/mate-skills/agents/mate-artifact-finish",
+  );
+  const SKILL_TEMPLATE_DIR_CLAUDE = path.join(
+    import.meta.dirname,
+    "templates/capabilities/openspec-cap/mate-skills/claude/mate-artifact-finish",
   );
 
   test("substitutes the placeholder and byte-copies placeholder-free files", async () => {
@@ -255,5 +259,46 @@ describe("skill template deploy substitution", () => {
     const skill = await fs.readFile(path.join(dest, "SKILL.md"), "utf8");
     expect(skill).toContain("`mate artifact finish`");
     expect(skill).not.toContain("{{MATE_COMMAND}}");
+  });
+
+  test("the Claude variant of the skill template deploys without unsubstituted placeholders", async () => {
+    useDistribution("acme");
+    const dest = await makeTempDir("acme-skill-template-claude-");
+    await deployMateSkillDir(SKILL_TEMPLATE_DIR_CLAUDE, dest);
+
+    const files: string[] = [];
+    async function walk(dir: string): Promise<void> {
+      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+        const entryPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(entryPath);
+        } else {
+          files.push(entryPath);
+        }
+      }
+    }
+    await walk(dest);
+    expect(files.length).toBeGreaterThan(0);
+
+    for (const file of files) {
+      expect(await fs.readFile(file, "utf8")).not.toContain("{{MATE_COMMAND}}");
+    }
+    const skill = await fs.readFile(path.join(dest, "SKILL.md"), "utf8");
+    expect(skill).toContain("acme artifact finish");
+    expect(skill).toContain("--no-push");
+  });
+
+  test("the Claude variant always confirms before finishing; the default variant never does", async () => {
+    const claudeDest = await makeTempDir("mate-skill-template-claude-");
+    await deployMateSkillDir(SKILL_TEMPLATE_DIR_CLAUDE, claudeDest);
+    const claudeSkill = await fs.readFile(path.join(claudeDest, "SKILL.md"), "utf8");
+    expect(claudeSkill).toContain("Always ask before finishing completely");
+    expect(claudeSkill).toContain("--no-push");
+
+    const defaultDest = await makeTempDir("mate-skill-template-default-");
+    await deployMateSkillDir(SKILL_TEMPLATE_DIR, defaultDest);
+    const defaultSkill = await fs.readFile(path.join(defaultDest, "SKILL.md"), "utf8");
+    expect(defaultSkill).not.toContain("Always ask before finishing completely");
+    expect(defaultSkill).toContain('artifact finish "<artifact-name>" --json\n');
   });
 });

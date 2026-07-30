@@ -372,6 +372,20 @@ describe("createOpenspecPlugin", () => {
         ).resolves.toContain(skill === "mate-create-report" ? "report --input" : "artifact finish");
       }
     }
+
+    // Claude Code always confirms with the user before the finish pipeline
+    // commits, tags, and pushes; other tools do it in one unattended call.
+    const claudeSkill = await fs.readFile(
+      path.join(root, ".claude", "skills", "mate-artifact-finish", "SKILL.md"),
+      "utf8",
+    );
+    expect(claudeSkill).toContain("Always ask before finishing completely");
+    const opencodeSkill = await fs.readFile(
+      path.join(root, ".opencode", "skills", "mate-artifact-finish", "SKILL.md"),
+      "utf8",
+    );
+    expect(opencodeSkill).not.toContain("Always ask before finishing completely");
+    expect(opencodeSkill).toContain('artifact finish "<artifact-name>" --json\n');
   });
 
   test("installs the Claude openspec auto-finish hook", async () => {
