@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import type { CapabilityPlugin, Plugin, SetupContext } from "./plugin";
 import { PluginRegistry } from "./registry";
 import { createGitignorePlugin } from "./plugins/gitignore";
@@ -230,7 +230,7 @@ describe("SetupContext — activeProviders", () => {
 
 describe("GitignorePlugin", () => {
   function makeGitignorePlugin(plugins: Plugin[]) {
-    return createGitignorePlugin(frameworkConfig.name, () => plugins);
+    return createGitignorePlugin(FRAMEWORK_NAME, () => plugins);
   }
 
   test("active plugins contribute gitignore entries, inactive do not", async () => {
@@ -265,8 +265,8 @@ describe("GitignorePlugin", () => {
 
   test("teardown removes managed block entirely", async () => {
     const root = await makeTempDir("mate-gi-teardown-");
-    const start = `# ${frameworkConfig.name} managed: start`;
-    const end = `# ${frameworkConfig.name} managed: end`;
+    const start = `# ${FRAMEWORK_NAME} managed: start`;
+    const end = `# ${FRAMEWORK_NAME} managed: end`;
     await fs.writeFile(
       path.join(root, ".gitignore"),
       `node_modules/\n\n${start}\n.venv/\n${end}\n`,

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { ConfigStore } from "../../lib/orchestrator/config-store";
 import { runSetupCommand, runSetupCommandWithDeps, setupCommandDeps } from "./setup";
 import type { SetupSelections } from "../../lib/orchestrator/setup-compatibilities";
@@ -84,7 +84,7 @@ describe("runSetupCommandWithDeps", () => {
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(executeMock).not.toHaveBeenCalled();
     expect(String(error)).toContain("EXIT:1");
-    await expect(fs.access(path.join(cwd, `.${frameworkConfig.name}`))).rejects.toThrow();
+    await expect(fs.access(path.join(cwd, `.${FRAMEWORK_NAME}`))).rejects.toThrow();
   });
 
   test("skips confirmation for existing companions", async () => {
@@ -405,7 +405,7 @@ describe("runSetupCommandWithDeps", () => {
     const cwd = await makeTempDir("mate-setup-cli-linked-no-flags-");
     const companionPath = await makeTempDir("mate-setup-cli-linked-no-flags-companion-");
     await new ConfigStore(
-      path.join(companionPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
     ).save({
       type: "companion",
       profiles: { default: { name: "default", allowedAgents: ["opencode"] } },
@@ -462,7 +462,7 @@ describe("runSetupCommandWithDeps", () => {
     const cwd = await makeTempDir("mate-setup-cli-linked-non-capability-flags-");
     const companionPath = await makeTempDir("mate-setup-cli-linked-non-capability-companion-");
     await new ConfigStore(
-      path.join(companionPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
     ).save({
       type: "companion",
       profiles: { default: { name: "default", allowedAgents: ["claude"] } },
@@ -505,7 +505,7 @@ describe("runSetupCommandWithDeps", () => {
     const cwd = await makeTempDir("mate-setup-cli-linked-schema-only-");
     const companionPath = await makeTempDir("mate-setup-cli-linked-schema-companion-");
     await new ConfigStore(
-      path.join(companionPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
     ).save({
       type: "companion",
       profiles: { default: { name: "default", allowedAgents: ["claude"] } },

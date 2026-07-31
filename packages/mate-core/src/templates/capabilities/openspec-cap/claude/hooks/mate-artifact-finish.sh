@@ -146,10 +146,9 @@ const change = extractArchiveCommand(command) || extractMoveCommand(command);
 if (!change) process.exit(0);
 if (isClearFailure(input.tool_response)) process.exit(0);
 
-const mateCommand = process.env.MATE_COMMAND || "mate";
 const context =
   "OpenSpec change " + change + " was just archived. Invoke the mate-artifact-finish " +
-  "skill, then run `" + mateCommand + " artifact finish \"" + change + "\" --json` to complete the " +
+  "skill, then run `mate artifact finish \"" + change + "\" --json` to complete the " +
   "finish workflow (commit, tag, and push).";
 process.stdout.write(JSON.stringify({
   hookSpecificOutput: {

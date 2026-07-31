@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { version } from "../../../../package.json";
 import { isCommandOnPath } from "../../fs-utils";
-import { FRAMEWORK_NAME, frameworkCommandName } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { getReactDoctorBinPath, getWrapperBinPath } from "../../package-paths";
 import {
   GRAPHIFY_OUTPUT_SUBDIR,
@@ -78,7 +78,6 @@ export abstract class LaunchAdapter {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       MATE_NAME: FRAMEWORK_NAME,
-      MATE_COMMAND: frameworkCommandName(),
       MATE_VERSION: version,
       MATE_ARTIFACT_PATH: context.companionPath,
       MATE_WRAPPER_BIN_PATH: wrapperBinPath,
@@ -149,7 +148,7 @@ export abstract class LaunchAdapter {
         command: this.toolName,
         args: builtArgs,
         env,
-        warning: `${frameworkCommandName()}: headroom capability enabled but \`headroom\` was not found on PATH; install with \`uv tool install "headroom-ai[all]"\`; launching ${this.toolName} directly\n`,
+        warning: `${FRAMEWORK_NAME}: headroom capability enabled but \`headroom\` was not found on PATH; install with \`uv tool install "headroom-ai[all]"\`; launching ${this.toolName} directly\n`,
       };
     }
 
@@ -183,7 +182,7 @@ export abstract class LaunchAdapter {
           command: this.toolName,
           args: builtArgs,
           env,
-          warning: `${frameworkCommandName()}: headroom proxy failed to become ready on port ${port} after ${maxProxyStartAttempts} attempts; launching ${this.toolName} directly${errorDetail}\n`,
+          warning: `${FRAMEWORK_NAME}: headroom proxy failed to become ready on port ${port} after ${maxProxyStartAttempts} attempts; launching ${this.toolName} directly${errorDetail}\n`,
         };
       }
     }

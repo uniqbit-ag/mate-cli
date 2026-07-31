@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { GlobalConfigStore } from "./global-config-store";
 import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
 import { inspectSetupPreflight, looksLikeWorkingRepo } from "./setup-preflight";
@@ -57,11 +57,11 @@ describe("inspectSetupPreflight", () => {
 
   test("prefers linked-working-repo over stray local companion config", async () => {
     const { repositoryPath, globalConfigStore } = await createLinkedRepoFixture();
-    await fs.mkdir(path.join(repositoryPath, `.${frameworkConfig.name}`, "config"), {
+    await fs.mkdir(path.join(repositoryPath, `.${FRAMEWORK_NAME}`, "config"), {
       recursive: true,
     });
     await fs.writeFile(
-      path.join(repositoryPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(repositoryPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
       "utf8",
     );
@@ -73,11 +73,11 @@ describe("inspectSetupPreflight", () => {
 
   test("prefers existing-companion over linked-working-repo when directory is a registered companion", async () => {
     const { repositoryPath, globalConfigStore } = await createLinkedRepoFixture();
-    await fs.mkdir(path.join(repositoryPath, `.${frameworkConfig.name}`, "config"), {
+    await fs.mkdir(path.join(repositoryPath, `.${FRAMEWORK_NAME}`, "config"), {
       recursive: true,
     });
     await fs.writeFile(
-      path.join(repositoryPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(repositoryPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
       "utf8",
     );
@@ -101,9 +101,9 @@ describe("inspectSetupPreflight", () => {
 
   test("recognizes an existing companion repository from local config", async () => {
     const root = await makeTempDir("mate-existing-companion-");
-    await fs.mkdir(path.join(root, `.${frameworkConfig.name}`, "config"), { recursive: true });
+    await fs.mkdir(path.join(root, `.${FRAMEWORK_NAME}`, "config"), { recursive: true });
     await fs.writeFile(
-      path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
       "utf8",
     );

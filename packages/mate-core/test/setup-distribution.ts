@@ -41,8 +41,6 @@ function buildTestPluginEntries(): PluginRegistration[] {
 
 setFallbackDistribution(() => ({
   config: {
-    name: "mate",
-    legacyNames: ["kizuna", "axon"],
     runtime: "bun",
     version,
   },

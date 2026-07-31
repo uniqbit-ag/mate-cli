@@ -1,5 +1,5 @@
 import { getActiveDistribution } from "../distribution";
-import { frameworkCommandName } from "../framework";
+import { FRAMEWORK_NAME } from "../framework";
 import {
   enforceUpdateIfRequired,
   scheduleBackgroundCheck,
@@ -92,10 +92,8 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     if (needs.install) {
       const preflight = await deps.inspectInstallPreflight();
       if (!preflight.ok) {
-        console.error(
-          `${frameworkCommandName()}: ${preflight.reason ?? "installation is incomplete"}`,
-        );
-        console.error(`Run \`${frameworkCommandName()} install\` before continuing.`);
+        console.error(`${FRAMEWORK_NAME}: ${preflight.reason ?? "installation is incomplete"}`);
+        console.error(`Run \`${FRAMEWORK_NAME} install\` before continuing.`);
         process.exitCode = 1;
         return false;
       }

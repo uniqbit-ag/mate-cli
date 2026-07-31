@@ -2,7 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { frameworkCommandName } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { getWrapperBinPath } from "../../../lib/package-paths";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
@@ -57,11 +57,7 @@ const MANAGED_HOOK_MARKERS = [
 // every file. Claude Code ignores `Glob()` rules for file-permission checks
 // (only Read/Edit rules gate file tools), so no Glob entry is emitted.
 function getBaseManagedPermissionEntries(companionPath: string): string[] {
-  return [
-    `Bash(${frameworkCommandName()}:*)`,
-    `Read(${companionPath}/**)`,
-    `Edit(${companionPath}/**)`,
-  ];
+  return [`Bash(${FRAMEWORK_NAME}:*)`, `Read(${companionPath}/**)`, `Edit(${companionPath}/**)`];
 }
 
 const LEGACY_MANAGED_PERMISSION_ENTRIES = [
@@ -80,14 +76,14 @@ function getCapabilityPermissionEntries(): Record<string, string[]> {
       "Skill(openspec-archive-change)",
       "Skill(mate-artifact-finish)",
       "Bash(openspec:*)",
-      `Bash(${frameworkCommandName()} cap graphify:*)`,
+      `Bash(${FRAMEWORK_NAME} cap graphify:*)`,
       `Bash(${path.join(wrapperBinPath, "openspec")}:*)`,
     ],
     rtk: ["Bash(rtk:*)"],
     graphify: [
       "Skill(graphify)",
       "Bash(graphify:*)",
-      `Bash(${frameworkCommandName()} cap graphify:*)`,
+      `Bash(${FRAMEWORK_NAME} cap graphify:*)`,
       `Bash(${path.join(wrapperBinPath, "graphify")}:*)`,
     ],
     "react-doctor": [

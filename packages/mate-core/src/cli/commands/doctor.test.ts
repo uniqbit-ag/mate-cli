@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import packageJson from "../../../package.json";
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { ConfigStore, RTK_CAPABILITY_SPLIT_MIGRATION } from "../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
@@ -59,7 +59,7 @@ async function setupCompanion(
   const companionPath = path.join(root, "companion");
   await fs.mkdir(companionPath, { recursive: true });
 
-  const configDir = path.join(companionPath, `.${frameworkConfig.name}`, "config");
+  const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   const configStore = new ConfigStore(path.join(configDir, "framework.yaml"));
   await configStore.save(config);
   await writeRepoLocalRegistryEntry(
@@ -172,7 +172,7 @@ describe("runDoctorCommand", () => {
 
   test("reports companion repository state for a local companion config", async () => {
     const root = await makeTempDir("doctor-companion-");
-    const localConfigPath = path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
     await fs.writeFile(
       localConfigPath,
@@ -195,7 +195,7 @@ describe("runDoctorCommand", () => {
     const { createMate } = await import("../../create-mate");
     const { resetActiveDistribution } = await import("../../distribution");
     const root = await makeTempDir("doctor-required-drift-");
-    const localConfigPath = path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
     await fs.writeFile(
       localConfigPath,
@@ -206,8 +206,6 @@ describe("runDoctorCommand", () => {
 
     createMate({
       config: {
-        name: "mate",
-        legacyNames: [],
         runtime: "bun",
         version: "1.0.0",
       },
@@ -243,7 +241,7 @@ describe("runDoctorCommand", () => {
     const { createMate } = await import("../../create-mate");
     const { resetActiveDistribution } = await import("../../distribution");
     const root = await makeTempDir("doctor-required-healthy-");
-    const localConfigPath = path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
     await fs.writeFile(
       localConfigPath,
@@ -254,8 +252,6 @@ describe("runDoctorCommand", () => {
 
     createMate({
       config: {
-        name: "mate",
-        legacyNames: [],
         runtime: "bun",
         version: "1.0.0",
       },

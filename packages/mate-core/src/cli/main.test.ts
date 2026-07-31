@@ -285,7 +285,7 @@ describe("plugin CLI commands", () => {
 
   function activate(...plugins: Plugin[]): void {
     setActiveDistribution({
-      config: { name: "acme-mate", runtime: "bun", version: "1.0.0" },
+      config: { runtime: "bun", version: "1.0.0" },
       registry: new PluginRegistry(plugins),
     });
   }
@@ -380,7 +380,7 @@ describe("plugin CLI commands", () => {
     try {
       await main(["node", "mate", "cap", "acme", "nope"], okDeps);
       expect(errors[0]).toBe("Unknown command: cap acme nope");
-      expect(errors[1]).toContain("acme-mate cap acme mcp");
+      expect(errors[1]).toContain("mate cap acme mcp");
       expect(process.exitCode).toBe(1);
     } finally {
       errorSpy.mockRestore();

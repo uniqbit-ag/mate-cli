@@ -1,4 +1,4 @@
-import { frameworkCommandName } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { FrameworkLauncher } from "../../../lib/orchestrator/launcher";
 import {
   LaunchPreflightError,
@@ -43,7 +43,7 @@ export function parseLaunchArgs(argv: string[]): ParsedLaunchArgs | null {
   const agentArgs = separatorIndex >= 0 ? argv.slice(separatorIndex + 1) : [];
 
   for (const arg of optionArgs) {
-    process.stderr.write(`${frameworkCommandName()}: unknown launch option: ${arg}\n`);
+    process.stderr.write(`${FRAMEWORK_NAME}: unknown launch option: ${arg}\n`);
     process.exitCode = 1;
     return null;
   }
@@ -109,7 +109,7 @@ export async function runLaunchToolCommand(
 
     if (error instanceof ToolNotAllowedError) {
       process.stderr.write(
-        `${frameworkCommandName()}: \`${tool}\` is disallowed by active repository policy.\n`,
+        `${FRAMEWORK_NAME}: \`${tool}\` is disallowed by active repository policy.\n`,
       );
       process.exitCode = 1;
       return;
@@ -117,7 +117,7 @@ export async function runLaunchToolCommand(
 
     if (error instanceof RepositoryNotSelectedError) {
       process.stderr.write(`${error.message}\n`);
-      process.stderr.write(`Run \`${frameworkCommandName()} companion link\` first.\n`);
+      process.stderr.write(`Run \`${FRAMEWORK_NAME} companion link\` first.\n`);
       process.exitCode = 1;
       return;
     }

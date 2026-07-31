@@ -1,7 +1,7 @@
 import type { PluginRegistry } from "./tools/setup/registry";
 
 export interface DistributionUpdateConfig {
-  /** npm package whose versions are checked and installed by `mate update`. Defaults to `@uniqbit/<name>`. */
+  /** npm package whose versions are checked and installed by `mate update`. Defaults to `@uniqbit/mate`. */
   packageName?: string;
   /** npm registry used for update checks and downloads. Defaults to public npm. */
   registry?: string;
@@ -14,15 +14,13 @@ export interface DistributionUpdateConfig {
   enforce?: boolean;
 }
 
-/** Identity and version of the distribution assembled through `createMate`. */
+/** Version and plugin registry of the distribution assembled through `createMate`. */
 export interface DistributionConfig {
-  name: string;
-  legacyNames?: string[];
   runtime: "bun";
   version: string;
   /** Asset directories that override the framework defaults, highest precedence first. */
   assetRoots?: string[];
-  /** Optional update source; defaults to `@uniqbit/<name>` on public npm. */
+  /** Optional update source; defaults to `@uniqbit/mate` on public npm. */
   update?: DistributionUpdateConfig;
 }
 

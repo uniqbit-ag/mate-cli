@@ -8,7 +8,7 @@ import {
   runCompanionLinkCommandWithDeps,
 } from "./link";
 import type { LinkedRepository } from "../../../lib/orchestrator/types";
-import { frameworkConfig } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import * as editor from "../../../lib/orchestrator/editor";
 
 function withProcessExitStub<T>(fn: () => Promise<T>): Promise<{ error: unknown }> {
@@ -636,17 +636,17 @@ describe("runCompanionLinkCommandWithDeps", () => {
     console.log = (msg?: unknown) => logs.push(String(msg ?? ""));
 
     try {
-      await fs.mkdir(path.join(companionPath, `.${frameworkConfig.name}`, "config"), {
+      await fs.mkdir(path.join(companionPath, `.${FRAMEWORK_NAME}`, "config"), {
         recursive: true,
       });
       await fs.mkdir(workingPath, { recursive: true });
       await fs.writeFile(
-        path.join(companionPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+        path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
         "type: companion\nprofiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
         "utf8",
       );
       await fs.writeFile(
-        path.join(companionPath, `.${frameworkConfig.name}`, "config", "registry.yaml"),
+        path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml"),
         "repos: []\n",
         "utf8",
       );
@@ -663,11 +663,11 @@ describe("runCompanionLinkCommandWithDeps", () => {
         installCompanion: async () => {},
       });
       const workspaceRegistry = await fs.readFile(
-        path.join(workingPath, `.${frameworkConfig.name}`, "config", "registry.yaml"),
+        path.join(workingPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml"),
         "utf8",
       );
       const workspaceFramework = await fs.readFile(
-        path.join(workingPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+        path.join(workingPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
         "utf8",
       );
       const resolvedWorkingPath = await fs.realpath(workingPath);

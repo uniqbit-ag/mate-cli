@@ -2,7 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { FRAMEWORK_NAME, frameworkCommandName } from "../framework";
+import { FRAMEWORK_NAME } from "../framework";
 import { ConfigStore, mergeWithDefaults } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import {
@@ -91,9 +91,8 @@ export async function syncCompanionFiles(
   );
 }
 
-// Exported for the distribution-identity tests.
 export function mateFolderReadme(): string {
-  const n = frameworkCommandName();
+  const n = FRAMEWORK_NAME;
   const packageName =
     getActiveDistribution().config.update?.packageName ?? `@uniqbit/${FRAMEWORK_NAME}`;
   return [

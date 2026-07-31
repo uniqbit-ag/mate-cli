@@ -2,12 +2,14 @@ import { spawn } from "node:child_process";
 import { accessSync } from "node:fs";
 
 import { getActiveDistribution } from "../../../distribution";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
 import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repo-local-registry";
 import { ensureUnambiguousCompanion } from "../launch/shared";
 
 export function renderBanner(repoPath: string, companionPath: string): string {
-  const { name, version } = getActiveDistribution().config;
+  const { version } = getActiveDistribution().config;
+  const name = FRAMEWORK_NAME;
   const lines = [`${name} v${version}`, "", `repo: ${repoPath}`, `${name}: ${companionPath}`];
   const contentWidth = Math.max(...lines.map((l) => l.length));
   const pad = (text: string) => `│ ${text.padEnd(contentWidth)} │`;

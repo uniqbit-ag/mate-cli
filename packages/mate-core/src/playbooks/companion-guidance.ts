@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { FRAMEWORK_NAME, frameworkCommandName } from "../framework";
+import { FRAMEWORK_NAME } from "../framework";
 import type { AdapterContext } from "../lib/orchestrator/adapters/base";
 import {
   hasGraphifyCapability,
@@ -35,7 +35,7 @@ export function buildCodebaseExplorationGuidanceSection(
 2. If tokensave is empty/file-only/irrelevant, run graphify query "<question>"; use graphify path/explain to deepen.
 3. Use grep/glob/read only after tokensave and graphify were tried.</order>
 <notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run ${frameworkCommandName()} cap index.</post-edit>
+<post-edit>After code changes, run ${FRAMEWORK_NAME} cap index.</post-edit>
 </codebase-exploration-rules>`;
   }
 
@@ -48,7 +48,7 @@ export function buildCodebaseExplorationGuidanceSection(
 2. Use graphify path "<A>" "<B>" or graphify explain "<concept>" to deepen.
 3. Use grep/glob/read only after graphify was tried.</order>
 <notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run ${frameworkCommandName()} cap index --graphify.</post-edit>
+<post-edit>After code changes, run ${FRAMEWORK_NAME} cap index --graphify.</post-edit>
 </codebase-exploration-rules>`;
   }
 
@@ -57,7 +57,7 @@ export function buildCodebaseExplorationGuidanceSection(
 <order>tokensave -> grep/glob/read. MUST try tokensave before raw source.
 1. tokensave_context first.
 2. Use grep/glob/read only after tokensave is empty or irrelevant.</order>
-<post-edit>After code changes, run ${frameworkCommandName()} cap index --tokensave.</post-edit>
+<post-edit>After code changes, run ${FRAMEWORK_NAME} cap index --tokensave.</post-edit>
 </codebase-exploration-rules>`;
 }
 
@@ -88,7 +88,7 @@ export function buildCompanionPolicyXml(
     "    <cli-tools>",
     `      <cli name="openspec" type="wrapper" invokeAs="${path.join(wrapperBinPath, "openspec")}" />`,
     `      <cli name="graphify" type="wrapper" invokeAs="${path.join(wrapperBinPath, "graphify")}" />`,
-    `      <cli name="${FRAMEWORK_NAME}" type="global" invokeAs="${frameworkCommandName()}" />`,
+    `      <cli name="${FRAMEWORK_NAME}" type="global" invokeAs="${FRAMEWORK_NAME}" />`,
     "    </cli-tools>",
     `    <linked-repository id="${context.repository.id}" profile="${context.repository.profile}" />`,
     "  </context>",
@@ -103,7 +103,7 @@ export function buildCompanionPolicyXml(
 
   if (hasOpenspecCapability(context.capabilities)) {
     lines.push(
-      `    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes ONLY with: ${frameworkCommandName()} artifact finish "<name>" --json — never hand-commit or hand-tag a finish. Finishing a still-active change applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>`,
+      `    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes ONLY with: ${FRAMEWORK_NAME} artifact finish "<name>" --json — never hand-commit or hand-tag a finish. Finishing a still-active change applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>`,
     );
   }
 
