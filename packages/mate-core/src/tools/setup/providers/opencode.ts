@@ -2,7 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { frameworkCommandName } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import {
   OPENCODE_PLUGIN_PACKAGE_NAME,
   getOpenCodePluginPackageReference,
@@ -18,7 +18,6 @@ import { getSetupProvidersRoot, getSetupRootTemplates } from "./utils";
 // package-owned now; these exact filenames are removed during sync and
 // teardown while every other companion-local plugin is preserved.
 const LEGACY_PLUGIN_FILES = [
-  "kizuna-companion.ts",
   "add-dir.ts",
   "companion.ts",
   "small-model.ts",
@@ -244,9 +243,9 @@ async function warmPluginCacheForSetup(pluginReference: string): Promise<void> {
 
   process.stderr.write(
     [
-      `${frameworkCommandName()}: could not pre-fetch ${pluginReference} into OpenCode's plugin environment.`,
+      `${FRAMEWORK_NAME}: could not pre-fetch ${pluginReference} into OpenCode's plugin environment.`,
       "The first managed OpenCode launch will download it, which requires registry access.",
-      `Re-run \`${frameworkCommandName()} companion setup\` with network access to warm the cache ahead of time.`,
+      `Re-run \`${FRAMEWORK_NAME} companion setup\` with network access to warm the cache ahead of time.`,
       ...(warmed.detail ? [`Details: ${warmed.detail}`] : []),
     ].join("\n") + "\n",
   );

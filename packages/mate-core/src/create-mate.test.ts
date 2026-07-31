@@ -20,8 +20,6 @@ function makePlugin(id: string, kind: Plugin["kind"] = "capability"): Plugin {
 }
 
 const acmeConfig = {
-  name: "acme-mate",
-  legacyNames: [],
   runtime: "bun",
   version: "1.0.0",
   update: {
@@ -59,7 +57,6 @@ describe("createMate", () => {
     const cli = createMate({ config: acmeConfig, plugins: [makePlugin("acme-a")] });
 
     const active = getActiveDistribution();
-    expect(active.config.name).toBe("acme-mate");
     expect(active.config.version).toBe("1.0.0");
     expect(active.config.update).toEqual({
       packageName: "@acme/mate",
@@ -98,7 +95,6 @@ describe("createMate", () => {
 describe("active distribution fallback", () => {
   test("falls back to the mate distribution defaults when createMate has not run", () => {
     const active = getActiveDistribution();
-    expect(active.config.name).toBe("mate");
     const ids = active.registry.getAll().map((plugin) => plugin.id);
     expect(ids).toContain("claude");
     expect(ids).toContain("opencode");

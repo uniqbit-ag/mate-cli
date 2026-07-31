@@ -13,7 +13,7 @@ Use this reference when you need the OpenSpec-specific parts of `mate-artifact-f
 
 The CLI is **resumable**.
 
-If the change is already archived — because the developer ran `openspec archive` by hand, or because a prior finish partially completed — `{{MATE_COMMAND}} artifact finish` detects the existing:
+If the change is already archived — because the developer ran `openspec archive` by hand, or because a prior finish partially completed — `mate artifact finish` detects the existing:
 
 ```text
 openspec/changes/archive/<date>-<name>/
@@ -21,7 +21,7 @@ openspec/changes/archive/<date>-<name>/
 
 It then skips the archive step and continues from commit → tag → push. In that case the result includes `resumed: true`.
 
-This means a developer can archive manually first and still rely on `{{MATE_COMMAND}} artifact finish` for the commit/tag/push tail.
+This means a developer can archive manually first and still rely on `mate artifact finish` for the commit/tag/push tail.
 
 ## JSON Contract
 
@@ -80,7 +80,7 @@ Failure behavior matters:
 
 ## OpenSpec Conflict Workflow
 
-If `status` is `conflict`, do **not** rerun `{{MATE_COMMAND}} artifact finish`.
+If `status` is `conflict`, do **not** rerun `mate artifact finish`.
 
 At that point:
 

@@ -1,5 +1,5 @@
 import { confirm } from "../confirm";
-import { frameworkCommandName } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import {
   buildInstallPlan,
   inspectInstallPlan,
@@ -19,7 +19,7 @@ export function reportPluginInstallResults(results: PluginInstallResult[]): void
   for (const result of results) {
     if (result.status === "failed") {
       process.stderr.write(
-        `${frameworkCommandName()}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}\n`,
+        `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}\n`,
       );
     } else if (result.status === "installed") {
       console.log(`  installed plugin ${result.package}@${result.resolvedVersion}`);
@@ -72,7 +72,7 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
       const ok = await confirm("Install the missing requirements? [y/N] ");
       if (!ok) {
         process.stderr.write(
-          `Installation declined. Run \`${frameworkCommandName()} install --yes\` to continue.\n`,
+          `Installation declined. Run \`${FRAMEWORK_NAME} install --yes\` to continue.\n`,
         );
         process.exitCode = 1;
         return false;
@@ -83,7 +83,7 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     printPlanText(plan);
     if (!skipConfirm) {
       process.stderr.write(
-        `${frameworkCommandName()}: installation requires confirmation in a TTY. Re-run with \`${frameworkCommandName()} install --yes\`.\n`,
+        `${FRAMEWORK_NAME}: installation requires confirmation in a TTY. Re-run with \`${FRAMEWORK_NAME} install --yes\`.\n`,
       );
       process.exitCode = 1;
       return false;
@@ -103,11 +103,11 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
   if (!execution.ok) {
     for (const result of execution.results.filter((item) => item.status === "failed")) {
       process.stderr.write(
-        `${frameworkCommandName()}: ${result.id} failed: ${result.error ?? "unknown error"}\n`,
+        `${FRAMEWORK_NAME}: ${result.id} failed: ${result.error ?? "unknown error"}\n`,
       );
     }
     process.stderr.write(
-      `Installation is incomplete. Re-run \`${frameworkCommandName()} install\` after remediation.\n`,
+      `Installation is incomplete. Re-run \`${FRAMEWORK_NAME} install\` after remediation.\n`,
     );
     process.exitCode = 1;
     return false;
@@ -118,11 +118,9 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     await saveCompleteInstallState(plan, execution.results);
   } catch (error) {
     process.stderr.write(
-      `${frameworkCommandName()}: installation completed but companion reconciliation failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      `${FRAMEWORK_NAME}: installation completed but companion reconciliation failed: ${error instanceof Error ? error.message : String(error)}\n`,
     );
-    process.stderr.write(
-      `Installation is incomplete. Re-run \`${frameworkCommandName()} install\`.\n`,
-    );
+    process.stderr.write(`Installation is incomplete. Re-run \`${FRAMEWORK_NAME} install\`.\n`);
     process.exitCode = 1;
     return false;
   }

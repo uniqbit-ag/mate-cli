@@ -1,13 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { frameworkCommandName } from "../../framework";
 import { pruneEmptyAncestors } from "./utils";
 
 export const MATE_ARTIFACT_SKILLS = ["mate-artifact-finish"] as const;
 export const MATE_SKILLS = ["mate-artifact-finish", "mate-create-report"] as const;
 
-const MATE_COMMAND_PLACEHOLDER = "{{MATE_COMMAND}}";
 const MATE_SKILLS_SOURCE = path.join(
   import.meta.dirname,
   "../../templates/capabilities/openspec-cap/mate-skills",
@@ -16,9 +14,9 @@ const MATE_SKILLS_SOURCE = path.join(
 const MATE_CREATE_REPORT_SKILL = `---
 name: mate-create-report
 description: Create a browser-first Mate report from an explicit structured ReportDocument. Use when a skill needs to present supplied metrics, tables, statuses, metadata, or narrative text.
-allowed-tools: Bash({{MATE_COMMAND}}:*)
+allowed-tools: Bash(mate:*)
 license: MIT
-compatibility: Requires the {{MATE_COMMAND}} CLI and the OpenSpec capability enabled.
+compatibility: Requires the mate CLI and the OpenSpec capability enabled.
 metadata:
   author: mate
   version: "1.0"
@@ -57,21 +55,13 @@ Supported section types are \`metadata\`, \`metrics\`, \`key-value\`, \`table\`,
 ## Invocation
 
 1. Serialize the complete document to a temporary file or pipe it to stdin.
-2. Run \`{{MATE_COMMAND}} report --input <file-or->\`.
+2. Run \`mate report --input <file-or->\`.
 3. Add \`--json\` when the caller needs normalized JSON instead of browser delivery.
 
 The default path writes self-contained HTML to a unique OS temporary directory and opens it in the default browser. The report includes a visible "Print / Save as PDF" control that calls the browser's native print dialog. If HTML delivery fails, the CLI warns on stderr and emits the complete report document as JSON on stdout.
 
-The built-in \`{{MATE_COMMAND}} report\` path collects Mate usage data and adapts it to the same contract and renderer.
+The built-in \`mate report\` path collects Mate usage data and adapts it to the same contract and renderer.
 `;
-
-function currentMateCommand(): string {
-  try {
-    return frameworkCommandName();
-  } catch {
-    return "mate";
-  }
-}
 
 export async function deployMateSkillDir(src: string, dest: string): Promise<void> {
   await fs.mkdir(dest, { recursive: true });
@@ -83,16 +73,7 @@ export async function deployMateSkillDir(src: string, dest: string): Promise<voi
       await deployMateSkillDir(srcPath, destPath);
       continue;
     }
-    const content = await fs.readFile(srcPath, "utf8");
-    if (content.includes(MATE_COMMAND_PLACEHOLDER)) {
-      await fs.writeFile(
-        destPath,
-        content.replaceAll(MATE_COMMAND_PLACEHOLDER, currentMateCommand()),
-        "utf8",
-      );
-    } else {
-      await fs.copyFile(srcPath, destPath);
-    }
+    await fs.copyFile(srcPath, destPath);
   }
 }
 
@@ -121,11 +102,7 @@ export async function applyMateSkills(skillsDir: string, tool: string): Promise<
     const destination = path.join(skillsDir, skill);
     if (skill === "mate-create-report") {
       await fs.mkdir(destination, { recursive: true });
-      await fs.writeFile(
-        path.join(destination, "SKILL.md"),
-        MATE_CREATE_REPORT_SKILL.replaceAll(MATE_COMMAND_PLACEHOLDER, currentMateCommand()),
-        "utf8",
-      );
+      await fs.writeFile(path.join(destination, "SKILL.md"), MATE_CREATE_REPORT_SKILL, "utf8");
     } else {
       await deployMateSkillDir(await resolveMateSkillSource(skill, tool), destination);
     }

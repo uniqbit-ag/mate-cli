@@ -38,8 +38,6 @@ function makePlugin(id: string, kind: Plugin["kind"]): Plugin {
 }
 
 const acmeConfig = {
-  name: "mate",
-  legacyNames: [],
   runtime: "bun",
   version: "1.0.0",
 };

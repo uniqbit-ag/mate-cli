@@ -30,8 +30,6 @@ function getInitialSelections() {
 
 describe("required plugins in the wizard", () => {
   const distributionConfig = {
-    name: "mate",
-    legacyNames: [],
     runtime: "bun",
     version: "1.0.0",
   };

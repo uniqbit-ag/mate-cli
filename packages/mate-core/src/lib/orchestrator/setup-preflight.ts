@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { parse } from "yaml";
 
-import { FRAMEWORK_NAME, frameworkCommandName, frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { fileExists } from "../fs-utils";
 import { GlobalConfigStore } from "./global-config-store";
 import { CompanionResolver, type CompanionMatch } from "./companion-resolver";
@@ -126,20 +126,7 @@ export async function looksLikeWorkingRepo(cwd: string): Promise<boolean> {
 
 export async function hasLocalCompanionConfig(cwd: string): Promise<boolean> {
   const resolvedCwd = path.resolve(cwd);
-  const candidatePaths = [
-    path.join(resolvedCwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-    ...frameworkConfig.legacyNames.map((name) =>
-      path.join(resolvedCwd, `.${name}`, "config", "framework.yaml"),
-    ),
-  ];
-
-  for (const candidatePath of candidatePaths) {
-    if (await fileExists(candidatePath)) {
-      return true;
-    }
-  }
-
-  return false;
+  return fileExists(path.join(resolvedCwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
 }
 
 async function hasWorkingRepoConfig(cwd: string): Promise<boolean> {
@@ -190,7 +177,7 @@ export async function inspectSetupPreflight(
 
 export function formatSetupGuardrailError(cwd: string, match: CompanionMatch): string {
   return [
-    `\`${frameworkCommandName()} setup\` cannot run here: ${path.resolve(cwd)} is inside linked working repo \`${match.repositoryId}\`.`,
-    `Run \`${frameworkCommandName()} setup\` from the companion repo instead: ${match.companionPath}`,
+    `\`${FRAMEWORK_NAME} setup\` cannot run here: ${path.resolve(cwd)} is inside linked working repo \`${match.repositoryId}\`.`,
+    `Run \`${FRAMEWORK_NAME} setup\` from the companion repo instead: ${match.companionPath}`,
   ].join("\n");
 }

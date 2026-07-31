@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import {
   resolveForCapability,
   resolveForLaunch,
@@ -47,7 +47,7 @@ describe("resolveFrameworkContext", () => {
 
   test("resolves from local config when present", async () => {
     const root = await makeTempDir("ctx-local-");
-    const localConfigPath = path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
     await fs.writeFile(
       localConfigPath,
@@ -149,7 +149,7 @@ describe("resolveForLaunch", () => {
 
   test("throws WorkingRepoRequiredError when cwd is a companion directory", async () => {
     const root = await makeTempDir("launch-companion-cwd-");
-    const localConfigPath = path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
     await fs.writeFile(
       localConfigPath,
@@ -234,7 +234,7 @@ describe("resolveForCapability", () => {
 
   test("resolves from companion directory local config using MATE_REPO_ID", async () => {
     const root = await makeTempDir("cap-companion-cwd-");
-    const localConfigPath = path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
     await fs.writeFile(
       localConfigPath,
@@ -253,7 +253,7 @@ describe("resolveForCapability", () => {
 
   test("returns an empty repositoryId for companion-root capability context when MATE_REPO_ID is unset", async () => {
     const root = await makeTempDir("cap-companion-no-env-");
-    const localConfigPath = path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
     await fs.writeFile(
       localConfigPath,

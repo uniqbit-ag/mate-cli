@@ -1,14 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { FRAMEWORK_NAME, frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { getActiveDistribution } from "../../distribution";
 import { CompanionResolver } from "../../lib/orchestrator/companion-resolver";
 import { CompanionStore, resolvePolicyFromConfig } from "../../lib/orchestrator/companion-store";
 import { ConfigStore } from "../../lib/orchestrator/config-store";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
-import { migrateConfigDir } from "../../lib/orchestrator/migration";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repo-local-registry";
 import type { CapabilityConfig, FrameworkConfig } from "../../lib/orchestrator/types";
 import { WorkingRepoStore } from "../../lib/orchestrator/working-repo-store";
@@ -43,8 +42,6 @@ function storesForCompanion(companionPath: string): CompanionStores {
 
 async function hasLocalCompanionConfig(cwd: string): Promise<boolean> {
   const localDir = path.join(cwd, `.${FRAMEWORK_NAME}`);
-  const localLegacyDirs = frameworkConfig.legacyNames.map((name) => path.join(cwd, `.${name}`));
-  await migrateConfigDir(localDir, localLegacyDirs);
 
   try {
     await fs.access(path.join(localDir, "config", "framework.yaml"));
@@ -74,10 +71,10 @@ function renderEngineRequirement(
 // diagnostic; foreign distribution keys are ignored entirely.
 function printEngineRequirement(config: FrameworkConfig): void {
   const distribution = getActiveDistribution().config;
-  if (!config.engines?.[distribution.name]) return;
+  if (!config.engines?.[FRAMEWORK_NAME]) return;
   printSection(
     "Version Requirement",
-    renderEngineRequirement(config, distribution.name, distribution.version),
+    renderEngineRequirement(config, FRAMEWORK_NAME, distribution.version),
   );
 }
 

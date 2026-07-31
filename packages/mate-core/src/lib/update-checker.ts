@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { getActiveDistribution, type DistributionUpdateConfig } from "../distribution";
-import { FRAMEWORK_NAME, frameworkCommandName } from "../framework";
+import { FRAMEWORK_NAME } from "../framework";
 import { fetchPublicPackageVersion, PUBLIC_NPM_REGISTRY } from "./public-npm";
 import { YamlFileStore } from "./orchestrator/yaml-file-store";
 
@@ -77,9 +77,9 @@ export async function showUpdateBannerIfAvailable(store: UpdateStateStore): Prom
     const current = getCurrentVersion();
     if (!isNewer(state.latestVersion, current)) return;
     process.stderr.write(
-      `\n${frameworkCommandName()}: update available (${current} → ${state.latestVersion})\n`,
+      `\n${FRAMEWORK_NAME}: update available (${current} → ${state.latestVersion})\n`,
     );
-    process.stderr.write(`  Run \`${frameworkCommandName()} update\` to upgrade.\n\n`);
+    process.stderr.write(`  Run \`${FRAMEWORK_NAME} update\` to upgrade.\n\n`);
   } catch {
     // never block the main command
   }
@@ -98,9 +98,9 @@ export async function enforceUpdateIfRequired(store: UpdateStateStore): Promise<
     const current = getCurrentVersion();
     if (!isNewer(state.latestVersion, current)) return false;
     process.stderr.write(
-      `\n${frameworkCommandName()}: update required (${current} → ${state.latestVersion})\n`,
+      `\n${FRAMEWORK_NAME}: update required (${current} → ${state.latestVersion})\n`,
     );
-    process.stderr.write(`  Run \`${frameworkCommandName()} update\` before continuing.\n\n`);
+    process.stderr.write(`  Run \`${FRAMEWORK_NAME} update\` before continuing.\n\n`);
     return true;
   } catch {
     return false;

@@ -6,7 +6,6 @@ import { PluginRegistry } from "../tools/setup/registry";
 import { ensureCapabilityEnabled } from "./plugin-commands";
 
 const distributionConfig = {
-  name: "acme-mate",
   runtime: "bun" as const,
   version: "1.0.0",
 };

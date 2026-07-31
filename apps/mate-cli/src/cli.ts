@@ -12,13 +12,8 @@ import {
   createTokensavePlugin,
 } from "@uniqbit/mate-core/plugins";
 
-import { bin, version } from "../package.json";
+import { version } from "../package.json";
 import { createContext7Plugin } from "./plugins/context7";
-
-const cliName = Object.keys(bin)[0];
-if (!cliName) {
-  throw new Error("The CLI package must declare a bin name.");
-}
 
 const claude = createClaudePlugin();
 const opencode = createOpenCodePlugin();
@@ -34,7 +29,6 @@ const contextMode = createContextModePlugin();
 
 const cli = createMate({
   config: {
-    name: cliName,
     runtime: "bun",
     version,
     update: {

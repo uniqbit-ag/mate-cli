@@ -1530,8 +1530,10 @@ describe("mate CLI e2e", () => {
     const mcpConfig = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".mcp.json"), "utf8"),
     );
+    // The MCP registration keeps the bare command name — it's resolved
+    // against PATH at spawn time by the hosting agent, not pinned here.
     expect(mcpConfig.mcpServers?.tokensave).toEqual({
-      command: path.join(scenario.bin, "tokensave"),
+      command: "tokensave",
       args: ["serve"],
     });
     const workingRepoSettings = JSON.parse(

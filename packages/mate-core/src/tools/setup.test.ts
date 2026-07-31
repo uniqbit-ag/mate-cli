@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-import { frameworkConfig } from "../framework";
+import { FRAMEWORK_NAME } from "../framework";
 import { ConfigStore } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repo-local-registry";
@@ -106,7 +106,7 @@ describe("executeSetup", () => {
 
     await expect(
       fs.readFile(
-        path.join(repositoryPath, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+        path.join(repositoryPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
         "utf8",
       ),
     ).resolves.toContain("type: working");
@@ -138,7 +138,7 @@ describe("executeSetup", () => {
     );
 
     const config = await fs.readFile(
-      path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "utf8",
     );
     expect(config).toContain("allowedAgents:");
@@ -799,7 +799,7 @@ describe("executeSetup", () => {
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain("node_modules/");
-    expect(gitignore).toContain(`# ${frameworkConfig.name} managed: start`);
+    expect(gitignore).toContain(`# ${FRAMEWORK_NAME} managed: start`);
     expect(gitignore).toContain(".venv/");
     expect(gitignore).toContain(".uv/");
     expect(gitignore).toContain("__pycache__/");
@@ -831,7 +831,7 @@ describe("executeSetup", () => {
     );
 
     const config = await fs.readFile(
-      path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "utf8",
     );
     expect(config).toContain("name: headroom");
@@ -847,7 +847,7 @@ describe("executeSetup", () => {
     );
 
     const updatedConfig = await fs.readFile(
-      path.join(root, `.${frameworkConfig.name}`, "config", "framework.yaml"),
+      path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "utf8",
     );
     expect(updatedConfig).not.toContain("name: headroom");
@@ -1325,8 +1325,10 @@ describe("applySetupCompatibilities — tokensave", () => {
       const companionMcpConfig = JSON.parse(
         await fs.readFile(path.join(companionRoot, ".mcp.json"), "utf8"),
       );
+      // The MCP registration keeps the bare command name — it's resolved
+      // against PATH at spawn time by the hosting agent, not pinned here.
       expect(companionMcpConfig.mcpServers?.tokensave).toEqual({
-        command: tokensavePath,
+        command: "tokensave",
         args: ["serve"],
       });
       expect(companionSettings.hooks?.PreToolUse).toContainEqual({
@@ -1444,9 +1446,7 @@ describe("updateProjectGitignore", () => {
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain("node_modules/");
     expect(gitignore).toContain("custom.log");
-    expect(
-      gitignore.match(new RegExp(`# ${frameworkConfig.name} managed: start`, "g"))?.length,
-    ).toBe(1);
+    expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
     expect(gitignore).toContain(".venv/");
   });
 
@@ -1471,7 +1471,7 @@ describe("updateProjectGitignore", () => {
       [
         "node_modules/",
         "",
-        `# ${frameworkConfig.name} managed: start`,
+        `# ${FRAMEWORK_NAME} managed: start`,
         "# python / uv",
         ".venv/",
         ".uv/",
@@ -1480,7 +1480,7 @@ describe("updateProjectGitignore", () => {
         "*.egg-info/",
         "build/",
         "dist/",
-        `# ${frameworkConfig.name} managed: end`,
+        `# ${FRAMEWORK_NAME} managed: end`,
         "",
       ].join("\n"),
       "utf8",
@@ -1504,10 +1504,10 @@ describe("updateProjectGitignore", () => {
       [
         "node_modules/",
         "",
-        `# ${frameworkConfig.name} managed: uv start`,
+        `# ${FRAMEWORK_NAME} managed: uv start`,
         "# python / uv",
         ".venv/",
-        `# ${frameworkConfig.name} managed: uv end`,
+        `# ${FRAMEWORK_NAME} managed: uv end`,
         "",
       ].join("\n"),
       "utf8",
@@ -1520,9 +1520,7 @@ describe("updateProjectGitignore", () => {
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).not.toContain("managed: uv start");
-    expect(
-      gitignore.match(new RegExp(`# ${frameworkConfig.name} managed: start`, "g"))?.length,
-    ).toBe(1);
+    expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
     expect(gitignore).toContain(".venv/");
   });
 
@@ -1538,9 +1536,7 @@ describe("updateProjectGitignore", () => {
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain("node_modules/");
-    expect(
-      gitignore.match(new RegExp(`# ${frameworkConfig.name} managed: start`, "g"))?.length,
-    ).toBe(1);
+    expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
     expect(gitignore).toContain(".headroom/");
   });
 
@@ -1551,10 +1547,10 @@ describe("updateProjectGitignore", () => {
       [
         "node_modules/",
         "",
-        `# ${frameworkConfig.name} managed: start`,
+        `# ${FRAMEWORK_NAME} managed: start`,
         "# headroom",
         ".headroom/",
-        `# ${frameworkConfig.name} managed: end`,
+        `# ${FRAMEWORK_NAME} managed: end`,
         "",
       ].join("\n"),
       "utf8",
@@ -1582,12 +1578,8 @@ describe("updateProjectGitignore", () => {
     });
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
-    expect(
-      gitignore.match(new RegExp(`# ${frameworkConfig.name} managed: start`, "g"))?.length,
-    ).toBe(1);
-    expect(gitignore.match(new RegExp(`# ${frameworkConfig.name} managed: end`, "g"))?.length).toBe(
-      1,
-    );
+    expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
+    expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: end`, "g"))?.length).toBe(1);
     expect(gitignore).toContain(".venv/");
     expect(gitignore).toContain(".headroom/");
     expect(gitignore).toContain("node_modules/");

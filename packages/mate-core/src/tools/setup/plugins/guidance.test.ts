@@ -4,11 +4,11 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { frameworkConfig } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { refreshFromTemplate, stripGuidanceBlock } from "./guidance";
 
-const GUIDANCE_START = `<!-- ${frameworkConfig.name.toUpperCase()}:COMPANION:START -->`;
-const GUIDANCE_END = `<!-- ${frameworkConfig.name.toUpperCase()}:COMPANION:END -->`;
+const GUIDANCE_START = `<!-- ${FRAMEWORK_NAME.toUpperCase()}:COMPANION:START -->`;
+const GUIDANCE_END = `<!-- ${FRAMEWORK_NAME.toUpperCase()}:COMPANION:END -->`;
 
 const tempRoots: string[] = [];
 
@@ -150,8 +150,8 @@ describe("stripGuidanceBlock", () => {
   test("strips current-framework legacy GUIDANCE block", async () => {
     const root = await makeTempDir("mate-strip-framework-legacy-");
     const filePath = path.join(root, "CLAUDE.md");
-    const legacyStart = `<!-- ${frameworkConfig.name.toUpperCase()}:COMPANION:GUIDANCE:START -->`;
-    const legacyEnd = `<!-- ${frameworkConfig.name.toUpperCase()}:COMPANION:GUIDANCE:END -->`;
+    const legacyStart = `<!-- ${FRAMEWORK_NAME.toUpperCase()}:COMPANION:GUIDANCE:START -->`;
+    const legacyEnd = `<!-- ${FRAMEWORK_NAME.toUpperCase()}:COMPANION:GUIDANCE:END -->`;
     await fs.writeFile(filePath, `${legacyStart}\nsome content\n${legacyEnd}\n# After\n`, "utf8");
 
     await stripGuidanceBlock(filePath);

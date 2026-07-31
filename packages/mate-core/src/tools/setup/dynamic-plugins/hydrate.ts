@@ -4,7 +4,7 @@ import path from "node:path";
 import { parse } from "yaml";
 
 import { getActiveDistribution } from "../../../distribution";
-import { FRAMEWORK_NAME, frameworkCommandName } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { CompanionResolver } from "../../../lib/orchestrator/companion-resolver";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { PLUGIN_DECLARATION_POLICIES } from "../../../lib/orchestrator/config-store";
@@ -26,14 +26,6 @@ export interface HydrateDynamicPluginsDeps extends DynamicPluginLoadDeps {
   companionPath?: string;
   registry?: PluginRegistry;
   warn?: (message: string) => void;
-}
-
-function commandName(): string {
-  try {
-    return frameworkCommandName();
-  } catch {
-    return FRAMEWORK_NAME;
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -106,7 +98,7 @@ function validateDeclaration(entry: unknown): { declaration?: PluginDeclaration;
  */
 export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}): Promise<void> {
   const warn =
-    deps.warn ?? ((message: string) => process.stderr.write(`${commandName()}: ${message}\n`));
+    deps.warn ?? ((message: string) => process.stderr.write(`${FRAMEWORK_NAME}: ${message}\n`));
   try {
     const env = deps.env ?? process.env;
     const companionPath =

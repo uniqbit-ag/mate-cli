@@ -1,5 +1,5 @@
 import { getActiveDistribution } from "../distribution";
-import { frameworkCommandName } from "../framework";
+import { FRAMEWORK_NAME } from "../framework";
 import { resolveInstallContext } from "../lib/install";
 import type { FrameworkConfig } from "../lib/orchestrator/types";
 import type { Plugin, PluginCliCommand } from "../tools/setup/plugin";
@@ -86,7 +86,7 @@ export async function ensureCapabilityEnabled(
   const loadConfig = deps.loadConfig ?? (async () => (await resolveInstallContext()).config);
   if (plugin?.isEnabled(await loadConfig())) return true;
 
-  const name = frameworkCommandName();
+  const name = FRAMEWORK_NAME;
   console.error(
     `${name}: the "${pluginId}" capability is not enabled for this companion. ` +
       `Enable it via \`${name} companion setup\`.`,
@@ -104,7 +104,7 @@ function formatCommand(
 }
 
 function usageFor(plugin: Plugin): string {
-  const distributionName = frameworkCommandName();
+  const distributionName = FRAMEWORK_NAME;
   const namespace = namespaceOf(plugin);
   const lines = (plugin.cliCommands ?? []).map((command) =>
     formatCommand(distributionName, namespace, command),
@@ -119,7 +119,7 @@ function usageFor(plugin: Plugin): string {
  * commands show up in `mate help` alongside framework builtins.
  */
 export function pluginCliCommandLines(): string[] {
-  const distributionName = frameworkCommandName();
+  const distributionName = FRAMEWORK_NAME;
   return getActiveDistribution()
     .registry.getAll()
     .flatMap((plugin) =>

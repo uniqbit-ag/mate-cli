@@ -30,7 +30,7 @@ function createLauncher(
   plugins: CapabilityPlugin[] = [],
 ) {
   setActiveDistribution({
-    config: { name: "acme", runtime: "bun", version: "1.0.0" },
+    config: { runtime: "bun", version: "1.0.0" },
     registry: new PluginRegistry(plugins),
   });
   const launcher = new FrameworkLauncher() as FrameworkLauncher & {

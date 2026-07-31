@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { FRAMEWORK_NAME, frameworkCommandName } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
 import type { Plugin } from "../plugin";
 import { resolveEffectivePluginConfig } from "./config-resolution";
@@ -31,14 +31,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function commandName(): string {
-  try {
-    return frameworkCommandName();
-  } catch {
-    return FRAMEWORK_NAME;
-  }
-}
-
 /**
  * Loads one declared plugin from the shared workspace: installed-presence
  * check, API version gate before import, entry-point resolution via the
@@ -63,7 +55,7 @@ export async function loadDynamicPlugin(
   } catch {
     return {
       ok: false,
-      warning: `plugin "${name}" is not installed; run \`${commandName()} install\`.`,
+      warning: `plugin "${name}" is not installed; run \`${FRAMEWORK_NAME} install\`.`,
     };
   }
 

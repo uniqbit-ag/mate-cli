@@ -292,11 +292,7 @@ export async function inspectInstallPreflight(
 ): Promise<InstallPreflightResult> {
   const context = await resolveInstallContext(cwd, deps);
   const distribution = getActiveDistribution().config;
-  const engineCheck = checkEngineRequirement(
-    context.config,
-    distribution.name,
-    distribution.version,
-  );
+  const engineCheck = checkEngineRequirement(context.config, FRAMEWORK_NAME, distribution.version);
   if (!engineCheck.ok) return { ok: false, reason: engineCheck.reason };
   const plan = await inspectInstallPlan(buildInstallPlan(context));
   if (context.kind === "ambiguous") return { ok: false, reason: context.message, plan };

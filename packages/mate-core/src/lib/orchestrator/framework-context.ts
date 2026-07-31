@@ -1,11 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { FRAMEWORK_NAME, frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { CompanionResolver } from "./companion-resolver";
 import { ConfigStore } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
-import { migrateConfigDir } from "./migration";
 import { findRepoLocalLinkedRepository } from "./repo-local-registry";
 import {
   AmbiguousCompanionError,
@@ -80,8 +79,6 @@ export async function resolveFrameworkContext(
   }
 
   const localDir = path.join(cwd, `.${FRAMEWORK_NAME}`);
-  const localLegacyDirs = frameworkConfig.legacyNames.map((n) => path.join(cwd, `.${n}`));
-  await migrateConfigDir(localDir, localLegacyDirs);
 
   const localConfigPath = path.join(localDir, "config", "framework.yaml");
   try {
@@ -171,8 +168,6 @@ export async function resolveForCapability(
   // Fallback: cwd is the companion directory — resolve from its local config.
   // This is specific to mate cap; resolveForLaunch does NOT get this fallback.
   const localDir = path.join(cwd, `.${FRAMEWORK_NAME}`);
-  const localLegacyDirs = frameworkConfig.legacyNames.map((n) => path.join(cwd, `.${n}`));
-  await migrateConfigDir(localDir, localLegacyDirs);
 
   const localConfigPath = path.join(localDir, "config", "framework.yaml");
   try {

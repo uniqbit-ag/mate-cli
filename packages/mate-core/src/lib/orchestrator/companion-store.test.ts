@@ -6,7 +6,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { parse } from "yaml";
 
-import { frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { CompanionStore } from "./companion-store";
 import { ConfigStore } from "./config-store";
 import { repoLocalRegistryPath } from "./repo-local-registry";
@@ -145,7 +145,7 @@ async function makeCompanionRootedStore(root: string): Promise<{
   const repoPath = path.join(root, "working");
   await fs.mkdir(repoPath, { recursive: true });
 
-  const configDir = path.join(companionPath, `.${frameworkConfig.name}`, "config");
+  const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   const configStore = new ConfigStore(path.join(configDir, "framework.yaml"));
   const workingRepoStore = new WorkingRepoStore(path.join(configDir, "registry.yaml"));
   await workingRepoStore.save(WorkingRepoStore.defaultConfig());
@@ -170,7 +170,7 @@ describe("CompanionStore repo-local dual write", () => {
     const root = await makeTempDir("companion-store-dual-write-failure-");
     const { store, repoPath } = await makeCompanionRootedStore(root);
 
-    const repoLocalDir = path.join(repoPath, `.${frameworkConfig.name}`);
+    const repoLocalDir = path.join(repoPath, `.${FRAMEWORK_NAME}`);
     const realWriteFile = fs.writeFile.bind(fs);
     const errorSpy = spyOn(console, "error").mockImplementation(() => {});
     const writeSpy = spyOn(fs, "writeFile").mockImplementation(async (...args) => {

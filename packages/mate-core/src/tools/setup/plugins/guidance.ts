@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { FRAMEWORK_NAME, frameworkConfig } from "../../../framework";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { removeGraphifySection } from "../capabilities/graphify";
 
 // Marker names derive from the framework identity, never the invocation name.
@@ -12,9 +12,6 @@ function allMateStarts(): string[] {
     `<!-- ${upperName()}:COMPANION:START -->`,
     "<!-- COMPANION:GUIDANCE:START -->",
     `<!-- ${upperName()}:COMPANION:GUIDANCE:START -->`,
-    ...frameworkConfig.legacyNames.map(
-      (n) => `<!-- ${n.toUpperCase()}:COMPANION:GUIDANCE:START -->`,
-    ),
     `<!-- ${upperName()}:GRAPHIFY:START -->`,
   ];
 }
@@ -24,7 +21,6 @@ function allMateEnds(): string[] {
     `<!-- ${upperName()}:COMPANION:END -->`,
     "<!-- COMPANION:GUIDANCE:END -->",
     `<!-- ${upperName()}:COMPANION:GUIDANCE:END -->`,
-    ...frameworkConfig.legacyNames.map((n) => `<!-- ${n.toUpperCase()}:COMPANION:GUIDANCE:END -->`),
     `<!-- ${upperName()}:GRAPHIFY:END -->`,
   ];
 }

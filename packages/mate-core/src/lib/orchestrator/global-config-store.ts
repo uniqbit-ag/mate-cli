@@ -1,9 +1,8 @@
 import os from "node:os";
 import path from "node:path";
 
-import { FRAMEWORK_NAME, frameworkConfig } from "../../framework";
+import { FRAMEWORK_NAME } from "../../framework";
 import { YamlFileStore } from "./yaml-file-store";
-import { migrateConfigDir } from "./migration";
 
 interface CompanionEntry {
   path: string;
@@ -35,9 +34,6 @@ export class GlobalConfigStore extends YamlFileStore<GlobalConfig> {
   }
 
   override async load(): Promise<GlobalConfig> {
-    const currentDir = path.dirname(this.configPath);
-    const legacyDirs = frameworkConfig.legacyNames.map((n) => path.join(os.homedir(), `.${n}`));
-    await migrateConfigDir(currentDir, legacyDirs);
     return normalizeGlobalConfig(await super.load());
   }
 

@@ -143,8 +143,6 @@ describe("ctx.templates.render", () => {
 
     createMate({
       config: {
-        name: "acme-mate",
-        legacyNames: [],
         runtime: "bun",
         version: "1.0.0",
         assetRoots: [overrideRoot],

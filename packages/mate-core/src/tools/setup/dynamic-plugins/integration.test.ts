@@ -117,7 +117,7 @@ async function writeCompanion(options: { enabled: boolean; outFile: string }): P
 function activateDistribution(): PluginRegistry {
   const registry = new PluginRegistry([]);
   setActiveDistribution({
-    config: { name: "acme-mate", runtime: "bun", version: "1.0.0" },
+    config: { runtime: "bun", version: "1.0.0" },
     registry,
   });
   return registry;
@@ -160,7 +160,7 @@ describe("dynamic plugins end to end", () => {
       greeting: string;
       host: string;
     };
-    expect(output).toEqual({ argv: ["--flag"], greeting: "hello from acme", host: "acme-mate" });
+    expect(output).toEqual({ argv: ["--flag"], greeting: "hello from acme", host: "mate" });
 
     // Enablement flows through the existing capabilities machinery.
     const plugin = registry.getAll().find((candidate) => candidate.id === "acme-custom");

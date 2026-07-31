@@ -1,4 +1,5 @@
 import { getActiveDistribution } from "../../../distribution";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { ensureCapabilityEnabled } from "../../../cli/plugin-commands";
 import type { CapabilityPlugin, Plugin } from "../plugin";
 
@@ -43,7 +44,7 @@ export function createPluginHost(): PluginHost {
   return {
     apiVersion: PLUGIN_API_VERSION,
     distribution: {
-      name: distribution.config.name,
+      name: FRAMEWORK_NAME,
       version: distribution.config.version,
     },
     ensureCapabilityEnabled: (name) => ensureCapabilityEnabled(name),

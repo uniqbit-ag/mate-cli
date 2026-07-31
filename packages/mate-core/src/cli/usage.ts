@@ -1,13 +1,13 @@
 import { getActiveDistribution } from "../distribution";
-import { FRAMEWORK_NAME, frameworkCommandName } from "../framework";
+import { FRAMEWORK_NAME } from "../framework";
 import { pluginCliCommandLines } from "./plugin-commands";
 
 export function usage(): string {
-  const n = frameworkCommandName();
+  const n = FRAMEWORK_NAME;
   const packageName =
     getActiveDistribution().config.update?.packageName ?? `@uniqbit/${FRAMEWORK_NAME}`;
   return [
-    `${n.charAt(0).toUpperCase() + n.slice(1)} CLI (${packageName})`,
+    `Mate CLI (${packageName})`,
     "",
     "Commands:",
     ` ${n} install [--yes]`,
