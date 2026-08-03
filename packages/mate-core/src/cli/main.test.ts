@@ -7,6 +7,7 @@ import { PluginRegistry } from "../tools/setup/registry";
 import * as artifactCmd from "./commands/artifact/artifact";
 import * as capCmd from "./commands/cap";
 import * as companionCmd from "./commands/companion/companion";
+import * as hubCmd from "./commands/companion/hub";
 import * as configCmd from "./commands/config";
 import * as doctorCmd from "./commands/doctor";
 import * as installCmd from "./commands/install";
@@ -22,6 +23,7 @@ const BUILT_IN_COMMANDS = [
   "plugin",
   "artifact",
   "companion",
+  "hub",
   "claude",
   "opencode",
   "report",
@@ -44,6 +46,7 @@ describe("command gating", () => {
       spyOn(updateCmd, "runUpdateCommand").mockImplementation(record("update")),
       spyOn(doctorCmd, "runDoctorCommand").mockImplementation(record("doctor")),
       spyOn(companionCmd, "runCompanionCommand").mockImplementation(record("companion")),
+      spyOn(hubCmd, "runHubCommand").mockImplementation(record("hub")),
       spyOn(configCmd, "runConfigCommand").mockImplementation(record("config")),
       spyOn(reportCmd, "runReportCommand").mockImplementation(record("report")),
       spyOn(claudeCmd, "runLaunchClaudeCommand").mockImplementation(record("claude")),
@@ -116,6 +119,13 @@ describe("command gating", () => {
       expect(gateCalls).toEqual([]);
     }
     expect(dispatched).toEqual(["companion", "companion", "companion", "companion"]);
+  });
+
+  test("hub commands dispatch without companion selection or install preflight", async () => {
+    const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
+    await main(["node", "mate", "hub", "init"], deps);
+    expect(gateCalls).toEqual([]);
+    expect(dispatched).toEqual(["hub"]);
   });
 
   test("companion open and tui require an unambiguous companion but no install", async () => {

@@ -119,6 +119,41 @@ describe("setup engine", () => {
       process.stderr.write = originalWrite;
     }
   });
+
+  test("hub setup actions receive only the hub root", async () => {
+    const appliedPaths: string[] = [];
+    const hub = "/tmp/hub";
+    const child = `${hub}/companions/acme`;
+    const rootPlugin: Plugin = {
+      ...makePlugin("root", "root"),
+      async apply(ctx) {
+        appliedPaths.push(ctx.companionPath);
+      },
+    };
+    const config = {
+      type: "hub" as const,
+      hub: {
+        companions: [
+          {
+            id: "acme",
+            path: "companions/acme",
+            source: { kind: "local" as const, path: child },
+          },
+        ],
+      },
+      profiles: { default: { name: "default", allowedAgents: [] } },
+    };
+    const plan = buildSetupInstallationPlan(config, [rootPlugin]);
+
+    await executeSetupInstallationPlan(
+      { ...makeCtx(config), companionPath: hub },
+      [rootPlugin],
+      plan,
+    );
+
+    expect(appliedPaths).toEqual([hub]);
+    expect(appliedPaths).not.toContain(child);
+  });
 });
 
 describe("registration policy enforcement", () => {

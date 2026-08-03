@@ -61,6 +61,56 @@ describe("engines parsing", () => {
   });
 });
 
+describe("hub manifest parsing", () => {
+  test("loads Git source provenance and materialized commit", async () => {
+    const root = await makeTempDir("config-store-hub-git-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      [
+        "type: hub",
+        "hub:",
+        "  companions:",
+        "    - id: product",
+        "      path: companions/product",
+        "      source:",
+        "        kind: git",
+        "        url: https://example.test/product.git",
+        "        ref: main",
+        "      materializedCommit: abc123",
+        "profiles:",
+        "  default:",
+        "    name: default",
+        "    allowedAgents: []",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const config = await new ConfigStore(configPath).load();
+
+    expect(config.type).toBe("hub");
+    expect(config.hub?.companions[0]).toEqual({
+      id: "product",
+      path: "companions/product",
+      source: { kind: "git", url: "https://example.test/product.git", ref: "main" },
+      materializedCommit: "abc123",
+    });
+  });
+
+  test("rejects a Git member without a materialized commit", async () => {
+    const root = await makeTempDir("config-store-hub-missing-commit-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      "type: hub\nhub:\n  companions:\n    - id: product\n      path: product\n      source:\n        kind: git\n        url: https://example.test/product.git\nprofiles:\n  default:\n    name: default\n    allowedAgents: []\n",
+      "utf8",
+    );
+
+    await expect(new ConfigStore(configPath).load()).rejects.toThrow(/materializedCommit/);
+  });
+});
+
 describe("mergeWithDefaults", () => {
   test("adds default capabilities when existing config has none", () => {
     const existing: FrameworkConfig = {

@@ -84,6 +84,10 @@ export function editorWorkspacePath(repoPath: string): string {
   return path.join(path.resolve(repoPath), ".mate", "workspace.code-workspace");
 }
 
+export function hubWorkspaceFolders(hubPath: string, memberPaths: string[]): string[] {
+  return [path.resolve(hubPath), ...memberPaths.map((memberPath) => path.resolve(memberPath))];
+}
+
 function editorStoragePath(cli: string): string {
   const appName =
     cli === "cursor" ? "Cursor" : cli === "code-insiders" ? "Code - Insiders" : "Code";
@@ -163,9 +167,9 @@ export async function injectEditorFolder(
 
   const { cli: resolvedCli, binary } = resolved;
 
-  const companionPaths = (Array.isArray(companionPath) ? companionPath : [companionPath]).map(
-    (candidate) => path.resolve(candidate),
-  );
+  const workspaceFolders = Array.isArray(companionPath)
+    ? hubWorkspaceFolders(repoPath, companionPath)
+    : [path.resolve(repoPath), path.resolve(companionPath)];
 
   const workspacePath = editorWorkspacePath(repoPath);
   await fs.mkdir(path.dirname(workspacePath), { recursive: true });
@@ -173,10 +177,7 @@ export async function injectEditorFolder(
     workspacePath,
     `${JSON.stringify(
       {
-        folders: [
-          { path: path.resolve(repoPath) },
-          ...companionPaths.map((candidate) => ({ path: candidate })),
-        ],
+        folders: workspaceFolders.map((candidate) => ({ path: candidate })),
       },
       null,
       2,
@@ -186,7 +187,7 @@ export async function injectEditorFolder(
 
   if (detectWorkspace(workspacePath, resolvedCli) === "open") return true;
 
-  const child = spawnProcess(binary, ["--add", path.resolve(repoPath), ...companionPaths], {
+  const child = spawnProcess(binary, ["--add", ...workspaceFolders], {
     stdio: "ignore",
     detached: true,
   });
