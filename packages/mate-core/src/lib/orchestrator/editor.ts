@@ -84,10 +84,6 @@ export function editorWorkspacePath(repoPath: string): string {
   return path.join(path.resolve(repoPath), ".mate", "workspace.code-workspace");
 }
 
-export function hubWorkspaceFolders(hubPath: string, memberPaths: string[]): string[] {
-  return [path.resolve(hubPath), ...memberPaths.map((memberPath) => path.resolve(memberPath))];
-}
-
 function editorStoragePath(cli: string): string {
   const appName =
     cli === "cursor" ? "Cursor" : cli === "code-insiders" ? "Code - Insiders" : "Code";
@@ -145,7 +141,7 @@ export function detectEditorWorkspaceState(
 }
 
 export async function injectEditorFolder(
-  companionPath: string | string[],
+  companionPath: string,
   repoPath: string,
   cli = "code",
   spawnProcess: SpawnLike = spawn,
@@ -167,9 +163,7 @@ export async function injectEditorFolder(
 
   const { cli: resolvedCli, binary } = resolved;
 
-  const workspaceFolders = Array.isArray(companionPath)
-    ? hubWorkspaceFolders(repoPath, companionPath)
-    : [path.resolve(repoPath), path.resolve(companionPath)];
+  const workspaceFolders = [path.resolve(repoPath), path.resolve(companionPath)];
 
   const workspacePath = editorWorkspacePath(repoPath);
   await fs.mkdir(path.dirname(workspacePath), { recursive: true });
@@ -196,16 +190,5 @@ export async function injectEditorFolder(
   });
   child.unref();
 
-  return true;
-}
-
-export function openEditorWorkspace(paths: string[], cli: string): boolean {
-  const binary = resolveEditorBinary(cli);
-  if (!binary) {
-    writeMissingEditorCliGuidance(cli);
-    return false;
-  }
-
-  execFileSync(binary, paths, { stdio: "ignore" });
   return true;
 }

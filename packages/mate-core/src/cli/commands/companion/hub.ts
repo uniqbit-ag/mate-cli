@@ -1,4 +1,3 @@
-import path from "node:path";
 import readline from "node:readline/promises";
 
 import {
@@ -9,8 +8,6 @@ import {
   updateHubPlugins,
 } from "../../../lib/orchestrator/companion-hub";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
-import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
-import { getPreferredEditorCli, injectEditorFolder } from "../../../lib/orchestrator/editor";
 
 function positionalArgs(argv: string[]): string[] {
   const values: string[] = [];
@@ -84,23 +81,6 @@ async function runHubSync(argv: string[]): Promise<void> {
   if (plugins.some((plugin) => plugin.status === "failed")) process.exitCode = 1;
 }
 
-async function runHubOpen(): Promise<void> {
-  const context = await resolveFrameworkContext(process.cwd());
-  if (context.contextKind !== "hub" || !context.hub) {
-    throw new Error(`Not a hub: ${path.resolve(process.cwd())}`);
-  }
-  const childPaths = context.hub.companions.map((member) =>
-    path.resolve(context.companionPath, member.path),
-  );
-  const opened = await injectEditorFolder(
-    childPaths,
-    context.companionPath,
-    getPreferredEditorCli(),
-  );
-  if (!opened) process.exitCode = 1;
-  else console.log("Hub workspace opened without synchronizing members.");
-}
-
 export async function runHubCommand(argv: string[]): Promise<void> {
   const [subcommand, ...rest] = argv;
   switch (subcommand) {
@@ -113,10 +93,7 @@ export async function runHubCommand(argv: string[]): Promise<void> {
     case "sync":
       await runHubSync(rest);
       return;
-    case "open":
-      await runHubOpen();
-      return;
     default:
-      throw new Error("Usage: mate hub <init|add|sync|open>");
+      throw new Error("Usage: mate hub <init|add|sync>");
   }
 }
