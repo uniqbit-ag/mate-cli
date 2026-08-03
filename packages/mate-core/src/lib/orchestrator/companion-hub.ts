@@ -5,7 +5,7 @@ import path from "node:path";
 import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { ConfigStore, defaultConfig, validateHubConfig } from "./config-store";
+import { ConfigStore, validateHubConfig } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
 import type { FrameworkConfig, HubMember, HubMemberSource } from "./types";
 import {
@@ -121,7 +121,13 @@ export async function initializeCompanionHub(
       throw new Error(`Cannot initialize hub over an existing non-hub framework: ${hubPath}`);
     }
   } else {
-    const config = { ...defaultConfig(), type: "hub" as const, hub: { companions: [] } };
+    const config: FrameworkConfig = {
+      type: "hub",
+      profiles: {},
+      packageManagers: [],
+      capabilities: [],
+      hub: { companions: [] },
+    };
     await configStore.save(config);
   }
   await globalConfigStore.register(hubPath);
