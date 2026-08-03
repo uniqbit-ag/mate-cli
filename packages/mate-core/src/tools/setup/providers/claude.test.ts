@@ -176,7 +176,17 @@ describe("syncCompanionClaudeSettings", () => {
       ],
     });
     expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
-    expect(settings.hooks?.Stop).toBeUndefined();
+    expect(settings.hooks?.Stop).toEqual([
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
+            timeout: 10,
+          },
+        ],
+      },
+    ]);
   });
 
   test("does not register the openspec nudge hook when git auto mode is disabled", async () => {
@@ -189,6 +199,7 @@ describe("syncCompanionClaudeSettings", () => {
     const settings = await readCompanionSettings(companionPath);
     expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(false);
     expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
+    expect(hasArtifactFinishHook(settings, "Stop", companionPath)).toBe(false);
   });
 
   test("resync replaces a stale PreToolUse deny registration with the PostToolUse nudge", async () => {
@@ -218,6 +229,7 @@ describe("syncCompanionClaudeSettings", () => {
     const settings = await readCompanionSettings(companionPath);
     expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
     expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(true);
+    expect(hasArtifactFinishHook(settings, "Stop", companionPath)).toBe(true);
   });
 
   test("preserves an unmanaged hook and unmanaged permissions.allow entry", async () => {

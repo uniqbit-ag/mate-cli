@@ -292,6 +292,22 @@ function buildManagedClaudeSettings(
       },
       ...(hooks.PostToolUse ?? []),
     ];
+    // Catch-all: an archive that the PostToolUse nudge never matched (a human
+    // running the command outside Claude, an unmatched command shape) still
+    // gets caught here before the session ends, by checking the archive dir
+    // against finish tags directly rather than guessing from command text.
+    hooks.Stop = [
+      {
+        hooks: [
+          {
+            type: "command",
+            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
+            timeout: 10,
+          },
+        ],
+      },
+      ...(hooks.Stop ?? []),
+    ];
   }
   if (reactDoctorEnabled) {
     // Record edits cheaply, then scan once when the edited turn finishes.

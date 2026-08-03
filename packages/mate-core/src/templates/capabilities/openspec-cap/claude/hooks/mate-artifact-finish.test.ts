@@ -208,12 +208,142 @@ describe("mate-artifact-finish", () => {
     ).toBe("");
   });
 
-  test("external archive changes do not affect Bash or Stop and create no state", async () => {
+  test("an unrelated Bash command creates no state even with an archive entry present", async () => {
     const { companion, archiveDir } = await makeFixture();
     await fs.mkdir(path.join(archiveDir, "2099-01-01-external"));
 
     expect(runHook(postToolUsePayload("printf hello"), companion).stdout).toBe("");
-    expect(runHook({ hook_event_name: "Stop" }, companion).stdout).toBe("");
     await expect(fs.access(path.join(companion, ".claude", "state"))).rejects.toThrow();
+  });
+});
+
+async function makeGitFixture() {
+  const { companion, archiveDir } = await makeFixture();
+  spawnSync("git", ["init", "-q"], { cwd: companion, stdio: "ignore" });
+  spawnSync("git", ["config", "user.email", "mate-tests@example.com"], {
+    cwd: companion,
+    stdio: "ignore",
+  });
+  spawnSync("git", ["config", "user.name", "Mate Tests"], { cwd: companion, stdio: "ignore" });
+  return { companion, archiveDir };
+}
+
+async function archiveEntry(archiveDir: string, name: string): Promise<void> {
+  await fs.mkdir(path.join(archiveDir, name), { recursive: true });
+}
+
+function tagFinished(companion: string, name: string): void {
+  spawnSync("git", ["commit", "--allow-empty", "-q", "-m", name], {
+    cwd: companion,
+    stdio: "ignore",
+  });
+  spawnSync("git", ["tag", `openspec/${name}`], { cwd: companion, stdio: "ignore" });
+}
+
+function stopPayload(sessionId?: string): Record<string, unknown> {
+  const payload: Record<string, unknown> = { hook_event_name: "Stop" };
+  if (sessionId) payload.session_id = sessionId;
+  return payload;
+}
+
+function blockReason(stdout: string): string | null {
+  if (!stdout) return null;
+  const parsed = JSON.parse(stdout) as { decision?: string; reason?: string };
+  expect(parsed.decision).toBe("block");
+  return parsed.reason ?? null;
+}
+
+describe("mate-artifact-finish (Stop hook)", () => {
+  test("blocks Stop when an archived change has no finish tag", async () => {
+    const { companion, archiveDir } = await makeGitFixture();
+    await archiveEntry(archiveDir, "2099-01-01-acme");
+
+    const result = runHook(stopPayload("session-1"), companion);
+    expect(result.exitCode).toBe(0);
+    const reason = blockReason(result.stdout);
+    expect(reason).toContain("acme");
+    expect(reason).toContain("mate-artifact-finish");
+    expect(reason).toContain('mate artifact finish "<name>" --json');
+  });
+
+  test("does not block when the archived change already has a finish tag", async () => {
+    const { companion, archiveDir } = await makeGitFixture();
+    await archiveEntry(archiveDir, "2099-01-01-acme");
+    tagFinished(companion, "2099-01-01-acme");
+
+    expect(runHook(stopPayload("session-1"), companion).stdout).toBe("");
+  });
+
+  test("does not repeat the block for the same change in the same session", async () => {
+    const { companion, archiveDir } = await makeGitFixture();
+    await archiveEntry(archiveDir, "2099-01-01-acme");
+
+    expect(blockReason(runHook(stopPayload("session-1"), companion).stdout)).toContain("acme");
+    expect(runHook(stopPayload("session-1"), companion).stdout).toBe("");
+  });
+
+  test("warns again in a different session for the same unfinished change", async () => {
+    const { companion, archiveDir } = await makeGitFixture();
+    await archiveEntry(archiveDir, "2099-01-01-acme");
+
+    runHook(stopPayload("session-1"), companion);
+    const second = runHook(stopPayload("session-2"), companion);
+    expect(blockReason(second.stdout)).toContain("acme");
+  });
+
+  test("only warns about the change(s) not yet finished, not an already-tagged sibling", async () => {
+    const { companion, archiveDir } = await makeGitFixture();
+    await archiveEntry(archiveDir, "2099-01-01-acme");
+    await archiveEntry(archiveDir, "2099-01-01-widget");
+    tagFinished(companion, "2099-01-01-widget");
+
+    const reason = blockReason(runHook(stopPayload("session-1"), companion).stdout);
+    expect(reason).toContain("acme");
+    expect(reason).not.toContain("widget");
+  });
+
+  test("stays silent when the archive directory is empty", async () => {
+    const { companion } = await makeGitFixture();
+    expect(runHook(stopPayload("session-1"), companion).stdout).toBe("");
+  });
+
+  test("stays silent when the archive directory does not exist", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-artifact-finish-stop-"));
+    tempRoots.push(root);
+    const companion = path.join(root, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    spawnSync("git", ["init", "-q"], { cwd: companion, stdio: "ignore" });
+
+    expect(runHook(stopPayload("session-1"), companion).stdout).toBe("");
+  });
+
+  test("ignores directories in the archive folder that are not date-prefixed", async () => {
+    const { companion, archiveDir } = await makeGitFixture();
+    await fs.mkdir(path.join(archiveDir, "not-a-date-prefixed-dir"), { recursive: true });
+
+    expect(runHook(stopPayload("session-1"), companion).stdout).toBe("");
+  });
+
+  test("stays silent when MATE_ARTIFACT_PATH is unset", async () => {
+    const { archiveDir } = await makeGitFixture();
+    await archiveEntry(archiveDir, "2099-01-01-acme");
+    const env = { ...process.env };
+    delete env.MATE_ARTIFACT_PATH;
+
+    const result = spawnSync("sh", [HOOK_PATH], {
+      env,
+      input: JSON.stringify(stopPayload("session-1")),
+      encoding: "utf8",
+    });
+    expect(result.stdout).toBe("");
+  });
+
+  test("records session-scoped dedupe state only, nothing else", async () => {
+    const { companion, archiveDir } = await makeGitFixture();
+    await archiveEntry(archiveDir, "2099-01-01-acme");
+    runHook(stopPayload("session-42"), companion);
+
+    const entries = await fs.readdir(path.join(companion, ".claude", "state"));
+    expect(entries).toEqual(["mate-artifact-finish-stop.session-42.json"]);
   });
 });
