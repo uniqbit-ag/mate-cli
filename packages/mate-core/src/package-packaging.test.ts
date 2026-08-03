@@ -42,7 +42,13 @@ describe("published core package", () => {
       expect(stat.mode & 0o111).toBeGreaterThan(0);
     }
 
-    for (const entry of ["index.ts", "plugins.ts", "runtime/index.ts", "opencode/index.ts"]) {
+    for (const entry of [
+      "index.ts",
+      "plugins.ts",
+      "runtime/index.ts",
+      "opencode/index.ts",
+      "tui.ts",
+    ]) {
       await expect(fs.stat(path.join(extracted, "package", "src", entry))).resolves.toBeDefined();
     }
   });

@@ -27,6 +27,7 @@ afterEach(async () => {
 });
 
 const PACKAGE = "@acme/custom-plugin";
+const VERSION = "1.2.0";
 
 const fakeHost: PluginHost = {
   apiVersion: 1,
@@ -76,7 +77,7 @@ async function writeCompanion(options: {
     await fs.mkdir(root, { recursive: true });
     await fs.writeFile(
       path.join(root, "package.json"),
-      JSON.stringify({ name: PACKAGE, version: "1.2.0", type: "module", main: "index.js" }),
+      JSON.stringify({ name: PACKAGE, version: VERSION, type: "module", main: "index.js" }),
       "utf8",
     );
     await fs.writeFile(path.join(root, "index.js"), options.source ?? FACTORY_SOURCE, "utf8");
@@ -120,10 +121,7 @@ describe("hydrateDynamicPlugins", () => {
   });
 
   test("no plugins entries is a silent no-op", async () => {
-    const companionPath = await writeCompanion({
-      pluginsYaml: [],
-      installed: false,
-    });
+    const companionPath = await writeCompanion({ pluginsYaml: [], installed: false });
     const registry = makeRegistry();
     const warnings: string[] = [];
 

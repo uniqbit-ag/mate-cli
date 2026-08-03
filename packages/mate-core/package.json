@@ -14,7 +14,8 @@
     ".": "./src/index.ts",
     "./plugins": "./src/plugins.ts",
     "./runtime": "./src/runtime/index.ts",
-    "./opencode": "./src/opencode/index.ts"
+    "./opencode": "./src/opencode/index.ts",
+    "./tui": "./src/tui.ts"
   },
   "publishConfig": {
     "access": "public",

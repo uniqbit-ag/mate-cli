@@ -17,18 +17,20 @@ function makeContext(config: Partial<FrameworkConfig>): SetupContext {
 }
 
 describe("collectManagedGitignoreEntries with declared plugins", () => {
-  test("ignores the local override file and the shared workspace's node_modules, never its manifest or lockfile", () => {
+  test("ignores the local override file and the shared workspace's local .npmrc, never its manifest or lockfile", () => {
     const entries = collectManagedGitignoreEntries(
       makeContext({ plugins: [{ package: "@acme/custom-plugin", version: "^1.0.0" }] }),
       [],
     );
 
     expect(entries).toContain(".mate/config/plugins.local.yaml");
-    expect(entries).toContain("!.mate/dependencies/plugins/");
-    expect(entries).toContain(".mate/dependencies/plugins/node_modules/");
+    expect(entries).toContain(".mate/plugins/.npmrc");
     expect(entries.some((entry) => entry.includes("plugins.lock.yaml"))).toBe(false);
     expect(entries.some((entry) => entry.includes("package.json"))).toBe(false);
-    expect(entries.some((entry) => entry.includes("bun.lock"))).toBe(false);
+    expect(entries.some((entry) => entry.includes("package-lock.json"))).toBe(false);
+    // The workspace's node_modules is covered by the baseline node_modules/
+    // rule below, not a plugin-specific entry.
+    expect(entries.some((entry) => entry.includes("dependencies/plugins"))).toBe(false);
   });
 
   test("always contributes the node_modules and dependencies-tree baseline", () => {

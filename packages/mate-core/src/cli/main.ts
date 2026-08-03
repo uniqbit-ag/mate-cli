@@ -13,6 +13,7 @@ import { runConfigCommand } from "./commands/config";
 import { runDoctorCommand } from "./commands/doctor";
 import { runLaunchClaudeCommand } from "./commands/launch/claude";
 import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
+import { runPluginCommand } from "./commands/plugin/plugin";
 import { runReportCommand } from "./commands/report";
 import { runUpdateCommand } from "./commands/update";
 import { runInstallCommand } from "./commands/install";
@@ -51,10 +52,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     return;
   }
 
-  // Companion-declared plugins register before cap-command detection and
-  // before help text is printed, so their commands route like compiled-in
-  // ones (including MCP servers whose command is their own cap subcommand)
-  // and show up in `mate help`. Diagnostics stay on stderr; a missing or
+  // Dynamic plugins register before cap-command detection and before help
+  // text is printed, so their commands route like compiled-in ones
+  // (including MCP servers whose command is their own cap subcommand) and
+  // show up in `mate help`. Diagnostics stay on stderr; a missing or
   // ambiguous companion makes this a no-op.
   await deps.hydrateDynamicPlugins();
 
@@ -108,6 +109,13 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       // companion — but must stay runnable when installation is incomplete.
       if (!(await gate({ companion: true }))) return;
       await runInstallCommand(argv.slice(3));
+      return;
+    case "plugin":
+      // Declares into framework.yaml and installs on the spot, so it needs
+      // the same gating as `install` — an unambiguous companion, but must
+      // stay runnable when installation is otherwise incomplete.
+      if (!(await gate({ companion: true }))) return;
+      await runPluginCommand(subcommand, rest);
       return;
     case "artifact":
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;

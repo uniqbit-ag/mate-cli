@@ -9,7 +9,7 @@ import { resetActiveDistribution, setActiveDistribution } from "../../../distrib
 import { ConfigStore } from "../../../lib/orchestrator/config-store";
 import { PluginRegistry } from "../registry";
 import { hydrateDynamicPlugins, resetDynamicPluginHydration } from "./hydrate";
-import { installDeclaredPlugins, type BunInstallRunner } from "./install";
+import { installDeclaredPlugins, type NpmInstallRunner } from "./install";
 
 const tempRoots: string[] = [];
 
@@ -65,8 +65,8 @@ export default function createPlugin(config, host) {
 }
 `;
 
-/** Simulates `bun install` by materializing the fixture package at 1.2.0. */
-const fakeBunInstall: BunInstallRunner = async (installDir) => {
+/** Simulates `npm install` by materializing the fixture package at 1.2.0. */
+const fakeNpmInstall: NpmInstallRunner = async (installDir) => {
   const root = path.join(installDir, "node_modules", ...PACKAGE.split("/"));
   await fs.mkdir(root, { recursive: true });
   await fs.writeFile(
@@ -82,8 +82,8 @@ const fakeBunInstall: BunInstallRunner = async (installDir) => {
   );
   await fs.writeFile(path.join(root, "index.js"), FIXTURE_SOURCE, "utf8");
   await fs.writeFile(
-    path.join(installDir, "bun.lock"),
-    `{\n  "packages": {\n    "${PACKAGE}": ["${PACKAGE}@1.2.0", "", {}, "sha512-fixture"],\n  }\n}`,
+    path.join(installDir, "package-lock.json"),
+    JSON.stringify({ packages: { [`node_modules/${PACKAGE}`]: { version: "1.2.0" } } }, null, 2),
     "utf8",
   );
   return { ok: true };
@@ -132,18 +132,18 @@ function mainDeps(companionPath: string, env: Record<string, string | undefined>
 }
 
 describe("dynamic plugins end to end", () => {
-  test("declare → install/pin → hydrate → cap routing → enablement", async () => {
+  test("declare → install → hydrate → cap routing → enablement", async () => {
     const outFile = path.join(await makeTempDir("dynamic-plugins-out-"), "out.json");
     const companionPath = await writeCompanion({ enabled: true, outFile });
     const env = { ACME_GREETING: "hello from acme" };
     const registry = activateDistribution();
 
-    // Install and pin.
+    // Install into the shared workspace.
     const installResults = await installDeclaredPlugins(
       companionPath,
       (await new ConfigStore(path.join(companionPath, ".mate", "config", "framework.yaml")).load())
         .plugins ?? [],
-      { runBunInstall: fakeBunInstall },
+      { runNpmInstall: fakeNpmInstall },
     );
     expect(installResults).toEqual([
       { package: PACKAGE, status: "installed", resolvedVersion: "1.2.0" },
@@ -176,7 +176,7 @@ describe("dynamic plugins end to end", () => {
     const env = { ACME_GREETING: "hi" };
     activateDistribution();
     await installDeclaredPlugins(companionPath, [{ package: PACKAGE, version: "^1.0.0" }], {
-      runBunInstall: fakeBunInstall,
+      runNpmInstall: fakeNpmInstall,
     });
     // A second, broken declaration: declared but never installed.
     const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
@@ -235,7 +235,7 @@ describe("dynamic plugins end to end", () => {
     );
     const registry = activateDistribution();
     await installDeclaredPlugins(companionPath, [{ package: PACKAGE, version: "^1.0.0" }], {
-      runBunInstall: fakeBunInstall,
+      runNpmInstall: fakeNpmInstall,
     });
 
     const warnings: string[] = [];

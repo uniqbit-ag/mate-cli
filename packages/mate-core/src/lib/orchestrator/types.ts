@@ -88,9 +88,10 @@ export type EngineConstraints = Record<string, string>;
 export type PluginDeclarationPolicy = "default" | "optional";
 
 /**
- * A companion-declared npm plugin: installed by setup/install into
- * `.mate/dependencies/plugins/` and loaded on every invocation. Declaration
- * registers the plugin; enablement stays in the `capabilities` list.
+ * A companion-declared npm plugin: installed by setup/install into the
+ * companion's own shared plugin workspace (`.mate/plugins/`) and loaded
+ * from there on every invocation. Declaration registers the plugin;
+ * enablement stays in the `capabilities` list.
  */
 export interface PluginDeclaration {
   /** npm package name (e.g. `@acme/custom-plugin`). */

@@ -20,7 +20,7 @@ function listSourceFiles(dir: string): string[] {
 }
 
 describe("OpenCode plugin import isolation", () => {
-  test("imports @uniqbit/mate-core only through the runtime and opencode subpaths", () => {
+  test("imports @uniqbit/mate-core only through public plugin subpaths", () => {
     const violations: string[] = [];
     for (const file of listSourceFiles(SRC_ROOT)) {
       const source = fs.readFileSync(file, "utf8");
@@ -29,7 +29,8 @@ describe("OpenCode plugin import isolation", () => {
         if (!specifier?.startsWith("@uniqbit/mate-core")) continue;
         if (
           specifier === "@uniqbit/mate-core/runtime" ||
-          specifier === "@uniqbit/mate-core/opencode"
+          specifier === "@uniqbit/mate-core/opencode" ||
+          specifier === "@uniqbit/mate-core/tui"
         ) {
           continue;
         }
