@@ -14,6 +14,7 @@ import {
   installDeclaredPlugins,
   type PluginInstallResult,
 } from "../../tools/setup/dynamic-plugins/install";
+import { registryConfigHint } from "../../tools/setup/dynamic-plugins/registry-hint";
 
 export function reportPluginInstallResults(results: PluginInstallResult[]): void {
   for (const result of results) {
@@ -21,6 +22,7 @@ export function reportPluginInstallResults(results: PluginInstallResult[]): void
       process.stderr.write(
         `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}\n`,
       );
+      process.stderr.write(`${registryConfigHint(result.package)}\n`);
     } else if (result.status === "installed") {
       console.log(`  installed plugin ${result.package}@${result.resolvedVersion}`);
     }

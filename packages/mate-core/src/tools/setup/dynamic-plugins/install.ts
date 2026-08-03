@@ -5,18 +5,18 @@ import path from "node:path";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
 import { dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
 
-export type BunInstallRunner = (
+export type NpmInstallRunner = (
   workspaceRoot: string,
 ) => Promise<{ ok: boolean; detail?: string }> | { ok: boolean; detail?: string };
 
-export type BunUpdateRunner = (
+export type NpmUpdateRunner = (
   workspaceRoot: string,
   packages: string[],
 ) => Promise<{ ok: boolean; detail?: string }> | { ok: boolean; detail?: string };
 
 export interface PluginInstallDeps {
-  runBunInstall?: BunInstallRunner;
-  runBunUpdate?: BunUpdateRunner;
+  runNpmInstall?: NpmInstallRunner;
+  runNpmUpdate?: NpmUpdateRunner;
 }
 
 export interface PluginInstallResult {
@@ -26,9 +26,9 @@ export interface PluginInstallResult {
   error?: string;
 }
 
-/** Runs `bun install` for the shared plugin workspace, honoring the user's ambient registry/auth config. */
-function defaultBunInstall(workspaceRoot: string): { ok: boolean; detail?: string } {
-  const result = spawnSync("bun", ["install", "--silent"], {
+/** Runs `npm install` for the shared plugin workspace, honoring the user's ambient registry/auth config. */
+function defaultNpmInstall(workspaceRoot: string): { ok: boolean; detail?: string } {
+  const result = spawnSync("npm", ["install", "--no-audit", "--no-fund", "--silent"], {
     cwd: workspaceRoot,
     encoding: "utf8",
   });
@@ -38,18 +38,18 @@ function defaultBunInstall(workspaceRoot: string): { ok: boolean; detail?: strin
       detail:
         result.error?.message ??
         result.stderr?.trim() ??
-        `bun install exited with ${result.status}`,
+        `npm install exited with ${result.status}`,
     };
   }
   return { ok: true };
 }
 
-/** Runs `bun update <pkg...>` to force re-resolution of `latest`-declared plugins every run. */
-function defaultBunUpdate(
+/** Runs `npm update <pkg...>` to force re-resolution of `latest`-declared plugins every run. */
+function defaultNpmUpdate(
   workspaceRoot: string,
   packages: string[],
 ): { ok: boolean; detail?: string } {
-  const result = spawnSync("bun", ["update", "--silent", ...packages], {
+  const result = spawnSync("npm", ["update", "--no-audit", "--no-fund", "--silent", ...packages], {
     cwd: workspaceRoot,
     encoding: "utf8",
   });
@@ -57,7 +57,7 @@ function defaultBunUpdate(
     return {
       ok: false,
       detail:
-        result.error?.message ?? result.stderr?.trim() ?? `bun update exited with ${result.status}`,
+        result.error?.message ?? result.stderr?.trim() ?? `npm update exited with ${result.status}`,
     };
   }
   return { ok: true };
@@ -99,23 +99,26 @@ async function writeWorkspaceManifest(
 
 /**
  * Installs every declared plugin into one shared workspace at
- * `.mate/dependencies/plugins/`. Builds a single `dependencies` map (package
+ * `.mate/plugins/`. Builds a single `dependencies` map (package
  * → declared version, sorted by name) and diffs it against the workspace's
  * current `package.json` plus each package's actual installed presence; an
  * identical, fully-installed map with no `latest` declaration skips the
- * install entirely. Otherwise the map is written and `bun install` runs once
- * for the whole workspace. `latest`-declared plugins additionally get a `bun
- * update` every run, regardless of whether the map changed, so they
- * re-resolve on every run. The shared, committed `bun.lock` is the sole
- * reproducibility record; nothing else pins versions.
+ * install entirely. Otherwise the map is written and `npm install` runs once
+ * for the whole workspace. `latest`-declared plugins additionally get an
+ * `npm update` every run, regardless of whether the map changed, so they
+ * re-resolve on every run. The shared, committed `package-lock.json` is the
+ * sole reproducibility record; nothing else pins versions. Private
+ * registries are never Mate's concern: installs run through the operator's
+ * own ambient npm config, or a project-local, gitignored `.npmrc` dropped
+ * next to the workspace's `package.json`.
  */
 export async function installDeclaredPlugins(
   companionPath: string,
   declarations: PluginDeclaration[],
   deps: PluginInstallDeps = {},
 ): Promise<PluginInstallResult[]> {
-  const runBunInstall = deps.runBunInstall ?? defaultBunInstall;
-  const runBunUpdate = deps.runBunUpdate ?? defaultBunUpdate;
+  const runNpmInstall = deps.runNpmInstall ?? defaultNpmInstall;
+  const runNpmUpdate = deps.runNpmUpdate ?? defaultNpmUpdate;
   const workspaceRoot = dynamicPluginsWorkspaceRoot(companionPath);
 
   const sorted = declarations.toSorted((a, b) => a.package.localeCompare(b.package));
@@ -147,15 +150,15 @@ export async function installDeclaredPlugins(
   }
 
   await writeWorkspaceManifest(workspaceRoot, desired);
-  const installOutcome = await runBunInstall(workspaceRoot);
+  const installOutcome = await runNpmInstall(workspaceRoot);
   const installFailure = installOutcome.ok
     ? undefined
-    : (installOutcome.detail ?? "bun install failed");
+    : (installOutcome.detail ?? "npm install failed");
 
   let updateFailure: string | undefined;
   if (latestPackages.length > 0) {
-    const updateOutcome = await runBunUpdate(workspaceRoot, latestPackages);
-    updateFailure = updateOutcome.ok ? undefined : (updateOutcome.detail ?? "bun update failed");
+    const updateOutcome = await runNpmUpdate(workspaceRoot, latestPackages);
+    updateFailure = updateOutcome.ok ? undefined : (updateOutcome.detail ?? "npm update failed");
   }
 
   const resolvedVersions = await Promise.all(

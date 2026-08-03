@@ -12,12 +12,14 @@ import * as doctorCmd from "./commands/doctor";
 import * as installCmd from "./commands/install";
 import * as claudeCmd from "./commands/launch/claude";
 import * as opencodeCmd from "./commands/launch/opencode";
+import * as pluginCmd from "./commands/plugin/plugin";
 import * as reportCmd from "./commands/report";
 import * as updateCmd from "./commands/update";
 import { main, type MainDeps } from "./main";
 
 const BUILT_IN_COMMANDS = [
   "install",
+  "plugin",
   "artifact",
   "companion",
   "claude",
@@ -52,6 +54,7 @@ describe("command gating", () => {
         dispatched.push("install");
         return true;
       }),
+      spyOn(pluginCmd, "runPluginCommand").mockImplementation(record("plugin")),
       spyOn(updateChecker, "scheduleBackgroundCheck").mockImplementation(() => {}),
       spyOn(updateChecker, "showUpdateBannerIfAvailable").mockImplementation(async () => {}),
       spyOn(updateChecker, "enforceUpdateIfRequired").mockImplementation(async () => false),
