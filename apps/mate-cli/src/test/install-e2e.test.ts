@@ -61,6 +61,26 @@ async function writeCompanionConfig(companion: string, capabilities: string[] = 
   );
 }
 
+async function writeHubConfig(hub: string): Promise<void> {
+  const configDir = path.join(hub, ".mate", "config");
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(
+    path.join(configDir, "framework.yaml"),
+    [
+      "type: hub",
+      "profiles:",
+      "  default:",
+      "    name: default",
+      "    allowedAgents: [claude]",
+      "packageManagers: [bun]",
+      "capabilities: []",
+      "hub:",
+      "  companions: []",
+      "",
+    ].join("\n"),
+  );
+}
+
 async function runMate(root: string, cwd: string, args: string[]): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
@@ -117,6 +137,21 @@ describe("install lifecycle CLI", () => {
     await expect(
       fs.stat(path.join(entry.companion, ".claude", "skills", "graphify")),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("does not install agent guidance files into a hub root", async () => {
+    const entry = await scenario();
+    await writeHubConfig(entry.root);
+
+    const result = await runMate(entry.root, entry.root, ["install", "--yes"]);
+
+    expect(result.status).toBe(0);
+    await expect(fs.stat(path.join(entry.root, "AGENTS.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.stat(path.join(entry.root, "CLAUDE.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   test("blocks a linked companion without companion install state", async () => {

@@ -48,6 +48,40 @@ describe("install context and planning", () => {
     expect(context.config.capabilities).toEqual([]);
   });
 
+  test("classifies local working and hub roots explicitly", async () => {
+    const workingRoot = await tempRoot();
+    const hubRoot = await tempRoot();
+    const writeConfig = async (root: string, type: string): Promise<void> => {
+      const configDir = path.join(root, ".mate", "config");
+      await fs.mkdir(configDir, { recursive: true });
+      await fs.writeFile(
+        path.join(configDir, "framework.yaml"),
+        [
+          `type: ${type}`,
+          "profiles:",
+          "  default:",
+          "    name: default",
+          "    allowedAgents: []",
+          ...(type === "hub" ? ["hub:", "  companions: []"] : []),
+          "",
+        ].join("\n"),
+      );
+    };
+
+    await writeConfig(workingRoot, "working");
+    await writeConfig(hubRoot, "hub");
+
+    const working = await resolveInstallContext(workingRoot);
+    const hub = await resolveInstallContext(hubRoot);
+
+    expect(working.kind).toBe("working");
+    expect(working.companionPath).toBeUndefined();
+    expect(hub.kind).toBe("hub");
+    expect(hub.companionPath).toBe(hubRoot);
+    expect(getInstallStatePath(working)).toBe(getInstallStatePath({ kind: "core" }));
+    expect(getInstallStatePath(hub)).not.toBe(getInstallStatePath({ kind: "core" }));
+  });
+
   test("plans selected companion dependencies and excludes unselected capabilities", async () => {
     const root = await tempRoot();
     const configDir = path.join(root, ".mate", "config");
