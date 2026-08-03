@@ -14,6 +14,7 @@ import { GlobalConfigStore } from "./global-config-store";
 import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
 import {
   AmbiguousCompanionError,
+  ConfigError,
   RepositoryNotFoundError,
   WorkingRepoRequiredError,
 } from "./types";
@@ -24,6 +25,12 @@ async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   tempRoots.push(dir);
   return dir;
+}
+
+async function writeFrameworkConfig(root: string, contents: string): Promise<void> {
+  const configPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(configPath, contents, "utf8");
 }
 
 afterEach(async () => {
@@ -59,6 +66,75 @@ describe("resolveFrameworkContext", () => {
     const ctx = await resolveFrameworkContext(root, store);
 
     expect(ctx.companionPath).toBe(root);
+  });
+
+  test("resolves a valid hub root and its companion child", async () => {
+    const root = await makeTempDir("ctx-hub-valid-");
+    const child = path.join(root, "companions", "product");
+    await fs.mkdir(child, { recursive: true });
+    await writeFrameworkConfig(child, "type: companion\n");
+    await writeFrameworkConfig(
+      root,
+      [
+        "type: hub",
+        "hub:",
+        "  companions:",
+        "    - id: product",
+        "      path: companions/product",
+        "      source:",
+        "        kind: local",
+        "",
+      ].join("\n"),
+    );
+
+    const ctx = await resolveFrameworkContext(
+      root,
+      new GlobalConfigStore(path.join(root, "global.yaml")),
+    );
+
+    expect(ctx.contextKind).toBe("hub");
+    expect(ctx.hub?.companions).toEqual([
+      { id: "product", path: "companions/product", source: { kind: "local" } },
+    ]);
+  });
+
+  test("requires each hub child to declare type companion", async () => {
+    const root = await makeTempDir("ctx-hub-child-type-");
+    const child = path.join(root, "child");
+    await fs.mkdir(child, { recursive: true });
+    await writeFrameworkConfig(child, "type: working\n");
+    await writeFrameworkConfig(
+      root,
+      "type: hub\nhub:\n  companions:\n    - id: child\n      path: child\n      source:\n        kind: local\n",
+    );
+
+    await expect(
+      resolveFrameworkContext(root, new GlobalConfigStore(path.join(root, "global.yaml"))),
+    ).rejects.toThrow(/declare type "companion"/);
+  });
+
+  test("rejects a missing hub child", async () => {
+    const root = await makeTempDir("ctx-hub-missing-child-");
+    await writeFrameworkConfig(
+      root,
+      "type: hub\nhub:\n  companions:\n    - id: missing\n      path: missing\n      source:\n        kind: local\n",
+    );
+
+    await expect(
+      resolveFrameworkContext(root, new GlobalConfigStore(path.join(root, "global.yaml"))),
+    ).rejects.toThrow(/directory is missing/);
+  });
+
+  test("rejects an unsafe hub child path outside the root", async () => {
+    const root = await makeTempDir("ctx-hub-outside-");
+    await writeFrameworkConfig(
+      root,
+      "type: hub\nhub:\n  companions:\n    - id: outside\n      path: ../outside\n      source:\n        kind: local\n",
+    );
+
+    await expect(
+      resolveFrameworkContext(root, new GlobalConfigStore(path.join(root, "global.yaml"))),
+    ).rejects.toThrow(ConfigError);
   });
 
   test("throws RepositoryNotFoundError when nothing is found", async () => {

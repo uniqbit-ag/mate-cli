@@ -2,12 +2,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { parse } from "yaml";
 import { CompanionResolver } from "./companion-resolver";
 import { ConfigStore } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
 import { findRepoLocalLinkedRepository } from "./repo-local-registry";
 import {
   AmbiguousCompanionError,
+  ConfigError,
+  type FrameworkConfig,
+  type HubConfig,
   type LinkedRepository,
   RepositoryNotFoundError,
   WorkingRepoRequiredError,
@@ -19,7 +23,8 @@ export interface FrameworkContext {
   workingRepoStore: WorkingRepoStore;
   companionPath: string;
   repository?: LinkedRepository;
-  contextKind: "env" | "working-repo" | "companion-root";
+  contextKind: "env" | "working-repo" | "companion-root" | "hub";
+  hub?: HubConfig;
 }
 
 export interface LaunchContext extends FrameworkContext {
@@ -43,6 +48,7 @@ function makeContext(
   companionPath: string,
   contextKind: FrameworkContext["contextKind"],
   repository?: LinkedRepository,
+  hub?: HubConfig,
 ): FrameworkContext {
   const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   return {
@@ -51,7 +57,88 @@ function makeContext(
     companionPath,
     repository,
     contextKind,
+    hub,
   };
+}
+
+function isStrictChildPath(parentPath: string, candidatePath: string): boolean {
+  const relative = path.relative(parentPath, candidatePath);
+  return relative !== "" && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative);
+}
+
+async function validateHubMember(
+  resolvedRoot: string,
+  realRoot: string,
+  member: HubConfig["companions"][number],
+): Promise<ConfigError | null> {
+  const memberPath = path.resolve(resolvedRoot, member.path);
+  if (!isStrictChildPath(resolvedRoot, memberPath)) {
+    return new ConfigError(
+      `Hub member "${member.id}" path resolves outside the hub root: ${member.path}`,
+    );
+  }
+
+  const stats = await fs.stat(memberPath).catch(() => null);
+  if (!stats?.isDirectory()) {
+    return new ConfigError(`Hub member "${member.id}" directory is missing: ${memberPath}`);
+  }
+
+  const realMemberPath = await fs.realpath(memberPath).catch(() => memberPath);
+  if (!isStrictChildPath(realRoot, realMemberPath)) {
+    return new ConfigError(
+      `Hub member "${member.id}" path resolves outside the hub root: ${member.path}`,
+    );
+  }
+
+  const childConfigPath = path.join(memberPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+  let childConfig: Partial<FrameworkConfig> | null;
+  try {
+    childConfig = parse(
+      await fs.readFile(childConfigPath, "utf8"),
+    ) as Partial<FrameworkConfig> | null;
+  } catch {
+    return new ConfigError(
+      `Hub member "${member.id}" must contain a framework.yaml declaring type "companion".`,
+    );
+  }
+
+  if (childConfig?.type !== "companion") {
+    return new ConfigError(
+      `Hub member "${member.id}" must declare type "companion" in ${childConfigPath}.`,
+    );
+  }
+
+  return null;
+}
+
+async function validateHubMembers(hubRoot: string, hub: HubConfig): Promise<void> {
+  const resolvedRoot = path.resolve(hubRoot);
+  const realRoot = await fs.realpath(resolvedRoot).catch(() => resolvedRoot);
+  const errors = await Promise.all(
+    hub.companions.map((member) => validateHubMember(resolvedRoot, realRoot, member)),
+  );
+  const firstError = errors.find((error): error is ConfigError => error !== null);
+  if (firstError) throw firstError;
+}
+
+async function withResolvedHub(context: FrameworkContext): Promise<FrameworkContext> {
+  let rawConfig: Partial<FrameworkConfig> | null;
+  try {
+    rawConfig = parse(
+      await fs.readFile(context.configStore.configPath, "utf8"),
+    ) as Partial<FrameworkConfig> | null;
+  } catch {
+    return context;
+  }
+
+  if (rawConfig?.type !== "hub") return context;
+
+  const config = await context.configStore.load();
+  if (!config.hub) {
+    throw new ConfigError('A "hub" framework requires a hub.companions array.');
+  }
+  await validateHubMembers(context.companionPath, config.hub);
+  return { ...context, contextKind: "hub", hub: config.hub };
 }
 
 // Resolves the companion framework context without a repositoryId. Used by commands
@@ -66,15 +153,19 @@ export async function resolveFrameworkContext(
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
   if (envCompanionPath) {
     const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
-    return makeContext(path.resolve(envCompanionPath), "env", repository ?? undefined);
+    return withResolvedHub(
+      makeContext(path.resolve(envCompanionPath), "env", repository ?? undefined),
+    );
   }
 
   const match = await new CompanionResolver(globalConfigStore).resolve(cwd);
   if (match) {
-    return makeContext(
-      match.companionPath,
-      "working-repo",
-      (await findRepoLocalLinkedRepository(cwd)) ?? undefined,
+    return withResolvedHub(
+      makeContext(
+        match.companionPath,
+        "working-repo",
+        (await findRepoLocalLinkedRepository(cwd)) ?? undefined,
+      ),
     );
   }
 
@@ -83,12 +174,11 @@ export async function resolveFrameworkContext(
   const localConfigPath = path.join(localDir, "config", "framework.yaml");
   try {
     await fs.access(localConfigPath);
-    return makeContext(cwd, "companion-root");
   } catch {
     // no local config
+    throw new RepositoryNotFoundError(`No companion found for current directory: ${cwd}`);
   }
-
-  throw new RepositoryNotFoundError(`No companion found for current directory: ${cwd}`);
+  return withResolvedHub(makeContext(cwd, "companion-root"));
 }
 
 // Resolves context for agent-launch commands. Returns a LaunchContext with repositoryId.
@@ -105,8 +195,11 @@ export async function resolveForLaunch(
   if (envCompanionPath) {
     const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
     const repositoryId = process.env.MATE_REPO_ID ?? repository?.id ?? "";
+    const context = await withResolvedHub(
+      makeContext(path.resolve(envCompanionPath), "env", repository ?? undefined),
+    );
     return {
-      ...makeContext(path.resolve(envCompanionPath), "env", repository ?? undefined),
+      ...context,
       repositoryId,
     };
   }
@@ -120,8 +213,11 @@ export async function resolveForLaunch(
 
   if (resolution.match) {
     const repository = (await findRepoLocalLinkedRepository(cwd)) ?? undefined;
+    const context = await withResolvedHub(
+      makeContext(resolution.match.companionPath, "working-repo", repository),
+    );
     return {
-      ...makeContext(resolution.match.companionPath, "working-repo", repository),
+      ...context,
       repositoryId: resolution.match.repositoryId,
     };
   }
@@ -140,7 +236,9 @@ export async function resolveForCapability(
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
   if (envCompanionPath) {
     const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
-    const ctx = makeContext(path.resolve(envCompanionPath), "env", repository ?? undefined);
+    const ctx = await withResolvedHub(
+      makeContext(path.resolve(envCompanionPath), "env", repository ?? undefined),
+    );
     const repositoryId = process.env.MATE_REPO_ID;
     if (repositoryId) {
       return { ...ctx, repositoryId };
@@ -155,12 +253,15 @@ export async function resolveForCapability(
 
   const match = await new CompanionResolver(globalConfigStore).resolve(cwd);
   if (match) {
-    return {
-      ...makeContext(
+    const context = await withResolvedHub(
+      makeContext(
         match.companionPath,
         "working-repo",
         (await findRepoLocalLinkedRepository(cwd)) ?? undefined,
       ),
+    );
+    return {
+      ...context,
       repositoryId: match.repositoryId,
     };
   }
@@ -172,10 +273,10 @@ export async function resolveForCapability(
   const localConfigPath = path.join(localDir, "config", "framework.yaml");
   try {
     await fs.access(localConfigPath);
-    return { ...makeContext(cwd, "companion-root"), repositoryId: process.env.MATE_REPO_ID ?? "" };
   } catch {
     // no local config
+    throw new WorkingRepoRequiredError("cap");
   }
-
-  throw new WorkingRepoRequiredError("cap");
+  const context = await withResolvedHub(makeContext(cwd, "companion-root"));
+  return { ...context, repositoryId: process.env.MATE_REPO_ID ?? "" };
 }

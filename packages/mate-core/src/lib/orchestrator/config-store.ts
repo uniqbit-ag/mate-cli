@@ -7,6 +7,8 @@ import { ConfigError, type FrameworkConfig } from "./types";
 
 export const RTK_CAPABILITY_SPLIT_MIGRATION = "rtk-capability-split-v1";
 
+const HUB_MEMBER_SOURCE_KINDS = ["git", "local"] as const;
+
 function defaultConfigPath(): string {
   return `.${FRAMEWORK_NAME}/config/framework.yaml`;
 }
@@ -54,6 +56,75 @@ export function migrateRtkCapabilitySplit(config: FrameworkConfig): FrameworkCon
   };
 }
 
+/** Validates the shape of a hub manifest before it is used. */
+export function validateHubConfig(config: FrameworkConfig): void {
+  if (config.type !== "hub") {
+    if (config.hub !== undefined) {
+      throw new ConfigError('Only a framework with type "hub" may define hub.companions.');
+    }
+    return;
+  }
+
+  const members = config.hub?.companions;
+  if (!Array.isArray(members)) {
+    throw new ConfigError('A "hub" framework requires a hub.companions array.');
+  }
+
+  const ids = new Set<string>();
+  for (const member of members) {
+    if (!member || typeof member !== "object") {
+      throw new ConfigError("Each hub member must be an object.");
+    }
+
+    if (typeof member.id !== "string" || member.id.trim() === "") {
+      throw new ConfigError("Each hub member requires a non-empty id.");
+    }
+    if (ids.has(member.id)) {
+      throw new ConfigError(`Hub member id is duplicated: ${member.id}`);
+    }
+    ids.add(member.id);
+
+    if (
+      typeof member.path !== "string" ||
+      member.path.trim() === "" ||
+      path.isAbsolute(member.path) ||
+      path.normalize(member.path) === "." ||
+      path.normalize(member.path) === ".." ||
+      path.normalize(member.path).startsWith(`..${path.sep}`)
+    ) {
+      throw new ConfigError(`Hub member "${member.id}" path must be a relative child path.`);
+    }
+
+    const source = member.source;
+    if (!source || typeof source !== "object") {
+      throw new ConfigError(`Hub member "${member.id}" requires source provenance.`);
+    }
+    if (!HUB_MEMBER_SOURCE_KINDS.includes(source.kind)) {
+      throw new ConfigError(
+        `Hub member "${member.id}" source kind must be one of: ${HUB_MEMBER_SOURCE_KINDS.join(", ")}.`,
+      );
+    }
+    if (source.kind === "git" && (typeof source.url !== "string" || source.url.trim() === "")) {
+      throw new ConfigError(`Git-backed hub member "${member.id}" requires a source URL.`);
+    }
+    if (source.ref !== undefined && (typeof source.ref !== "string" || source.ref.trim() === "")) {
+      throw new ConfigError(`Hub member "${member.id}" source ref must be a non-empty string.`);
+    }
+    if (
+      source.kind === "git" &&
+      (typeof member.materializedCommit !== "string" || member.materializedCommit.trim() === "")
+    ) {
+      throw new ConfigError(`Git-backed hub member "${member.id}" requires materializedCommit.`);
+    }
+    if (
+      member.materializedCommit !== undefined &&
+      (typeof member.materializedCommit !== "string" || member.materializedCommit.trim() === "")
+    ) {
+      throw new ConfigError(`Hub member "${member.id}" materializedCommit must be non-empty.`);
+    }
+  }
+}
+
 export const PLUGIN_DECLARATION_POLICIES = ["default", "optional"] as const;
 
 /**
@@ -78,6 +149,7 @@ export class ConfigStore extends YamlFileStore<FrameworkConfig> {
 
   override async load(): Promise<FrameworkConfig> {
     const merged = mergeWithDefaults(await super.load());
+    validateHubConfig(merged);
     validatePluginDeclarations(merged);
     const needsMigration = !(merged.migrations ?? []).includes(RTK_CAPABILITY_SPLIT_MIGRATION);
     const config = migrateRtkCapabilitySplit(merged);

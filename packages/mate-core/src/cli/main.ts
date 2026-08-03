@@ -9,6 +9,7 @@ import {
 import { runArtifactCommand } from "./commands/artifact/artifact";
 import { runCapCommand } from "./commands/cap";
 import { runCompanionCommand } from "./commands/companion/companion";
+import { runHubCommand } from "./commands/companion/hub";
 import { runConfigCommand } from "./commands/config";
 import { runDoctorCommand } from "./commands/doctor";
 import { runLaunchClaudeCommand } from "./commands/launch/claude";
@@ -129,6 +130,11 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
         case "link":
           if (!(await gate({}))) return;
           break;
+        // Hub commands establish and operate on a local hub root directly;
+        // they must not require a linked working repository or installation.
+        case "hub":
+          if (!(await gate({ updateGuard: true }))) return;
+          break;
         // open/tui consume a companion context.
         case "open":
         case "tui":
@@ -139,6 +145,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
           if (!(await gate({ updateGuard: true }))) return;
       }
       await runCompanionCommand(subcommand, rest);
+      return;
+    case "hub":
+      if (!(await gate({ updateGuard: true }))) return;
+      await runHubCommand(subcommand ? [subcommand, ...rest] : []);
       return;
     case "claude":
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;

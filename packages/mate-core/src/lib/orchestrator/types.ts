@@ -74,6 +74,26 @@ export interface CapabilityConfig {
   schemaProfile?: OpenSpecSchemaProfile;
 }
 
+export type FrameworkType = "working" | "companion" | "hub";
+
+export interface HubMemberSource {
+  kind: "git" | "local";
+  url?: string;
+  ref?: string;
+  path?: string;
+}
+
+export interface HubMember {
+  id: string;
+  path: string;
+  source: HubMemberSource;
+  materializedCommit?: string;
+}
+
+export interface HubConfig {
+  companions: HubMember[];
+}
+
 /**
  * Distribution-name-keyed semver ranges (e.g. `{ mate: ">=0.15.0" }` or
  * `{ "acme-mate": ">=1.2.0" }`). A running CLI only checks the key matching
@@ -105,8 +125,9 @@ export interface PluginDeclaration {
 }
 
 export interface FrameworkConfig {
-  type?: "working" | "companion";
+  type?: FrameworkType;
   git?: GitModeProfile;
+  hub?: HubConfig;
   profiles: Record<string, PolicyProfile>;
   capabilities?: CapabilityConfig[];
   plugins?: PluginDeclaration[];

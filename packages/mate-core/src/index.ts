@@ -47,7 +47,11 @@ export type {
   TemplatesService,
 } from "./tools/setup/plugin";
 export type {
+  FrameworkType,
   FrameworkConfig,
+  HubConfig,
+  HubMember,
+  HubMemberSource,
   PluginDeclaration,
   PluginDeclarationPolicy,
 } from "./lib/orchestrator/types";
