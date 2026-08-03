@@ -117,7 +117,6 @@ companion directory and sets `MATE_ARTIFACT_PATH` for that shell.
 mate hub init ./workspace
 mate hub add <registered-companion-or-git-url>
 mate hub sync
-mate hub open
 ```
 
 A hub is a local, non-Git Mate root containing materialized `type: companion`
@@ -125,10 +124,8 @@ children. Git-backed additions are fresh clones; registered companions without
 a Git origin are copied as local-only children. `hub sync` is explicit,
 updates only hub-declared plugins, fetches tracked remotes, and applies only
 clean fast-forward updates. It never updates child plugin workspaces, pushes,
-merges, resets, or discards child changes. `hub open` creates a
-multi-root VS Code or Cursor workspace with the hub first, followed by its
-valid children; initialization, adding, synchronization, and setup do not open
-an editor implicitly.
+merges, resets, or discards child changes. Initialization, adding,
+synchronization, and setup do not open an editor implicitly.
 
 ### Health And Inspection
 

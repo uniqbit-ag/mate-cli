@@ -80,57 +80,7 @@ describe("editor helpers", () => {
     ).toBe("undetermined");
   });
 
-  test("writes guidance and returns false when opening a workspace without an editor CLI", () => {
-    spyOn(editor, "resolveEditorBinary").mockReturnValue(null);
-    const chunks: string[] = [];
-    const originalWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string) => {
-      chunks.push(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-
-    try {
-      expect(editor.openEditorWorkspace(["/tmp/repo", "/tmp/companion"], "code")).toBe(false);
-    } finally {
-      process.stderr.write = originalWrite;
-    }
-
-    expect(chunks.join("")).toContain("code CLI not found on PATH");
-    expect(chunks.join("")).toContain("Install 'code' command in PATH");
-  });
-
   describe("injectEditorFolder", () => {
-    test("writes the hub first followed by materialized children", async () => {
-      spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
-      const spawnCalls: string[][] = [];
-      const spawnProcess = ((command: string, args: string[]) => {
-        spawnCalls.push([command, ...args]);
-        return {
-          on: () => undefined,
-          unref: () => undefined,
-        } as unknown as EventEmitter & { unref(): void };
-      }) as typeof spawn;
-      const root = await makeTempDir("editor-hub-");
-      const hubPath = path.join(root, "hub");
-      const childA = path.join(hubPath, "companions", "a");
-      const childB = path.join(hubPath, "companions", "b");
-      await fs.mkdir(childA, { recursive: true });
-      await fs.mkdir(childB, { recursive: true });
-
-      await editor.injectEditorFolder(
-        [childA, childB],
-        hubPath,
-        "code",
-        spawnProcess,
-        () => "not-open",
-      );
-
-      expect(JSON.parse(await fs.readFile(editor.editorWorkspacePath(hubPath), "utf8"))).toEqual({
-        folders: [{ path: hubPath }, { path: childA }, { path: childB }],
-      });
-      expect(spawnCalls).toEqual([["/usr/bin/code", "--add", hubPath, childA, childB]]);
-    });
-
     test("writes guidance and returns false when the editor CLI is unavailable", async () => {
       spyOn(editor, "resolveEditorBinary").mockReturnValue(null);
       const chunks: string[] = [];

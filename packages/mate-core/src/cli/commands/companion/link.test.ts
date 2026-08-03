@@ -593,7 +593,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
       "cursor",
     );
     const injectEditorFolder = spyOn(editor, "injectEditorFolder");
-    const openEditorWorkspace = spyOn(editor, "openEditorWorkspace");
     const originalTermProgram = process.env.TERM_PROGRAM;
     process.env.TERM_PROGRAM = "cursor";
 
@@ -619,7 +618,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
 
     expect(detectInvokingEditorCli).not.toHaveBeenCalled();
     expect(injectEditorFolder).not.toHaveBeenCalled();
-    expect(openEditorWorkspace).not.toHaveBeenCalled();
   });
 
   test("writes the workspace-local link metadata without requiring companion-side registry writes", async () => {
