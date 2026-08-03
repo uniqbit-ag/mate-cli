@@ -18,7 +18,7 @@ import type { Plugin } from "../tools/setup/plugin";
 export const INSTALL_CONTRACT_REVISION = 1;
 
 export interface InstallContext {
-  kind: "core" | "companion" | "ambiguous";
+  kind: "core" | "working" | "companion" | "hub" | "ambiguous";
   companionPath?: string;
   config: FrameworkConfig;
   fingerprint: string;
@@ -66,8 +66,8 @@ export function getInstallStatePath(
     throw new Error("cannot resolve install state for an ambiguous companion context");
   }
   const key =
-    scope.kind === "companion" && scope.companionPath
-      ? fingerprint({ kind: "companion", companionPath: path.resolve(scope.companionPath) })
+    (scope.kind === "companion" || scope.kind === "hub") && scope.companionPath
+      ? fingerprint({ kind: scope.kind, companionPath: path.resolve(scope.companionPath) })
       : "core";
   return path.join(stateRoot, `${key}.yaml`);
 }
@@ -106,15 +106,23 @@ function coreContext(): InstallContext {
   };
 }
 
-async function contextForCompanion(companionPath: string): Promise<InstallContext> {
-  const configPath = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+async function contextForConfiguredRoot(rootPath: string): Promise<InstallContext> {
+  const configPath = path.join(rootPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
   const config = mergeWithDefaults(await new ConfigStore(configPath).load());
+  const kind = config.type === "hub" ? "hub" : config.type === "working" ? "working" : "companion";
+  if (kind === "working") return workingContext();
+
   return {
-    kind: "companion",
-    companionPath,
+    kind,
+    companionPath: rootPath,
     config,
-    fingerprint: fingerprint({ kind: "companion", companionPath, config }),
+    fingerprint: fingerprint({ kind, companionPath: rootPath, config }),
   };
+}
+
+function workingContext(): InstallContext {
+  const context = coreContext();
+  return { ...context, kind: "working" };
 }
 
 async function hasLocalConfig(cwd: string): Promise<boolean> {
@@ -132,7 +140,7 @@ export async function resolveInstallContext(
 ): Promise<InstallContext> {
   const resolvedCwd = path.resolve(cwd);
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
-  if (envCompanionPath) return contextForCompanion(path.resolve(envCompanionPath));
+  if (envCompanionPath) return contextForConfiguredRoot(path.resolve(envCompanionPath));
 
   const resolver = new CompanionResolver(deps.globalConfigStore ?? new GlobalConfigStore());
   const resolution = await resolver.resolveWithDiagnostics(resolvedCwd);
@@ -147,8 +155,8 @@ export async function resolveInstallContext(
       ].join("\n"),
     };
   }
-  if (resolution.match) return contextForCompanion(resolution.match.companionPath);
-  if (await hasLocalConfig(resolvedCwd)) return contextForCompanion(resolvedCwd);
+  if (resolution.match) return contextForConfiguredRoot(resolution.match.companionPath);
+  if (await hasLocalConfig(resolvedCwd)) return contextForConfiguredRoot(resolvedCwd);
   return coreContext();
 }
 
@@ -329,8 +337,10 @@ export async function inspectInstallPreflight(
 }
 
 export async function reconcileInstalledCompanion(plan: InstallPlan): Promise<void> {
-  if (plan.context.kind === "companion" && plan.context.companionPath) {
-    const { syncCompanionFiles } = await import("../tools/setup");
-    await syncCompanionFiles(plan.context.companionPath, plan.context.config);
+  if (plan.context.kind !== "companion" || !plan.context.companionPath) {
+    return;
   }
+
+  const { syncCompanionFiles } = await import("../tools/setup");
+  await syncCompanionFiles(plan.context.companionPath, plan.context.config);
 }
