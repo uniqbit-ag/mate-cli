@@ -75,6 +75,13 @@ describe("companion hub lifecycle", () => {
     expect(
       await fs.readFile(path.join(root, ".mate", "config", "framework.yaml"), "utf8"),
     ).toContain("type: hub");
+    const config = await new ConfigStore(
+      path.join(root, ".mate", "config", "framework.yaml"),
+    ).load();
+    expect(config.profiles).toEqual({});
+    expect(config.packageManagers).toEqual([]);
+    expect(config.capabilities).toEqual([]);
+    expect(config.hub).toEqual({ companions: [] });
     expect(await fs.stat(path.join(root, ".git")).catch(() => null)).toBeNull();
   });
 
