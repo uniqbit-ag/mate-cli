@@ -4,12 +4,17 @@ set -u
 input_file=$(mktemp "${TMPDIR:-/tmp}/mate-artifact-finish.XXXXXX")
 trap 'rm -f "$input_file"' EXIT
 cat >"$input_file"
+companion_path="${MATE_ARTIFACT_PATH:-}"
 
 node -e '
 const fs = require("node:fs");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 const inputFile = process.argv[1];
+const companionPath = process.argv[2] || "";
 const archivePathPattern = /(?:^|[\s\/"\x27`,(])openspec\/changes\/archive\/(\d{4}-\d{2}-\d{2}-[^\/\s"\x27`,)]+)/;
+const archiveEntryPattern = /^\d{4}-\d{2}-\d{2}-.+$/;
 
 function shellSplit(command) {
   const parts = [];
@@ -133,10 +138,82 @@ function isClearFailure(response) {
   return typeof exitCode === "number" && exitCode !== 0;
 }
 
+// A change is finished once `mate artifact finish` has tagged it; this never
+// runs, denies, or auto-invokes the finish pipeline itself — it only checks
+// whether that already happened, so it cannot be steered by injected content.
+function hasFinishTag(entryName) {
+  if (!companionPath) return true; // cannot verify — do not block on it
+  const result = spawnSync(
+    "git",
+    ["-C", companionPath, "rev-parse", "-q", "--verify", "refs/tags/openspec/" + entryName],
+    { stdio: "ignore" },
+  );
+  return result.status === 0;
+}
+
+function handleStop(input) {
+  if (!companionPath) return;
+  const archiveDir = path.join(companionPath, "openspec", "changes", "archive");
+  let entries;
+  try {
+    entries = fs.readdirSync(archiveDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && archiveEntryPattern.test(entry.name))
+      .map((entry) => entry.name);
+  } catch {
+    return;
+  }
+  const unfinished = entries.filter((name) => !hasFinishTag(name));
+  if (unfinished.length === 0) return;
+
+  // Warn about each unfinished change at most once per session: if the user
+  // declines to finish now, repeating the block on every later Stop would
+  // make the session impossible to end.
+  const sessionId = typeof input.session_id === "string" && input.session_id ? input.session_id : null;
+  const stateDir = path.join(companionPath, ".claude", "state");
+  const stateFile = path.join(
+    stateDir,
+    "mate-artifact-finish-stop." +
+      (sessionId ? sessionId.replace(/[^a-zA-Z0-9_-]/g, "_") : "archive-snapshot") +
+      ".json",
+  );
+  let flagged = [];
+  try {
+    const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    if (state && Array.isArray(state.flagged)) flagged = state.flagged;
+  } catch {}
+  const flaggedSet = new Set(flagged);
+  const toWarn = unfinished.filter((name) => !flaggedSet.has(name));
+  if (toWarn.length === 0) return;
+
+  try {
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(
+      stateFile,
+      JSON.stringify({ version: 1, flagged: [...flaggedSet, ...toWarn] }) + "\n",
+    );
+  } catch {
+    return; // cannot record the warning — do not block without being able to dedupe it
+  }
+
+  const names = toWarn.map((name) => name.replace(/^\d{4}-\d{2}-\d{2}-/, ""));
+  const reason =
+    "Archived OpenSpec change(s) not yet finished (no dated finish tag): " + names.join(", ") +
+    ". Invoke the mate-artifact-finish skill now — it will ask you to confirm before it " +
+    "commits, tags, and pushes — then run `mate artifact finish \"<name>\" --json` for each. " +
+    "Do not hand-commit or hand-tag. If the user declines, you may end the turn; this check " +
+    "will not repeat for the same change(s) in this session.";
+  process.stdout.write(JSON.stringify({ decision: "block", reason }));
+}
+
 let input = {};
 try {
   input = JSON.parse(fs.readFileSync(inputFile, "utf8") || "{}");
 } catch {}
+
+if (input.hook_event_name === "Stop") {
+  handleStop(input);
+  process.exit(0);
+}
 
 if (input.hook_event_name !== "PostToolUse" || input.tool_name !== "Bash") process.exit(0);
 const command = input.tool_input && typeof input.tool_input.command === "string"
@@ -156,5 +233,5 @@ process.stdout.write(JSON.stringify({
     additionalContext: context,
   },
 }));
-' "$input_file"
+' "$input_file" "$companion_path"
 exit 0
