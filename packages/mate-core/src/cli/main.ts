@@ -30,6 +30,8 @@ export interface GateNeeds {
   updateGuard?: boolean;
   /** Block the command when the current directory resolves to a hub root. */
   notHubRoot?: boolean;
+  /** Block the command when the current directory resolves to a companion root. */
+  notCompanionRoot?: boolean;
   /** Require an unambiguous companion (selection wizard on ambiguity) before dispatch. */
   companion?: boolean;
   /** Require a complete installation (install preflight) before dispatch. */
@@ -91,12 +93,22 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await showUpdateBannerIfAvailable(updateStore);
     }
 
-    if (needs.notHubRoot && (await deps.resolveRootContext()).kind === "hub") {
-      console.error(
-        `${FRAMEWORK_NAME}: this directory resolves to a companion hub root; companion commands are not available here. Use \`${FRAMEWORK_NAME} hub ...\` to manage the hub.`,
-      );
-      process.exitCode = 1;
-      return false;
+    if (needs.notHubRoot || needs.notCompanionRoot) {
+      const kind = (await deps.resolveRootContext()).kind;
+      if (needs.notHubRoot && kind === "hub") {
+        console.error(
+          `${FRAMEWORK_NAME}: this directory resolves to a companion hub root; companion commands are not available here. Use \`${FRAMEWORK_NAME} hub ...\` to manage the hub.`,
+        );
+        process.exitCode = 1;
+        return false;
+      }
+      if (needs.notCompanionRoot && kind === "companion") {
+        console.error(
+          `${FRAMEWORK_NAME}: this directory resolves to a companion root; hub commands are not available here. Run them from a hub root.`,
+        );
+        process.exitCode = 1;
+        return false;
+      }
     }
 
     if (needs.companion && !(await deps.ensureUnambiguousCompanion())) {
@@ -126,9 +138,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       return;
     case "plugin":
       // Declares into framework.yaml and installs on the spot, so it needs
-      // the same gating as `install` — an unambiguous companion, but must
-      // stay runnable when installation is otherwise incomplete.
-      if (!(await gate({ updateGuard: true }))) return;
+      // the same gating as `install` — an unambiguous companion (hubs pass
+      // trivially), but must stay runnable when installation is otherwise
+      // incomplete.
+      if (!(await gate({ companion: true }))) return;
       await runPluginCommand(subcommand, rest);
       return;
     case "artifact":
@@ -144,9 +157,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
           if (!(await gate({ notHubRoot: true }))) return;
           break;
         // Hub commands establish and operate on a local hub root directly;
-        // they must not require a linked working repository or installation.
+        // they must not require a linked working repository or installation —
+        // but companions are never hubs.
         case "hub":
-          if (!(await gate({ updateGuard: true }))) return;
+          if (!(await gate({ updateGuard: true, notCompanionRoot: true }))) return;
           break;
         // open/tui consume a companion context.
         case "open":
@@ -160,7 +174,8 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runCompanionCommand(subcommand, rest);
       return;
     case "hub":
-      if (!(await gate({ updateGuard: true }))) return;
+      // Hubs are never companions: hub commands are blocked in companion roots.
+      if (!(await gate({ updateGuard: true, notCompanionRoot: true }))) return;
       await runHubCommand(subcommand ? [subcommand, ...rest] : []);
       return;
     case "claude":
