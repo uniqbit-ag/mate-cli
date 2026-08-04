@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// Thin shim: hook logic lives in src/hooks/session-banner.ts
-// (loaded via node's native TypeScript type stripping, engines node >= 24).
-import { run } from "../../src/hooks/session-banner.ts";
+// Thin shim: hook logic lives in src/hooks/session-banner.ts, loaded through
+// ts-loader.mjs because the installed plugin sits inside node_modules where
+// node's native type stripping is disabled.
+import "./ts-loader.mjs";
 
+const { run } = await import("../../src/hooks/session-banner.ts");
 process.exitCode = run();

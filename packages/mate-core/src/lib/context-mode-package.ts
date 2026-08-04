@@ -20,7 +20,7 @@ export function isContextModePackageReference(value: unknown): value is string {
 }
 
 export function getContextModeInstallDir(companionPath: string): string {
-  return path.join(companionPath, ".mate", "dependencies", CONTEXT_MODE_PACKAGE_NAME);
+  return path.join(companionPath, ".mate", "plugins", ".local");
 }
 
 export function getContextModePackageRoot(companionPath: string): string {

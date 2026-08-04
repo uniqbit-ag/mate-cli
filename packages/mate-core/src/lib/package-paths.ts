@@ -46,6 +46,7 @@ export function validateClaudePluginAssets(pluginRoot = getClaudePluginRoot()): 
   const expected = [
     path.join(".claude-plugin", "plugin.json"),
     path.join("hooks", "hooks.json"),
+    path.join("hooks", "ts-loader.mjs"),
     ...CLAUDE_PLUGIN_HOOK_SHIMS.map((shim) => path.join("hooks", shim)),
   ];
   const missing = expected.filter((asset) => !fs.existsSync(path.join(pluginRoot, asset)));

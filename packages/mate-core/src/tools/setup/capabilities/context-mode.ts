@@ -38,6 +38,12 @@ function getLegacyOwnershipPath(companionPath: string): string {
   return path.join(companionPath, ".mate", "state", "context-mode.json");
 }
 
+// Legacy install location from before the relocate-distribution-deps-to-plugins-local
+// change; self-heals on every apply the same way the ownership sidecar above does.
+function getLegacyInstallDir(companionPath: string): string {
+  return path.join(companionPath, ".mate", "dependencies", CONTEXT_MODE_PACKAGE_NAME);
+}
+
 function hasContextModeMcp(servers: Record<string, unknown>): boolean {
   return Object.entries(servers).some(
     ([name, value]) =>
@@ -117,6 +123,9 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
       };
     },
     async apply(ctx) {
+      const legacyInstallDir = getLegacyInstallDir(ctx.companionPath);
+      await fs.rm(legacyInstallDir, { recursive: true, force: true });
+      await pruneEmptyAncestors(path.dirname(legacyInstallDir), ctx.companionPath);
       if (ctx.mode === "setup") {
         await installPackage(ctx.companionPath);
       } else {

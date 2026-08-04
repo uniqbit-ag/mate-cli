@@ -1237,7 +1237,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
     "--plugin-dir",
     "<claude-plugin>",
     "--plugin-dir",
-    "<root>/companion/.mate/dependencies/context-mode/node_modules/context-mode",
+    "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
   ],
   "claudeEnv": {
     "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
@@ -1508,7 +1508,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     "--plugin-dir",
     "<claude-plugin>",
     "--plugin-dir",
-    "<root>/companion/.mate/dependencies/context-mode/node_modules/context-mode",
+    "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
   ],
   "claudeEnv": {
     "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
@@ -2816,7 +2816,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     "--plugin-dir",
     "<claude-plugin>",
     "--plugin-dir",
-    "<root>/companion/.mate/dependencies/context-mode/node_modules/context-mode",
+    "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
   ],
   "claudeEnv": {
     "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
