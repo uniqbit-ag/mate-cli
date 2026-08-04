@@ -17,7 +17,6 @@ export interface CompanionLinkInputs {
   gitUrl?: string;
   localPath?: string;
   companionPaths?: string[];
-  profile: string;
 }
 
 interface SourceStep {
@@ -45,15 +44,7 @@ interface TextStep {
   error?: string;
 }
 
-interface ProfileStep {
-  kind: "select";
-  field: "profile";
-  label: string;
-  options: string[];
-  activeIndex: number;
-}
-
-type WizardStep = SourceStep | CompanionMultiSelectStep | TextStep | ProfileStep;
+type WizardStep = SourceStep | CompanionMultiSelectStep | TextStep;
 
 interface WizardAppProps {
   step: WizardStep;
@@ -99,10 +90,7 @@ function CompanionLinkWizardApp({ step, stepNumber, totalSteps, onMounted }: Wiz
     );
   }
 
-  const items =
-    step.field === "source"
-      ? step.options.map((option) => ({ key: option.key, label: option.label }))
-      : step.options.map((option) => ({ key: option, label: option }));
+  const items = step.options.map((option) => ({ key: option.key, label: option.label }));
 
   return (
     <Box flexDirection="column" width="100%">
@@ -116,7 +104,6 @@ function CompanionLinkWizardApp({ step, stepNumber, totalSteps, onMounted }: Wiz
 }
 
 export interface CompanionLinkWizardOptions {
-  profiles: string[];
   existingCompanions?: string[];
   stdin?: NodeJS.ReadStream;
   stdout?: NodeJS.WriteStream;
@@ -125,7 +112,6 @@ export interface CompanionLinkWizardOptions {
 
 function buildSteps(
   source: CompanionSource,
-  profiles: string[],
   values: {
     gitUrl: string;
     localPath: string;
@@ -176,21 +162,7 @@ function buildSteps(
             selected: values.companionPaths,
           };
 
-  if (profiles.length === 1) {
-    return [sourceStep, sourceSpecificStep];
-  }
-
-  return [
-    sourceStep,
-    sourceSpecificStep,
-    {
-      kind: "select",
-      field: "profile",
-      label: "Profile",
-      options: profiles,
-      activeIndex: 0,
-    },
-  ];
+  return [sourceStep, sourceSpecificStep];
 }
 
 export async function selectCompanionLinkInputs(
@@ -199,7 +171,6 @@ export async function selectCompanionLinkInputs(
   const stdin = options.stdin ?? process.stdin;
   const stdout = options.stdout ?? process.stdout;
   const stderr = options.stderr ?? process.stderr;
-  const profiles = options.profiles;
   const existingCompanions = options.existingCompanions ?? [];
 
   return new Promise<CompanionLinkInputs | null>((resolve, reject) => {
@@ -214,7 +185,7 @@ export async function selectCompanionLinkInputs(
     let currentStepIndex = 0;
     const keepAlive = setInterval(() => {}, 1 << 30);
     let rendered: ReturnType<typeof inkRender> | undefined;
-    let steps = buildSteps(source, profiles, values, existingCompanions);
+    let steps = buildSteps(source, values, existingCompanions);
 
     const cleanup = () => {
       clearInterval(keepAlive);
@@ -232,24 +203,12 @@ export async function selectCompanionLinkInputs(
       resolve(value);
     };
 
-    const buildResult = (): CompanionLinkInputs => {
-      const singleProfile = profiles.length === 1 ? profiles[0]! : null;
-      const profile =
-        singleProfile ??
-        ((steps.find((step) => step.kind === "select" && step.field === "profile") as ProfileStep)
-          .options[
-          (steps.find((step) => step.kind === "select" && step.field === "profile") as ProfileStep)
-            .activeIndex
-        ] as string);
-
-      return {
-        source,
-        gitUrl: source === "git" ? values.gitUrl : undefined,
-        localPath: source === "local" ? values.localPath : undefined,
-        companionPaths: source === "existing" ? [...values.companionPaths] : undefined,
-        profile,
-      };
-    };
+    const buildResult = (): CompanionLinkInputs => ({
+      source,
+      gitUrl: source === "git" ? values.gitUrl : undefined,
+      localPath: source === "local" ? values.localPath : undefined,
+      companionPaths: source === "existing" ? [...values.companionPaths] : undefined,
+    });
 
     const rerender = () => {
       rendered?.rerender(
@@ -262,16 +221,7 @@ export async function selectCompanionLinkInputs(
     };
 
     const rebuildSteps = () => {
-      const previousProfileStep = steps.find(
-        (step): step is ProfileStep => step.kind === "select" && step.field === "profile",
-      );
-      steps = buildSteps(source, profiles, values, existingCompanions);
-      const nextProfileStep = steps.find(
-        (step): step is ProfileStep => step.kind === "select" && step.field === "profile",
-      );
-      if (previousProfileStep && nextProfileStep) {
-        nextProfileStep.activeIndex = previousProfileStep.activeIndex;
-      }
+      steps = buildSteps(source, values, existingCompanions);
     };
 
     const onData = (chunk: string) => {
@@ -352,7 +302,7 @@ export async function selectCompanionLinkInputs(
         return;
       }
 
-      if (step.kind === "select" && step.field === "source") {
+      if (step.kind === "select") {
         source = step.options[step.activeIndex]!.key;
         rebuildSteps();
         if (currentStepIndex < steps.length - 1) {
@@ -362,23 +312,17 @@ export async function selectCompanionLinkInputs(
         return;
       }
 
-      if (step.kind === "multiselect") {
-        if (step.selected.size === 0) {
-          const option = step.options[step.activeIndex];
-          if (option) step.selected.add(option);
-        }
-        if (currentStepIndex < steps.length - 1) {
-          currentStepIndex++;
-          rerender();
-        } else {
-          doResolve(buildResult());
-          rendered?.unmount();
-        }
-        return;
+      if (step.selected.size === 0) {
+        const option = step.options[step.activeIndex];
+        if (option) step.selected.add(option);
       }
-
-      doResolve(buildResult());
-      rendered?.unmount();
+      if (currentStepIndex < steps.length - 1) {
+        currentStepIndex++;
+        rerender();
+      } else {
+        doResolve(buildResult());
+        rendered?.unmount();
+      }
     };
 
     const onMounted = () => {

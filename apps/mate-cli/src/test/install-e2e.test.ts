@@ -49,10 +49,7 @@ async function writeCompanionConfig(companion: string, capabilities: string[] = 
     path.join(configDir, "framework.yaml"),
     [
       "type: companion",
-      "profiles:",
-      "  default:",
-      "    name: default",
-      "    allowedAgents: [claude]",
+      "allowedAgents: [claude]",
       "packageManagers: [bun]",
       "capabilities:",
       capabilityLines || "  []",
@@ -68,12 +65,10 @@ async function writeHubConfig(hub: string): Promise<void> {
     path.join(configDir, "framework.yaml"),
     [
       "type: hub",
-      "profiles:",
-      "  default:",
-      "    name: default",
-      "    allowedAgents: [claude]",
+      "allowedAgents: [claude]",
       "packageManagers: [bun]",
       "capabilities: []",
+      "migrations: [rtk-capability-split-v1]",
       "hub:",
       "  companions: []",
       "",
@@ -150,6 +145,35 @@ describe("install lifecycle CLI", () => {
       code: "ENOENT",
     });
     await expect(fs.stat(path.join(entry.root, "CLAUDE.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.stat(path.join(entry.root, ".opencode"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  test("blocks companion setup in a hub root without touching it", async () => {
+    const entry = await scenario();
+    await writeHubConfig(entry.root);
+    const configBefore = await fs.readFile(
+      path.join(entry.root, ".mate", "config", "framework.yaml"),
+      "utf8",
+    );
+
+    const result = await runMate(entry.root, entry.root, ["companion", "setup"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("hub");
+    await expect(
+      fs.readFile(path.join(entry.root, ".mate", "config", "framework.yaml"), "utf8"),
+    ).resolves.toBe(configBefore);
+    await expect(fs.stat(path.join(entry.root, "AGENTS.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.stat(path.join(entry.root, "CLAUDE.md"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(fs.stat(path.join(entry.root, ".opencode"))).rejects.toMatchObject({
       code: "ENOENT",
     });
   });

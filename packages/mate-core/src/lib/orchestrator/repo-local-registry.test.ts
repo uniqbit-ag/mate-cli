@@ -47,7 +47,7 @@ describe("writeRepoLocalRegistryEntry", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
 
@@ -55,7 +55,6 @@ describe("writeRepoLocalRegistryEntry", () => {
     expect(registry.repository).toEqual({
       id: "app",
       path: path.resolve(repoPath),
-      profile: "default",
     });
     expect(registry.companions).toEqual([
       { path: path.resolve("/tmp/companion"), repositoryId: "app", source: "git" },
@@ -76,13 +75,13 @@ describe("writeRepoLocalRegistryEntry", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion",
-      { id: "renamed-app", path: repoPath, profile: "research" },
+      { id: "renamed-app", path: repoPath },
       "existing",
     );
 
@@ -90,7 +89,6 @@ describe("writeRepoLocalRegistryEntry", () => {
     expect(registry.repository).toEqual({
       id: "renamed-app",
       path: path.resolve(repoPath),
-      profile: "research",
     });
     expect(registry.companions).toEqual([
       { path: path.resolve("/tmp/companion"), repositoryId: "renamed-app", source: "existing" },
@@ -105,13 +103,13 @@ describe("writeRepoLocalRegistryEntry", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion-a",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion-b",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "existing",
     );
 
@@ -132,7 +130,7 @@ describe("writeRepoLocalRegistryEntry", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
 
@@ -173,7 +171,7 @@ describe("findRepoLocalRegistryFile", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
 
@@ -191,7 +189,7 @@ describe("findRepoLocalRegistryFile", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
 
@@ -273,13 +271,13 @@ describe("listOtherRepoLocalCompanionPaths", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion-a",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion-b",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
 
@@ -306,14 +304,41 @@ describe("findRepoLocalLinkedRepository", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       "/tmp/companion",
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
 
     expect(await findRepoLocalLinkedRepository(repoPath)).toEqual({
       id: "app",
       path: path.resolve(repoPath),
-      profile: "default",
+    });
+  });
+
+  test("strips legacy profile and overrides fields from a stale repo-local entry", async () => {
+    const root = await makeTempDir("repo-local-linked-repo-legacy-");
+    const repoPath = path.join(root, "repo");
+    await initGitRepo(repoPath);
+
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(repoPath)), { recursive: true });
+    await fs.writeFile(
+      repoLocalRegistryPath(repoPath),
+      [
+        "repository:",
+        "  id: app",
+        `  path: ${repoPath}`,
+        "  profile: default",
+        "  overrides:",
+        "    allowedAgents:",
+        "      - claude",
+        "companions: []",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    expect(await findRepoLocalLinkedRepository(repoPath)).toEqual({
+      id: "app",
+      path: path.resolve(repoPath),
     });
   });
 

@@ -36,7 +36,7 @@ async function writeCompanion(root: string, name = "child"): Promise<string> {
   await fs.mkdir(path.join(companion, ".mate", "config"), { recursive: true });
   await fs.writeFile(
     path.join(companion, ".mate", "config", "framework.yaml"),
-    "type: companion\nprofiles:\n  default:\n    name: default\n    allowedAgents: []\n",
+    "type: companion\nallowedAgents: []\n",
     "utf8",
   );
   await fs.writeFile(path.join(companion, "notes.md"), "initial\n", "utf8");
@@ -78,7 +78,7 @@ describe("companion hub lifecycle", () => {
     const config = await new ConfigStore(
       path.join(root, ".mate", "config", "framework.yaml"),
     ).load();
-    expect(config.profiles).toEqual({});
+    expect(config.allowedAgents).toEqual([]);
     expect(config.packageManagers).toEqual([]);
     expect(config.capabilities).toEqual([]);
     expect(config.hub).toEqual({ companions: [] });

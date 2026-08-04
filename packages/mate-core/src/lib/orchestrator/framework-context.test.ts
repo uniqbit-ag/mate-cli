@@ -56,11 +56,7 @@ describe("resolveFrameworkContext", () => {
     const root = await makeTempDir("ctx-local-");
     const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
-    await fs.writeFile(
-      localConfigPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
-      "utf8",
-    );
+    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
 
     const store = new GlobalConfigStore(path.join(root, "config.yaml"));
     const ctx = await resolveFrameworkContext(root, store);
@@ -154,7 +150,7 @@ describe("resolveFrameworkContext", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       companionPath,
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
 
@@ -191,12 +187,11 @@ describe("resolveForLaunch", () => {
     process.env.MATE_ARTIFACT_PATH = companionPath;
     process.env.MATE_REPO_PATH = repoPath;
     process.env.MATE_REPO_ID = "my-repo";
-    process.env.MATE_REPO_PROFILE = "default";
 
     const store = new GlobalConfigStore(path.join(root, "config.yaml"));
     const ctx = await resolveForLaunch(companionPath, store);
 
-    expect(ctx.repository).toEqual({ id: "my-repo", path: repoPath, profile: "default" });
+    expect(ctx.repository).toEqual({ id: "my-repo", path: repoPath });
     expect(ctx.repositoryId).toBe("my-repo");
   });
 
@@ -210,7 +205,7 @@ describe("resolveForLaunch", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       companionPath,
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
 
@@ -227,11 +222,7 @@ describe("resolveForLaunch", () => {
     const root = await makeTempDir("launch-companion-cwd-");
     const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
-    await fs.writeFile(
-      localConfigPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
-      "utf8",
-    );
+    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
 
     const store = new GlobalConfigStore(path.join(root, "config.yaml"));
 
@@ -258,18 +249,8 @@ describe("resolveForLaunch", () => {
     await fs.mkdir(companionA, { recursive: true });
     await fs.mkdir(companionB, { recursive: true });
 
-    await writeRepoLocalRegistryEntry(
-      repoPath,
-      companionA,
-      { id: "app-a", path: repoPath, profile: "default" },
-      "git",
-    );
-    await writeRepoLocalRegistryEntry(
-      repoPath,
-      companionB,
-      { id: "app-b", path: repoPath, profile: "default" },
-      "git",
-    );
+    await writeRepoLocalRegistryEntry(repoPath, companionA, { id: "app-a", path: repoPath }, "git");
+    await writeRepoLocalRegistryEntry(repoPath, companionB, { id: "app-b", path: repoPath }, "git");
 
     const store = new GlobalConfigStore(path.join(root, "config.yaml"));
     await store.register(companionA);
@@ -292,7 +273,7 @@ describe("resolveForCapability", () => {
     await writeRepoLocalRegistryEntry(
       repoPath,
       companionPath,
-      { id: "app", path: repoPath, profile: "default" },
+      { id: "app", path: repoPath },
       "git",
     );
 
@@ -312,11 +293,7 @@ describe("resolveForCapability", () => {
     const root = await makeTempDir("cap-companion-cwd-");
     const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
-    await fs.writeFile(
-      localConfigPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
-      "utf8",
-    );
+    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
 
     const store = new GlobalConfigStore(path.join(root, "config.yaml"));
     process.env.MATE_REPO_ID = "second-repo";
@@ -331,11 +308,7 @@ describe("resolveForCapability", () => {
     const root = await makeTempDir("cap-companion-no-env-");
     const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
-    await fs.writeFile(
-      localConfigPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
-      "utf8",
-    );
+    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
 
     const store = new GlobalConfigStore(path.join(root, "config.yaml"));
 

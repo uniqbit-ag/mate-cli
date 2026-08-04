@@ -3,13 +3,7 @@ import path from "node:path";
 
 import { ConfigStore } from "./config-store";
 import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
-import {
-  type CompanionSource,
-  ConfigError,
-  type FrameworkConfig,
-  type LinkedRepository,
-  type PolicySettings,
-} from "./types";
+import { type CompanionSource, ConfigError, type LinkedRepository } from "./types";
 import { WorkingRepoStore } from "./working-repo-store";
 
 export class CompanionStore {
@@ -68,32 +62,4 @@ export class CompanionStore {
     const working = await this.workingRepoStore.load();
     return working.repos;
   }
-
-  async resolvePolicy(repositoryId: string): Promise<PolicySettings> {
-    const [config, working] = await Promise.all([
-      this.configStore.load(),
-      this.workingRepoStore.load(),
-    ]);
-    return resolvePolicyFromConfig(config, working.repos, repositoryId);
-  }
-}
-
-export function resolvePolicyFromConfig(
-  config: FrameworkConfig,
-  repos: LinkedRepository[],
-  repositoryId: string,
-): PolicySettings {
-  const repository = repos.find((r) => r.id === repositoryId);
-  if (!repository) {
-    throw new ConfigError(`Unknown linked repository: ${repositoryId}`);
-  }
-
-  const profile = config.profiles[repository.profile];
-  if (!profile) {
-    throw new ConfigError(`Unknown policy profile: ${repository.profile}`);
-  }
-
-  return {
-    allowedAgents: repository.overrides?.allowedAgents ?? profile.allowedAgents,
-  };
 }

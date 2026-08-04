@@ -35,7 +35,6 @@ function makeContext(repo: string, companion: string): CompanionContext {
     gitAutoModeEnabled: false,
     repositoryPath: repo,
     repositoryId: "app",
-    repositoryProfile: "default",
     policyJson: "{}",
     agentsMd: "",
   };

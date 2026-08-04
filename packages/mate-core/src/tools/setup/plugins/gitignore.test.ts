@@ -10,7 +10,7 @@ function makeContext(config: Partial<FrameworkConfig>): SetupContext {
     mode: "sync",
     activeProviders: [],
     config: {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       ...config,
     },
   };

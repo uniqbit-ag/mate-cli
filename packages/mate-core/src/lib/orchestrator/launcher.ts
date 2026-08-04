@@ -5,7 +5,7 @@ import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup
 import type { LaunchAdapter, AdapterContext } from "./adapters/base";
 import { ClaudeAdapter } from "./adapters/claude";
 import { OpenCodeAdapter } from "./adapters/opencode";
-import { CompanionStore, resolvePolicyFromConfig } from "./companion-store";
+import { CompanionStore } from "./companion-store";
 import { syncCompanionGit } from "./companion-git-sync";
 import { resolveForLaunch, type LaunchContext } from "./framework-context";
 import {
@@ -16,7 +16,6 @@ import {
   type LaunchRequest,
   type LaunchResult,
   type LinkedRepository,
-  type PolicySettings,
 } from "./types";
 
 export interface LaunchPreview {
@@ -34,7 +33,6 @@ interface ResolvedLaunchState {
   adapter: LaunchAdapter;
   companionPath: string;
   config: FrameworkConfig;
-  policy: PolicySettings;
   repository: LinkedRepository;
 }
 
@@ -100,10 +98,7 @@ export class FrameworkLauncher {
     }
 
     const config = await configStore.load();
-    const policy = localRepository
-      ? resolvePolicyFromConfig(config, [repository], repository.id)
-      : await store.resolvePolicy(repository.id);
-    if (!policy.allowedAgents.includes(request.tool)) {
+    if (!config.allowedAgents.includes(request.tool)) {
       throw new ToolNotAllowedError(`Tool is disallowed by policy: ${request.tool}`);
     }
 
@@ -116,7 +111,6 @@ export class FrameworkLauncher {
       adapter,
       companionPath,
       config,
-      policy,
       repository,
     };
   }
@@ -124,7 +118,7 @@ export class FrameworkLauncher {
   private makeAdapterContext(state: ResolvedLaunchState): AdapterContext {
     return {
       repository: state.repository,
-      policy: state.policy,
+      allowedAgents: state.config.allowedAgents,
       companionPath: state.companionPath,
       capabilities: state.config.capabilities ?? [],
       git: state.config.git,

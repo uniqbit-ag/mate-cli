@@ -11,7 +11,6 @@ export const MATE_ENV = {
   wrapperBinPath: "MATE_WRAPPER_BIN_PATH",
   repositoryPath: "MATE_REPO_PATH",
   repositoryId: "MATE_REPO_ID",
-  repositoryProfile: "MATE_REPO_PROFILE",
   policyJson: "MATE_POLICY_JSON",
   graphifyEnabled: "MATE_GRAPHIFY_ENABLED",
   gitAutoMode: "MATE_GIT_AUTO_MODE",
@@ -37,7 +36,6 @@ export type CompanionRuntimeContext = {
   companionPath: string;
   repositoryPath: string;
   repositoryId: string;
-  repositoryProfile: string;
   policyJson: string;
   graphifyEnabled: boolean;
   gitAutoModeEnabled: boolean;
@@ -52,7 +50,6 @@ export function readCompanionRuntimeContext(
     companionPath: env[MATE_ENV.companionPath] ?? "",
     repositoryPath: env[MATE_ENV.repositoryPath] ?? "",
     repositoryId: env[MATE_ENV.repositoryId] ?? "",
-    repositoryProfile: env[MATE_ENV.repositoryProfile] ?? "",
     policyJson: env[MATE_ENV.policyJson] ?? "{}",
     graphifyEnabled: env[MATE_ENV.graphifyEnabled] === "1",
     gitAutoModeEnabled: env[MATE_ENV.gitAutoMode] === "1",

@@ -96,10 +96,7 @@ async function writeCompanion(options: { enabled: boolean; outFile: string }): P
   await fs.writeFile(
     path.join(configDir, "framework.yaml"),
     [
-      "profiles:",
-      "  default:",
-      "    name: default",
-      "    allowedAgents: []",
+      "allowedAgents: []",
       ...(options.enabled ? ["capabilities:", "  - name: acme-custom"] : ["capabilities: []"]),
       "plugins:",
       `  - package: "${PACKAGE}"`,
@@ -166,8 +163,10 @@ describe("dynamic plugins end to end", () => {
     const plugin = registry.getAll().find((candidate) => candidate.id === "acme-custom");
     expect(plugin).toBeDefined();
     expect(registry.getPolicy("acme-custom")).toBe("optional");
-    expect(plugin!.isEnabled({ profiles: {}, capabilities: [{ name: "acme-custom" }] })).toBe(true);
-    expect(plugin!.isEnabled({ profiles: {}, capabilities: [] })).toBe(false);
+    expect(plugin!.isEnabled({ allowedAgents: [], capabilities: [{ name: "acme-custom" }] })).toBe(
+      true,
+    );
+    expect(plugin!.isEnabled({ allowedAgents: [], capabilities: [] })).toBe(false);
   });
 
   test("hydration warnings during a dynamic cap command stay on stderr", async () => {
@@ -222,10 +221,7 @@ describe("dynamic plugins end to end", () => {
     await fs.writeFile(
       path.join(configDir, "framework.yaml"),
       [
-        "profiles:",
-        "  default:",
-        "    name: default",
-        "    allowedAgents: []",
+        "allowedAgents: []",
         "plugins:",
         `  - package: "${PACKAGE}"`,
         '    version: "^1.0.0"',

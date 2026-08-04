@@ -105,9 +105,11 @@ async function saveRepoLocalRegistry(repoPath: string, registry: RepoLocalRegist
   await store.save(registry);
 }
 
+// Field-explicit on purpose: also strips legacy per-repo policy fields
+// (profile/overrides) from entries read from or written to disk.
 function normalizeLinkedRepository(repository: LinkedRepository): LinkedRepository {
   return {
-    ...repository,
+    id: repository.id,
     path: path.resolve(repository.path),
   };
 }

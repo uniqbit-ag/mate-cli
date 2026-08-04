@@ -18,7 +18,7 @@ const makeResolveContext = () => ({
   },
   workingRepoStore: {
     load: async () => ({
-      repos: [{ id: "test", path: "/tmp/test-work", profile: "default" }],
+      repos: [{ id: "test", path: "/tmp/test-work" }],
     }),
   },
   companionPath: "/tmp/test-companion",
@@ -177,7 +177,7 @@ describe("runReportCommand", () => {
         configStore: { load: async () => ({ capabilities: [] }) },
         workingRepoStore: {
           load: async () => ({
-            repos: [{ id: "test", path: "/tmp/test-work", profile: "default" }],
+            repos: [{ id: "test", path: "/tmp/test-work" }],
           }),
         },
         companionPath: "/tmp/test-companion",

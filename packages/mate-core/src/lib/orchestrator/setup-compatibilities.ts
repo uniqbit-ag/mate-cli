@@ -287,7 +287,7 @@ export function getDefaultSetupSelections(): SetupSelections {
 
 export function getSetupSelectionsFromConfig(config: FrameworkConfig): SetupSelections {
   return {
-    allowedAgents: [...new Set(config.profiles.default?.allowedAgents ?? [])],
+    allowedAgents: [...new Set(config.allowedAgents ?? [])],
     packageManagers: [
       ...new Set([...getLockedPackageManagers(), ...(config.packageManagers ?? [])]),
     ],

@@ -53,7 +53,6 @@ async function runLinkWithShadowScan(
       selectCompanionLinkInputs: async () => ({
         source: "existing",
         companionPaths: [path.join(process.env.HOME!, ".mate", "companions", "test-companion")],
-        profile: "default",
       }),
       resolveCompanion: async () => null,
       listCompanions: async () => [],
@@ -138,7 +137,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         selectCompanionLinkInputs: async () => ({
           source: "git",
           gitUrl: "https://github.com/user/test-companion.git",
-          profile: "default",
         }),
         extractRepoName: () => "test-companion",
         resolveCompanion: async () => null,
@@ -174,7 +172,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
       expect.objectContaining({
         id: path.basename(process.cwd()),
         path: path.resolve(process.cwd()),
-        profile: "default",
       }),
       {
         companionPath: expectedCompanionPath,
@@ -203,7 +200,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         selectCompanionLinkInputs: async () => ({
           source: "git",
           gitUrl: "https://github.com/user/test-companion.git",
-          profile: "default",
         }),
         extractRepoName: () => "test-companion",
         resolveCompanion: async () => null,
@@ -250,7 +246,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         selectCompanionLinkInputs: async () => ({
           source: "git",
           gitUrl: "https://git.example.test:22222/example-org/example-group/acme-companion.git",
-          profile: "default",
         }),
         resolveCompanion: async () => null,
         stat: async () => {
@@ -297,7 +292,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         selectCompanionLinkInputs: async () => ({
           source: "git",
           gitUrl: "ssh://git@git.example.test:22222/example-org/example-group/acme-companion.git",
-          profile: "default",
         }),
         resolveCompanion: async () => null,
         stat: async () => {
@@ -348,7 +342,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         selectCompanionLinkInputs: async () => ({
           source: "git",
           gitUrl: "https://github.com/user/test-companion.git",
-          profile: "default",
         }),
         extractRepoName: () => "test-companion",
         resolveCompanion: async () => null,
@@ -406,7 +399,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         selectCompanionLinkInputs: async () => ({
           source: "git",
           gitUrl: "https://github.com/user/test-companion.git",
-          profile: "default",
         }),
         extractRepoName: () => "test-companion",
         resolveCompanion: async () => null,
@@ -463,7 +455,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
           return {
             source: "existing",
             companionPaths: [localCompanionPath],
-            profile: "default",
           };
         },
         resolveCompanion: async () => null,
@@ -508,7 +499,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
           return {
             source: "existing",
             companionPaths: [secondCompanionPath],
-            profile: "default",
           };
         },
         resolveCompanion: async () => ({
@@ -553,7 +543,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
           return {
             source: "local",
             localPath: localCompanionPath,
-            profile: "default",
           };
         },
         resolveCompanion: async () => null,
@@ -601,7 +590,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         selectCompanionLinkInputs: async () => ({
           source: "existing",
           companionPaths: [localCompanionPath],
-          profile: "default",
         }),
         resolveCompanion: async () => null,
         stat: async () => ({ isDirectory: () => true }) as Awaited<ReturnType<typeof fs.stat>>,
@@ -640,7 +628,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
       await fs.mkdir(workingPath, { recursive: true });
       await fs.writeFile(
         path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-        "type: companion\nprofiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
+        "type: companion\nallowedAgents:\n  - claude\n",
         "utf8",
       );
       await fs.writeFile(
@@ -654,7 +642,6 @@ describe("runCompanionLinkCommandWithDeps", () => {
         selectCompanionLinkInputs: async () => ({
           source: "existing",
           companionPaths: [companionPath],
-          profile: "default",
         }),
         resolveCompanion: async () => null,
         registerCompanion: async () => {},

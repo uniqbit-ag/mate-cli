@@ -44,7 +44,7 @@ function createLauncher(
       repositoryId: "repo",
       configStore: {
         load: async () => ({
-          profiles: {},
+          allowedAgents: ["claude"],
           capabilities,
           git,
         }),
@@ -109,10 +109,6 @@ describe("FrameworkLauncher", () => {
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
-      profile: "default",
-    });
-    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
-      allowedAgents: ["claude"],
     });
 
     try {
@@ -168,10 +164,6 @@ describe("FrameworkLauncher", () => {
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
-      profile: "default",
-    });
-    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
-      allowedAgents: ["claude"],
     });
 
     try {
@@ -213,10 +205,6 @@ describe("FrameworkLauncher", () => {
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
-      profile: "default",
-    });
-    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
-      allowedAgents: ["claude"],
     });
 
     await launcher.prepare(makeRequest());
@@ -239,10 +227,6 @@ describe("FrameworkLauncher", () => {
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
-      profile: "default",
-    });
-    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
-      allowedAgents: ["claude"],
     });
 
     await expect(launcher.prepare(makeRequest())).rejects.toThrow(
@@ -263,10 +247,6 @@ describe("FrameworkLauncher", () => {
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
-      profile: "default",
-    });
-    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
-      allowedAgents: ["claude"],
     });
 
     await expect(launcher.prepare(makeRequest())).rejects.toThrow(
@@ -286,10 +266,6 @@ describe("FrameworkLauncher", () => {
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
-      profile: "default",
-    });
-    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
-      allowedAgents: ["claude"],
     });
 
     try {
@@ -318,10 +294,6 @@ describe("FrameworkLauncher", () => {
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
-      profile: "default",
-    });
-    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
-      allowedAgents: ["claude"],
     });
 
     try {
@@ -347,10 +319,6 @@ describe("FrameworkLauncher", () => {
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
-      profile: "default",
-    });
-    spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
-      allowedAgents: ["claude"],
     });
 
     try {
@@ -390,10 +358,6 @@ describe("FrameworkLauncher", () => {
         spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
           id: "repo",
           path: "/tmp/repo",
-          profile: "default",
-        });
-        spyOn(CompanionStore.prototype, "resolvePolicy").mockResolvedValue({
-          allowedAgents: ["claude"],
         });
 
         for (const [key, value] of Object.entries(vars)) {

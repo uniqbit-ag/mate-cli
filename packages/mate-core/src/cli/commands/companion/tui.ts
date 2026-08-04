@@ -81,7 +81,6 @@ export async function runCompanionTuiCommand(): Promise<void> {
   if (repository) {
     process.env.MATE_REPO_PATH = repository.path;
     process.env.MATE_REPO_ID = repository.id;
-    process.env.MATE_REPO_PROFILE = repository.profile;
   }
 
   console.log(renderBanner(repoPath, companionPath));

@@ -17,14 +17,28 @@ export function defaultConfig(): FrameworkConfig {
   const defaults = getDefaultSetupSelections();
   return {
     type: "companion",
-    profiles: {
-      default: {
-        name: "default",
-        allowedAgents: defaults.allowedAgents,
-      },
-    },
+    allowedAgents: defaults.allowedAgents,
     packageManagers: defaults.packageManagers,
     capabilities: defaults.capabilities,
+  };
+}
+
+interface LegacyProfilesShape {
+  profiles?: Record<string, { name?: string; allowedAgents?: string[] }>;
+}
+
+/**
+ * Silently collapses the legacy `profiles` map into the flat `allowedAgents`
+ * list (`profiles.default.allowedAgents` wins; other profiles are dropped).
+ * The new shape persists on the next save.
+ */
+export function migrateProfilesToAllowedAgents(config: FrameworkConfig): FrameworkConfig {
+  const legacy = config as FrameworkConfig & LegacyProfilesShape;
+  if (!legacy.profiles) return config;
+  const { profiles, ...rest } = legacy;
+  return {
+    ...rest,
+    allowedAgents: rest.allowedAgents ?? profiles.default?.allowedAgents ?? [],
   };
 }
 
@@ -33,6 +47,7 @@ export function mergeWithDefaults(existing: FrameworkConfig): FrameworkConfig {
   return {
     ...existing,
     type: existing.type ?? defaults.type,
+    allowedAgents: existing.allowedAgents ?? [],
     packageManagers: existing.packageManagers ?? defaults.packageManagers,
     // Only backfill capabilities for legacy configs that predate the field
     // entirely. Once a capabilities array has been persisted, it reflects the
@@ -148,7 +163,7 @@ export class ConfigStore extends YamlFileStore<FrameworkConfig> {
   }
 
   override async load(): Promise<FrameworkConfig> {
-    const merged = mergeWithDefaults(await super.load());
+    const merged = mergeWithDefaults(migrateProfilesToAllowedAgents(await super.load()));
     validateHubConfig(merged);
     validatePluginDeclarations(merged);
     const needsMigration = !(merged.migrations ?? []).includes(RTK_CAPABILITY_SPLIT_MIGRATION);

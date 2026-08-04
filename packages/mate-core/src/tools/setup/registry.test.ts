@@ -43,7 +43,7 @@ function makePlugin(id: string, kind: Plugin["kind"] = "provider"): Plugin {
 function makeProvider(id: string): Plugin {
   return {
     ...makePlugin(id, "provider"),
-    isEnabled: (config) => (config.profiles.default?.allowedAgents ?? []).includes(id),
+    isEnabled: (config) => (config.allowedAgents ?? []).includes(id),
   };
 }
 
@@ -68,8 +68,8 @@ describe("PluginRegistry", () => {
     await expect(
       withPreflight.forProvider?.claude?.preflight?.({
         companionPath: "/tmp/acme",
-        config: { profiles: {} },
-        repository: { id: "acme", path: "/tmp/acme", profile: "default" },
+        config: { allowedAgents: [] },
+        repository: { id: "acme", path: "/tmp/acme" },
         providerId: "claude",
       }),
     ).resolves.toEqual(["acme diagnostic"]);
@@ -162,7 +162,7 @@ describe("SetupContext — activeProviders", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [{ name: "spy" }],
       },
       "setup",
@@ -181,7 +181,7 @@ describe("SetupContext — activeProviders", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [],
       },
       "setup",
@@ -210,7 +210,7 @@ describe("SetupContext — activeProviders", () => {
       await applySetupCompatibilities(
         root,
         {
-          profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+          allowedAgents: ["claude"],
           capabilities: testCase.capabilities,
         },
         "setup",
@@ -251,7 +251,7 @@ describe("GitignorePlugin", () => {
     const gitignorePlugin = makeGitignorePlugin([activePlugin, inactivePlugin]);
     const ctx: SetupContext = {
       companionPath: root,
-      config: { profiles: { default: { name: "default", allowedAgents: [] } } },
+      config: { allowedAgents: [] },
       mode: "setup",
       activeProviders: [],
     };
@@ -276,7 +276,7 @@ describe("GitignorePlugin", () => {
     const gitignorePlugin = makeGitignorePlugin([]);
     const ctx: SetupContext = {
       companionPath: root,
-      config: { profiles: { default: { name: "default", allowedAgents: [] } } },
+      config: { allowedAgents: [] },
       mode: "sync",
       activeProviders: [],
     };
@@ -302,7 +302,7 @@ describe("GitignorePlugin", () => {
     const gitignorePlugin = makeGitignorePlugin([stickyPlugin]);
     const ctx: SetupContext = {
       companionPath: root,
-      config: { profiles: { default: { name: "default", allowedAgents: [] } } },
+      config: { allowedAgents: [] },
       mode: "sync",
       activeProviders: [],
     };
@@ -326,7 +326,7 @@ describe("GitignorePlugin", () => {
     const gitignorePlugin = makeGitignorePlugin([plugin]);
     const ctx: SetupContext = {
       companionPath: root,
-      config: { profiles: { default: { name: "default", allowedAgents: [] } } },
+      config: { allowedAgents: [] },
       mode: "sync",
       activeProviders: [],
     };
@@ -366,7 +366,7 @@ describe("engine forProvider cross-cutting", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [{ name: "spy" }],
       },
       "setup",
@@ -402,7 +402,7 @@ describe("engine forProvider cross-cutting", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [{ name: "spy" }],
       },
       "setup",
@@ -412,7 +412,7 @@ describe("engine forProvider cross-cutting", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [],
       },
       "setup",
@@ -448,7 +448,7 @@ describe("engine forProvider cross-cutting", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [{ name: "spy" }],
       },
       "setup",

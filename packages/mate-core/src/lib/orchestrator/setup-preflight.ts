@@ -154,7 +154,7 @@ export async function inspectSetupPreflight(
   // linked working repo, even if it sits inside another repo's working tree.
   // A stale registration of a working repo is the exception: its local type
   // marker is authoritative and must not make setup load working-repo config
-  // as a companion profile config.
+  // as a companion framework config.
   if (isRegisteredCompanion && !(await hasWorkingRepoConfig(resolvedCwd))) {
     return { kind: "existing-companion" };
   }

@@ -256,7 +256,7 @@ describe("reactDoctorPlugin", () => {
     await reactDoctorPlugin.forProvider?.claude?.teardown?.({
       companionPath,
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [{ name: "react-doctor" }],
       },
       stage: "setup",

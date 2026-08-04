@@ -42,23 +42,9 @@ export class WorkingRepoRequiredError extends MateError {
 
 export type CompanionSource = "git" | "existing" | "local";
 
-export interface PolicySettings {
-  allowedAgents: string[];
-}
-
-export interface PolicyOverride {
-  allowedAgents?: string[];
-}
-
-export interface PolicyProfile extends PolicySettings {
-  name: string;
-}
-
 export interface LinkedRepository {
   id: string;
   path: string;
-  profile: string;
-  overrides?: PolicyOverride;
 }
 
 export interface CliToolConfig {
@@ -128,7 +114,7 @@ export interface FrameworkConfig {
   type?: FrameworkType;
   git?: GitModeProfile;
   hub?: HubConfig;
-  profiles: Record<string, PolicyProfile>;
+  allowedAgents: string[];
   capabilities?: CapabilityConfig[];
   plugins?: PluginDeclaration[];
   migrations?: string[];

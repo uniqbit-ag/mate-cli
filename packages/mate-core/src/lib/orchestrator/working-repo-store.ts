@@ -16,7 +16,13 @@ export class WorkingRepoStore extends YamlFileStore<WorkingRepoConfig> {
 
   override async load(): Promise<WorkingRepoConfig> {
     await migrateRegistryData(this.configPath);
-    return super.load();
+    const config = await super.load();
+    // Silently drop legacy per-repo policy fields (profile/overrides); the
+    // clean shape persists on the next save.
+    return {
+      ...config,
+      repos: (config.repos ?? []).map(({ id, path: repoPath }) => ({ id, path: repoPath })),
+    };
   }
 
   protected async onMissing(): Promise<WorkingRepoConfig> {

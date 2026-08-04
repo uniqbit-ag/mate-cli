@@ -127,7 +127,7 @@ describe("setup compatibilities", () => {
 
   test("selected openspec contributes the default redirected cli tool", () => {
     const config: FrameworkConfig = {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }],
     };
@@ -209,7 +209,7 @@ describe("setup compatibilities", () => {
   test("selections read packageManagers from config and always include both locked package managers", () => {
     expect(
       getSetupSelectionsFromConfig({
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun", "uv"],
         capabilities: [],
       }),
@@ -221,7 +221,7 @@ describe("setup compatibilities", () => {
 
     expect(
       getSetupSelectionsFromConfig({
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         git: "auto",
         capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
       }),

@@ -95,7 +95,7 @@ describe("executeSetup", () => {
     await writeRepoLocalRegistryEntry(
       repositoryPath,
       companionPath,
-      { id: "app", path: repositoryPath, profile: "default" },
+      { id: "app", path: repositoryPath },
       "git",
     );
     await globalConfigStore.register(companionPath);
@@ -111,6 +111,70 @@ describe("executeSetup", () => {
       ),
     ).resolves.toContain("type: working");
     await expect(fs.access(path.join(repositoryPath, ".claude"))).rejects.toThrow();
+  });
+
+  test("refuses a hub root and writes no guidance, even with agents in config", async () => {
+    const root = await makeTempDir("mate-setup-hub-refusal-");
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    const configDir = path.join(root, `.${FRAMEWORK_NAME}`, "config");
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(
+      path.join(configDir, "framework.yaml"),
+      [
+        "type: hub",
+        "allowedAgents: [claude, opencode]",
+        "packageManagers: [bun]",
+        "capabilities: []",
+        "migrations: [rtk-capability-split-v1]",
+        "hub:",
+        "  companions: []",
+        "",
+      ].join("\n"),
+    );
+
+    await expect(
+      executeSetup({ allowedAgents: ["claude", "opencode"] }, { cwd: root, globalConfigStore }),
+    ).rejects.toThrow(/hub cannot be set up as a companion/);
+
+    await expect(fs.access(path.join(root, "AGENTS.md"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, "CLAUDE.md"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, ".opencode"))).rejects.toThrow();
+  });
+
+  test("a companion nested below a hub root still sets up", async () => {
+    const root = await makeTempDir("mate-setup-hub-member-");
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    const hubConfigDir = path.join(root, `.${FRAMEWORK_NAME}`, "config");
+    await fs.mkdir(hubConfigDir, { recursive: true });
+    await fs.writeFile(
+      path.join(hubConfigDir, "framework.yaml"),
+      ["type: hub", "hub:", "  companions: []", ""].join("\n"),
+    );
+    const memberPath = path.join(root, "companions", "app");
+    const memberConfigDir = path.join(memberPath, `.${FRAMEWORK_NAME}`, "config");
+    await fs.mkdir(memberConfigDir, { recursive: true });
+    await fs.writeFile(
+      path.join(memberConfigDir, "framework.yaml"),
+      [
+        "type: companion",
+        "allowedAgents: []",
+        "packageManagers: [bun]",
+        "capabilities: []",
+        "migrations: [rtk-capability-split-v1]",
+        "",
+      ].join("\n"),
+    );
+
+    const { config } = await executeSetup({}, { cwd: memberPath, globalConfigStore });
+
+    expect(config.type).toBe("companion");
+    await expect(
+      fs.readFile(path.join(memberConfigDir, "framework.yaml"), "utf8"),
+    ).resolves.toContain("type: companion");
   });
 
   test("replaces saved providers and capabilities with the selected set", async () => {
@@ -155,7 +219,7 @@ describe("executeSetup", () => {
     await writeRepoLocalRegistryEntry(
       workingRepoRoot,
       companionRoot,
-      { id: "app", path: workingRepoRoot, profile: "default" },
+      { id: "app", path: workingRepoRoot },
       "git",
     );
 
@@ -657,7 +721,7 @@ describe("executeSetup", () => {
     );
 
     await syncCompanionFiles(root, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
     });
 
     const rootClaudeMd = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
@@ -858,7 +922,7 @@ describe("uv plugin (createUvPluginForTest)", () => {
   function makeCtx(companionPath: string): SetupContext {
     return {
       companionPath,
-      config: { profiles: { default: { name: "default", allowedAgents: [] } } },
+      config: { allowedAgents: [] },
       mode: "setup",
       activeProviders: [],
     };
@@ -985,7 +1049,7 @@ describe("applySetupCompatibilities — graphify", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude", "opencode"] } },
+        allowedAgents: ["claude", "opencode"],
         packageManagers: ["bun"],
         capabilities: [{ name: "graphify" }],
       },
@@ -1006,7 +1070,7 @@ describe("applySetupCompatibilities — graphify", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude", "opencode"] } },
+        allowedAgents: ["claude", "opencode"],
         packageManagers: ["bun"],
         capabilities: [{ name: "graphify" }],
       },
@@ -1025,7 +1089,7 @@ describe("applySetupCompatibilities — graphify", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [{ name: "graphify" }],
       },
@@ -1035,7 +1099,7 @@ describe("applySetupCompatibilities — graphify", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [],
       },
@@ -1053,7 +1117,7 @@ describe("applySetupCompatibilities — graphify", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [{ name: "graphify" }],
       },
@@ -1063,7 +1127,7 @@ describe("applySetupCompatibilities — graphify", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [{ name: "graphify" }],
       },
@@ -1080,7 +1144,7 @@ describe("applySetupCompatibilities — graphify", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: [] } },
+        allowedAgents: [],
         packageManagers: ["bun"],
         capabilities: [{ name: "graphify" }],
       },
@@ -1107,7 +1171,7 @@ describe("applySetupCompatibilities — graphify", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: [] } },
+        allowedAgents: [],
         packageManagers: ["bun"],
         capabilities: [],
       },
@@ -1137,7 +1201,7 @@ describe("applySetupCompatibilities — openspec", () => {
       await applySetupCompatibilities(
         root,
         {
-          profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+          allowedAgents: ["claude"],
           packageManagers: ["bun"],
           capabilities: [{ name: "openspec" }],
         },
@@ -1170,7 +1234,7 @@ describe("applySetupCompatibilities — openspec", () => {
       await applySetupCompatibilities(
         root,
         {
-          profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+          allowedAgents: ["claude"],
           packageManagers: ["bun"],
           capabilities: [{ name: "openspec" }],
         },
@@ -1204,7 +1268,7 @@ describe("applySetupCompatibilities — tokensave", () => {
       await applySetupCompatibilities(
         root,
         {
-          profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+          allowedAgents: ["claude"],
           packageManagers: ["bun"],
           capabilities: [{ name: "tokensave" }],
         },
@@ -1386,7 +1450,7 @@ describe("applySetupCompatibilities", () => {
       await applySetupCompatibilities(
         root,
         {
-          profiles: { default: { name: "default", allowedAgents: [] } },
+          allowedAgents: [],
           packageManagers: ["bun"],
           capabilities: [{ name: "headroom" }],
         },
@@ -1411,7 +1475,7 @@ describe("applySetupCompatibilities", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
       },
       "setup",
@@ -1439,7 +1503,7 @@ describe("updateProjectGitignore", () => {
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\ncustom.log\n", "utf8");
 
     await updateProjectGitignore(root, {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       packageManagers: ["bun", "uv"],
     });
 
@@ -1455,7 +1519,7 @@ describe("updateProjectGitignore", () => {
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
 
     await updateProjectGitignore(root, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       packageManagers: ["bun"],
     });
 
@@ -1487,7 +1551,7 @@ describe("updateProjectGitignore", () => {
     );
 
     await updateProjectGitignore(root, {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       packageManagers: ["bun"],
     });
 
@@ -1514,7 +1578,7 @@ describe("updateProjectGitignore", () => {
     );
 
     await updateProjectGitignore(root, {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       packageManagers: ["bun", "uv"],
     });
 
@@ -1529,7 +1593,7 @@ describe("updateProjectGitignore", () => {
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
 
     await updateProjectGitignore(root, {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       packageManagers: ["bun"],
       capabilities: [{ name: "headroom" }],
     });
@@ -1557,7 +1621,7 @@ describe("updateProjectGitignore", () => {
     );
 
     await updateProjectGitignore(root, {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       packageManagers: ["bun"],
     });
 
@@ -1572,7 +1636,7 @@ describe("updateProjectGitignore", () => {
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
 
     await updateProjectGitignore(root, {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       packageManagers: ["bun", "uv"],
       capabilities: [{ name: "headroom" }],
     });

@@ -4,7 +4,7 @@ import { checkEngineRequirement } from "./engine-guard";
 import type { FrameworkConfig } from "./types";
 
 function config(engines?: FrameworkConfig["engines"]): FrameworkConfig {
-  return { profiles: {}, engines };
+  return { allowedAgents: [], engines };
 }
 
 describe("checkEngineRequirement", () => {

@@ -39,10 +39,7 @@ describe("setup engine", () => {
       makePlugin("root-a", "root"),
     ];
 
-    const plan = buildSetupInstallationPlan(
-      { profiles: { default: { name: "default", allowedAgents: ["provider-a"] } } },
-      plugins,
-    );
+    const plan = buildSetupInstallationPlan({ allowedAgents: ["provider-a"] }, plugins);
 
     expect(plan.activeProviders).toEqual(["provider-a"]);
     expect(
@@ -76,7 +73,7 @@ describe("setup engine", () => {
     };
     const ctx: SetupContext = {
       companionPath: "/tmp/companion",
-      config: { profiles: { default: { name: "default", allowedAgents: ["claude"] } } },
+      config: { allowedAgents: ["claude"] },
       mode: "setup",
       activeProviders: ["claude"],
     };
@@ -141,7 +138,7 @@ describe("setup engine", () => {
           },
         ],
       },
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
     };
     const plan = buildSetupInstallationPlan(config, [rootPlugin]);
 
@@ -157,7 +154,7 @@ describe("setup engine", () => {
 });
 
 describe("registration policy enforcement", () => {
-  const emptyConfig = { profiles: { default: { name: "default", allowedAgents: [] } } };
+  const emptyConfig = { allowedAgents: [] };
 
   test("required plugin applies despite deselection and never receives teardown", async () => {
     const applyMock = mock(async () => {});

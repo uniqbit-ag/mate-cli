@@ -32,7 +32,7 @@ function makeCtx(
     mode: opts?.mode ?? "setup",
     repoPath: opts?.repoPath,
     config: {
-      profiles: { default: { name: "default", allowedAgents: opts?.providers ?? [] } },
+      allowedAgents: opts?.providers ?? [],
       capabilities: [{ name: "tokensave" }],
     },
   };

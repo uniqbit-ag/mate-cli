@@ -56,7 +56,7 @@ export async function runSetupCommand(argv: string[]): Promise<void> {
  * Resolves agent/package-manager/capability selections either from CLI flags
  * (non-interactive) or from the interactive `selectSetupCompatibilities` picker,
  * seeded from the existing config when one exists. Writes the resulting config
- * via `setup.execute` and prints a summary table of profiles, package managers,
+ * via `setup.execute` and prints a summary table of allowed agents, package managers,
  * and capabilities.
  * @flags
  * - `--agents <list>` — parsed via `parseAllowedAgents`.
@@ -192,9 +192,7 @@ async function runSetupFlow(
   const { config } = result;
   const rows: [string, string][] = [];
 
-  for (const [profileName, profile] of Object.entries(config.profiles)) {
-    rows.push([`profile:${profileName}`, (profile.allowedAgents ?? []).join(", ") || "(none)"]);
-  }
+  rows.push(["allowedAgents", (config.allowedAgents ?? []).join(", ") || "(none)"]);
 
   const capabilities = config.capabilities ?? [];
   rows.push(["packageManagers", (config.packageManagers ?? ["bun"]).join(", ") || "(none)"]);

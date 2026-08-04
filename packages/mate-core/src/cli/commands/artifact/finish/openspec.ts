@@ -61,10 +61,7 @@ async function capSync(context: FinishContext): Promise<boolean> {
   const previous = process.exitCode;
   process.exitCode = 0;
   const previousEnv = new Map(
-    ["MATE_ARTIFACT_PATH", "MATE_REPO_PATH", "MATE_REPO_ID", "MATE_REPO_PROFILE"].map((key) => [
-      key,
-      process.env[key],
-    ]),
+    ["MATE_ARTIFACT_PATH", "MATE_REPO_PATH", "MATE_REPO_ID"].map((key) => [key, process.env[key]]),
   );
 
   // Pass both sides of the companion/working-repo boundary explicitly. Capability
@@ -73,7 +70,6 @@ async function capSync(context: FinishContext): Promise<boolean> {
   if (context.repository) {
     process.env.MATE_REPO_PATH = context.repository.path;
     process.env.MATE_REPO_ID = context.repository.id;
-    process.env.MATE_REPO_PROFILE = context.repository.profile;
   }
   try {
     await runIndexCapCommand([]);

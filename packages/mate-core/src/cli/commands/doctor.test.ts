@@ -48,10 +48,7 @@ async function setupCompanion(
   root: string,
   repoPath: string,
   config: FrameworkConfig = {
-    profiles: {
-      default: { name: "default", allowedAgents: ["claude"] },
-      strict: { name: "strict", allowedAgents: ["claude"] },
-    },
+    allowedAgents: ["claude"],
     packageManagers: ["bun", "uv"],
     capabilities: [{ name: "openspec" }],
   },
@@ -62,17 +59,7 @@ async function setupCompanion(
   const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   const configStore = new ConfigStore(path.join(configDir, "framework.yaml"));
   await configStore.save(config);
-  await writeRepoLocalRegistryEntry(
-    repoPath,
-    companionPath,
-    {
-      id: "app",
-      path: repoPath,
-      profile: "strict",
-      overrides: { allowedAgents: ["opencode"] },
-    },
-    "git",
-  );
+  await writeRepoLocalRegistryEntry(repoPath, companionPath, { id: "app", path: repoPath }, "git");
 
   return companionPath;
 }
@@ -101,11 +88,11 @@ describe("runDoctorCommand", () => {
       runDoctorCommand([], { cwd: repoPath, globalConfigStore }),
     );
 
-    expect(output).toContain("linked-working-repository");
+    expect(output).toMatch(/\| State {2,}\| working +\|/);
     expect(output).toContain(companionPath);
     expect(output).toContain("app");
-    expect(output).toContain("strict");
-    expect(output).toContain("opencode");
+    expect(output).toContain("Allowed Agents");
+    expect(output).toContain("claude");
     expect(output).toContain("openspec");
   });
 
@@ -118,10 +105,7 @@ describe("runDoctorCommand", () => {
     await makeExecutable(binPath, "uv");
     await makeExecutable(binPath, "openspec");
     const companionPath = await setupCompanion(root, repoPath, {
-      profiles: {
-        default: { name: "default", allowedAgents: ["claude"] },
-        strict: { name: "strict", allowedAgents: ["claude"] },
-      },
+      allowedAgents: ["claude"],
       packageManagers: ["uv"],
       capabilities: [{ name: "openspec" }, { name: "headroom" }],
       migrations: [RTK_CAPABILITY_SPLIT_MIGRATION],
@@ -152,10 +136,7 @@ describe("runDoctorCommand", () => {
     await fs.mkdir(binPath, { recursive: true });
     await makeExecutable(binPath, "rtk");
     const companionPath = await setupCompanion(root, repoPath, {
-      profiles: {
-        default: { name: "default", allowedAgents: ["claude"] },
-        strict: { name: "strict", allowedAgents: ["claude"] },
-      },
+      allowedAgents: ["claude"],
       packageManagers: [],
       capabilities: [{ name: "rtk" }],
     });
@@ -174,18 +155,14 @@ describe("runDoctorCommand", () => {
     const root = await makeTempDir("doctor-companion-");
     const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
-    await fs.writeFile(
-      localConfigPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
-      "utf8",
-    );
+    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
 
     const output = await captureStdout(() =>
       runDoctorCommand([], { cwd: root, globalConfigStore }),
     );
 
-    expect(output).toContain("companion-repository");
+    expect(output).toMatch(/\| State {2,}\| companion +\|/);
     expect(output).toContain(root);
     expect(output).toContain("Repository ID");
     expect(output).toContain("none");
@@ -199,7 +176,7 @@ describe("runDoctorCommand", () => {
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
     await fs.writeFile(
       localConfigPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\ncapabilities:\n  - name: openspec\n",
+      "allowedAgents:\n  - claude\ncapabilities:\n  - name: openspec\n",
       "utf8",
     );
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
@@ -245,7 +222,7 @@ describe("runDoctorCommand", () => {
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
     await fs.writeFile(
       localConfigPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\ncapabilities:\n  - name: acme-mcp\n",
+      "allowedAgents:\n  - claude\ncapabilities:\n  - name: acme-mcp\n",
       "utf8",
     );
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
@@ -282,7 +259,7 @@ describe("runDoctorCommand", () => {
     }
   });
 
-  test("reports not-linked state without throwing", async () => {
+  test("reports core state without throwing", async () => {
     const root = await makeTempDir("doctor-unlinked-");
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
 
@@ -290,7 +267,7 @@ describe("runDoctorCommand", () => {
       runDoctorCommand([], { cwd: root, globalConfigStore }),
     );
 
-    expect(output).toContain("not-linked");
+    expect(output).toMatch(/\| State {2,}\| core +\|/);
     expect(output).toContain("Companion Path");
     expect(output).toContain("none");
   });
@@ -312,10 +289,178 @@ describe("runDoctorCommand", () => {
       runDoctorCommand([], { cwd: repoPath, globalConfigStore }),
     );
 
-    expect(output).toContain("linked-working-repository");
+    expect(output).toMatch(/\| State {2,}\| working +\|/);
     expect(output).toContain(companionPath);
     expect(output).toContain("Resolution Failures");
     expect(output).toContain("No companion resolution failures encountered.");
+  });
+
+  test("reports hub kind with member health and omits working-repo sections", async () => {
+    const root = await makeTempDir("doctor-hub-");
+    const memberPath = path.join(root, "members", "acme");
+    await fs.mkdir(memberPath, { recursive: true });
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
+    await fs.writeFile(
+      localConfigPath,
+      [
+        'type: "hub"',
+        "hub:",
+        "  companions:",
+        "    - id: acme",
+        "      path: members/acme",
+        "      source:",
+        '        kind: "git"',
+        "        url: git@acme.test:acme/companion.git",
+        "      materializedCommit: aaaa1111",
+        "    - id: ghost",
+        "      path: members/ghost",
+        "      source:",
+        '        kind: "local"',
+        "        path: /tmp/ghost",
+        "allowedAgents:",
+        "  - claude",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], { cwd: root, globalConfigStore, gitHead: () => "aaaa1111" }),
+    );
+
+    expect(output).toMatch(/\| State {2,}\| hub +\|/);
+    expect(output).toContain("Hub Members");
+    expect(output).toContain("acme");
+    expect(output).toContain("ok");
+    expect(output).toContain("ghost");
+    expect(output).toContain("missing");
+    expect(output).not.toContain("Policy");
+    expect(output).not.toContain("Tool Installations");
+  });
+
+  test("marks a hub member drifted when its HEAD differs from materializedCommit", async () => {
+    const root = await makeTempDir("doctor-hub-drift-");
+    const memberPath = path.join(root, "members", "acme");
+    await fs.mkdir(memberPath, { recursive: true });
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
+    await fs.writeFile(
+      localConfigPath,
+      [
+        'type: "hub"',
+        "hub:",
+        "  companions:",
+        "    - id: acme",
+        "      path: members/acme",
+        "      source:",
+        '        kind: "git"',
+        "        url: git@acme.test:acme/companion.git",
+        "      materializedCommit: aaaa1111",
+        "allowedAgents:",
+        "  - claude",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], { cwd: root, globalConfigStore, gitHead: () => "bbbb2222" }),
+    );
+
+    expect(output).toContain("drifted");
+    expect(output).not.toContain("Policy");
+  });
+
+  test("resolves the companion root from a subdirectory", async () => {
+    const root = await makeTempDir("doctor-subdir-");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
+    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
+    const nested = path.join(root, "src", "deep");
+    await fs.mkdir(nested, { recursive: true });
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], { cwd: nested, globalConfigStore }),
+    );
+
+    expect(output).toMatch(/\| State {2,}\| companion +\|/);
+    expect(output).toContain(root);
+  });
+
+  test("emits a machine-readable JSON report with --json for a linked working repository", async () => {
+    const root = await makeTempDir("doctor-json-working-");
+    const repoPath = path.join(root, "repo");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath);
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand(["--json"], { cwd: repoPath, globalConfigStore }),
+    );
+
+    const report = JSON.parse(output) as {
+      kind: string;
+      companionPath: string;
+      repositoryId: string;
+      policy: { allowedAgents: string[] };
+      capabilities: string[];
+      resolutionFailures: unknown[];
+    };
+    expect(output).not.toContain("Mate Doctor");
+    expect(report.kind).toBe("working");
+    expect(report.companionPath).toBe(companionPath);
+    expect(report.repositoryId).toBe("app");
+    expect(report.policy.allowedAgents).toEqual(["claude"]);
+    expect(report.capabilities).toEqual(["openspec"]);
+    expect(report.resolutionFailures).toEqual([]);
+  });
+
+  test("emits hub members in the JSON report", async () => {
+    const root = await makeTempDir("doctor-json-hub-");
+    const memberPath = path.join(root, "members", "acme");
+    await fs.mkdir(memberPath, { recursive: true });
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
+    await fs.writeFile(
+      localConfigPath,
+      [
+        'type: "hub"',
+        "hub:",
+        "  companions:",
+        "    - id: acme",
+        "      path: members/acme",
+        "      source:",
+        '        kind: "git"',
+        "        url: git@acme.test:acme/companion.git",
+        "      materializedCommit: aaaa1111",
+        "allowedAgents:",
+        "  - claude",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+
+    const output = await captureStdout(() =>
+      runDoctorCommand(["--json"], { cwd: root, globalConfigStore, gitHead: () => "bbbb2222" }),
+    );
+
+    const report = JSON.parse(output) as {
+      kind: string;
+      hub: { members: Array<{ id: string; exists: boolean; commitStatus: string }> };
+    };
+    expect(report.kind).toBe("hub");
+    expect(report.hub.members).toHaveLength(1);
+    expect(report.hub.members[0]).toMatchObject({
+      id: "acme",
+      exists: true,
+      commitStatus: "drifted",
+    });
   });
 
   test("reports engines.mate as satisfied when the running version matches the declared range", async () => {
@@ -323,10 +468,7 @@ describe("runDoctorCommand", () => {
     const repoPath = path.join(root, "working");
     await fs.mkdir(repoPath, { recursive: true });
     const companionPath = await setupCompanion(root, repoPath, {
-      profiles: {
-        default: { name: "default", allowedAgents: ["claude"] },
-        strict: { name: "strict", allowedAgents: ["claude"] },
-      },
+      allowedAgents: ["claude"],
       packageManagers: [],
       capabilities: [],
       engines: { mate: ">=0.0.0" },
@@ -349,10 +491,7 @@ describe("runDoctorCommand", () => {
     const repoPath = path.join(root, "working");
     await fs.mkdir(repoPath, { recursive: true });
     const companionPath = await setupCompanion(root, repoPath, {
-      profiles: {
-        default: { name: "default", allowedAgents: ["claude"] },
-        strict: { name: "strict", allowedAgents: ["claude"] },
-      },
+      allowedAgents: ["claude"],
       packageManagers: [],
       capabilities: [],
       engines: { mate: ">=99.0.0" },
@@ -375,10 +514,7 @@ describe("runDoctorCommand", () => {
     const repoPath = path.join(root, "working");
     await fs.mkdir(repoPath, { recursive: true });
     const companionPath = await setupCompanion(root, repoPath, {
-      profiles: {
-        default: { name: "default", allowedAgents: ["claude"] },
-        strict: { name: "strict", allowedAgents: ["claude"] },
-      },
+      allowedAgents: ["claude"],
       packageManagers: [],
       capabilities: [],
       engines: { mate: ">=0.x.y" },

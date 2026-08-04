@@ -9,7 +9,7 @@ function makeCtx(overrides: Partial<SetupContext> = {}): SetupContext {
     activeProviders: [],
     mode: "setup",
     config: {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       packageManagers: ["uv"],
       capabilities: [],
     },

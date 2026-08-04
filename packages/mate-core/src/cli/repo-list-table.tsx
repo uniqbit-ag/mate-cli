@@ -39,10 +39,6 @@ function RepoListTable({
     "ID",
     repositories.map((repository) => repository.id),
   );
-  const profileWidth = columnWidth(
-    "Profile",
-    repositories.map((repository) => repository.profile),
-  );
   const pathWidth = columnWidth(
     "Path",
     repositories.map((repository) => repository.path),
@@ -53,8 +49,7 @@ function RepoListTable({
       <Text bold>Linked repositories</Text>
       <Box marginTop={1} flexDirection="column">
         <Text dimColor>
-          {pad("Active", markerWidth)} {pad("ID", idWidth)} {pad("Profile", profileWidth)}{" "}
-          {pad("Path", pathWidth)}
+          {pad("Active", markerWidth)} {pad("ID", idWidth)} {pad("Path", pathWidth)}
         </Text>
         {repositories.map((repository) => {
           const isActive = repository.id === activeRepositoryId;
@@ -63,7 +58,7 @@ function RepoListTable({
           return (
             <Text key={repository.id} color={isActive ? "green" : undefined}>
               {pad(marker, markerWidth)} {pad(repository.id, idWidth)}{" "}
-              {pad(repository.profile, profileWidth)} {pad(repository.path, pathWidth)}
+              {pad(repository.path, pathWidth)}
             </Text>
           );
         })}

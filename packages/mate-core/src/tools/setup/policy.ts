@@ -57,10 +57,7 @@ export interface RequiredPluginDrift {
 export function getRequiredPluginDrift(config: FrameworkConfig): RequiredPluginDrift[] {
   const drift: RequiredPluginDrift[] = [];
   for (const { plugin } of requiredPluginsByKind()) {
-    if (
-      plugin.kind === "provider" &&
-      !(config.profiles.default?.allowedAgents ?? []).includes(plugin.id)
-    ) {
+    if (plugin.kind === "provider" && !(config.allowedAgents ?? []).includes(plugin.id)) {
       drift.push({
         pluginId: plugin.id,
         kind: plugin.kind,
@@ -96,9 +93,9 @@ export function getRequiredPluginDrift(config: FrameworkConfig): RequiredPluginD
 export function applyRequiredSelectionsToConfig(config: FrameworkConfig): void {
   for (const { plugin } of requiredPluginsByKind()) {
     if (plugin.kind === "provider") {
-      const profile = config.profiles.default;
-      if (profile && !profile.allowedAgents.includes(plugin.id)) {
-        profile.allowedAgents.push(plugin.id);
+      const allowedAgents = config.allowedAgents ?? [];
+      if (!allowedAgents.includes(plugin.id)) {
+        config.allowedAgents = [...allowedAgents, plugin.id];
       }
     }
     if (plugin.kind === "packageManager") {

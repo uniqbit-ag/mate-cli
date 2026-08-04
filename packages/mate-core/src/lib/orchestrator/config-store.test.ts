@@ -23,25 +23,17 @@ describe("engines parsing", () => {
   test("framework.yaml without an engines key parses with engines undefined", async () => {
     const root = await makeTempDir("config-store-engines-none-");
     const configPath = path.join(root, "framework.yaml");
-    await fs.writeFile(
-      configPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
-      "utf8",
-    );
+    await fs.writeFile(configPath, "allowedAgents:\n  - claude\n", "utf8");
 
     const config = await new ConfigStore(configPath).load();
     expect(config.engines).toBeUndefined();
-    expect(config.profiles.default?.allowedAgents).toEqual(["claude"]);
+    expect(config.allowedAgents).toEqual(["claude"]);
   });
 
   test("framework.yaml with engines.mate parses into config", async () => {
     const root = await makeTempDir("config-store-engines-mate-");
     const configPath = path.join(root, "framework.yaml");
-    await fs.writeFile(
-      configPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents: []\nengines:\n  mate: '>=0.15.0'\n",
-      "utf8",
-    );
+    await fs.writeFile(configPath, "allowedAgents: []\nengines:\n  mate: '>=0.15.0'\n", "utf8");
 
     const config = await new ConfigStore(configPath).load();
     expect(config.engines?.mate).toBe(">=0.15.0");
@@ -50,11 +42,7 @@ describe("engines parsing", () => {
   test("framework.yaml with a custom distribution engines key parses into config", async () => {
     const root = await makeTempDir("config-store-engines-custom-");
     const configPath = path.join(root, "framework.yaml");
-    await fs.writeFile(
-      configPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents: []\nengines:\n  acme-mate: '>=1.2.0'\n",
-      "utf8",
-    );
+    await fs.writeFile(configPath, "allowedAgents: []\nengines:\n  acme-mate: '>=1.2.0'\n", "utf8");
 
     const config = await new ConfigStore(configPath).load();
     expect(config.engines?.["acme-mate"]).toBe(">=1.2.0");
@@ -78,10 +66,7 @@ describe("hub manifest parsing", () => {
         "        url: https://example.test/product.git",
         "        ref: main",
         "      materializedCommit: abc123",
-        "profiles:",
-        "  default:",
-        "    name: default",
-        "    allowedAgents: []",
+        "allowedAgents: []",
         "",
       ].join("\n"),
       "utf8",
@@ -103,7 +88,7 @@ describe("hub manifest parsing", () => {
     const configPath = path.join(root, "framework.yaml");
     await fs.writeFile(
       configPath,
-      "type: hub\nhub:\n  companions:\n    - id: product\n      path: product\n      source:\n        kind: git\n        url: https://example.test/product.git\nprofiles:\n  default:\n    name: default\n    allowedAgents: []\n",
+      "type: hub\nhub:\n  companions:\n    - id: product\n      path: product\n      source:\n        kind: git\n        url: https://example.test/product.git\nallowedAgents: []\n",
       "utf8",
     );
 
@@ -114,7 +99,7 @@ describe("hub manifest parsing", () => {
 describe("mergeWithDefaults", () => {
   test("adds default capabilities when existing config has none", () => {
     const existing: FrameworkConfig = {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
     };
 
     const merged = mergeWithDefaults(existing);
@@ -126,7 +111,7 @@ describe("mergeWithDefaults", () => {
 
   test("does not duplicate capabilities already present", () => {
     const existing: FrameworkConfig = {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "react-doctor" }],
     };
 
@@ -138,7 +123,7 @@ describe("mergeWithDefaults", () => {
 
   test("preserves existing openspec schema profile metadata", () => {
     const existing: FrameworkConfig = {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
     };
 
@@ -152,7 +137,7 @@ describe("mergeWithDefaults", () => {
 
   test("does not resurrect a default-selected capability the user deliberately deselected", () => {
     const existing: FrameworkConfig = {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "tokensave" }],
     };
 
@@ -163,7 +148,7 @@ describe("mergeWithDefaults", () => {
 
   test("preserves existing unknown capabilities", () => {
     const existing: FrameworkConfig = {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "custom-cap" }],
     };
 
@@ -174,25 +159,25 @@ describe("mergeWithDefaults", () => {
 
   test("preserves all other fields from existing config", () => {
     const existing: FrameworkConfig = {
-      profiles: { custom: { name: "custom", allowedAgents: ["opencode"] } },
+      allowedAgents: ["opencode"],
     };
 
     const merged = mergeWithDefaults(existing);
 
-    expect(merged.profiles).toEqual(existing.profiles);
+    expect(merged.allowedAgents).toEqual(existing.allowedAgents);
   });
 
   test("preserves existing packageManagers when present and defaults to bun and uv otherwise", () => {
     expect(
       mergeWithDefaults({
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun", "uv"],
       }).packageManagers,
     ).toEqual(["bun", "uv"]);
 
     expect(
       mergeWithDefaults({
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
       }).packageManagers,
     ).toEqual(["bun", "uv"]);
   });
@@ -205,10 +190,7 @@ describe("plugins parsing", () => {
     await fs.writeFile(
       configPath,
       [
-        "profiles:",
-        "  default:",
-        "    name: default",
-        "    allowedAgents: []",
+        "allowedAgents: []",
         "plugins:",
         '  - package: "@acme/custom-plugin"',
         '    version: "^1.0.0"',
@@ -237,11 +219,7 @@ describe("plugins parsing", () => {
   test("framework.yaml without plugins loads with plugins undefined", async () => {
     const root = await makeTempDir("config-store-plugins-none-");
     const configPath = path.join(root, "framework.yaml");
-    await fs.writeFile(
-      configPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents: []\n",
-      "utf8",
-    );
+    await fs.writeFile(configPath, "allowedAgents: []\n", "utf8");
 
     const config = await new ConfigStore(configPath).load();
     expect(config.plugins).toBeUndefined();
@@ -253,10 +231,7 @@ describe("plugins parsing", () => {
     await fs.writeFile(
       configPath,
       [
-        "profiles:",
-        "  default:",
-        "    name: default",
-        "    allowedAgents: []",
+        "allowedAgents: []",
         "plugins:",
         '  - package: "@acme/custom-plugin"',
         '    version: "1.0.0"',
@@ -277,10 +252,7 @@ describe("plugins parsing", () => {
     await fs.writeFile(
       configPath,
       [
-        "profiles:",
-        "  default:",
-        "    name: default",
-        "    allowedAgents: []",
+        "allowedAgents: []",
         "plugins:",
         '  - package: "@acme/a"',
         '    version: "1.0.0"',
@@ -298,6 +270,56 @@ describe("plugins parsing", () => {
   });
 });
 
+describe("legacy profiles migration", () => {
+  test("collapses profiles.default.allowedAgents into flat allowedAgents on load", async () => {
+    const root = await makeTempDir("config-store-legacy-profiles-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      // prettier-ignore
+      "profiles:" + "\n  default:\n    name: default\n    allowedAgents:\n      - claude\n      - opencode\n",
+      "utf8",
+    );
+
+    const config = await new ConfigStore(configPath).load();
+
+    expect(config.allowedAgents).toEqual(["claude", "opencode"]);
+    expect((config as Record<string, unknown>).profiles).toBeUndefined();
+  });
+
+  test("legacy config without a default profile migrates to an empty list", async () => {
+    const root = await makeTempDir("config-store-legacy-no-default-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      "profiles:\n  strict:\n    name: strict\n    allowedAgents:\n      - claude\n",
+      "utf8",
+    );
+
+    const config = await new ConfigStore(configPath).load();
+
+    expect(config.allowedAgents).toEqual([]);
+  });
+
+  test("saving after load persists the new shape without a profiles key", async () => {
+    const root = await makeTempDir("config-store-legacy-rewrite-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      // prettier-ignore
+      "profiles:" + "\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
+      "utf8",
+    );
+
+    const store = new ConfigStore(configPath);
+    await store.save(await store.load());
+
+    const written = await fs.readFile(configPath, "utf8");
+    expect(written).not.toContain("profiles:");
+    expect(written).toContain("allowedAgents:");
+  });
+});
+
 describe("ConfigStore", () => {
   test("creates and returns default config when file is missing", async () => {
     const root = await makeTempDir("config-store-");
@@ -306,8 +328,7 @@ describe("ConfigStore", () => {
 
     const config = await store.load();
 
-    expect(config.profiles.default).toBeDefined();
-    expect(config.profiles.default.allowedAgents).toContain("claude");
+    expect(config.allowedAgents).toContain("claude");
     expect(config.packageManagers).toEqual(["bun", "uv"]);
     await fs.access(configPath);
   });
@@ -315,8 +336,7 @@ describe("ConfigStore", () => {
   test("marks a normal config as migrated without adding RTK", async () => {
     const root = await makeTempDir("config-store-migrate-");
     const configPath = path.join(root, "framework.yaml");
-    const original =
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n";
+    const original = "allowedAgents:\n  - claude\n";
     await fs.writeFile(configPath, original, "utf8");
     const store = new ConfigStore(configPath);
 
@@ -333,7 +353,7 @@ describe("ConfigStore", () => {
     const configPath = path.join(root, "framework.yaml");
     await fs.writeFile(
       configPath,
-      "profiles:\n  default:\n    name: default\n    allowedAgents: []\ncapabilities:\n  - name: headroom\n",
+      "allowedAgents: []\ncapabilities:\n  - name: headroom\n",
       "utf8",
     );
 
@@ -358,7 +378,7 @@ describe("ConfigStore", () => {
     const configPath = path.join(root, "framework.yaml");
     const store = new ConfigStore(configPath);
     await store.save({
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       capabilities: [],
       migrations: [RTK_CAPABILITY_SPLIT_MIGRATION],
     });

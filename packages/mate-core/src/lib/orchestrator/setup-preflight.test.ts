@@ -29,7 +29,7 @@ async function createLinkedRepoFixture() {
   await writeRepoLocalRegistryEntry(
     repositoryPath,
     companionPath,
-    { id: "app", path: repositoryPath, profile: "default" },
+    { id: "app", path: repositoryPath },
     "git",
   );
 
@@ -62,7 +62,7 @@ describe("inspectSetupPreflight", () => {
     });
     await fs.writeFile(
       path.join(repositoryPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
+      "allowedAgents:\n  - claude\n",
       "utf8",
     );
 
@@ -78,7 +78,7 @@ describe("inspectSetupPreflight", () => {
     });
     await fs.writeFile(
       path.join(repositoryPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
+      "allowedAgents:\n  - claude\n",
       "utf8",
     );
     // Register the repository as a companion too — this is what makes it a legitimate companion
@@ -104,7 +104,7 @@ describe("inspectSetupPreflight", () => {
     await fs.mkdir(path.join(root, `.${FRAMEWORK_NAME}`, "config"), { recursive: true });
     await fs.writeFile(
       path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-      "profiles:\n  default:\n    name: default\n    allowedAgents:\n      - claude\n",
+      "allowedAgents:\n  - claude\n",
       "utf8",
     );
 

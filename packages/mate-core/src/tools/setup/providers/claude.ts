@@ -292,22 +292,6 @@ function buildManagedClaudeSettings(
       },
       ...(hooks.PostToolUse ?? []),
     ];
-    // Catch-all: an archive that the PostToolUse nudge never matched (a human
-    // running the command outside Claude, an unmatched command shape) still
-    // gets caught here before the session ends, by checking the archive dir
-    // against finish tags directly rather than guessing from command text.
-    hooks.Stop = [
-      {
-        hooks: [
-          {
-            type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
-            timeout: 10,
-          },
-        ],
-      },
-      ...(hooks.Stop ?? []),
-    ];
   }
   if (reactDoctorEnabled) {
     // Record edits cheaply, then scan once when the edited turn finishes.
@@ -689,7 +673,7 @@ export function createClaudePlugin(): ProviderPlugin {
     label: "Claude",
     description: "Install Claude companion files, hooks, and guidance.",
     defaultSelected: true,
-    isEnabled: (config) => (config.profiles.default?.allowedAgents ?? []).includes("claude"),
+    isEnabled: (config) => (config.allowedAgents ?? []).includes("claude"),
     gitignoreEntries: () => COMPANION_GITIGNORE_ENTRIES,
     hosting: {
       mcp: {
@@ -715,7 +699,7 @@ export function createClaudePlugin(): ProviderPlugin {
       await syncCompanionClaudeSettings(ctx.companionPath, ctx.config);
     },
     async teardown(ctx) {
-      await teardownClaude(ctx.companionPath, ctx.config.profiles.default?.allowedAgents ?? []);
+      await teardownClaude(ctx.companionPath, ctx.config.allowedAgents ?? []);
     },
   };
 }

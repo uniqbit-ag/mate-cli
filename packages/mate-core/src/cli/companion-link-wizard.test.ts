@@ -11,7 +11,6 @@ describe("selectCompanionLinkInputs", () => {
     const localPath = "/tmp/companion repo";
 
     const selectionPromise = selectCompanionLinkInputs({
-      profiles: ["default"],
       existingCompanions: ["/tmp/managed-companion"],
       stdin,
       stdout,
@@ -31,7 +30,6 @@ describe("selectCompanionLinkInputs", () => {
       localPath,
       gitUrl: undefined,
       companionPaths: undefined,
-      profile: "default",
     });
   });
 });

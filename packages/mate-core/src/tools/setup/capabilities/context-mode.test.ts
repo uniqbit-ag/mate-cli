@@ -22,7 +22,7 @@ async function makeContext(): Promise<SetupContext> {
     mode: "sync",
     activeProviders: ["claude", "opencode"],
     config: {
-      profiles: { default: { name: "default", allowedAgents: ["claude", "opencode"] } },
+      allowedAgents: ["claude", "opencode"],
       capabilities: [{ name: "context-mode" }],
     },
   };
@@ -38,8 +38,10 @@ describe("createContextModePlugin", () => {
   test("is optional and selected by its capability name", () => {
     const plugin = createContextModePlugin();
     expect(plugin.defaultSelected).toBe(false);
-    expect(plugin.isEnabled({ profiles: {}, capabilities: [{ name: "context-mode" }] })).toBe(true);
-    expect(plugin.isEnabled({ profiles: {}, capabilities: [] })).toBe(false);
+    expect(plugin.isEnabled({ allowedAgents: [], capabilities: [{ name: "context-mode" }] })).toBe(
+      true,
+    );
+    expect(plugin.isEnabled({ allowedAgents: [], capabilities: [] })).toBe(false);
   });
 
   test("provisions only during setup and validates during launch sync", async () => {
@@ -85,7 +87,7 @@ describe("createContextModePlugin", () => {
     const launchContext: LaunchPreflightContext = {
       companionPath: ctx.companionPath,
       config: ctx.config,
-      repository: { id: "acme", path: "/tmp/acme", profile: "default" },
+      repository: { id: "acme", path: "/tmp/acme" },
       providerId: "opencode",
     };
 
@@ -104,7 +106,7 @@ describe("createContextModePlugin", () => {
     const diagnostics = await preflight?.({
       companionPath: ctx.companionPath,
       config: ctx.config,
-      repository: { id: "acme", path: "/tmp/acme", profile: "default" },
+      repository: { id: "acme", path: "/tmp/acme" },
       providerId: "opencode",
     });
 
@@ -172,9 +174,7 @@ describe("createContextModePlugin", () => {
     });
     const plugins = [createClaudePlugin(), createOpenCodePlugin(), contextMode];
     const enabled = {
-      profiles: {
-        default: { name: "default", allowedAgents: ["claude", "opencode"] },
-      },
+      allowedAgents: ["claude", "opencode"],
       capabilities: [{ name: "context-mode" }],
     };
 
@@ -206,7 +206,7 @@ describe("createContextModePlugin", () => {
     await applySetupCompatibilities(
       root,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [{ name: "context-mode" }],
       },
       "sync",

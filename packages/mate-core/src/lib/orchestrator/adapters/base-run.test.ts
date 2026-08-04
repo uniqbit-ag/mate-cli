@@ -32,11 +32,8 @@ function makeContext(): AdapterContext {
     repository: {
       id: "repo",
       path: "/tmp/repo",
-      profile: "default",
     },
-    policy: {
-      allowedAgents: ["claude"],
-    },
+    allowedAgents: ["claude"],
     companionPath: "/tmp/companion",
     capabilities: [],
   };
@@ -108,7 +105,6 @@ describe("LaunchAdapter runtime", () => {
       MATE_GIT_AUTO_MODE: "0",
       MATE_REPO_ID: "repo",
       MATE_REPO_PATH: "/tmp/repo",
-      MATE_REPO_PROFILE: "default",
       MATE_POLICY_JSON: JSON.stringify({ allowedAgents: ["claude"] }),
     });
     expect(environment.PATH?.split(path.delimiter)[0]).toBe(wrapperBinPath);

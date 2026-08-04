@@ -384,7 +384,7 @@ export function createOpenCodePlugin(): ProviderPlugin {
     label: "OpenCode",
     description: "Install the OpenCode plugin workspace.",
     defaultSelected: false,
-    isEnabled: (config) => (config.profiles.default?.allowedAgents ?? []).includes("opencode"),
+    isEnabled: (config) => (config.allowedAgents ?? []).includes("opencode"),
     hosting: {
       mcp: {
         async register(ctx: SetupContext, descriptor: McpServerDescriptor) {
