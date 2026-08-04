@@ -2062,8 +2062,10 @@ describe("mate CLI e2e", () => {
       (groups ?? []).some((group) =>
         (group.hooks ?? []).some((hook) => (hook.command ?? "").includes(needle)),
       );
-    expect(hasCommand(first.hooks?.PreToolUse, "validate-artifact-path")).toBe(true);
-    expect(hasCommand(first.hooks?.SessionStart, "mate-session-banner")).toBe(true);
+    // Mate's own hooks ship in the bundled Claude plugin (loaded via
+    // --plugin-dir), so settings carry only capability hooks.
+    expect(hasCommand(first.hooks?.PreToolUse, "validate-artifact-path")).toBe(false);
+    expect(hasCommand(first.hooks?.SessionStart, "mate-session-banner")).toBe(false);
     expect(hasCommand(first.hooks?.Stop, "react-doctor.sh")).toBe(true);
     expect(first.permissions?.allow).toContain("Bash(openspec:*)");
     expect(first.permissions?.allow).toContain("Bash(npx react-doctor:*)");

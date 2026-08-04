@@ -6,6 +6,7 @@
   "files": [
     "src/",
     "wrappers/",
+    "claude-plugin/",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx"
   ],

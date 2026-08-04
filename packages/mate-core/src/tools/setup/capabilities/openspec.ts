@@ -39,11 +39,6 @@ const MATE_V1_SCHEMA_SOURCE = path.join(
   "../../../templates/capabilities/openspec-cap/mate-v1",
 );
 
-const CLAUDE_HOOK_SOURCE = path.join(
-  import.meta.dirname,
-  "../../../templates/capabilities/openspec-cap/claude/hooks/mate-artifact-finish.sh",
-);
-
 const OPENSPEC_TOOL_DIRS = {
   claude: ".claude",
   opencode: ".opencode",
@@ -347,19 +342,10 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
     },
     forProvider: {
       claude: {
+        // The archive-finish nudge hook ships in the bundled mate Claude
+        // plugin and self-gates at runtime; openspec no longer contributes a
+        // Claude hook file. Only legacy per-session nudge state is migrated.
         async apply(ctx: SetupContext) {
-          if (ctx.config.git !== "auto") {
-            return;
-          }
-          const hookDest = path.join(
-            ctx.companionPath,
-            ".claude",
-            "hooks",
-            "mate-artifact-finish.sh",
-          );
-          await fs.mkdir(path.dirname(hookDest), { recursive: true });
-          await fs.copyFile(CLAUDE_HOOK_SOURCE, hookDest);
-          await fs.chmod(hookDest, 0o755);
           const stateDir = path.join(ctx.companionPath, ".claude", "state");
           try {
             const entries = await fs.readdir(stateDir);
@@ -374,17 +360,6 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
           }
         },
         async teardown(ctx: SetupContext) {
-          try {
-            await fs.unlink(
-              path.join(ctx.companionPath, ".claude", "hooks", "mate-artifact-finish.sh"),
-            );
-          } catch {
-            /* not present */
-          }
-          await pruneEmptyAncestors(
-            path.join(ctx.companionPath, ".claude", "hooks"),
-            ctx.companionPath,
-          );
           await teardownToolRuntime(ctx.companionPath, "claude");
         },
       },

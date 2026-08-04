@@ -383,7 +383,7 @@ describe("createOpenspecPlugin", () => {
     expect(opencodeSkill).toContain('artifact finish "<artifact-name>" --json\n');
   });
 
-  test("installs the Claude openspec auto-finish hook", async () => {
+  test("does not install a Claude hook file (nudge ships in the bundled plugin)", async () => {
     const root = await makeTempDir("mate-openspec-claude-hook-");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
 
@@ -393,7 +393,7 @@ describe("createOpenspecPlugin", () => {
 
     await expect(
       fs.access(path.join(root, ".claude", "hooks", "mate-artifact-finish.sh")),
-    ).resolves.toBeNull();
+    ).rejects.toThrow();
   });
 
   test("removes only legacy Claude archive snapshot state", async () => {
@@ -414,14 +414,17 @@ describe("createOpenspecPlugin", () => {
     await expect(fs.readFile(path.join(stateDir, "other.json"), "utf8")).resolves.toBe("{}\n");
   });
 
-  test("does not install the Claude openspec auto-finish hook when Git auto mode is off", async () => {
+  test("removes legacy Claude archive snapshot state regardless of Git auto mode", async () => {
     const root = await makeTempDir("mate-openspec-claude-hook-off-");
+    const stateDir = path.join(root, ".claude", "state");
+    await fs.mkdir(stateDir, { recursive: true });
+    await fs.writeFile(path.join(stateDir, "mate-artifact-finish.session.json"), "{}\n");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
 
     await plugin.forProvider!.claude.apply(makeCtx(root, ["claude"]));
 
     await expect(
-      fs.access(path.join(root, ".claude", "hooks", "mate-artifact-finish.sh")),
+      fs.access(path.join(stateDir, "mate-artifact-finish.session.json")),
     ).rejects.toThrow();
   });
 

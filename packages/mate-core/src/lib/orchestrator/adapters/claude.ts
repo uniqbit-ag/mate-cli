@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 
 import { buildCompanionGuidance } from "../../../playbooks/companion-guidance";
 import { getContextModePackageRoot, validateContextModePackage } from "../../context-mode-package";
+import { getClaudePluginRoot, validateClaudePluginAssets } from "../../package-paths";
 import {
   getCompanionClaudeMcpConfigPath,
   getCompanionClaudeSettingsPath,
@@ -13,6 +14,17 @@ export class ClaudeAdapter extends LaunchAdapter {
   readonly interactive = true;
 
   async validateLaunch(context: AdapterContext): Promise<void> {
+    // The bundled mate plugin carries the artifact-path guard; never launch a
+    // managed session without it.
+    try {
+      validateClaudePluginAssets();
+    } catch (error) {
+      throw new Error(
+        `Mate Claude plugin is unavailable: ${(error as Error).message}. Reinstall mate to repair it.`,
+        { cause: error },
+      );
+    }
+
     if (context.capabilities.some((capability) => capability.name === "context-mode")) {
       try {
         await validateContextModePackage(context.companionPath);
@@ -56,6 +68,10 @@ export class ClaudeAdapter extends LaunchAdapter {
       buildCompanionGuidance(context),
       ...settingsArgs,
       ...mcpConfigArgs,
+      // Bundled mate plugin (hooks) resolved from the running mate-core
+      // installation, coexisting with the context-mode plugin dir.
+      "--plugin-dir",
+      getClaudePluginRoot(),
       ...contextModeArgs,
       ...args,
     ];
