@@ -95,7 +95,7 @@ describe("command gating", () => {
       },
       hydrateDynamicPlugins: async () => {},
       resolveRootContext: async () => {
-        gateCalls.push("hubRoot");
+        gateCalls.push("root");
         return rootContextFor(overrides.rootKind ?? "core");
       },
     };
@@ -132,7 +132,7 @@ describe("command gating", () => {
     for (const subcommand of ["setup", "link", "list", "nope"]) {
       const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
       await main(["node", "mate", "companion", subcommand], deps);
-      expect(gateCalls).toEqual(["hubRoot"]);
+      expect(gateCalls).toEqual(["root"]);
     }
     expect(dispatched).toEqual(["companion", "companion", "companion", "companion"]);
   });
@@ -148,7 +148,7 @@ describe("command gating", () => {
         const { gateCalls, deps } = recordingDeps({ rootKind: "hub" });
         process.exitCode = 0;
         await main(["node", "mate", "companion", subcommand], deps);
-        expect(gateCalls).toEqual(["hubRoot"]);
+        expect(gateCalls).toEqual(["root"]);
         expect(process.exitCode).toBe(1);
       }
       expect(dispatched).toEqual([]);
@@ -159,13 +159,37 @@ describe("command gating", () => {
     }
   });
 
-  test("hub, install, and doctor still dispatch in a hub root", async () => {
-    for (const argv of [["hub", "status"], ["install"], ["doctor"]]) {
-      const { gateCalls, deps } = recordingDeps({ rootKind: "hub" });
+  test("hub, install, plugin, and doctor still dispatch in a hub root", async () => {
+    for (const argv of [["hub", "sync"], ["install"], ["plugin", "install"], ["doctor"]]) {
+      const { deps } = recordingDeps({ rootKind: "hub" });
       await main(["node", "mate", ...argv], deps);
-      expect(gateCalls).not.toContain("hubRoot");
     }
-    expect(dispatched).toEqual(["hub", "install", "doctor"]);
+    expect(dispatched).toEqual(["hub", "install", "plugin", "doctor"]);
+  });
+
+  test("hub commands are blocked in a companion root", async () => {
+    const originalExitCode = process.exitCode;
+    const errors: string[] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.join(" "));
+    });
+    try {
+      for (const argv of [
+        ["hub", "sync"],
+        ["companion", "hub", "sync"],
+      ]) {
+        const { gateCalls, deps } = recordingDeps({ rootKind: "companion" });
+        process.exitCode = 0;
+        await main(["node", "mate", ...argv], deps);
+        expect(gateCalls).toEqual(["root"]);
+        expect(process.exitCode).toBe(1);
+      }
+      expect(dispatched).toEqual([]);
+      expect(errors.join("\n")).toContain("companion root");
+    } finally {
+      errorSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
   });
 
   test("companion subcommands dispatch when the root is a companion", async () => {
@@ -179,7 +203,7 @@ describe("command gating", () => {
   test("hub commands dispatch without companion selection or install preflight", async () => {
     const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
     await main(["node", "mate", "hub", "init"], deps);
-    expect(gateCalls).toEqual([]);
+    expect(gateCalls).toEqual(["root"]);
     expect(dispatched).toEqual(["hub"]);
   });
 
@@ -190,7 +214,7 @@ describe("command gating", () => {
         const { gateCalls, deps } = recordingDeps({ companion: false });
         process.exitCode = 0;
         await main(["node", "mate", "companion", subcommand], deps);
-        expect(gateCalls).toEqual(["hubRoot", "companion"]);
+        expect(gateCalls).toEqual(["root", "companion"]);
         expect(process.exitCode).toBe(1);
       }
       expect(dispatched).toEqual([]);

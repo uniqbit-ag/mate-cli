@@ -15,17 +15,25 @@ let originalStderrWrite: typeof process.stderr.write;
 let logs: string[];
 let originalLog: typeof console.log;
 
-async function makeCompanion(pluginsYaml: string[] = []): Promise<string> {
-  const companionPath = await fs.mkdtemp(path.join(os.tmpdir(), "plugin-install-cmd-"));
-  tempRoots.push(companionPath);
-  const configDir = path.join(companionPath, ".mate", "config");
+async function makeRoot(configYaml: string[]): Promise<string> {
+  const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), "plugin-install-cmd-"));
+  tempRoots.push(rootPath);
+  const configDir = path.join(rootPath, ".mate", "config");
   await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(
     path.join(configDir, "framework.yaml"),
-    ["allowedAgents: []", ...pluginsYaml, ""].join("\n"),
+    [...configYaml, ""].join("\n"),
     "utf8",
   );
-  return companionPath;
+  return rootPath;
+}
+
+async function makeCompanion(pluginsYaml: string[] = []): Promise<string> {
+  return makeRoot(["allowedAgents: []", ...pluginsYaml]);
+}
+
+async function makeHub(): Promise<string> {
+  return makeRoot(["type: hub", "hub:", "  companions: []"]);
 }
 
 async function readFrameworkYaml(companionPath: string): Promise<{ plugins?: unknown[] }> {
@@ -108,14 +116,28 @@ describe("runPluginInstallCommand", () => {
     expect(stderrWrites.join(" ")).toContain("usage");
   });
 
-  test("requires a companion context", async () => {
+  test("requires a companion or hub context", async () => {
     process.env.MATE_ARTIFACT_PATH = "";
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "plugin-install-nocompanion-"));
     tempRoots.push(cwd);
     const ok = await runPluginInstallCommand(["@acme/tool@1.0.0"], { cwd });
     expect(ok).toBe(false);
     expect(process.exitCode).toBe(1);
-    expect(stderrWrites.join(" ")).toContain("companion context");
+    expect(stderrWrites.join(" ")).toContain("companion or hub context");
+  });
+
+  test("declares and installs into a hub root", async () => {
+    const hubPath = await makeHub();
+    process.env.MATE_ARTIFACT_PATH = hubPath;
+
+    const ok = await runPluginInstallCommand(["@acme/custom-plugin@1.2.0"], {
+      installDeps: fakeInstall(() => "1.2.0"),
+    });
+
+    expect(ok).toBe(true);
+    const config = await readFrameworkYaml(hubPath);
+    expect(config.plugins).toEqual([{ package: "@acme/custom-plugin", version: "1.2.0" }]);
+    expect(logs.join(" ")).toContain("installed plugin @acme/custom-plugin@1.2.0");
   });
 
   test("declares a fresh package in framework.yaml and installs it", async () => {

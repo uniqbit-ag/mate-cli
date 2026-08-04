@@ -56,10 +56,14 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     process.exitCode = 1;
     return false;
   }
-  // Companion-declared plugins install first and hydrate into the registry
-  // before the plan is built, so one run goes install → load → plan and their
-  // own install requirements are part of the plan.
-  if (context.kind === "companion" && context.companionPath && context.config.plugins?.length) {
+  // Root-declared plugins (companion or hub) install first and hydrate into
+  // the registry before the plan is built, so one run goes install → load →
+  // plan and their own install requirements are part of the plan.
+  if (
+    (context.kind === "companion" || context.kind === "hub") &&
+    context.companionPath &&
+    context.config.plugins?.length
+  ) {
     reportPluginInstallResults(
       await installDeclaredPlugins(context.companionPath, context.config.plugins),
     );

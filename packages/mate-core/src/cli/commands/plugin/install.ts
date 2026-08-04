@@ -37,7 +37,7 @@ export interface PluginInstallCommandDeps {
 
 /**
  * @command mate plugin install <package>[@version]
- * @description Declares `<package>` in the companion's `framework.yaml`
+ * @description Declares `<package>` in the companion's (or hub's) `framework.yaml`
  * `plugins:` list (adding it, or updating its version if already declared)
  * and installs it immediately into the shared workspace, the same way
  * `mate install` would on its next run.
@@ -62,9 +62,9 @@ export async function runPluginInstallCommand(
     process.exitCode = 1;
     return false;
   }
-  if (context.kind !== "companion" || !context.companionPath) {
+  if ((context.kind !== "companion" && context.kind !== "hub") || !context.companionPath) {
     process.stderr.write(
-      `${FRAMEWORK_NAME}: \`plugin install\` requires a companion context; run it from inside a linked working repository.\n`,
+      `${FRAMEWORK_NAME}: \`plugin install\` requires a companion or hub context; run it from inside a linked working repository or a hub root.\n`,
     );
     process.exitCode = 1;
     return false;
