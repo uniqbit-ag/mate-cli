@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import {
+  createClaudePlugin,
   ensureWorkingRepoLocalExcludes,
   getCompanionClaudeMcpConfigPath,
   getCompanionClaudeSettingsPath,
@@ -91,7 +92,7 @@ function hasPostToolHook(
 }
 
 describe("syncCompanionClaudeSettings", () => {
-  test("writes shared PreToolUse hook without react-doctor post hooks by default", async () => {
+  test("writes no mate hook groups by default (plugin-delivered)", async () => {
     const companionPath = await makeTempDir("mate-companion-basic-");
     await syncCompanionClaudeSettings(companionPath, {
       allowedAgents: ["claude"],
@@ -99,20 +100,7 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.PreToolUse).toEqual([
-      {
-        matcher: "Write|Edit|MultiEdit|Bash",
-        hooks: [
-          { type: "command", command: `${companionPath}/.claude/hooks/validate-artifact-path` },
-        ],
-      },
-    ]);
-    expect(settings.hooks?.SessionStart).toEqual([
-      {
-        hooks: [{ type: "command", command: `${companionPath}/.claude/hooks/mate-session-banner` }],
-      },
-    ]);
-    expect(settings.hooks?.Stop).toBeUndefined();
+    expect(settings.hooks).toBeUndefined();
   });
 
   test("disables auto memory by default", async () => {
@@ -157,7 +145,7 @@ describe("syncCompanionClaudeSettings", () => {
     ]);
   });
 
-  test("adds openspec post-archive nudge hook when capability enabled with git auto", async () => {
+  test("does not write the openspec nudge hook even with git auto (plugin-delivered)", async () => {
     const companionPath = await makeTempDir("mate-companion-openspec-");
     await syncCompanionClaudeSettings(companionPath, {
       allowedAgents: ["claude"],
@@ -166,15 +154,7 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.PostToolUse).toContainEqual({
-      matcher: "Bash",
-      hooks: [
-        {
-          type: "command",
-          command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
-        },
-      ],
-    });
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(false);
     expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
     expect(settings.hooks?.Stop).toBeUndefined();
   });
@@ -191,11 +171,22 @@ describe("syncCompanionClaudeSettings", () => {
     expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
   });
 
-  test("resync replaces a stale PreToolUse deny registration with the PostToolUse nudge", async () => {
+  test("resync strips stale mate-artifact-finish registrations and does not re-add them", async () => {
     const companionPath = await makeTempDir("mate-companion-openspec-migrate-");
     await seedSettings(companionPath, {
       hooks: {
         PreToolUse: [
+          {
+            matcher: "Bash",
+            hooks: [
+              {
+                type: "command",
+                command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
+              },
+            ],
+          },
+        ],
+        PostToolUse: [
           {
             matcher: "Bash",
             hooks: [
@@ -217,7 +208,7 @@ describe("syncCompanionClaudeSettings", () => {
 
     const settings = await readCompanionSettings(companionPath);
     expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
-    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(true);
+    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(false);
   });
 
   test("preserves an unmanaged hook and unmanaged permissions.allow entry", async () => {
@@ -239,7 +230,7 @@ describe("syncCompanionClaudeSettings", () => {
       matcher: "Bash",
       hooks: [{ type: "command", command: "echo custom" }],
     });
-    expect(hasValidateHook(settings, companionPath)).toBe(true);
+    expect(hasValidateHook(settings, companionPath)).toBe(false);
     expect(settings.permissions?.allow).toContain("Bash(ls:*)");
   });
 
@@ -276,7 +267,7 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.permissions?.allow).not.toContain(`Glob(${companionPath}/**)`);
   });
 
-  test("resync preserves user-authored SessionStart hooks alongside the managed banner", async () => {
+  test("resync strips the legacy managed banner and preserves user-authored SessionStart hooks", async () => {
     const companionPath = await makeTempDir("mate-companion-session-start-");
     await seedSettings(companionPath, {
       hooks: {
@@ -297,13 +288,9 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.SessionStart).toContainEqual({
-      hooks: [{ type: "command", command: `${companionPath}/.claude/hooks/mate-session-banner` }],
-    });
-    expect(settings.hooks?.SessionStart).toContainEqual({
-      hooks: [{ type: "command", command: "echo custom-session-start" }],
-    });
-    expect(settings.hooks?.SessionStart).toHaveLength(2);
+    expect(settings.hooks?.SessionStart).toEqual([
+      { hooks: [{ type: "command", command: "echo custom-session-start" }] },
+    ]);
   });
 
   test("declares tokensave hooks without duplication and leaves MCP registration to ctx.mcp", async () => {
@@ -485,7 +472,7 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.permissions?.allow).toContain("Bash(ls:*)");
   });
 
-  test("reconciles react-doctor hook by capability while validate hook stays present", async () => {
+  test("reconciles react-doctor hook by capability without re-adding mate plugin hooks", async () => {
     const companionPath = await makeTempDir("mate-companion-hook-reconcile-");
 
     await syncCompanionClaudeSettings(companionPath, {
@@ -501,7 +488,7 @@ describe("syncCompanionClaudeSettings", () => {
         `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
       ),
     ).toBe(true);
-    expect(hasValidateHook(settings, companionPath)).toBe(true);
+    expect(hasValidateHook(settings, companionPath)).toBe(false);
 
     await syncCompanionClaudeSettings(companionPath, {
       allowedAgents: ["claude"],
@@ -516,28 +503,56 @@ describe("syncCompanionClaudeSettings", () => {
         `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
       ),
     ).toBe(false);
-    expect(hasValidateHook(settings, companionPath)).toBe(true);
+    expect(hasValidateHook(settings, companionPath)).toBe(false);
+  });
+});
+
+describe("Claude provider apply (mate hook migration)", () => {
+  test("creates no mate hook files and strips previously copied ones, keeping capability hooks", async () => {
+    const companionPath = await makeTempDir("mate-claude-apply-migrate-");
+    const hooksDir = path.join(companionPath, ".claude", "hooks");
+    await fs.mkdir(hooksDir, { recursive: true });
+    for (const stale of [
+      "validate-artifact-path",
+      "mate-session-banner",
+      "mate-artifact-finish.sh",
+    ]) {
+      await fs.writeFile(path.join(hooksDir, stale), "#!/bin/sh\nexit 0\n", "utf8");
+    }
+    await fs.writeFile(path.join(hooksDir, "react-doctor.sh"), "#!/bin/sh\nexit 0\n", "utf8");
+
+    await createClaudePlugin().apply({
+      companionPath,
+      config: { allowedAgents: ["claude"], capabilities: [] },
+      mode: "sync",
+      activeProviders: ["claude"],
+    });
+
+    for (const stale of [
+      "validate-artifact-path",
+      "mate-session-banner",
+      "mate-artifact-finish.sh",
+    ]) {
+      await expect(fs.access(path.join(hooksDir, stale))).rejects.toThrow();
+    }
+    // Capability hook files that remain settings-delivered are untouched.
+    await expect(fs.access(path.join(hooksDir, "react-doctor.sh"))).resolves.toBeNull();
   });
 
-  test("reconciles openspec hook by capability while validate hook stays present", async () => {
-    const companionPath = await makeTempDir("mate-companion-openspec-reconcile-");
+  test("prunes the emptied hooks directory on a fully migrated companion", async () => {
+    const companionPath = await makeTempDir("mate-claude-apply-prune-");
+    const hooksDir = path.join(companionPath, ".claude", "hooks");
+    await fs.mkdir(hooksDir, { recursive: true });
+    await fs.writeFile(path.join(hooksDir, "validate-artifact-path"), "#!/bin/sh\n", "utf8");
 
-    await syncCompanionClaudeSettings(companionPath, {
-      allowedAgents: ["claude"],
-      git: "auto",
-      capabilities: [{ name: "openspec" }],
+    await createClaudePlugin().apply({
+      companionPath,
+      config: { allowedAgents: ["claude"], capabilities: [] },
+      mode: "sync",
+      activeProviders: ["claude"],
     });
-    let settings = await readCompanionSettings(companionPath);
-    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(true);
-    expect(hasValidateHook(settings, companionPath)).toBe(true);
 
-    await syncCompanionClaudeSettings(companionPath, {
-      allowedAgents: ["claude"],
-      capabilities: [],
-    });
-    settings = await readCompanionSettings(companionPath);
-    expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(false);
-    expect(hasValidateHook(settings, companionPath)).toBe(true);
+    await expect(fs.access(hooksDir)).rejects.toThrow();
   });
 });
 
@@ -644,6 +659,42 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
       await fs.readFile(path.join(workingRepoPath, ".claude", "settings.local.json"), "utf8"),
     );
     expect(after.hooks).toBeUndefined();
+  });
+
+  test("strips the legacy archive-finish guard group and stays idempotent", async () => {
+    const workingRepoPath = await makeTempDir("mate-claude-strip-finish-");
+    const companionPath = await makeTempDir("mate-claude-strip-finish-companion-");
+
+    await seedSettings(workingRepoPath, {
+      hooks: {
+        PostToolUse: [
+          {
+            matcher: "Bash",
+            hooks: [
+              {
+                type: "command",
+                command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
+              },
+            ],
+          },
+          { matcher: "Bash", hooks: [{ type: "command", command: "echo user-post-tool" }] },
+        ],
+      },
+    });
+
+    const config = { allowedAgents: ["claude"], capabilities: [] };
+    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, config);
+
+    const settingsPath = path.join(workingRepoPath, ".claude", "settings.local.json");
+    const first = await fs.readFile(settingsPath, "utf8");
+    const settings = JSON.parse(first);
+    expect(settings.hooks?.PostToolUse).toEqual([
+      { matcher: "Bash", hooks: [{ type: "command", command: "echo user-post-tool" }] },
+    ]);
+
+    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, config);
+    const second = await fs.readFile(settingsPath, "utf8");
+    expect(second).toBe(first);
   });
 
   test("writes companion additionalDirectories to working-repo Claude settings", async () => {

@@ -1484,16 +1484,13 @@ describe("applySetupCompatibilities", () => {
     // Unmanaged legacy settings.json is removed so it cannot shadow companion config.
     await expect(fs.access(path.join(root, ".claude", "settings.json"))).rejects.toThrow();
 
-    // Mate-managed settings.local.json is generated with the validate hook.
+    // Mate-managed settings.local.json is generated without mate hook groups;
+    // those ship in the bundled Claude plugin loaded at launch.
     const settings = JSON.parse(
       await fs.readFile(path.join(root, ".claude", "settings.local.json"), "utf8"),
     );
-    expect(settings.hooks?.PreToolUse).toEqual([
-      {
-        matcher: "Write|Edit|MultiEdit|Bash",
-        hooks: [{ type: "command", command: `${root}/.claude/hooks/validate-artifact-path` }],
-      },
-    ]);
+    expect(settings.hooks?.PreToolUse ?? []).toEqual([]);
+    expect(settings.autoMemoryEnabled).toBe(false);
   });
 });
 

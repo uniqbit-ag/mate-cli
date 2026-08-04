@@ -7,7 +7,12 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { LaunchPreflightError } from "../types";
 import { getContextModePackageRoot } from "../../context-mode-package";
 import { getOpenCodePluginPackageReference } from "../../opencode-plugin-package";
-import { getReactDoctorBinPath, getWrapperBinPath } from "../../package-paths";
+import {
+  getClaudePluginRoot,
+  getReactDoctorBinPath,
+  getWrapperBinPath,
+  validateClaudePluginAssets,
+} from "../../package-paths";
 import { ClaudeAdapter } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
 import type { AdapterContext, ProxyDeps } from "./base";
@@ -293,6 +298,27 @@ describe("graphify GRAPHIFY_OUT env injection", () => {
   });
 });
 
+describe("openspec archive-nudge gate env injection", () => {
+  test("marks openspec enabled only when the capability is selected", async () => {
+    const enabled = await new ClaudeAdapter().prepareLaunch(
+      makeContext([{ name: "openspec" }]),
+      [],
+    );
+    const disabled = await new ClaudeAdapter().prepareLaunch(makeContext(), []);
+
+    expect(enabled.env.MATE_OPENSPEC_ENABLED).toBe("1");
+    expect(disabled.env.MATE_OPENSPEC_ENABLED).toBe("0");
+  });
+
+  test("carries the git auto mode state alongside the openspec flag", async () => {
+    const context = { ...makeContext([{ name: "openspec" }]), git: "auto" as const };
+    const launch = await new ClaudeAdapter().prepareLaunch(context, []);
+
+    expect(launch.env.MATE_OPENSPEC_ENABLED).toBe("1");
+    expect(launch.env.MATE_GIT_AUTO_MODE).toBe("1");
+  });
+});
+
 describe("react-doctor capability env injection", () => {
   test("marks react-doctor enabled only when the capability is selected", async () => {
     const enabled = await new ClaudeAdapter().prepareLaunch(
@@ -379,7 +405,15 @@ describe("Claude companion settings launch flags", () => {
     expect(launch.args.slice(-2)).toEqual(["--print", "hello"]);
   });
 
-  test("adds the local context-mode plugin directory only when enabled", async () => {
+  test("always loads the bundled mate plugin directory", async () => {
+    const companionPath = await makeTempDir("mate-claude-plugin-flag-");
+    const args = new ClaudeAdapter().buildArgs({ ...makeContext(), companionPath }, []);
+
+    const pluginDirs = args.filter((_, index) => args[index - 1] === "--plugin-dir");
+    expect(pluginDirs).toEqual([getClaudePluginRoot()]);
+  });
+
+  test("adds the local context-mode plugin directory only when enabled, alongside the mate plugin", async () => {
     const companionPath = await makeTempDir("mate-claude-context-mode-flag-");
     const enabled = new ClaudeAdapter().buildArgs(
       { ...makeContext([{ name: "context-mode" }]), companionPath },
@@ -387,9 +421,25 @@ describe("Claude companion settings launch flags", () => {
     );
     const disabled = new ClaudeAdapter().buildArgs({ ...makeContext(), companionPath }, []);
 
-    const pluginIndex = enabled.indexOf("--plugin-dir");
-    expect(enabled[pluginIndex + 1]).toBe(getContextModePackageRoot(companionPath));
-    expect(disabled).not.toContain("--plugin-dir");
+    const enabledPluginDirs = enabled.filter((_, index) => enabled[index - 1] === "--plugin-dir");
+    expect(enabledPluginDirs).toEqual([
+      getClaudePluginRoot(),
+      getContextModePackageRoot(companionPath),
+    ]);
+    const disabledPluginDirs = disabled.filter(
+      (_, index) => disabled[index - 1] === "--plugin-dir",
+    );
+    expect(disabledPluginDirs).toEqual([getClaudePluginRoot()]);
+  });
+
+  test("validates the bundled mate plugin assets", async () => {
+    // The real bundled plugin is present, so a managed launch validates.
+    await expect(new ClaudeAdapter().validateLaunch(makeContext())).resolves.toBeUndefined();
+
+    // A broken installation fails naming the missing assets.
+    const broken = await makeTempDir("mate-claude-plugin-broken-");
+    expect(() => validateClaudePluginAssets(broken)).toThrow(/plugin\.json/);
+    expect(() => validateClaudePluginAssets(broken)).toThrow(/validate-artifact-path\.mjs/);
   });
 });
 

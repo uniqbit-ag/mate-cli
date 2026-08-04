@@ -1,0 +1,4 @@
+{
+  "name": "mate",
+  "description": "Mate-managed Claude Code hooks: artifact-path guardrail, session banner, and the OpenSpec archive-finish nudge. Ships inside @uniqbit/mate-core and is loaded per managed launch via --plugin-dir; it is never published separately."
+}

@@ -83,6 +83,7 @@ export abstract class LaunchAdapter {
       MATE_WRAPPER_BIN_PATH: wrapperBinPath,
       PATH: prependPathEntry(process.env.PATH, wrapperBinPath),
       MATE_GRAPHIFY_ENABLED: context.capabilities.some((c) => c.name === "graphify") ? "1" : "0",
+      MATE_OPENSPEC_ENABLED: context.capabilities.some((c) => c.name === "openspec") ? "1" : "0",
       MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
       MATE_GIT_AUTO_MODE: context.git === "auto" ? "1" : "0",
       MATE_REPO_ID: context.repository.id,

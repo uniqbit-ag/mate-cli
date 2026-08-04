@@ -128,7 +128,7 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       // Declares into framework.yaml and installs on the spot, so it needs
       // the same gating as `install` — an unambiguous companion, but must
       // stay runnable when installation is otherwise incomplete.
-      if (!(await gate({ companion: true }))) return;
+      if (!(await gate({ updateGuard: true }))) return;
       await runPluginCommand(subcommand, rest);
       return;
     case "artifact":
