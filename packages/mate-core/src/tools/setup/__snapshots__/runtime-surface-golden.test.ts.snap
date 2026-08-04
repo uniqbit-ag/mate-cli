@@ -17,6 +17,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -42,6 +43,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -174,6 +176,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -191,7 +194,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -227,7 +230,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -321,6 +324,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -346,6 +350,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -402,7 +407,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -438,7 +443,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -587,6 +592,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -619,6 +625,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -758,6 +765,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -785,7 +793,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -800,7 +808,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -891,6 +899,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -923,6 +932,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -999,7 +1009,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -1014,7 +1024,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -1157,6 +1167,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -1182,6 +1193,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -1274,6 +1286,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 
@@ -1299,7 +1312,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1315,7 +1328,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
       "context-mode@1.0.169",
     ],
   },
@@ -1399,6 +1412,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 
@@ -1432,6 +1446,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -1457,7 +1472,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1473,7 +1488,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
       "context-mode@1.0.169",
     ],
   },
@@ -1603,6 +1618,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -1630,6 +1646,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -1749,6 +1766,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -1766,7 +1784,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -1784,7 +1802,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -1867,6 +1885,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -1894,6 +1913,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -1948,7 +1968,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -1966,7 +1986,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -2093,6 +2113,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -2118,6 +2139,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -2220,6 +2242,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -2237,7 +2260,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -2257,7 +2280,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -2341,6 +2364,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -2366,6 +2390,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -2402,7 +2427,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -2422,7 +2447,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -2551,6 +2576,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 
@@ -2593,6 +2619,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -2738,7 +2765,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -2781,7 +2808,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
       "context-mode@1.0.169",
     ],
   },
@@ -2935,6 +2962,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -2960,6 +2988,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -2983,7 +3012,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -2998,7 +3027,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -3021,6 +3050,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -3046,6 +3076,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -3069,7 +3100,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -3084,7 +3115,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -3107,6 +3138,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 
@@ -3133,6 +3165,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -3156,7 +3189,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -3171,7 +3204,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -3194,6 +3227,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -3219,6 +3253,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -3242,7 +3277,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -3257,7 +3292,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -3280,6 +3315,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -3305,6 +3341,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -3328,7 +3365,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
     "references": {
       "mate": "..",
@@ -3343,7 +3380,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
     ],
   },
 }
@@ -3366,6 +3403,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
@@ -3391,6 +3429,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
 
 <!-- MATE:COMPANION:END -->
 "
