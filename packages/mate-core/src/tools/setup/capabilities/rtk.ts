@@ -1,4 +1,4 @@
-import type { CapabilityPlugin, SetupContext } from "../plugin";
+import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
 import { isCommandOnPath, runShellCommand, runShellCommandSilently } from "../utils";
 import { confirm } from "../../../cli/confirm";
@@ -52,6 +52,9 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
     defaultSelected: false,
     isEnabled: (config) =>
       (config.capabilities ?? []).some((capability) => capability.name === "rtk"),
+    getRuntimeContributions(): RuntimeContributionsByRuntime {
+      return { claude: { permissionEntries: ["Bash(rtk:*)"] } };
+    },
     getInstallRequirements: (): InstallRequirement[] => {
       const command = checkBrew() ? RTK_INSTALL_CMD_BREW : RTK_INSTALL_CMD_FALLBACK;
       return [

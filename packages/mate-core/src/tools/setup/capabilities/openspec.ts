@@ -4,10 +4,12 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { getOpenSpecSchemaSelection } from "../../../lib/orchestrator/setup-compatibilities";
+import { getWrapperBinPath } from "../../../lib/package-paths";
 import { fetchPublicPackageVersion } from "../../../lib/public-npm";
 import { isNewer } from "../../../lib/update-checker";
+import { FRAMEWORK_NAME } from "../../../framework";
 import { confirm } from "../../../cli/confirm";
-import type { CapabilityPlugin, SetupContext } from "../plugin";
+import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
 import {
   isCommandOnPath,
@@ -309,6 +311,26 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
     description: "Route OpenSpec commands to the companion root and enable planning workflows.",
     defaultSelected: true,
     isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "openspec"),
+    // Permission pre-seeds are declared and reconciled by the Claude Runtime
+    // Surface. Skill trees stay imperative on purpose: the workflow skills are
+    // written by the external `openspec` CLI (foreign trees), and the
+    // mate-authored skills are git-mode-conditional with per-tool sources.
+    getRuntimeContributions(): RuntimeContributionsByRuntime {
+      return {
+        claude: {
+          permissionEntries: [
+            "Skill(openspec-explore)",
+            "Skill(openspec-propose)",
+            "Skill(openspec-apply-change)",
+            "Skill(openspec-archive-change)",
+            "Skill(mate-artifact-finish)",
+            "Bash(openspec:*)",
+            `Bash(${FRAMEWORK_NAME} cap graphify:*)`,
+            `Bash(${path.join(getWrapperBinPath(), "openspec")}:*)`,
+          ],
+        },
+      };
+    },
     getInstallRequirements: (): InstallRequirement[] => [
       {
         id: "capability:openspec",

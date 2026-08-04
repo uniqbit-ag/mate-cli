@@ -8,7 +8,7 @@ import { getContextModePackageReference } from "../../../lib/context-mode-packag
 import { applySetupCompatibilities } from "../../setup";
 import type { LaunchPreflightContext, SetupContext } from "../plugin";
 import { createClaudePlugin } from "../providers/claude";
-import { createOpenCodePlugin } from "../providers/opencode";
+import { createOpenCodePlugin, reconcileOpenCodeContributions } from "../providers/opencode";
 import { CONTEXT_MODE_OPENCODE_GUIDANCE, createContextModePlugin } from "./context-mode";
 
 const tempRoots: string[] = [];
@@ -57,19 +57,28 @@ describe("createContextModePlugin", () => {
     expect(validatePackage).toHaveBeenCalledTimes(1);
   });
 
-  test("adds the exact OpenCode reference after existing plugins idempotently", async () => {
+  test("declared reference lands after existing plugins idempotently", async () => {
     const ctx = await makeContext();
     const configPath = path.join(ctx.companionPath, ".opencode", "opencode.json");
     const tuiPath = path.join(ctx.companionPath, ".opencode", "tui.json");
     await fs.writeFile(configPath, JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }));
     await fs.writeFile(tuiPath, "{}\n");
-    const handler = createContextModePlugin().forProvider?.opencode;
+    const plugin = createContextModePlugin();
+    const inputs = [
+      {
+        pluginId: "context-mode",
+        enabled: true,
+        contributions: plugin.getRuntimeContributions!(ctx).opencode!,
+      },
+    ];
 
-    await handler?.apply(ctx);
-    await handler?.apply(ctx);
+    await reconcileOpenCodeContributions(ctx, inputs);
+    await reconcileOpenCodeContributions(ctx, inputs);
 
     const config = JSON.parse(await fs.readFile(configPath, "utf8"));
     expect(config.plugin).toEqual(["acme-plugin@1.0.0", getContextModePackageReference()]);
+    const tui = JSON.parse(await fs.readFile(tuiPath, "utf8"));
+    expect(tui.plugin).toEqual([getContextModePackageReference()]);
   });
 
   test("preflight validates both pinned OpenCode references without modifying files", async () => {

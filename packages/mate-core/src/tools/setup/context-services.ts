@@ -99,6 +99,35 @@ export async function upsertManagedBlock(
   await fs.writeFile(filePath, existing + (existing ? separator : "") + block, "utf8");
 }
 
+/**
+ * Remove every managed block a plugin owns in `filePath`, except blocks whose
+ * key is in `keepKeys`. Used by contribution reconciliation: current sections
+ * are upserted (content-hashed keys), then stale keys are swept here.
+ */
+export async function removeManagedBlocksForPlugin(
+  filePath: string,
+  frameworkName: string,
+  pluginId: string,
+  keepKeys: Set<string> = new Set(),
+): Promise<void> {
+  let existing: string;
+  try {
+    existing = await fs.readFile(filePath, "utf8");
+  } catch {
+    return;
+  }
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const keyPattern = new RegExp(
+    `<!-- ${escape(frameworkName)}:managed:(${escape(pluginId)}:[0-9a-f]+) start -->`,
+    "g",
+  );
+  const keys = [...existing.matchAll(keyPattern)].map((match) => match[1]);
+  for (const key of keys) {
+    if (keepKeys.has(key)) continue;
+    await removeManagedBlock(filePath, frameworkName, key);
+  }
+}
+
 /** Remove a marker-delimited block if present. No-op when file or block is absent. */
 export async function removeManagedBlock(
   filePath: string,

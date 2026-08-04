@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
-import { removeGraphifySection } from "../capabilities/graphify";
+import { removeGraphifySection } from "../capabilities/graphify-shared";
 
 // Marker names derive from the framework identity, never the invocation name.
 const upperName = () => FRAMEWORK_NAME.toUpperCase();

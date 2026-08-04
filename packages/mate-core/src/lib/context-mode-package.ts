@@ -37,7 +37,9 @@ export function isContextModeNodeVersionSupported(version: string): boolean {
 }
 
 export function validateContextModeNodeRuntime(): void {
-  const result = spawnSync("node", ["--version"], { encoding: "utf8" });
+  // env passed explicitly: bun's spawnSync otherwise ignores in-process PATH
+  // changes when resolving the executable.
+  const result = spawnSync("node", ["--version"], { encoding: "utf8", env: process.env });
   const version = result.stdout?.trim() ?? "";
   if (result.status !== 0 || !isContextModeNodeVersionSupported(version)) {
     throw new Error(
@@ -83,7 +85,7 @@ export async function installContextModePackage(companionPath: string): Promise<
   const result = spawnSync(
     "npm",
     ["install", "--no-audit", "--no-fund", "--silent", "--registry", PUBLIC_NPM_REGISTRY],
-    { cwd: installDir, encoding: "utf8" },
+    { cwd: installDir, encoding: "utf8", env: process.env },
   );
   if (result.error || result.status !== 0) {
     throw new Error(
