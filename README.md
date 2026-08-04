@@ -202,9 +202,10 @@ selected for Python-backed capability workflows.
 
 Context Mode is opt-in and pins `context-mode@1.0.169` (Elastic License 2.0,
 Node.js `>=22.5.0`). Mate installs its Claude plugin below the Companion's
-`.mate/dependencies/` directory and activates it per launch; it does not change
-Claude's global marketplace state. OpenCode receives the same exact package pin
-after Mate's policy plugin. Mate does not add a separate context-mode MCP entry.
+`.mate/plugins/.local/` directory and activates it per launch; it does not
+change Claude's global marketplace state. OpenCode receives the same exact
+package pin after Mate's policy plugin. Mate does not add a separate
+context-mode MCP entry.
 
 Context Mode retains session and memory data in its provider defaults (normally
 `~/.claude/context-mode/` for Claude and `~/.config/opencode/context-mode/` for

@@ -25,8 +25,11 @@ beforeAll(async () => {
   const tarball = (await fs.readdir(root)).find((entry) => entry.endsWith(".tgz"));
   expect(tarball).toBeDefined();
 
-  const extracted = path.join(root, "extracted");
-  await fs.mkdir(extracted);
+  // Extract under a node_modules segment: node refuses native type stripping
+  // there (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), so this exercises the
+  // shims exactly as an installed package would.
+  const extracted = path.join(root, "node_modules", "@acme");
+  await fs.mkdir(extracted, { recursive: true });
   const unpack = spawnSync("tar", ["-xzf", path.join(root, tarball!), "-C", extracted], {
     encoding: "utf8",
   });

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   CONTEXT_MODE_VERSION,
+  getContextModeInstallDir,
   getContextModePackageReference,
   getContextModePackageRoot,
   isContextModeNodeVersionSupported,
@@ -27,6 +28,14 @@ describe("context-mode package contract", () => {
     expect(isContextModePackageReference("context-mode")).toBe(true);
     expect(isContextModePackageReference(getContextModePackageReference())).toBe(true);
     expect(isContextModePackageReference("context-mode-fork@1.0.0")).toBe(false);
+  });
+
+  test("installs into the machine-local plugins workspace, not the legacy dependencies tree", () => {
+    const installDir = getContextModeInstallDir("/companion");
+    expect(installDir).toBe(path.join("/companion", ".mate", "plugins", ".local"));
+    expect(getContextModePackageRoot("/companion")).toBe(
+      path.join(installDir, "node_modules", "context-mode"),
+    );
   });
 
   test("enforces the pinned Node.js engine floor", () => {

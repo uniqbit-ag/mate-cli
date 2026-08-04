@@ -57,6 +57,34 @@ describe("createContextModePlugin", () => {
     expect(validatePackage).toHaveBeenCalledTimes(1);
   });
 
+  test("removes a leftover legacy .mate/dependencies tree on apply", async () => {
+    const ctx = await makeContext();
+    const legacyDir = path.join(ctx.companionPath, ".mate", "dependencies", "context-mode");
+    await fs.mkdir(legacyDir, { recursive: true });
+    await fs.writeFile(path.join(legacyDir, "package.json"), "{}\n");
+    const plugin = createContextModePlugin({
+      installPackage: async () => {},
+      validatePackage: async () => {},
+    });
+
+    await plugin.apply({ ...ctx, mode: "setup" });
+
+    await expect(fs.access(legacyDir)).rejects.toThrow();
+    await expect(
+      fs.access(path.join(ctx.companionPath, ".mate", "dependencies")),
+    ).rejects.toThrow();
+  });
+
+  test("is a no-op when no legacy .mate/dependencies tree exists", async () => {
+    const ctx = await makeContext();
+    const plugin = createContextModePlugin({
+      installPackage: async () => {},
+      validatePackage: async () => {},
+    });
+
+    await expect(plugin.apply({ ...ctx, mode: "setup" })).resolves.toBeUndefined();
+  });
+
   test("declared reference lands after existing plugins idempotently", async () => {
     const ctx = await makeContext();
     const configPath = path.join(ctx.companionPath, ".opencode", "opencode.json");

@@ -33,11 +33,15 @@ describe("collectManagedGitignoreEntries with declared plugins", () => {
     expect(entries.some((entry) => entry.includes("dependencies/plugins"))).toBe(false);
   });
 
-  test("always contributes the node_modules and dependencies-tree baseline", () => {
+  test("always contributes the node_modules and local distribution-workspace baseline", () => {
     expect(collectManagedGitignoreEntries(makeContext({}), [])).toEqual([
       "node_modules/",
-      ".mate/dependencies/*",
+      ".mate/plugins/.local/",
       ".mcp.json*",
     ]);
+  });
+
+  test("ignores the local distribution workspace even with no declared plugins", () => {
+    expect(collectManagedGitignoreEntries(makeContext({}), [])).toContain(".mate/plugins/.local/");
   });
 });
