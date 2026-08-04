@@ -3,10 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { defaultConfig, ConfigStore, mergeWithDefaults } from "./orchestrator/config-store";
-import { CompanionResolver } from "./orchestrator/companion-resolver";
+import { defaultConfig } from "./orchestrator/config-store";
 import { checkEngineRequirement } from "./orchestrator/engine-guard";
-import { GlobalConfigStore } from "./orchestrator/global-config-store";
+import type { GlobalConfigStore } from "./orchestrator/global-config-store";
+import { resolveRootContext } from "./orchestrator/root-context";
 import { YamlFileStore } from "./orchestrator/yaml-file-store";
 import { FRAMEWORK_NAME } from "../framework";
 import type { FrameworkConfig } from "./orchestrator/types";
@@ -106,58 +106,40 @@ function coreContext(): InstallContext {
   };
 }
 
-async function contextForConfiguredRoot(rootPath: string): Promise<InstallContext> {
-  const configPath = path.join(rootPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
-  const config = mergeWithDefaults(await new ConfigStore(configPath).load());
-  const kind = config.type === "hub" ? "hub" : config.type === "working" ? "working" : "companion";
-  if (kind === "working") return workingContext();
-
-  return {
-    kind,
-    companionPath: rootPath,
-    config,
-    fingerprint: fingerprint({ kind, companionPath: rootPath, config }),
-  };
-}
-
 function workingContext(): InstallContext {
   const context = coreContext();
   return { ...context, kind: "working" };
-}
-
-async function hasLocalConfig(cwd: string): Promise<boolean> {
-  try {
-    await fs.access(path.join(cwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export async function resolveInstallContext(
   cwd = process.cwd(),
   deps: InstallContextDeps = {},
 ): Promise<InstallContext> {
-  const resolvedCwd = path.resolve(cwd);
-  const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
-  if (envCompanionPath) return contextForConfiguredRoot(path.resolve(envCompanionPath));
-
-  const resolver = new CompanionResolver(deps.globalConfigStore ?? new GlobalConfigStore());
-  const resolution = await resolver.resolveWithDiagnostics(resolvedCwd);
-  if (resolution.ambiguousMatches.length > 1) {
+  const root = await resolveRootContext(cwd, deps);
+  if (root.resolution.ambiguousMatches.length > 1) {
     return {
       ...coreContext(),
       kind: "ambiguous",
       message: [
         "multiple companions match the current working repository.",
-        ...resolution.ambiguousMatches.map((match) => `  - ${match.companionPath}`),
+        ...root.resolution.ambiguousMatches.map((match) => `  - ${match.companionPath}`),
         "Run `mate install` from an explicit companion context or set MATE_ARTIFACT_PATH.",
       ].join("\n"),
     };
   }
-  if (resolution.match) return contextForConfiguredRoot(resolution.match.companionPath);
-  if (await hasLocalConfig(resolvedCwd)) return contextForConfiguredRoot(resolvedCwd);
-  return coreContext();
+  if (root.kind === "working") return workingContext();
+  if (root.kind === "core" || !root.rootPath || !root.config) return coreContext();
+
+  return {
+    kind: root.kind,
+    companionPath: root.rootPath,
+    config: root.config,
+    fingerprint: fingerprint({
+      kind: root.kind,
+      companionPath: root.rootPath,
+      config: root.config,
+    }),
+  };
 }
 
 export function buildInstallPlan(

@@ -39,7 +39,7 @@ function makeCtx(
     activeProviders: opts.activeProviders ?? [],
     mode: opts.mode ?? "setup",
     config: {
-      profiles: { default: { name: "default", allowedAgents: opts.activeProviders ?? [] } },
+      allowedAgents: opts.activeProviders ?? [],
       capabilities: [{ name: "graphify" }],
     },
   };

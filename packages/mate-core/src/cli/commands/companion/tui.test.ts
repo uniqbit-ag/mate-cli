@@ -142,7 +142,7 @@ describe("resolveRepoPath", () => {
       await writeRepoLocalRegistryEntry(
         repoPath,
         "/tmp/companion",
-        { id: "app", path: repoPath, profile: "default" },
+        { id: "app", path: repoPath },
         "git",
       );
 

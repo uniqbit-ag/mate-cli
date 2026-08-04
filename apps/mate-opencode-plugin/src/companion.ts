@@ -41,8 +41,7 @@ function materializeCompanionGuidance(guidance: string, context: CompanionContex
     .replaceAll("$MATE_REPO_PATH", context.repositoryPath)
     .replaceAll("$MATE_ARTIFACT_PATH", context.companionPath)
     .replaceAll("$MATE_WRAPPER_BIN_PATH", wrapperBinPath)
-    .replaceAll("$MATE_REPO_ID", context.repositoryId)
-    .replaceAll("$MATE_REPO_PROFILE", context.repositoryProfile);
+    .replaceAll("$MATE_REPO_ID", context.repositoryId);
 }
 
 function buildSystemPrompt(context: CompanionContext, guidance: MateGuidanceFile): string[] {
@@ -82,7 +81,6 @@ export const CompanionPlugin: Plugin = async () => {
                 wrapperBinPath,
                 repositoryPath: context.repositoryPath,
                 repositoryId: context.repositoryId,
-                repositoryProfile: context.repositoryProfile,
                 policy: JSON.parse(context.policyJson || "{}"),
               },
               null,
@@ -124,7 +122,6 @@ export const CompanionPlugin: Plugin = async () => {
       output.env.MATE_WRAPPER_BIN_PATH = wrapperBinPath;
       output.env.MATE_REPO_PATH = context.repositoryPath;
       output.env.MATE_REPO_ID = context.repositoryId;
-      output.env.MATE_REPO_PROFILE = context.repositoryProfile;
       output.env.MATE_POLICY_JSON = context.policyJson;
       output.env.MATE_GRAPHIFY_ENABLED = context.graphifyEnabled ? "1" : "0";
       output.env.MATE_GIT_AUTO_MODE = context.gitAutoModeEnabled ? "1" : "0";

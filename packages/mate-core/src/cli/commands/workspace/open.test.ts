@@ -37,7 +37,7 @@ describe("runWorkspaceOpenCommand", () => {
     workspaceOpenCommandDeps.createStore = () =>
       ({
         getRepository: async (id: string) =>
-          id === "repo-a" ? { id: "repo-a", path: "/tmp/repo-a", profile: "default" } : undefined,
+          id === "repo-a" ? { id: "repo-a", path: "/tmp/repo-a" } : undefined,
       }) as never;
     workspaceOpenCommandDeps.getPreferredEditorCli = () => "cursor";
     workspaceOpenCommandDeps.injectEditorFolder = injectEditorFolder;
@@ -57,7 +57,7 @@ describe("runWorkspaceOpenCommand", () => {
       }) as never;
     workspaceOpenCommandDeps.createStore = () =>
       ({
-        getRepository: async () => ({ id: "repo-a", path: "/tmp/repo-a", profile: "default" }),
+        getRepository: async () => ({ id: "repo-a", path: "/tmp/repo-a" }),
       }) as never;
     workspaceOpenCommandDeps.getPreferredEditorCli = () => "code";
     workspaceOpenCommandDeps.injectEditorFolder = async () => false;

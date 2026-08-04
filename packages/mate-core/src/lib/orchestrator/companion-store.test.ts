@@ -52,7 +52,6 @@ describe("CompanionStore", () => {
     const result = await store.registerRepository({
       id: "app",
       path: repoPath,
-      profile: "default",
     });
 
     expect(result.id).toBe("app");
@@ -66,7 +65,6 @@ describe("CompanionStore", () => {
       store.registerRepository({
         id: "missing",
         path: path.join(root, "nonexistent"),
-        profile: "default",
       }),
     ).rejects.toThrow(ConfigError);
   });
@@ -75,12 +73,12 @@ describe("CompanionStore", () => {
     const root = await makeTempDir("companion-store-update-");
     const { store, repoPath } = await makeStore(root);
 
-    await store.registerRepository({ id: "app", path: repoPath, profile: "default" });
-    await store.registerRepository({ id: "app", path: repoPath, profile: "strict" });
+    await store.registerRepository({ id: "app", path: repoPath });
+    await store.registerRepository({ id: "app", path: repoPath });
     const repos = await store.listRepositories();
 
     expect(repos).toHaveLength(1);
-    expect(repos[0].profile).toBe("strict");
+    expect(repos[0].id).toBe("app");
   });
 
   test("getRepository returns undefined for an unknown id", async () => {
@@ -96,43 +94,11 @@ describe("CompanionStore", () => {
     const repoPath2 = path.join(root, "working2");
     await fs.mkdir(repoPath2, { recursive: true });
 
-    await store.registerRepository({ id: "a", path: repoPath, profile: "default" });
-    await store.registerRepository({ id: "b", path: repoPath2, profile: "default" });
+    await store.registerRepository({ id: "a", path: repoPath });
+    await store.registerRepository({ id: "b", path: repoPath2 });
     const repos = await store.listRepositories();
 
     expect(repos.map((r) => r.id)).toEqual(["a", "b"]);
-  });
-
-  test("resolvePolicy returns allowedAgents from the profile", async () => {
-    const root = await makeTempDir("companion-store-policy-");
-    const { store, repoPath } = await makeStore(root);
-    await store.registerRepository({ id: "app", path: repoPath, profile: "default" });
-
-    const policy = await store.resolvePolicy("app");
-
-    expect(policy.allowedAgents).toContain("claude");
-  });
-
-  test("resolvePolicy applies per-repo overrides over the profile", async () => {
-    const root = await makeTempDir("companion-store-override-");
-    const { store, repoPath } = await makeStore(root);
-    await store.registerRepository({
-      id: "app",
-      path: repoPath,
-      profile: "default",
-      overrides: { allowedAgents: ["opencode"] },
-    });
-
-    const policy = await store.resolvePolicy("app");
-
-    expect(policy.allowedAgents).toEqual(["opencode"]);
-  });
-
-  test("resolvePolicy throws ConfigError for an unknown repository", async () => {
-    const root = await makeTempDir("companion-store-policy-missing-");
-    const { store } = await makeStore(root);
-
-    await expect(store.resolvePolicy("nope")).rejects.toThrow(ConfigError);
   });
 });
 
@@ -158,7 +124,7 @@ describe("CompanionStore repo-local dual write", () => {
     const root = await makeTempDir("companion-store-dual-write-");
     const { store, companionPath, repoPath } = await makeCompanionRootedStore(root);
 
-    await store.registerRepository({ id: "app", path: repoPath, profile: "default" });
+    await store.registerRepository({ id: "app", path: repoPath });
 
     const registry = parse(await fs.readFile(repoLocalRegistryPath(repoPath), "utf8"));
     expect(registry.companions).toEqual([
@@ -185,7 +151,6 @@ describe("CompanionStore repo-local dual write", () => {
       const result = await store.registerRepository({
         id: "app",
         path: repoPath,
-        profile: "default",
       });
       expect(result.id).toBe("app");
       expect(errorSpy).toHaveBeenCalled();

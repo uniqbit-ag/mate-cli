@@ -33,12 +33,7 @@ function makeCtx(
     activeProviders,
     mode,
     config: {
-      profiles: {
-        default: {
-          name: "default",
-          allowedAgents: activeProviders,
-        },
-      },
+      allowedAgents: activeProviders,
       capabilities,
       git,
     },

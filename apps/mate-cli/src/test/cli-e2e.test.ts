@@ -138,7 +138,6 @@ async function runMate(
         MATE_ARTIFACT_PATH: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
-        MATE_REPO_PROFILE: "",
         MATE_POLICY_JSON: "",
         // Setup would otherwise pre-fetch the pinned OpenCode plugin package
         // into the developer's real OpenCode cache via npm.
@@ -270,7 +269,6 @@ async function runMateInTty(
         MATE_ARTIFACT_PATH: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
-        MATE_REPO_PROFILE: "",
         MATE_POLICY_JSON: "",
         MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
         ...env,
@@ -423,7 +421,6 @@ async function writeAdapterStub(
     "    MATE_ARTIFACT_PATH: process.env.MATE_ARTIFACT_PATH ?? null,",
     "    MATE_REPO_ID: process.env.MATE_REPO_ID ?? null,",
     "    MATE_REPO_PATH: process.env.MATE_REPO_PATH ?? null,",
-    "    MATE_REPO_PROFILE: process.env.MATE_REPO_PROFILE ?? null,",
     "    MATE_POLICY_JSON: process.env.MATE_POLICY_JSON ?? null,",
     "    MATE_GUIDANCE_JSON: process.env.MATE_GUIDANCE_JSON ?? null,",
     "    OPENCODE_CONFIG_DIR: process.env.OPENCODE_CONFIG_DIR ?? null,",
@@ -1162,10 +1159,26 @@ describe("mate CLI e2e", () => {
       args: ["doctor"],
     });
     expect(doctorResult.exitCode).toBe(0);
-    expect(doctorResult.stdout).toContain("linked-working-repository");
+    expect(doctorResult.stdout).toMatch(/\| State {2,}\| working +\|/);
     expect(doctorResult.stdout).toContain(scenario.companion);
     expect(doctorResult.stdout).toContain("app");
     expect(doctorResult.stdout).toContain("headroom");
+
+    const jsonResult = await runMate(scenario, {
+      cwd: scenario.working,
+      args: ["doctor", "--json"],
+    });
+    expect(jsonResult.exitCode).toBe(0);
+    const report = JSON.parse(jsonResult.stdout) as {
+      kind: string;
+      companionPath: string;
+      repositoryId: string;
+      policy: { allowedAgents: string[] };
+    };
+    expect(report.kind).toBe("working");
+    expect(report.companionPath).toBe(scenario.companion);
+    expect(report.repositoryId).toBe("app");
+    expect(report.policy.allowedAgents.length).toBeGreaterThan(0);
   });
 
   test("companion list returns all linked repositories", async () => {
@@ -1188,7 +1201,7 @@ describe("mate CLI e2e", () => {
     expect(parsed.repositories[0].path).toBe(scenario.working);
   });
 
-  test("doctor reports companion-repository state when no repos are linked", async () => {
+  test("doctor reports companion state when no repos are linked", async () => {
     const scenario = await createScenario("mate-cli-e2e-doctor-no-repo-");
 
     expect((await setupCompanion(scenario)).exitCode).toBe(0);
@@ -1199,9 +1212,130 @@ describe("mate CLI e2e", () => {
     });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("companion-repository");
+    expect(result.stdout).toMatch(/\| State {2,}\| companion +\|/);
     expect(result.stdout).toContain("none");
     expect(result.stdout).toContain("openspec");
+
+    const jsonResult = await runMate(scenario, {
+      cwd: scenario.companion,
+      args: ["doctor", "--json"],
+    });
+    expect(jsonResult.exitCode).toBe(0);
+    const report = JSON.parse(jsonResult.stdout) as { kind: string; companionPath: string };
+    expect(report.kind).toBe("companion");
+    expect(report.companionPath).toBe(scenario.companion);
+  });
+
+  test("doctor resolves the companion root from a subdirectory", async () => {
+    const scenario = await createScenario("mate-cli-e2e-doctor-subdir-");
+
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    const nested = path.join(scenario.companion, "src", "deep");
+    await fs.mkdir(nested, { recursive: true });
+
+    const result = await runMate(scenario, {
+      cwd: nested,
+      args: ["doctor"],
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/\| State {2,}\| companion +\|/);
+    expect(result.stdout).toContain(scenario.companion);
+  });
+
+  test("doctor reports hub member health in a hub root", async () => {
+    const scenario = await createScenario("mate-cli-e2e-doctor-hub-");
+    const hubRoot = path.join(scenario.root, "hub");
+    const membersRoot = path.join(hubRoot, "members");
+
+    const initMember = (name: string): string => {
+      const memberPath = path.join(membersRoot, name);
+      spawnSync("git", ["init", "-q", memberPath], { stdio: "ignore" });
+      spawnSync(
+        "git",
+        [
+          "-C",
+          memberPath,
+          "-c",
+          "user.email=e2e@acme.test",
+          "-c",
+          "user.name=e2e",
+          "commit",
+          "--allow-empty",
+          "-q",
+          "-m",
+          "init",
+        ],
+        { stdio: "ignore" },
+      );
+      const head = spawnSync("git", ["-C", memberPath, "rev-parse", "HEAD"], {
+        encoding: "utf8",
+      });
+      return head.stdout.trim();
+    };
+
+    const healthyCommit = initMember("healthy");
+    initMember("drifty");
+    const configPath = path.join(hubRoot, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(
+      configPath,
+      [
+        'type: "hub"',
+        "hub:",
+        "  companions:",
+        "    - id: healthy",
+        "      path: members/healthy",
+        "      source:",
+        '        kind: "git"',
+        "        url: git@acme.test:acme/healthy.git",
+        `      materializedCommit: ${healthyCommit}`,
+        "    - id: drifty",
+        "      path: members/drifty",
+        "      source:",
+        '        kind: "git"',
+        "        url: git@acme.test:acme/drifty.git",
+        "      materializedCommit: aaaa111122223333aaaa111122223333aaaa1111",
+        "    - id: ghost",
+        "      path: members/ghost",
+        "      source:",
+        '        kind: "local"',
+        "        path: /tmp/ghost",
+        "allowedAgents:",
+        "  - claude",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await runMate(scenario, {
+      cwd: hubRoot,
+      args: ["doctor"],
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/\| State {2,}\| hub +\|/);
+    expect(result.stdout).toContain("Hub Members");
+    expect(result.stdout).toContain("drifted");
+    expect(result.stdout).toContain("missing");
+    expect(result.stdout).not.toContain("Policy");
+    expect(result.stdout).not.toContain("Tool Installations");
+
+    const jsonResult = await runMate(scenario, {
+      cwd: hubRoot,
+      args: ["doctor", "--json"],
+    });
+    expect(jsonResult.exitCode).toBe(0);
+    const report = JSON.parse(jsonResult.stdout) as {
+      kind: string;
+      hub: { members: Array<{ id: string; commitStatus: string }> };
+    };
+    expect(report.kind).toBe("hub");
+    expect(report.hub.members.map((member) => [member.id, member.commitStatus])).toEqual([
+      ["healthy", "ok"],
+      ["drifty", "drifted"],
+      ["ghost", "missing"],
+    ]);
   });
 
   test("cap openspec runs openspec from the companion root", async () => {
@@ -1875,7 +2009,7 @@ describe("mate CLI e2e", () => {
       expect(invocation.env.MATE_ARTIFACT_PATH).toBe(scenario.companion);
       expect(invocation.env.MATE_REPO_ID).toBe("app");
       expect(invocation.env.MATE_REPO_PATH).toBe(scenario.working);
-      expect(invocation.env.MATE_REPO_PROFILE).toBe("default");
+      expect(invocation.env.MATE_REPO_PROFILE).toBeUndefined();
       expect(JSON.parse(invocation.env.MATE_POLICY_JSON ?? "{}")).toEqual({
         allowedAgents: testCase.allowedAgents ?? ["claude", "opencode"],
       });

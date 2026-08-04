@@ -14,7 +14,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -30,7 +29,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -50,7 +48,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -67,7 +64,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -89,7 +85,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -105,7 +100,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -115,11 +109,10 @@ describe("buildCompanionGuidance", () => {
   test("omits allowed-agent policy echo from prompt guidance", () => {
     const guidance = buildCompanionGuidance({
       companionPath: "/tmp/companion",
-      policy: { allowedAgents: ["claude", "opencode"] },
+      allowedAgents: ["claude", "opencode"],
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -135,7 +128,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -149,7 +141,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -160,7 +151,7 @@ describe("buildCompanionGuidance", () => {
     expect(guidance).toContain(
       '<path role="working-repository" env="MATE_REPO_PATH">/tmp/working</path>',
     );
-    expect(guidance).toContain('<linked-repository id="app" profile="default" />');
+    expect(guidance).toContain('<linked-repository id="app" />');
   });
 
   test("uses intent-based artifact framing, not file extensions", () => {
@@ -170,7 +161,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -186,7 +176,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -204,7 +193,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -224,7 +212,6 @@ describe("buildCompanionGuidance", () => {
         repository: {
           id: "$MATE_REPO_ID",
           path: "$MATE_REPO_PATH",
-          profile: "$MATE_REPO_PROFILE",
         },
       } as never,
       { wrapperBinPath: "$MATE_WRAPPER_BIN_PATH" },
@@ -245,7 +232,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -259,7 +245,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 
@@ -279,7 +264,6 @@ describe("buildCompanionGuidance", () => {
       repository: {
         id: "app",
         path: "/tmp/working",
-        profile: "default",
       },
     } as never);
 

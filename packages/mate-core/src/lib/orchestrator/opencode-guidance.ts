@@ -25,9 +25,8 @@ export function buildOpenCodeGuidance(capabilities: CapabilityConfig[]): MateGui
       repository: {
         id: "$MATE_REPO_ID",
         path: "$MATE_REPO_PATH",
-        profile: "$MATE_REPO_PROFILE",
       },
-      policy: { allowedAgents: [] },
+      allowedAgents: [],
       capabilities,
     },
     { wrapperBinPath: "$MATE_WRAPPER_BIN_PATH" },

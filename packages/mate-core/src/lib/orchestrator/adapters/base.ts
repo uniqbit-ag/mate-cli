@@ -17,11 +17,11 @@ import {
   spawnProxyBackground as defaultSpawnProxyBackground,
   waitForProxyReachable as defaultWaitForProxyReachable,
 } from "../headroom/proxy";
-import type { CapabilityConfig, GitModeProfile, LinkedRepository, PolicySettings } from "../types";
+import type { CapabilityConfig, GitModeProfile, LinkedRepository } from "../types";
 
 export interface AdapterContext {
   repository: LinkedRepository;
-  policy: PolicySettings;
+  allowedAgents: string[];
   companionPath: string;
   capabilities: CapabilityConfig[];
   git?: GitModeProfile;
@@ -87,8 +87,7 @@ export abstract class LaunchAdapter {
       MATE_GIT_AUTO_MODE: context.git === "auto" ? "1" : "0",
       MATE_REPO_ID: context.repository.id,
       MATE_REPO_PATH: context.repository.path,
-      MATE_REPO_PROFILE: context.repository.profile,
-      MATE_POLICY_JSON: JSON.stringify(context.policy),
+      MATE_POLICY_JSON: JSON.stringify({ allowedAgents: context.allowedAgents }),
     };
 
     if (reactDoctorEnabled) {

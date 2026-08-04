@@ -15,7 +15,7 @@ function makeCtx(mode: "setup" | "sync" = "setup"): SetupContext {
     activeProviders: [],
     mode,
     config: {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       capabilities: [{ name: "rtk" }],
     },
   };

@@ -9,7 +9,7 @@ function makeCtx(companionPath: string): SetupContext {
     activeProviders: [],
     mode: "setup",
     config: {
-      profiles: { default: { name: "default", allowedAgents: [] } },
+      allowedAgents: [],
       capabilities: [{ name: "headroom" }],
     },
   };

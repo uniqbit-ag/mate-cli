@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { resetActiveDistribution, setActiveDistribution } from "../distribution";
+import type { RootContext, RootKind } from "../lib/orchestrator/root-context";
 import * as updateChecker from "../lib/update-checker";
 import type { Plugin, PluginCliCommand } from "../tools/setup/plugin";
 import { PluginRegistry } from "../tools/setup/registry";
@@ -68,7 +69,18 @@ describe("command gating", () => {
     while (spies.length > 0) spies.pop()?.mockRestore();
   });
 
-  function recordingDeps(overrides: { companion?: boolean; installOk?: boolean } = {}) {
+  function rootContextFor(kind: RootKind): RootContext {
+    return {
+      kind,
+      origin: kind === "core" ? "none" : "local",
+      linkedRepository: null,
+      resolution: { match: null, ambiguousMatches: [], failures: [] },
+    };
+  }
+
+  function recordingDeps(
+    overrides: { companion?: boolean; installOk?: boolean; rootKind?: RootKind } = {},
+  ) {
     const gateCalls: string[] = [];
     const deps: MainDeps = {
       ensureUnambiguousCompanion: async () => {
@@ -82,6 +94,10 @@ describe("command gating", () => {
           : { ok: true };
       },
       hydrateDynamicPlugins: async () => {},
+      resolveRootContext: async () => {
+        gateCalls.push("hubRoot");
+        return rootContextFor(overrides.rootKind ?? "core");
+      },
     };
     return { gateCalls, deps };
   }
@@ -116,9 +132,48 @@ describe("command gating", () => {
     for (const subcommand of ["setup", "link", "list", "nope"]) {
       const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
       await main(["node", "mate", "companion", subcommand], deps);
-      expect(gateCalls).toEqual([]);
+      expect(gateCalls).toEqual(["hubRoot"]);
     }
     expect(dispatched).toEqual(["companion", "companion", "companion", "companion"]);
+  });
+
+  test("companion subcommands are blocked in a hub root", async () => {
+    const originalExitCode = process.exitCode;
+    const errors: string[] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.join(" "));
+    });
+    try {
+      for (const subcommand of ["setup", "link", "list", "open", "tui"]) {
+        const { gateCalls, deps } = recordingDeps({ rootKind: "hub" });
+        process.exitCode = 0;
+        await main(["node", "mate", "companion", subcommand], deps);
+        expect(gateCalls).toEqual(["hubRoot"]);
+        expect(process.exitCode).toBe(1);
+      }
+      expect(dispatched).toEqual([]);
+      expect(errors.join("\n")).toContain("hub");
+    } finally {
+      errorSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
+  test("hub, install, and doctor still dispatch in a hub root", async () => {
+    for (const argv of [["hub", "status"], ["install"], ["doctor"]]) {
+      const { gateCalls, deps } = recordingDeps({ rootKind: "hub" });
+      await main(["node", "mate", ...argv], deps);
+      expect(gateCalls).not.toContain("hubRoot");
+    }
+    expect(dispatched).toEqual(["hub", "install", "doctor"]);
+  });
+
+  test("companion subcommands dispatch when the root is a companion", async () => {
+    for (const subcommand of ["setup", "link", "list"]) {
+      const { deps } = recordingDeps({ rootKind: "companion" });
+      await main(["node", "mate", "companion", subcommand], deps);
+    }
+    expect(dispatched).toEqual(["companion", "companion", "companion"]);
   });
 
   test("hub commands dispatch without companion selection or install preflight", async () => {
@@ -135,7 +190,7 @@ describe("command gating", () => {
         const { gateCalls, deps } = recordingDeps({ companion: false });
         process.exitCode = 0;
         await main(["node", "mate", "companion", subcommand], deps);
-        expect(gateCalls).toEqual(["companion"]);
+        expect(gateCalls).toEqual(["hubRoot", "companion"]);
         expect(process.exitCode).toBe(1);
       }
       expect(dispatched).toEqual([]);
@@ -279,6 +334,12 @@ describe("plugin CLI commands", () => {
     ensureUnambiguousCompanion: async () => true,
     inspectInstallPreflight: async () => ({ ok: true }),
     hydrateDynamicPlugins: async () => {},
+    resolveRootContext: async () => ({
+      kind: "core",
+      origin: "none",
+      linkedRepository: null,
+      resolution: { match: null, ambiguousMatches: [], failures: [] },
+    }),
   };
 
   function makePlugin(id: string, cliCommands?: PluginCliCommand[], cliNamespace?: string): Plugin {

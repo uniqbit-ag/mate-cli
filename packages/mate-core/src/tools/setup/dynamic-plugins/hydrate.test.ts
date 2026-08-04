@@ -62,14 +62,7 @@ async function writeCompanion(options: {
   await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(
     path.join(configDir, "framework.yaml"),
-    [
-      "profiles:",
-      "  default:",
-      "    name: default",
-      "    allowedAgents: []",
-      ...(options.pluginsYaml ?? []),
-      "",
-    ].join("\n"),
+    ["allowedAgents: []", ...(options.pluginsYaml ?? []), ""].join("\n"),
     "utf8",
   );
   if (options.installed !== false) {

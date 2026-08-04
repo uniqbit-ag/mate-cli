@@ -94,7 +94,7 @@ describe("syncCompanionClaudeSettings", () => {
   test("writes shared PreToolUse hook without react-doctor post hooks by default", async () => {
     const companionPath = await makeTempDir("mate-companion-basic-");
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -118,7 +118,7 @@ describe("syncCompanionClaudeSettings", () => {
   test("disables auto memory by default", async () => {
     const companionPath = await makeTempDir("mate-companion-auto-memory-");
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -129,7 +129,7 @@ describe("syncCompanionClaudeSettings", () => {
   test("adds react-doctor post hook when capability enabled", async () => {
     const companionPath = await makeTempDir("mate-companion-react-doctor-");
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "react-doctor" }],
     });
 
@@ -160,7 +160,7 @@ describe("syncCompanionClaudeSettings", () => {
   test("adds openspec post-archive nudge hook when capability enabled with git auto", async () => {
     const companionPath = await makeTempDir("mate-companion-openspec-");
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       git: "auto",
       capabilities: [{ name: "openspec" }],
     });
@@ -176,30 +176,19 @@ describe("syncCompanionClaudeSettings", () => {
       ],
     });
     expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
-    expect(settings.hooks?.Stop).toEqual([
-      {
-        hooks: [
-          {
-            type: "command",
-            command: `sh "${companionPath}/.claude/hooks/mate-artifact-finish.sh"`,
-            timeout: 10,
-          },
-        ],
-      },
-    ]);
+    expect(settings.hooks?.Stop).toBeUndefined();
   });
 
   test("does not register the openspec nudge hook when git auto mode is disabled", async () => {
     const companionPath = await makeTempDir("mate-companion-openspec-no-auto-");
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "openspec" }],
     });
 
     const settings = await readCompanionSettings(companionPath);
     expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(false);
     expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
-    expect(hasArtifactFinishHook(settings, "Stop", companionPath)).toBe(false);
   });
 
   test("resync replaces a stale PreToolUse deny registration with the PostToolUse nudge", async () => {
@@ -221,7 +210,7 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       git: "auto",
       capabilities: [{ name: "openspec" }],
     });
@@ -229,7 +218,6 @@ describe("syncCompanionClaudeSettings", () => {
     const settings = await readCompanionSettings(companionPath);
     expect(hasArtifactFinishHook(settings, "PreToolUse", companionPath)).toBe(false);
     expect(hasArtifactFinishHook(settings, "PostToolUse", companionPath)).toBe(true);
-    expect(hasArtifactFinishHook(settings, "Stop", companionPath)).toBe(true);
   });
 
   test("preserves an unmanaged hook and unmanaged permissions.allow entry", async () => {
@@ -242,7 +230,7 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -258,7 +246,7 @@ describe("syncCompanionClaudeSettings", () => {
   test("seeds Read and Edit companion permissions and never an ineffective Glob rule", async () => {
     const companionPath = await makeTempDir("mate-companion-permissions-");
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -277,7 +265,7 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -304,7 +292,7 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -332,7 +320,7 @@ describe("syncCompanionClaudeSettings", () => {
 
     try {
       const config = {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [{ name: "tokensave" }],
       };
 
@@ -382,7 +370,7 @@ describe("syncCompanionClaudeSettings", () => {
     );
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -396,7 +384,7 @@ describe("syncCompanionClaudeSettings", () => {
   test("is idempotent across repeated syncs (no duplicate hooks or allow entries)", async () => {
     const companionPath = await makeTempDir("mate-companion-idempotent-");
     const config = {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       git: "auto",
       capabilities: [{ name: "openspec" }, { name: "react-doctor" }],
     };
@@ -419,7 +407,7 @@ describe("syncCompanionClaudeSettings", () => {
   ])("pre-seeds %s permission allowance %s", async (name, entry) => {
     const companionPath = await makeTempDir("mate-companion-perm-");
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name }],
     });
 
@@ -430,7 +418,7 @@ describe("syncCompanionClaudeSettings", () => {
   test("pre-seeds package wrapper permission allowances", async () => {
     const companionPath = await makeTempDir("mate-companion-bin-perm-");
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "openspec" }, { name: "graphify" }],
     });
 
@@ -455,7 +443,7 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "openspec" }, { name: "graphify" }],
     });
 
@@ -467,7 +455,7 @@ describe("syncCompanionClaudeSettings", () => {
   test("pre-seeds base mate permission allowance", async () => {
     const companionPath = await makeTempDir("mate-companion-base-perm-");
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -480,7 +468,7 @@ describe("syncCompanionClaudeSettings", () => {
     await seedSettings(companionPath, { permissions: { allow: ["Bash(ls:*)"] } });
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       git: "auto",
       capabilities: [{ name: "openspec" }],
     });
@@ -489,7 +477,7 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.permissions?.allow).toContain("Bash(ls:*)");
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
     settings = await readCompanionSettings(companionPath);
@@ -501,7 +489,7 @@ describe("syncCompanionClaudeSettings", () => {
     const companionPath = await makeTempDir("mate-companion-hook-reconcile-");
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "react-doctor" }],
     });
     let settings = await readCompanionSettings(companionPath);
@@ -516,7 +504,7 @@ describe("syncCompanionClaudeSettings", () => {
     expect(hasValidateHook(settings, companionPath)).toBe(true);
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
     settings = await readCompanionSettings(companionPath);
@@ -535,7 +523,7 @@ describe("syncCompanionClaudeSettings", () => {
     const companionPath = await makeTempDir("mate-companion-openspec-reconcile-");
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       git: "auto",
       capabilities: [{ name: "openspec" }],
     });
@@ -544,7 +532,7 @@ describe("syncCompanionClaudeSettings", () => {
     expect(hasValidateHook(settings, companionPath)).toBe(true);
 
     await syncCompanionClaudeSettings(companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
     settings = await readCompanionSettings(companionPath);
@@ -561,7 +549,7 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     });
 
     await ensureWorkingRepoLocalExcludes(workingRepoPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -570,7 +558,7 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     expect(exclude).toContain(".claude/settings.local.json\n");
 
     await ensureWorkingRepoLocalExcludes(workingRepoPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
     const secondPassExclude = await fs.readFile(excludePath, "utf8");
@@ -584,7 +572,7 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     });
 
     await ensureWorkingRepoLocalExcludes(workingRepoPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "tokensave" }],
     });
 
@@ -603,7 +591,7 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     await fs.writeFile(path.join(workingRepoPath, ".git"), "gitdir: .worktrees/repo-git\n", "utf8");
 
     await ensureWorkingRepoLocalExcludes(workingRepoPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -648,7 +636,7 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     });
 
     await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [],
     });
 
@@ -663,7 +651,7 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     const companionPath = await makeTempDir("mate-claude-cleanup-companion-");
 
     await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "tokensave" }],
     });
 
@@ -729,7 +717,7 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     // preserved; this migration only removes obsolete hook groups.
     await seedSettings(workingRepoPath, seeded);
     await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       capabilities: [{ name: "tokensave" }],
     });
 
@@ -775,7 +763,7 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
       workingRepoPath,
       activeCompanionPath,
       {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [{ name: "tokensave" }],
       },
       globalConfigStore,

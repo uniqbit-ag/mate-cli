@@ -90,7 +90,7 @@ export function buildCompanionPolicyXml(
     `      <cli name="graphify" type="wrapper" invokeAs="${path.join(wrapperBinPath, "graphify")}" />`,
     `      <cli name="${FRAMEWORK_NAME}" type="global" invokeAs="${FRAMEWORK_NAME}" />`,
     "    </cli-tools>",
-    `    <linked-repository id="${context.repository.id}" profile="${context.repository.profile}" />`,
+    `    <linked-repository id="${context.repository.id}" />`,
     "  </context>",
     "  <mandatory-rules>",
     `    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to ${context.companionPath}, NEVER ${context.repository.path}. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>`,

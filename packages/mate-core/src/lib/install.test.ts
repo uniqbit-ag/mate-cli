@@ -58,10 +58,7 @@ describe("install context and planning", () => {
         path.join(configDir, "framework.yaml"),
         [
           `type: ${type}`,
-          "profiles:",
-          "  default:",
-          "    name: default",
-          "    allowedAgents: []",
+          "allowedAgents: []",
           ...(type === "hub" ? ["hub:", "  companions: []"] : []),
           "",
         ].join("\n"),
@@ -82,6 +79,23 @@ describe("install context and planning", () => {
     expect(getInstallStatePath(hub)).not.toBe(getInstallStatePath({ kind: "core" }));
   });
 
+  test("resolves a parent-configured root from a subdirectory", async () => {
+    const root = await tempRoot();
+    const configDir = path.join(root, ".mate", "config");
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(
+      path.join(configDir, "framework.yaml"),
+      ["type: companion", "allowedAgents: [claude]", ""].join("\n"),
+    );
+    const nested = path.join(root, "src", "deep");
+    await fs.mkdir(nested, { recursive: true });
+
+    const context = await resolveInstallContext(nested);
+
+    expect(context.kind).toBe("companion");
+    expect(context.companionPath).toBe(root);
+  });
+
   test("plans selected companion dependencies and excludes unselected capabilities", async () => {
     const root = await tempRoot();
     const configDir = path.join(root, ".mate", "config");
@@ -90,10 +104,7 @@ describe("install context and planning", () => {
       path.join(configDir, "framework.yaml"),
       [
         "type: companion",
-        "profiles:",
-        "  default:",
-        "    name: default",
-        "    allowedAgents: [claude]",
+        "allowedAgents: [claude]",
         "packageManagers: [bun, uv]",
         "capabilities:",
         "  - name: openspec",
@@ -121,7 +132,7 @@ describe("install context and planning", () => {
       kind: "companion" as const,
       companionPath: root,
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun", "uv"],
         capabilities: [{ name: "rtk" }],
       },
@@ -257,15 +268,7 @@ describe("engines.mate version guard", () => {
     await fs.mkdir(configDir, { recursive: true });
     await fs.writeFile(
       path.join(configDir, "framework.yaml"),
-      [
-        "type: companion",
-        "profiles:",
-        "  default:",
-        "    name: default",
-        "    allowedAgents: [claude]",
-        enginesYaml,
-        "",
-      ].join("\n"),
+      ["type: companion", "allowedAgents: [claude]", enginesYaml, ""].join("\n"),
     );
     return root;
   }

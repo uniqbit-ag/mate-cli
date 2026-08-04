@@ -44,7 +44,7 @@ function mcpCapability(descriptor: McpServerDescriptor): CapabilityPlugin {
 
 function configWith(capabilities: string[], agents: string[] = ["claude", "opencode"]) {
   return {
-    profiles: { default: { name: "default", allowedAgents: agents } },
+    allowedAgents: agents,
     capabilities: capabilities.map((name) => ({ name })),
   };
 }
@@ -297,7 +297,7 @@ describe("unhosted context services", () => {
       label: "Bare",
       description: "",
       defaultSelected: false,
-      isEnabled: (config) => (config.profiles.default?.allowedAgents ?? []).includes("bare"),
+      isEnabled: (config) => (config.allowedAgents ?? []).includes("bare"),
       async apply() {},
       async teardown() {},
     };
@@ -307,7 +307,7 @@ describe("unhosted context services", () => {
       root,
       {
         ...configWith(["acme-mcp"]),
-        profiles: { default: { name: "default", allowedAgents: ["bare"] } },
+        allowedAgents: ["bare"],
       },
       "setup",
       [bareProvider, capability],

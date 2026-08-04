@@ -19,6 +19,7 @@ import { runReportCommand } from "./commands/report";
 import { runUpdateCommand } from "./commands/update";
 import { runInstallCommand } from "./commands/install";
 import { inspectInstallPreflight } from "../lib/install";
+import { resolveRootContext } from "../lib/orchestrator/root-context";
 import { ensureUnambiguousCompanion } from "./commands/shared/companion-selection";
 import { hydrateDynamicPlugins } from "../tools/setup/dynamic-plugins/hydrate";
 import { findPluginCliCommand } from "./plugin-commands";
@@ -27,6 +28,8 @@ import { usage } from "./usage";
 export interface GateNeeds {
   /** Block the command while an enforced update is pending. */
   updateGuard?: boolean;
+  /** Block the command when the current directory resolves to a hub root. */
+  notHubRoot?: boolean;
   /** Require an unambiguous companion (selection wizard on ambiguity) before dispatch. */
   companion?: boolean;
   /** Require a complete installation (install preflight) before dispatch. */
@@ -37,12 +40,14 @@ export interface MainDeps {
   ensureUnambiguousCompanion: typeof ensureUnambiguousCompanion;
   inspectInstallPreflight: typeof inspectInstallPreflight;
   hydrateDynamicPlugins: typeof hydrateDynamicPlugins;
+  resolveRootContext: typeof resolveRootContext;
 }
 
 const mainDeps: MainDeps = {
   ensureUnambiguousCompanion,
   inspectInstallPreflight,
   hydrateDynamicPlugins,
+  resolveRootContext,
 };
 
 export async function main(argv = process.argv, deps: MainDeps = mainDeps): Promise<void> {
@@ -86,6 +91,14 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await showUpdateBannerIfAvailable(updateStore);
     }
 
+    if (needs.notHubRoot && (await deps.resolveRootContext()).kind === "hub") {
+      console.error(
+        `${FRAMEWORK_NAME}: this directory resolves to a companion hub root; companion commands are not available here. Use \`${FRAMEWORK_NAME} hub ...\` to manage the hub.`,
+      );
+      process.exitCode = 1;
+      return false;
+    }
+
     if (needs.companion && !(await deps.ensureUnambiguousCompanion())) {
       process.exitCode = 1;
       return false;
@@ -125,10 +138,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     case "companion":
       switch (subcommand) {
         // setup/link are recovery paths and must never be gated on the
-        // state they exist to repair.
+        // state they exist to repair — but hubs are never companions.
         case "setup":
         case "link":
-          if (!(await gate({}))) return;
+          if (!(await gate({ notHubRoot: true }))) return;
           break;
         // Hub commands establish and operate on a local hub root directly;
         // they must not require a linked working repository or installation.
@@ -138,11 +151,11 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
         // open/tui consume a companion context.
         case "open":
         case "tui":
-          if (!(await gate({ updateGuard: true, companion: true }))) return;
+          if (!(await gate({ updateGuard: true, notHubRoot: true, companion: true }))) return;
           break;
         // list and unknown subcommands (which fail inside the command).
         default:
-          if (!(await gate({ updateGuard: true }))) return;
+          if (!(await gate({ updateGuard: true, notHubRoot: true }))) return;
       }
       await runCompanionCommand(subcommand, rest);
       return;

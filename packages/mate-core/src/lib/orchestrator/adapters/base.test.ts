@@ -37,11 +37,8 @@ function makeContext(capabilities: AdapterContext["capabilities"] = []): Adapter
     repository: {
       id: "app",
       path: "/tmp/app",
-      profile: "default",
     },
-    policy: {
-      allowedAgents: ["claude", "opencode"],
-    },
+    allowedAgents: ["claude", "opencode"],
     companionPath: "/tmp/companion",
     capabilities,
   };

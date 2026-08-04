@@ -38,7 +38,6 @@ function repositoryFromEnvironment(): LinkedRepository | undefined {
   return {
     id: process.env.MATE_REPO_ID ?? path.basename(path.resolve(repositoryPath)),
     path: path.resolve(repositoryPath),
-    profile: process.env.MATE_REPO_PROFILE ?? "default",
   };
 }
 

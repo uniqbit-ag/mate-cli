@@ -10,7 +10,6 @@ describe("MATE_ENV", () => {
     expect(MATE_ENV.wrapperBinPath).toBe("MATE_WRAPPER_BIN_PATH");
     expect(MATE_ENV.repositoryPath).toBe("MATE_REPO_PATH");
     expect(MATE_ENV.repositoryId).toBe("MATE_REPO_ID");
-    expect(MATE_ENV.repositoryProfile).toBe("MATE_REPO_PROFILE");
     expect(MATE_ENV.policyJson).toBe("MATE_POLICY_JSON");
     expect(MATE_ENV.graphifyEnabled).toBe("MATE_GRAPHIFY_ENABLED");
     expect(MATE_ENV.gitAutoMode).toBe("MATE_GIT_AUTO_MODE");
@@ -27,7 +26,6 @@ describe("readCompanionRuntimeContext", () => {
       MATE_ARTIFACT_PATH: "/companions/acme",
       MATE_REPO_PATH: "/repos/acme",
       MATE_REPO_ID: "acme",
-      MATE_REPO_PROFILE: "default",
       MATE_POLICY_JSON: '{"allowedAgents":["opencode"]}',
       MATE_GRAPHIFY_ENABLED: "1",
       MATE_GIT_AUTO_MODE: "0",
@@ -39,7 +37,6 @@ describe("readCompanionRuntimeContext", () => {
       companionPath: "/companions/acme",
       repositoryPath: "/repos/acme",
       repositoryId: "acme",
-      repositoryProfile: "default",
       policyJson: '{"allowedAgents":["opencode"]}',
       graphifyEnabled: true,
       gitAutoModeEnabled: false,

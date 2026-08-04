@@ -10,7 +10,6 @@ import {
   type CompanionLinkWizardOptions,
 } from "../../companion-link-wizard";
 import { extractRepoName } from "../artifact/extract-repo-name";
-import { defaultConfig } from "../../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { CompanionResolver } from "../../../lib/orchestrator/companion-resolver";
 import { inspectSetupPreflight } from "../../../lib/orchestrator/setup-preflight";
@@ -131,7 +130,6 @@ export async function runCompanionLinkCommandWithDeps(
 
   const cwd = path.resolve(process.cwd());
   const existingMatch = await resolveCompanion(cwd);
-  const profiles = Object.keys(defaultConfig().profiles);
   const companionsDir = companionsHomeDir();
   const candidatePaths = new Set(await listCompanions());
   if (existingMatch) candidatePaths.add(existingMatch.companionPath);
@@ -148,7 +146,6 @@ export async function runCompanionLinkCommandWithDeps(
   ).filter((candidate): candidate is string => candidate !== null);
 
   const inputs = await selectInputs({
-    profiles,
     existingCompanions,
   });
   if (!inputs) {
@@ -241,7 +238,6 @@ export async function runCompanionLinkCommandWithDeps(
   const repository: LinkedRepository = {
     id: path.basename(cwd),
     path: cwd,
-    profile: inputs.profile,
   };
 
   const registerRepository =
@@ -292,6 +288,5 @@ export async function runCompanionLinkCommandWithDeps(
     console.log(`  Companion: ${companionPath}`);
   }
   console.log(`  Source: ${persistedSource}`);
-  console.log(`  Profile: ${repository.profile}`);
   console.log("  Workspace: run `mate companion open` to open the workspace in your editor");
 }

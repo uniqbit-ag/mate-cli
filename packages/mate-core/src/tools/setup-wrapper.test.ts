@@ -7,7 +7,7 @@ const originalExecuteSetup = setupToolDeps.executeSetup;
 beforeEach(() => {
   setupToolDeps.executeSetup = mock(async () => ({
     config: {
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
     },
   }));
 });
@@ -24,6 +24,6 @@ describe("setup tool wrapper", () => {
     const result = await setup.execute(input);
 
     expect(setupToolDeps.executeSetup).toHaveBeenCalledWith(input);
-    expect(result.config.profiles.default.allowedAgents).toEqual(["claude"]);
+    expect(result.config.allowedAgents).toEqual(["claude"]);
   });
 });

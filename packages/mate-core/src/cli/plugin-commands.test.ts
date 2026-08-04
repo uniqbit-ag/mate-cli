@@ -42,7 +42,7 @@ describe("ensureCapabilityEnabled", () => {
     activate(plugin);
 
     const enabled = await ensureCapabilityEnabled("acme", {
-      loadConfig: async () => ({ profiles: {}, capabilities: [{ name: "acme" }] }),
+      loadConfig: async () => ({ allowedAgents: [], capabilities: [{ name: "acme" }] }),
     });
 
     expect(enabled).toBe(true);
@@ -60,7 +60,7 @@ describe("ensureCapabilityEnabled", () => {
 
     try {
       const enabled = await ensureCapabilityEnabled("acme", {
-        loadConfig: async () => ({ profiles: {}, capabilities: [] }),
+        loadConfig: async () => ({ allowedAgents: [], capabilities: [] }),
       });
 
       expect(enabled).toBe(false);

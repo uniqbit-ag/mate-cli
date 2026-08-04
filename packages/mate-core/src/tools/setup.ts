@@ -120,7 +120,7 @@ export function mateFolderReadme(): string {
     ``,
     `Edit \`.${FRAMEWORK_NAME}/config/framework.yaml\` to configure:`,
     ``,
-    `- **profiles** — per-profile allowed agents list`,
+    `- **allowedAgents** — agents permitted to launch from linked repositories`,
     `- **capabilities** — skill and CLI tool capabilities (e.g. react-doctor, openspec, tokensave, headroom, rtk)`,
     `- **git** — set to \`auto\` to synchronize the companion before agent launches`,
     ``,
@@ -139,7 +139,7 @@ export const setupToolDeps = {
 
 const setup: FrameworkTool<SetupInput, { config: FrameworkConfig }> = {
   name: "setup",
-  description: "Initialize framework runtime, default profiles, and configure .opencode.",
+  description: "Initialize framework runtime, agent policy, and configure .opencode.",
   async execute(input) {
     return setupToolDeps.executeSetup(input);
   },
@@ -160,10 +160,16 @@ export async function executeSetup(
     deps.configStore ??
     new ConfigStore(path.join(cwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
   const config = mergeWithDefaults(await configStore.load());
-  const defaultProfile = config.profiles.default;
+  // Hubs are never companions: no setup entry path (CLI, wizard, or the
+  // setup framework tool) may write agent guidance into a hub root.
+  if (config.type === "hub") {
+    throw new ConfigError(
+      `A companion hub cannot be set up as a companion: ${cwd}. Use \`${FRAMEWORK_NAME} hub\` commands to manage the hub.`,
+    );
+  }
 
   if (input.allowedAgents !== undefined) {
-    defaultProfile.allowedAgents = [...new Set(input.allowedAgents)];
+    config.allowedAgents = [...new Set(input.allowedAgents)];
   }
   if (input.packageManagers !== undefined) {
     config.packageManagers = getSetupSelectionsFromConfig({

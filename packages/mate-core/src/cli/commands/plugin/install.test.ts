@@ -22,14 +22,7 @@ async function makeCompanion(pluginsYaml: string[] = []): Promise<string> {
   await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(
     path.join(configDir, "framework.yaml"),
-    [
-      "profiles:",
-      "  default:",
-      "    name: default",
-      "    allowedAgents: []",
-      ...pluginsYaml,
-      "",
-    ].join("\n"),
+    ["allowedAgents: []", ...pluginsYaml, ""].join("\n"),
     "utf8",
   );
   return companionPath;

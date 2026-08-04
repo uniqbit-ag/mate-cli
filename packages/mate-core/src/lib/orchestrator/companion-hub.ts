@@ -123,7 +123,7 @@ export async function initializeCompanionHub(
   } else {
     const config: FrameworkConfig = {
       type: "hub",
-      profiles: {},
+      allowedAgents: [],
       packageManagers: [],
       capabilities: [],
       hub: { companions: [] },

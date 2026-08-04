@@ -8,7 +8,7 @@ describe("bunPlugin", () => {
   test("is enabled by default when packageManagers is absent", () => {
     expect(
       bunPlugin.isEnabled({
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [],
       }),
     ).toBe(true);
@@ -17,7 +17,7 @@ describe("bunPlugin", () => {
   test("is disabled when bun is not selected", () => {
     expect(
       bunPlugin.isEnabled({
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["uv"],
         capabilities: [],
       }),

@@ -102,7 +102,7 @@ describe("runSetupCommandWithDeps", () => {
     );
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [],
       },
@@ -137,7 +137,7 @@ describe("runSetupCommandWithDeps", () => {
     );
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [],
       },
@@ -178,7 +178,7 @@ describe("runSetupCommandWithDeps", () => {
     );
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [],
       },
@@ -211,7 +211,7 @@ describe("runSetupCommandWithDeps", () => {
     });
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         capabilities: [{ name: "headroom" }],
         packageManagers: ["bun"],
       },
@@ -245,7 +245,7 @@ describe("runSetupCommandWithDeps", () => {
     });
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun", "uv"],
         capabilities: [],
       },
@@ -279,7 +279,7 @@ describe("runSetupCommandWithDeps", () => {
     });
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun", "uv"],
         capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
       },
@@ -313,7 +313,7 @@ describe("runSetupCommandWithDeps", () => {
     });
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun", "uv"],
         capabilities: [{ name: "openspec" }],
         git: "auto",
@@ -370,7 +370,7 @@ describe("runSetupCommandWithDeps", () => {
     });
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["opencode"] } },
+        allowedAgents: ["opencode"],
         packageManagers: ["bun", "uv"],
         capabilities: [{ name: "headroom" }],
       },
@@ -408,7 +408,7 @@ describe("runSetupCommandWithDeps", () => {
       path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
     ).save({
       type: "companion",
-      profiles: { default: { name: "default", allowedAgents: ["opencode"] } },
+      allowedAgents: ["opencode"],
       packageManagers: ["bun"],
       capabilities: [{ name: "headroom" }],
     });
@@ -424,7 +424,7 @@ describe("runSetupCommandWithDeps", () => {
     );
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["opencode"] } },
+        allowedAgents: ["opencode"],
         packageManagers: ["bun"],
         capabilities: [{ name: "headroom" }],
       },
@@ -465,13 +465,13 @@ describe("runSetupCommandWithDeps", () => {
       path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
     ).save({
       type: "companion",
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }],
     });
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["opencode"] } },
+        allowedAgents: ["opencode"],
         packageManagers: ["uv"],
         capabilities: [{ name: "openspec" }],
       },
@@ -508,13 +508,13 @@ describe("runSetupCommandWithDeps", () => {
       path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
     ).save({
       type: "companion",
-      profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+      allowedAgents: ["claude"],
       packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }, { name: "react-doctor" }],
     });
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }, { name: "react-doctor" }],
       },
@@ -559,7 +559,7 @@ describe("runSetupCommandWithDeps", () => {
     );
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [],
       },
@@ -605,7 +605,7 @@ describe("runSetupCommandWithDeps", () => {
     });
     const executeMock = mock(async () => ({
       config: {
-        profiles: { default: { name: "default", allowedAgents: ["claude"] } },
+        allowedAgents: ["claude"],
         packageManagers: ["bun"],
         capabilities: [],
       },
