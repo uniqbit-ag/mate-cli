@@ -14,6 +14,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -36,6 +37,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -169,6 +171,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -188,7 +191,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -224,7 +227,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -315,6 +318,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -337,6 +341,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -397,7 +402,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -433,7 +438,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -579,6 +584,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -608,6 +614,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -748,6 +755,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -777,7 +785,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -792,7 +800,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -880,6 +888,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -909,6 +918,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -989,7 +999,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -1004,7 +1014,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -1144,6 +1154,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -1166,6 +1177,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1259,6 +1271,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -1286,7 +1299,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1302,7 +1315,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
       "context-mode@1.0.169",
     ],
   },
@@ -1383,6 +1396,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -1413,6 +1427,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1442,7 +1457,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1458,7 +1473,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
       "context-mode@1.0.169",
     ],
   },
@@ -1585,6 +1600,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -1609,6 +1625,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1729,6 +1746,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -1748,7 +1766,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -1766,7 +1784,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -1846,6 +1864,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -1870,6 +1889,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1928,7 +1948,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -1946,7 +1966,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -2070,6 +2090,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -2092,6 +2113,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -2195,6 +2217,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -2214,7 +2237,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -2234,7 +2257,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -2315,6 +2338,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -2337,6 +2361,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -2377,7 +2402,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -2397,7 +2422,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -2523,6 +2548,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -2562,6 +2588,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -2711,7 +2738,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -2754,7 +2781,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
       "context-mode@1.0.169",
     ],
   },
@@ -2905,6 +2932,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -2927,6 +2955,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -2954,7 +2983,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -2969,7 +2998,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -2989,6 +3018,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -3011,6 +3041,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -3038,7 +3069,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -3053,7 +3084,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -3073,6 +3104,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -3096,6 +3128,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -3123,7 +3156,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -3138,7 +3171,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -3158,6 +3191,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -3180,6 +3214,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -3207,7 +3242,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -3222,7 +3257,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -3242,6 +3277,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -3264,6 +3300,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -3291,7 +3328,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
     "references": {
       "mate": "..",
@@ -3306,7 +3343,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.8",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.9",
     ],
   },
 }
@@ -3326,6 +3363,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 
@@ -3348,6 +3386,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.

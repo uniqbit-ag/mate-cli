@@ -8,10 +8,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 const tempRoots: string[] = [];
 
 afterEach(async () => {
+  // Cleans up a temp dir containing a full `bun install` of two packed
+  // tarballs (node_modules + lockfile); on a loaded CI box the recursive
+  // rm can outrun bun's 5s default hook timeout, so give it real headroom.
   await Promise.all(
     tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })),
   );
-});
+}, 60_000);
 
 async function packInto(packageRoot: string, destination: string): Promise<string> {
   const pack = spawnSync("bun", ["pm", "pack", "--destination", destination], {
