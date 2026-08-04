@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import type { SetupContext } from "../plugin";
+import { reconcileOpenCodeContributions } from "../providers/opencode";
 import {
   TOKENSAVE_SUPPORTED_AGENTS,
   TOKENSAVE_MIN_RUST_VERSION,
@@ -369,60 +370,45 @@ describe("tokensavePlugin.apply", () => {
     expect(runMock.mock.calls.map((call) => call[0][0])).toEqual(["--version"]);
   });
 
-  test("registers the tokensave MCP server through ctx.mcp", async () => {
-    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
-    tempRoots.push(companionDir);
-
-    const registered: unknown[] = [];
-    const ctx: SetupContext = {
-      ...makeCtx(companionDir, { providers: ["claude", "opencode"] }),
-      mcp: {
-        register: async (descriptor) => {
-          registered.push(descriptor);
-        },
-      },
-    };
-
-    await tokensavePlugin.apply(ctx);
-
-    expect(registered).toHaveLength(1);
-    expect(registered[0]).toEqual({
-      name: "tokensave",
-      command: expect.stringContaining("tokensave"),
-      args: ["serve"],
-    });
-  });
-
-  test("does not register an MCP server when no supported provider is active", async () => {
-    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
-    tempRoots.push(companionDir);
-
-    const registered: unknown[] = [];
-    const ctx: SetupContext = {
-      ...makeCtx(companionDir, { providers: [] }),
-      mcp: {
-        register: async (descriptor) => {
-          registered.push(descriptor);
-        },
-      },
-    };
-
-    await tokensavePlugin.apply(ctx);
-
-    expect(registered).toHaveLength(0);
-  });
-
-  test("does not write companion Claude wiring during setup", async () => {
-    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
-    tempRoots.push(companionDir);
-
-    await tokensavePlugin.forProvider!.claude.apply(
-      makeCtx(companionDir, { providers: ["claude"] }),
+  test("declares MCP, hook, and permission contributions per runtime", () => {
+    const byRuntime = tokensavePlugin.getRuntimeContributions!(
+      makeCtx("/companion", { providers: ["claude", "opencode"] }),
     );
 
-    expect(runMock).not.toHaveBeenCalled();
+    expect(byRuntime.claude?.mcpServers).toEqual([
+      { name: "tokensave", command: "tokensave", args: ["serve"] },
+    ]);
+    expect(byRuntime.opencode?.mcpServers).toEqual([
+      { name: "tokensave", command: "tokensave", args: ["serve"] },
+    ]);
+    expect(byRuntime.opencode?.hookGroups).toBeUndefined();
+
+    const hookGroups = byRuntime.claude?.hookGroups ?? [];
+    expect(hookGroups.map((hook) => hook.event)).toEqual([
+      "PreToolUse",
+      "UserPromptSubmit",
+      "Stop",
+    ]);
+    for (const hook of hookGroups) {
+      expect(hook.marker).toBe("tokensave");
+      expect(hook.group.hooks?.[0]?.command).toContain("tokensave");
+    }
+
+    expect(byRuntime.claude?.permissionEntries).toEqual(["mcp__tokensave__*"]);
+  });
+
+  test("apply does not write companion runtime config directly", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    tempRoots.push(companionDir);
+
+    await tokensavePlugin.apply(makeCtx(companionDir, { providers: ["claude", "opencode"] }));
+
     await expect(
       fs.access(path.join(companionDir, ".claude", "settings.local.json")),
+    ).rejects.toThrow();
+    await expect(fs.access(path.join(companionDir, ".mcp.json"))).rejects.toThrow();
+    await expect(
+      fs.access(path.join(companionDir, ".opencode", "opencode.json")),
     ).rejects.toThrow();
   });
 });
@@ -460,7 +446,7 @@ describe("tokensavePlugin.teardown", () => {
     await expect(fs.stat(path.join(repoDir, TOKENSAVE_STORE_DIR))).rejects.toThrow();
   });
 
-  test("removes tokensave MCP config from companion-local opencode.json", async () => {
+  test("declared opencode MCP entry drives teardown through the Runtime Surface", async () => {
     const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
     tempRoots.push(companionDir);
 
@@ -477,9 +463,14 @@ describe("tokensavePlugin.teardown", () => {
       "utf8",
     );
 
-    await tokensavePlugin.forProvider!.opencode.teardown(
-      makeCtx(companionDir, { providers: ["opencode"] }),
-    );
+    const ctx = makeCtx(companionDir, { providers: ["opencode"] });
+    await reconcileOpenCodeContributions(ctx, [
+      {
+        pluginId: "tokensave",
+        enabled: false,
+        contributions: tokensavePlugin.getRuntimeContributions!(ctx).opencode!,
+      },
+    ]);
 
     const config = JSON.parse(
       await fs.readFile(path.join(companionDir, ".opencode", "opencode.json"), "utf8"),

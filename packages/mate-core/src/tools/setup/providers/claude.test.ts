@@ -12,8 +12,53 @@ import {
   syncWorkingRepoClaudeSettings,
 } from "./claude";
 import { getWrapperBinPath } from "../../../lib/package-paths";
+import { createContextModePlugin } from "../capabilities/context-mode";
+import { createGraphifyPlugin } from "../capabilities/graphify";
+import { createOpenspecPlugin } from "../capabilities/openspec";
+import { createReactDoctorPlugin } from "../capabilities/react-doctor";
+import { createRtkPlugin } from "../capabilities/rtk";
+import type { CapabilityContributionInput, CapabilityPlugin, SetupContext } from "../plugin";
 
 const tempRoots: string[] = [];
+
+// Contributions exactly as a capability declares them — the provider carries
+// no per-capability knowledge for declared contributions anymore.
+function declaredContributions(
+  plugin: CapabilityPlugin,
+  companionPath: string,
+  enabled: boolean,
+): CapabilityContributionInput[] {
+  const ctx: SetupContext = {
+    companionPath,
+    config: {
+      allowedAgents: ["claude"],
+      capabilities: enabled ? [{ name: plugin.id }] : [],
+    },
+    mode: "setup",
+    activeProviders: ["claude"],
+  };
+  return [
+    {
+      pluginId: plugin.id,
+      enabled,
+      contributions: plugin.getRuntimeContributions!(ctx).claude!,
+    },
+  ];
+}
+
+function reactDoctorContributions(
+  companionPath: string,
+  enabled: boolean,
+): CapabilityContributionInput[] {
+  return declaredContributions(createReactDoctorPlugin(), companionPath, enabled);
+}
+
+function openspecContributions(
+  companionPath: string,
+  enabled: boolean,
+): CapabilityContributionInput[] {
+  return declaredContributions(createOpenspecPlugin(), companionPath, enabled);
+}
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -116,10 +161,14 @@ describe("syncCompanionClaudeSettings", () => {
 
   test("adds react-doctor post hook when capability enabled", async () => {
     const companionPath = await makeTempDir("mate-companion-react-doctor-");
-    await syncCompanionClaudeSettings(companionPath, {
-      allowedAgents: ["claude"],
-      capabilities: [{ name: "react-doctor" }],
-    });
+    await syncCompanionClaudeSettings(
+      companionPath,
+      {
+        allowedAgents: ["claude"],
+        capabilities: [{ name: "react-doctor" }],
+      },
+      reactDoctorContributions(companionPath, true),
+    );
 
     const settings = await readCompanionSettings(companionPath);
     expect(settings.hooks?.PostToolUse).toContainEqual({
@@ -293,58 +342,82 @@ describe("syncCompanionClaudeSettings", () => {
     ]);
   });
 
-  test("declares tokensave hooks without duplication and leaves MCP registration to ctx.mcp", async () => {
+  test("applies declared tokensave hooks without duplication across repeated syncs", async () => {
     const companionPath = await makeTempDir("mate-companion-tokensave-");
     const binDir = await makeTempDir("mate-companion-bin-");
-    const originalPath = process.env.PATH;
     const tokensavePath = await makeExecutable(binDir, "tokensave");
-
-    process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
 
     await seedSettings(companionPath, {
       permissions: { allow: ["Bash(ls:*)"] },
     });
 
-    try {
-      const config = {
-        allowedAgents: ["claude"],
-        capabilities: [{ name: "tokensave" }],
-      };
+    const config = {
+      allowedAgents: ["claude"],
+      capabilities: [{ name: "tokensave" }],
+    };
+    // Contributions as the tokensave capability declares them; the provider
+    // sync itself carries no tokensave knowledge anymore.
+    const contributions = [
+      {
+        pluginId: "tokensave",
+        enabled: true,
+        contributions: {
+          hookGroups: [
+            {
+              event: "PreToolUse",
+              marker: "tokensave",
+              group: {
+                matcher: "Agent|Grep|Bash",
+                hooks: [{ type: "command", command: tokensavePath, args: ["hook-pre-tool-use"] }],
+              },
+            },
+            {
+              event: "UserPromptSubmit",
+              marker: "tokensave",
+              group: {
+                hooks: [{ type: "command", command: tokensavePath, args: ["hook-prompt-submit"] }],
+              },
+            },
+            {
+              event: "Stop",
+              marker: "tokensave",
+              group: { hooks: [{ type: "command", command: tokensavePath, args: ["hook-stop"] }] },
+            },
+          ],
+          permissionEntries: ["mcp__tokensave__*"],
+        },
+      },
+    ];
 
-      await syncCompanionClaudeSettings(companionPath, config);
-      await syncCompanionClaudeSettings(companionPath, config);
+    await syncCompanionClaudeSettings(companionPath, config, contributions);
+    await syncCompanionClaudeSettings(companionPath, config, contributions);
 
-      const settings = await readCompanionSettings(companionPath);
-      // MCP server moved to .mcp.json; settings.local.json must not carry it,
-      // but the mcp__tokensave__* permission entry is still pre-seeded.
-      expect(settings.permissions?.allow).toContain("Bash(ls:*)");
-      expect(settings.permissions?.allow ?? []).toContain("mcp__tokensave__*");
-      expect(settings.mcpServers?.tokensave).toBeUndefined();
+    const settings = await readCompanionSettings(companionPath);
+    // MCP server lives in .mcp.json; settings.local.json must not carry it,
+    // but the mcp__tokensave__* permission entry is still pre-seeded.
+    expect(settings.permissions?.allow).toContain("Bash(ls:*)");
+    expect(settings.permissions?.allow ?? []).toContain("mcp__tokensave__*");
+    expect(settings.mcpServers?.tokensave).toBeUndefined();
 
-      // The provider sync no longer writes the tokensave MCP entry itself;
-      // the tokensave capability registers it through ctx.mcp during setup.
-      const mcpConfig = JSON.parse(
-        await fs.readFile(getCompanionClaudeMcpConfigPath(companionPath), "utf8"),
-      ) as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
-      expect(mcpConfig.mcpServers?.tokensave).toBeUndefined();
+    const mcpConfig = JSON.parse(
+      await fs.readFile(getCompanionClaudeMcpConfigPath(companionPath), "utf8"),
+    ) as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
+    expect(mcpConfig.mcpServers?.tokensave).toBeUndefined();
 
-      expect(
-        settings.hooks?.PreToolUse?.filter(
-          (group) =>
-            group.matcher === "Agent|Grep|Bash" &&
-            group.hooks?.[0]?.command === tokensavePath &&
-            group.hooks?.[0]?.args?.[0] === "hook-pre-tool-use",
-        ),
-      ).toHaveLength(1);
-      expect(settings.hooks?.UserPromptSubmit).toContainEqual({
-        hooks: [{ type: "command", command: tokensavePath, args: ["hook-prompt-submit"] }],
-      });
-      expect(settings.hooks?.Stop).toContainEqual({
-        hooks: [{ type: "command", command: tokensavePath, args: ["hook-stop"] }],
-      });
-    } finally {
-      process.env.PATH = originalPath;
-    }
+    expect(
+      settings.hooks?.PreToolUse?.filter(
+        (group) =>
+          group.matcher === "Agent|Grep|Bash" &&
+          group.hooks?.[0]?.command === tokensavePath &&
+          group.hooks?.[0]?.args?.[0] === "hook-pre-tool-use",
+      ),
+    ).toHaveLength(1);
+    expect(settings.hooks?.UserPromptSubmit).toContainEqual({
+      hooks: [{ type: "command", command: tokensavePath, args: ["hook-prompt-submit"] }],
+    });
+    expect(settings.hooks?.Stop).toContainEqual({
+      hooks: [{ type: "command", command: tokensavePath, args: ["hook-stop"] }],
+    });
   });
 
   test("preserves an unmanaged .mcp.json server and prunes tokensave when disabled", async () => {
@@ -385,29 +458,66 @@ describe("syncCompanionClaudeSettings", () => {
   });
 
   test.each([
-    ["openspec", "Bash(openspec:*)"],
-    ["rtk", "Bash(rtk:*)"],
-    ["graphify", "Bash(graphify:*)"],
-    ["react-doctor", "Bash(npx react-doctor:*)"],
-    ["context-mode", "Skill(context-mode:context-mode)"],
-    ["context-mode", "mcp__plugin_context-mode_context-mode__*"],
-  ])("pre-seeds %s permission allowance %s", async (name, entry) => {
+    [createRtkPlugin, "Bash(rtk:*)"],
+    [createContextModePlugin, "Skill(context-mode:context-mode)"],
+    [createContextModePlugin, "mcp__plugin_context-mode_context-mode__*"],
+  ])("pre-seeds declared permission allowance %#: %s", async (factory, entry) => {
     const companionPath = await makeTempDir("mate-companion-perm-");
-    await syncCompanionClaudeSettings(companionPath, {
-      allowedAgents: ["claude"],
-      capabilities: [{ name }],
-    });
+    const plugin = factory();
+    await syncCompanionClaudeSettings(
+      companionPath,
+      {
+        allowedAgents: ["claude"],
+        capabilities: [{ name: plugin.id }],
+      },
+      declaredContributions(plugin, companionPath, true),
+    );
 
     const settings = await readCompanionSettings(companionPath);
     expect(settings.permissions?.allow).toContain(entry);
   });
 
+  test("pre-seeds declared react-doctor permission allowances", async () => {
+    const companionPath = await makeTempDir("mate-companion-perm-declared-");
+    await syncCompanionClaudeSettings(
+      companionPath,
+      { allowedAgents: ["claude"], capabilities: [{ name: "react-doctor" }] },
+      reactDoctorContributions(companionPath, true),
+    );
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.allow).toContain("Bash(npx react-doctor:*)");
+    expect(settings.permissions?.allow).toContain("Skill(react-doctor)");
+  });
+
+  test("pre-seeds declared openspec permission allowances", async () => {
+    const companionPath = await makeTempDir("mate-companion-perm-openspec-");
+    await syncCompanionClaudeSettings(
+      companionPath,
+      { allowedAgents: ["claude"], capabilities: [{ name: "openspec" }] },
+      openspecContributions(companionPath, true),
+    );
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.allow).toContain("Bash(openspec:*)");
+    expect(settings.permissions?.allow).toContain(
+      `Bash(${path.join(getWrapperBinPath(), "openspec")}:*)`,
+    );
+  });
+
   test("pre-seeds package wrapper permission allowances", async () => {
     const companionPath = await makeTempDir("mate-companion-bin-perm-");
-    await syncCompanionClaudeSettings(companionPath, {
-      allowedAgents: ["claude"],
-      capabilities: [{ name: "openspec" }, { name: "graphify" }],
-    });
+    await syncCompanionClaudeSettings(
+      companionPath,
+      {
+        allowedAgents: ["claude"],
+        capabilities: [{ name: "openspec" }, { name: "graphify" }],
+      },
+      [
+        ...openspecContributions(companionPath, true),
+        ...declaredContributions(createGraphifyPlugin(), companionPath, true),
+      ],
+    );
 
     const settings = await readCompanionSettings(companionPath);
     expect(settings.permissions?.allow).toContain(
@@ -454,19 +564,27 @@ describe("syncCompanionClaudeSettings", () => {
     const companionPath = await makeTempDir("mate-companion-disable-");
     await seedSettings(companionPath, { permissions: { allow: ["Bash(ls:*)"] } });
 
-    await syncCompanionClaudeSettings(companionPath, {
-      allowedAgents: ["claude"],
-      git: "auto",
-      capabilities: [{ name: "openspec" }],
-    });
+    await syncCompanionClaudeSettings(
+      companionPath,
+      {
+        allowedAgents: ["claude"],
+        git: "auto",
+        capabilities: [{ name: "openspec" }],
+      },
+      openspecContributions(companionPath, true),
+    );
     let settings = await readCompanionSettings(companionPath);
     expect(settings.permissions?.allow).toContain("Bash(openspec:*)");
     expect(settings.permissions?.allow).toContain("Bash(ls:*)");
 
-    await syncCompanionClaudeSettings(companionPath, {
-      allowedAgents: ["claude"],
-      capabilities: [],
-    });
+    await syncCompanionClaudeSettings(
+      companionPath,
+      {
+        allowedAgents: ["claude"],
+        capabilities: [],
+      },
+      openspecContributions(companionPath, false),
+    );
     settings = await readCompanionSettings(companionPath);
     expect(settings.permissions?.allow ?? []).not.toContain("Bash(openspec:*)");
     expect(settings.permissions?.allow).toContain("Bash(ls:*)");
@@ -475,10 +593,14 @@ describe("syncCompanionClaudeSettings", () => {
   test("reconciles react-doctor hook by capability without re-adding mate plugin hooks", async () => {
     const companionPath = await makeTempDir("mate-companion-hook-reconcile-");
 
-    await syncCompanionClaudeSettings(companionPath, {
-      allowedAgents: ["claude"],
-      capabilities: [{ name: "react-doctor" }],
-    });
+    await syncCompanionClaudeSettings(
+      companionPath,
+      {
+        allowedAgents: ["claude"],
+        capabilities: [{ name: "react-doctor" }],
+      },
+      reactDoctorContributions(companionPath, true),
+    );
     let settings = await readCompanionSettings(companionPath);
     expect(settings.hooks?.Stop).toBeDefined();
     expect(
@@ -490,10 +612,14 @@ describe("syncCompanionClaudeSettings", () => {
     ).toBe(true);
     expect(hasValidateHook(settings, companionPath)).toBe(false);
 
-    await syncCompanionClaudeSettings(companionPath, {
-      allowedAgents: ["claude"],
-      capabilities: [],
-    });
+    await syncCompanionClaudeSettings(
+      companionPath,
+      {
+        allowedAgents: ["claude"],
+        capabilities: [],
+      },
+      reactDoctorContributions(companionPath, false),
+    );
     settings = await readCompanionSettings(companionPath);
     expect(settings.hooks?.Stop).toBeUndefined();
     expect(

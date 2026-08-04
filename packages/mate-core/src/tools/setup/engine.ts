@@ -2,7 +2,15 @@ import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
 import { collectHostingProviders, ContextServiceMediator } from "./context-services";
-import type { CapabilityPlugin, Plugin, PluginRegistration, SetupContext } from "./plugin";
+import type {
+  CapabilityContributionInput,
+  CapabilityPlugin,
+  Plugin,
+  PluginRegistration,
+  SetupContext,
+} from "./plugin";
+import { reconcileClaudeContributions } from "./providers/claude";
+import { reconcileOpenCodeContributions } from "./providers/opencode";
 import { normalizeRegistration, type NormalizedRegistration } from "./registry";
 
 export interface SetupInstallationPlanAction {
@@ -151,5 +159,61 @@ export async function executeSetupInstallationPlan(
 
   await mediator.finalize();
 
+  await reconcileCapabilityContributions(ctx, plugins, plan);
+
   return { executedActions, skippedActions, warnings };
+}
+
+// The Runtime Surface of each active Agent Runtime, by runtime id.
+const RUNTIME_SURFACE_RECONCILERS: Record<
+  string,
+  (ctx: SetupContext, inputs: CapabilityContributionInput[]) => Promise<void>
+> = {
+  claude: reconcileClaudeContributions,
+  opencode: reconcileOpenCodeContributions,
+};
+
+/**
+ * Reconcile declared Capability contributions through every active runtime's
+ * Runtime Surface (spec: plugin-engine). Runs after all plugin phases, so
+ * providers are always done first. Disabled capabilities participate with
+ * `enabled: false` and drive teardown of their managed entries.
+ */
+async function reconcileCapabilityContributions(
+  ctx: SetupContext,
+  plugins: Plugin[],
+  plan: SetupInstallationPlan,
+): Promise<void> {
+  // The plan already resolved enablement (policy, saved selection, package
+  // manager requirements); mirror it instead of recomputing.
+  const enabledByPluginId = new Map(
+    plan.actions
+      .filter((action) => action.phase === "capability" && action.providerId === undefined)
+      .map((action) => [action.pluginId, action.action === "apply"]),
+  );
+
+  const inputsByRuntime = new Map<string, CapabilityContributionInput[]>();
+  for (const plugin of plugins) {
+    if (plugin.kind !== "capability") continue;
+    const capability = plugin as CapabilityPlugin;
+    if (!capability.getRuntimeContributions) continue;
+    const enabled = enabledByPluginId.get(capability.id) ?? false;
+    const byRuntime = capability.getRuntimeContributions(ctx);
+    for (const [runtimeId, contributions] of Object.entries(byRuntime)) {
+      if (!contributions) continue;
+      // Inactive runtimes still reconcile — with everything disabled — so a
+      // deselected runtime's managed entries (skill trees, guidance blocks)
+      // are torn down. The surfaces never create files for disabled inputs.
+      const runtimeActive = plan.activeProviders.includes(runtimeId);
+      const inputs = inputsByRuntime.get(runtimeId) ?? [];
+      inputs.push({ pluginId: capability.id, enabled: enabled && runtimeActive, contributions });
+      inputsByRuntime.set(runtimeId, inputs);
+    }
+  }
+
+  for (const [runtimeId, inputs] of inputsByRuntime) {
+    const reconcile = RUNTIME_SURFACE_RECONCILERS[runtimeId];
+    if (!reconcile || inputs.length === 0) continue;
+    await reconcile(ctx, inputs);
+  }
 }

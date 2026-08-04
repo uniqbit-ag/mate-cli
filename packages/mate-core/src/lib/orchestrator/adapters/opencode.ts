@@ -9,60 +9,14 @@ import {
   getOpenCodePluginPackageReference,
   isMateOpenCodePluginReference,
 } from "../../opencode-plugin-package";
+import {
+  getOpenCodePluginReferences,
+  mergeOpenCodeConfigContent,
+  readOpenCodeConfig,
+} from "../../../tools/setup/providers/opencode-format";
 import { buildOpenCodeGuidance } from "../opencode-guidance";
 import { LaunchPreflightError } from "../types";
 import { type AdapterContext, LaunchAdapter } from "./base";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function mergeConfig(target: Record<string, unknown>, source: Record<string, unknown>): void {
-  for (const [key, sourceValue] of Object.entries(source)) {
-    const targetValue = target[key];
-    if (isRecord(targetValue) && isRecord(sourceValue)) {
-      mergeConfig(targetValue, sourceValue);
-      continue;
-    }
-
-    target[key] = sourceValue;
-  }
-}
-
-function mergeOpenCodeConfigContent(
-  overlay: Record<string, unknown>,
-  env: NodeJS.ProcessEnv = process.env,
-  options: { appendSkillPaths?: string[] } = {},
-): string {
-  let config: Record<string, unknown> = {};
-  const existing = env.OPENCODE_CONFIG_CONTENT;
-
-  if (existing) {
-    try {
-      const parsed = JSON.parse(existing) as unknown;
-      if (isRecord(parsed)) {
-        config = parsed;
-      }
-    } catch {
-      // Ignore invalid inherited config content rather than breaking launch.
-    }
-  }
-
-  mergeConfig(config, overlay);
-
-  if (options.appendSkillPaths && options.appendSkillPaths.length > 0) {
-    const skills = isRecord(config.skills) ? config.skills : {};
-    const paths = Array.isArray(skills.paths) ? skills.paths : [];
-    const existingPaths = new Set(paths);
-    skills.paths = [
-      ...paths,
-      ...options.appendSkillPaths.filter((skillPath) => !existingPaths.has(skillPath)),
-    ];
-    config.skills = skills;
-  }
-
-  return JSON.stringify(config);
-}
 
 export class OpenCodeAdapter extends LaunchAdapter {
   readonly toolName = "opencode";
@@ -190,18 +144,14 @@ export class OpenCodeAdapter extends LaunchAdapter {
   ): Promise<string[]> {
     const configPath = path.join(context.companionPath, configFile);
 
-    let config: unknown;
-    try {
-      config = JSON.parse(await fs.readFile(configPath, "utf8"));
-    } catch {
-      return [`Unreadable OpenCode configuration: ${configPath}`];
-    }
-    if (!isRecord(config)) {
+    const { present, config } = await readOpenCodeConfig(configPath);
+    if (!present) {
       return [`Unreadable OpenCode configuration: ${configPath}`];
     }
 
-    const plugins = Array.isArray(config.plugin) ? (config.plugin as unknown[]) : [];
-    const mateReferences = plugins.filter(isMateOpenCodePluginReference) as string[];
+    const mateReferences = getOpenCodePluginReferences(config).filter(
+      isMateOpenCodePluginReference,
+    ) as string[];
 
     if (mateReferences.includes(expectedPluginReference)) {
       return [];

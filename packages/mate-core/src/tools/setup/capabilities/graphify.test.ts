@@ -609,37 +609,9 @@ describe("rewriteGraphifySkillOutputPaths", () => {
   });
 });
 
+// Generic heading-section semantics are covered by the agent-file-sections
+// unit tests; these pin graphify's section identity (heading forms, markers).
 describe("removeGraphifySection", () => {
-  test("removes the ## graphify section, leaving surrounding content intact", () => {
-    const input = [
-      "# Companion",
-      "",
-      "## graphify",
-      "",
-      "graphify-out/graph.json",
-      "",
-      "## other",
-      "",
-      "Other content.",
-      "",
-    ].join("\n");
-    const result = removeGraphifySection(input);
-    expect(result).not.toContain("## graphify");
-    expect(result).not.toContain("graphify-out/graph.json");
-    expect(result).toContain("## other");
-    expect(result).toContain("Other content.");
-  });
-
-  test("returns content unchanged when no ## graphify section present", () => {
-    const input = "# Header\n\nSome content.\n";
-    expect(removeGraphifySection(input)).toBe(input);
-  });
-
-  test("returns empty string when file contains only the graphify section", () => {
-    const input = "## graphify\n\ngraphify-out/graph.json\n";
-    expect(removeGraphifySection(input).trim()).toBe("");
-  });
-
   test("removes a single-hash graphify section", () => {
     const input = "# graphify\n\ngraphify-out/graph.json\n";
     expect(removeGraphifySection(input).trim()).toBe("");

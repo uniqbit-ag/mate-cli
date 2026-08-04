@@ -3,28 +3,19 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { resolveGitInfoExcludePath } from "../git-utils";
-import type { CapabilityPlugin } from "../plugin";
-import { isCommandOnPath, runCommand, runShellCommand } from "../utils";
+import type { CapabilityPlugin, RuntimeContributionsByRuntime } from "../plugin";
+import { isCommandOnPath, resolveCommandOnPath, runCommand, runShellCommand } from "../utils";
+import { TOKENSAVE_CLAUDE_MD_MARKER } from "./tokensave-shared";
 export { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "./tokensave-shared";
 
 export const TOKENSAVE_SUPPORTED_AGENTS = new Set(["claude", "opencode"]);
 export const TOKENSAVE_STORE_DIR = ".tokensave";
 export const TOKENSAVE_MIN_RUST_VERSION = "1.91.0";
-const TOKENSAVE_CLAUDE_MD_MARKER = "## MANDATORY: No Explore Agents When Tokensave Is Available";
 const TOKENSAVE_STORE_EXCLUDE_ENTRY = `${TOKENSAVE_STORE_DIR}/`;
 const TOKENSAVE_BREW_INSTALL_CMD = "brew install aovestdipaperino/tap/tokensave";
 const TOKENSAVE_CARGO_INSTALL_CMD = "cargo install --locked tokensave";
 const TOKENSAVE_SCOOP_INSTALL_CMD =
   "scoop bucket add tokensave https://github.com/aovestdipaperino/scoop-bucket && scoop install tokensave";
-
-interface CompanionOpenCodeSettings {
-  mcp?: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-function getCompanionOpenCodeConfigPath(companionPath: string): string {
-  return path.join(companionPath, ".opencode", "opencode.json");
-}
 
 export interface TokensaveRunResult {
   ok: boolean;
@@ -34,10 +25,14 @@ export interface TokensaveRunResult {
 
 export const tokensaveDeps = {
   run(args: string[], cwd: string): TokensaveRunResult {
+    // env is passed explicitly: bun's spawnSync otherwise resolves the binary
+    // against the process's original PATH, ignoring in-process PATH changes
+    // (which test stubs and shell-integration wrappers rely on).
     const result = spawnSync("tokensave", args, {
       cwd,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
     });
     return {
       ok: result.status === 0 && !result.error,
@@ -58,6 +53,7 @@ export const tokensaveDeps = {
     const result = spawnSync("rustc", ["--version"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
     });
     return {
       ok: result.status === 0 && !result.error,
@@ -72,41 +68,6 @@ export const tokensaveDeps = {
     return process.env.PATH ?? "";
   },
 };
-
-async function readCompanionOpenCodeSettings(
-  companionPath: string,
-): Promise<CompanionOpenCodeSettings> {
-  try {
-    const parsed = JSON.parse(
-      await fs.readFile(getCompanionOpenCodeConfigPath(companionPath), "utf8"),
-    ) as unknown;
-    if (parsed && typeof parsed === "object") {
-      return parsed as CompanionOpenCodeSettings;
-    }
-  } catch {
-    /* absent or malformed */
-  }
-  return {};
-}
-
-async function removeOpenCodeMcpServer(companionPath: string): Promise<void> {
-  const configPath = getCompanionOpenCodeConfigPath(companionPath);
-  const settings = await readCompanionOpenCodeSettings(companionPath);
-  if (!settings.mcp || typeof settings.mcp !== "object") {
-    return;
-  }
-
-  const mcp = { ...settings.mcp };
-  delete mcp.tokensave;
-  if (Object.keys(mcp).length > 0) {
-    settings.mcp = mcp;
-  } else {
-    delete settings.mcp;
-  }
-
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.writeFile(configPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
-}
 
 async function cleanupRepoLocalTokensaveArtifacts(repoPath: string): Promise<void> {
   const claudeMdPath = path.join(repoPath, "CLAUDE.md");
@@ -314,21 +275,54 @@ export function createTokensavePlugin(): CapabilityPlugin {
         },
       ];
     },
+    // MCP access, session hooks, and permission pre-seeds are declared below
+    // and reconciled by each runtime's Runtime Surface. The bare `tokensave`
+    // command name in the MCP entry is resolved against PATH at spawn time by
+    // each provider, so it never pins a since-moved/upgraded binary.
+    getRuntimeContributions(): RuntimeContributionsByRuntime {
+      const mcpServers = [{ name: "tokensave", command: "tokensave", args: ["serve"] }];
+      // Hook commands pin the resolved binary path (hooks run without the
+      // launch environment's PATH guarantees).
+      const tokensaveCommandPath =
+        resolveCommandOnPath("tokensave", process.env.PATH ?? "") ?? "tokensave";
+      const hookGroups = [
+        {
+          event: "PreToolUse",
+          marker: "tokensave",
+          group: {
+            matcher: "Agent|Grep|Bash",
+            hooks: [
+              { type: "command", command: tokensaveCommandPath, args: ["hook-pre-tool-use"] },
+            ],
+          },
+        },
+        {
+          event: "UserPromptSubmit",
+          marker: "tokensave",
+          group: {
+            hooks: [
+              { type: "command", command: tokensaveCommandPath, args: ["hook-prompt-submit"] },
+            ],
+          },
+        },
+        {
+          event: "Stop",
+          marker: "tokensave",
+          group: {
+            hooks: [{ type: "command", command: tokensaveCommandPath, args: ["hook-stop"] }],
+          },
+        },
+      ];
+      return {
+        claude: { mcpServers, hookGroups, permissionEntries: ["mcp__tokensave__*"] },
+        opencode: { mcpServers },
+      };
+    },
     async apply(ctx) {
       // Presence only: make sure the tokensave binary is installed so the graph can be
       // built later. The graph build itself (init/sync) lives in `mate cap index`, never
       // in setup or launch-time sync — keeping launch fast and indexing an explicit step.
       if (ctx.activeProviders.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).length === 0) return;
-
-      // MCP access is provider-mediated: every active hosting provider gets the
-      // server in its native config, and teardown bookkeeping removes it again.
-      // The bare command name is resolved against PATH at spawn time by each
-      // provider, so the registration never pins a since-moved/upgraded binary.
-      await ctx.mcp?.register({
-        name: "tokensave",
-        command: "tokensave",
-        args: ["serve"],
-      });
 
       const targetPath = ctx.repoPath ?? ctx.companionPath;
       if (!(await ensureTokensaveInstalled(targetPath))) {
@@ -341,21 +335,6 @@ export function createTokensavePlugin(): CapabilityPlugin {
     async teardown(ctx) {
       if (!ctx.repoPath) return;
       await teardownDriver(ctx.repoPath, ctx.activeProviders);
-    },
-    forProvider: {
-      claude: {
-        async apply(_ctx) {},
-        async teardown(_ctx) {},
-      },
-      opencode: {
-        // Registration goes through ctx.mcp now. Teardown stays as a legacy
-        // prune for entries written by releases that predate the bookkeeping
-        // manifest.
-        async apply(_ctx) {},
-        async teardown(ctx) {
-          await removeOpenCodeMcpServer(ctx.companionPath);
-        },
-      },
     },
   };
 }

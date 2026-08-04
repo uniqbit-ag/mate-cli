@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type { CapabilityPlugin, SetupContext } from "../plugin";
-import { mergeDir, pruneEmptyAncestors } from "../utils";
+import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
+import { pruneEmptyAncestors } from "../utils";
 
 export const SKILL_SRC = path.join(
   import.meta.dirname,
@@ -13,22 +13,6 @@ export const CLAUDE_HOOK_SRC = path.join(
   "../../../templates/capabilities/react-doctor/claude/hooks/react-doctor.sh",
 );
 
-export async function applyReactDoctorSkills(skillsDir: string): Promise<void> {
-  await mergeDir(SKILL_SRC, skillsDir);
-}
-
-export async function teardownReactDoctorSkills(
-  skillsDir: string,
-  companionPath: string,
-): Promise<void> {
-  try {
-    await fs.rm(skillsDir, { recursive: true, force: true });
-  } catch {
-    /* not present */
-  }
-  await pruneEmptyAncestors(path.dirname(skillsDir), companionPath);
-}
-
 export function createReactDoctorPlugin(): CapabilityPlugin {
   return {
     id: "react-doctor",
@@ -37,6 +21,41 @@ export function createReactDoctorPlugin(): CapabilityPlugin {
     description: "Install React Doctor skills and Claude post-edit scans.",
     defaultSelected: true,
     isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "react-doctor"),
+    // Skills, session hooks, and permission pre-seeds are declared and
+    // reconciled by each runtime's Runtime Surface. Only the hook script file
+    // itself is copied imperatively below (script files are not a config
+    // format the surface owns).
+    getRuntimeContributions(ctx: SetupContext): RuntimeContributionsByRuntime {
+      const hookCommand = `sh "${ctx.companionPath}/.claude/hooks/react-doctor.sh"`;
+      const skillTrees = [{ name: "react-doctor", sourceDir: SKILL_SRC }];
+      return {
+        claude: {
+          hookGroups: [
+            // Record edits cheaply, then scan once when the edited turn finishes.
+            {
+              event: "PostToolUse",
+              marker: "react-doctor.sh",
+              group: {
+                matcher: "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
+                hooks: [{ type: "command", command: hookCommand, timeout: 5 }],
+              },
+            },
+            {
+              event: "Stop",
+              marker: "react-doctor.sh",
+              group: { hooks: [{ type: "command", command: hookCommand, timeout: 45 }] },
+            },
+          ],
+          permissionEntries: [
+            "Skill(react-doctor)",
+            "Bash(npx react-doctor:*)",
+            "Bash(npx react-doctor@latest *)",
+          ],
+          skillTrees,
+        },
+        opencode: { skillTrees },
+      };
+    },
     async apply(ctx: SetupContext) {
       // Migrate: remove legacy shared .agents/skills/react-doctor/ from previous installs.
       try {
@@ -57,18 +76,12 @@ export function createReactDoctorPlugin(): CapabilityPlugin {
     forProvider: {
       claude: {
         async apply(ctx: SetupContext) {
-          const skillsDir = path.join(ctx.companionPath, ".claude", "skills", "react-doctor");
-          await applyReactDoctorSkills(skillsDir);
           const hookDest = path.join(ctx.companionPath, ".claude", "hooks", "react-doctor.sh");
           await fs.mkdir(path.dirname(hookDest), { recursive: true });
           await fs.copyFile(CLAUDE_HOOK_SRC, hookDest);
           await fs.chmod(hookDest, 0o755);
         },
         async teardown(ctx: SetupContext) {
-          await teardownReactDoctorSkills(
-            path.join(ctx.companionPath, ".claude", "skills", "react-doctor"),
-            ctx.companionPath,
-          );
           try {
             await fs.unlink(path.join(ctx.companionPath, ".claude", "hooks", "react-doctor.sh"));
           } catch {
@@ -76,19 +89,6 @@ export function createReactDoctorPlugin(): CapabilityPlugin {
           }
           await pruneEmptyAncestors(
             path.join(ctx.companionPath, ".claude", "hooks"),
-            ctx.companionPath,
-          );
-        },
-      },
-      opencode: {
-        async apply(ctx: SetupContext) {
-          await applyReactDoctorSkills(
-            path.join(ctx.companionPath, ".opencode", "skills", "react-doctor"),
-          );
-        },
-        async teardown(ctx: SetupContext) {
-          await teardownReactDoctorSkills(
-            path.join(ctx.companionPath, ".opencode", "skills", "react-doctor"),
             ctx.companionPath,
           );
         },

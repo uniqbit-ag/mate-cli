@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type { CapabilityPlugin, SetupContext } from "../plugin";
+import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
 import {
   isCommandOnPath,
@@ -11,7 +11,23 @@ import {
 } from "../utils";
 import { confirm } from "../../../cli/confirm";
 import { FRAMEWORK_NAME } from "../../../framework";
+import { getWrapperBinPath } from "../../../lib/package-paths";
 import { isInstalledViaUvTool } from "../package-managers/uv";
+import { stripSectionFromFile } from "../providers/agent-file-sections";
+import { graphifySectionOptions } from "./graphify-shared";
+export { removeGraphifySection } from "./graphify-shared";
+import {
+  mergeClaudeSettingsJsonHooks,
+  patchClaudeSkillTree,
+  removeClaudeHookGroupsWhere,
+  stripClaudeForeignSections,
+} from "../providers/claude";
+import type { ClaudeHookGroup } from "../providers/claude-format";
+import {
+  patchOpenCodeSkillTree,
+  removeOpenCodeForeignPluginReferences,
+  stripOpenCodeForeignSections,
+} from "../providers/opencode";
 
 // Storage contract: <companionPath>/.graphify/<repositoryId>/graphify-out/
 export const GRAPHIFY_STORE_SEGMENT = ".graphify";
@@ -43,30 +59,7 @@ const GRAPHIFY_PROVIDER_DIRS: Record<string, string> = {
 export const GRAPHIFY_COMPANION_OUT_PREFIX =
   "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/";
 
-// Marker names derive from the framework identity, never the invocation name.
-const GRAPHIFY_START = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:START -->`;
-const GRAPHIFY_END = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:END -->`;
-
-// Per-provider root agent instruction files used for graphify cleanup on teardown.
-const GRAPHIFY_AGENT_FILES: Record<string, string> = {
-  claude: "CLAUDE.md",
-  opencode: "AGENTS.md",
-};
-
 export const GRAPHIFY_SUPPORTED_PROVIDERS = Object.keys(GRAPHIFY_PROVIDER_DIRS);
-
-interface ClaudeHookCommand {
-  type?: string;
-  command?: string;
-  args?: string[];
-}
-
-interface ClaudeHookGroup {
-  matcher?: string;
-  hooks?: ClaudeHookCommand[];
-}
-
-type ClaudeHookMap = Record<string, ClaudeHookGroup[]>;
 
 const CLAUDE_MANAGED_HOOK_COMMAND_SUFFIXES = new Set([
   "/.claude/hooks/validate-artifact-path",
@@ -77,29 +70,6 @@ const CLAUDE_MANAGED_HOOK_COMMAND_SUFFIXES = new Set([
 
 export function deriveGraphifyProviders(activeProviders: string[]): string[] {
   return GRAPHIFY_SUPPORTED_PROVIDERS.filter((p) => activeProviders.includes(p));
-}
-
-function isGraphifyHeading(line: string): boolean {
-  return /^#{1,6}\s+graphify\s*$/i.test(line);
-}
-
-function stripGraphifyMarkers(lines: string[]): string[] {
-  return lines.filter((line) => line !== GRAPHIFY_START() && line !== GRAPHIFY_END());
-}
-
-function findGraphifySectionBounds(lines: string[]): { start: number; end: number } | null {
-  const start = lines.findIndex(isGraphifyHeading);
-  if (start === -1) return null;
-
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (lines[i].startsWith("## ") || lines[i].startsWith("# ")) {
-      end = i;
-      break;
-    }
-  }
-
-  return { start, end };
 }
 
 // graphifyy's `graphify install` emits a skill whose pipeline writes to a
@@ -133,99 +103,7 @@ export function rewriteGraphifySkillOutputPaths(content: string): string {
 // Reference files whose graphify-out/ paths are intentionally cwd-relative or
 // point at external/cloned repos (e.g. multi-repo merge) and must NOT be
 // rewritten to the companion store.
-const GRAPHIFY_SKILL_REWRITE_EXCLUDE = new Set(["github-and-merge.md"]);
-
-async function patchGraphifySkillFile(skillPath: string): Promise<void> {
-  let content: string;
-  try {
-    content = await fs.readFile(skillPath, "utf8");
-  } catch {
-    return; // file absent (graphify binary not installed) — nothing to patch
-  }
-  const rewritten = rewriteGraphifySkillOutputPaths(content);
-  if (rewritten !== content) await fs.writeFile(skillPath, rewritten, "utf8");
-}
-
-// Rewrite output paths across the installed skill: SKILL.md plus every
-// references/*.md (excluding GRAPHIFY_SKILL_REWRITE_EXCLUDE). Directory-driven
-// so reference files graphifyy adds in future releases are covered automatically.
-async function patchGraphifySkillTree(skillDir: string): Promise<void> {
-  await patchGraphifySkillFile(path.join(skillDir, "SKILL.md"));
-
-  const refsDir = path.join(skillDir, "references");
-  let entries: string[];
-  try {
-    entries = await fs.readdir(refsDir);
-  } catch {
-    return; // no references/ dir
-  }
-  const targets = entries.filter(
-    (name) => name.endsWith(".md") && !GRAPHIFY_SKILL_REWRITE_EXCLUDE.has(name),
-  );
-  await Promise.all(targets.map((name) => patchGraphifySkillFile(path.join(refsDir, name))));
-}
-
-// Removes the graphify section from content, collapsing leftover blank lines.
-export function removeGraphifySection(content: string): string {
-  const normalizedLines = stripGraphifyMarkers(content.split("\n"));
-  const bounds = findGraphifySectionBounds(normalizedLines);
-  if (!bounds) {
-    const strippedMarkersOnly = normalizedLines.join("\n");
-    return strippedMarkersOnly === content ? content : strippedMarkersOnly;
-  }
-
-  const remaining = [
-    ...normalizedLines.slice(0, bounds.start),
-    ...normalizedLines.slice(bounds.end),
-  ].join("\n");
-  const collapsed = remaining.replace(/\n{3,}/g, "\n\n").trim();
-  return collapsed ? collapsed + "\n" : "";
-}
-
-async function stripAgentFile(filePath: string): Promise<void> {
-  let content: string;
-  try {
-    content = await fs.readFile(filePath, "utf8");
-  } catch {
-    return;
-  }
-  const stripped = removeGraphifySection(content);
-  if (stripped === content) return;
-  if (!stripped.trim()) {
-    await fs.unlink(filePath);
-  } else {
-    await fs.writeFile(filePath, stripped, "utf8");
-  }
-}
-
-async function stripLegacyClaudeGraphifyFile(companionPath: string): Promise<void> {
-  const legacyPath = path.join(companionPath, ".claude", "CLAUDE.md");
-  await stripAgentFile(legacyPath);
-  await pruneEmptyAncestors(path.join(companionPath, ".claude"), companionPath);
-}
-
-function hookEntryKey(entry: ClaudeHookGroup): string {
-  return JSON.stringify(entry);
-}
-
-function mergeClaudeHookGroups(
-  existingHooks: ClaudeHookMap,
-  incomingHooks: ClaudeHookMap,
-): ClaudeHookMap {
-  const merged: ClaudeHookMap = { ...existingHooks };
-  for (const [event, entries] of Object.entries(incomingHooks)) {
-    const current = merged[event] ?? [];
-    const seen = new Set(current.map(hookEntryKey));
-    merged[event] = [...current];
-    for (const entry of entries ?? []) {
-      const key = hookEntryKey(entry);
-      if (seen.has(key)) continue;
-      merged[event].push(entry);
-      seen.add(key);
-    }
-  }
-  return merged;
-}
+const GRAPHIFY_SKILL_REWRITE_EXCLUDE = ["github-and-merge.md"];
 
 function isMateManagedClaudeHookCommand(command: string): boolean {
   for (const suffix of CLAUDE_MANAGED_HOOK_COMMAND_SUFFIXES) {
@@ -249,65 +127,8 @@ function isGraphifyClaudeHookGroup(entry: ClaudeHookGroup): boolean {
   });
 }
 
-async function removeGraphifyClaudeHooks(companionPath: string): Promise<void> {
-  const settingsLocalPath = path.join(companionPath, ".claude", "settings.local.json");
-
-  try {
-    const raw = await fs.readFile(settingsLocalPath, "utf8");
-    const settings = JSON.parse(raw) as { hooks?: ClaudeHookMap } & Record<string, unknown>;
-    const existingHooks = settings.hooks ?? {};
-    let changed = false;
-
-    for (const [event, existingEntries] of Object.entries(existingHooks)) {
-      if (!existingEntries?.length) continue;
-      const nextEntries = existingEntries.filter((entry) => !isGraphifyClaudeHookGroup(entry));
-
-      if (nextEntries.length !== existingEntries.length) {
-        changed = true;
-        if (nextEntries.length > 0) {
-          existingHooks[event] = nextEntries;
-        } else {
-          delete existingHooks[event];
-        }
-      }
-    }
-
-    if (Object.keys(existingHooks).length === 0) {
-      if (Object.prototype.hasOwnProperty.call(settings, "hooks")) changed = true;
-      delete settings.hooks;
-    } else {
-      settings.hooks = existingHooks;
-    }
-
-    if (changed) {
-      await fs.writeFile(settingsLocalPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
-    }
-  } catch {
-    /* settings absent or malformed */
-  }
-}
-
-async function removeOpenCodePlugin(filePath: string): Promise<void> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(filePath, "utf8");
-  } catch {
-    return;
-  }
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (Array.isArray(parsed.plugin)) {
-      parsed.plugin = (parsed.plugin as string[]).filter((p) => !p.includes("graphify"));
-      if ((parsed.plugin as string[]).length === 0) delete parsed.plugin;
-    }
-    if (Object.keys(parsed).length === 0) {
-      await fs.unlink(filePath);
-    } else {
-      await fs.writeFile(filePath, JSON.stringify(parsed, null, 2) + "\n", "utf8");
-    }
-  } catch {
-    // JSON parse error — leave file untouched
-  }
+function isGraphifyPluginReference(entry: unknown): boolean {
+  return typeof entry === "string" && entry.includes("graphify");
 }
 
 type GraphifyRunCommand = typeof runShellCommand;
@@ -336,6 +157,22 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
       "Enable Graphify code graph analysis with companion-managed wrappers for supported agent sessions.",
     defaultSelected: false,
     isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "graphify"),
+    // Permission pre-seeds are declared and reconciled by the Claude Runtime
+    // Surface. The graphify skill trees and agent-file sections are written by
+    // the external `graphify install` CLI, so they are reconciled through the
+    // Runtime Surface escape hatch below instead of declarations.
+    getRuntimeContributions(): RuntimeContributionsByRuntime {
+      return {
+        claude: {
+          permissionEntries: [
+            "Skill(graphify)",
+            "Bash(graphify:*)",
+            `Bash(${FRAMEWORK_NAME} cap graphify:*)`,
+            `Bash(${path.join(getWrapperBinPath(), "graphify")}:*)`,
+          ],
+        },
+      };
+    },
     gitignoreEntries: () => GRAPHIFY_GITIGNORE_ENTRIES,
     persistGitignoreEntries: true,
     getInstallRequirements: (): InstallRequirement[] => [
@@ -372,7 +209,10 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
     },
 
     async teardown(ctx: SetupContext) {
-      await stripAgentFile(path.join(ctx.companionPath, "AGENTS.md"));
+      await stripSectionFromFile(
+        path.join(ctx.companionPath, "AGENTS.md"),
+        graphifySectionOptions(),
+      );
       // Don't uninstall the global graphify binary — companion-managed files are
       // cleaned up per-provider in forProvider[].teardown. Graph data under
       // .graphify/ is retained as user data.
@@ -383,8 +223,6 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
         providerId,
         {
           async apply(ctx: SetupContext) {
-            const providerDir = GRAPHIFY_PROVIDER_DIRS[providerId];
-
             // Reconcile Graphify-managed provider assets from the companion root
             const isInstalled =
               checkPath("graphify", process.env.PATH ?? "") || checkUvTool("graphifyy");
@@ -395,93 +233,54 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
                 { cwd: ctx.companionPath },
               );
 
-              // graphify install writes a ## graphify section to the agent file.
-              // Strip it since guidance is now delivered at runtime via system prompt.
-              const agentFile = GRAPHIFY_AGENT_FILES[providerId];
-              if (agentFile) {
-                // `graphify install` runs with cwd=companionPath, so it writes the
-                // section to the companion root agent file (CLAUDE.md / AGENTS.md).
-                // Strip there. Also strip the per-provider path in case a future
-                // graphify release targets it instead.
-                await stripAgentFile(path.join(ctx.companionPath, agentFile));
-                await stripAgentFile(path.join(ctx.companionPath, providerDir, agentFile));
-
-                // Also strip from the repo-level files when syncing from a linked repo.
-                if (ctx.repoPath) {
-                  await stripAgentFile(path.join(ctx.repoPath, agentFile));
-                }
-              }
-
-              // graphify install also writes "plugin": [".opencode/plugins/graphify.js"]
-              // to opencode.json. Because the config lives inside companionPath/.opencode/,
-              // the relative path resolves to companionPath/.opencode/.opencode/plugins/
-              // (double .opencode) — a broken path. Opencode auto-discovers plugins from
-              // plugins/ anyway, so strip the explicit entry to avoid duplicate loading.
-              if (providerId === "opencode") {
-                await removeOpenCodePlugin(
-                  path.join(ctx.companionPath, ".opencode", "opencode.json"),
-                );
-              }
-
-              // graphify install writes .claude/settings.json with hook guards.
-              // Merge its hooks into settings.local.json (where hooks are managed),
-              // then remove the tracked file.
+              // graphify install writes a ## graphify section to the agent
+              // files (companion root, per-provider dir, and — when syncing
+              // from a linked repo — the repo file). Strip them through the
+              // escape hatch since guidance is delivered via system prompt.
               if (providerId === "claude") {
-                const settingsJsonPath = path.join(ctx.companionPath, ".claude", "settings.json");
-                const settingsLocalPath = path.join(
+                await stripClaudeForeignSections(ctx.companionPath, {
+                  ...graphifySectionOptions(),
+                  repoPath: ctx.repoPath,
+                });
+
+                // graphify install writes .claude/settings.json with hook
+                // guards; absorb them into the Mate-owned settings document.
+                await mergeClaudeSettingsJsonHooks(ctx.companionPath);
+              }
+
+              if (providerId === "opencode") {
+                await stripOpenCodeForeignSections(ctx.companionPath, {
+                  ...graphifySectionOptions(),
+                  repoPath: ctx.repoPath,
+                });
+
+                // graphify install also writes "plugin": [".opencode/plugins/graphify.js"]
+                // to opencode.json. Because the config lives inside companionPath/.opencode/,
+                // the relative path resolves to companionPath/.opencode/.opencode/plugins/
+                // (double .opencode) — a broken path. Opencode auto-discovers plugins from
+                // plugins/ anyway, so strip the explicit entry to avoid duplicate loading.
+                await removeOpenCodeForeignPluginReferences(
                   ctx.companionPath,
-                  ".claude",
-                  "settings.local.json",
+                  isGraphifyPluginReference,
                 );
-                try {
-                  const settingsJsonRaw = await fs.readFile(settingsJsonPath, "utf8");
-                  const settingsJson = JSON.parse(settingsJsonRaw) as {
-                    hooks?: ClaudeHookMap;
-                  } & Record<string, unknown>;
-
-                  const settingsLocalRaw = await fs.readFile(settingsLocalPath, "utf8");
-                  const settingsLocal = JSON.parse(settingsLocalRaw) as {
-                    hooks?: ClaudeHookMap;
-                  } & Record<string, unknown>;
-
-                  if (settingsJson.hooks && Object.keys(settingsJson.hooks).length > 0) {
-                    settingsLocal.hooks = mergeClaudeHookGroups(
-                      settingsLocal.hooks ?? {},
-                      settingsJson.hooks,
-                    );
-                  }
-
-                  await fs.writeFile(
-                    settingsLocalPath,
-                    JSON.stringify(settingsLocal, null, 2) + "\n",
-                    "utf8",
-                  );
-                } catch {
-                  /* settings files absent or malformed — just remove settings.json */
-                }
-                try {
-                  await fs.unlink(settingsJsonPath);
-                } catch {
-                  /* not present */
-                }
               }
             }
 
             // Redirect the freshly-installed skill's cwd-relative graphify-out/
             // paths (SKILL.md + references) to the companion-local store. Runs
             // every setup/sync so it survives graphifyy regenerating the skill.
-            await patchGraphifySkillTree(
-              path.join(ctx.companionPath, providerDir, "skills", "graphify"),
-            );
+            const patchSkillTree =
+              providerId === "claude" ? patchClaudeSkillTree : patchOpenCodeSkillTree;
+            await patchSkillTree(ctx.companionPath, "graphify", rewriteGraphifySkillOutputPaths, {
+              excludeFiles: GRAPHIFY_SKILL_REWRITE_EXCLUDE,
+            });
           },
 
           async teardown(ctx: SetupContext) {
             const providerDir = GRAPHIFY_PROVIDER_DIRS[providerId];
 
-            if (deriveGraphifyProviders(ctx.activeProviders).length === 0) {
-            }
-
-            // Remove Graphify-managed skills directory
+            // Remove the Graphify-managed skills directory (written by the
+            // external CLI, so removed here rather than via a declaration).
             try {
               await fs.rm(path.join(ctx.companionPath, providerDir, "skills", "graphify"), {
                 recursive: true,
@@ -495,23 +294,17 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
               ctx.companionPath,
             );
 
-            // Strip the ## graphify section from the provider's agent instruction file,
-            // but only when no other active provider also uses the same file.
-            const agentFile = GRAPHIFY_AGENT_FILES[providerId];
-            if (agentFile) {
-              const sharedWithActive = GRAPHIFY_SUPPORTED_PROVIDERS.some(
-                (otherId) =>
-                  otherId !== providerId &&
-                  GRAPHIFY_AGENT_FILES[otherId] === agentFile &&
-                  ctx.activeProviders.includes(otherId),
-              );
-              if (!sharedWithActive) {
-                await stripAgentFile(path.join(ctx.companionPath, agentFile));
-              }
-            }
-
-            // Provider-specific cleanup for files beyond skills/
-            if (providerId === "opencode") {
+            // Strip the ## graphify section and provider-specific foreign
+            // config through the escape hatch. The shared AGENTS.md is kept
+            // while another active runtime still uses it.
+            if (providerId === "claude") {
+              await stripClaudeForeignSections(ctx.companionPath, graphifySectionOptions());
+              await removeClaudeHookGroupsWhere(ctx.companionPath, isGraphifyClaudeHookGroup);
+            } else if (providerId === "opencode") {
+              await stripOpenCodeForeignSections(ctx.companionPath, {
+                ...graphifySectionOptions(),
+                guardSharedFile: { activeProviders: ctx.activeProviders },
+              });
               try {
                 await fs.unlink(
                   path.join(ctx.companionPath, ".opencode", "plugins", "graphify.js"),
@@ -519,16 +312,14 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
               } catch {
                 /* not present */
               }
-              await removeOpenCodePlugin(
-                path.join(ctx.companionPath, ".opencode", "opencode.json"),
+              await removeOpenCodeForeignPluginReferences(
+                ctx.companionPath,
+                isGraphifyPluginReference,
               );
               await pruneEmptyAncestors(
                 path.join(ctx.companionPath, ".opencode", "plugins"),
                 ctx.companionPath,
               );
-            } else if (providerId === "claude") {
-              await removeGraphifyClaudeHooks(ctx.companionPath);
-              await stripLegacyClaudeGraphifyFile(ctx.companionPath);
             }
           },
         },

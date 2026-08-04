@@ -1,3 +1,4 @@
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -20,6 +21,20 @@ import {
 import type { SetupContext } from "./setup/plugin";
 
 const tempRoots: string[] = [];
+
+// Guard stubs: executeSetup runs teardown for every deselected capability, and
+// the rtk/tokensave teardowns shell out to whatever binary is on PATH
+// (`rtk init -g --uninstall` edits the developer's real global agent config).
+// Shadow both binaries for the whole file so no test can reach the real ones.
+const guardBinDir = mkdtempSync(path.join(os.tmpdir(), "mate-setup-guard-bin-"));
+mkdirSync(guardBinDir, { recursive: true });
+for (const name of ["rtk", "tokensave"]) {
+  const stubPath = path.join(guardBinDir, name);
+  writeFileSync(stubPath, "#!/bin/sh\nexit 0\n", "utf8");
+  chmodSync(stubPath, 0o755);
+}
+process.env.PATH = `${guardBinDir}${path.delimiter}${process.env.PATH ?? ""}`;
+
 const originalPath = process.env.PATH;
 
 // Setup would otherwise pre-fetch the pinned OpenCode plugin package into the

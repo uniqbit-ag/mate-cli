@@ -10,8 +10,25 @@ import {
   warmOpenCodePluginCache,
 } from "../../../lib/opencode-plugin-package";
 import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
-import type { McpServerDescriptor, ProviderPlugin, SetupContext } from "../plugin";
-import { pruneEmptyAncestors } from "../utils";
+import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
+import { patchSkillTreeMarkdownFiles } from "./skill-tree";
+import {
+  instructionBlockKey,
+  removeManagedBlocksForPlugin,
+  upsertManagedBlock,
+} from "../context-services";
+import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "../plugin";
+import { mergeDir, pruneEmptyAncestors } from "../utils";
+import {
+  getOpenCodePluginReferences,
+  isRecord,
+  readOpenCodeConfig,
+  setOpenCodePluginReferences,
+  toOpenCodeMcpEntry,
+  updateOpenCodeMcpServer,
+  writeOpenCodeConfig,
+  type OpenCodeConfig,
+} from "./opencode-format";
 import { getSetupProvidersRoot, getSetupRootTemplates } from "./utils";
 
 // Copied Mate plugin source files from earlier releases. Plugin code is
@@ -45,10 +62,6 @@ const LEGACY_TUI_DEPENDENCIES = {
   "@opentui/keymap": "^0.3.4",
   "@opentui/solid": "^0.3.4",
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function mergeConfigDefaults(
   target: Record<string, unknown>,
@@ -100,25 +113,20 @@ function isLegacyMatePluginConfigEntry(entry: unknown): boolean {
  * references) with the current pinned package reference while preserving
  * every unrelated plugin entry.
  */
-function ensureMatePluginReference(config: Record<string, unknown>, pluginReference: string): void {
-  const existing = Array.isArray(config.plugin) ? config.plugin : [];
-  const preserved = existing.filter(
+function ensureMatePluginReference(config: OpenCodeConfig, pluginReference: string): void {
+  const preserved = getOpenCodePluginReferences(config).filter(
     (entry) => !isMateOpenCodePluginReference(entry) && !isLegacyMatePluginConfigEntry(entry),
   );
-  config.plugin = [...preserved, pluginReference];
+  setOpenCodePluginReferences(config, [...preserved, pluginReference]);
 }
 
-function stripMatePluginReference(config: Record<string, unknown>): void {
+function stripMatePluginReference(config: OpenCodeConfig): void {
   if (!Array.isArray(config.plugin)) return;
 
-  const preserved = config.plugin.filter(
+  const preserved = getOpenCodePluginReferences(config).filter(
     (entry) => !isMateOpenCodePluginReference(entry) && !isLegacyMatePluginConfigEntry(entry),
   );
-  if (preserved.length === 0) {
-    delete config.plugin;
-    return;
-  }
-  config.plugin = preserved;
+  setOpenCodePluginReferences(config, preserved);
 }
 
 async function syncOpenCodeConfigFile(
@@ -140,7 +148,7 @@ async function syncOpenCodeConfigFile(
 
   mergeConfigDefaults(existing, defaults);
   ensureMatePluginReference(existing, pluginReference);
-  await fs.writeFile(destPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+  await writeOpenCodeConfig(destPath, existing);
 }
 
 function normalizeForComparison(value: unknown): unknown {
@@ -187,7 +195,7 @@ async function teardownOpenCodeConfigFile(srcPath: string, destPath: string): Pr
     return;
   }
 
-  await fs.writeFile(destPath, JSON.stringify(existing, null, 2) + "\n", "utf8");
+  await writeOpenCodeConfig(destPath, existing);
 }
 
 async function removeLegacyTuiDependencies(dest: string): Promise<void> {
@@ -326,55 +334,149 @@ function getCompanionOpenCodeConfigPath(companionPath: string): string {
   return path.join(companionPath, ".opencode", "opencode.json");
 }
 
-function opencodeMcpEntry(descriptor: McpServerDescriptor): Record<string, unknown> {
-  if (descriptor.url) {
-    return { type: "remote", url: descriptor.url, enabled: true };
-  }
-  return {
-    type: "local",
-    command: [descriptor.command ?? "", ...(descriptor.args ?? [])].filter(Boolean),
-    ...(descriptor.env ? { environment: descriptor.env } : {}),
-    enabled: true,
-  };
-}
+// ---------------------------------------------------------------------------
+// Runtime Surface escape hatch (spec: runtime-surface). Imperative operations
+// for effects a declaration cannot express. Format knowledge stays here;
+// capabilities pass only predicates.
+// ---------------------------------------------------------------------------
 
-// Reconcile a single Mate-managed MCP server in `.opencode/opencode.json`
-// while preserving every unrelated key. `entry: null` removes the server.
-async function updateCompanionOpenCodeMcpServer(
+/** Patch markdown files of an externally written `.opencode/skills/<name>` tree. */
+export async function patchOpenCodeSkillTree(
   companionPath: string,
   name: string,
-  entry: Record<string, unknown> | null,
+  transform: (content: string) => string,
+  options: { excludeFiles?: readonly string[] } = {},
+): Promise<void> {
+  await patchSkillTreeMarkdownFiles(
+    path.join(companionPath, ".opencode", "skills", name),
+    transform,
+    new Set(options.excludeFiles ?? []),
+  );
+}
+
+/**
+ * Strip a foreign heading section from the OpenCode guidance surfaces: the
+ * shared root AGENTS.md, the per-provider `.opencode/AGENTS.md`, and — when
+ * syncing from a linked repo — the repo-level AGENTS.md. With
+ * `guardSharedFile`, the shared root file is left alone while another active
+ * runtime (Claude) still uses it.
+ */
+export async function stripOpenCodeForeignSections(
+  companionPath: string,
+  options: RemoveHeadingSectionOptions & {
+    repoPath?: string;
+    guardSharedFile?: { activeProviders: string[] };
+  },
+): Promise<void> {
+  const sharedWithActive = options.guardSharedFile?.activeProviders.includes("claude") ?? false;
+  if (!sharedWithActive) {
+    await stripSectionFromFile(path.join(companionPath, "AGENTS.md"), options);
+  }
+  await stripSectionFromFile(path.join(companionPath, ".opencode", "AGENTS.md"), options);
+  if (options.repoPath) {
+    await stripSectionFromFile(path.join(options.repoPath, "AGENTS.md"), options);
+  }
+}
+
+/**
+ * Remove plugin entries matching `isForeign` from `opencode.json`. A config
+ * left empty is deleted; malformed configs are left untouched.
+ */
+export async function removeOpenCodeForeignPluginReferences(
+  companionPath: string,
+  isForeign: (entry: unknown) => boolean,
 ): Promise<void> {
   const configPath = getCompanionOpenCodeConfigPath(companionPath);
-  let existing: Record<string, unknown> = {};
-  let present = false;
+  let raw: string;
   try {
-    const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as unknown;
-    if (isRecord(parsed)) {
-      existing = parsed;
-      present = true;
+    raw = await fs.readFile(configPath, "utf8");
+  } catch {
+    return;
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (Array.isArray(parsed.plugin)) {
+      setOpenCodePluginReferences(
+        parsed,
+        parsed.plugin.filter((entry) => !isForeign(entry)),
+      );
+    }
+    if (Object.keys(parsed).length === 0) {
+      await fs.unlink(configPath);
+    } else {
+      await writeOpenCodeConfig(configPath, parsed);
     }
   } catch {
-    // Absent or unparseable — start from an empty object.
+    // JSON parse error — leave file untouched
   }
-  if (entry === null && !present) return;
+}
 
-  const mcp: Record<string, unknown> = isRecord(existing.mcp) ? { ...existing.mcp } : {};
-  if (entry === null) {
-    if (!(name in mcp)) return;
-    delete mcp[name];
-  } else {
-    mcp[name] = entry;
-  }
+// ---------------------------------------------------------------------------
+// Runtime Surface reconciliation: apply/remove declared Capability
+// contributions (spec: runtime-surface). Managed identity: named MCP servers,
+// `isManagedReference` for plugin entries, managed guidance blocks, and named
+// skill trees.
+// ---------------------------------------------------------------------------
 
-  const next = { ...existing };
-  if (Object.keys(mcp).length > 0) {
-    next.mcp = mcp;
-  } else {
-    delete next.mcp;
+const OPENCODE_CONTRIBUTION_CONFIG_FILES = ["opencode.json", "tui.json"];
+
+export async function reconcileOpenCodeContributions(
+  ctx: SetupContext,
+  inputs: CapabilityContributionInput[],
+): Promise<void> {
+  const { companionPath } = ctx;
+
+  for (const input of inputs) {
+    for (const descriptor of input.contributions.mcpServers ?? []) {
+      await updateOpenCodeMcpServer(
+        getCompanionOpenCodeConfigPath(companionPath),
+        descriptor.name,
+        input.enabled ? toOpenCodeMcpEntry(descriptor) : null,
+      );
+    }
+
+    for (const pluginReference of input.contributions.pluginReferences ?? []) {
+      const configFiles = pluginReference.configFiles ?? OPENCODE_CONTRIBUTION_CONFIG_FILES;
+      for (const name of configFiles) {
+        const configPath = path.join(companionPath, ".opencode", name);
+        const { present, config } = await readOpenCodeConfig(configPath);
+        if (!input.enabled && !present) continue;
+        const preserved = getOpenCodePluginReferences(config).filter(
+          (entry) => !pluginReference.isManagedReference(entry),
+        );
+        setOpenCodePluginReferences(
+          config,
+          input.enabled ? [...preserved, pluginReference.reference] : preserved,
+        );
+        await writeOpenCodeConfig(configPath, config);
+      }
+    }
+
+    // Guidance sections are managed blocks in AGENTS.md. Capability disable
+    // strips them here; runtime teardown of the shared AGENTS.md is guarded in
+    // the provider teardown paths (kept while another active runtime uses it).
+    const guidancePath = path.join(companionPath, "AGENTS.md");
+    const sections = input.enabled ? (input.contributions.guidanceSections ?? []) : [];
+    const keepKeys = new Set<string>();
+    for (const section of sections) {
+      const blockKey = instructionBlockKey(input.pluginId, section.content);
+      keepKeys.add(blockKey);
+      await upsertManagedBlock(guidancePath, FRAMEWORK_NAME, blockKey, section.content);
+    }
+    if ((input.contributions.guidanceSections ?? []).length > 0) {
+      await removeManagedBlocksForPlugin(guidancePath, FRAMEWORK_NAME, input.pluginId, keepKeys);
+    }
+
+    for (const skillTree of input.contributions.skillTrees ?? []) {
+      const skillDir = path.join(companionPath, ".opencode", "skills", skillTree.name);
+      if (input.enabled) {
+        await mergeDir(skillTree.sourceDir, skillDir);
+      } else {
+        await fs.rm(skillDir, { recursive: true, force: true });
+        await pruneEmptyAncestors(path.join(companionPath, ".opencode", "skills"), companionPath);
+      }
+    }
   }
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.writeFile(configPath, JSON.stringify(next, null, 2) + "\n", "utf8");
 }
 
 export function createOpenCodePlugin(): ProviderPlugin {
@@ -387,15 +489,19 @@ export function createOpenCodePlugin(): ProviderPlugin {
     isEnabled: (config) => (config.allowedAgents ?? []).includes("opencode"),
     hosting: {
       mcp: {
-        async register(ctx: SetupContext, descriptor: McpServerDescriptor) {
-          await updateCompanionOpenCodeMcpServer(
-            ctx.companionPath,
+        async register(ctx: SetupContext, descriptor) {
+          await updateOpenCodeMcpServer(
+            getCompanionOpenCodeConfigPath(ctx.companionPath),
             descriptor.name,
-            opencodeMcpEntry(descriptor),
+            toOpenCodeMcpEntry(descriptor),
           );
         },
         async unregister(ctx: SetupContext, name: string) {
-          await updateCompanionOpenCodeMcpServer(ctx.companionPath, name, null);
+          await updateOpenCodeMcpServer(
+            getCompanionOpenCodeConfigPath(ctx.companionPath),
+            name,
+            null,
+          );
         },
       },
       instructions: {
