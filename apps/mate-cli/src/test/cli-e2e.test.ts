@@ -645,6 +645,7 @@ async function writeOpenSpecStub(scenario: E2EScenario): Promise<string> {
     "  }",
     "  process.exit(0);",
     "}",
+    "if (command === 'config' && args[1] === 'reset') process.exit(0);",
     "if (command === 'update' || command === 'templates') { process.exit(0); }",
     "process.exit(1);",
     "",
@@ -1115,16 +1116,20 @@ describe("mate CLI e2e", () => {
 
     const invocations = await readJson<Array<{ command: string; args: string[] }>>(capturePath);
     expect(invocations.map((entry) => entry.command)).toEqual([
+      "config",
       "init",
       "update",
+      "config",
       "init",
       "update",
+      "config",
       "init",
       "update",
     ]);
-    expect(invocations[0]?.args).toContain("opencode");
-    expect(invocations[2]?.args).toContain("claude,opencode");
-    expect(invocations[4]?.args).toContain("opencode");
+    expect(invocations[0]?.args).toEqual(["config", "reset", "--all", "-y"]);
+    expect(invocations[1]?.args).toContain("opencode");
+    expect(invocations[4]?.args).toContain("claude,opencode");
+    expect(invocations[7]?.args).toContain("opencode");
   });
 
   test("declined setup leaves no companion config or provider files behind", async () => {
@@ -1353,9 +1358,11 @@ describe("mate CLI e2e", () => {
 
     expect(result.exitCode).toBe(0);
     const invocations = await readJson<Array<{ cwd: string; args: string[] }>>(capturePath);
-    expect(invocations).toHaveLength(1);
+    expect(invocations).toHaveLength(2);
     expect(invocations[0]?.cwd).toBe(scenario.companion);
-    expect(invocations[0]?.args).toEqual(["update", "--force"]);
+    expect(invocations[0]?.args).toEqual(["config", "reset", "--all", "-y"]);
+    expect(invocations[1]?.cwd).toBe(scenario.companion);
+    expect(invocations[1]?.args).toEqual(["update", "--force"]);
   });
 
   test("cap openspec injects companion schema for templates when absent", async () => {
