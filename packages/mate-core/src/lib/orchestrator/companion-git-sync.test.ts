@@ -4,7 +4,13 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { CompanionGitSync, CompanionGitSyncError } from "./companion-git-sync";
+import {
+  CompanionGitSync,
+  CompanionGitSyncError,
+  companionGitSyncDeps,
+  describeGitFailure,
+  type GitRunner,
+} from "./companion-git-sync";
 
 const tempRoots: string[] = [];
 const managedRoots = [".mate", ".opencode", ".claude", ".agents", ".graphify"];
@@ -55,6 +61,38 @@ afterEach(async () => {
   await Promise.all(
     tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })),
   );
+});
+
+describe("describeGitFailure", () => {
+  test("strips carriage-return progress-meter noise and keeps diagnostic text", () => {
+    const stderr =
+      "Updating files:  76% (11340/14790)\rUpdating files: 100% (14790/14790), done.\nfatal: could not write file";
+    expect(describeGitFailure({ status: 1, stdout: "", stderr })).toBe(
+      "fatal: could not write file",
+    );
+  });
+
+  test("keeps real error lines untouched", () => {
+    const stderr =
+      "error: Your local changes to the following files would be overwritten by merge:\n\tnotes.md";
+    expect(describeGitFailure({ status: 1, stdout: "", stderr })).toBe(stderr);
+  });
+
+  test("falls back when output is only progress noise", () => {
+    const stderr =
+      "Updating files:   3% (12/400)\rUpdating files: 100% (400/400), done.\rChecking out files:  50% (2/4)";
+    expect(describeGitFailure({ status: 1, stdout: "", stderr })).toBe("unknown Git error");
+  });
+
+  test("falls back to sanitized stdout when stderr is empty", () => {
+    expect(
+      describeGitFailure({
+        status: 1,
+        stdout: "merge: unrelated - not something we can merge",
+        stderr: "",
+      }),
+    ).toBe("merge: unrelated - not something we can merge");
+  });
 });
 
 describe("CompanionGitSync", () => {
@@ -123,6 +161,40 @@ describe("CompanionGitSync", () => {
 
     expect(await fs.readFile(path.join(companion, "remote.md"), "utf8")).toBe("remote\n");
     await expect(fs.access(path.join(unrelated, "remote.md"))).rejects.toThrow();
+  });
+
+  test("merges with --no-stat --no-progress and reports changed via HEAD movement", async () => {
+    const { companion, upstream } = await makeRepository();
+    await fs.writeFile(path.join(upstream, "remote.md"), "remote\n");
+    git(upstream, "add", "remote.md");
+    git(upstream, "commit", "-qm", "remote");
+    git(upstream, "push", "-q");
+
+    const calls: string[][] = [];
+    const recording: GitRunner = async (args, cwd) => {
+      calls.push([...args]);
+      return companionGitSyncDeps.runGit(args, cwd);
+    };
+
+    const first = await new CompanionGitSync(recording).sync(companion);
+    const merge = calls.find((args) => args[0] === "merge");
+    expect(merge).toEqual(["merge", "origin/main", "--no-stat", "--no-progress", "--no-edit"]);
+    expect(first.changed).toBe(true);
+
+    const second = await new CompanionGitSync().sync(companion);
+    expect(second.changed).toBe(false);
+  });
+
+  test("captures Git output beyond 1 MiB without killing the process", async () => {
+    const { companion } = await makeRepository();
+    await fs.writeFile(path.join(companion, "big.txt"), "x".repeat(2 * 1024 * 1024));
+    git(companion, "add", "big.txt");
+    git(companion, "commit", "-qm", "big");
+
+    const result = await companionGitSyncDeps.runGit(["show", "HEAD:big.txt"], companion);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.length).toBeGreaterThan(1024 * 1024);
   });
 
   test("fetches and fast-forwards a companion behind origin/main", async () => {
@@ -261,6 +333,35 @@ describe("CompanionGitSync", () => {
     await expect(new CompanionGitSync().sync(companion)).rejects.toMatchObject({
       name: "CompanionGitSyncError",
       conflictingPaths: ["notes.md"],
+    });
+  });
+
+  test("discloses the preflight stash when sync fails after stashing", async () => {
+    const { companion, upstream } = await makeRepository();
+    await fs.writeFile(path.join(companion, "notes.md"), "local dirty\n");
+    await fs.writeFile(path.join(upstream, "notes.md"), "remote\n");
+    git(upstream, "add", "notes.md");
+    git(upstream, "commit", "-qm", "remote notes");
+    git(upstream, "push", "-q");
+
+    await expect(new CompanionGitSync().sync(companion)).rejects.toMatchObject({
+      name: "CompanionGitSyncError",
+      stashRef: expect.stringMatching(/^[0-9a-f]{40}$/),
+      message: expect.stringContaining("git stash apply"),
+    });
+  });
+
+  test("does not mention a stash when failing before one exists", async () => {
+    const { companion } = await makeRepository();
+    git(companion, "remote", "set-url", "origin", path.join(companion, "missing.git"));
+
+    const rejection = new CompanionGitSync().sync(companion);
+    await expect(rejection).rejects.toMatchObject({
+      name: "CompanionGitSyncError",
+      stashRef: undefined,
+    });
+    await rejection.catch((error: CompanionGitSyncError) => {
+      expect(error.message).not.toContain("git stash apply");
     });
   });
 

@@ -9,6 +9,9 @@ import { LaunchPreflightError } from "./types";
 
 const execFile = promisify(execFileCallback);
 
+/** Bounded but far above any diagnostic output; default 1 MiB kills git mid-merge on large trees. */
+const GIT_MAX_BUFFER = 64 * 1024 * 1024;
+
 export interface GitCommandResult {
   status: number;
   stdout: string;
@@ -26,15 +29,22 @@ export interface CompanionGitSyncResult {
 export class CompanionGitSyncError extends LaunchPreflightError {
   readonly companionPath: string;
   readonly conflictingPaths: string[];
+  readonly reason: string;
+  readonly recovery: string;
+  readonly stashRef: string | undefined;
 
   constructor(
     companionPath: string,
     reason: string,
     conflictingPaths: string[] = [],
     recovery = "Resolve or abort the Git operation, then retry the launch.",
+    stashRef?: string,
   ) {
     const conflicts = conflictingPaths.length
       ? `\n  Conflicting paths:\n${conflictingPaths.map((entry) => `    - ${entry}`).join("\n")}`
+      : "";
+    const stash = stashRef
+      ? `  Local changes were stashed as ${stashRef}. Recover with \`git stash apply ${stashRef}\` in the companion.`
       : "";
     super(
       [
@@ -42,6 +52,7 @@ export class CompanionGitSyncError extends LaunchPreflightError {
         `  Companion: ${companionPath}`,
         `  ${reason}`,
         conflicts,
+        stash,
         `  ${recovery}`,
         "  Bypass: `mate claude -- --no-git` or `mate opencode -- --no-git`.",
       ]
@@ -51,6 +62,9 @@ export class CompanionGitSyncError extends LaunchPreflightError {
     this.name = "CompanionGitSyncError";
     this.companionPath = companionPath;
     this.conflictingPaths = conflictingPaths;
+    this.reason = reason;
+    this.recovery = recovery;
+    this.stashRef = stashRef;
   }
 }
 
@@ -68,6 +82,7 @@ export const companionGitSyncDeps: { runGit: GitRunner } = {
         cwd,
         encoding: "utf8",
         env: gitEnv,
+        maxBuffer: GIT_MAX_BUFFER,
       });
       return { status: 0, stdout: String(result.stdout), stderr: String(result.stderr) };
     } catch (error) {
@@ -104,6 +119,21 @@ function outputLines(stdout: string): string[] {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+/** Matches Git progress-meter lines such as `Updating files:  76% (11340/14790)` or `..., done.` */
+const GIT_PROGRESS_LINE = /^\S.*?: +\d+% \(\d+\/\d+\)(?:, done\.)?$/;
+
+function stripGitProgress(text: string): string {
+  return text
+    .split(/\r\n|\r|\n/)
+    .filter((line) => !GIT_PROGRESS_LINE.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
+export function describeGitFailure(result: GitCommandResult): string {
+  return stripGitProgress(result.stderr) || stripGitProgress(result.stdout) || "unknown Git error";
 }
 
 export class CompanionGitSync {
@@ -160,7 +190,42 @@ export class CompanionGitSync {
       stashRef = ref.stdout.trim();
     }
 
-    const merge = await this.command(companionPath, ["merge", target.ref, "--no-edit"]);
+    const headBefore = await this.command(companionPath, ["rev-parse", "HEAD"]);
+    try {
+      await this.mergeAndRestore(companionPath, target, stashRef);
+    } catch (error) {
+      if (stashRef && error instanceof CompanionGitSyncError && !error.stashRef) {
+        throw new CompanionGitSyncError(
+          error.companionPath,
+          error.reason,
+          error.conflictingPaths,
+          error.recovery,
+          stashRef,
+        );
+      }
+      throw error;
+    }
+
+    const headAfter = await this.command(companionPath, ["rev-parse", "HEAD"]);
+    return {
+      skipped: false,
+      changed: headBefore.stdout.trim() !== headAfter.stdout.trim(),
+      companionPath,
+    };
+  }
+
+  private async mergeAndRestore(
+    companionPath: string,
+    target: SyncTarget,
+    stashRef: string | undefined,
+  ): Promise<void> {
+    const merge = await this.command(companionPath, [
+      "merge",
+      target.ref,
+      "--no-stat",
+      "--no-progress",
+      "--no-edit",
+    ]);
     if (merge.status !== 0) {
       await this.resolveManagedConflicts(companionPath, target.ref);
       const conflicts = await this.unresolvedPaths(companionPath);
@@ -220,12 +285,6 @@ export class CompanionGitSync {
       // Keep the stash if dropping it fails; it remains a recoverable backup.
       await this.command(companionPath, ["stash", "drop", stashRef]);
     }
-
-    return {
-      skipped: false,
-      changed: merge.status === 0 && merge.stdout.trim() !== "",
-      companionPath,
-    };
   }
 
   private async assertSafeCompanionRoot(
@@ -410,7 +469,7 @@ export class CompanionGitSync {
   }
 
   private detail(result: GitCommandResult): string {
-    return (result.stderr || result.stdout || "unknown Git error").trim();
+    return describeGitFailure(result);
   }
 
   private failure(
