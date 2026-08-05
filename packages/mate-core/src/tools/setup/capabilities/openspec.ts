@@ -134,6 +134,16 @@ async function reconcileOpenSpecTools(
 ): Promise<void> {
   const tools = deriveOpenSpecTools(ctx.activeProviders);
   if (tools.length === 0) return;
+  /** Best-effort: `config reset` is missing on older openspec releases. */
+  try {
+    await runCommand("openspec", ["config", "reset", "--all", "-y"], {
+      cwd: ctx.companionPath,
+    });
+  } catch (error) {
+    process.stderr.write(
+      `openspec config reset skipped: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+  }
 
   await runCommand("openspec", ["init", "--tools", tools.join(","), "--force", ctx.companionPath], {
     cwd: ctx.companionPath,

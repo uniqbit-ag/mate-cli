@@ -132,6 +132,7 @@ describe("runPluginInstallCommand", () => {
 
     const ok = await runPluginInstallCommand(["@acme/custom-plugin@1.2.0"], {
       installDeps: fakeInstall(() => "1.2.0"),
+      setupHub: async () => {},
     });
 
     expect(ok).toBe(true);

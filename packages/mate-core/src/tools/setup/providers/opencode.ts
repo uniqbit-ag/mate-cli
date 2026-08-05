@@ -426,15 +426,14 @@ export async function reconcileOpenCodeContributions(
 ): Promise<void> {
   const { companionPath } = ctx;
 
-  for (const input of inputs) {
-    for (const descriptor of input.contributions.mcpServers ?? []) {
-      await updateOpenCodeMcpServer(
-        getCompanionOpenCodeConfigPath(companionPath),
-        descriptor.name,
-        input.enabled ? toOpenCodeMcpEntry(descriptor) : null,
-      );
-    }
+  if (ctx.scope === "hub") {
+    await reconcileOpenCodeMcpContributions(ctx, inputs);
+    return;
+  }
 
+  await reconcileOpenCodeMcpContributions(ctx, inputs);
+
+  for (const input of inputs) {
     for (const pluginReference of input.contributions.pluginReferences ?? []) {
       const configFiles = pluginReference.configFiles ?? OPENCODE_CONTRIBUTION_CONFIG_FILES;
       for (const name of configFiles) {
@@ -479,6 +478,22 @@ export async function reconcileOpenCodeContributions(
   }
 }
 
+/** Reconcile only MCP entries without touching OpenCode plugins or guidance. */
+async function reconcileOpenCodeMcpContributions(
+  ctx: SetupContext,
+  inputs: CapabilityContributionInput[],
+): Promise<void> {
+  for (const input of inputs) {
+    for (const descriptor of input.contributions.mcpServers ?? []) {
+      await updateOpenCodeMcpServer(
+        getCompanionOpenCodeConfigPath(ctx.companionPath),
+        descriptor.name,
+        input.enabled ? toOpenCodeMcpEntry(descriptor) : null,
+      );
+    }
+  }
+}
+
 export function createOpenCodePlugin(): ProviderPlugin {
   return {
     id: "opencode",
@@ -509,6 +524,7 @@ export function createOpenCodePlugin(): ProviderPlugin {
       },
     },
     async apply(ctx: SetupContext) {
+      if (ctx.scope === "hub") return;
       await syncOpenCodeRuntimeFiles(
         path.join(getSetupProvidersRoot(), "opencode"),
         ctx.companionPath,

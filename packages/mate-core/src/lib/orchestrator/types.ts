@@ -96,8 +96,8 @@ export type PluginDeclarationPolicy = "default" | "optional";
 /**
  * A companion-declared npm plugin: installed by setup/install into the
  * companion's own shared plugin workspace (`.mate/plugins/`) and loaded
- * from there on every invocation. Declaration registers the plugin;
- * enablement stays in the `capabilities` list.
+ * from there on every invocation. Declaration both registers and activates
+ * the plugin; dynamic plugins do not need a separate `capabilities` entry.
  */
 export interface PluginDeclaration {
   /** npm package name (e.g. `@acme/custom-plugin`). */

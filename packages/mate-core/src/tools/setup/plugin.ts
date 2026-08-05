@@ -2,11 +2,15 @@ import type { FrameworkConfig, LinkedRepository } from "../../lib/orchestrator/t
 import type { InstallRequirement, InstallRequirementContext } from "./install-contract";
 import type { ClaudeHookGroup } from "./providers/claude-format";
 
+export type SetupScope = "companion" | "hub";
+
 export interface SetupContext {
   companionPath: string;
   config: FrameworkConfig;
   mode: "setup" | "sync";
   activeProviders: string[];
+  /** Hub setup runs providers but excludes companion-only surfaces. */
+  scope?: SetupScope;
   /** Working repository path when syncing from a linked repo (e.g. during launch). */
   repoPath?: string;
   /**

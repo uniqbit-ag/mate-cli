@@ -16,6 +16,7 @@ import {
   updateHubPlugins,
 } from "./companion-hub";
 import { ConfigStore } from "./config-store";
+import type { FrameworkConfig } from "./types";
 
 const tempRoots: string[] = [];
 
@@ -78,7 +79,7 @@ describe("companion hub lifecycle", () => {
     const config = await new ConfigStore(
       path.join(root, ".mate", "config", "framework.yaml"),
     ).load();
-    expect(config.allowedAgents).toEqual([]);
+    expect(config.allowedAgents).toEqual(["claude", "opencode"]);
     expect(config.packageManagers).toEqual([]);
     expect(config.capabilities).toEqual([]);
     expect(config.hub).toEqual({ companions: [] });
@@ -235,6 +236,7 @@ describe("companion hub lifecycle", () => {
         runNpmUpdate: async () => ({ ok: true }),
       },
       hydrate: async ({ companionPath }) => hydrated.push(companionPath),
+      setup: async () => {},
     });
 
     expect(updated).toEqual([
@@ -244,5 +246,25 @@ describe("companion hub lifecycle", () => {
     expect(await fs.readFile(path.join(childWorkspace, "child-marker"), "utf8")).toBe(
       "unchanged\n",
     );
+  });
+
+  test("backfills provider agents for hubs persisted with an empty allowedAgents list", async () => {
+    const root = await makeTempDir("hub-backfill-");
+    const hub = path.join(root, "hub");
+    await initializeCompanionHub(hub);
+    const store = new ConfigStore(path.join(hub, ".mate", "config", "framework.yaml"));
+    const legacy = await store.load();
+    legacy.allowedAgents = [];
+    await store.save(legacy);
+
+    const setupConfigs: FrameworkConfig[] = [];
+    await updateHubPlugins(hub, {
+      setup: async (_companionPath, config) => {
+        setupConfigs.push(config);
+      },
+    });
+
+    expect((await store.load()).allowedAgents).toEqual(["claude", "opencode"]);
+    expect(setupConfigs[0]?.allowedAgents).toEqual(["claude", "opencode"]);
   });
 });

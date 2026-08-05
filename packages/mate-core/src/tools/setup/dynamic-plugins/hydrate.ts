@@ -9,6 +9,7 @@ import { CompanionResolver } from "../../../lib/orchestrator/companion-resolver"
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { PLUGIN_DECLARATION_POLICIES } from "../../../lib/orchestrator/config-store";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
+import type { Plugin } from "../plugin";
 import type { PluginRegistry } from "../registry";
 import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
 
@@ -90,6 +91,16 @@ function validateDeclaration(entry: unknown): { declaration?: PluginDeclaration;
 }
 
 /**
+ * A framework declaration is the activation switch for a dynamic plugin.
+ * Own-property override rather than a spread: class-instance plugins keep
+ * their prototype members.
+ */
+function activateDeclaredPlugin(plugin: Plugin): Plugin {
+  plugin.isEnabled = () => true;
+  return plugin;
+}
+
+/**
  * Registers the companion's declared plugins into the active registry —
  * compiled-in plugins first (they are already registered), declared order
  * after. Runs before cap-command detection on every invocation. No-op
@@ -135,7 +146,10 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
         );
       }
 
-      registry.register({ plugin: result.plugin, policy: declaration.policy ?? "optional" });
+      registry.register({
+        plugin: activateDeclaredPlugin(result.plugin),
+        policy: declaration.policy ?? "optional",
+      });
       hydratedPackages.add(declaration.package);
     }
   } catch (error) {

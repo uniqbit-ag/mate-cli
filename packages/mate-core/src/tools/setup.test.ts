@@ -128,8 +128,8 @@ describe("executeSetup", () => {
     await expect(fs.access(path.join(repositoryPath, ".claude"))).rejects.toThrow();
   });
 
-  test("refuses a hub root and writes no guidance, even with agents in config", async () => {
-    const root = await makeTempDir("mate-setup-hub-refusal-");
+  test("sets up a hub root with providers only, writing no guidance", async () => {
+    const root = await makeTempDir("mate-setup-hub-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
     );
@@ -140,7 +140,7 @@ describe("executeSetup", () => {
       [
         "type: hub",
         "allowedAgents: [claude, opencode]",
-        "packageManagers: [bun]",
+        "packageManagers: []",
         "capabilities: []",
         "migrations: [rtk-capability-split-v1]",
         "hub:",
@@ -149,13 +149,16 @@ describe("executeSetup", () => {
       ].join("\n"),
     );
 
-    await expect(
-      executeSetup({ allowedAgents: ["claude", "opencode"] }, { cwd: root, globalConfigStore }),
-    ).rejects.toThrow(/hub cannot be set up as a companion/);
+    const { config } = await executeSetup(
+      { allowedAgents: ["claude", "opencode"] },
+      { cwd: root, globalConfigStore },
+    );
 
+    expect(config.type).toBe("hub");
+    await fs.access(path.join(root, ".claude", "settings.local.json"));
     await expect(fs.access(path.join(root, "AGENTS.md"))).rejects.toThrow();
     await expect(fs.access(path.join(root, "CLAUDE.md"))).rejects.toThrow();
-    await expect(fs.access(path.join(root, ".opencode"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, `.${FRAMEWORK_NAME}`, "README.md"))).rejects.toThrow();
   });
 
   test("a companion nested below a hub root still sets up", async () => {

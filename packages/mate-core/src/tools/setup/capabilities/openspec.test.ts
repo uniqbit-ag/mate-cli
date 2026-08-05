@@ -69,18 +69,20 @@ describe("createOpenspecPlugin", () => {
       getInstalledVersion: async () => undefined,
     });
     const ctx = makeCtx("/tmp/companion", ["claude", "opencode"]);
-
     await plugin.apply(ctx);
 
     expect(installCommand).not.toHaveBeenCalled();
+    expect(runCommand).toHaveBeenNthCalledWith(1, "openspec", ["config", "reset", "--all", "-y"], {
+      cwd: "/tmp/companion",
+    });
     expect(runCommand).toHaveBeenNthCalledWith(
-      1,
+      2,
       "openspec",
       ["init", "--tools", "claude,opencode", "--force", "/tmp/companion"],
       { cwd: "/tmp/companion" },
     );
     expect(runCommand).toHaveBeenNthCalledWith(
-      2,
+      3,
       "openspec",
       ["update", "--force", "/tmp/companion"],
       { cwd: "/tmp/companion" },
