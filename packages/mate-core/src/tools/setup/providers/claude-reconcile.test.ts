@@ -57,6 +57,9 @@ function contribution(
       permissionEntries: ["mcp__acme__*"],
       guidanceSections: [{ content: "## Acme\n\nUse the acme tools." }],
       skillTrees: [{ name: "acme", sourceDir: path.join(companionPath, "skill-src") }],
+      agentDefinitions: [
+        { name: "acme-agent", content: "---\nname: acme-agent\n---\nAcme agent body.\n" },
+      ],
     },
   };
 }
@@ -102,6 +105,10 @@ describe("reconcileClaudeContributions", () => {
     expect(claudeMd).toContain("## Acme");
 
     await fs.access(path.join(companionPath, ".claude", "skills", "acme", "SKILL.md"));
+
+    expect(
+      await fs.readFile(path.join(companionPath, ".claude", "agents", "acme-agent.md"), "utf8"),
+    ).toBe("---\nname: acme-agent\n---\nAcme agent body.\n");
   });
 
   test("reconciliation is idempotent", async () => {
@@ -165,6 +172,10 @@ describe("reconcileClaudeContributions", () => {
 
     await expect(
       fs.access(path.join(companionPath, ".claude", "skills", "acme")),
+    ).rejects.toThrow();
+
+    await expect(
+      fs.access(path.join(companionPath, ".claude", "agents", "acme-agent.md")),
     ).rejects.toThrow();
   });
 });

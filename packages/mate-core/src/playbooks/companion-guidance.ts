@@ -103,7 +103,7 @@ export function buildCompanionPolicyXml(
 
   if (hasOpenspecCapability(context.capabilities)) {
     lines.push(
-      `    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes ONLY with: ${FRAMEWORK_NAME} artifact finish "<name>" --json — never hand-commit or hand-tag a finish. Finishing a still-active change applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>`,
+      `    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run ${FRAMEWORK_NAME} artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>`,
     );
   }
 

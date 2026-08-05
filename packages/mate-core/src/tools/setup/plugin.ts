@@ -158,6 +158,22 @@ export interface PluginReferenceContribution {
 }
 
 /**
+ * A real, provider-native agent definition file, written to
+ * `<runtime dir>/agents/<name>.md` and selectable via `--agent <name>`.
+ * Unlike a guidance section, the whole file is managed content (no merge with
+ * unmanaged text) — the Capability pre-renders `content` per runtime, since
+ * frontmatter shape (Claude's `name`/`hidden`, OpenCode's `mode`) differs.
+ * Reconciled in both companion and hub scope: an agent definition is exactly
+ * the kind of artifact a repo-less hub needs.
+ */
+export interface AgentDefinitionContribution {
+  /** Agent name; the file is written to `<runtime dir>/agents/<name>.md`. */
+  name: string;
+  /** Full file content, including frontmatter, ready to write as-is. */
+  content: string;
+}
+
+/**
  * Declarative Agent Runtime contributions of one Capability for one runtime.
  * The runtime's Runtime Surface reconciles these symmetrically: applied while
  * the Capability is enabled, removed when it is not, idempotent across runs.
@@ -169,6 +185,7 @@ export interface RuntimeContributions {
   guidanceSections?: GuidanceSectionContribution[];
   skillTrees?: SkillTreeContribution[];
   pluginReferences?: PluginReferenceContribution[];
+  agentDefinitions?: AgentDefinitionContribution[];
 }
 
 /**
@@ -197,9 +214,12 @@ export interface CapabilityPlugin extends Plugin {
    * Declare Agent Runtime contributions as data. Called on every setup/sync
    * pass for all registered Capabilities — enabled ones contribute their
    * entries, disabled ones only widen the managed strip set so their previous
-   * entries are removed.
+   * entries are removed. May be async (e.g. reading a companion-local
+   * override file) — the engine always awaits the result.
    */
-  getRuntimeContributions?(ctx: SetupContext): RuntimeContributionsByRuntime;
+  getRuntimeContributions?(
+    ctx: SetupContext,
+  ): RuntimeContributionsByRuntime | Promise<RuntimeContributionsByRuntime>;
   forProvider?: Record<
     string,
     {

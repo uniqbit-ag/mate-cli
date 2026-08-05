@@ -90,4 +90,77 @@ describe("hub setup scope", () => {
       await expect(fs.access(path.join(hubPath, file))).rejects.toThrow();
     }
   });
+
+  test("materializes and prunes agent definition files without other companion surfaces", async () => {
+    const hubPath = await makeTempDir();
+    const capability: CapabilityPlugin = {
+      id: "acme-agent",
+      kind: "capability",
+      label: "Acme Agent",
+      description: "hub agent-definition fixture",
+      defaultSelected: false,
+      isEnabled: () => true,
+      apply: async () => {},
+      teardown: async () => {},
+      getRuntimeContributions: (_ctx: SetupContext) => ({
+        claude: {
+          agentDefinitions: [{ name: "acme", content: "---\nname: acme\n---\nAcme agent body.\n" }],
+        },
+        opencode: {
+          agentDefinitions: [{ name: "acme", content: "---\nmode: primary\n---\nAcme agent.\n" }],
+        },
+      }),
+    };
+    const config: FrameworkConfig = {
+      type: "hub",
+      allowedAgents: ["claude", "opencode"],
+      packageManagers: [],
+      capabilities: [],
+    };
+    const registry = new PluginRegistry([createClaudePlugin(), createOpenCodePlugin(), capability]);
+    setActiveDistribution({ config: { runtime: "bun", version: "test" }, registry });
+
+    const registrations = registry.getEntries();
+    const baseCtx: SetupContext = {
+      companionPath: hubPath,
+      config,
+      mode: "setup",
+      activeProviders: buildSetupInstallationPlan(config, registrations).activeProviders,
+      scope: "hub",
+    };
+    await executeSetupInstallationPlan(
+      baseCtx,
+      registrations,
+      buildSetupInstallationPlan(config, registrations),
+    );
+
+    expect(await fs.readFile(path.join(hubPath, ".claude", "agents", "acme.md"), "utf8")).toBe(
+      "---\nname: acme\n---\nAcme agent body.\n",
+    );
+    expect(await fs.readFile(path.join(hubPath, ".opencode", "agents", "acme.md"), "utf8")).toBe(
+      "---\nmode: primary\n---\nAcme agent.\n",
+    );
+
+    // Disabling the capability tears the files back down, hub scope or not.
+    const disabledCapability: CapabilityPlugin = { ...capability, isEnabled: () => false };
+    const disabledRegistry = new PluginRegistry([
+      createClaudePlugin(),
+      createOpenCodePlugin(),
+      disabledCapability,
+    ]);
+    setActiveDistribution({
+      config: { runtime: "bun", version: "test" },
+      registry: disabledRegistry,
+    });
+    const disabledRegistrations = disabledRegistry.getEntries();
+    const plan = buildSetupInstallationPlan(config, disabledRegistrations);
+    await executeSetupInstallationPlan(
+      { ...baseCtx, activeProviders: plan.activeProviders },
+      disabledRegistrations,
+      plan,
+    );
+
+    await expect(fs.access(path.join(hubPath, ".claude", "agents", "acme.md"))).rejects.toThrow();
+    await expect(fs.access(path.join(hubPath, ".opencode", "agents", "acme.md"))).rejects.toThrow();
+  });
 });

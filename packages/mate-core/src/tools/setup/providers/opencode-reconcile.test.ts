@@ -47,6 +47,7 @@ function contribution(enabled: boolean, companionPath: string): CapabilityContri
       ],
       guidanceSections: [{ content: "## Acme\n\nUse the acme tools." }],
       skillTrees: [{ name: "acme", sourceDir: path.join(companionPath, "skill-src") }],
+      agentDefinitions: [{ name: "acme-agent", content: "---\nmode: primary\n---\nAcme agent.\n" }],
     },
   };
 }
@@ -93,6 +94,10 @@ describe("reconcileOpenCodeContributions", () => {
     expect(agentsMd).toContain("## Acme");
 
     await fs.access(path.join(companionPath, ".opencode", "skills", "acme", "SKILL.md"));
+
+    expect(
+      await fs.readFile(path.join(companionPath, ".opencode", "agents", "acme-agent.md"), "utf8"),
+    ).toBe("---\nmode: primary\n---\nAcme agent.\n");
   });
 
   test("disabling removes managed entries and is idempotent", async () => {
@@ -114,6 +119,9 @@ describe("reconcileOpenCodeContributions", () => {
     await expect(fs.access(path.join(companionPath, "AGENTS.md"))).rejects.toThrow();
     await expect(
       fs.access(path.join(companionPath, ".opencode", "skills", "acme")),
+    ).rejects.toThrow();
+    await expect(
+      fs.access(path.join(companionPath, ".opencode", "agents", "acme-agent.md")),
     ).rejects.toThrow();
   });
 

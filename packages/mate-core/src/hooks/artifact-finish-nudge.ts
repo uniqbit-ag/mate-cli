@@ -79,6 +79,36 @@ function extractChangeFromPath(value: string): string | null {
   return match ? match[1].replace(/^\d{4}-\d{2}-\d{2}-/, "") : null;
 }
 
+// Best-effort shell variable substitution, NOT a shell interpreter: a change
+// name is often built up through variables (DEST="...archive/$TARGET"; mv a
+// "$DEST") rather than appearing as a literal path next to mv/archive. This
+// resolves $NAME/${NAME} references against preceding literal NAME=value
+// assignment tokens in the same command string; unresolved references are
+// left as-is, which keeps prior (silent) behavior for anything it can't follow.
+const ASSIGNMENT_PATTERN = /^([A-Za-z_][A-Za-z0-9_]*)=([\s\S]*)$/;
+const VARIABLE_REFERENCE_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g;
+
+function substituteVariables(value: string, vars: Map<string, string>): string {
+  return value.replace(VARIABLE_REFERENCE_PATTERN, (match, braced: string, bare: string) => {
+    const name = braced ?? bare;
+    return vars.has(name) ? vars.get(name)! : match;
+  });
+}
+
+// Assignments are collected in left-to-right token order so a later
+// assignment (e.g. DEST) can reference an earlier one (e.g. TARGET) the same
+// way the shell would resolve it at that point in the script.
+function collectVariableAssignments(parts: string[]): Map<string, string> {
+  const vars = new Map<string, string>();
+  for (const part of parts) {
+    const match = part.match(ASSIGNMENT_PATTERN);
+    if (!match) continue;
+    const [, name, rawValue] = match;
+    vars.set(name, substituteVariables(rawValue, vars));
+  }
+  return vars;
+}
+
 // Shell syntax tokens are never change-name positionals: separators end the
 // archive invocation, redirections are skipped (a bare operator also consumes
 // its target token).
@@ -95,6 +125,7 @@ export function extractArchiveCommand(command: string): string | null {
       (parts[position - 1] === "openspec" || parts[position - 1].endsWith("/openspec")),
   );
   if (index < 0) return null;
+  const vars = collectVariableAssignments(parts);
   for (let position = index + 1; position < parts.length; position += 1) {
     const part = parts[position];
     if (!part || part === "--") continue;
@@ -107,7 +138,7 @@ export function extractArchiveCommand(command: string): string | null {
       if (part === "--store") position += 1;
       continue;
     }
-    return part;
+    return substituteVariables(part, vars);
   }
   return null;
 }
@@ -130,15 +161,16 @@ function isPython(part: string): boolean {
 
 export function extractMoveCommand(command: string): string | null {
   const parts = shellSplit(command);
+  const vars = collectVariableAssignments(parts);
   for (let index = 0; index < parts.length; index += 1) {
     if (MOVE_COMMANDS.has(parts[index].toLowerCase())) {
       for (const part of parts.slice(index + 1)) {
-        const change = extractChangeFromPath(part);
+        const change = extractChangeFromPath(substituteVariables(part, vars));
         if (change) return change;
       }
     }
     if (isPython(parts[index]) && /(?:shutil\.move|os\.rename|\.rename\s*\()/.test(command)) {
-      return extractChangeFromPath(command);
+      return extractChangeFromPath(substituteVariables(command, vars));
     }
   }
   return null;

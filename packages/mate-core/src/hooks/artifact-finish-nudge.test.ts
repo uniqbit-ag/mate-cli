@@ -109,6 +109,26 @@ describe("artifact-finish-nudge", () => {
     expect(context).toContain(`mate artifact finish "${expectedChange}" --json`);
   });
 
+  test.each([
+    ['DEST="openspec/changes/archive/2099-01-01-acme"\nmv "acme" "$DEST"', "acme"],
+    ['DEST=openspec/changes/archive/2099-01-01-acme; mv acme "${DEST}"', "acme"],
+    ['TARGET=2099-01-01-acme\nDEST="openspec/changes/archive/$TARGET"\nmv "acme" "$DEST"', "acme"],
+    ['CHANGE=acme\nopenspec archive "$CHANGE" --yes', "acme"],
+    ['CHANGE=acme; openspec archive "${CHANGE}" --yes', "acme"],
+  ])(
+    "resolves a destination or change name built through shell variables: %s",
+    (command, expectedChange) => {
+      const result = evaluate(postToolUsePayload(command), GATE_ON);
+      expect(nudgeContext(result.stdout)).toContain(
+        `mate artifact finish "${expectedChange}" --json`,
+      );
+    },
+  );
+
+  test("stays silent when a variable reference cannot be resolved", () => {
+    expect(evaluate(postToolUsePayload('mv acme "$UNKNOWN_DEST"'), GATE_ON).stdout).toBe("");
+  });
+
   test("does not treat a token after a pipe as the change name", () => {
     expect(
       evaluate(postToolUsePayload("openspec archive --help | head -n 20"), GATE_ON).stdout,

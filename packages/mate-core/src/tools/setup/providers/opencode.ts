@@ -428,10 +428,12 @@ export async function reconcileOpenCodeContributions(
 
   if (ctx.scope === "hub") {
     await reconcileOpenCodeMcpContributions(ctx, inputs);
+    await reconcileOpenCodeAgentDefinitionContributions(ctx, inputs);
     return;
   }
 
   await reconcileOpenCodeMcpContributions(ctx, inputs);
+  await reconcileOpenCodeAgentDefinitionContributions(ctx, inputs);
 
   for (const input of inputs) {
     for (const pluginReference of input.contributions.pluginReferences ?? []) {
@@ -490,6 +492,31 @@ async function reconcileOpenCodeMcpContributions(
         descriptor.name,
         input.enabled ? toOpenCodeMcpEntry(descriptor) : null,
       );
+    }
+  }
+}
+
+/**
+ * Reconcile declared agent definition files under `.opencode/agents/`. Runs
+ * in both companion and hub scope — an agent definition is fully
+ * self-contained (no shared-file merge), so it needs no companion-only
+ * surface.
+ */
+async function reconcileOpenCodeAgentDefinitionContributions(
+  ctx: SetupContext,
+  inputs: CapabilityContributionInput[],
+): Promise<void> {
+  const agentsDir = path.join(ctx.companionPath, ".opencode", "agents");
+  for (const input of inputs) {
+    for (const agent of input.contributions.agentDefinitions ?? []) {
+      const agentPath = path.join(agentsDir, `${agent.name}.md`);
+      if (input.enabled) {
+        await fs.mkdir(agentsDir, { recursive: true });
+        await fs.writeFile(agentPath, agent.content, "utf8");
+      } else {
+        await fs.rm(agentPath, { force: true });
+        await pruneEmptyAncestors(agentsDir, ctx.companionPath);
+      }
     }
   }
 }

@@ -334,6 +334,7 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
             "Skill(openspec-apply-change)",
             "Skill(openspec-archive-change)",
             "Skill(mate-artifact-finish)",
+            "Skill(mate-openspec-backfill)",
             "Bash(openspec:*)",
             `Bash(${FRAMEWORK_NAME} cap graphify:*)`,
             `Bash(${path.join(getWrapperBinPath(), "openspec")}:*)`,

@@ -194,7 +194,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -230,7 +230,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -407,7 +407,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -443,7 +443,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -793,7 +793,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -808,7 +808,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -1009,7 +1009,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -1024,7 +1024,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -1312,7 +1312,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1328,7 +1328,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
       "context-mode@1.0.169",
     ],
   },
@@ -1472,7 +1472,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1488,7 +1488,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
       "context-mode@1.0.169",
     ],
   },
@@ -1784,7 +1784,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -1802,7 +1802,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -1968,7 +1968,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -1986,7 +1986,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -2155,6 +2155,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "Skill(mate-artifact-finish)",
+        "Skill(mate-openspec-backfill)",
         "Skill(openspec-apply-change)",
         "Skill(openspec-archive-change)",
         "Skill(openspec-explore)",
@@ -2206,7 +2207,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes ONLY with: mate artifact finish "<name>" --json — never hand-commit or hand-tag a finish. Finishing a still-active change applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -2260,7 +2261,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -2280,7 +2281,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -2319,7 +2320,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes ONLY with: mate artifact finish "<name>" --json — never hand-commit or hand-tag a finish. Finishing a still-active change applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -2406,6 +2407,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "Skill(mate-artifact-finish)",
+        "Skill(mate-openspec-backfill)",
         "Skill(openspec-apply-change)",
         "Skill(openspec-archive-change)",
         "Skill(openspec-explore)",
@@ -2427,7 +2429,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -2447,7 +2449,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -2484,7 +2486,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes ONLY with: mate artifact finish "<name>" --json — never hand-commit or hand-tag a finish. Finishing a still-active change applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -2531,7 +2533,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes ONLY with: mate artifact finish "<name>" --json — never hand-commit or hand-tag a finish. Finishing a still-active change applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -2714,6 +2716,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
         "Skill(context-mode:context-mode)",
         "Skill(graphify)",
         "Skill(mate-artifact-finish)",
+        "Skill(mate-openspec-backfill)",
         "Skill(openspec-apply-change)",
         "Skill(openspec-archive-change)",
         "Skill(openspec-explore)",
@@ -2765,7 +2768,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -2808,7 +2811,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
       "context-mode@1.0.169",
     ],
   },
@@ -2846,7 +2849,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes ONLY with: mate artifact finish "<name>" --json — never hand-commit or hand-tag a finish. Finishing a still-active change applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>
 
@@ -2917,7 +2920,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes ONLY with: mate artifact finish "<name>" --json — never hand-commit or hand-tag a finish. Finishing a still-active change applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -3012,7 +3015,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -3027,7 +3030,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -3100,7 +3103,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -3115,7 +3118,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -3189,7 +3192,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -3204,7 +3207,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -3277,7 +3280,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -3292,7 +3295,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }
@@ -3365,7 +3368,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
     "references": {
       "mate": "..",
@@ -3380,7 +3383,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.10",
+      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
     ],
   },
 }

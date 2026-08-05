@@ -348,6 +348,7 @@ export async function reconcileClaudeContributions(
 
   if (ctx.scope === "hub") {
     await reconcileClaudeMcpContributions(ctx, inputs);
+    await reconcileClaudeAgentDefinitionContributions(ctx, inputs);
     return;
   }
 
@@ -359,6 +360,7 @@ export async function reconcileClaudeContributions(
   }
 
   await reconcileClaudeMcpContributions(ctx, inputs);
+  await reconcileClaudeAgentDefinitionContributions(ctx, inputs);
 
   for (const input of inputs) {
     // Guidance sections are managed blocks in CLAUDE.md. Current sections are
@@ -400,6 +402,30 @@ async function reconcileClaudeMcpContributions(
         descriptor.name,
         input.enabled ? toClaudeMcpEntry(descriptor) : null,
       );
+    }
+  }
+}
+
+/**
+ * Reconcile declared agent definition files under `.claude/agents/`. Runs in
+ * both companion and hub scope — an agent definition is fully self-contained
+ * (no shared-file merge), so it needs no companion-only surface.
+ */
+async function reconcileClaudeAgentDefinitionContributions(
+  ctx: SetupContext,
+  inputs: CapabilityContributionInput[],
+): Promise<void> {
+  const agentsDir = path.join(ctx.companionPath, ".claude", "agents");
+  for (const input of inputs) {
+    for (const agent of input.contributions.agentDefinitions ?? []) {
+      const agentPath = path.join(agentsDir, `${agent.name}.md`);
+      if (input.enabled) {
+        await fs.mkdir(agentsDir, { recursive: true });
+        await fs.writeFile(agentPath, agent.content, "utf8");
+      } else {
+        await fs.rm(agentPath, { force: true });
+        await pruneEmptyAncestors(agentsDir, ctx.companionPath);
+      }
     }
   }
 }
