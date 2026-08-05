@@ -179,15 +179,12 @@ function detectCommandArchive(input: unknown, output: unknown): string | null {
 
 function detectNewlyArchivedChanges(archiveDir: string, snapshot: Set<string>): string[] {
   const current = readArchiveEntries(archiveDir);
-  const newlyArchived = [...current].filter((entry) => !snapshot.has(entry)).toSorted();
-  snapshot.clear();
-  for (const entry of current) snapshot.add(entry);
-  return newlyArchived;
+  return [...current].filter((entry) => !snapshot.has(entry)).toSorted();
 }
 
 function appendOpenSpecFinishNudge(
   context: CompanionContext,
-  archiveSnapshot: Set<string>,
+  archiveSnapshot: Set<string> | undefined,
   nudgedCommandChanges: Set<string>,
   input: { tool?: unknown },
   output: { output?: string },
@@ -196,8 +193,10 @@ function appendOpenSpecFinishNudge(
 
   const archiveDir = path.join(context.companionPath, "openspec", "changes", "archive");
   const changes: string[] = [];
-  for (const entry of detectNewlyArchivedChanges(archiveDir, archiveSnapshot)) {
-    changes.push(entry.slice("YYYY-MM-DD-".length));
+  if (archiveSnapshot) {
+    for (const entry of detectNewlyArchivedChanges(archiveDir, archiveSnapshot)) {
+      changes.push(entry.slice("YYYY-MM-DD-".length));
+    }
   }
   const commandChange =
     String(input.tool ?? "").toLowerCase() === "bash" ? detectCommandArchive(input, output) : null;
@@ -313,8 +312,15 @@ async function runReactDoctorScan(
 }
 
 type PluginEventInput = Parameters<NonNullable<Hooks["event"]>>[0];
+type ToolBeforeInput = Parameters<NonNullable<Hooks["tool.execute.before"]>>[0];
+type ToolBeforeOutput = Parameters<NonNullable<Hooks["tool.execute.before"]>>[1];
 type ToolAfterInput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[0];
 type ToolAfterOutput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[1];
+
+interface ArchiveCallSnapshot {
+  sessionID: string;
+  entries: Set<string>;
+}
 
 export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInput) => {
   const { client, $ } = pluginInput;
@@ -322,13 +328,20 @@ export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInp
   if (!context.companionPath || !context.repositoryPath) return {};
 
   const archiveDir = path.join(context.companionPath, "openspec", "changes", "archive");
-  const archiveSnapshot = readArchiveEntries(archiveDir);
+  const archiveCallSnapshots = new Map<string, ArchiveCallSnapshot>();
   const nudgedCommandChanges = new Set<string>();
   const dirtyReactDoctorSessions = new Set<string>();
   const reactDoctorScansInFlight = new Set<string>();
 
   return {
     event: async ({ event }: PluginEventInput) => {
+      if (event.type === "session.deleted") {
+        const sessionID = event.properties.info.id;
+        for (const [callID, snapshot] of archiveCallSnapshots) {
+          if (snapshot.sessionID === sessionID) archiveCallSnapshots.delete(callID);
+        }
+        return;
+      }
       if (event.type !== "session.idle") return;
       const sessionID = event.properties.sessionID;
       if (
@@ -340,10 +353,7 @@ export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInp
       }
       await runReactDoctorScan(context, client, $, sessionID, reactDoctorScansInFlight);
     },
-    "tool.execute.before": async (
-      input: { tool: unknown },
-      output: { args: { filePath?: unknown; patchText?: unknown } | undefined },
-    ) => {
+    "tool.execute.before": async (input: ToolBeforeInput, output: ToolBeforeOutput) => {
       const toolName = String(input.tool ?? "");
       const args = output.args ?? {};
       if (["write", "edit"].includes(toolName)) {
@@ -359,12 +369,23 @@ export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInp
           }
         }
       }
+      if (context.gitAutoModeEnabled) {
+        archiveCallSnapshots.set(input.callID, {
+          sessionID: input.sessionID,
+          entries: readArchiveEntries(archiveDir),
+        });
+      }
     },
     "tool.execute.after": async (input: ToolAfterInput, output: ToolAfterOutput) => {
       if (context.reactDoctorEnabled && REACT_DOCTOR_EDIT_TOOLS.has(input.tool)) {
         dirtyReactDoctorSessions.add(input.sessionID);
       }
+      const archiveSnapshot = archiveCallSnapshots.get(input.callID)?.entries;
+      archiveCallSnapshots.delete(input.callID);
       appendOpenSpecFinishNudge(context, archiveSnapshot, nudgedCommandChanges, input, output);
+    },
+    dispose: async () => {
+      archiveCallSnapshots.clear();
     },
   };
 };

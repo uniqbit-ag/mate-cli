@@ -5,6 +5,7 @@ import { pruneEmptyAncestors } from "./utils";
 
 export const MATE_ARTIFACT_SKILLS = ["mate-artifact-finish"] as const;
 export const MATE_SKILLS = ["mate-artifact-finish", "mate-create-report"] as const;
+const LEGACY_MATE_SKILLS = ["mate-openspec-artifact-finish"] as const;
 
 const MATE_SKILLS_SOURCE = path.join(
   import.meta.dirname,
@@ -98,6 +99,9 @@ async function resolveMateSkillSource(skill: string, tool: string): Promise<stri
 }
 
 export async function applyMateSkills(skillsDir: string, tool: string): Promise<void> {
+  for (const skill of LEGACY_MATE_SKILLS) {
+    await fs.rm(path.join(skillsDir, skill), { recursive: true, force: true });
+  }
   for (const skill of MATE_SKILLS) {
     const destination = path.join(skillsDir, skill);
     if (skill === "mate-create-report") {
@@ -110,7 +114,7 @@ export async function applyMateSkills(skillsDir: string, tool: string): Promise<
 }
 
 export async function teardownMateSkills(skillsDir: string, companionPath: string): Promise<void> {
-  for (const skill of MATE_SKILLS) {
+  for (const skill of [...MATE_SKILLS, ...LEGACY_MATE_SKILLS]) {
     try {
       await fs.rm(path.join(skillsDir, skill), { recursive: true, force: true });
     } catch {
