@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
@@ -200,7 +201,7 @@ async function reconcileCapabilityContributions(
     const capability = plugin as CapabilityPlugin;
     if (!capability.getRuntimeContributions) continue;
     const enabled = enabledByPluginId.get(capability.id) ?? false;
-    const byRuntime = capability.getRuntimeContributions(ctx);
+    const byRuntime = await capability.getRuntimeContributions(ctx);
     for (const [runtimeId, contributions] of Object.entries(byRuntime)) {
       if (!contributions) continue;
       // Inactive runtimes still reconcile — with everything disabled — so a

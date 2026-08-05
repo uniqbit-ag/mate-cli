@@ -4,7 +4,11 @@ import path from "node:path";
 import { pruneEmptyAncestors } from "./utils";
 
 export const MATE_ARTIFACT_SKILLS = ["mate-artifact-finish"] as const;
-export const MATE_SKILLS = ["mate-artifact-finish", "mate-create-report"] as const;
+export const MATE_SKILLS = [
+  "mate-artifact-finish",
+  "mate-create-report",
+  "mate-openspec-backfill",
+] as const;
 const LEGACY_MATE_SKILLS = ["mate-openspec-artifact-finish"] as const;
 
 const MATE_SKILLS_SOURCE = path.join(

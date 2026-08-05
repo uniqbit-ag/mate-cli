@@ -369,10 +369,15 @@ describe("createOpenspecPlugin", () => {
     );
 
     for (const runtimeDir of [".claude", ".opencode"]) {
+      const markers: Record<(typeof MATE_SKILLS)[number], string> = {
+        "mate-artifact-finish": "artifact finish",
+        "mate-create-report": "report --input",
+        "mate-openspec-backfill": "backfill-spec-",
+      };
       for (const skill of MATE_SKILLS) {
         await expect(
           fs.readFile(path.join(root, runtimeDir, "skills", skill, "SKILL.md"), "utf8"),
-        ).resolves.toContain(skill === "mate-create-report" ? "report --input" : "artifact finish");
+        ).resolves.toContain(markers[skill]);
       }
       await expect(
         fs.access(path.join(root, runtimeDir, "skills", "mate-openspec-artifact-finish")),
@@ -437,6 +442,13 @@ describe("createOpenspecPlugin", () => {
     await expect(
       fs.access(path.join(stateDir, "mate-artifact-finish.session.json")),
     ).rejects.toThrow();
+  });
+
+  test("Claude runtime contributions include mate skill permissions", () => {
+    const plugin = createOpenspecPlugin();
+    const entries = plugin.getRuntimeContributions?.().claude?.permissionEntries ?? [];
+    expect(entries).toContain("Skill(mate-artifact-finish)");
+    expect(entries).toContain("Skill(mate-openspec-backfill)");
   });
 
   test("does not install mate-authored skills for inactive providers", async () => {
