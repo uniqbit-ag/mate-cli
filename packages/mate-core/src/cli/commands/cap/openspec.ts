@@ -79,7 +79,26 @@ export async function runOpenspecCapCommand(
     readOpenSpecProjectSchema(companionPath),
   );
 
-  const result = spawnSync("openspec", forwardedArgs, { cwd, stdio: "inherit" });
+  if (forwardedArgs[0] === "init" || forwardedArgs[0] === "update") {
+    const reset = spawnSync("openspec", ["config", "reset", "--all", "-y"], {
+      cwd,
+      stdio: "inherit",
+    });
+    if (reset.error) {
+      process.stderr.write(`Failed to reset openspec config: ${reset.error.message}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    if (reset.status !== 0) {
+      process.exitCode = reset.status ?? 1;
+      return;
+    }
+  }
+
+  const result = spawnSync("openspec", forwardedArgs, {
+    cwd,
+    stdio: "inherit",
+  });
   if (result.error) {
     process.stderr.write(`Failed to run openspec: ${result.error.message}\n`);
     process.exitCode = 1;

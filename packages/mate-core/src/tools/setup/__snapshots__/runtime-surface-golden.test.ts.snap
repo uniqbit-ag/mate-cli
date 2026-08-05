@@ -3564,15 +3564,44 @@ User notes.
 }
 `;
 
-exports[`working repo golden fixtures hub roots are refused before any runtime file is written 1`] = `
+exports[`working repo golden fixtures hub roots set up providers only without companion surfaces 1`] = `
 {
   "agentsMd": null,
   "claudeHooks": {},
-  "claudeMcpConfig": null,
+  "claudeMcpConfig": {
+    "mcpServers": {
+      "tokensave": {
+        "args": [
+          "serve",
+        ],
+        "command": "tokensave",
+      },
+    },
+  },
   "claudeMd": null,
-  "claudeSettingsLocal": null,
+  "claudeSettingsLocal": {
+    "autoMemoryEnabled": false,
+    "permissions": {
+      "allow": [
+        "Bash(mate:*)",
+        "Edit(<root>/companion/**)",
+        "Read(<root>/companion/**)",
+      ],
+    },
+  },
   "claudeSkills": {},
-  "opencodeConfig": null,
+  "opencodeConfig": {
+    "mcp": {
+      "tokensave": {
+        "command": [
+          "tokensave",
+          "serve",
+        ],
+        "enabled": true,
+        "type": "local",
+      },
+    },
+  },
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,

@@ -50,6 +50,7 @@ async function selectRegisteredCompanion(): Promise<string> {
 async function runHubInit(argv: string[]): Promise<void> {
   const folder = positionalArgs(argv)[0] ?? process.cwd();
   const hubPath = await initializeCompanionHub(folder);
+  await updateHubPlugins(hubPath);
   console.log(`Initialized companion hub: ${hubPath}`);
 }
 

@@ -1,5 +1,4 @@
 // oxlint-disable no-await-in-loop
-import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../framework";
@@ -25,7 +24,7 @@ import {
   collectManagedGitignoreEntries,
   writeManagedGitignoreBlock,
 } from "./setup/plugins/gitignore";
-import type { PluginRegistration, SetupContext } from "./setup/plugin";
+import type { PluginRegistration, SetupContext, SetupScope } from "./setup/plugin";
 import { getActiveDistribution } from "../distribution";
 import { createUvPlugin } from "./setup/package-managers/uv";
 import type { PackageManagerSetupDeps } from "./setup/package-managers/uv";
@@ -60,10 +59,11 @@ export async function applySetupCompatibilities(
   mode: "setup" | "sync",
   plugins: PluginRegistration[] = getActiveDistribution().registry.getEntries(),
   repoPath?: string,
+  scope: SetupScope = config.type === "hub" ? "hub" : "companion",
 ): Promise<SetupInstallationOutcome> {
   const plan = buildSetupInstallationPlan(config, plugins);
   const activeProviders = plan.activeProviders;
-  const ctx: SetupContext = { companionPath, config, mode, activeProviders, repoPath };
+  const ctx: SetupContext = { companionPath, config, mode, activeProviders, repoPath, scope };
   return executeSetupInstallationPlan(ctx, plugins, plan);
 }
 
@@ -89,48 +89,6 @@ export async function syncCompanionFiles(
     getActiveDistribution().registry.getAll(),
     repoPath,
   );
-}
-
-export function mateFolderReadme(): string {
-  const n = FRAMEWORK_NAME;
-  const packageName =
-    getActiveDistribution().config.update?.packageName ?? `@uniqbit/${FRAMEWORK_NAME}`;
-  return [
-    `# .${FRAMEWORK_NAME}`,
-    ``,
-    `This directory is managed by the **${FRAMEWORK_NAME}** companion framework (\`${packageName}\`).`,
-    ``,
-    `The ${FRAMEWORK_NAME} framework keeps your AI agent's companion artifacts separate from the code it works on.`,
-    `Specs, notes, and agent config live here; code stays in the linked working repository.`,
-    ``,
-    `## Common commands`,
-    ``,
-    `| Command | Description |`,
-    `|---|---|`,
-    `| \`${n} companion setup\` | Initialize or re-configure this companion |`,
-    `| \`${n} companion link\` | Link a working repository to a companion |`,
-    `| \`${n} companion list\` | List linked repositories for the active working repo context |`,
-    `| \`${n} companion open\` | Inject the resolved companion into the current editor window |`,
-    `| \`${n} claude\` / \`${n} opencode\` | Launch an allowed agent from a linked working repository |`,
-    `| \`${n} doctor\` | Check current link state, installed tools, and active capabilities |`,
-    ``,
-    `Run \`${n} claude\` or \`${n} opencode\` from any linked working repository directory.`,
-    ``,
-    `## Configuration`,
-    ``,
-    `Edit \`.${FRAMEWORK_NAME}/config/framework.yaml\` to configure:`,
-    ``,
-    `- **allowedAgents** — agents permitted to launch from linked repositories`,
-    `- **capabilities** — skill and CLI tool capabilities (e.g. react-doctor, openspec, tokensave, headroom, rtk)`,
-    `- **git** — set to \`auto\` to synchronize the companion before agent launches`,
-    ``,
-  ].join("\n");
-}
-
-async function writeMateReadme(companionPath: string): Promise<void> {
-  const readmePath = path.join(companionPath, `.${FRAMEWORK_NAME}`, "README.md");
-  await fs.mkdir(path.dirname(readmePath), { recursive: true });
-  await fs.writeFile(readmePath, mateFolderReadme(), "utf8");
 }
 
 export const setupToolDeps = {
@@ -160,14 +118,6 @@ export async function executeSetup(
     deps.configStore ??
     new ConfigStore(path.join(cwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
   const config = mergeWithDefaults(await configStore.load());
-  // Hubs are never companions: no setup entry path (CLI, wizard, or the
-  // setup framework tool) may write agent guidance into a hub root.
-  if (config.type === "hub") {
-    throw new ConfigError(
-      `A companion hub cannot be set up as a companion: ${cwd}. Use \`${FRAMEWORK_NAME} hub\` commands to manage the hub.`,
-    );
-  }
-
   if (input.allowedAgents !== undefined) {
     config.allowedAgents = [...new Set(input.allowedAgents)];
   }
@@ -202,11 +152,12 @@ export async function executeSetup(
     await hydrateDynamicPlugins({ companionPath });
   }
   await applySetupCompatibilities(companionPath, config, "setup");
-  await invalidateInstallState({ kind: "companion", companionPath });
+  await invalidateInstallState({
+    kind: config.type === "hub" ? "hub" : "companion",
+    companionPath,
+  });
 
   await globalConfigStore.register(companionPath);
-
-  await writeMateReadme(companionPath);
 
   // Setup no longer fans out to linked repos: capabilities that touch a working repo
   // (companion files on launch, the tokensave/graphify graph via `mate cap index`)

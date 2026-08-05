@@ -89,7 +89,7 @@ const fakeNpmInstall: NpmInstallRunner = async (installDir) => {
   return { ok: true };
 };
 
-async function writeCompanion(options: { enabled: boolean; outFile: string }): Promise<string> {
+async function writeCompanion(options: { outFile: string }): Promise<string> {
   const companionPath = await makeTempDir("dynamic-plugins-e2e-");
   const configDir = path.join(companionPath, ".mate", "config");
   await fs.mkdir(configDir, { recursive: true });
@@ -97,7 +97,7 @@ async function writeCompanion(options: { enabled: boolean; outFile: string }): P
     path.join(configDir, "framework.yaml"),
     [
       "allowedAgents: []",
-      ...(options.enabled ? ["capabilities:", "  - name: acme-custom"] : ["capabilities: []"]),
+      "capabilities: []",
       "plugins:",
       `  - package: "${PACKAGE}"`,
       '    version: "^1.0.0"',
@@ -131,7 +131,7 @@ function mainDeps(companionPath: string, env: Record<string, string | undefined>
 describe("dynamic plugins end to end", () => {
   test("declare → install → hydrate → cap routing → enablement", async () => {
     const outFile = path.join(await makeTempDir("dynamic-plugins-out-"), "out.json");
-    const companionPath = await writeCompanion({ enabled: true, outFile });
+    const companionPath = await writeCompanion({ outFile });
     const env = { ACME_GREETING: "hello from acme" };
     const registry = activateDistribution();
 
@@ -159,19 +159,15 @@ describe("dynamic plugins end to end", () => {
     };
     expect(output).toEqual({ argv: ["--flag"], greeting: "hello from acme", host: "mate" });
 
-    // Enablement flows through the existing capabilities machinery.
     const plugin = registry.getAll().find((candidate) => candidate.id === "acme-custom");
     expect(plugin).toBeDefined();
     expect(registry.getPolicy("acme-custom")).toBe("optional");
-    expect(plugin!.isEnabled({ allowedAgents: [], capabilities: [{ name: "acme-custom" }] })).toBe(
-      true,
-    );
-    expect(plugin!.isEnabled({ allowedAgents: [], capabilities: [] })).toBe(false);
+    expect(plugin!.isEnabled({ allowedAgents: [], capabilities: [] })).toBe(true);
   });
 
   test("hydration warnings during a dynamic cap command stay on stderr", async () => {
     const outFile = path.join(await makeTempDir("dynamic-plugins-out-"), "out.json");
-    const companionPath = await writeCompanion({ enabled: true, outFile });
+    const companionPath = await writeCompanion({ outFile });
     const env = { ACME_GREETING: "hi" };
     activateDistribution();
     await installDeclaredPlugins(companionPath, [{ package: PACKAGE, version: "^1.0.0" }], {

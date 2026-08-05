@@ -8,12 +8,14 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { ConfigStore, validateHubConfig } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
 import type { FrameworkConfig, HubMember, HubMemberSource } from "./types";
+import { listSetupProviderCompatibilities } from "./setup-compatibilities";
 import {
   installDeclaredPlugins,
   type PluginInstallDeps,
   type PluginInstallResult,
 } from "../../tools/setup/dynamic-plugins/install";
 import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
+import { applySetupCompatibilities } from "../../tools/setup";
 import { findRepoLocalRegistryFile } from "./repo-local-registry";
 
 export interface GitCommandResult {
@@ -41,6 +43,7 @@ export interface HubSyncResult {
 export interface HubPluginSyncDeps {
   installDeps?: PluginInstallDeps;
   hydrate?: (options: { companionPath: string }) => Promise<void>;
+  setup?: (companionPath: string, config: FrameworkConfig, mode: "setup" | "sync") => Promise<void>;
 }
 
 export function defaultGitCommand(cwd: string, args: string[]): GitCommandResult {
@@ -123,7 +126,7 @@ export async function initializeCompanionHub(
   } else {
     const config: FrameworkConfig = {
       type: "hub",
-      allowedAgents: [],
+      allowedAgents: listSetupProviderCompatibilities().map((entry) => entry.agent),
       packageManagers: [],
       capabilities: [],
       hub: { companions: [] },
@@ -365,16 +368,35 @@ export async function syncHub(
   return results;
 }
 
+/**
+ * Hubs persisted before provider bootstrapping carry `allowedAgents: []`;
+ * an empty list on a hub means "all built-in agents", not "none".
+ */
+export function backfillHubAllowedAgents(config: FrameworkConfig): boolean {
+  if (config.type !== "hub" || config.allowedAgents.length > 0) return false;
+  config.allowedAgents = listSetupProviderCompatibilities().map((entry) => entry.agent);
+  return true;
+}
+
 export async function updateHubPlugins(
   hubPath: string,
   deps: HubPluginSyncDeps = {},
 ): Promise<PluginInstallResult[]> {
-  const { config } = await assertHubRoot(hubPath);
+  const { config, store } = await assertHubRoot(hubPath);
+  if (backfillHubAllowedAgents(config)) await store.save(config);
   const declarations = config.plugins ?? [];
-  if (declarations.length === 0) return [];
-
   const resolvedHubPath = path.resolve(hubPath);
-  const results = await installDeclaredPlugins(resolvedHubPath, declarations, deps.installDeps);
-  await (deps.hydrate ?? hydrateDynamicPlugins)({ companionPath: resolvedHubPath });
+  const results =
+    declarations.length > 0
+      ? await installDeclaredPlugins(resolvedHubPath, declarations, deps.installDeps)
+      : [];
+  if (declarations.length > 0) {
+    await (deps.hydrate ?? hydrateDynamicPlugins)({ companionPath: resolvedHubPath });
+  }
+  await (
+    deps.setup ??
+    ((companionPath, setupConfig, mode) =>
+      applySetupCompatibilities(companionPath, setupConfig, mode, undefined, undefined, "hub"))
+  )(resolvedHubPath, config, "sync");
   return results;
 }

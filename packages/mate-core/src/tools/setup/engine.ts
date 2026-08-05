@@ -125,6 +125,8 @@ export async function executeSetupInstallationPlan(
   });
 
   for (const action of plan.actions) {
+    if (ctx.scope === "hub" && action.phase !== "provider") continue;
+
     const plugin = pluginById.get(action.pluginId);
     if (!plugin) {
       continue;

@@ -125,7 +125,10 @@ a Git origin are copied as local-only children. `hub sync` is explicit,
 updates only hub-declared plugins, fetches tracked remotes, and applies only
 clean fast-forward updates. It never updates child plugin workspaces, pushes,
 merges, resets, or discards child changes. Initialization, adding,
-synchronization, and setup do not open an editor implicitly.
+synchronization, and setup do not open an editor implicitly. Hub initialization
+allows all built-in agents for hub-local MCP configuration, but does not create
+agent guidance, `CLAUDE.md`, `AGENTS.md`, or the Mate OpenCode plugin, and never
+sets up child companions.
 
 ### Health And Inspection
 

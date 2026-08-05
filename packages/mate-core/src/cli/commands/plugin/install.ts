@@ -2,8 +2,10 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { resolveInstallContext } from "../../../lib/install";
+import { backfillHubAllowedAgents } from "../../../lib/orchestrator/companion-hub";
 import { ConfigStore } from "../../../lib/orchestrator/config-store";
-import type { PluginDeclaration } from "../../../lib/orchestrator/types";
+import type { FrameworkConfig, PluginDeclaration } from "../../../lib/orchestrator/types";
+import { applySetupCompatibilities } from "../../../tools/setup";
 import { hydrateDynamicPlugins } from "../../../tools/setup/dynamic-plugins/hydrate";
 import {
   installDeclaredPlugins,
@@ -33,6 +35,7 @@ function withDeclaration(
 export interface PluginInstallCommandDeps {
   cwd?: string;
   installDeps?: PluginInstallDeps;
+  setupHub?: (companionPath: string, config: FrameworkConfig) => Promise<void>;
 }
 
 /**
@@ -78,8 +81,10 @@ export async function runPluginInstallCommand(
   );
   const store = new ConfigStore(configPath);
   const nextPlugins = withDeclaration(context.config.plugins ?? [], packageName, version);
-  if (nextPlugins !== context.config.plugins) {
-    await store.save({ ...context.config, plugins: nextPlugins });
+  const nextConfig = { ...context.config, plugins: nextPlugins };
+  const agentsBackfilled = context.kind === "hub" && backfillHubAllowedAgents(nextConfig);
+  if (nextPlugins !== context.config.plugins || agentsBackfilled) {
+    await store.save(nextConfig);
   }
 
   const results = await installDeclaredPlugins(
@@ -89,6 +94,13 @@ export async function runPluginInstallCommand(
   );
   reportPluginInstallResults(results);
   await hydrateDynamicPlugins({ companionPath: context.companionPath });
+  if (context.kind === "hub") {
+    await (
+      deps.setupHub ??
+      ((companionPath, config) =>
+        applySetupCompatibilities(companionPath, config, "sync", undefined, undefined, "hub"))
+    )(context.companionPath, nextConfig);
+  }
 
   return results.find((result) => result.package === packageName)?.status !== "failed";
 }

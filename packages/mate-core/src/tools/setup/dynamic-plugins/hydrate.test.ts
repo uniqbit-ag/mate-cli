@@ -85,7 +85,7 @@ function makeRegistry(plugins: Plugin[] = []): PluginRegistry {
 }
 
 describe("hydrateDynamicPlugins", () => {
-  test("registers a declared plugin with the declared policy default", async () => {
+  test("registers and activates a declared plugin with the declared policy default", async () => {
     const companionPath = await writeCompanion({ pluginsYaml: DECLARED });
     const registry = makeRegistry();
     const warnings: string[] = [];
@@ -100,6 +100,41 @@ describe("hydrateDynamicPlugins", () => {
     expect(warnings).toEqual([]);
     expect(registry.getAll().map((plugin) => plugin.id)).toEqual(["acme-custom"]);
     expect(registry.getPolicy("acme-custom")).toBe("optional");
+    expect(registry.getAll()[0].isEnabled({ allowedAgents: [], capabilities: [] })).toBe(true);
+  });
+
+  test("keeps prototype members of class-instance plugins when activating", async () => {
+    const source = `
+export default function createPlugin() {
+  class AcmePlugin {
+    id = "acme-custom";
+    kind = "capability";
+    label = "Acme Custom";
+    description = "class plugin";
+    defaultSelected = false;
+    isEnabled() { return false; }
+    async apply() {}
+    async teardown() {}
+  }
+  return new AcmePlugin();
+}
+`;
+    const companionPath = await writeCompanion({ pluginsYaml: DECLARED, source });
+    const registry = makeRegistry();
+    const warnings: string[] = [];
+
+    await hydrateDynamicPlugins({
+      companionPath,
+      registry,
+      host: fakeHost,
+      warn: (message) => warnings.push(message),
+    });
+
+    expect(warnings).toEqual([]);
+    const plugin = registry.getAll()[0];
+    expect(plugin.isEnabled({ allowedAgents: [], capabilities: [] })).toBe(true);
+    expect(typeof plugin.apply).toBe("function");
+    expect(typeof plugin.teardown).toBe("function");
   });
 
   test("honors an explicit default policy", async () => {

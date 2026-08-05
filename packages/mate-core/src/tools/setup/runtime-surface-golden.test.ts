@@ -474,7 +474,7 @@ describe("working repo golden fixtures", () => {
     );
   }
 
-  test("hub roots are refused before any runtime file is written", async () => {
+  test("hub roots set up providers only without companion surfaces", async () => {
     const fixture = await makeFixture("mate-golden-hub-");
     const configDir = path.join(fixture.companionPath, ".mate", "config");
     await fs.mkdir(configDir, { recursive: true });
@@ -484,9 +484,7 @@ describe("working repo golden fixtures", () => {
       "utf8",
     );
 
-    await expect(runSetup(fixture, ["claude", "opencode"], ["tokensave"])).rejects.toThrow(
-      /hub cannot be set up as a companion/,
-    );
+    await runSetup(fixture, ["claude", "opencode"], ["tokensave"]);
 
     expect(await collectEffectiveState(fixture)).toMatchSnapshot();
   });

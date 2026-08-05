@@ -346,6 +346,11 @@ export async function reconcileClaudeContributions(
 ): Promise<void> {
   const { companionPath, config } = ctx;
 
+  if (ctx.scope === "hub") {
+    await reconcileClaudeMcpContributions(ctx, inputs);
+    return;
+  }
+
   // The settings sync (re)creates the managed settings document, so it only
   // runs while the Claude runtime is active; a deactivated runtime's pass is
   // teardown-only and must not resurrect files the provider teardown removed.
@@ -353,15 +358,9 @@ export async function reconcileClaudeContributions(
     await syncCompanionClaudeSettings(companionPath, config, inputs);
   }
 
-  for (const input of inputs) {
-    for (const descriptor of input.contributions.mcpServers ?? []) {
-      await updateClaudeMcpServer(
-        getCompanionClaudeMcpConfigPath(companionPath),
-        descriptor.name,
-        input.enabled ? toClaudeMcpEntry(descriptor) : null,
-      );
-    }
+  await reconcileClaudeMcpContributions(ctx, inputs);
 
+  for (const input of inputs) {
     // Guidance sections are managed blocks in CLAUDE.md. Current sections are
     // upserted, then stale keys (content changes, disabled capability) are
     // swept. CLAUDE.md is Claude-exclusive, so no shared-file guard applies.
@@ -385,6 +384,22 @@ export async function reconcileClaudeContributions(
         await fs.rm(skillDir, { recursive: true, force: true });
         await pruneEmptyAncestors(path.join(companionPath, ".claude", "skills"), companionPath);
       }
+    }
+  }
+}
+
+/** Reconcile only MCP entries without touching Claude settings or guidance. */
+async function reconcileClaudeMcpContributions(
+  ctx: SetupContext,
+  inputs: CapabilityContributionInput[],
+): Promise<void> {
+  for (const input of inputs) {
+    for (const descriptor of input.contributions.mcpServers ?? []) {
+      await updateClaudeMcpServer(
+        getCompanionClaudeMcpConfigPath(ctx.companionPath),
+        descriptor.name,
+        input.enabled ? toClaudeMcpEntry(descriptor) : null,
+      );
     }
   }
 }
@@ -688,6 +703,10 @@ export function createClaudePlugin(): ProviderPlugin {
       },
     },
     async apply(ctx) {
+      if (ctx.scope === "hub") {
+        await syncCompanionClaudeSettings(ctx.companionPath, ctx.config);
+        return;
+      }
       await configureClaude(ctx.companionPath);
       await configureClaudeGuidance(ctx.companionPath);
       await teardownLegacyClaudeBin(ctx.companionPath);
