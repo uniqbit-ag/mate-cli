@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate-core",
-  "version": "0.15.4-canary.11",
+  "version": "0.15.4-canary.12",
   "description": "Core framework and plugin APIs for Mate.",
   "license": "MIT",
   "files": [
