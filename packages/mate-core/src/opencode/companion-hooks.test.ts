@@ -119,9 +119,9 @@ describe("OpenCode companion hooks plugin", () => {
     expect(runtime.shellCalls[0]?.expressions.flat()).toContain(mateBin);
   });
 
-  test("nudges once when a new archive entry appears", async () => {
+  test("nudges only for an archive entry created during the tool call", async () => {
     const { companion, repo, archiveDir } = await setupCompanion();
-    const output: { output?: string } = {};
+    const output = { title: "", output: "", metadata: {} };
     await withEnv(
       {
         MATE_ARTIFACT_PATH: companion,
@@ -132,14 +132,11 @@ describe("OpenCode companion hooks plugin", () => {
       },
       async () => {
         const plugin = await CompanionHooksPlugin();
-        const after = plugin["tool.execute.after"] as (
-          input: { tool: string },
-          output: { output?: string },
-        ) => Promise<void>;
-        await after({ tool: "bash" }, output);
+        const before = plugin["tool.execute.before"]!;
+        const after = plugin["tool.execute.after"]!;
+        await before({ tool: "read", sessionID: "session", callID: "call" }, { args: {} });
         await fs.mkdir(path.join(archiveDir, "2026-07-14-my-change"));
-        await after({ tool: "read" }, output);
-        await after({ tool: "bash" }, output);
+        await after({ tool: "read", sessionID: "session", callID: "call", args: {} }, output);
       },
     );
     expect(output.output).toContain("mate-artifact-finish");
@@ -148,9 +145,85 @@ describe("OpenCode companion hooks plugin", () => {
     expect(output.output?.match(/ACTION REQUIRED:/g)).toHaveLength(1);
   });
 
+  test("does not nudge for an archive entry created before the tool call", async () => {
+    const { companion, repo, archiveDir } = await setupCompanion();
+    const plugin = await getHooks(companion, repo);
+    const output = { title: "", output: "", metadata: {} };
+
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-external-change"));
+    await plugin["tool.execute.before"]!(
+      { tool: "read", sessionID: "session", callID: "call" },
+      { args: {} },
+    );
+    await plugin["tool.execute.after"]!(
+      { tool: "read", sessionID: "session", callID: "call", args: {} },
+      output,
+    );
+
+    expect(output.output).toBe("");
+  });
+
+  test("keeps overlapping tool-call snapshots independent", async () => {
+    const { companion, repo, archiveDir } = await setupCompanion();
+    const plugin = await getHooks(companion, repo);
+    const before = plugin["tool.execute.before"]!;
+    const after = plugin["tool.execute.after"]!;
+    const firstOutput = { title: "", output: "", metadata: {} };
+    const secondOutput = { title: "", output: "", metadata: {} };
+
+    await before({ tool: "read", sessionID: "one", callID: "first" }, { args: {} });
+    await before({ tool: "read", sessionID: "two", callID: "second" }, { args: {} });
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-my-change"));
+    await after({ tool: "read", sessionID: "one", callID: "first", args: {} }, firstOutput);
+    await after({ tool: "read", sessionID: "two", callID: "second", args: {} }, secondOutput);
+
+    expect(firstOutput.output).toContain("my-change");
+    expect(secondOutput.output).toContain("my-change");
+  });
+
+  test("discards pending snapshots when their session is deleted", async () => {
+    const { companion, repo, archiveDir } = await setupCompanion();
+    const plugin = await getHooks(companion, repo);
+    const output = { title: "", output: "", metadata: {} };
+
+    await plugin["tool.execute.before"]!(
+      { tool: "read", sessionID: "session", callID: "call" },
+      { args: {} },
+    );
+    await plugin.event!({
+      event: { type: "session.deleted", properties: { info: { id: "session" } } },
+    } as never);
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-external-change"));
+    await plugin["tool.execute.after"]!(
+      { tool: "read", sessionID: "session", callID: "call", args: {} },
+      output,
+    );
+
+    expect(output.output).toBe("");
+  });
+
+  test("discards pending snapshots when the plugin is disposed", async () => {
+    const { companion, repo, archiveDir } = await setupCompanion();
+    const plugin = await getHooks(companion, repo);
+    const output = { title: "", output: "", metadata: {} };
+
+    await plugin["tool.execute.before"]!(
+      { tool: "read", sessionID: "session", callID: "call" },
+      { args: {} },
+    );
+    await plugin.dispose!();
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-external-change"));
+    await plugin["tool.execute.after"]!(
+      { tool: "read", sessionID: "session", callID: "call", args: {} },
+      output,
+    );
+
+    expect(output.output).toBe("");
+  });
+
   test("nudges after a direct archive command", async () => {
     const { companion, repo } = await setupCompanion();
-    const output: { output?: string } = {};
+    const output = { title: "", output: "", metadata: {} };
     await withEnv(
       {
         MATE_ARTIFACT_PATH: companion,
@@ -161,12 +234,13 @@ describe("OpenCode companion hooks plugin", () => {
       },
       async () => {
         const plugin = await CompanionHooksPlugin();
-        const after = plugin["tool.execute.after"] as (
-          input: { tool: string; args?: Record<string, unknown> },
-          output: { output?: string },
-        ) => Promise<void>;
-        await after(
-          { tool: "bash", args: { command: "openspec archive my-change --json --yes" } },
+        await plugin["tool.execute.after"]!(
+          {
+            tool: "bash",
+            sessionID: "session",
+            callID: "call",
+            args: { command: "openspec archive my-change --json --yes" },
+          },
           output,
         );
       },
@@ -176,7 +250,7 @@ describe("OpenCode companion hooks plugin", () => {
 
   test("nudges after a move command and ignores non-archive names", async () => {
     const { companion, repo } = await setupCompanion();
-    const output: { output?: string } = {};
+    const output = { title: "", output: "", metadata: {} };
     await withEnv(
       {
         MATE_ARTIFACT_PATH: companion,
@@ -187,13 +261,11 @@ describe("OpenCode companion hooks plugin", () => {
       },
       async () => {
         const plugin = await CompanionHooksPlugin();
-        const after = plugin["tool.execute.after"] as (
-          input: { tool: string; args?: Record<string, unknown> },
-          output: { output?: string },
-        ) => Promise<void>;
-        await after(
+        await plugin["tool.execute.after"]!(
           {
             tool: "bash",
+            sessionID: "session",
+            callID: "call",
             args: { command: 'mv "my-change" "openspec/changes/archive/2026-07-14-my-change"' },
           },
           output,
@@ -206,7 +278,7 @@ describe("OpenCode companion hooks plugin", () => {
   test("does not nudge initial entries or disabled auto mode", async () => {
     const { companion, repo, archiveDir } = await setupCompanion();
     await fs.mkdir(path.join(archiveDir, "2026-07-14-existing-change"));
-    const output: { output?: string } = {};
+    const output = { title: "", output: "", metadata: {} };
     await withEnv(
       {
         MATE_ARTIFACT_PATH: companion,
@@ -217,14 +289,17 @@ describe("OpenCode companion hooks plugin", () => {
       },
       async () => {
         const plugin = await CompanionHooksPlugin();
-        const after = plugin["tool.execute.after"] as (
-          input: { tool: string },
-          output: { output?: string },
-        ) => Promise<void>;
-        await after({ tool: "bash" }, output);
+        await plugin["tool.execute.before"]!(
+          { tool: "bash", sessionID: "session", callID: "call" },
+          { args: {} },
+        );
+        await plugin["tool.execute.after"]!(
+          { tool: "bash", sessionID: "session", callID: "call", args: {} },
+          output,
+        );
       },
     );
-    expect(output.output).toBeUndefined();
+    expect(output.output).toBe("");
     const disabled = await getHooks(companion, repo, "0");
     expect(disabled["tool.execute.after"]).toBeDefined();
   });

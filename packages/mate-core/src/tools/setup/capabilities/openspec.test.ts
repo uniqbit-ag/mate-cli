@@ -358,6 +358,12 @@ describe("createOpenspecPlugin", () => {
     const root = await makeTempDir("mate-openspec-mate-skills-");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
 
+    for (const runtimeDir of [".claude", ".opencode"]) {
+      const retired = path.join(root, runtimeDir, "skills", "mate-openspec-artifact-finish");
+      await fs.mkdir(retired, { recursive: true });
+      await fs.writeFile(path.join(retired, "SKILL.md"), "retired\n", "utf8");
+    }
+
     await plugin.apply(
       makeCtx(root, ["claude", "opencode"], [{ name: "openspec" }], "setup", "auto"),
     );
@@ -368,6 +374,9 @@ describe("createOpenspecPlugin", () => {
           fs.readFile(path.join(root, runtimeDir, "skills", skill, "SKILL.md"), "utf8"),
         ).resolves.toContain(skill === "mate-create-report" ? "report --input" : "artifact finish");
       }
+      await expect(
+        fs.access(path.join(root, runtimeDir, "skills", "mate-openspec-artifact-finish")),
+      ).rejects.toThrow();
     }
 
     // Claude Code always confirms with the user before the finish pipeline
@@ -445,7 +454,7 @@ describe("createOpenspecPlugin", () => {
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}) });
 
     for (const runtimeDir of [".claude", ".opencode"]) {
-      for (const skill of MATE_ARTIFACT_SKILLS) {
+      for (const skill of [...MATE_ARTIFACT_SKILLS, "mate-openspec-artifact-finish"]) {
         await fs.mkdir(path.join(root, runtimeDir, "skills", skill), { recursive: true });
         await fs.writeFile(
           path.join(root, runtimeDir, "skills", skill, "SKILL.md"),
