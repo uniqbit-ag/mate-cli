@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.15.4](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-05)
+
+## [0.15.4-canary.12](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-05)
+
+### Features
+
+- **setup:** add agent-definition runtime contributions for openspec backfill ([74df601](https://github.com/uniqbit-ag/mate-cli/commit/74df601311a2b5d7126155146d51c3ce0f90eef8))
+
+### Bug Fixes
+
+- **opencode:** scope archive snapshots per tool call, retire legacy finish skill ([8637772](https://github.com/uniqbit-ag/mate-cli/commit/8637772e8251cfc42042a2c412564a12b6d91aab))
+- **orchestrator:** harden companion git sync merge and error handling ([dc55d9f](https://github.com/uniqbit-ag/mate-cli/commit/dc55d9f1a386cc828bd93c52bc12c9eb42777e16))
+
+## [0.15.4-canary.11](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-05)
+
+### Features
+
+- **setup:** support hub-scoped setup limited to MCP contributions ([7b7286f](https://github.com/uniqbit-ag/mate-cli/commit/7b7286f0aa351da12d3cba3ef4453b1359d8670e))
+
+## [0.15.4-canary.10](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-04)
+
+## [0.15.4-canary.9](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-04)
+
+## [0.15.4-canary.8](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-04)
+
+### Features
+
+- allow plugin install in hub roots; gate hub cmds off companions ([a6cdefc](https://github.com/uniqbit-ag/mate-cli/commit/a6cdefcc3acc4925c34fe53f9a8fafd9bf952f94))
+
+## [0.15.4-canary.7](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-04)
+
+## [0.15.4-canary.6](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-04)
+
+### Bug Fixes
+
+- prevent guidance install in hub roots ([b04e5b6](https://github.com/uniqbit-ag/mate-cli/commit/b04e5b62c257ed0e0fe2934a854007701abdcc0e))
+
+## [0.15.4-canary.5](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-03)
+
+## [0.15.4-canary.4](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-03)
+
+### Bug Fixes
+
+- initialize hub config with complete defaults ([13ae295](https://github.com/uniqbit-ag/mate-cli/commit/13ae2953c6f2e16bcdd84ab14670ab26f793c0bd))
+
+## [0.15.4-canary.3](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-03)
+
+## [0.15.4-canary.2](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-03)
+
+## [0.15.4-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-03)
+
+### Features
+
+- add companion hub commands ([cdf634f](https://github.com/uniqbit-ag/mate-cli/commit/cdf634f8f508ef2c3fd6c87af981fae89899209c))
+- add mate plugin install command and registry-hint diagnostics ([38b5b07](https://github.com/uniqbit-ag/mate-cli/commit/38b5b07aea325d1dd4a81e297a6bc73bb0fd99bd))
+
+### Bug Fixes
+
+- enforce unfinished OpenSpec artifact finishing ([3a3c1d4](https://github.com/uniqbit-ag/mate-cli/commit/3a3c1d43a3b1118b30793d43007534a5bd40146d))
+- remove implicit hub editor opening ([92a1ab9](https://github.com/uniqbit-ag/mate-cli/commit/92a1ab96de142d9e2ca94838dc073763b553a37d))
+
+## [0.15.4-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-07-30)
+
 ## [0.15.3](https://github.com/uniqbit-ag/mate-cli/compare/0.15.2...0.15.3) (2026-07-29)
 
 ## [0.15.3-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.15.2...0.15.3) (2026-07-29)
