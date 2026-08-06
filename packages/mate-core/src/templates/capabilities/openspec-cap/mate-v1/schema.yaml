@@ -1,5 +1,5 @@
 name: mate-v1
-version: 3
+version: 5
 description: Mate's repository- and Area-scoped OpenSpec workflow - explore → proposal → specs → design → tasks
 artifacts:
   - id: explore
@@ -46,7 +46,9 @@ artifacts:
        - Scopes are recorded ONLY in the frontmatter `scopes` list — do not add a `## Scopes` body section. Every change MUST name at least one scope.
        - Every `scopes` entry MUST pair `repository: org/repository` with an `area` selected according to the repository layout: the owning workspace/package root in a monorepo — the directory containing that package's manifest (`package.json`, `Cargo.toml`, `go.mod`, etc.) nearest the affected path (for example, `acme`, `apps/storefront`, or `packages/ui`, not `acme/src/sub-1/sub-2` or `apps/storefront/src/features/checkout`), or the exact affected path in a non-monorepo repository (for example, `docs`); use `.` only when the repository root itself is affected.
        - Repository identity MUST come from the Git remote. Normalize SSH and HTTPS forms such as `git@github.com:org/repository.git` and `https://github.com/org/repository.git` to `org/repository`.
-       - Area identity is metadata, never part of a change or capability folder name.
+       - Default a new capability to one package root: prefer one capability per owning package root over a single capability spanning several Areas.
+       - A change MAY declare scopes in several repositories, but each capability spec names exactly one. When a change spans repositories, list one capability per repository under Capabilities.
+       - Area identity is metadata: scope is read only from the frontmatter `scopes`, never from a change or capability folder name, though a descriptive name aligned with its package root is permitted.
        - Do not use a local checkout directory basename, Mate's internal repository ID, a synthetic Area token, or `N/A` as durable metadata.
 
       **Obsidian**: Emit this YAML frontmatter at the very top of the file. Replace `<change-name>` with the actual change folder name (e.g. `my-change`):
@@ -85,14 +87,14 @@ artifacts:
        **Path and scope rules** — spec files are ALWAYS flat; paired scope metadata is required, never a folder:
       - Every spec lives at `specs/<capability>/spec.md`. Never interpose an Area folder. `specs/<area>/<capability>/spec.md` breaks the OpenSpec CLI: it parses spec deltas only at the flat path, so an Area folder makes `openspec show`/`validate` report zero deltas.
        - Every delta and canonical spec MUST record a `scopes` frontmatter list whose entries pair `repository: org/repository` with an `area` selected according to the repository layout. Monorepo Areas stop at workspace/package roots such as `acme`, `apps/storefront`, or `packages/ui` — the directory containing that package's manifest (`package.json`, `Cargo.toml`, `go.mod`, etc.) nearest the affected path; non-monorepo Areas remain exact paths such as `docs` or `.`.
-       - Each scope pair is independent. Preserve every repository/Area pair for monorepos and multiple repositories; never use separate parallel `repositories` and `areas` arrays.
-       - Example paired scopes: `{ repository: org/product, area: acme }`, `{ repository: org/product, area: apps/storefront }`, `{ repository: org/product, area: packages/api }`, and `{ repository: org/other, area: docs }`.
+       - Each scope pair is independent. Preserve every repository/Area pair; never use separate parallel `repositories` and `areas` arrays.
+       - Example paired scopes for one spec: `{ repository: org/product, area: acme }`, `{ repository: org/product, area: apps/storefront }`, and `{ repository: org/product, area: packages/api }` — same repository throughout. A capability in `org/other` is its own spec.
        - Do not split a monorepo Area into deeper entries such as `acme/src`, `acme/public`, or `apps/storefront/src/features/checkout`; those paths remain inside the `acme` Area (or `apps/storefront`, `packages/ui`, etc.) regardless of how many source subfolders the change touches. A non-monorepo repository may use exact subpaths such as `docs` to identify the affected Area.
-       - Scopes cascade: every requirement inherits all frontmatter `scopes` entries by default and needs no inline markers.
-       - Add a direct `**Area:**` marker to a requirement ONLY when its effective scope is narrower than the document scopes. The marker may list multiple Areas as backtick-quoted, comma-separated values (for example, `**Area:** \`acme\`, \`packages/api\``), and every listed Area MUST appear in the frontmatter `scopes`.
-       - Add a direct `**Repository:**` marker ONLY when the spec's frontmatter names more than one repository and the requirement binds fewer of them; every listed value MUST appear in the frontmatter `scopes`. In a single-repository spec, requirement-level `**Repository:**` markers are forbidden — the frontmatter already says it.
-       - Prefer single-repository specs: a cross-repo feature SHOULD use one capability spec per repository, with shared contracts in a capability owned by one repository. A deliberately multi-repository spec MUST label every requirement that does not bind all listed repositories with a `**Repository:**` marker.
-       - Capability names are opaque, kebab-case labels with no scope semantics: repository and Area meaning comes ONLY from the frontmatter `scopes`, never from the capability name. Names are unique per OpenSpec root (`specs/<capability>/spec.md` is flat); when two linked repositories would want the same name, choose distinct descriptive names rather than encoding a repository or Area into the name. State each repository's own observable obligation as its own requirement, and put shared contracts in a capability owned by one repository.
+       - Default a new capability to a single scope entry for the owning package root. When a change affects two package roots, write two capability specs rather than one spec with two Areas; reserve multi-Area specs for behavior genuinely shared across those roots.
+       - EVERY requirement MUST carry an `**Area:**` marker naming the Areas it binds — in every spec, including a spec whose frontmatter names only one Area and a requirement that binds all of them. The marker may list several as backtick-quoted, comma-separated values (for example, `**Area:** \`acme\`, \`packages/api\``), and every listed Area MUST appear in the frontmatter `scopes`.
+       - Mark unconditionally, never by cascade: a requirement's Area is then readable without consulting the frontmatter, it survives archive creating a new main spec (which discards frontmatter but copies requirement blocks verbatim), and a spec that later gains an Area needs no edit to its existing requirements.
+       - A spec MUST name exactly one repository: every `scopes` entry in one spec repeats the same `repository`, and requirement-level `**Repository:**` markers do not exist in this model. Cross-repository work is specified as one capability per repository, with shared contracts in a capability owned by one of them. A change's proposal MAY still declare scopes in several repositories — this rule binds each spec, not the change.
+       - Capability names are unique per OpenSpec root (`specs/<capability>/spec.md` is flat) and carry no authority over scope: repository and Area are read ONLY from the frontmatter `scopes`, never from the capability name. A descriptive name aligned with its package root is permitted where it aids uniqueness.
        - Do not use a local checkout directory basename, Mate's internal repository ID, a synthetic Area token, or `N/A`.
       - Modified capabilities: match the existing `specs/<capability>/spec.md` path exactly.
 
@@ -105,10 +107,12 @@ artifacts:
       Format requirements:
       - Each requirement: `### Requirement: <name>` followed by description
       - Use SHALL/MUST for normative requirements (avoid should/may)
-       - Narrowing markers, when needed, go after the requirement's SHALL/MUST statement and before its first scenario — `**Repository:**` first, then `**Area:**`. For a REMOVED requirement without a normative statement, put them after `**Migration**`.
+       - An `**Area:**` marker, when required, goes after the requirement's SHALL/MUST statement and before its first scenario. For a REMOVED requirement without a normative statement, put it after `**Migration**`.
       - Each scenario: `#### Scenario: <name>` with WHEN/THEN format
       - **CRITICAL**: Scenarios MUST use exactly 4 hashtags (`####`). Using 3 hashtags or bullets will fail silently.
       - Every requirement MUST have at least one scenario.
+
+      New capabilities only: after the frontmatter and backlink lines, start the delta spec body with a `## Purpose` section - one or two sentences (50+ characters, or `openspec validate --strict` reports it as too brief) describing what the capability is for. Archive copies it into the main spec it creates; without it the new main spec is left with a `TBD ... Update Purpose after archive.` placeholder to fill in by hand. Do NOT add `## Purpose` to a delta for an existing capability - that spec already has one and the delta's is ignored. To change an existing capability's Purpose - including a leftover `TBD` placeholder - edit `openspec/specs/<capability>/spec.md` directly.
 
       MODIFIED requirements workflow:
       1. Locate the existing requirement in `openspec/specs/<capability>/spec.md`.
@@ -118,13 +122,14 @@ artifacts:
 
       Common pitfall: Using MODIFIED with partial content loses detail at archive time. If adding new concerns without changing existing behavior, use ADDED instead.
 
-      Example (frontmatter scopes cover `acme` and `packages/api`; the first requirement inherits both, the second narrows to one):
+      Example (frontmatter scopes cover `acme` and `packages/api`; every requirement carries an `**Area:**` marker, as always — the first binds both, the second one):
 
       ```
       ## ADDED Requirements
 
       ### Requirement: User can export data
       The system SHALL allow users to export their data in CSV format.
+      **Area:** `acme`, `packages/api`
 
       #### Scenario: Successful export
       - **WHEN** user clicks "Export" button
@@ -160,8 +165,8 @@ artifacts:
        1. Normalize each Area to the owning workspace/package root for monorepos — the directory containing that package's manifest (`package.json`, `Cargo.toml`, `go.mod`, etc.) nearest the affected path, e.g. collapse `apps/storefront/src/features/checkout` to `apps/storefront`; for non-monorepos, retain the exact affected repository-relative path and use `.` only when the repository root is the intended Area.
        2. Replace local, internal, synthetic, or otherwise non-portable repository and Area values with canonical Git remote identities and exact repository-relative paths.
        3. Add mandatory paired `scopes` frontmatter to every delta and canonical spec that lacks it.
-       4. Remove requirement-level `**Repository:**` markers and any `**Area:**` marker that merely repeats the full document scope; keep or add `**Area:**` markers only where a requirement's effective scope is narrower than the frontmatter `scopes`.
-       5. Preserve paired scope metadata and narrowing Area markers when archiving, validating, displaying, or finishing artifacts.
+       4. Remove every requirement-level `**Repository:**` marker; if a legacy spec names more than one repository, split it into one capability per repository. Add an `**Area:**` marker to every requirement that lacks one, including in a spec whose frontmatter names only one Area.
+       5. Preserve paired scope metadata and requirement-level Area markers when archiving, validating, displaying, or finishing artifacts.
     requires:
       - proposal
   - id: design
