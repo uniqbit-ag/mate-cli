@@ -45,9 +45,9 @@ describe("mate-v1 schema", () => {
 
     expect(parsed.name).toBe("mate-v1");
     expect(isValidSchemaVersion(parsed.version)).toBe(true);
-    expect(parsed.version).toBe(3);
+    expect(parsed.version).toBe(5);
 
-    const dottedVersion = parse(raw.replace("version: 3", "version: 3.1")) as {
+    const dottedVersion = parse(raw.replace("version: 5", "version: 5.1")) as {
       version?: unknown;
     };
     expect(isValidSchemaVersion(dottedVersion.version)).toBe(false);
@@ -116,20 +116,11 @@ describe("mate-v1 schema", () => {
     expect(raw).toContain("area: acme");
     expect(raw).toContain("packages/api");
     expect(raw).toContain("org/other");
-    expect(raw).toContain("area: docs");
     expect(raw).toContain("not `acme/src/sub-1/sub-2`");
     expect(raw).toContain("acme/src");
     expect(raw).toContain("acme` Area");
     expect(raw).not.toContain("area: acme/src");
     expect(raw).toContain("A non-monorepo repository may use exact subpaths such as `docs`");
-    expect(raw).toContain(
-      "Scopes cascade: every requirement inherits all frontmatter `scopes` entries",
-    );
-    expect(raw).toContain("ONLY when its effective scope is narrower than the document scopes");
-    expect(raw).toContain("ONLY when the spec's frontmatter names more than one repository");
-    expect(raw).toContain("requirement-level `**Repository:**` markers are forbidden");
-    expect(raw).toContain("Prefer single-repository specs");
-    expect(raw).toContain("no scope semantics");
     expect(raw).toContain("never from the capability name");
     expect(raw).toContain("area: apps/storefront");
     expect(raw).not.toContain("area: apps/storefront/src");
@@ -147,13 +138,104 @@ describe("mate-v1 schema", () => {
     expect(spec).toContain("type: delta-spec");
     expect(spec).toContain("capability: <capability>");
     expect(spec).toContain("tags: [openspec/change, openspec/spec, openspec/delta]");
-    expect(spec).toContain("inherits every frontmatter `scopes` entry");
-    expect(spec).toContain("**Area:** `.`");
-    expect(spec).toContain("allowed only when the frontmatter names more than one");
+    expect(spec).toContain("always, even when there is only one");
+    expect(spec).toContain("**Area:** `packages/ui`");
+    expect(spec).toContain("Every scopes entry names the same repository");
     expect(design).toContain("type: change-design");
     expect(design).toContain("schema: mate-v1");
     expect(tasks).toContain("type: change-tasks");
     expect(tasks).toContain("schema: mate-v1");
+  });
+
+  test("guides delta Purpose for new capabilities in template and specs instruction", async () => {
+    const { parsed } = await readSchema();
+    const specs = artifact(parsed, "specs");
+    const spec = await fs.readFile(path.join(templatesPath, "spec.md"), "utf8");
+
+    expect(spec).toMatch(/^## Purpose\n/m);
+    expect(spec.indexOf("## Purpose")).toBeLessThan(spec.indexOf("## ADDED Requirements"));
+    expect(spec).toContain("New capabilities only");
+    expect(spec).toContain("50+ characters");
+    expect(spec).toContain("Delete this section for an existing capability");
+    expect(specs.instruction).toContain("start the delta spec body with a `## Purpose` section");
+    expect(specs.instruction).toContain("50+ characters");
+    expect(specs.instruction).toContain("Archive copies it into the main spec it creates");
+    expect(specs.instruction).toContain("TBD ... Update Purpose after archive.");
+    expect(specs.instruction).toContain(
+      "Do NOT add `## Purpose` to a delta for an existing capability",
+    );
+  });
+
+  test("requires an Area marker on every requirement unconditionally", async () => {
+    const { raw, parsed } = await readSchema();
+    const specs = artifact(parsed, "specs");
+    const spec = await fs.readFile(path.join(templatesPath, "spec.md"), "utf8");
+
+    expect(specs.instruction).toContain(
+      "EVERY requirement MUST carry an `**Area:**` marker naming the Areas it binds",
+    );
+    expect(specs.instruction).toContain(
+      "including a spec whose frontmatter names only one Area and a requirement that binds all of them",
+    );
+    /** Unconditional marking is what survives archive discarding frontmatter. */
+    expect(specs.instruction).toContain(
+      "survives archive creating a new main spec (which discards frontmatter but copies requirement blocks verbatim)",
+    );
+    expect(specs.instruction).toContain(
+      "a spec that later gains an Area needs no edit to its existing requirements",
+    );
+    expect(specs.instruction).not.toContain("MUST NOT carry an `**Area:**` marker");
+    expect(spec).toContain("EVERY requirement carries an **Area:** marker");
+    expect(specs.instruction).toContain("**Area:** `acme`, `packages/api`");
+    expect(raw).toContain(
+      "Add an `**Area:**` marker to every requirement that lacks one, including in a spec whose frontmatter names only one Area",
+    );
+  });
+
+  test("defaults new capabilities to one package root without giving names scope authority", async () => {
+    const { parsed } = await readSchema();
+    const specs = artifact(parsed, "specs");
+    const proposal = artifact(parsed, "proposal");
+
+    expect(specs.instruction).toContain(
+      "Default a new capability to a single scope entry for the owning package root",
+    );
+    expect(specs.instruction).toContain(
+      "write two capability specs rather than one spec with two Areas",
+    );
+    expect(proposal.instruction).toContain("Default a new capability to one package root");
+    expect(specs.instruction).toContain("carry no authority over scope");
+    expect(specs.instruction).toContain(
+      "A descriptive name aligned with its package root is permitted",
+    );
+    expect(proposal.instruction).toContain(
+      "a descriptive name aligned with its package root is permitted",
+    );
+  });
+
+  test("binds every spec to exactly one repository and drops Repository markers", async () => {
+    const { raw, parsed } = await readSchema();
+    const specs = artifact(parsed, "specs");
+    const proposal = artifact(parsed, "proposal");
+    const spec = await fs.readFile(path.join(templatesPath, "spec.md"), "utf8");
+
+    expect(specs.instruction).toContain("A spec MUST name exactly one repository");
+    expect(specs.instruction).toContain(
+      "requirement-level `**Repository:**` markers do not exist in this model",
+    );
+    expect(specs.instruction).toContain(
+      "Cross-repository work is specified as one capability per repository",
+    );
+    /** The single-repository rule binds each spec, never the change. */
+    expect(specs.instruction).toContain("this rule binds each spec, not the change");
+    expect(proposal.instruction).toContain(
+      "A change MAY declare scopes in several repositories, but each capability spec names exactly one",
+    );
+    expect(spec).toContain("no **Repository:** marker is ever used");
+    expect(spec).not.toContain("A **Repository:** marker is allowed only when");
+    expect(raw).not.toContain("Prefer single-repository specs");
+    expect(raw).not.toContain("ONLY when the spec's frontmatter names more than one repository");
+    expect(raw).toContain("Remove every requirement-level `**Repository:**` marker");
   });
 
   test("does not define separate repository and Area arrays", async () => {
