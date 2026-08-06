@@ -1,5 +1,5 @@
 name: mate-v1
-version: 5
+version: 6
 description: Mate's repository- and Area-scoped OpenSpec workflow - explore → proposal → specs → design → tasks
 artifacts:
   - id: explore
@@ -161,12 +161,33 @@ artifacts:
 
       After the file's `#` title line, add a backlink on the next line: `← [[proposal]]`. If modifying an existing main spec, add on the line after: `Applies to: [[openspec/specs/<capability>/spec]]`.
 
+       **Canonical spec frontmatter** — a DIFFERENT block, used ONLY by canonical specs at `openspec/specs/<capability>/spec.md`. A canonical spec uses flat scalars, never a nested `scopes` list:
+
+      ```
+      ---
+      type: spec
+      capability: <capability>
+      repository: org/repository
+      areas: [<area>, <area>]
+      tags: [openspec/spec]
+      ---
+      ```
+
+       Which block applies where: change artifacts — explore brief, proposal, delta spec, design, and tasks — keep paired `scopes`, because a change MAY declare scopes in several repositories. Canonical specs use the flat block above and MUST NOT carry a `scopes` key, because the one-repository-per-spec rule leaves no repository/Area pair to bind. Flat scalars are also the only shape Obsidian properties, property search, and Bases can filter or group; a list of mappings is an unsupported property type.
+
+       Projection from a delta spec to its canonical spec — both the agent-driven merge and any deterministic reconciliation MUST derive the canonical block this way, so the two agree:
+       1. Read the delta spec's `scopes` entries.
+       2. Assert every `repository` value is identical. If they differ, projection FAILS — never pick one and never emit a list; correct the delta by splitting it into one capability per repository.
+       3. Emit that repository as the scalar `repository`, and the distinct `area` values as `areas` in their original order.
+       4. Set `capability` from the spec's directory name and `tags` to `[openspec/spec]`. Delta-only keys — `change` and the delta tags `openspec/change`/`openspec/delta` — MUST NOT carry over.
+
        Migration rules for existing artifacts and canonical specs:
        1. Normalize each Area to the owning workspace/package root for monorepos — the directory containing that package's manifest (`package.json`, `Cargo.toml`, `go.mod`, etc.) nearest the affected path, e.g. collapse `apps/storefront/src/features/checkout` to `apps/storefront`; for non-monorepos, retain the exact affected repository-relative path and use `.` only when the repository root is the intended Area.
        2. Replace local, internal, synthetic, or otherwise non-portable repository and Area values with canonical Git remote identities and exact repository-relative paths.
-       3. Add mandatory paired `scopes` frontmatter to every delta and canonical spec that lacks it.
+       3. Add mandatory scope frontmatter to every delta and canonical spec that lacks it — paired `scopes` on a delta spec, the flat `repository`/`areas` block on a canonical spec.
        4. Remove every requirement-level `**Repository:**` marker; if a legacy spec names more than one repository, split it into one capability per repository. Add an `**Area:**` marker to every requirement that lacks one, including in a spec whose frontmatter names only one Area.
        5. Preserve paired scope metadata and requirement-level Area markers when archiving, validating, displaying, or finishing artifacts.
+       6. Convert a canonical spec still carrying a nested `scopes` list to the flat block: collapse the repeated `repository` value to the scalar `repository`, list the distinct `area` values as `areas`, and delete the `scopes` key. Strip leaked delta-only keys — `change`, a flat legacy `area`, and the `openspec/change`/`openspec/delta` tags — and add `type: spec` and `capability` where missing. A canonical spec that predates this rule stays readable until converted; do not treat the legacy shape as a validation failure.
     requires:
       - proposal
   - id: design

@@ -45,9 +45,9 @@ describe("mate-v1 schema", () => {
 
     expect(parsed.name).toBe("mate-v1");
     expect(isValidSchemaVersion(parsed.version)).toBe(true);
-    expect(parsed.version).toBe(5);
+    expect(parsed.version).toBe(6);
 
-    const dottedVersion = parse(raw.replace("version: 5", "version: 5.1")) as {
+    const dottedVersion = parse(raw.replace("version: 6", "version: 6.1")) as {
       version?: unknown;
     };
     expect(isValidSchemaVersion(dottedVersion.version)).toBe(false);
@@ -242,7 +242,58 @@ describe("mate-v1 schema", () => {
     const { raw } = await readSchema();
 
     expect(raw).not.toMatch(/^\s*repositories:\s*$/m);
-    expect(raw).not.toMatch(/^\s*areas:\s*$/m);
+    /** Canonical specs pair a scalar `repository` with `areas`; a plural `repositories` array stays forbidden. */
+    expect(raw).not.toContain("repositories:");
     expect(raw).toContain("never use separate parallel `repositories` and `areas` arrays");
+  });
+
+  test("defines flat canonical spec frontmatter distinct from the delta block", async () => {
+    const { raw, parsed } = await readSchema();
+    const specs = artifact(parsed, "specs");
+
+    expect(specs.instruction).toContain(
+      "used ONLY by canonical specs at `openspec/specs/<capability>/spec.md`",
+    );
+    expect(specs.instruction).toContain("type: spec");
+    expect(specs.instruction).toContain("repository: org/repository");
+    expect(specs.instruction).toContain("areas: [<area>, <area>]");
+    expect(specs.instruction).toContain("tags: [openspec/spec]");
+    /** The delta block must survive untouched alongside the canonical one. */
+    expect(specs.instruction).toContain("type: delta-spec");
+    expect(raw).toContain("A canonical spec uses flat scalars, never a nested `scopes` list");
+  });
+
+  test("keeps paired scopes on change artifacts and forbids scopes on canonical specs", async () => {
+    const { parsed } = await readSchema();
+    const specs = artifact(parsed, "specs");
+
+    expect(specs.instruction).toContain(
+      "change artifacts — explore brief, proposal, delta spec, design, and tasks — keep paired `scopes`",
+    );
+    expect(specs.instruction).toContain(
+      "Canonical specs use the flat block above and MUST NOT carry a `scopes` key",
+    );
+    expect(specs.instruction).toContain("a change MAY declare scopes in several repositories");
+    /** Flatness is justified by queryability, not taste. */
+    expect(specs.instruction).toContain("a list of mappings is an unsupported property type");
+  });
+
+  test("specifies the delta-to-canonical projection including its failure case", async () => {
+    const { raw, parsed } = await readSchema();
+    const specs = artifact(parsed, "specs");
+
+    expect(specs.instruction).toContain(
+      "both the agent-driven merge and any deterministic reconciliation MUST derive the canonical block this way",
+    );
+    expect(specs.instruction).toContain("Assert every `repository` value is identical");
+    expect(specs.instruction).toContain("projection FAILS — never pick one and never emit a list");
+    expect(specs.instruction).toContain(
+      "the distinct `area` values as `areas` in their original order",
+    );
+    expect(specs.instruction).toContain("MUST NOT carry over");
+    expect(raw).toContain(
+      "Convert a canonical spec still carrying a nested `scopes` list to the flat block",
+    );
+    expect(raw).toContain("do not treat the legacy shape as a validation failure");
   });
 });
