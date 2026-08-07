@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { parse } from "yaml";
+
 import { hasOpenspecCapability } from "../../../../lib/orchestrator/capabilities";
 import { runIndexCapCommand } from "../../cap/index-cmd";
 import type { ArtifactFinisher, FinishContext } from "./finisher";
@@ -57,6 +59,171 @@ async function commitPathsForArchive(
   ];
 }
 
+const BOM = "﻿";
+
+interface ScopePair {
+  repository: string;
+  area: string;
+}
+
+type ProjectionResult =
+  | { ok: true; repository: string; areas: string[] }
+  | { ok: false; reason: string };
+
+function parseDeltaScopes(source: string): ScopePair[] {
+  const text = source.startsWith(BOM) ? source.slice(BOM.length) : source;
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+  if (!match) return [];
+
+  try {
+    const parsed = parse(match[1]) as unknown;
+    if (!parsed || typeof parsed !== "object") return [];
+    const scopes = (parsed as Record<string, unknown>).scopes;
+    if (!Array.isArray(scopes)) return [];
+    return scopes.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const pair = entry as Record<string, unknown>;
+      return typeof pair.repository === "string" && typeof pair.area === "string"
+        ? [{ repository: pair.repository, area: pair.area }]
+        : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function projectDeltaScopes(scopes: ScopePair[]): ProjectionResult {
+  if (scopes.length === 0) return { ok: false, reason: "delta declares no scopes entries" };
+  const repositories = [...new Set(scopes.map((entry) => entry.repository))];
+  if (repositories.length > 1) {
+    return {
+      ok: false,
+      reason: `delta names ${repositories.length} repositories (${repositories.join(", ")}); a spec names exactly one`,
+    };
+  }
+  return {
+    ok: true,
+    repository: repositories[0],
+    areas: [...new Set(scopes.map((entry) => entry.area))],
+  };
+}
+
+async function archivedChangeUsesMateV1(
+  companionPath: string,
+  anchorName: string,
+): Promise<boolean> {
+  try {
+    const metadataPath = path.join(
+      companionPath,
+      "openspec",
+      "changes",
+      "archive",
+      anchorName,
+      ".openspec.yaml",
+    );
+    const parsed = parse(await fs.readFile(metadataPath, "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object") return false;
+    const schema = (parsed as Record<string, unknown>).schema;
+    return typeof schema === "string" && schema.trim() === "mate-v1";
+  } catch {
+    return false;
+  }
+}
+
+/** Scope keys are omitted when the delta had none — a partial block beats no frontmatter. */
+function renderCanonicalFrontmatter(
+  capability: string,
+  scope: { repository: string; areas: string[] } | null,
+): string {
+  return [
+    "---",
+    "type: spec",
+    `capability: ${capability}`,
+    ...(scope ? [`repository: ${scope.repository}`, `areas: [${scope.areas.join(", ")}]`] : []),
+    "tags: [openspec/spec]",
+    "---",
+    "",
+    "",
+  ].join("\n");
+}
+
+/**
+ * Prepends canonical frontmatter to main specs born during this archive.
+ *
+ * `openspec archive` rebuilds a brand-new main spec from a skeleton with no frontmatter slot,
+ * so scope metadata dies exactly once, at spec birth; existing specs keep theirs because only
+ * requirement blocks are spliced. Best-effort by design — the archive already succeeded, so a
+ * failure here warns rather than stranding the change archived-but-unfinished.
+ */
+async function reconcileMainSpecFrontmatter(
+  companionPath: string,
+  anchorName: string,
+): Promise<string[]> {
+  if (!(await archivedChangeUsesMateV1(companionPath, anchorName))) return [];
+
+  const deltaSpecsDir = path.join(
+    companionPath,
+    "openspec",
+    "changes",
+    "archive",
+    anchorName,
+    "specs",
+  );
+  const reconciled: string[] = [];
+
+  const walk = async (directory: string, relative = ""): Promise<void> => {
+    let entries;
+    try {
+      entries = await fs.readdir(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const entryRelative = path.posix.join(relative, entry.name);
+      if (entry.isDirectory()) {
+        await walk(path.join(directory, entry.name), entryRelative);
+        continue;
+      }
+      if (!entry.isFile() || entry.name !== "spec.md") continue;
+
+      const capability = path.posix.dirname(entryRelative);
+      if (capability === ".") continue;
+      const canonicalRelative = path.posix.join("openspec", "specs", entryRelative);
+      const canonicalPath = path.join(companionPath, canonicalRelative);
+
+      try {
+        const canonical = await fs.readFile(canonicalPath, "utf8");
+        if (canonical.replace(BOM, "").startsWith("---")) continue;
+
+        const deltaSource = await fs.readFile(path.join(directory, entry.name), "utf8");
+        const scopes = parseDeltaScopes(deltaSource);
+        const projected = projectDeltaScopes(scopes);
+
+        /** Multi-repository is invalid input, so skip; absent scopes still earn a partial block. */
+        if (!projected.ok && scopes.length > 0) {
+          process.stderr.write(
+            `mate: skipped frontmatter for ${canonicalRelative}: ${projected.reason}\n`,
+          );
+          continue;
+        }
+        const head = renderCanonicalFrontmatter(
+          capability,
+          projected.ok ? { repository: projected.repository, areas: projected.areas } : null,
+        );
+        await fs.writeFile(canonicalPath, head + canonical.replace(BOM, ""), "utf8");
+        reconciled.push(canonicalRelative);
+      } catch (error) {
+        process.stderr.write(
+          `mate: could not reconcile frontmatter for ${canonicalRelative}: ${String(error)}\n`,
+        );
+      }
+    }
+  };
+
+  await walk(deltaSpecsDir);
+  return reconciled;
+}
+
 async function capSync(context: FinishContext): Promise<boolean> {
   const previous = process.exitCode;
   process.exitCode = 0;
@@ -92,7 +259,10 @@ async function capSync(context: FinishContext): Promise<boolean> {
  * to `openspec/`. Resumable detection reads the dated `openspec/changes/archive/` folder
  * openspec actually created so the tag is never a computed date.
  */
-export function openspecFinisher(contextOrPath: FinishContext | string): ArtifactFinisher {
+export function openspecFinisher(
+  contextOrPath: FinishContext | string,
+  runCommand: typeof run = run,
+): ArtifactFinisher {
   const context: FinishContext =
     typeof contextOrPath === "string"
       ? { companionPath: contextOrPath, repositoryId: "" }
@@ -106,7 +276,7 @@ export function openspecFinisher(contextOrPath: FinishContext | string): Artifac
       return hasOpenspecCapability(capabilities);
     },
     async validate(name) {
-      const res = run(companionPath, ["openspec", "validate", name, "--json"]);
+      const res = runCommand(companionPath, ["openspec", "validate", name, "--json"]);
       try {
         const parsed = JSON.parse(res.stdout) as {
           items?: Array<{ id: string; valid: boolean; issues?: Array<{ message: string }> }>;
@@ -124,7 +294,7 @@ export function openspecFinisher(contextOrPath: FinishContext | string): Artifac
       }
     },
     async isComplete(name) {
-      const res = run(companionPath, ["openspec", "list", "--json"]);
+      const res = runCommand(companionPath, ["openspec", "list", "--json"]);
       try {
         const parsed = JSON.parse(res.stdout) as {
           changes?: Array<{ name: string; completedTasks: number; totalTasks: number }>;
@@ -157,13 +327,12 @@ export function openspecFinisher(contextOrPath: FinishContext | string): Artifac
       }
       // Latest dated folder wins if the same change name was ever archived twice.
       const anchorName = matches[matches.length - 1];
-      return {
-        anchorName,
-        commitPaths: await commitPathsForArchive(companionPath, name, anchorName),
-      };
+      const commitPaths = await commitPathsForArchive(companionPath, name, anchorName);
+      await reconcileMainSpecFrontmatter(companionPath, anchorName);
+      return { anchorName, commitPaths };
     },
     async produce(name) {
-      const res = run(companionPath, ["openspec", "archive", name, "--yes"]);
+      const res = runCommand(companionPath, ["openspec", "archive", name, "--yes"]);
       if (res.status !== 0) {
         return {
           ok: false,
@@ -176,12 +345,11 @@ export function openspecFinisher(contextOrPath: FinishContext | string): Artifac
       if (!match) {
         return { ok: false, produced: null, message: "could not detect archived folder name" };
       }
+      const commitPaths = await commitPathsForArchive(companionPath, name, match[1]);
+      await reconcileMainSpecFrontmatter(companionPath, match[1]);
       return {
         ok: true,
-        produced: {
-          anchorName: match[1],
-          commitPaths: await commitPathsForArchive(companionPath, name, match[1]),
-        },
+        produced: { anchorName: match[1], commitPaths },
         message: res.stdout.trim(),
       };
     },
