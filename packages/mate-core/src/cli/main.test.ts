@@ -17,6 +17,7 @@ import * as opencodeCmd from "./commands/launch/opencode";
 import * as pluginCmd from "./commands/plugin/plugin";
 import * as reportCmd from "./commands/report";
 import * as updateCmd from "./commands/update";
+import * as workspaceCmd from "./commands/workspace/workspace";
 import { main, type MainDeps } from "./main";
 
 const BUILT_IN_COMMANDS = [
@@ -32,6 +33,7 @@ const BUILT_IN_COMMANDS = [
   "doctor",
   "cap",
   "update",
+  "workspace",
 ];
 
 describe("command gating", () => {
@@ -54,6 +56,7 @@ describe("command gating", () => {
       spyOn(opencodeCmd, "runLaunchOpenCodeCommand").mockImplementation(record("opencode")),
       spyOn(artifactCmd, "runArtifactCommand").mockImplementation(record("artifact")),
       spyOn(capCmd, "runCapCommand").mockImplementation(record("cap")),
+      spyOn(workspaceCmd, "runWorkspaceCommand").mockImplementation(record("workspace")),
       spyOn(installCmd, "runInstallCommand").mockImplementation(async () => {
         dispatched.push("install");
         return true;
@@ -126,6 +129,18 @@ describe("command gating", () => {
       expect(gateCalls).toEqual([]);
     }
     expect(dispatched).toEqual(["update", "doctor"]);
+  });
+
+  test("workspace list and materialize dispatch without companion selection, install preflight, or root gating", async () => {
+    for (const argv of [
+      ["workspace", "list"],
+      ["workspace", "materialize"],
+    ]) {
+      const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
+      await main(["node", "mate", ...argv], deps);
+      expect(gateCalls).toEqual([]);
+    }
+    expect(dispatched).toEqual(["workspace", "workspace"]);
   });
 
   test("companion setup, link, list, and unknown subcommands dispatch without companion selection or preflight", async () => {

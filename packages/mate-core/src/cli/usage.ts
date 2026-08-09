@@ -16,6 +16,8 @@ export function usage(): string {
     ` ${n} companion list`,
     ` ${n} companion open`,
     ` ${n} companion tui`,
+    ` ${n} workspace list --json`,
+    ` ${n} workspace materialize --repository ID --companion PATH --json`,
     ` ${n} hub init [folder]`,
     ` ${n} hub add [source] [--id ID] [--path PATH]`,
     ` ${n} hub sync [--json] (companions + hub plugins)`,

@@ -218,6 +218,59 @@ describe("resolveForLaunch", () => {
     expect(ctx.repositoryId).toBe("app");
   });
 
+  test("backfills the companion-side registry from repo-local metadata when it is missing", async () => {
+    const root = await makeTempDir("launch-backfill-");
+    const companionPath = path.join(root, "companion");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(companionPath, { recursive: true });
+    await fs.mkdir(repoPath, { recursive: true });
+
+    await writeRepoLocalRegistryEntry(
+      repoPath,
+      companionPath,
+      { id: "app", path: repoPath },
+      "git",
+    );
+
+    const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await store.register(companionPath);
+
+    await resolveForLaunch(repoPath, store);
+
+    const companionRegistry = await fs.readFile(
+      path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml"),
+      "utf8",
+    );
+    expect(companionRegistry).toContain("id: app");
+    expect(companionRegistry).toContain(`path: ${repoPath}`);
+  });
+
+  test("does not rewrite an already-current companion-side registry entry", async () => {
+    const root = await makeTempDir("launch-backfill-current-");
+    const companionPath = path.join(root, "companion");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(companionPath, { recursive: true });
+    await fs.mkdir(repoPath, { recursive: true });
+
+    await writeRepoLocalRegistryEntry(
+      repoPath,
+      companionPath,
+      { id: "app", path: repoPath },
+      "git",
+    );
+
+    const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await store.register(companionPath);
+    await resolveForLaunch(repoPath, store);
+
+    const registryPath = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml");
+    const before = await fs.stat(registryPath);
+    await resolveForLaunch(repoPath, store);
+    const after = await fs.stat(registryPath);
+
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+
   test("throws WorkingRepoRequiredError when cwd is a companion directory", async () => {
     const root = await makeTempDir("launch-companion-cwd-");
     const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");

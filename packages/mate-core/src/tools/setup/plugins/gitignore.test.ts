@@ -33,12 +33,19 @@ describe("collectManagedGitignoreEntries with declared plugins", () => {
     expect(entries.some((entry) => entry.includes("dependencies/plugins"))).toBe(false);
   });
 
-  test("always contributes the node_modules and local distribution-workspace baseline", () => {
+  test("always contributes the node_modules, local distribution-workspace, and companion registry baseline", () => {
     expect(collectManagedGitignoreEntries(makeContext({}), [])).toEqual([
       "node_modules/",
       ".mate/plugins/.local/",
+      ".mate/config/registry.yaml",
       ".mcp.json*",
     ]);
+  });
+
+  test("ignores the companion-side registry file, which holds absolute local repo paths", () => {
+    expect(collectManagedGitignoreEntries(makeContext({}), [])).toContain(
+      ".mate/config/registry.yaml",
+    );
   });
 
   test("ignores the local distribution workspace even with no declared plugins", () => {

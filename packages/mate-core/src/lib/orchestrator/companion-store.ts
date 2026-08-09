@@ -1,10 +1,20 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { FRAMEWORK_NAME } from "../../framework";
 import { ConfigStore } from "./config-store";
 import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
 import { type CompanionSource, ConfigError, type LinkedRepository } from "./types";
 import { WorkingRepoStore } from "./working-repo-store";
+
+/** Builds a {@link CompanionStore} whose config/registry files live under `<companionPath>/.mate/config`, regardless of `process.cwd()`. */
+export function companionRootedStore(companionPath: string): CompanionStore {
+  const configDir = path.join(path.resolve(companionPath), `.${FRAMEWORK_NAME}`, "config");
+  return new CompanionStore(
+    new ConfigStore(path.join(configDir, "framework.yaml")),
+    new WorkingRepoStore(path.join(configDir, "registry.yaml")),
+  );
+}
 
 export class CompanionStore {
   constructor(
@@ -23,7 +33,13 @@ export class CompanionStore {
       );
     }
 
-    const working = await this.workingRepoStore.load();
+    // A companion's registry.yaml may not exist yet (its first-ever link):
+    // that is not a real error here, unlike a working repo reading its own
+    // missing config, so fall back to an empty registry instead of throwing.
+    const working = await this.workingRepoStore.load().catch((error) => {
+      if (error instanceof ConfigError) return WorkingRepoStore.defaultConfig();
+      throw error;
+    });
     const existing = working.repos.findIndex((r) => r.id === repository.id);
     if (existing >= 0) {
       working.repos[existing] = repository;

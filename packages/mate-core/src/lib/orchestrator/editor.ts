@@ -140,6 +140,39 @@ export function detectEditorWorkspaceState(
   }
 }
 
+export interface WorkspaceDocument {
+  workspacePath: string;
+  folders: [string, string];
+}
+
+/**
+ * Writes the generated `.mate/workspace.code-workspace` file (working
+ * repository first, companion second) and returns its path and folder
+ * order. Shared by editor-launching `injectEditorFolder` and the
+ * non-launching `workspace materialize` command — both must produce the
+ * same document for the same pairing.
+ */
+export async function writeWorkspaceDocument(
+  companionPath: string,
+  repoPath: string,
+): Promise<WorkspaceDocument> {
+  const folders: [string, string] = [path.resolve(repoPath), path.resolve(companionPath)];
+  const workspacePath = editorWorkspacePath(repoPath);
+  await fs.mkdir(path.dirname(workspacePath), { recursive: true });
+  await fs.writeFile(
+    workspacePath,
+    `${JSON.stringify(
+      {
+        folders: folders.map((candidate) => ({ path: candidate })),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  return { workspacePath, folders };
+}
+
 export async function injectEditorFolder(
   companionPath: string,
   repoPath: string,
@@ -163,20 +196,9 @@ export async function injectEditorFolder(
 
   const { cli: resolvedCli, binary } = resolved;
 
-  const workspaceFolders = [path.resolve(repoPath), path.resolve(companionPath)];
-
-  const workspacePath = editorWorkspacePath(repoPath);
-  await fs.mkdir(path.dirname(workspacePath), { recursive: true });
-  await fs.writeFile(
-    workspacePath,
-    `${JSON.stringify(
-      {
-        folders: workspaceFolders.map((candidate) => ({ path: candidate })),
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
+  const { workspacePath, folders: workspaceFolders } = await writeWorkspaceDocument(
+    companionPath,
+    repoPath,
   );
 
   if (detectWorkspace(workspacePath, resolvedCli) === "open") return true;
