@@ -18,6 +18,7 @@
     "apps/mate-cli/src/**/*.tsx",
     "apps/mate-opencode-plugin/src/**/*.ts",
     "apps/mate-opencode-plugin/src/**/*.tsx",
+    "apps/mate-vscode/src/**/*.ts",
     "packages/mate-core/src/**/*.ts",
     "packages/mate-core/src/**/*.tsx"
   ],
@@ -25,6 +26,7 @@
     "apps/mate-cli/src/**/*.test.ts",
     "apps/mate-cli/src/**/*.test.tsx",
     "apps/mate-opencode-plugin/src/**/*.test.ts",
+    "apps/mate-vscode/src/**/*.test.ts",
     "packages/mate-core/src/templates/**",
     "packages/mate-core/src/**/*.test.ts",
     "packages/mate-core/src/**/*.test.tsx"

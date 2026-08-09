@@ -7,7 +7,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { CompanionStore } from "./companion-store";
+import { companionRootedStore, CompanionStore } from "./companion-store";
 import { ConfigStore } from "./config-store";
 import { repoLocalRegistryPath } from "./repo-local-registry";
 import { ConfigError } from "./types";
@@ -118,6 +118,42 @@ async function makeCompanionRootedStore(root: string): Promise<{
 
   return { store: new CompanionStore(configStore, workingRepoStore), companionPath, repoPath };
 }
+
+describe("CompanionStore missing registry", () => {
+  test("registers a repository even when the companion has no registry.yaml yet", async () => {
+    const root = await makeTempDir("companion-store-missing-registry-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const store = new CompanionStore(
+      new ConfigStore(path.join(root, "framework.yaml")),
+      new WorkingRepoStore(path.join(root, "registry.yaml")),
+    );
+
+    const result = await store.registerRepository({ id: "app", path: repoPath });
+
+    expect(result.id).toBe("app");
+    expect(await store.listRepositories()).toEqual([{ id: "app", path: repoPath }]);
+  });
+});
+
+describe("companionRootedStore", () => {
+  test("reads and writes registry.yaml under <companionPath>/.mate/config regardless of cwd", async () => {
+    const root = await makeTempDir("companion-rooted-store-");
+    const companionPath = path.join(root, "companion");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+
+    await companionRootedStore(companionPath).registerRepository({ id: "app", path: repoPath });
+
+    const registry = parse(
+      await fs.readFile(
+        path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml"),
+        "utf8",
+      ),
+    );
+    expect(registry.repos).toEqual([{ id: "app", path: repoPath }]);
+  });
+});
 
 describe("CompanionStore repo-local dual write", () => {
   test("writes the repo-local registry pointer alongside the companion-side registration", async () => {

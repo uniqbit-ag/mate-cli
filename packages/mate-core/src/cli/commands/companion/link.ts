@@ -12,11 +12,9 @@ import {
 import { extractRepoName } from "../artifact/extract-repo-name";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { CompanionResolver } from "../../../lib/orchestrator/companion-resolver";
+import { companionRootedStore } from "../../../lib/orchestrator/companion-store";
 import { inspectSetupPreflight } from "../../../lib/orchestrator/setup-preflight";
-import {
-  findDescendantRepoLocalRegistries,
-  writeRepoLocalRegistryEntry,
-} from "../../../lib/orchestrator/repo-local-registry";
+import { findDescendantRepoLocalRegistries } from "../../../lib/orchestrator/repo-local-registry";
 import { runSetupFlowAtPath } from "../setup";
 import { runInstallCommand } from "../install";
 import type { CompanionSource, LinkedRepository } from "../../../lib/orchestrator/types";
@@ -240,17 +238,15 @@ export async function runCompanionLinkCommandWithDeps(
     path: cwd,
   };
 
+  // Writes both the companion-side registry entry (companionRootedStore, the
+  // source of truth for `mate workspace list`) and the repo-local pointer
+  // (CompanionStore's internal dual write) in one call.
   const registerRepository =
     deps.registerRepository ??
-    (async (nextRepository, options) => {
-      await writeRepoLocalRegistryEntry(
-        nextRepository.path,
-        options.companionPath,
-        nextRepository,
-        options.companionSource,
-      );
-      return nextRepository;
-    });
+    ((nextRepository, options) =>
+      companionRootedStore(options.companionPath).registerRepository(nextRepository, {
+        companionSource: options.companionSource,
+      }));
 
   // Managed companions are git-backed; explicitly pasted paths retain local provenance.
   const persistedSource: CompanionSource = companionSource === "local" ? "local" : "git";

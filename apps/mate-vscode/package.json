@@ -1,0 +1,173 @@
+{
+  "name": "mate-vscode",
+  "displayName": "Mate Workspace Navigator",
+  "version": "0.15.5-canary.0",
+  "private": true,
+  "description": "Discover Mate repository pairings, open paired workspaces, and launch Mate-aware OpenCode/Claude terminals from VS Code.",
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "companion",
+    "mate",
+    "opencode",
+    "workspace"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uniqbit-ag/mate-cli",
+    "directory": "apps/mate-vscode"
+  },
+  "publisher": "uniqbit",
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "scripts": {
+    "build": "bun build src/extension.ts --target node --format cjs --external vscode --outfile dist/extension.cjs",
+    "test": "CI=1 bun test",
+    "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
+    "lint": "oxlint src/",
+    "lint:fix": "oxlint src/ --fix",
+    "format": "oxfmt src/",
+    "format:check": "oxfmt src/ --check",
+    "package": "bun run build && bunx @vscode/vsce package --no-dependencies -o dist/mate-vscode.vsix"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/node": "^26.0.1",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mate",
+          "title": "Mate",
+          "icon": "media/activity-bar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "mate": [
+        {
+          "id": "mateWorkspaces",
+          "name": "Workspaces"
+        },
+        {
+          "id": "mateCompanions",
+          "name": "Companions"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "mateWorkspaces",
+        "contents": "No companions are registered yet.\n[Learn how to link a companion](https://github.com/uniqbit-ag/mate-cli)\nRun `mate companion link` from a working repository, then refresh."
+      },
+      {
+        "view": "mateCompanions",
+        "contents": "No companions are registered yet.\n[Learn how to link a companion](https://github.com/uniqbit-ag/mate-cli)\nRun `mate companion link` from a working repository, then refresh."
+      }
+    ],
+    "commands": [
+      {
+        "command": "mate.refreshWorkspaces",
+        "title": "Mate: Refresh Workspaces",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mate.openWorkspace",
+        "title": "Mate: Open Workspace"
+      },
+      {
+        "command": "mate.revealWorkingRepository",
+        "title": "Mate: Reveal Working Repository"
+      },
+      {
+        "command": "mate.revealCompanion",
+        "title": "Mate: Reveal Companion"
+      },
+      {
+        "command": "mate.copyWorkingRepositoryPath",
+        "title": "Mate: Copy Working Repository Path"
+      },
+      {
+        "command": "mate.copyCompanionPath",
+        "title": "Mate: Copy Companion Path"
+      },
+      {
+        "command": "mate.launchOpenCode",
+        "title": "Mate: Launch OpenCode"
+      },
+      {
+        "command": "mate.launchClaude",
+        "title": "Mate: Launch Claude"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "mate.refreshWorkspaces",
+          "when": "view == mateWorkspaces || view == mateCompanions",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "mate.openWorkspace",
+          "when": "(view == mateWorkspaces || view == mateCompanions) && viewItem =~ /\\bpairing-open\\b/",
+          "group": "1_open@1"
+        },
+        {
+          "command": "mate.launchOpenCode",
+          "when": "(view == mateWorkspaces || view == mateCompanions) && viewItem =~ /\\bpairing-launchable\\b/",
+          "group": "2_launch@1"
+        },
+        {
+          "command": "mate.launchClaude",
+          "when": "(view == mateWorkspaces || view == mateCompanions) && viewItem =~ /\\bpairing-launchable\\b/",
+          "group": "2_launch@2"
+        },
+        {
+          "command": "mate.revealWorkingRepository",
+          "when": "(view == mateWorkspaces || view == mateCompanions) && viewItem =~ /\\bpairing-repo-available\\b/",
+          "group": "3_reveal@1"
+        },
+        {
+          "command": "mate.revealCompanion",
+          "when": "(view == mateWorkspaces || view == mateCompanions) && viewItem =~ /\\bpairing\\b/",
+          "group": "3_reveal@2"
+        },
+        {
+          "command": "mate.copyWorkingRepositoryPath",
+          "when": "(view == mateWorkspaces || view == mateCompanions) && viewItem =~ /\\bpairing-repo-available\\b/",
+          "group": "4_copy@1"
+        },
+        {
+          "command": "mate.copyCompanionPath",
+          "when": "(view == mateWorkspaces || view == mateCompanions) && viewItem =~ /\\bpairing\\b/",
+          "group": "4_copy@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Mate",
+      "properties": {
+        "mate.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the mate executable. Leave empty to resolve `mate` from the extension host's PATH."
+        }
+      }
+    }
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "engines": {
+    "node": "24.x",
+    "vscode": "^1.85.0"
+  }
+}

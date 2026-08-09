@@ -17,6 +17,7 @@ import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
 import { runPluginCommand } from "./commands/plugin/plugin";
 import { runReportCommand } from "./commands/report";
 import { runUpdateCommand } from "./commands/update";
+import { runWorkspaceCommand } from "./commands/workspace/workspace";
 import { runInstallCommand } from "./commands/install";
 import { inspectInstallPreflight } from "../lib/install";
 import { resolveRootContext } from "../lib/orchestrator/root-context";
@@ -78,12 +79,19 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   const isPluginCommand =
     command === "cap" && findPluginCliCommand(subcommand, rest[0]) !== undefined;
 
+  // `workspace list`/`workspace materialize` are machine-JSON contracts an
+  // editor extension may poll frequently; their stdout must be pure JSON,
+  // and the un-awaited scheduleBackgroundCheck() has been observed to race
+  // a large final stdout write against process exit, truncating it. Both
+  // reasons put them in the same stdout-owning bucket as plugin commands.
+  const ownsStdout = isPluginCommand || command === "workspace";
+
   // Every dispatch case opens with a gate() call declaring what the command
   // needs before it may run. Declared gates run in fixed order — update
   // enforcement, companion selection, install preflight — and a blocked gate
   // sets the exit code, so callers only need `if (!(await gate(...))) return`.
   const gate = async (needs: GateNeeds): Promise<boolean> => {
-    if (!isPluginCommand) {
+    if (!ownsStdout) {
       const updateStore = new UpdateStateStore();
       scheduleBackgroundCheck(updateStore);
       if (needs.updateGuard && (await enforceUpdateIfRequired(updateStore))) {
@@ -205,6 +213,12 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     case "update":
       if (!(await gate({}))) return;
       await runUpdateCommand(argv.slice(3));
+      return;
+    case "workspace":
+      // list/materialize are context-independent: no companion, install, or
+      // update gating — an editor extension may call these frequently.
+      if (!(await gate({}))) return;
+      await runWorkspaceCommand(subcommand, rest);
       return;
     default:
       // Unknown commands fail fast: no case matched, so no gate ever ran.

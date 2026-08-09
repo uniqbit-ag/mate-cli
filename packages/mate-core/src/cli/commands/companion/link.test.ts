@@ -608,7 +608,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
     expect(injectEditorFolder).not.toHaveBeenCalled();
   });
 
-  test("writes the workspace-local link metadata without requiring companion-side registry writes", async () => {
+  test("writes both the repo-local pointer and the companion-side registry entry", async () => {
     const originalIsTTY = process.stdin.isTTY;
     const originalCwd = process.cwd();
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
@@ -655,6 +655,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         path.join(workingPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
         "utf8",
       );
+      const companionRegistry = await fs.readFile(
+        path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml"),
+        "utf8",
+      );
       const resolvedWorkingPath = await fs.realpath(workingPath);
 
       expect(workspaceRegistry).toContain("repository:");
@@ -662,11 +666,61 @@ describe("runCompanionLinkCommandWithDeps", () => {
       expect(workspaceRegistry).toContain(`path: ${resolvedWorkingPath}`);
       expect(workspaceRegistry).toContain(`- path: ${companionPath}`);
       expect(workspaceFramework).toContain("type: working");
+      expect(companionRegistry).toContain("id: working");
+      expect(companionRegistry).toContain(`path: ${resolvedWorkingPath}`);
       expect(logs.join("\n")).toContain(`Companion: ${companionPath}`);
     } finally {
       process.chdir(originalCwd);
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
       console.log = originalLog;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("creates the companion-side registry when linking a companion that has never had one", async () => {
+    const originalIsTTY = process.stdin.isTTY;
+    const originalCwd = process.cwd();
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+
+    const root = await makeTempDir("mate-companion-link-fresh-");
+    const companionPath = path.join(root, "companion");
+    const workingPath = path.join(root, "working");
+
+    try {
+      // Mirrors a companion set up before the companion-side registry write
+      // existed: framework.yaml present, no registry.yaml at all.
+      await fs.mkdir(path.join(companionPath, `.${FRAMEWORK_NAME}`, "config"), {
+        recursive: true,
+      });
+      await fs.mkdir(workingPath, { recursive: true });
+      await fs.writeFile(
+        path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
+        "type: companion\nallowedAgents:\n  - claude\n",
+        "utf8",
+      );
+      process.chdir(workingPath);
+
+      await runCompanionLinkCommandWithDeps([], {
+        selectCompanionLinkInputs: async () => ({
+          source: "existing",
+          companionPaths: [companionPath],
+        }),
+        resolveCompanion: async () => null,
+        registerCompanion: async () => {},
+        installCompanion: async () => {},
+      });
+
+      const companionRegistry = await fs.readFile(
+        path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml"),
+        "utf8",
+      );
+      const resolvedWorkingPath = await fs.realpath(workingPath);
+
+      expect(companionRegistry).toContain("id: working");
+      expect(companionRegistry).toContain(`path: ${resolvedWorkingPath}`);
+    } finally {
+      process.chdir(originalCwd);
+      Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
       await fs.rm(root, { recursive: true, force: true });
     }
   });
