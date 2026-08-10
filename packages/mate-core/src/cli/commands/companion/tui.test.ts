@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { version } from "../../../../package.json";
+import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repo-local-registry";
 import { renderBanner, resolveCompanionPath, resolveRepoPath, resolveShell } from "./tui";
 
@@ -100,10 +101,12 @@ describe("resolveCompanionPath", () => {
         `companions:\n  - path: ${companionPath}\n    repositoryId: test-repo\n`,
         "utf8",
       );
+      const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await globalStore.register(companionPath);
       delete process.env.MATE_ARTIFACT_PATH;
       delete process.env.MATE_REPO_PATH;
 
-      expect(await resolveCompanionPath(repoPath)).toBe(companionPath);
+      expect(await resolveCompanionPath(repoPath, globalStore)).toBe(companionPath);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -122,10 +125,12 @@ describe("resolveCompanionPath", () => {
         `companions:\n  - path: ${companionPath}\n    repositoryId: test-repo\n`,
         "utf8",
       );
+      const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await globalStore.register(companionPath);
       delete process.env.MATE_ARTIFACT_PATH;
       process.env.MATE_REPO_PATH = repoPath;
 
-      expect(await resolveCompanionPath(companionPath)).toBe(companionPath);
+      expect(await resolveCompanionPath(companionPath, globalStore)).toBe(companionPath);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

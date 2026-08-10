@@ -2,6 +2,7 @@ import { usage } from "../../usage";
 import { runCompanionLinkCommand } from "./link";
 import { runSetupCommand } from "../setup";
 import { runCompanionListCommand } from "./list";
+import { runCompanionSelectCommand } from "./select";
 import { runWorkspaceOpenCommand } from "../workspace/open";
 import { runCompanionTuiCommand } from "./tui";
 
@@ -18,6 +19,9 @@ export async function runCompanionCommand(
       return;
     case "list":
       await runCompanionListCommand(argv);
+      return;
+    case "select":
+      await runCompanionSelectCommand(argv);
       return;
     case "open":
       await runWorkspaceOpenCommand();

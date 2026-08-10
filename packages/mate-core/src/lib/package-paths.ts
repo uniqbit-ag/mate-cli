@@ -19,6 +19,19 @@ export function getWrapperBinPath(): string {
 }
 
 /**
+ * Wrapper path for processes with no active distribution (plugins loaded by
+ * an agent host, hooks in sessions Mate did not spawn): falls back to core's
+ * packaged default instead of throwing.
+ */
+export function getWrapperBinPathSafe(): string {
+  try {
+    return getWrapperBinPath();
+  } catch {
+    return path.resolve(import.meta.dirname, "../../wrappers/bin");
+  }
+}
+
+/**
  * Resolved bundled Claude plugin root: a distribution asset root that ships
  * `claude-plugin/` wins over core's bundled default. Loaded per managed
  * launch via `claude --plugin-dir`, so hooks always match the installed
@@ -34,7 +47,7 @@ export function getClaudePluginRoot(): string {
 
 export const CLAUDE_PLUGIN_HOOK_SHIMS = [
   "validate-artifact-path.mjs",
-  "session-banner.mjs",
+  "session-activation.mjs",
   "artifact-finish-nudge.mjs",
 ] as const;
 

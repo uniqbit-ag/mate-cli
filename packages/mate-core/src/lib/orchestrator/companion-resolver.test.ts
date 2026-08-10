@@ -47,7 +47,7 @@ describe("CompanionResolver", () => {
   });
 
   describe("repo-local registry fast path", () => {
-    test("resolves from the repo-local pointer without scanning the global registry", async () => {
+    test("resolves a globally registered pointer without scanning companion registries", async () => {
       const root = await makeTempDir("resolver-repo-local-fast-");
       const repoPath = path.join(root, "project");
       await fs.mkdir(repoPath, { recursive: true });
@@ -58,10 +58,11 @@ describe("CompanionResolver", () => {
         companions: [{ path: companionPath, repositoryId: "app" }],
       });
 
-      // A GlobalConfigStore pointed at a nonexistent file behaves as "no
-      // companions registered" — if resolution still succeeds, it proves the
-      // repo-local pointer was used instead of a global scan.
-      const store = new GlobalConfigStore(path.join(root, "does-not-exist.yaml"));
+      // The companion has no companion-side registry.yaml, so the global
+      // fallback scan could never resolve it — success proves the repo-local
+      // pointer was used.
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await store.register(companionPath);
 
       const result = await new CompanionResolver(store).resolve(repoPath);
 
@@ -80,11 +81,99 @@ describe("CompanionResolver", () => {
         companions: [{ path: companionPath, repositoryId: "app" }],
       });
 
-      const store = new GlobalConfigStore(path.join(root, "does-not-exist.yaml"));
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await store.register(companionPath);
 
       const result = await new CompanionResolver(store).resolve(subDir);
 
       expect(result?.repositoryId).toBe("app");
+    });
+
+    test("rejects an unregistered pointer with a warning and no match", async () => {
+      const root = await makeTempDir("resolver-repo-local-untrusted-");
+      const repoPath = path.join(root, "project");
+      await fs.mkdir(repoPath, { recursive: true });
+
+      const companionPath = path.join(root, "companion");
+      await fs.mkdir(companionPath, { recursive: true });
+      await new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath)).save({
+        companions: [{ path: companionPath, repositoryId: "app" }],
+      });
+
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+      const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+
+      const resolver = new CompanionResolver(store);
+      const result = await resolver.resolveWithDiagnostics(repoPath, { logFailures: true });
+
+      expect(result.match).toBeNull();
+      expect(result.failures).toHaveLength(1);
+      expect(result.failures[0]!.companionPath).toBe(path.resolve(companionPath));
+      expect(result.failures[0]!.message).toContain("untrusted");
+      expect(errorSpy.mock.calls.flat().join("\n")).toContain(path.resolve(companionPath));
+
+      // The untrusted pointer survives on disk — linking later establishes trust.
+      const rewritten = parse(await fs.readFile(repoLocalRegistryPath(repoPath), "utf8"));
+      expect(rewritten.companions).toEqual([
+        { path: path.resolve(companionPath), repositoryId: "app" },
+      ]);
+
+      errorSpy.mockRestore();
+    });
+
+    test("linking establishes trust: a previously rejected pointer resolves after registration", async () => {
+      const root = await makeTempDir("resolver-repo-local-trust-later-");
+      const repoPath = path.join(root, "project");
+      await fs.mkdir(repoPath, { recursive: true });
+
+      const companionPath = path.join(root, "companion");
+      await fs.mkdir(companionPath, { recursive: true });
+      await new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath)).save({
+        companions: [{ path: companionPath, repositoryId: "app" }],
+      });
+
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+      const resolver = new CompanionResolver(store);
+      const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+      expect(await resolver.resolve(repoPath)).toBeNull();
+      errorSpy.mockRestore();
+
+      await store.register(companionPath);
+
+      expect(await resolver.resolve(repoPath)).toEqual({
+        companionPath: path.resolve(companionPath),
+        repositoryId: "app",
+      });
+    });
+
+    test("only trusted pointers match when trusted and untrusted pointers coexist", async () => {
+      const root = await makeTempDir("resolver-repo-local-mixed-trust-");
+      const repoPath = path.join(root, "project");
+      await fs.mkdir(repoPath, { recursive: true });
+
+      const trustedCompanion = path.join(root, "companion-trusted");
+      const untrustedCompanion = path.join(root, "companion-untrusted");
+      await fs.mkdir(trustedCompanion, { recursive: true });
+      await fs.mkdir(untrustedCompanion, { recursive: true });
+      await new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath)).save({
+        companions: [
+          { path: untrustedCompanion, repositoryId: "from-untrusted" },
+          { path: trustedCompanion, repositoryId: "from-trusted" },
+        ],
+      });
+
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await store.register(trustedCompanion);
+
+      const result = await new CompanionResolver(store).resolveWithDiagnostics(repoPath);
+
+      expect(result.match).toEqual({
+        companionPath: path.resolve(trustedCompanion),
+        repositoryId: "from-trusted",
+      });
+      expect(result.ambiguousMatches).toEqual([]);
+      expect(result.failures).toHaveLength(1);
+      expect(result.failures[0]!.companionPath).toBe(path.resolve(untrustedCompanion));
     });
 
     test("returns null when there is no repo-local registry", async () => {
@@ -151,7 +240,9 @@ describe("CompanionResolver", () => {
         ],
       });
 
-      const store = new GlobalConfigStore(path.join(root, "does-not-exist.yaml"));
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await store.register(companionA);
+      await store.register(companionB);
 
       const result = await new CompanionResolver(store).resolveWithDiagnostics(repoPath);
 
@@ -264,18 +355,22 @@ describe("CompanionResolver", () => {
 
       const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
       await globalStore.register(companionPath);
-      const listSpy = spyOn(globalStore, "list");
 
       const resolver = new CompanionResolver(globalStore);
       const first = await resolver.resolve(repoPath);
       expect(first).toEqual({ companionPath: path.resolve(companionPath), repositoryId: "app" });
-      expect(listSpy).toHaveBeenCalledTimes(1);
+
+      // Corrupt the companion-side registry: a second fallback scan would now
+      // fail, so continued resolution proves the healed fast path is used.
+      // (The trust cross-check still reads the global config on every resolve.)
+      await fs.writeFile(
+        path.join(companionPath, ".mate", "config", "registry.yaml"),
+        "repos: [unterminated",
+        "utf8",
+      );
 
       const second = await resolver.resolve(repoPath);
       expect(second).toEqual({ companionPath: path.resolve(companionPath), repositoryId: "app" });
-      expect(listSpy).toHaveBeenCalledTimes(1);
-
-      listSpy.mockRestore();
     });
   });
 });

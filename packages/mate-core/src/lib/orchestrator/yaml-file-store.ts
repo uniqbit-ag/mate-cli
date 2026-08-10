@@ -5,7 +5,10 @@ import path from "node:path";
 import { parse, stringify } from "yaml";
 
 export abstract class YamlFileStore<T> {
-  constructor(readonly configPath: string) {
+  /** No TS parameter property: the SessionStart hook loads this file through node's strip-only TS loader. */
+  readonly configPath: string;
+
+  constructor(configPath: string) {
     this.configPath = path.resolve(configPath);
   }
 

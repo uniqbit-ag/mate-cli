@@ -21,17 +21,20 @@ Then run the default workflow from the repository you want an agent to edit:
 ```sh
 mate install
 mate companion link
-mate opencode
+mate sync
+opencode   # or: claude
 ```
 
 The first `mate install` verifies Mate's core requirements without requiring a
 companion. `mate companion link` is interactive and must run in a TTY. It can
 clone a Git companion, select an existing managed companion, or link a local
 companion repository by pasted path. Linking installs the requirements selected
-by that companion, so no second `mate install` is needed before launch.
+by that companion, registers the companion as trusted on this machine, and
+registers Mate's global agent plugins — so no second `mate install` is needed.
 
-Use `mate claude` instead of `mate opencode` when the selected companion profile
-allows Claude.
+After linking, start `claude` or `opencode` any way you like — terminal, VS
+Code extension, or desktop app. Sessions activate themselves in linked
+repositories; no Mate launcher is required.
 
 ## Repository Model
 
@@ -41,8 +44,11 @@ allows Claude.
 - **Repo-local link**: `./.mate/config/registry.yaml` records which companion
   belongs to a working repository. Mate keeps this directory out of Git's
   tracked files through `.git/info/exclude`.
+- **Trust gate**: a repo-local link only activates when the companion is also
+  registered in `~/.mate` — which only `mate companion link` writes. A `.mate`
+  pointer committed to a cloned repository never activates on your machine.
 
-Run launch commands from the working repository. Run setup commands from the
+Run `mate sync` from the working repository. Run setup commands from the
 companion repository unless the command explicitly says otherwise.
 
 ## Installation State
@@ -102,14 +108,17 @@ Code or Cursor workspace.
 
 ```sh
 mate companion list [--json]
+mate companion select <id>
 mate companion open
 mate companion tui
 ```
 
 `list` shows linked repositories and emits JSON when `--json` is supplied or
-stdout is not a TTY. `open` adds the active working repository and companion to
-the preferred editor. `tui` opens an interactive shell in the resolved
-companion directory and sets `MATE_ARTIFACT_PATH` for that shell.
+stdout is not a TTY. `select` pins the per-user companion choice for a working
+repository linked to multiple companions. `open` adds the active working
+repository and companion to the preferred editor. `tui` opens an interactive
+shell in the resolved companion directory and sets `MATE_ARTIFACT_PATH` for
+that shell.
 
 ### Companion Hubs
 
@@ -155,33 +164,55 @@ PDF` control backed by the browser's native print dialog. If HTML creation or
 browser launch fails, Mate warns on stderr and prints the complete report
 document as JSON to stdout. Existing `REPORT.md` files are not modified.
 
-### Agent Launch
+### Synchronization
 
 ```sh
-mate claude
-mate opencode
+mate sync [--check] [--no-git]
 ```
 
-Launch from a linked working repository. Mate resolves the companion, applies
-the selected provider and capability configuration, refreshes enabled indexes,
-and then starts the agent. The active profile must allow the selected agent.
+`mate sync` is type-aware for the nearest Mate root. In a **working
+repository** it pulls companion Git changes (when Git auto mode is enabled),
+materializes the Claude session configuration into the per-user, gitignored
+`.claude/settings.local.json` (companion marketplace + plugin registration,
+the `MATE_*` environment contract, companion directory access, and MCP server
+pre-approval), and refreshes enabled capability indexes. In a **companion** it
+refreshes runtime assets and regenerates the plugin-marketplace scaffold that
+exposes companion skills, commands, agents, hooks, and MCP servers through the
+agent's native plugin discovery. In a **hub** it fans out over registered
+members.
 
-Forward agent arguments after `--`:
+`--check` reports whether materialized configuration is stale without writing
+and exits non-zero when it is. `--no-git` skips the companion Git pull.
+
+Sync runs mostly automatically: session hooks probe freshness at start and
+nudge you to run `mate sync` when the companion configuration changed.
+MCP-level changes apply to the next session.
+
+### Starting Agents
+
+Start `claude` or `opencode` directly — from a terminal, the VS Code
+extension, or the desktop app. In a linked working repository the globally
+registered Mate plugins activate the session automatically: the companion
+policy is injected as session context, companion skills and MCP servers load
+through the generated companion plugin, and the `MATE_*` environment is
+provided by the materialized settings.
+
+When a repository is linked to multiple companions, the session asks which one
+to use; pin the answer with:
 
 ```sh
-mate claude -- --model sonnet
-mate opencode -- --continue
+mate companion select <id>
 ```
 
-If companion Git auto mode is enabled, skip its pre-launch synchronization for
-one launch with:
+**Deprecated:** `mate claude` and `mate opencode` remain as thin shims that
+run `mate sync` in the foreground and then start the plain agent binary. They
+add nothing over starting the agent directly and will be removed in a later
+major. Agent arguments still forward after `--`, and `-- --no-git` skips the
+companion Git pull for that run.
 
-```sh
-mate claude -- --no-git
-mate opencode -- --no-git
-```
-
-`--no-git` must appear after the argument separator.
+**BREAKING:** the companion profile's `allowedAgents` policy is now advisory.
+Since Mate no longer owns the agent spawn, a disallowed agent is not blocked
+at launch; policy violations surface as in-session guidance instead.
 
 ### Capabilities
 

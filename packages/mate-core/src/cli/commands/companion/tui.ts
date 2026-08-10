@@ -4,6 +4,7 @@ import { accessSync } from "node:fs";
 import { getActiveDistribution } from "../../../distribution";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
+import type { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repo-local-registry";
 import { ensureUnambiguousCompanion } from "../launch/shared";
 
@@ -33,13 +34,14 @@ export function resolveShell(): string {
 
 export async function resolveCompanionPath(
   cwd: string = process.cwd(),
+  globalConfigStore?: GlobalConfigStore,
 ): Promise<string | undefined> {
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
   if (envCompanionPath) return envCompanionPath;
 
   try {
     const repositoryPath = process.env.MATE_REPO_PATH ?? cwd;
-    return (await resolveFrameworkContext(repositoryPath)).companionPath;
+    return (await resolveFrameworkContext(repositoryPath, globalConfigStore)).companionPath;
   } catch {
     return undefined;
   }

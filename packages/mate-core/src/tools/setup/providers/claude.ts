@@ -4,7 +4,9 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
+import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repo-local-registry";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
+import { buildMateSessionEnv, MANAGED_SESSION_ENV_KEYS } from "../mate-session-env";
 import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
 import {
   TOKENSAVE_CLAUDE_MD_MARKER,
@@ -59,8 +61,17 @@ async function configureClaudeGuidance(companionPath: string): Promise<void> {
   );
 }
 
-const BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES = [".claude/settings.local.json"];
-const COMPANION_GITIGNORE_ENTRIES = [...BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES, ".claude/state/"];
+/* `.mcp.json` in the exclude list only affects an untracked, mate-created
+   file (git excludes never hide tracked-file changes), so a user-committed
+   .mcp.json is unaffected. */
+const BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES = [".claude/settings.local.json", ".mcp.json"];
+// `.claude-plugin/` is the generated marketplace scaffold; its hooks.json can
+// carry per-machine absolute paths, so it stays per-user generated state.
+const COMPANION_GITIGNORE_ENTRIES = [
+  ...BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES,
+  ".claude/state/",
+  ".claude-plugin/",
+];
 // Union of all managed exclude entries — used to identify which lines we own.
 const ALL_MANAGED_EXCLUDE_ENTRIES = new Set([
   ...BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES,
@@ -211,6 +222,17 @@ async function stripTokensaveClaudeMdAppend(workingRepoPath: string): Promise<vo
   } else {
     await fs.unlink(claudeMdPath);
   }
+}
+
+// Identity of the companion-as-marketplace registration materialized into the
+// working repo settings. The generated companion plugin (see
+// companion-plugin-marketplace) must use the same names.
+export const COMPANION_MARKETPLACE_NAME = `${FRAMEWORK_NAME}-companion`;
+export const COMPANION_PLUGIN_NAME = `${FRAMEWORK_NAME}-companion`;
+
+/** `enabledPlugins` key enabling the generated companion plugin. */
+export function companionEnabledPluginKey(): string {
+  return `${COMPANION_PLUGIN_NAME}@${COMPANION_MARKETPLACE_NAME}`;
 }
 
 // Resolved path of the companion-owned Claude settings document. This is the
@@ -443,13 +465,14 @@ async function syncCompanionClaudeMcpConfig(companionPath: string): Promise<void
   });
 }
 
-// Reconcile the working repo for a Claude launch. Mate-managed Claude settings
-// now live in companion settings (see `syncCompanionClaudeSettings`) and are
-// loaded at launch via `--settings`, so Mate no longer writes them into the
-// working repo. Existing Mate-managed hooks are removed during migration;
-// user-authored settings remain in place. This also keeps the git exclude for
-// that file current and strips the TokenSave CLAUDE.md append the installer may
-// have added.
+// Reconcile the working repo so a Claude session started by ANY entry point
+// (CLI, IDE extension, desktop) loads the companion without launcher flags:
+// managed marketplace/plugin registration, the MATE_* session env contract,
+// companion directory access, and MCP pre-approval are materialized into the
+// per-user, gitignored `.claude/settings.local.json`. Unmanaged entries are
+// preserved; managed keys are reconciled with remove semantics. Also keeps
+// the git exclude for that file current and strips the TokenSave CLAUDE.md
+// append the installer may have added.
 export async function syncWorkingRepoClaudeSettings(
   workingRepoPath: string,
   companionPath: string,
@@ -457,22 +480,116 @@ export async function syncWorkingRepoClaudeSettings(
   globalConfigStore = new GlobalConfigStore(),
 ): Promise<void> {
   await ensureWorkingRepoLocalExcludes(workingRepoPath, config);
-  await syncWorkingRepoClaudeAdditionalDirectories(
+  await reconcileWorkingRepoManagedSettings(
     workingRepoPath,
     companionPath,
+    config,
     globalConfigStore,
+  );
+  // The static gateway entry is the one Mate-managed server in the working
+  // repo's .mcp.json; unrelated user entries in that file are preserved.
+  await updateClaudeMcpServer(
+    getWorkingRepoClaudeMcpConfigPath(workingRepoPath),
+    MATE_GATEWAY_MCP_SERVER_NAME,
+    buildMateGatewayMcpEntry() as { command?: string; args?: string[] },
   );
   await stripTokensaveClaudeMdAppend(workingRepoPath);
 }
 
-async function syncWorkingRepoClaudeAdditionalDirectories(
+export interface WorkingRepoClaudeSettingsPlan {
+  settingsPath: string;
+  /** Raw current file content, or null when absent. */
+  currentContent: string | null;
+  /** Exact bytes a sync would write. */
+  desiredContent: string;
+  /** Top-level managed keys whose current value differs from desired. */
+  staleManagedKeys: string[];
+}
+
+const WORKING_REPO_MANAGED_SETTINGS_KEYS = [
+  "permissions",
+  "extraKnownMarketplaces",
+  "enabledPlugins",
+  "env",
+  "enabledMcpjsonServers",
+  "hooks",
+] as const;
+
+/**
+ * The single static MCP entry every host gets: the Mate gateway shim. On
+ * Claude it lives in the working repo's `.mcp.json` — settings files do not
+ * register MCP servers (verified live against Claude Code 2.1.220) — with
+ * pre-approval via the managed `enabledMcpjsonServers`.
+ */
+export const MATE_GATEWAY_MCP_SERVER_NAME = FRAMEWORK_NAME;
+
+export function buildMateGatewayMcpEntry(): Record<string, unknown> {
+  return { type: "stdio", command: FRAMEWORK_NAME, args: ["mcp", "shim"] };
+}
+
+export function getWorkingRepoClaudeMcpConfigPath(workingRepoPath: string): string {
+  return path.join(workingRepoPath, ".mcp.json");
+}
+
+/**
+ * Compute the reconciled working-repo settings without writing, so `mate
+ * sync --check` and the SessionStart freshness probe share one staleness
+ * definition with the writer.
+ */
+export async function planWorkingRepoClaudeSettings(
   workingRepoPath: string,
   companionPath: string,
+  config: FrameworkConfig,
+  globalConfigStore = new GlobalConfigStore(),
+): Promise<WorkingRepoClaudeSettingsPlan> {
+  const settingsPath = path.join(workingRepoPath, ".claude", "settings.local.json");
+  let currentContent: string | null = null;
+  try {
+    currentContent = await fs.readFile(settingsPath, "utf8");
+  } catch {
+    /* absent */
+  }
+
+  const desired = await buildDesiredWorkingRepoSettings(
+    workingRepoPath,
+    companionPath,
+    config,
+    globalConfigStore,
+  );
+  const desiredContent = JSON.stringify(desired, null, 2) + "\n";
+
+  const current = await readClaudeSettings(settingsPath);
+  const staleManagedKeys = WORKING_REPO_MANAGED_SETTINGS_KEYS.filter(
+    (key) => JSON.stringify(current[key]) !== JSON.stringify(desired[key]),
+  );
+
+  return { settingsPath, currentContent, desiredContent, staleManagedKeys };
+}
+
+async function reconcileWorkingRepoManagedSettings(
+  workingRepoPath: string,
+  companionPath: string,
+  config: FrameworkConfig,
   globalConfigStore: GlobalConfigStore,
 ): Promise<void> {
+  const settings = await buildDesiredWorkingRepoSettings(
+    workingRepoPath,
+    companionPath,
+    config,
+    globalConfigStore,
+  );
+  await writeClaudeSettings(path.join(workingRepoPath, ".claude", "settings.local.json"), settings);
+}
+
+async function buildDesiredWorkingRepoSettings(
+  workingRepoPath: string,
+  companionPath: string,
+  config: FrameworkConfig,
+  globalConfigStore: GlobalConfigStore,
+): Promise<ClaudeSettings> {
   const settingsPath = path.join(workingRepoPath, ".claude", "settings.local.json");
   // Migrate hooks only. Existing permissions and MCP entries stay in the
-  // working repo; additionalDirectories is reconciled below.
+  // working repo; managed keys are reconciled below.
   const existing = removeManagedHookGroups(await readClaudeSettings(settingsPath));
   const permissions = { ...existing.permissions };
   const existingAdditionalDirectories = Array.isArray(permissions.additionalDirectories)
@@ -496,15 +613,72 @@ async function syncWorkingRepoClaudeAdditionalDirectories(
     ),
   );
 
+  // Managed marketplace + plugin registration. Delete-then-set keeps the
+  // managed key trailing user entries so repeated syncs stay byte-identical.
+  const extraKnownMarketplaces = {
+    ...(existing.extraKnownMarketplaces as Record<string, unknown> | undefined),
+  };
+  delete extraKnownMarketplaces[COMPANION_MARKETPLACE_NAME];
+  extraKnownMarketplaces[COMPANION_MARKETPLACE_NAME] = {
+    source: { source: "directory", path: resolvedCompanionPath },
+  };
+
+  const enabledPlugins = {
+    ...(existing.enabledPlugins as Record<string, boolean> | undefined),
+  };
+  delete enabledPlugins[companionEnabledPluginKey()];
+  enabledPlugins[companionEnabledPluginKey()] = true;
+
+  // Managed env map: strip the whole managed key set before applying the
+  // fresh contract so stale keys (disabled capability gates, moved
+  // companion) never survive; user env keys are untouched.
+  const repository = (await findRepoLocalLinkedRepository(workingRepoPath)) ?? {
+    id: path.basename(path.resolve(workingRepoPath)),
+    path: path.resolve(workingRepoPath),
+  };
+  const env: Record<string, unknown> = { ...(existing.env as Record<string, unknown> | undefined) };
+  for (const key of MANAGED_SESSION_ENV_KEYS) {
+    delete env[key];
+  }
+  Object.assign(
+    env,
+    buildMateSessionEnv({ companionPath: resolvedCompanionPath, repository, config }),
+  );
+
+  // Pre-approve Mate-managed MCP servers: the companion `.mcp.json` names
+  // (Mate-owned) plus the static gateway entry in the working-repo .mcp.json.
+  const { config: companionMcpConfig } = await readClaudeMcpConfig(
+    getCompanionClaudeMcpConfigPath(resolvedCompanionPath),
+  );
+  const managedServerNames = [
+    ...Object.keys(companionMcpConfig.mcpServers ?? {}),
+    MATE_GATEWAY_MCP_SERVER_NAME,
+  ];
+  const existingApprovedServers = Array.isArray(existing.enabledMcpjsonServers)
+    ? (existing.enabledMcpjsonServers as string[])
+    : [];
+  const enabledMcpjsonServers = [
+    ...existingApprovedServers.filter((name) => !managedServerNames.includes(name)),
+    ...managedServerNames,
+  ];
+
   const settings: ClaudeSettings = {
     ...existing,
     permissions: {
       ...permissions,
       additionalDirectories,
     },
+    extraKnownMarketplaces,
+    enabledPlugins,
+    env,
   };
+  if (enabledMcpjsonServers.length > 0) {
+    settings.enabledMcpjsonServers = enabledMcpjsonServers;
+  } else {
+    delete settings.enabledMcpjsonServers;
+  }
 
-  await writeClaudeSettings(settingsPath, settings);
+  return settings;
 }
 
 async function configureClaude(companionPath: string): Promise<void> {

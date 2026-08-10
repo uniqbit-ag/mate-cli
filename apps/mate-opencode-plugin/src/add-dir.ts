@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { Config, Hooks, Plugin } from "@opencode-ai/plugin";
+import { resolveOpenCodeActivation } from "@uniqbit/mate-core/opencode";
 
 // OpenCode accepts a per-path rule map for external_directory at runtime even
 // though the published Config type narrows it to a single rule value.
@@ -17,13 +18,13 @@ function externalDirectoryRules(config: Config): ExternalDirectoryRules {
   return permission.external_directory as ExternalDirectoryRules;
 }
 
-export const AddDirPlugin: Plugin = async () => {
-  const companionPath = process.env.MATE_ARTIFACT_PATH?.trim();
-  if (!companionPath) {
+export const AddDirPlugin: Plugin = async (input) => {
+  const activation = await resolveOpenCodeActivation(input.directory ?? process.cwd());
+  if (activation.status !== "active") {
     return {};
   }
 
-  const resolvedCompanionPath = path.resolve(companionPath);
+  const resolvedCompanionPath = path.resolve(activation.context.companionPath);
 
   return {
     config: (async (cfg) => {

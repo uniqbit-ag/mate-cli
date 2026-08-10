@@ -8,6 +8,8 @@ import {
   runCompanionLinkCommandWithDeps,
 } from "./link";
 import type { LinkedRepository } from "../../../lib/orchestrator/types";
+import { CompanionResolver } from "../../../lib/orchestrator/companion-resolver";
+import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import { FRAMEWORK_NAME } from "../../../framework";
 import * as editor from "../../../lib/orchestrator/editor";
 
@@ -59,6 +61,8 @@ async function runLinkWithShadowScan(
       stat: async () => ({ isDirectory: () => true }) as Awaited<ReturnType<typeof fs.stat>>,
       inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
       installCompanion: async () => {},
+      registerMateClaudePluginGlobally: async () => {},
+      registerMateOpenCodePluginGlobally: async () => {},
       registerRepository: async (repository) => repository,
       registerCompanion: async () => {},
       findDescendantRepoLocalRegistries: findShadowedRegistries,
@@ -149,6 +153,8 @@ describe("runCompanionLinkCommandWithDeps", () => {
         inspectSetupPreflight: async () => ({ kind: "unrecognized" }),
         runSetupFlowAtPath: runSetup,
         installCompanion,
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
         registerRepository,
         registerCompanion: async () => {},
       });
@@ -212,6 +218,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         inspectSetupPreflight: async () => ({ kind: "unrecognized" }),
         runSetupFlowAtPath: runSetup,
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
         registerRepository,
         registerCompanion: async () => {},
       });
@@ -256,6 +266,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         rm: async () => {},
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
         registerRepository: async (repository) => repository,
         registerCompanion: async () => {},
       });
@@ -302,6 +316,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         rm: async () => {},
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
         registerRepository: async (repository) => repository,
         registerCompanion: async () => {},
       });
@@ -356,6 +374,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         runSetupFlowAtPath: runSetup,
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
         registerRepository,
         registerCompanion: async () => {},
       });
@@ -411,6 +433,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         runSetupFlowAtPath: mock(async () => {}),
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
         registerRepository: async (repository) => repository,
         registerCompanion: async () => {},
       });
@@ -464,6 +490,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         runSetupFlowAtPath: runSetup,
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
         registerRepository: async (repository) => repository,
         registerCompanion: async () => {},
       });
@@ -511,6 +541,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         registerRepository,
         registerCompanion,
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
       });
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
@@ -551,6 +585,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         inspectSetupPreflight: async () => ({ kind: "unrecognized" }),
         runSetupFlowAtPath: mock(async () => {}),
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
         registerRepository,
         registerCompanion: async () => {},
       });
@@ -596,6 +634,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         runSetupFlowAtPath: mock(async () => {}),
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
         registerRepository: async (repository) => repository,
         registerCompanion: async () => {},
       });
@@ -646,6 +688,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         resolveCompanion: async () => null,
         registerCompanion: async () => {},
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
       });
       const workspaceRegistry = await fs.readFile(
         path.join(workingPath, `.${FRAMEWORK_NAME}`, "config", "registry.yaml"),
@@ -708,6 +754,10 @@ describe("runCompanionLinkCommandWithDeps", () => {
         resolveCompanion: async () => null,
         registerCompanion: async () => {},
         installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
       });
 
       const companionRegistry = await fs.readFile(
@@ -718,6 +768,50 @@ describe("runCompanionLinkCommandWithDeps", () => {
 
       expect(companionRegistry).toContain("id: working");
       expect(companionRegistry).toContain(`path: ${resolvedWorkingPath}`);
+    } finally {
+      process.chdir(originalCwd);
+      Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("link → resolve round trip: linking registers trust so the repo-local pointer resolves", async () => {
+    const originalIsTTY = process.stdin.isTTY;
+    const originalCwd = process.cwd();
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+
+    const root = await makeTempDir("mate-companion-link-roundtrip-");
+    const companionPath = path.join(root, "companion");
+    const workingPath = path.join(root, "working");
+
+    try {
+      await fs.mkdir(companionPath, { recursive: true });
+      await fs.mkdir(workingPath, { recursive: true });
+      process.chdir(workingPath);
+
+      const globalStore = new GlobalConfigStore(path.join(root, "global-config.yaml"));
+      const resolver = new CompanionResolver(globalStore);
+
+      await runCompanionLinkCommandWithDeps([], {
+        selectCompanionLinkInputs: async () => ({
+          source: "local",
+          localPath: companionPath,
+        }),
+        resolveCompanion: async () => null,
+        registerCompanion: (candidate) => globalStore.register(candidate),
+        installCompanion: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+        registerMateClaudePluginGlobally: async () => {},
+        registerMateOpenCodePluginGlobally: async () => {},
+      });
+
+      const resolvedWorkingPath = await fs.realpath(workingPath);
+      const match = await resolver.resolve(resolvedWorkingPath);
+      expect(match).toEqual({
+        companionPath: path.resolve(companionPath),
+        repositoryId: "working",
+      });
     } finally {
       process.chdir(originalCwd);
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });

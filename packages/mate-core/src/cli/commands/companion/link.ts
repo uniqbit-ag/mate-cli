@@ -19,6 +19,8 @@ import { runSetupFlowAtPath } from "../setup";
 import { runInstallCommand } from "../install";
 import type { CompanionSource, LinkedRepository } from "../../../lib/orchestrator/types";
 import { invalidateInstallState } from "../../../lib/install";
+import { registerMateClaudePluginGlobally } from "../../../tools/setup/global-claude-registration";
+import { registerMateOpenCodePluginGlobally } from "../../../tools/setup/global-opencode-registration";
 
 interface CompanionLinkCommandDeps {
   selectCompanionLinkInputs?: (
@@ -41,6 +43,8 @@ interface CompanionLinkCommandDeps {
   installCompanion?: (companionPath: string) => Promise<boolean | void>;
   isDirectory?: (candidatePath: string) => Promise<boolean>;
   findDescendantRepoLocalRegistries?: typeof findDescendantRepoLocalRegistries;
+  registerMateClaudePluginGlobally?: typeof registerMateClaudePluginGlobally;
+  registerMateOpenCodePluginGlobally?: typeof registerMateOpenCodePluginGlobally;
 }
 
 /** All companions surfaced by the "existing companion" picker live under this directory. */
@@ -261,6 +265,18 @@ export async function runCompanionLinkCommandWithDeps(
     await registerCompanion(companionPath);
     await invalidateInstallState({ kind: "companion", companionPath });
     if ((await installCompanion(companionPath)) === false) return;
+  }
+
+  // Linking is the trust decision, so it also establishes the global plugin
+  // registrations every session activation depends on.
+  try {
+    await (deps.registerMateClaudePluginGlobally ?? registerMateClaudePluginGlobally)();
+    await (deps.registerMateOpenCodePluginGlobally ?? registerMateOpenCodePluginGlobally)();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `mate: warning: failed to register the global agent plugins (run \`mate sync\` to retry): ${message}`,
+    );
   }
 
   let shadowedPaths: string[] = [];

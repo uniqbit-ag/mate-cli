@@ -1538,11 +1538,17 @@ describe("mate CLI e2e", () => {
     const workingRepoSettings = JSON.parse(
       await fs.readFile(path.join(scenario.working, ".claude", "settings.local.json"), "utf8"),
     );
-    expect(workingRepoSettings).toEqual({
-      permissions: { additionalDirectories: [scenario.companion] },
+    expect(workingRepoSettings.permissions.additionalDirectories).toEqual([scenario.companion]);
+    expect(workingRepoSettings.enabledMcpjsonServers).toContain("tokensave");
+    expect(workingRepoSettings.enabledMcpjsonServers).toContain("mate");
+    // The only Mate-managed MCP declaration in the working repo is the static
+    // gateway entry; companion servers are delivered through the daemon.
+    const workingRepoMcp = JSON.parse(
+      await fs.readFile(path.join(scenario.working, ".mcp.json"), "utf8"),
+    );
+    expect(workingRepoMcp.mcpServers).toEqual({
+      mate: { type: "stdio", command: "mate", args: ["mcp", "shim"] },
     });
-    // The working repo receives no Mate-managed Claude MCP declaration.
-    await expect(fs.access(path.join(scenario.working, ".mcp.json"))).rejects.toThrow();
   });
 
   test("setup installs graphify companion assets for opencode provider", async () => {

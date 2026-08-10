@@ -10,6 +10,8 @@ import { ConfigStore } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repo-local-registry";
 import { TOKENSAVE_STORE_DIR, tokensaveDeps } from "./setup/capabilities/tokensave";
+import { COMPANION_MARKETPLACE_NAME, companionEnabledPluginKey } from "./setup/providers/claude";
+import { buildMateSessionEnv } from "./setup/mate-session-env";
 import {
   applySetupCompatibilities,
   createUvPluginForTest,
@@ -1387,13 +1389,31 @@ describe("applySetupCompatibilities — tokensave", () => {
       });
 
       // The working repo receives only the Claude additional directory pointer.
-      await expect(fs.access(path.join(workingRepoRoot, ".mcp.json"))).rejects.toThrow();
+      // The working repo's .mcp.json carries only the static gateway entry.
+      const workingRepoMcp = JSON.parse(
+        await fs.readFile(path.join(workingRepoRoot, ".mcp.json"), "utf8"),
+      );
+      expect(workingRepoMcp.mcpServers).toEqual({
+        mate: { type: "stdio", command: "mate", args: ["mcp", "shim"] },
+      });
       await expect(fs.access(path.join(workingRepoRoot, "CLAUDE.md"))).rejects.toThrow();
       const workingRepoSettings = JSON.parse(
         await fs.readFile(path.join(workingRepoRoot, ".claude", "settings.local.json"), "utf8"),
       );
       expect(workingRepoSettings).toEqual({
         permissions: { additionalDirectories: [companionRoot] },
+        extraKnownMarketplaces: {
+          [COMPANION_MARKETPLACE_NAME]: {
+            source: { source: "directory", path: companionRoot },
+          },
+        },
+        enabledPlugins: { [companionEnabledPluginKey()]: true },
+        env: buildMateSessionEnv({
+          companionPath: companionRoot,
+          repository: { id: path.basename(workingRepoRoot), path: workingRepoRoot },
+          config,
+        }),
+        enabledMcpjsonServers: ["tokensave", "mate"],
       });
     } finally {
       tokensaveDeps.run = originalRun;

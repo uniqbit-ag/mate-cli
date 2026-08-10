@@ -8,6 +8,10 @@ import {
 // leaf module (capability-owned) so both the graphify capability and the
 // guidance plugin can consume it without an import cycle.
 
+// Storage contract: <companionPath>/.graphify/<repositoryId>/graphify-out/
+export const GRAPHIFY_STORE_SEGMENT = ".graphify";
+export const GRAPHIFY_OUTPUT_SUBDIR = "graphify-out";
+
 // Marker names derive from the framework identity, never the invocation name.
 export const GRAPHIFY_START = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:START -->`;
 export const GRAPHIFY_END = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:END -->`;

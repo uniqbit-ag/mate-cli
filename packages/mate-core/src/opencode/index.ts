@@ -7,3 +7,9 @@
 export { default as tuiPlugin } from "./tui";
 export { CompanionHooksPlugin } from "./companion-hooks";
 export * from "./companion-policy";
+export {
+  resolveOpenCodeActivation,
+  type OpenCodeActivation,
+  type OpenCodeActivationDeps,
+} from "./activation";
+export { buildOpenCodeGuidance } from "../runtime/opencode-guidance";

@@ -35,6 +35,15 @@ beforeAll(async () => {
   });
   expect(unpack.status).toBe(0);
   pluginRoot = path.join(extracted, "package", "claude-plugin");
+
+  // An installed package always has its runtime dependencies next to it;
+  // mirror that offline by symlinking the workspace's resolved node_modules
+  // into the extracted package (the activation hook imports `yaml`).
+  await fs.symlink(
+    path.join(packageRoot, "node_modules"),
+    path.join(extracted, "package", "node_modules"),
+    "dir",
+  );
 });
 
 afterAll(async () => {
@@ -47,11 +56,13 @@ function runShim(
   shim: string,
   payload: unknown,
   env: Record<string, string> = {},
+  cwd?: string,
 ): { exitCode: number; stdout: string; stderr: string } {
   const result = spawnSync("node", [path.join(pluginRoot, "hooks", shim)], {
     input: JSON.stringify(payload),
     encoding: "utf8",
     env: { ...process.env, ...env },
+    cwd,
   });
   return { exitCode: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
 }
@@ -70,7 +81,7 @@ describe("packed Claude plugin", () => {
 
     for (const shim of [
       "validate-artifact-path.mjs",
-      "session-banner.mjs",
+      "session-activation.mjs",
       "artifact-finish-nudge.mjs",
     ]) {
       const stat = await fs.stat(path.join(pluginRoot, "hooks", shim));
@@ -102,20 +113,90 @@ describe("packed Claude plugin", () => {
     expect(allowed.exitCode).toBe(0);
   });
 
-  test("session-banner shim emits the managed-session banner", () => {
-    const result = runShim(
-      "session-banner.mjs",
-      {},
-      {
-        MATE_REPO_PATH: "/work/acme",
-        MATE_ARTIFACT_PATH: "/companions/acme-companion",
-        MATE_VERSION: "9.9.9",
-      },
-    );
+  test("session-activation shim is a silent no-op outside Mate repositories", async () => {
+    const nonMate = await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-non-mate-"));
+    tempRoots.push(nonMate);
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-home-"));
+    tempRoots.push(home);
+
+    const result = runShim("session-activation.mjs", {}, { HOME: home }, nonMate);
     expect(result.exitCode).toBe(0);
-    const payload = JSON.parse(result.stdout) as { systemMessage: string };
-    expect(payload.systemMessage).toContain("mate v9.9.9");
-    expect(payload.systemMessage).toContain("/companions/acme-companion");
+    expect(result.stdout).toBe("");
+  });
+
+  test("session-activation shim injects the companion policy for a trusted linked repo", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-activate-"));
+    tempRoots.push(root);
+    const repo = path.join(root, "repo");
+    const companion = path.join(root, "companion");
+    const home = path.join(root, "home");
+    await fs.mkdir(path.join(repo, ".mate", "config"), { recursive: true });
+    await fs.mkdir(path.join(companion, ".mate", "config"), { recursive: true });
+    await fs.mkdir(path.join(home, ".mate"), { recursive: true });
+
+    await fs.writeFile(
+      path.join(repo, ".mate", "config", "registry.yaml"),
+      [
+        "repository:",
+        "  id: acme",
+        `  path: ${repo}`,
+        "companions:",
+        `  - path: ${companion}`,
+        "    repositoryId: acme",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(companion, ".mate", "config", "framework.yaml"),
+      "type: companion\nallowedAgents:\n  - claude\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(home, ".mate", "config.yaml"),
+      ["version: 1", "companions:", `  - path: ${companion}`, ""].join("\n"),
+      "utf8",
+    );
+
+    const result = runShim("session-activation.mjs", {}, { HOME: home }, repo);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      systemMessage: string;
+      hookSpecificOutput: { hookEventName: string; additionalContext: string };
+    };
+    expect(payload.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("<companion-policy");
+    expect(payload.hookSpecificOutput.additionalContext).toContain(companion);
+    // Nothing was materialized, so the freshness nudge points at mate sync.
+    expect(payload.hookSpecificOutput.additionalContext).toContain("mate sync");
+    expect(payload.systemMessage).toContain(companion);
+  });
+
+  test("session-activation shim warns on an untrusted committed pointer without activating", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-untrusted-"));
+    tempRoots.push(root);
+    const repo = path.join(root, "repo");
+    const companion = path.join(root, "companion");
+    const home = path.join(root, "home");
+    await fs.mkdir(path.join(repo, ".mate", "config"), { recursive: true });
+    await fs.mkdir(companion, { recursive: true });
+    await fs.mkdir(home, { recursive: true });
+
+    await fs.writeFile(
+      path.join(repo, ".mate", "config", "registry.yaml"),
+      ["companions:", `  - path: ${companion}`, "    repositoryId: acme", ""].join("\n"),
+      "utf8",
+    );
+
+    const result = runShim("session-activation.mjs", {}, { HOME: home }, repo);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      systemMessage: string;
+      hookSpecificOutput?: unknown;
+    };
+    expect(payload.systemMessage).toContain("untrusted");
+    expect(payload.systemMessage).toContain(companion);
+    expect(payload.hookSpecificOutput).toBeUndefined();
   });
 
   test("artifact-finish-nudge shim nudges only when the gate is on", () => {

@@ -19,14 +19,6 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
-const GUIDANCE_JSON = JSON.stringify({
-  version: 1,
-  companionGuidance:
-    '<companion-policy framework="mate" priority="mandatory"><context><paths><path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path></paths></context><mandatory-rules><rule id="artifact-location" severity="critical">test</rule></mandatory-rules></companion-policy>',
-  codebaseExplorationGuidance: "",
-  errors: [],
-});
-
 function withEnv<T>(env: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
   const previous = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(env)) {
@@ -47,9 +39,12 @@ afterEach(async () => {
 });
 
 describe("aggregate Mate OpenCode plugin", () => {
-  test("remains inert without the Mate launch environment", async () => {
+  test("remains inert without launch env in a non-Mate directory", async () => {
+    const dir = await makeTempDir("mate-opencode-server-inert-");
+    const home = await makeTempDir("mate-opencode-server-inert-home-");
     await withEnv(
       {
+        HOME: home,
         MATE_ARTIFACT_PATH: undefined,
         MATE_REPO_PATH: undefined,
         MATE_REPO_ID: undefined,
@@ -58,7 +53,7 @@ describe("aggregate Mate OpenCode plugin", () => {
         MATE_GUIDANCE_JSON: undefined,
       },
       async () => {
-        const hooks = await MateOpenCodePlugin({} as never);
+        const hooks = await MateOpenCodePlugin({ directory: dir } as never);
 
         expect(hooks).toEqual({});
       },
@@ -75,14 +70,16 @@ describe("aggregate Mate OpenCode plugin", () => {
       {
         MATE_ARTIFACT_PATH: companion,
         MATE_REPO_PATH: repo,
-        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
         MATE_REPO_ID: "acme",
         MATE_POLICY_JSON: "{}",
         MATE_GIT_AUTO_MODE: "0",
         MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
       },
       async () => {
-        const hooks = (await MateOpenCodePlugin({} as never)) as Record<string, unknown>;
+        const hooks = (await MateOpenCodePlugin({ directory: repo } as never)) as Record<
+          string,
+          unknown
+        >;
 
         // add-dir module
         expect(hooks.config).toBeFunction();
@@ -119,8 +116,8 @@ describe("aggregate Mate OpenCode plugin", () => {
     );
   });
 
-  test("fails fast for a managed session without companion guidance", async () => {
-    const root = await makeTempDir("mate-opencode-aggregate-missing-");
+  test("builds guidance from the live companion configuration without a launch payload", async () => {
+    const root = await makeTempDir("mate-opencode-aggregate-live-");
     const companion = path.join(root, "companion");
     const repo = path.join(root, "repo");
     await fs.mkdir(companion, { recursive: true });
@@ -136,9 +133,19 @@ describe("aggregate Mate OpenCode plugin", () => {
         MATE_GIT_AUTO_MODE: "0",
       },
       async () => {
-        await expect(MateOpenCodePlugin({} as never)).rejects.toThrow(
-          "missing MATE_GUIDANCE_JSON in the launch environment",
-        );
+        const hooks = (await MateOpenCodePlugin({ directory: repo } as never)) as Record<
+          string,
+          unknown
+        >;
+        const prompt = { system: [] as string[] };
+        await (
+          hooks["experimental.chat.system.transform"] as (
+            input: unknown,
+            output: { system: string[] },
+          ) => Promise<void>
+        )({}, prompt);
+        expect(prompt.system[0]).toContain("<companion-policy ");
+        expect(prompt.system[0]).toContain(companion);
       },
     );
   });
@@ -154,14 +161,16 @@ describe("aggregate Mate OpenCode plugin", () => {
         HOME: root,
         MATE_ARTIFACT_PATH: companion,
         MATE_REPO_PATH: repo,
-        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
         MATE_REPO_ID: "acme",
         MATE_POLICY_JSON: JSON.stringify({ forbiddenPaths: ["private/**"] }),
         MATE_GIT_AUTO_MODE: "0",
         MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
       },
       async () => {
-        const mate = (await MateOpenCodePlugin({} as never)) as Record<string, unknown>;
+        const mate = (await MateOpenCodePlugin({ directory: repo } as never)) as Record<
+          string,
+          unknown
+        >;
         const contextMode = (await ContextModePlugin({
           directory: repo,
           client: { app: { log: async () => {} } },

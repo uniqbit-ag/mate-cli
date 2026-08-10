@@ -1,0 +1,107 @@
+---
+title: MCP Gateway
+description: How companion MCP servers reach every agent host through one shared daemon.
+---
+
+Mate delivers companion MCP servers to every agent host through a single
+shared **MCP gateway daemon** instead of host-specific wiring. Each host
+registers exactly one static MCP server entry named `mate` that runs
+`mate mcp shim`; everything else is resolved per session by the daemon.
+
+## Architecture
+
+```
+Claude session ──┐
+                 ├─ mate mcp shim ── unix socket ──┐
+opencode session ┘   (stdio, per session)          │
+                                                   ▼
+                                        mate gateway daemon
+                                        ├─ resolves repo pin per connection
+                                        ├─ manifest cache (tools/list without spawning)
+                                        └─ backend processes (lazy, shared)
+                                             ├─ companion MCP server A
+                                             └─ companion MCP server B
+```
+
+- **Shim.** Hosts spawn `mate mcp shim` as a plain stdio MCP server. The shim
+  connects to `~/.mate/run/gateway.sock`, auto-starts the daemon when absent,
+  hands over the session working directory, and pipes MCP frames verbatim.
+- **Per-connection tools.** The daemon resolves each connection's directory to
+  its repo root and pinned companion (the same trust-gated resolution used for
+  session activation) and exposes only that companion's tools, flat-named
+  `mate__<tool>`. Two servers exporting the same tool name are qualified as
+  `mate__<server>_<tool>`. Unlinked repositories get an empty tool list.
+- **Hot switching.** Repinning a companion (`mate companion select`) or
+  editing the companion MCP config emits `notifications/tools/list_changed`
+  on exactly the affected connections — open sessions on both hosts swap
+  tools without a restart.
+- **Lazy backends.** `tools/list` is answered from a manifest cache at
+  `~/.mate/cache/mcp-manifests.json`; a backend process spawns only on its
+  first `tools/call` and is reaped after an idle TTL. Backends are shared
+  across sessions of the same companion by default.
+- **Upgrades.** The shim and daemon exchange versions; after a package
+  upgrade the old daemon drains (keeps serving live sessions, frees the
+  socket) and the new version takes over for new sessions.
+
+## Companion MCP Configuration
+
+Companion MCP servers are declared in the mate-owned file
+`<companion>/.mate/mcp.yaml`:
+
+```yaml
+servers:
+  browser:
+    command: npx
+    args: ["-y", "@acme/browser-mcp"]
+    env:
+      ACME_TOKEN: secret # passed through to the backend unchanged
+    cwd: tools # relative paths resolve against the companion
+    isolation: connection # optional: one instance per session
+    enabled: true # optional: default true
+```
+
+- `command`/`args`/`env`/`cwd` describe what spawns; credentials stay inside
+  the companion config and are passed through unchanged.
+- `isolation: connection` opts a server out of cross-session sharing when it
+  assumes a single client. The default is one shared backend per companion
+  and configuration.
+
+## Migration From Legacy Files
+
+During the migration window the gateway also reads companion MCP servers from
+the legacy locations and emits deprecation warnings in the daemon log:
+
+| Legacy source                         | Mapped from                      |
+| ------------------------------------- | -------------------------------- |
+| `<companion>/.opencode/opencode.json` | `mcp` entries with `type: local` |
+| `<companion>/.mcp.json`               | `mcpServers` stdio entries       |
+
+Move these definitions into `.mate/mcp.yaml`; entries with the same name in
+the canonical file win. Remote (`url`-based) servers cannot move behind the
+gateway and are reported in the log.
+
+Host wiring changed with the gateway: the OpenCode plugin no longer merges
+companion `mcp` entries into host config, and the generated Claude companion
+plugin no longer ships MCP servers. On Claude the gateway entry lives in the
+working repo's `.mcp.json` (kept out of `git status` via the repo's local
+exclude file) and is pre-approved through the mate-managed settings.
+
+## Permissions
+
+On Claude, gateway tools are named `mcp__mate__mate__<tool>`. Both exact
+rules (`mcp__mate__mate__search`) and the wildcard `mcp__mate__*` match in
+`permissions.allow`. Note that Claude only applies settings-based allow rules
+in trusted workspaces.
+
+## Inspecting The Gateway
+
+```sh
+mate mcp status          # human-readable report
+mate mcp status --json   # machine-readable
+```
+
+The report names the daemon version and pid, every live connection with its
+repository and resolved companion, running backends with idle timers, and the
+manifest-cache entries. When no daemon is running the command says so without
+starting one. The daemon writes a structured JSONL log to
+`~/.mate/logs/mcp-gateway.log`.
