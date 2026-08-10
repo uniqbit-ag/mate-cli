@@ -11,7 +11,7 @@ import { companionRootedStore, CompanionStore } from "./companion-store";
 import { ConfigStore } from "./config-store";
 import { repoLocalRegistryPath } from "./repo-local-registry";
 import { ConfigError } from "./types";
-import { WorkingRepoStore } from "./working-repo-store";
+import { CompanionRegistryStore } from "./companion-registry-store";
 
 const tempRoots: string[] = [];
 
@@ -28,14 +28,14 @@ afterEach(async () => {
 async function makeStore(root: string): Promise<{
   store: CompanionStore;
   repoPath: string;
-  workingRepoStore: WorkingRepoStore;
+  workingRepoStore: CompanionRegistryStore;
 }> {
   const repoPath = path.join(root, "working");
   await fs.mkdir(repoPath, { recursive: true });
 
   const configStore = new ConfigStore(path.join(root, "framework.yaml"));
-  const workingRepoStore = new WorkingRepoStore(path.join(root, "registry.yaml"));
-  await workingRepoStore.save(WorkingRepoStore.defaultConfig());
+  const workingRepoStore = new CompanionRegistryStore(path.join(root, "registry.yaml"));
+  await workingRepoStore.save(CompanionRegistryStore.defaultConfig());
 
   return {
     store: new CompanionStore(configStore, workingRepoStore),
@@ -102,6 +102,37 @@ describe("CompanionStore", () => {
   });
 });
 
+describe("CompanionStore prune-on-write", () => {
+  test("drops a dead entry when an unrelated repository registers", async () => {
+    const root = await makeTempDir("companion-store-prune-dead-");
+    const { store, repoPath, workingRepoStore } = await makeStore(root);
+    const goneRepoPath = path.join(root, "gone");
+    const existing = CompanionRegistryStore.defaultConfig();
+    existing.repos.push({ id: "gone", path: goneRepoPath });
+    await workingRepoStore.save(existing);
+
+    await store.registerRepository({ id: "app", path: repoPath });
+    const repos = await store.listRepositories();
+
+    expect(repos.map((r) => r.id)).toEqual(["app"]);
+  });
+
+  test("leaves a registry unchanged when every existing entry is still valid", async () => {
+    const root = await makeTempDir("companion-store-prune-keep-");
+    const { store, repoPath, workingRepoStore } = await makeStore(root);
+    const otherRepoPath = path.join(root, "other");
+    await fs.mkdir(otherRepoPath, { recursive: true });
+    const existing = CompanionRegistryStore.defaultConfig();
+    existing.repos.push({ id: "other", path: otherRepoPath });
+    await workingRepoStore.save(existing);
+
+    await store.registerRepository({ id: "app", path: repoPath });
+    const repos = await store.listRepositories();
+
+    expect(repos.map((r) => r.id).sort()).toEqual(["app", "other"]);
+  });
+});
+
 async function makeCompanionRootedStore(root: string): Promise<{
   store: CompanionStore;
   companionPath: string;
@@ -113,8 +144,8 @@ async function makeCompanionRootedStore(root: string): Promise<{
 
   const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   const configStore = new ConfigStore(path.join(configDir, "framework.yaml"));
-  const workingRepoStore = new WorkingRepoStore(path.join(configDir, "registry.yaml"));
-  await workingRepoStore.save(WorkingRepoStore.defaultConfig());
+  const workingRepoStore = new CompanionRegistryStore(path.join(configDir, "registry.yaml"));
+  await workingRepoStore.save(CompanionRegistryStore.defaultConfig());
 
   return { store: new CompanionStore(configStore, workingRepoStore), companionPath, repoPath };
 }
@@ -126,7 +157,7 @@ describe("CompanionStore missing registry", () => {
     await fs.mkdir(repoPath, { recursive: true });
     const store = new CompanionStore(
       new ConfigStore(path.join(root, "framework.yaml")),
-      new WorkingRepoStore(path.join(root, "registry.yaml")),
+      new CompanionRegistryStore(path.join(root, "registry.yaml")),
     );
 
     const result = await store.registerRepository({ id: "app", path: repoPath });

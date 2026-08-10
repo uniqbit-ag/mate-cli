@@ -2,24 +2,24 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { CompanionRegistryStore } from "./companion-registry-store";
 import { ConfigStore } from "./config-store";
-import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
+import { pathIsDirectory, writeRepoLocalRegistryEntry } from "./repo-local-registry";
 import { type CompanionSource, ConfigError, type LinkedRepository } from "./types";
-import { WorkingRepoStore } from "./working-repo-store";
 
 /** Builds a {@link CompanionStore} whose config/registry files live under `<companionPath>/.mate/config`, regardless of `process.cwd()`. */
 export function companionRootedStore(companionPath: string): CompanionStore {
   const configDir = path.join(path.resolve(companionPath), `.${FRAMEWORK_NAME}`, "config");
   return new CompanionStore(
     new ConfigStore(path.join(configDir, "framework.yaml")),
-    new WorkingRepoStore(path.join(configDir, "registry.yaml")),
+    new CompanionRegistryStore(path.join(configDir, "registry.yaml")),
   );
 }
 
 export class CompanionStore {
   constructor(
     private readonly configStore = new ConfigStore(),
-    private readonly workingRepoStore = new WorkingRepoStore(),
+    private readonly companionRegistryStore = new CompanionRegistryStore(),
   ) {}
 
   async registerRepository(
@@ -36,17 +36,30 @@ export class CompanionStore {
     // A companion's registry.yaml may not exist yet (its first-ever link):
     // that is not a real error here, unlike a working repo reading its own
     // missing config, so fall back to an empty registry instead of throwing.
-    const working = await this.workingRepoStore.load().catch((error) => {
-      if (error instanceof ConfigError) return WorkingRepoStore.defaultConfig();
+    const working = await this.companionRegistryStore.load().catch((error) => {
+      if (error instanceof ConfigError) return CompanionRegistryStore.defaultConfig();
       throw error;
     });
-    const existing = working.repos.findIndex((r) => r.id === repository.id);
-    if (existing >= 0) {
-      working.repos[existing] = repository;
-    } else {
-      working.repos.push(repository);
+
+    // Prune dead entries (path no longer a directory) as part of this same
+    // write, piggybacking on the load/save that registration already does
+    // rather than adding a separate scan; never runs on a read-only list.
+    const checked = await Promise.all(
+      working.repos.map(async (repo) => ({ repo, exists: await pathIsDirectory(repo.path) })),
+    );
+    const survivors: LinkedRepository[] = [];
+    for (const entry of checked) {
+      if (entry.exists) survivors.push(entry.repo);
     }
-    await this.workingRepoStore.save(working);
+
+    const existing = survivors.findIndex((r) => r.id === repository.id);
+    if (existing >= 0) {
+      survivors[existing] = repository;
+    } else {
+      survivors.push(repository);
+    }
+    working.repos = survivors;
+    await this.companionRegistryStore.save(working);
 
     // Repo-local registry write is a cache, not the source of truth: the
     // companion-side write above already succeeded, so a failure here (e.g. a
@@ -70,12 +83,12 @@ export class CompanionStore {
   }
 
   async getRepository(repositoryId: string): Promise<LinkedRepository | undefined> {
-    const working = await this.workingRepoStore.load();
+    const working = await this.companionRegistryStore.load();
     return working.repos.find((r) => r.id === repositoryId);
   }
 
   async listRepositories(): Promise<LinkedRepository[]> {
-    const working = await this.workingRepoStore.load();
+    const working = await this.companionRegistryStore.load();
     return working.repos;
   }
 }

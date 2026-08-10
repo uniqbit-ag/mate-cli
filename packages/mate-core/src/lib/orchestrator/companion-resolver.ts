@@ -3,10 +3,12 @@ import path from "node:path";
 
 import { parse } from "yaml";
 
+import { readCompanionRegistry } from "./companion-registry-reader";
 import type { GlobalConfigStore } from "./global-config-store";
 import {
   findRepoLocalRegistryFile,
   pathIsDirectory,
+  repoLocalRegistryPath,
   type RepoLocalCompanionPointer,
   RepoLocalRegistryStore,
 } from "./repo-local-registry";
@@ -36,7 +38,7 @@ export interface CompanionResolutionResult {
 }
 
 export class CompanionResolver {
-  constructor(_globalConfigStore: GlobalConfigStore) {}
+  constructor(private readonly globalConfigStore: GlobalConfigStore) {}
 
   async resolve(cwd: string): Promise<CompanionMatch | null> {
     return (await this.resolveWithDiagnostics(cwd, { logFailures: true })).match;
@@ -49,7 +51,53 @@ export class CompanionResolver {
     const resolvedCwd = path.resolve(cwd);
 
     const repoLocalResult = await this.resolveFromRepoLocalRegistry(resolvedCwd, options);
-    return repoLocalResult ?? { match: null, ambiguousMatches: [], failures: [] };
+    if (repoLocalResult) return repoLocalResult;
+
+    return this.resolveFromGlobalRegistry(resolvedCwd);
+  }
+
+  /**
+   * Fallback for when the repo-local cache is missing or unusable: scans
+   * every companion the global registry knows about and matches by
+   * repository path. A single match self-heals the repo-local cache so the
+   * fast path succeeds on the next resolution without repeating this scan.
+   */
+  private async resolveFromGlobalRegistry(resolvedCwd: string): Promise<CompanionResolutionResult> {
+    const candidates = await this.globalConfigStore.list();
+    const found = await Promise.all(
+      candidates.map(async (candidate) => {
+        const companionPath = path.resolve(candidate);
+        try {
+          const { repos } = await readCompanionRegistry(companionPath);
+          const repo = repos.find((r) => path.resolve(r.path) === resolvedCwd);
+          return repo ? { companionPath, repositoryId: repo.id } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const seenCompanionPaths = new Set<string>();
+    const matches = found.filter((match): match is CompanionMatch => {
+      if (!match || seenCompanionPaths.has(match.companionPath)) return false;
+      seenCompanionPaths.add(match.companionPath);
+      return true;
+    });
+
+    if (matches.length === 0) return { match: null, ambiguousMatches: [], failures: [] };
+
+    if (matches.length === 1) {
+      const store = new RepoLocalRegistryStore(repoLocalRegistryPath(resolvedCwd));
+      await store.save({
+        companions: [{ path: matches[0]!.companionPath, repositoryId: matches[0]!.repositoryId }],
+      });
+    }
+
+    return {
+      match: matches[0]!,
+      ambiguousMatches: matches.length > 1 ? matches : [],
+      failures: [],
+    };
   }
 
   /**
