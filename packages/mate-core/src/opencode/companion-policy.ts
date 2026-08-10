@@ -158,20 +158,27 @@ export function buildArtifactError(context: CompanionContext, filePath: string):
   ].join("\n");
 }
 
-export function readContext(companionPath: string): CompanionContext {
+export function readCompanionAgentsMd(companionPath: string): string {
   const agentsMdPath = path.join(companionPath, "AGENTS.md");
-  let agentsMd = "";
   try {
     if (fs.existsSync(agentsMdPath)) {
-      agentsMd = fs.readFileSync(agentsMdPath, "utf8");
+      return fs.readFileSync(agentsMdPath, "utf8");
     }
   } catch {
     // Ignore read errors; AGENTS.md is optional
   }
+  return "";
+}
 
+/** Compose the policy context from an already-resolved runtime context. */
+export function contextFromRuntime(runtime: CompanionRuntimeContext): CompanionContext {
+  return { ...runtime, agentsMd: readCompanionAgentsMd(runtime.companionPath) };
+}
+
+export function readContext(companionPath: string): CompanionContext {
   return {
     ...readCompanionRuntimeContext(process.env),
     companionPath,
-    agentsMd,
+    agentsMd: readCompanionAgentsMd(companionPath),
   };
 }

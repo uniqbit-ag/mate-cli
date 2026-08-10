@@ -1,7 +1,11 @@
+import { EventEmitter } from "node:events";
+
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   ensureUnambiguousCompanion,
   launchAmbiguityDeps,
+  launchShimDeps,
+  makeLaunchCommand,
   parseDirectLaunchArgs,
   parseLaunchArgs,
 } from "./shared";
@@ -180,5 +184,125 @@ describe("ensureUnambiguousCompanion", () => {
     launchAmbiguityDeps.selectCompanion = mock(async () => null);
 
     expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(false);
+  });
+});
+
+describe("deprecated launch shims", () => {
+  const originalRunSync = launchShimDeps.runSyncCommand;
+  const originalSpawn = launchShimDeps.spawn;
+
+  function fakeChild(exitCode = 0) {
+    const child = new EventEmitter() as EventEmitter & { exitCode: number };
+    queueMicrotask(() => child.emit("close", exitCode));
+    return child;
+  }
+
+  function captureStderr(): { chunks: string[]; restore: () => void } {
+    const chunks: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    return { chunks, restore: () => (process.stderr.write = originalWrite) };
+  }
+
+  beforeEach(() => {
+    launchAmbiguityDeps.resolveCompanionMatches = mock(async () => []);
+    delete process.env.MATE_ARTIFACT_PATH;
+  });
+
+  afterEach(() => {
+    launchShimDeps.runSyncCommand = originalRunSync;
+    launchShimDeps.spawn = originalSpawn;
+  });
+
+  test("runs working sync, warns about deprecation, and spawns the plain binary", async () => {
+    const syncCalls: string[][] = [];
+    launchShimDeps.runSyncCommand = mock(async (argv: string[]) => {
+      syncCalls.push(argv);
+    });
+    const spawnMock = mock(() => fakeChild(0));
+    launchShimDeps.spawn = spawnMock as never;
+
+    const { chunks, restore } = captureStderr();
+    try {
+      await makeLaunchCommand("claude")(["--model", "opus"], { directPassthrough: true });
+    } finally {
+      restore();
+    }
+
+    expect(syncCalls).toEqual([[]]);
+    expect(chunks.join("")).toContain("deprecated");
+    expect(chunks.join("")).toContain("start `claude` directly");
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [command, args, options] = spawnMock.mock.calls[0] as unknown as [
+      string,
+      string[],
+      { stdio: string; env: NodeJS.ProcessEnv },
+    ];
+    expect(command).toBe("claude");
+    // Arg passthrough only — no Mate-injected flags.
+    expect(args).toEqual(["--model", "opus"]);
+    expect(options.stdio).toBe("inherit");
+    // Inherited env only — no Mate launch environment variables injected.
+    expect(options.env).toBe(process.env);
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  test("consumes the --no-git token and forwards it to sync only", async () => {
+    const syncCalls: string[][] = [];
+    launchShimDeps.runSyncCommand = mock(async (argv: string[]) => {
+      syncCalls.push(argv);
+    });
+    const spawnMock = mock(() => fakeChild(0));
+    launchShimDeps.spawn = spawnMock as never;
+
+    const { restore } = captureStderr();
+    try {
+      await makeLaunchCommand("opencode")(["--", "--no-git", "--verbose"], {
+        directPassthrough: true,
+      });
+    } finally {
+      restore();
+    }
+
+    expect(syncCalls).toEqual([["--no-git"]]);
+    const [command, args] = spawnMock.mock.calls[0] as unknown as [string, string[]];
+    expect(command).toBe("opencode");
+    expect(args).toEqual(["--verbose"]);
+  });
+
+  test("sync repair findings never block the spawn", async () => {
+    launchShimDeps.runSyncCommand = mock(async () => {
+      process.exitCode = 1;
+    });
+    const spawnMock = mock(() => fakeChild(0));
+    launchShimDeps.spawn = spawnMock as never;
+
+    const { restore } = captureStderr();
+    try {
+      await makeLaunchCommand("claude")([], { directPassthrough: true });
+    } finally {
+      restore();
+    }
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  test("propagates the agent's exit code", async () => {
+    launchShimDeps.runSyncCommand = mock(async () => {});
+    launchShimDeps.spawn = mock(() => fakeChild(3)) as never;
+
+    const { restore } = captureStderr();
+    try {
+      await makeLaunchCommand("claude")([], { directPassthrough: true });
+    } finally {
+      restore();
+    }
+
+    expect(process.exitCode).toBe(3);
   });
 });

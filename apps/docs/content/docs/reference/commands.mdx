@@ -86,6 +86,19 @@ The two index flags cannot be combined. When both Graphify and TokenSave are
 enabled, the default index flow refreshes TokenSave and then refreshes Graphify
 against the resulting state.
 
+## MCP Gateway
+
+| Command                  | Purpose                                                                    |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `mate mcp status`        | Report daemon version, connections, running backends, and manifest cache.  |
+| `mate mcp status --json` | Same report as machine-readable JSON.                                      |
+| `mate mcp shim`          | Stdio MCP endpoint agent hosts spawn per session (auto-starts the daemon). |
+| `mate mcp daemon`        | Run the gateway daemon in the foreground (normally started by the shim).   |
+
+`mate mcp status` never starts a daemon; it reports "not running" instead.
+See [MCP Gateway](/docs/concepts/mcp-gateway) for the architecture and the
+companion MCP configuration format.
+
 ## Artifacts And Updates
 
 | Command                                        | Purpose                                                              |

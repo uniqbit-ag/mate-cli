@@ -3,10 +3,11 @@ import path from "node:path";
 
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
 
+import { resolveOpenCodeActivation } from "./activation";
 import {
   buildArtifactError,
+  contextFromRuntime,
   extractPatchPaths,
-  readContext,
   shouldBlockArtifactWrite,
   type CompanionContext,
 } from "./companion-policy";
@@ -324,7 +325,12 @@ interface ArchiveCallSnapshot {
 
 export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInput) => {
   const { client, $ } = pluginInput;
-  const context = readContext(process.env.MATE_ARTIFACT_PATH ?? "");
+  // Trust-gated directory resolution when no Mate launch env is present, so
+  // plain `opencode` starts activate the same hooks; untrusted or ambiguous
+  // sessions stay inert here (the companion plugin surfaces the messaging).
+  const activation = await resolveOpenCodeActivation(pluginInput.directory ?? process.cwd());
+  if (activation.status !== "active") return {};
+  const context = contextFromRuntime(activation.context);
   if (!context.companionPath || !context.repositoryPath) return {};
 
   const archiveDir = path.join(context.companionPath, "openspec", "changes", "archive");

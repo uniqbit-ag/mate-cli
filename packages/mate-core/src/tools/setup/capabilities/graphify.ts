@@ -15,7 +15,11 @@ import { getWrapperBinPath } from "../../../lib/package-paths";
 import { isInstalledViaUvTool } from "../package-managers/uv";
 import { stripSectionFromFile } from "../providers/agent-file-sections";
 import { graphifySectionOptions } from "./graphify-shared";
-export { removeGraphifySection } from "./graphify-shared";
+export {
+  GRAPHIFY_OUTPUT_SUBDIR,
+  GRAPHIFY_STORE_SEGMENT,
+  removeGraphifySection,
+} from "./graphify-shared";
 import {
   mergeClaudeSettingsJsonHooks,
   patchClaudeSkillTree,
@@ -28,10 +32,6 @@ import {
   removeOpenCodeForeignPluginReferences,
   stripOpenCodeForeignSections,
 } from "../providers/opencode";
-
-// Storage contract: <companionPath>/.graphify/<repositoryId>/graphify-out/
-export const GRAPHIFY_STORE_SEGMENT = ".graphify";
-export const GRAPHIFY_OUTPUT_SUBDIR = "graphify-out";
 
 const GRAPHIFY_INSTALL_CMD = `uv tool install graphifyy`;
 const GRAPHIFY_GITIGNORE_ENTRIES = [
@@ -75,8 +75,8 @@ export function deriveGraphifyProviders(activeProviders: string[]): string[] {
 // graphifyy's `graphify install` emits a skill whose pipeline writes to a
 // cwd-relative graphify-out/ using literal path strings (inline Python + bash)
 // that graphifyy's own GRAPHIFY_OUT/paths.py override cannot redirect. Rewrite
-// those tokens to the $GRAPHIFY_OUT env var mate injects into the launch session
-// (adapters/base.ts), so agent-driven skill runs land in the companion-local
+// those tokens to the $GRAPHIFY_OUT env var mate materializes into the session
+// env map (mate-session-env.ts), so agent-driven skill runs land in the companion-local
 // store instead of leaking graphify-out/ into the working repo. YAML frontmatter
 // is preserved verbatim (its prose description mentions graphify-out/).
 export function rewriteGraphifySkillOutputPaths(content: string): string {

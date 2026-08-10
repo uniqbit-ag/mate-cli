@@ -5,11 +5,9 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import type { AdapterContext } from "../../lib/orchestrator/adapters/base";
-import { ClaudeAdapter } from "../../lib/orchestrator/adapters/claude";
-import { OpenCodeAdapter } from "../../lib/orchestrator/adapters/opencode";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
-import { getClaudePluginRoot, getWrapperBinPath } from "../../lib/package-paths";
+import { getReactDoctorBinPath, getWrapperBinPath } from "../../lib/package-paths";
+import { version } from "../../../package.json";
 import { executeSetup, syncWorkingRepoClaudeSettings } from "../setup";
 
 // Golden-fixture harness for the Runtime Surface refactor: runs the real
@@ -272,47 +270,6 @@ async function collectEffectiveState(fixture: Fixture): Promise<unknown> {
   ]);
 }
 
-// Launch-time surface: what the adapters inject into an agent session — the
-// appended system prompt (companion-policy XML), --settings/--mcp-config args,
-// the merged OPENCODE_CONFIG_CONTENT, and the guidance JSON. Task 2.3 moves
-// the adapters onto the shared format modules; these fixtures pin the result.
-async function collectLaunchSurface(
-  fixture: Fixture,
-  agents: string[],
-  capabilities: string[],
-): Promise<unknown> {
-  const context: AdapterContext = {
-    repository: { id: "app", path: path.join(fixture.root, "working") },
-    allowedAgents: agents,
-    companionPath: fixture.companionPath,
-    capabilities: capabilities.map((name) => ({ name })),
-  };
-  delete process.env.OPENCODE_CONFIG_CONTENT;
-
-  const surface: Record<string, unknown> = {};
-  if (agents.includes("claude")) {
-    const adapter = new ClaudeAdapter();
-    surface.claudeArgs = adapter.buildArgs(context, []);
-    surface.claudeEnv = adapter.extendEnvironment(context);
-  }
-  if (agents.includes("opencode")) {
-    const adapter = new OpenCodeAdapter();
-    surface.opencodeArgs = adapter.buildArgs(context, []);
-    const env = adapter.extendEnvironment(context);
-    surface.opencodeEnv = {
-      ...env,
-      OPENCODE_CONFIG_CONTENT: JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? "{}"),
-      MATE_GUIDANCE_JSON: JSON.parse(env.MATE_GUIDANCE_JSON ?? "{}"),
-    };
-  }
-  return normalize(surface, [
-    [await fs.realpath(fixture.root), "<root>"],
-    [fixture.root, "<root>"],
-    [getClaudePluginRoot(), "<claude-plugin>"],
-    [getWrapperBinPath(), "<wrapper-bin>"],
-  ]);
-}
-
 function runSetup(
   fixture: Fixture,
   agents: string[],
@@ -337,7 +294,6 @@ describe("runtime surface golden fixtures", () => {
           const fixture = await makeFixture(`mate-golden-${capability}-`);
           await runSetup(fixture, agents, [capability]);
           expect(await collectEffectiveState(fixture)).toMatchSnapshot();
-          expect(await collectLaunchSurface(fixture, agents, [capability])).toMatchSnapshot();
         },
         { timeout: 30000 },
       );
@@ -350,9 +306,6 @@ describe("runtime surface golden fixtures", () => {
       const fixture = await makeFixture("mate-golden-all-");
       await runSetup(fixture, ["claude", "opencode"], [...CAPABILITIES]);
       expect(await collectEffectiveState(fixture)).toMatchSnapshot();
-      expect(
-        await collectLaunchSurface(fixture, ["claude", "opencode"], [...CAPABILITIES]),
-      ).toMatchSnapshot();
     },
     { timeout: 30000 },
   );
@@ -447,9 +400,14 @@ describe("working repo golden fixtures", () => {
       claudeMd: await readText(path.join(workingRepoPath, "CLAUDE.md")),
       gitExclude: await readText(path.join(workingRepoPath, ".git", "info", "exclude")),
     };
+    // Machine- and version-specific managed env values are tokenized so the
+    // snapshots stay portable.
     return normalize(state, [
       [await fs.realpath(fixture.root), "<root>"],
       [fixture.root, "<root>"],
+      [getWrapperBinPath(), "<wrapperBin>"],
+      [getReactDoctorBinPath(), "<reactDoctorBin>"],
+      [version, "<version>"],
     ]);
   }
 

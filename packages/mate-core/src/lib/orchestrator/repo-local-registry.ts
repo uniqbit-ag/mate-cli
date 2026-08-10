@@ -17,6 +17,8 @@ export interface RepoLocalCompanionPointer {
 export interface RepoLocalRegistry {
   repository?: LinkedRepository;
   companions: RepoLocalCompanionPointer[];
+  /** Per-user pinned choice when multiple companions link this repo. */
+  selectedCompanionPath?: string;
 }
 
 const repoLocalDirName = () => `.${FRAMEWORK_NAME}`;
@@ -160,6 +162,31 @@ export async function writeRepoLocalRegistryEntry(
   await writeRepoLocalFrameworkConfig(repoPath);
   await upsertRepoLocalLinkedRepository(repoPath, repository);
   await upsertRepoLocalCompanionPointer(repoPath, companionPath, repository.id, source);
+}
+
+/**
+ * Pin the per-user companion choice for an ambiguous repo. The id matches a
+ * pointer's repositoryId, the companion path basename, or the full path.
+ * Returns the pinned pointer, or null when nothing matches.
+ */
+export async function selectRepoLocalCompanion(
+  repoPath: string,
+  id: string,
+): Promise<RepoLocalCompanionPointer | null> {
+  const registry = await loadRepoLocalRegistry(repoPath);
+  const selected = registry.companions.find((pointer) => {
+    const resolvedPath = path.resolve(pointer.path);
+    return (
+      resolvedPath === path.resolve(id) ||
+      path.basename(resolvedPath) === id ||
+      pointer.repositoryId === id
+    );
+  });
+  if (!selected) return null;
+
+  registry.selectedCompanionPath = path.resolve(selected.path);
+  await saveRepoLocalRegistry(repoPath, registry);
+  return selected;
 }
 
 export async function findRepoLocalLinkedRepository(cwd: string): Promise<LinkedRepository | null> {

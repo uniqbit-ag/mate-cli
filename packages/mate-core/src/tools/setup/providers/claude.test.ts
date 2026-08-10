@@ -4,14 +4,20 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import {
+  buildMateGatewayMcpEntry,
+  COMPANION_MARKETPLACE_NAME,
+  companionEnabledPluginKey,
   createClaudePlugin,
   ensureWorkingRepoLocalExcludes,
   getCompanionClaudeMcpConfigPath,
   getCompanionClaudeSettingsPath,
+  MATE_GATEWAY_MCP_SERVER_NAME,
   syncCompanionClaudeSettings,
   syncWorkingRepoClaudeSettings,
 } from "./claude";
 import { getWrapperBinPath } from "../../../lib/package-paths";
+import { buildMateSessionEnv } from "../mate-session-env";
+import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { createContextModePlugin } from "../capabilities/context-mode";
 import { createGraphifyPlugin } from "../capabilities/graphify";
 import { createOpenspecPlugin } from "../capabilities/openspec";
@@ -104,6 +110,33 @@ async function seedSettings(basePath: string, settings: ClaudeSettings): Promise
   const settingsPath = path.join(basePath, ".claude", "settings.local.json");
   await fs.mkdir(path.dirname(settingsPath), { recursive: true });
   await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), "utf8");
+}
+
+// Managed working-repo settings blocks a sync must materialize. Env values
+// come from the writer's own builder; these tests pin placement and
+// reconcile semantics, not the individual env values.
+function expectedWorkingRepoManagedBlocks(
+  workingRepoPath: string,
+  companionPath: string,
+  config: FrameworkConfig,
+) {
+  return {
+    extraKnownMarketplaces: {
+      [COMPANION_MARKETPLACE_NAME]: {
+        source: { source: "directory", path: path.resolve(companionPath) },
+      },
+    },
+    enabledPlugins: { [companionEnabledPluginKey()]: true },
+    env: buildMateSessionEnv({
+      companionPath: path.resolve(companionPath),
+      repository: {
+        id: path.basename(path.resolve(workingRepoPath)),
+        path: path.resolve(workingRepoPath),
+      },
+      config,
+    }),
+    enabledMcpjsonServers: [MATE_GATEWAY_MCP_SERVER_NAME],
+  };
 }
 
 function hasValidateHook(settings: ClaudeSettings, companionPath: string): boolean {
@@ -823,14 +856,15 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     expect(second).toBe(first);
   });
 
-  test("writes companion additionalDirectories to working-repo Claude settings", async () => {
+  test("writes companion additionalDirectories and managed session blocks to working-repo Claude settings", async () => {
     const workingRepoPath = await makeTempDir("mate-claude-cleanup-none-");
     const companionPath = await makeTempDir("mate-claude-cleanup-companion-");
 
-    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, {
+    const config: FrameworkConfig = {
       allowedAgents: ["claude"],
       capabilities: [{ name: "tokensave" }],
-    });
+    };
+    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, config);
 
     const settings = JSON.parse(
       await fs.readFile(path.join(workingRepoPath, ".claude", "settings.local.json"), "utf8"),
@@ -839,6 +873,7 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
       permissions: {
         additionalDirectories: [path.resolve(companionPath)],
       },
+      ...expectedWorkingRepoManagedBlocks(workingRepoPath, companionPath, config),
     });
   });
 
@@ -893,14 +928,16 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     // Legacy Mate permissions and inline MCP entries are intentionally
     // preserved; this migration only removes obsolete hook groups.
     await seedSettings(workingRepoPath, seeded);
-    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, {
+    const config: FrameworkConfig = {
       allowedAgents: ["claude"],
       capabilities: [{ name: "tokensave" }],
-    });
+    };
+    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, config);
 
     const after = JSON.parse(
       await fs.readFile(path.join(workingRepoPath, ".claude", "settings.local.json"), "utf8"),
     );
+    const managed = expectedWorkingRepoManagedBlocks(workingRepoPath, companionPath, config);
     expect(after).toEqual({
       ...seeded,
       hooks: {
@@ -910,6 +947,8 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
         additionalDirectories: ["/tmp/shared", path.resolve(companionPath)],
         allow: ["Bash(ls:*)", "mcp__tokensave__*"],
       },
+      ...managed,
+      env: { MATE_TEST_VALUE: "preserve", ...managed.env },
     });
   });
 
@@ -936,13 +975,14 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
       },
     });
 
+    const config: FrameworkConfig = {
+      allowedAgents: ["claude"],
+      capabilities: [{ name: "tokensave" }],
+    };
     await syncWorkingRepoClaudeSettings(
       workingRepoPath,
       activeCompanionPath,
-      {
-        allowedAgents: ["claude"],
-        capabilities: [{ name: "tokensave" }],
-      },
+      config,
       globalConfigStore,
     );
 
@@ -953,6 +993,82 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
       permissions: {
         additionalDirectories: ["/tmp/shared", path.resolve(activeCompanionPath)],
       },
+      ...expectedWorkingRepoManagedBlocks(workingRepoPath, activeCompanionPath, config),
     });
+  });
+
+  test("double sync leaves the settings file byte-identical", async () => {
+    const workingRepoPath = await makeTempDir("mate-claude-idempotent-");
+    const companionPath = await makeTempDir("mate-claude-idempotent-companion-");
+    const config: FrameworkConfig = {
+      allowedAgents: ["claude"],
+      capabilities: [{ name: "graphify" }],
+    };
+
+    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, config);
+    const settingsPath = path.join(workingRepoPath, ".claude", "settings.local.json");
+    const first = await fs.readFile(settingsPath, "utf8");
+
+    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, config);
+    const second = await fs.readFile(settingsPath, "utf8");
+
+    expect(second).toBe(first);
+  });
+
+  test("companion change rewrites managed values and drops stale managed keys", async () => {
+    const root = await makeTempDir("mate-claude-companion-change-");
+    const workingRepoPath = path.join(root, "working");
+    const companionA = path.join(root, "companion-a");
+    const companionB = path.join(root, "companion-b");
+    await fs.mkdir(workingRepoPath, { recursive: true });
+    await fs.mkdir(companionA, { recursive: true });
+    await fs.mkdir(companionB, { recursive: true });
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "global-config.yaml"));
+    await globalConfigStore.register(companionA);
+    await globalConfigStore.register(companionB);
+
+    await syncWorkingRepoClaudeSettings(
+      workingRepoPath,
+      companionA,
+      { allowedAgents: ["claude"], capabilities: [{ name: "graphify" }] },
+      globalConfigStore,
+    );
+
+    await syncWorkingRepoClaudeSettings(
+      workingRepoPath,
+      companionB,
+      { allowedAgents: ["claude"], capabilities: [] },
+      globalConfigStore,
+    );
+
+    const after = JSON.parse(
+      await fs.readFile(path.join(workingRepoPath, ".claude", "settings.local.json"), "utf8"),
+    );
+    expect(after.extraKnownMarketplaces[COMPANION_MARKETPLACE_NAME].source.path).toBe(
+      path.resolve(companionB),
+    );
+    expect(after.env.MATE_ARTIFACT_PATH).toBe(path.resolve(companionB));
+    expect(after.env.MATE_GRAPHIFY_ENABLED).toBe("0");
+    expect(after.env.GRAPHIFY_OUT).toBeUndefined();
+    expect(after.permissions.additionalDirectories).toEqual([path.resolve(companionB)]);
+  });
+
+  test("pre-approves companion .mcp.json servers while preserving user approvals", async () => {
+    const workingRepoPath = await makeTempDir("mate-claude-mcp-approve-");
+    const companionPath = await makeTempDir("mate-claude-mcp-approve-companion-");
+    await fs.writeFile(
+      path.join(companionPath, ".mcp.json"),
+      JSON.stringify({ mcpServers: { tokensave: { command: "tokensave", args: ["serve"] } } }),
+      "utf8",
+    );
+    await seedSettings(workingRepoPath, { enabledMcpjsonServers: ["user-server"] });
+
+    const config: FrameworkConfig = { allowedAgents: ["claude"], capabilities: [] };
+    await syncWorkingRepoClaudeSettings(workingRepoPath, companionPath, config);
+
+    const after = JSON.parse(
+      await fs.readFile(path.join(workingRepoPath, ".claude", "settings.local.json"), "utf8"),
+    );
+    expect(after.enabledMcpjsonServers).toEqual(["user-server", "tokensave", "mate"]);
   });
 });

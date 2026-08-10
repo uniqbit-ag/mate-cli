@@ -14,8 +14,10 @@ import { runConfigCommand } from "./commands/config";
 import { runDoctorCommand } from "./commands/doctor";
 import { runLaunchClaudeCommand } from "./commands/launch/claude";
 import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
+import { runMcpCommand } from "./commands/mcp";
 import { runPluginCommand } from "./commands/plugin/plugin";
 import { runReportCommand } from "./commands/report";
+import { runSyncCommand } from "./commands/sync";
 import { runUpdateCommand } from "./commands/update";
 import { runWorkspaceCommand } from "./commands/workspace/workspace";
 import { runInstallCommand } from "./commands/install";
@@ -84,7 +86,9 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // and the un-awaited scheduleBackgroundCheck() has been observed to race
   // a large final stdout write against process exit, truncating it. Both
   // reasons put them in the same stdout-owning bucket as plugin commands.
-  const ownsStdout = isPluginCommand || command === "workspace";
+  // `mcp shim` speaks MCP JSON-RPC over stdout and `mcp daemon` runs headless;
+  // no banner may ever land on their stdout.
+  const ownsStdout = isPluginCommand || command === "workspace" || command === "mcp";
 
   // Every dispatch case opens with a gate() call declaring what the command
   // needs before it may run. Declared gates run in fixed order — update
@@ -210,6 +214,14 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
       await runCapCommand(subcommand, rest);
       return;
+    case "sync":
+      // Root-type dispatch (working/companion/hub) happens inside the
+      // command; ambiguity resolves via `companion select`, not a TTY picker,
+      // so no companion gate. Must stay runnable with an incomplete install —
+      // it is the repair path session hooks nudge users toward.
+      if (!(await gate({ updateGuard: true }))) return;
+      await runSyncCommand(argv.slice(3));
+      return;
     case "update":
       if (!(await gate({}))) return;
       await runUpdateCommand(argv.slice(3));
@@ -219,6 +231,13 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       // update gating — an editor extension may call these frequently.
       if (!(await gate({}))) return;
       await runWorkspaceCommand(subcommand, rest);
+      return;
+    case "mcp":
+      // Gateway plumbing hosts invoke directly; must run in any directory
+      // (per-connection resolution handles unlinked repos) and stay ungated —
+      // a blocked shim would take MCP away from every session.
+      if (!(await gate({}))) return;
+      await runMcpCommand(subcommand, rest);
       return;
     default:
       // Unknown commands fail fast: no case matched, so no gate ever ran.

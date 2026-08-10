@@ -2,14 +2,12 @@ import { makeLaunchCommand } from "./shared";
 
 /**
  * @command mate opencode [-- ...agentArgs]
- * @description Launches OpenCode for the active working repository. In a
- * TTY, launches directly; outside a TTY, launches via
- * {@link runLaunchToolCommand} with confirmation.
+ * @description DEPRECATED shim: runs the working-type `mate sync` in the
+ * foreground, prints a deprecation warning pointing at starting `opencode`
+ * directly, and spawns the plain `opencode` binary with no Mate-injected
+ * flags or launch environment variables.
  * @flags
  * - `-- <args>` — arguments forwarded to the launched `opencode` process.
  * - `-- --no-git` — skip companion Git synchronization for this launch.
- * @remarks When invoked via `directPassthrough` (the top-level `mate
- * opencode` alias), all args before `--` are treated as agent args rather
- * than being parsed as launch options.
  */
 export const runLaunchOpenCodeCommand = makeLaunchCommand("opencode");

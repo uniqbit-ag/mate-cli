@@ -1,5 +1,5 @@
 {
-  "description": "Mate hooks — PreToolUse artifact-path guardrail, SessionStart banner, PostToolUse OpenSpec archive-finish nudge (self-gated at runtime)",
+  "description": "Mate hooks — PreToolUse artifact-path guardrail, SessionStart activation (trust-gated resolution, policy injection, freshness nudge, banner), PostToolUse OpenSpec archive-finish nudge (self-gated at runtime)",
   "hooks": {
     "PreToolUse": [
       {
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-banner.mjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-activation.mjs\""
           }
         ]
       }

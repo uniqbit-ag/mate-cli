@@ -6,7 +6,9 @@ import { getActiveDistribution } from "../../distribution";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { pathIsDirectory } from "../../lib/orchestrator/repo-local-registry";
+import { collectOpenCodeRuntimeProblems } from "../../lib/orchestrator/opencode-runtime-check";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
+import { validateClaudePluginAssets } from "../../lib/package-paths";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
 import { getRequiredPluginDrift } from "../../tools/setup/policy";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
@@ -18,6 +20,8 @@ interface DoctorDeps {
   pathValue?: string;
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
   gitHead?: (memberPath: string) => string | null;
+  validateClaudePluginAssets?: () => void;
+  collectOpenCodeRuntimeProblems?: typeof collectOpenCodeRuntimeProblems;
 }
 
 export type DoctorKind = "core" | "working" | "companion" | "hub";
@@ -52,6 +56,8 @@ export interface DoctorReport {
   requiredPluginDrift?: Array<{ pluginId: string; kind: string; reason: string }>;
   engineRequirement?: { range: string; ok: boolean; detail: string };
   hub?: { members: DoctorHubMember[] };
+  /** Launch-preflight validations relocated to reported repairs (empty = healthy). */
+  companionRepairs?: string[];
   resolutionFailures: Array<{ companionPath: string; message: string }>;
 }
 
@@ -203,6 +209,26 @@ function collectConfiguredRootSections(
   report.engineRequirement = collectEngineRequirement(config);
 }
 
+/** Launch-preflight validations relocated here and to `mate sync` per plugin-activated-sessions. */
+async function collectDoctorCompanionRepairs(
+  companionPath: string,
+  config: FrameworkConfig,
+  deps: DoctorDeps,
+): Promise<string[]> {
+  const problems: string[] = [];
+  try {
+    (deps.validateClaudePluginAssets ?? validateClaudePluginAssets)();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    problems.push(`${message}. Repair it: reinstall ${FRAMEWORK_NAME}.`);
+  }
+  if ((config.allowedAgents ?? []).includes("opencode")) {
+    const collect = deps.collectOpenCodeRuntimeProblems ?? collectOpenCodeRuntimeProblems;
+    problems.push(...(await collect(companionPath, config.capabilities ?? [])));
+  }
+  return problems;
+}
+
 export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<DoctorReport> {
   const cwd = path.resolve(deps.cwd ?? process.cwd());
   const pathValue = deps.pathValue ?? process.env.PATH ?? "";
@@ -219,6 +245,10 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
       root.resolution.ambiguousMatches.length > 1 ? root.resolution.ambiguousMatches : [],
     resolutionFailures: root.resolution.failures,
   };
+
+  if ((kind === "working" || kind === "companion") && root.rootPath && root.config) {
+    report.companionRepairs = await collectDoctorCompanionRepairs(root.rootPath, root.config, deps);
+  }
 
   if (kind === "working") {
     await collectWorkingSections(report, root, pathValue);
@@ -330,6 +360,10 @@ function renderHumanReport(report: DoctorReport): void {
   }
   if (report.engineRequirement) {
     printSection("Version Requirement", report.engineRequirement.detail);
+  }
+  // Healthy companions produce no repair section at all.
+  if (report.companionRepairs && report.companionRepairs.length > 0) {
+    printSection("Companion Repairs", renderList(report.companionRepairs, ""));
   }
 
   printSection(

@@ -13,6 +13,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -40,6 +41,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -99,66 +101,6 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 }
 `;
 
-exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>
-
-<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/</path>
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>graphify -> grep/glob/read. MUST try graphify before raw source.
-1. graphify query "<question>" first.
-2. Use graphify path "<A>" "<B>" or graphify explain "<concept>" to deepen.
-3. Use grep/glob/read only after graphify was tried.</order>
-<notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run mate cap index --graphify.</post-edit>
-</codebase-exploration-rules>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
 {
   "agentsMd": 
@@ -172,6 +114,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -232,77 +175,6 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "plugin": [
       "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
-  },
-}
-`;
-
-exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
-{
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": 
-"<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/</path>
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>graphify -> grep/glob/read. MUST try graphify before raw source.
-1. graphify query "<question>" first.
-2. Use graphify path "<A>" "<B>" or graphify explain "<concept>" to deepen.
-3. Use grep/glob/read only after graphify was tried.</order>
-<notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run mate cap index --graphify.</post-edit>
-</codebase-exploration-rules>"
-,
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
 }
 `;
@@ -320,6 +192,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -347,6 +220,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -445,132 +319,6 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "plugin": [
       "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
-  },
-}
-`;
-
-exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>
-
-<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/</path>
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>graphify -> grep/glob/read. MUST try graphify before raw source.
-1. graphify query "<question>" first.
-2. Use graphify path "<A>" "<B>" or graphify explain "<concept>" to deepen.
-3. Use grep/glob/read only after graphify was tried.</order>
-<notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run mate cap index --graphify.</post-edit>
-</codebase-exploration-rules>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": 
-"<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/</path>
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>graphify -> grep/glob/read. MUST try graphify before raw source.
-1. graphify query "<question>" first.
-2. Use graphify path "<A>" "<B>" or graphify explain "<concept>" to deepen.
-3. Use grep/glob/read only after graphify was tried.</order>
-<notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run mate cap index --graphify.</post-edit>
-</codebase-exploration-rules>"
-,
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
 }
 `;
@@ -588,6 +336,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -622,6 +371,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -691,63 +441,6 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 }
 `;
 
-exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>
-
-<codebase-exploration-rules priority="mandatory">
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>tokensave -> grep/glob/read. MUST try tokensave before raw source.
-1. tokensave_context first.
-2. Use grep/glob/read only after tokensave is empty or irrelevant.</order>
-<post-edit>After code changes, run mate cap index --tokensave.</post-edit>
-</codebase-exploration-rules>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
 {
   "agentsMd": 
@@ -761,6 +454,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -810,74 +504,6 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
     "plugin": [
       "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
-  },
-}
-`;
-
-exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
-{
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": 
-"<codebase-exploration-rules priority="mandatory">
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>tokensave -> grep/glob/read. MUST try tokensave before raw source.
-1. tokensave_context first.
-2. Use grep/glob/read only after tokensave is empty or irrelevant.</order>
-<post-edit>After code changes, run mate cap index --tokensave.</post-edit>
-</codebase-exploration-rules>"
-,
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
 }
 `;
@@ -895,6 +521,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -929,6 +556,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -1030,126 +658,6 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 }
 `;
 
-exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>
-
-<codebase-exploration-rules priority="mandatory">
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>tokensave -> grep/glob/read. MUST try tokensave before raw source.
-1. tokensave_context first.
-2. Use grep/glob/read only after tokensave is empty or irrelevant.</order>
-<post-edit>After code changes, run mate cap index --tokensave.</post-edit>
-</codebase-exploration-rules>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": 
-"<codebase-exploration-rules priority="mandatory">
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>tokensave -> grep/glob/read. MUST try tokensave before raw source.
-1. tokensave_context first.
-2. Use grep/glob/read only after tokensave is empty or irrelevant.</order>
-<post-edit>After code changes, run mate cap index --tokensave.</post-edit>
-</codebase-exploration-rules>"
-,
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
 {
   "agentsMd": 
@@ -1163,6 +671,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1190,6 +699,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -1218,57 +728,6 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 }
 `;
 
-exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-    "--plugin-dir",
-    "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup context-mode × opencode 1`] = `
 {
   "agentsMd": 
@@ -1282,6 +741,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1331,66 +791,6 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
       "context-mode@1.0.169",
     ],
-  },
-}
-`;
-
-exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
-{
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": "",
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
 }
 `;
@@ -1408,6 +808,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1443,6 +844,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -1495,112 +897,6 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 }
 `;
 
-exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-    "--plugin-dir",
-    "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": "",
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
 {
   "agentsMd": 
@@ -1614,6 +910,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1643,6 +940,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -1700,55 +998,6 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 }
 `;
 
-exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
 {
   "agentsMd": 
@@ -1762,6 +1011,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1804,66 +1054,6 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
     "plugin": [
       "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
-  },
-}
-`;
-
-exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
-{
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": "",
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
 }
 `;
@@ -1881,6 +1071,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -1910,6 +1101,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -1992,110 +1184,6 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 }
 `;
 
-exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": "",
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
 {
   "agentsMd": 
@@ -2109,6 +1197,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -2136,6 +1225,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -2176,56 +1266,6 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 }
 `;
 
-exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
 {
   "agentsMd": 
@@ -2239,6 +1279,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -2287,67 +1328,6 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 }
 `;
 
-exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
-{
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": "",
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -2361,6 +1341,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -2388,6 +1369,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -2455,112 +1437,6 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 }
 `;
 
-exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": "",
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures setup all capabilities × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -2574,6 +1450,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -2618,6 +1495,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -2818,136 +1696,6 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 }
 `;
 
-exports[`runtime surface golden fixtures setup all capabilities × claude+opencode 2`] = `
-{
-  "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
-    "--append-system-prompt",
-    
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="<wrapper-bin>/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="app" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to <root>/companion, NEVER <root>/working. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
-  </mandatory-rules>
-</companion-policy>
-
-<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/</path>
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>tokensave -> graphify -> grep/glob/read. MUST NOT skip steps.
-1. tokensave_context first.
-2. If tokensave is empty/file-only/irrelevant, run graphify query "<question>"; use graphify path/explain to deepen.
-3. Use grep/glob/read only after tokensave and graphify were tried.</order>
-<notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run mate cap index.</post-edit>
-</codebase-exploration-rules>"
-,
-    "--setting-sources",
-    "user,project,local",
-    "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
-    "--plugin-dir",
-    "<claude-plugin>",
-    "--plugin-dir",
-    "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
-  ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
-  "opencodeArgs": [
-    "<root>/working",
-  ],
-  "opencodeEnv": {
-    "MATE_GUIDANCE_JSON": {
-      "codebaseExplorationGuidance": 
-"<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/</path>
-<trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
-<order>tokensave -> graphify -> grep/glob/read. MUST NOT skip steps.
-1. tokensave_context first.
-2. If tokensave is empty/file-only/irrelevant, run graphify query "<question>"; use graphify path/explain to deepen.
-3. Use grep/glob/read only after tokensave and graphify were tried.</order>
-<notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
-<post-edit>After code changes, run mate cap index.</post-edit>
-</codebase-exploration-rules>"
-,
-      "companionGuidance": 
-"## MANDATORY RULES - NON-NEGOTIABLE
-
-<companion-policy framework="mate" priority="mandatory">
-  <overview>You are operating inside the mate companion repository.</overview>
-  <context>
-    <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
-      <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
-      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
-    </paths>
-    <cli-tools>
-      <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
-      <cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" />
-      <cli name="mate" type="global" invokeAs="mate" />
-    </cli-tools>
-    <linked-repository id="$MATE_REPO_ID" />
-  </context>
-  <mandatory-rules>
-    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to $MATE_ARTIFACT_PATH, NEVER $MATE_REPO_PATH. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>
-    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
-    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
-    <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
-    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
-  </mandatory-rules>
-</companion-policy>"
-,
-      "errors": [],
-      "version": 1,
-    },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-      },
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
-  },
-}
-`;
-
 exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -2961,6 +1709,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -2988,6 +1737,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -3049,6 +1799,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -3076,6 +1827,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -3137,6 +1889,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -3165,6 +1918,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -3226,6 +1980,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -3253,6 +2008,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -3314,6 +2070,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -3341,6 +2098,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -3402,6 +2160,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
 ## Agent Notes
 
 - Use absolute paths when a tool needs a file path. Do not create literal \`$MATE_REPO_PATH\` or \`$MATE_ARTIFACT_PATH\` directories.
+- MCP tools named \`mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
@@ -3429,6 +2188,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
 - Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
 - Claude Code receives \`$MATE_ARTIFACT_PATH\` via \`--add-dir\`; if \`@\` autocomplete does not show companion artifacts, reference them by absolute path.
+- MCP tools named \`mcp__mate__mate__<tool>\` are companion MCP servers delivered through the Mate gateway (\`.mate/mcp.yaml\` in the companion). \`mate mcp status\` inspects the gateway.
 - The root \`CLAUDE.md\` in the companion repo is intentional and loaded by Mate. Do not create another project-level \`CLAUDE.md\` in the working repo unless the user explicitly asks for one.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
@@ -3498,10 +2258,41 @@ User notes.
 ,
   "gitExclude": 
 ".claude/settings.local.json
+.mcp.json
 .tokensave/
 "
 ,
   "settingsLocal": {
+    "enabledMcpjsonServers": [
+      "tokensave",
+      "mate",
+    ],
+    "enabledPlugins": {
+      "mate-companion@mate-companion": true,
+    },
+    "env": {
+      "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+      "MATE_ARTIFACT_PATH": "<root>/companion",
+      "MATE_GIT_AUTO_MODE": "0",
+      "MATE_GRAPHIFY_ENABLED": "0",
+      "MATE_NAME": "mate",
+      "MATE_OPENSPEC_ENABLED": "0",
+      "MATE_POLICY_JSON": "{"allowedAgents":["claude"]}",
+      "MATE_REACT_DOCTOR_BIN_PATH": "<reactDoctorBin>",
+      "MATE_REACT_DOCTOR_ENABLED": "1",
+      "MATE_REPO_ID": "working",
+      "MATE_REPO_PATH": "<root>/working",
+      "MATE_VERSION": "<version>",
+      "MATE_WRAPPER_BIN_PATH": "<wrapperBin>",
+    },
+    "extraKnownMarketplaces": {
+      "mate-companion": {
+        "source": {
+          "path": "<root>/companion",
+          "source": "directory",
+        },
+      },
+    },
     "hooks": {
       "PreToolUse": [
         {
@@ -3538,9 +2329,38 @@ User notes.
 ,
   "gitExclude": 
 ".claude/settings.local.json
+.mcp.json
 "
 ,
   "settingsLocal": {
+    "enabledMcpjsonServers": [
+      "mate",
+    ],
+    "enabledPlugins": {
+      "mate-companion@mate-companion": true,
+    },
+    "env": {
+      "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+      "MATE_ARTIFACT_PATH": "<root>/companion",
+      "MATE_GIT_AUTO_MODE": "0",
+      "MATE_GRAPHIFY_ENABLED": "0",
+      "MATE_NAME": "mate",
+      "MATE_OPENSPEC_ENABLED": "0",
+      "MATE_POLICY_JSON": "{"allowedAgents":["claude"]}",
+      "MATE_REACT_DOCTOR_ENABLED": "0",
+      "MATE_REPO_ID": "working",
+      "MATE_REPO_PATH": "<root>/working",
+      "MATE_VERSION": "<version>",
+      "MATE_WRAPPER_BIN_PATH": "<wrapperBin>",
+    },
+    "extraKnownMarketplaces": {
+      "mate-companion": {
+        "source": {
+          "path": "<root>/companion",
+          "source": "directory",
+        },
+      },
+    },
     "hooks": {
       "PreToolUse": [
         {

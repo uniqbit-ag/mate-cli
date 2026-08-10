@@ -135,6 +135,7 @@ test("resolves a registry match as the companion root with origin registry", asy
   await fs.mkdir(companion, { recursive: true });
   await writeFrameworkConfig(companion, "allowedAgents: []\n");
   await writeRepoLocalRegistryEntry(working, companion, { id: "app", path: working }, "git");
+  await globalStoreIn(root).register(companion);
 
   const context = await resolveRootContext(working, { globalConfigStore: globalStoreIn(root) });
 
@@ -156,6 +157,7 @@ test("passes through ambiguity diagnostics from the resolver", async () => {
     await fs.mkdir(companion, { recursive: true });
     await writeFrameworkConfig(companion, "allowedAgents: []\n");
     await writeRepoLocalRegistryEntry(working, companion, { id: "app", path: working }, "git");
+    await globalStoreIn(root).register(companion);
   }
 
   const context = await resolveRootContext(working, { globalConfigStore: globalStoreIn(root) });

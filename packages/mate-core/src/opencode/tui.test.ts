@@ -19,6 +19,32 @@ describe("Mate OpenCode TUI plugin", () => {
     expect(source).not.toContain("showToast");
   });
 
+  test("renders a startup notice when the companion choice is ambiguous", async () => {
+    const source = await fs.readFile(path.resolve(import.meta.dirname, "./tui.tsx"), "utf8");
+
+    expect(source).toContain('activation.status === "ambiguous"');
+    expect(source).toContain("AmbiguousNotice");
+    expect(source).toContain("activation.candidates");
+    expect(source).toContain("mate companion select");
+  });
+
+  test("swaps the banner whenever the pinned companion lands or changes", async () => {
+    const source = await fs.readFile(path.resolve(import.meta.dirname, "./tui.tsx"), "utf8");
+
+    expect(source).toContain('api.event.on("server.instance.disposed"');
+    expect(source).toContain("next.context.companionPath === activePath");
+    expect(source).toContain("registerActiveSlots(api, contextFromRuntime(next.context))");
+  });
+
+  test("activates from the trust-gated repo pointer, not launch env", async () => {
+    const source = await fs.readFile(path.resolve(import.meta.dirname, "./tui.tsx"), "utf8");
+
+    expect(source).toContain("resolveOpenCodeActivation");
+    expect(source).toContain('activation.status !== "active"');
+    expect(source).toContain("api.state.path.directory");
+    expect(source).not.toContain("MATE_ARTIFACT_PATH");
+  });
+
   test("is exported through the core ./opencode subpath", async () => {
     const packageJson = JSON.parse(
       await fs.readFile(path.resolve(import.meta.dirname, "..", "..", "package.json"), "utf8"),
