@@ -194,7 +194,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -230,7 +230,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -407,7 +407,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -443,7 +443,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -793,7 +793,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -808,7 +808,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -1009,7 +1009,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -1024,7 +1024,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -1312,7 +1312,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1328,7 +1328,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
       "context-mode@1.0.169",
     ],
   },
@@ -1472,7 +1472,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1488,7 +1488,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
       "context-mode@1.0.169",
     ],
   },
@@ -1784,7 +1784,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -1802,7 +1802,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -1968,7 +1968,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -1986,7 +1986,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -2261,7 +2261,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -2281,7 +2281,7 @@ This block is kept for AGENTS.md compatibility and must not restate that policy.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -2429,7 +2429,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -2449,7 +2449,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -2768,7 +2768,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -2811,7 +2811,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
       "context-mode@1.0.169",
     ],
   },
@@ -3015,7 +3015,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -3030,7 +3030,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -3103,7 +3103,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -3118,7 +3118,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -3192,7 +3192,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -3207,7 +3207,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -3280,7 +3280,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -3295,7 +3295,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
@@ -3368,7 +3368,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
     "references": {
       "mate": "..",
@@ -3383,7 +3383,7 @@ This block is kept for Claude/AGENTS.md compatibility and must not restate that 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.4-canary.11",
+      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
     ],
   },
 }
