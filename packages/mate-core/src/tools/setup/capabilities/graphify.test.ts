@@ -47,14 +47,14 @@ function makeCtx(
 
 describe("deriveGraphifyProviders", () => {
   test("keeps only supported providers in stable order", () => {
-    expect(deriveGraphifyProviders(["headroom", "claude", "custom", "opencode"])).toEqual([
+    expect(deriveGraphifyProviders(["rtk", "claude", "custom", "opencode"])).toEqual([
       "claude",
       "opencode",
     ]);
   });
 
   test("returns empty when no supported providers active", () => {
-    expect(deriveGraphifyProviders(["headroom", "custom"])).toEqual([]);
+    expect(deriveGraphifyProviders(["rtk", "custom"])).toEqual([]);
   });
 });
 

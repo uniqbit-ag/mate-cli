@@ -51,7 +51,7 @@ afterEach(async () => {
 
 describe("deriveOpenSpecTools", () => {
   test("keeps only supported providers in stable runtime order", () => {
-    expect(deriveOpenSpecTools(["headroom", "claude", "custom", "opencode"])).toEqual([
+    expect(deriveOpenSpecTools(["rtk", "claude", "custom", "opencode"])).toEqual([
       "claude",
       "opencode",
     ]);

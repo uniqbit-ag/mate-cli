@@ -890,50 +890,6 @@ describe("executeSetup", () => {
     expect(gitignore).toContain("build/");
     expect(gitignore).toContain("dist/");
   });
-
-  test("setup writes headroom capability to config when headroom binary is present", async () => {
-    const root = await makeTempDir("mate-setup-headroom-");
-    const globalConfigStore = new GlobalConfigStore(
-      path.join(root, "home", ".mate", "config.yaml"),
-    );
-
-    // Put a headroom stub on PATH so apply() skips the install prompt
-    const binDir = path.join(root, "bin");
-    await fs.mkdir(binDir, { recursive: true });
-    await fs.writeFile(path.join(binDir, "headroom"), "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(path.join(binDir, "headroom"), 0o755);
-    process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
-
-    await executeSetup(
-      {
-        allowedAgents: ["claude"],
-        capabilities: [{ name: "headroom" }],
-      },
-      { cwd: root, globalConfigStore },
-    );
-
-    const config = await fs.readFile(
-      path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-      "utf8",
-    );
-    expect(config).toContain("name: headroom");
-    expect(config).not.toContain("memory: true");
-
-    // teardown is a no-op: re-running setup without headroom just removes it from config
-    await executeSetup(
-      {
-        allowedAgents: ["claude"],
-        capabilities: [],
-      },
-      { cwd: root, globalConfigStore },
-    );
-
-    const updatedConfig = await fs.readFile(
-      path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-      "utf8",
-    );
-    expect(updatedConfig).not.toContain("name: headroom");
-  });
 });
 
 describe("uv plugin (createUvPluginForTest)", () => {
@@ -1447,40 +1403,6 @@ describe("applySetupCompatibilities — tokensave", () => {
 });
 
 describe("applySetupCompatibilities", () => {
-  test("headroom capability applies without uv since it no longer requires a package manager", async () => {
-    const root = await makeTempDir("mate-setup-headroom-no-uv-");
-    await installOpenSpecStub(root);
-
-    // Put a headroom stub on PATH so apply() skips the install prompt
-    const binDir = path.join(root, "bin");
-    await fs.writeFile(path.join(binDir, "headroom"), "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(path.join(binDir, "headroom"), 0o755);
-    process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
-
-    const stderrChunks: string[] = [];
-    const originalWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string) => {
-      stderrChunks.push(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-
-    try {
-      await applySetupCompatibilities(
-        root,
-        {
-          allowedAgents: [],
-          packageManagers: ["bun"],
-          capabilities: [{ name: "headroom" }],
-        },
-        "setup",
-      );
-    } finally {
-      process.stderr.write = originalWrite;
-    }
-
-    expect(stderrChunks.join("")).not.toContain("headroom capability disabled");
-  });
-
   test("removes legacy settings.json and generates managed settings.local.json during setup", async () => {
     const root = await makeTempDir("mate-setup-claude-settings-migrate-");
     await fs.mkdir(path.join(root, ".claude"), { recursive: true });
@@ -1603,64 +1525,102 @@ describe("updateProjectGitignore", () => {
     expect(gitignore).toContain(".venv/");
   });
 
-  test("adds headroom entries to the unified managed block", async () => {
-    const root = await makeTempDir("mate-sync-headroom-gitignore-");
+  test("adds graphify entries to the unified managed block", async () => {
+    const root = await makeTempDir("mate-sync-graphify-gitignore-");
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
 
     await updateProjectGitignore(root, {
       allowedAgents: [],
       packageManagers: ["bun"],
-      capabilities: [{ name: "headroom" }],
+      capabilities: [{ name: "graphify" }],
     });
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain("node_modules/");
     expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
-    expect(gitignore).toContain(".headroom/");
+    expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
   });
 
-  test("removes headroom entries but keeps sticky managed entries when headroom is disabled", async () => {
-    const root = await makeTempDir("mate-sync-headroom-gitignore-remove-");
+  test("removes a deselected plugin's entries but keeps sticky managed entries", async () => {
+    const { createMate } = await import("../create-mate");
+    const { resetActiveDistribution } = await import("../distribution");
+    const nonStickyPlugin = {
+      id: "acme-example",
+      kind: "capability" as const,
+      label: "Acme Example",
+      description: "",
+      defaultSelected: false,
+      isEnabled: (config: SetupContext["config"]) =>
+        (config.capabilities ?? []).some((c) => c.name === "acme-example"),
+      gitignoreEntries: () => ["# acme-example", ".acme-example/"],
+      async apply() {},
+      async teardown() {},
+    };
+    const stickyPlugin = {
+      id: "acme-sticky",
+      kind: "capability" as const,
+      label: "Acme Sticky",
+      description: "",
+      defaultSelected: false,
+      isEnabled: () => false,
+      persistGitignoreEntries: true,
+      gitignoreEntries: () => ["# acme-sticky", ".acme-sticky/"],
+      async apply() {},
+      async teardown() {},
+    };
+
+    const root = await makeTempDir("mate-sync-plugin-gitignore-remove-");
     await fs.writeFile(
       path.join(root, ".gitignore"),
       [
         "node_modules/",
         "",
         `# ${FRAMEWORK_NAME} managed: start`,
-        "# headroom",
-        ".headroom/",
+        "# acme-example",
+        ".acme-example/",
         `# ${FRAMEWORK_NAME} managed: end`,
         "",
       ].join("\n"),
       "utf8",
     );
 
-    await updateProjectGitignore(root, {
-      allowedAgents: [],
-      packageManagers: ["bun"],
+    createMate({
+      config: { runtime: "bun", version: "1.0.0" },
+      plugins: [
+        { plugin: nonStickyPlugin, policy: "optional" },
+        { plugin: stickyPlugin, policy: "optional" },
+      ],
     });
+    try {
+      await updateProjectGitignore(root, {
+        allowedAgents: [],
+        packageManagers: ["bun"],
+      });
+    } finally {
+      resetActiveDistribution();
+    }
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain("node_modules/");
-    expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
-    expect(gitignore).not.toContain(".headroom/");
+    expect(gitignore).toContain(".acme-sticky/");
+    expect(gitignore).not.toContain(".acme-example/");
   });
 
-  test("combines uv and headroom entries in one managed block", async () => {
-    const root = await makeTempDir("mate-sync-uv-headroom-gitignore-");
+  test("combines uv and graphify entries in one managed block", async () => {
+    const root = await makeTempDir("mate-sync-uv-graphify-gitignore-");
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
 
     await updateProjectGitignore(root, {
       allowedAgents: [],
       packageManagers: ["bun", "uv"],
-      capabilities: [{ name: "headroom" }],
+      capabilities: [{ name: "graphify" }],
     });
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
     expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: end`, "g"))?.length).toBe(1);
     expect(gitignore).toContain(".venv/");
-    expect(gitignore).toContain(".headroom/");
+    expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
     expect(gitignore).toContain("node_modules/");
   });
 });

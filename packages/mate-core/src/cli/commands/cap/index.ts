@@ -1,5 +1,4 @@
 import { runGraphifyCapCommand } from "./graphify";
-import { runHeadroomCapCommand } from "./headroom";
 import { runOpenspecCapCommand } from "./openspec";
 import { runIndexCapCommand } from "./index-cmd";
 import { runPluginCliCommand } from "../../plugin-commands";
@@ -7,7 +6,7 @@ import { runPluginCliCommand } from "../../plugin-commands";
 /**
  * @command mate cap <capability> [...args]
  * @description Dispatches to a capability-scoped subcommand: `graphify`,
- * `headroom`, `openspec` (each forwards `[...args]` to the underlying CLI tool,
+ * `openspec` (each forwards `[...args]` to the underlying CLI tool,
  * scoped to the resolved companion/working repo), or `index` (re-syncs
  * capability indexes such as tokensave/graphify after code changes; `sync` is
  * accepted as a compatibility alias for `index`). Names not claimed by the
@@ -21,7 +20,7 @@ export async function runCapCommand(
 ): Promise<void> {
   if (!capabilityName) {
     process.stderr.write(
-      "mate: capability name required. Use `mate cap <openspec|graphify|headroom|index|sync>`.\n",
+      "mate: capability name required. Use `mate cap <openspec|graphify|index|sync>`.\n",
     );
     process.exitCode = 1;
     return;
@@ -30,9 +29,6 @@ export async function runCapCommand(
   switch (capabilityName) {
     case "graphify":
       await runGraphifyCapCommand(args);
-      return;
-    case "headroom":
-      await runHeadroomCapCommand(args);
       return;
     case "openspec":
       await runOpenspecCapCommand(args);

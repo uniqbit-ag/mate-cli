@@ -137,10 +137,10 @@ describe("selectSetupCompatibilities", () => {
     expect(getDisabledCapabilityIds(new Set(["bun", "uv"]))).toEqual(new Set());
   });
 
-  test("locked bun toggle is a no-op and headroom can be selected without uv", () => {
+  test("locked bun toggle is a no-op and tokensave can be selected without uv", () => {
     const items = getSelectableItems();
     const bun = items.find((item) => item.kind === "packageManager" && item.id === "bun");
-    const headroom = items.find((item) => item.kind === "capability" && item.id === "headroom");
+    const tokensave = items.find((item) => item.kind === "capability" && item.id === "tokensave");
 
     const initialState = {
       selectedProviders: new Set<string>(["claude"]),
@@ -153,8 +153,8 @@ describe("selectSetupCompatibilities", () => {
     const bunAttempt = toggleSelectableItem(initialState, bun!);
     expect(bunAttempt).toBe(initialState);
 
-    const withHeadroom = toggleSelectableItem(initialState, headroom!);
-    expect(withHeadroom.selectedCapabilities).toEqual(new Set(["headroom"]));
+    const withTokensave = toggleSelectableItem(initialState, tokensave!);
+    expect(withTokensave.selectedCapabilities).toEqual(new Set(["tokensave"]));
   });
 
   test("schema step items include a custom entry only when a non-builtin schema is active", () => {
@@ -257,7 +257,7 @@ describe("selectSetupCompatibilities", () => {
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude", "opencode"],
       packageManagers: ["bun", "uv"],
-      capabilities: [{ name: "openspec" }, { name: "headroom" }],
+      capabilities: [{ name: "openspec" }, { name: "rtk" }],
       selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
@@ -266,7 +266,7 @@ describe("selectSetupCompatibilities", () => {
     expect(output).toContain("Always installing: bun (node) · uv (python)");
   });
 
-  test("headroom selection keeps the required package managers in the result", async () => {
+  test("rtk selection keeps the required package managers in the result", async () => {
     const stdin = createTtyInput();
     const stdout = createTtyOutput();
     const stderr = createTtyOutput();
@@ -291,7 +291,7 @@ describe("selectSetupCompatibilities", () => {
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude"],
       packageManagers: ["bun", "uv"],
-      capabilities: [{ name: "headroom" }],
+      capabilities: [{ name: "rtk" }],
       selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });

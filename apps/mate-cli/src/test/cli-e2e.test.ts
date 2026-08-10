@@ -314,11 +314,6 @@ async function setupCompanion(
   // OpenSpec is a required capability in the CLI distribution, so every
   // setup fixture must provide its binary even when the test omits it.
   await writeOpenSpecStub(scenario);
-  const hasHeadroom =
-    (selections.capabilities ?? []).includes("headroom") || extraArgs.includes("headroom");
-  if (hasHeadroom) {
-    await writeHeadroomStub(scenario);
-  }
   // Keep the external command deterministic for provider teardown. Capability
   // activation remains controlled solely by the persisted selection.
   await writeRtkStub(scenario);
@@ -465,13 +460,11 @@ async function writeEditorStub(
 }
 
 async function writeUvStub(scenario: E2EScenario): Promise<string> {
-  const capturePath = path.join(scenario.root, "headroom-capture.json");
+  const capturePath = path.join(scenario.root, "uv-capture.json");
   const stubPath = path.join(scenario.bin, "uv");
   const source = [
     "#!/usr/bin/env bun",
     'import fs from "node:fs";',
-    'import http from "node:http";',
-    'import { spawnSync } from "node:child_process";',
     "const args = process.argv.slice(2);",
     "const sub = args[0];",
     "if (sub === 'init') {",
@@ -479,7 +472,7 @@ async function writeUvStub(scenario: E2EScenario): Promise<string> {
     "  fs.writeFileSync('uv.lock', '');",
     "  process.exit(0);",
     "}",
-    "if (sub === 'add') {",
+    "if (sub === 'add' || sub === 'remove') {",
     "  const setupCapturePath = process.env.MATE_E2E_UV_CAPTURE_PATH;",
     "  if (setupCapturePath) {",
     "    const existing = fs.existsSync(setupCapturePath)",
@@ -488,103 +481,7 @@ async function writeUvStub(scenario: E2EScenario): Promise<string> {
     "    existing.push({ cwd: process.cwd(), args });",
     "    fs.writeFileSync(setupCapturePath, JSON.stringify(existing, null, 2));",
     "  }",
-    "  if (args[1] === 'headroom-ai[all]') {",
-    "    fs.mkdirSync('.headroom', { recursive: true });",
-    "    fs.writeFileSync('.headroom/installed.txt', 'headroom\\n');",
-    "    fs.writeFileSync('.tokensave', 'headroom\\n');",
-    "  }",
     "  process.exit(0);",
-    "}",
-    "if (sub === 'remove') {",
-    "  const setupCapturePath = process.env.MATE_E2E_UV_CAPTURE_PATH;",
-    "  if (setupCapturePath) {",
-    "    const existing = fs.existsSync(setupCapturePath)",
-    "      ? JSON.parse(fs.readFileSync(setupCapturePath, 'utf8'))",
-    "      : [];",
-    "    existing.push({ cwd: process.cwd(), args });",
-    "    fs.writeFileSync(setupCapturePath, JSON.stringify(existing, null, 2));",
-    "  }",
-    "  if (args[1] === 'headroom-ai') {",
-    "    fs.rmSync('.headroom', { recursive: true, force: true });",
-    "    fs.rmSync('.tokensave', { force: true });",
-    "  }",
-    "  process.exit(0);",
-    "}",
-    "if (sub === 'run') {",
-    "  const capturePath = process.env.MATE_E2E_HEADROOM_CAPTURE_PATH;",
-    "  if (capturePath) {",
-    "    fs.writeFileSync(capturePath, JSON.stringify({ tool: 'uv', cwd: process.cwd(), argv: args }, null, 2));",
-    "  }",
-    "  const dashIdx = args.indexOf('--');",
-    "  if (dashIdx !== -1) {",
-    "    const tool = args[dashIdx - 1];",
-    "    const toolArgs = args.slice(dashIdx + 1);",
-    "    const r = spawnSync(tool, toolArgs, { stdio: 'inherit', env: process.env });",
-    "    process.exit(r.status ?? 0);",
-    "  }",
-    "}",
-    "process.exit(0);",
-    "",
-  ].join("\n");
-
-  await fs.writeFile(stubPath, source, "utf8");
-  await fs.chmod(stubPath, 0o755);
-
-  return capturePath;
-}
-
-async function writeHeadroomStub(scenario: E2EScenario): Promise<string> {
-  const capturePath = path.join(scenario.root, "headroom-capture.json");
-  const stubPath = path.join(scenario.bin, "headroom");
-  const source = [
-    "#!/usr/bin/env bun",
-    'import fs from "node:fs";',
-    'import http from "node:http";',
-    'import { spawnSync } from "node:child_process";',
-    "const args = process.argv.slice(2);",
-    "const capturePath = process.env.MATE_E2E_HEADROOM_CAPTURE_PATH;",
-    "const readyPath = process.env.MATE_E2E_HEADROOM_PROXY_READY_FILE;",
-    "if (capturePath) {",
-    "  fs.writeFileSync(capturePath, JSON.stringify({",
-    "    argv: args,",
-    "    cwd: process.cwd(),",
-    "    env: {",
-    "      HEADROOM_MEMORY_DB_PATH: process.env.HEADROOM_MEMORY_DB_PATH ?? null,",
-    "      HEADROOM_MEMORY_PROJECT_ROOT: process.env.HEADROOM_MEMORY_PROJECT_ROOT ?? null,",
-    "      PATH: process.env.PATH ?? null,",
-    "      MATE_ARTIFACT_PATH: process.env.MATE_ARTIFACT_PATH ?? null,",
-    "      MATE_REPO_PATH: process.env.MATE_REPO_PATH ?? null,",
-    "    },",
-    "  }, null, 2));",
-    "}",
-    "if (args[0] === 'wrap') {",
-    "  const dashIdx = args.indexOf('--');",
-    "  if (dashIdx !== -1) {",
-    "    const tool = args[1];",
-    "    const toolArgs = args.slice(dashIdx + 1);",
-    "    const r = spawnSync(tool, toolArgs, { stdio: 'inherit', env: process.env });",
-    "    process.exit(r.status ?? 0);",
-    "  }",
-    "}",
-    "if (args[0] === 'proxy') {",
-    " if (readyPath) {",
-    "  fs.writeFileSync(readyPath, 'ready');",
-    " }",
-    " const portIdx = args.indexOf('--port');",
-    " const port = portIdx === -1 ? 8787 : Number(args[portIdx + 1]);",
-    " const server = http.createServer((req, res) => {",
-    "  if (req.url === '/livez') {",
-    "   res.writeHead(200);",
-    "   res.end('ok');",
-    "   return;",
-    "  }",
-    "  res.writeHead(404);",
-    "  res.end('not found');",
-    " });",
-    " try {",
-    "  server.listen(port, '127.0.0.1');",
-    " } catch {}",
-    " await new Promise(() => {});",
     "}",
     "process.exit(0);",
     "",
@@ -835,7 +732,7 @@ describe("mate CLI e2e", () => {
 
     const result = await setupCompanion(scenario, [], {
       allowedAgents: ["claude", "opencode"],
-      capabilities: ["openspec", "headroom"],
+      capabilities: ["openspec", "rtk"],
     });
 
     expect(result.exitCode).toBe(0);
@@ -847,7 +744,7 @@ describe("mate CLI e2e", () => {
     expect(config).toContain("- claude");
     expect(config).toContain("- opencode");
     expect(config).toContain("name: openspec");
-    expect(config).toContain("name: headroom");
+    expect(config).toContain("name: rtk");
     expect(config).not.toContain("react-doctor");
   });
 
@@ -894,44 +791,7 @@ describe("mate CLI e2e", () => {
     await fs.access(path.join(scenario.companion, "openspec", "schemas", "mate-v1", "schema.yaml"));
   });
 
-  test("setup writes headroom capability without memory to config when headroom binary is present", async () => {
-    const scenario = await createScenario("mate-cli-e2e-headroom-setup-");
-    await writeHeadroomStub(scenario);
-
-    expect(
-      (
-        await setupCompanion(scenario, [], {
-          allowedAgents: ["claude"],
-          capabilities: ["headroom"],
-        })
-      ).exitCode,
-    ).toBe(0);
-
-    const config = await fs.readFile(
-      path.join(scenario.companion, ".mate", "config", "framework.yaml"),
-      "utf8",
-    );
-    expect(config).toContain("name: headroom");
-    expect(config).not.toContain("name: rtk");
-    expect(config).not.toContain("memory: true");
-
-    expect(
-      (
-        await setupCompanion(scenario, [], {
-          allowedAgents: ["claude"],
-          capabilities: ["react-doctor"],
-        })
-      ).exitCode,
-    ).toBe(0);
-
-    const updatedConfig = await fs.readFile(
-      path.join(scenario.companion, ".mate", "config", "framework.yaml"),
-      "utf8",
-    );
-    expect(updatedConfig).not.toContain("name: headroom");
-  });
-
-  test("setup persists RTK independently from Headroom", async () => {
+  test("setup persists RTK as a selectable capability", async () => {
     const scenario = await createScenario("mate-cli-e2e-rtk-setup-");
 
     const result = await setupCompanion(scenario, [], {
@@ -945,7 +805,6 @@ describe("mate CLI e2e", () => {
       "utf8",
     );
     expect(config).toContain("name: rtk");
-    expect(config).not.toContain("name: headroom");
   });
 
   test("setup deploys the OpenCode companion plugin into the companion runtime", async () => {
@@ -1152,8 +1011,7 @@ describe("mate CLI e2e", () => {
   test("linking and doctor succeed in one isolated flow", async () => {
     const scenario = await createScenario("mate-cli-e2e-repo-flow-");
 
-    await writeHeadroomStub(scenario);
-    expect((await setupCompanion(scenario, ["--capability", "headroom"])).exitCode).toBe(0);
+    expect((await setupCompanion(scenario, ["--capability", "rtk"])).exitCode).toBe(0);
 
     const linkResult = await linkRepository(scenario);
     expect(linkResult.exitCode).toBe(0);
@@ -1167,7 +1025,7 @@ describe("mate CLI e2e", () => {
     expect(doctorResult.stdout).toMatch(/\| State {2,}\| working +\|/);
     expect(doctorResult.stdout).toContain(scenario.companion);
     expect(doctorResult.stdout).toContain("app");
-    expect(doctorResult.stdout).toContain("headroom");
+    expect(doctorResult.stdout).toContain("rtk");
 
     const jsonResult = await runMate(scenario, {
       cwd: scenario.working,
@@ -2097,104 +1955,6 @@ describe("mate CLI e2e", () => {
     expect(second).toBe(JSON.stringify(first, null, 2) + "\n");
   });
 
-  for (const testCase of [
-    {
-      tool: "claude" as const,
-      allowedAgents: undefined,
-      setupSelections: {
-        allowedAgents: ["claude"],
-        capabilities: ["openspec", "react-doctor", "headroom"],
-      },
-      launchArgs: ["claude", "--print", "hello"],
-    },
-    {
-      tool: "opencode" as const,
-      allowedAgents: ["opencode"],
-      setupSelections: { allowedAgents: ["opencode"], capabilities: ["openspec", "headroom"] },
-      launchArgs: ["opencode", "--mode", "chat"],
-    },
-  ]) {
-    test(
-      `launch uses headroom proxy for ${testCase.tool} when configured and installed`,
-      async () => {
-        const scenario = await createScenario(`mate-cli-e2e-headroom-wrap-${testCase.tool}-`);
-        await writeHeadroomStub(scenario);
-        const capturePath = await writeAdapterStub(scenario, testCase.tool);
-        const readyPath = path.join(scenario.root, "headroom-ready");
-
-        expect((await setupCompanion(scenario, [], testCase.setupSelections)).exitCode).toBe(0);
-        expect((await linkRepository(scenario)).exitCode).toBe(0);
-
-        const result = await runMate(scenario, {
-          cwd: scenario.working,
-          args: testCase.launchArgs,
-          input: "y\n",
-          env: {
-            MATE_E2E_CAPTURE_PATH: capturePath,
-            MATE_E2E_HEADROOM_PROXY_READY_FILE: readyPath,
-          },
-        });
-
-        expect(result.exitCode).toBe(0);
-        expect(result.stderr).not.toContain("`headroom` was not found on PATH");
-
-        const invocation = await readJson<{
-          cwd: string;
-          argv: string[];
-          env: {
-            ANTHROPIC_BASE_URL: string | null;
-            OPENAI_BASE_URL: string | null;
-            OPENCODE_CONFIG_CONTENT: string | null;
-            PATH: string | null;
-            MATE_ARTIFACT_PATH: string | null;
-            MATE_REPO_PATH: string | null;
-          };
-        }>(capturePath);
-
-        expect(invocation.cwd).toBe(scenario.working);
-        // Agent is launched directly — not wrapped via headroom
-        expect(invocation.argv).not.toContain("wrap");
-        expect(invocation.env.MATE_ARTIFACT_PATH).toBe(scenario.companion);
-        expect(invocation.env.MATE_REPO_PATH).toBe(scenario.working);
-        // Memory DB path is passed as CLI flags to proxy, not injected into agent env
-        expect(invocation.env).not.toHaveProperty("HEADROOM_MEMORY_DB_PATH");
-        expect(invocation.env).not.toHaveProperty("HEADROOM_MEMORY_PROJECT_ROOT");
-      },
-      // setup + link + launch + proxy startup; 10s was too tight under parallel
-      // load. 30s also lets the runMate watchdog fire first and dump output.
-      { timeout: 30000 },
-    );
-
-    test(`launch is blocked when required headroom dependencies are missing for ${testCase.tool}`, async () => {
-      const scenario = await createScenario(`mate-cli-e2e-headroom-fallback-${testCase.tool}-`);
-      const capturePath = await writeAdapterStub(scenario, testCase.tool);
-
-      // Write headroom stub so setup doesn't prompt for install
-      await writeHeadroomStub(scenario);
-      expect((await setupCompanion(scenario, [], testCase.setupSelections)).exitCode).toBe(0);
-      expect((await linkRepository(scenario)).exitCode).toBe(0);
-
-      // Remove headroom binary and strip it from PATH to simulate it being absent at launch time
-      await fs.rm(path.join(scenario.bin, "headroom"));
-      const pathWithoutHeadroom = pathWithoutCommand("headroom", process.env.PATH ?? "");
-
-      const result = await runMate(scenario, {
-        cwd: scenario.working,
-        args: testCase.launchArgs,
-        input: "y\n",
-        env: {
-          MATE_E2E_CAPTURE_PATH: capturePath,
-          PATH: `${scenario.bin}:${pathWithoutHeadroom}`,
-        },
-      });
-
-      expect(result.exitCode).toBe(1);
-      expect(result.stderr).toMatch(/Missing required dependency|Mate has not been installed/);
-      expect(result.stderr).toContain("Headroom CLI");
-      await expect(fs.access(capturePath)).rejects.toThrow();
-    }, 30000);
-  }
-
   test("launch repairs missing OpenCode companion runtime assets before spawn", async () => {
     const scenario = await createScenario("mate-cli-e2e-opencode-repair-");
     const capturePath = await writeAdapterStub(scenario, "opencode");
@@ -2365,7 +2125,7 @@ describe("mate CLI e2e", () => {
         (
           await setupCompanion(scenario, [], {
             allowedAgents: ["claude"],
-            capabilities: ["openspec", "headroom"],
+            capabilities: ["openspec"],
           })
         ).exitCode,
       ).toBe(0);
@@ -2381,7 +2141,6 @@ describe("mate CLI e2e", () => {
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain("Review launch");
-      expect(result.stdout).not.toContain("Headroom:");
       expect(result.stdout).not.toContain("Continue? [y/N]");
 
       const launchResult = JSON.parse(result.stdout.slice(result.stdout.lastIndexOf("{")));

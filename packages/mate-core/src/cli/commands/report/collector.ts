@@ -184,59 +184,6 @@ export async function collectRTKSavings(
   };
 }
 
-// headroom savings JSON: { windows: { last_7_days: { tokens_saved, cost_usd, calls } } }
-export async function collectHeadroomSavings(
-  days: number,
-  deps: CollectorDeps = {},
-): Promise<{ entry: SavingsEntry | null; status: ToolStatus }> {
-  const result = spawnCmd(
-    "headroom",
-    ["savings", "--json", "--days", String(days)],
-    { cwd: process.cwd() },
-    deps,
-  );
-
-  if (result.error || result.status !== 0) {
-    return {
-      entry: null,
-      status: { name: "headroom", enabled: false, status: "not enabled" },
-    };
-  }
-
-  const data = parseJson<{
-    windows?: Record<string, { tokens_saved?: number; cost_usd?: number; calls?: number }>;
-  }>(result.stdout);
-  if (!data || !data.windows) {
-    return {
-      entry: null,
-      status: { name: "headroom", enabled: false, status: "no data" },
-    };
-  }
-
-  const key = `last_${days}_days`;
-  const window = data.windows[key] ?? data.windows["last_7_days"] ?? data.windows["all_time"];
-  if (!window) {
-    return {
-      entry: null,
-      status: { name: "headroom", enabled: false, status: "no window data" },
-    };
-  }
-
-  return {
-    entry: {
-      tool: "headroom",
-      tokensSaved: window.tokens_saved ?? 0,
-      calls: window.calls ?? 0,
-      costSaved: window.cost_usd ?? 0,
-      efficiency:
-        (window.calls ?? 0) > 0
-          ? `${formatEfficiency(window.tokens_saved ?? 0, window.calls ?? 0)}`
-          : "N/A",
-    },
-    status: { name: "headroom", enabled: true, status: "ok" },
-  };
-}
-
 function formatEfficiency(tokensSaved: number, calls: number): string {
   const perCall = tokensSaved / calls;
   if (perCall >= 1_000_000) {
@@ -253,7 +200,6 @@ export function mergeResults(
   tokensaveWorking: SavingsEntry | null,
   tokensaveCompanion: SavingsEntry | null,
   rtkEntry: SavingsEntry | null,
-  headroomEntry: SavingsEntry | null,
 ): {
   spending: SpendingEntry[];
   savings: SavingsEntry[];
@@ -279,9 +225,7 @@ export function mergeResults(
     };
   }
 
-  const savings: SavingsEntry[] = [mergedTokensave, rtkEntry, headroomEntry].filter(
-    Boolean,
-  ) as SavingsEntry[];
+  const savings: SavingsEntry[] = [mergedTokensave, rtkEntry].filter(Boolean) as SavingsEntry[];
   const totalSavings = savings.reduce((sum, e) => sum + e.costSaved, 0);
 
   return {

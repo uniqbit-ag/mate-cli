@@ -42,17 +42,12 @@ describe("setup compatibilities", () => {
     expect(getDefaultSetupSelections().packageManagers).toEqual(["bun", "uv"]);
   });
 
-  test("lists Headroom and RTK as independent optional capabilities", () => {
+  test("lists RTK as an optional capability", () => {
     expect(
       BUILTIN_SETUP_COMPATIBILITIES.filter(
-        (entry) => entry.kind === "capability" && ["headroom", "rtk"].includes(entry.id),
+        (entry) => entry.kind === "capability" && entry.id === "rtk",
       ),
     ).toEqual([
-      expect.objectContaining({
-        id: "headroom",
-        capability: { name: "headroom" },
-        defaultSelected: false,
-      }),
       expect.objectContaining({
         id: "rtk",
         capability: { name: "rtk" },
