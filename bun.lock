@@ -41,7 +41,6 @@
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@uniqbit/mate-core": "0.15.5-canary.0",
         "@uniqbit/mate-opencode-plugin": "0.15.5-canary.0",
-        "headroom-ai": "^0.22.4",
         "yaml": "^2.9.0",
         "zod": "^4.4.3",
       },
@@ -1595,8 +1594,6 @@
     "hast-util-whitespace": ["hast-util-whitespace@3.0.0", "", { "dependencies": { "@types/hast": "^3.0.0" } }, "sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw=="],
 
     "hastscript": ["hastscript@9.0.1", "", { "dependencies": { "@types/hast": "^3.0.0", "comma-separated-tokens": "^2.0.0", "hast-util-parse-selector": "^4.0.0", "property-information": "^7.0.0", "space-separated-tokens": "^2.0.0" } }, "sha512-g7df9rMFX/SPi34tyGCyUBREQoKkapwdY/T04Qn9TDWfHhAYt4/I0gMVirzK5wEzeUqIjEB+LXC/ypb7Aqno5w=="],
-
-    "headroom-ai": ["headroom-ai@0.22.4", "", { "peerDependencies": { "@ai-sdk/provider": ">=1.0.0", "@anthropic-ai/sdk": ">=0.30.0", "ai": ">=6.0.0", "openai": ">=4.0.0" }, "optionalPeers": ["@ai-sdk/provider", "@anthropic-ai/sdk", "ai", "openai"] }, "sha512-9a0rgB/jsWe8gs/ggyUwe6E8DYwKAuBvlUml2ApwlUjb5EfJ611X6X+WG0SiXw3nO6sdyV1/+Ah5uw9P7ecnjw=="],
 
     "hermes-estree": ["hermes-estree@0.25.1", "", {}, "sha512-0wUoCcLp+5Ev5pDW2OriHC2MJCbwLwuRx+gAqMTOkGKJJiBCLjtrvy4PWUGn6MIVefecRpzoOZ/UV6iGdOr+Cw=="],
 

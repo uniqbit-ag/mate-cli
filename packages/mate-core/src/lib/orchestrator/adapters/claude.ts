@@ -82,15 +82,4 @@ export class ClaudeAdapter extends LaunchAdapter {
       CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1",
     };
   }
-
-  protected headroomEnv(
-    context: AdapterContext,
-    port: number,
-    _companionPath: string,
-  ): NodeJS.ProcessEnv {
-    const project = encodeURIComponent(context.repository.id);
-    return {
-      ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}/p/${project}`,
-    };
-  }
 }

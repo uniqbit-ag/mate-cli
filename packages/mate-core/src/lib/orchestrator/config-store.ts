@@ -5,8 +5,6 @@ import { getDefaultSetupSelections } from "./setup-compatibilities";
 import { YamlFileStore } from "./yaml-file-store";
 import { ConfigError, type FrameworkConfig } from "./types";
 
-export const RTK_CAPABILITY_SPLIT_MIGRATION = "rtk-capability-split-v1";
-
 const HUB_MEMBER_SOURCE_KINDS = ["git", "local"] as const;
 
 function defaultConfigPath(): string {
@@ -54,20 +52,6 @@ export function mergeWithDefaults(existing: FrameworkConfig): FrameworkConfig {
     // user's explicit selection — including deliberate deselection of
     // default-selected capabilities — and must not be padded back out.
     capabilities: existing.capabilities ?? defaults.capabilities,
-  };
-}
-
-export function migrateRtkCapabilitySplit(config: FrameworkConfig): FrameworkConfig {
-  const migrations = config.migrations ?? [];
-  if (migrations.includes(RTK_CAPABILITY_SPLIT_MIGRATION)) return config;
-
-  const capabilities = config.capabilities ?? [];
-  const hasHeadroom = capabilities.some((capability) => capability.name === "headroom");
-  const hasRtk = capabilities.some((capability) => capability.name === "rtk");
-  return {
-    ...config,
-    capabilities: hasHeadroom && !hasRtk ? [...capabilities, { name: "rtk" }] : capabilities,
-    migrations: [...migrations, RTK_CAPABILITY_SPLIT_MIGRATION],
   };
 }
 
@@ -166,14 +150,11 @@ export class ConfigStore extends YamlFileStore<FrameworkConfig> {
     const merged = mergeWithDefaults(migrateProfilesToAllowedAgents(await super.load()));
     validateHubConfig(merged);
     validatePluginDeclarations(merged);
-    const needsMigration = !(merged.migrations ?? []).includes(RTK_CAPABILITY_SPLIT_MIGRATION);
-    const config = migrateRtkCapabilitySplit(merged);
-    if (needsMigration) await this.save(config);
-    return config;
+    return merged;
   }
 
   protected async onMissing(): Promise<FrameworkConfig> {
-    const config = migrateRtkCapabilitySplit(defaultConfig());
+    const config = defaultConfig();
     await this.save(config);
     return config;
   }

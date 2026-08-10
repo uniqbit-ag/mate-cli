@@ -103,9 +103,6 @@ function getSelectedToolChecks(config: {
   if (selectedCapabilities.has("tokensave")) {
     checks.push({ name: "tokensave", command: "tokensave", source: "capability" });
   }
-  if (selectedCapabilities.has("headroom")) {
-    checks.push({ name: "headroom", command: "headroom", source: "capability" });
-  }
   if (selectedCapabilities.has("rtk")) {
     checks.push({ name: "rtk", command: "rtk", source: "capability" });
   }

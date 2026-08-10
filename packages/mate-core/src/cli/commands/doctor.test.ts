@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import packageJson from "../../../package.json";
 import { FRAMEWORK_NAME } from "../../framework";
-import { ConfigStore, RTK_CAPABILITY_SPLIT_MIGRATION } from "../../lib/orchestrator/config-store";
+import { ConfigStore } from "../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
@@ -107,8 +107,7 @@ describe("runDoctorCommand", () => {
     const companionPath = await setupCompanion(root, repoPath, {
       allowedAgents: ["claude"],
       packageManagers: ["uv"],
-      capabilities: [{ name: "openspec" }, { name: "headroom" }],
-      migrations: [RTK_CAPABILITY_SPLIT_MIGRATION],
+      capabilities: [{ name: "openspec" }, { name: "rtk" }],
     });
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
     await globalConfigStore.register(companionPath);
@@ -120,15 +119,14 @@ describe("runDoctorCommand", () => {
     expect(output).toContain("Tool Installations");
     expect(output).toContain("uv");
     expect(output).toContain("openspec");
-    expect(output).toContain("headroom");
-    expect(output).not.toContain("rtk");
+    expect(output).toContain("rtk");
     expect(output).toContain("ok");
     expect(output).toContain("missing");
     expect(output).not.toContain("tokensave");
     expect(output).not.toContain("graphify");
   });
 
-  test("checks RTK independently without reporting Headroom", async () => {
+  test("reports RTK's tool check when the capability is selected", async () => {
     const root = await makeTempDir("doctor-rtk-only-");
     const repoPath = path.join(root, "working");
     const binPath = path.join(root, "bin");
@@ -148,7 +146,6 @@ describe("runDoctorCommand", () => {
     );
 
     expect(output).toContain("rtk");
-    expect(output).not.toContain("headroom");
   });
 
   test("reports companion repository state for a local companion config", async () => {

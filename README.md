@@ -188,20 +188,18 @@ mate opencode -- --no-git
 ```sh
 mate cap openspec <subcommand> [args...]
 mate cap graphify <subcommand> [args...]
-mate cap headroom [args...]
 mate cap index [--graphify | --tokensave]
 ```
 
-OpenSpec and Graphify commands run through the active Mate context. Headroom
-requires the Headroom capability to be enabled. `cap index` refreshes enabled
-Graphify and TokenSave indexes; without a flag it chooses the enabled default,
-and the flags restrict the run to one indexer.
+OpenSpec and Graphify commands run through the active Mate context. `cap index`
+refreshes enabled Graphify and TokenSave indexes; without a flag it chooses the
+enabled default, and the flags restrict the run to one indexer.
 
-The available capabilities are OpenSpec, React Doctor, TokenSave, Headroom, RTK,
-Graphify, Context7, and Context Mode. Headroom and RTK are independently selectable: Headroom wraps
-launches through its proxy, while RTK patches supported provider integrations.
-Providers are Claude and OpenCode. Bun is always part of the core runtime; uv is
-selected for Python-backed capability workflows.
+The available capabilities are OpenSpec, React Doctor, TokenSave, RTK,
+Graphify, Context7, and Context Mode. RTK is independently selectable and
+patches supported provider integrations. Providers are Claude and OpenCode.
+Bun is always part of the core runtime; uv is selected for Python-backed
+capability workflows.
 
 Context Mode is opt-in and pins `context-mode@1.0.169` (Elastic License 2.0,
 Node.js `>=22.5.0`). Mate installs its Claude plugin below the Companion's

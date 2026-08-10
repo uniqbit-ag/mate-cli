@@ -2,21 +2,12 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { version } from "../../../../package.json";
-import { isCommandOnPath } from "../../fs-utils";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { getReactDoctorBinPath, getWrapperBinPath } from "../../package-paths";
 import {
   GRAPHIFY_OUTPUT_SUBDIR,
   GRAPHIFY_STORE_SEGMENT,
 } from "../../../tools/setup/capabilities/graphify";
-import {
-  type SpawnProxyOpts,
-  getProxyStderr,
-  isProxyReachable as defaultIsProxyReachable,
-  resolveHeadroomPort,
-  spawnProxyBackground as defaultSpawnProxyBackground,
-  waitForProxyReachable as defaultWaitForProxyReachable,
-} from "../headroom/proxy";
 import type { CapabilityConfig, GitModeProfile, LinkedRepository } from "../types";
 
 export interface AdapterContext {
@@ -40,12 +31,6 @@ export interface PreparedLaunch {
   warning?: string;
 }
 
-export interface ProxyDeps {
-  isProxyReachable?: (port: number) => Promise<boolean>;
-  spawnProxyBackground?: (opts: SpawnProxyOpts) => void;
-  waitForProxyReachable?: (port: number) => Promise<boolean>;
-}
-
 function prependPathEntry(pathValue: string | undefined, entry: string): string {
   const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
   return [entry, ...entries.filter((value) => value !== entry)].join(path.delimiter);
@@ -60,15 +45,6 @@ export abstract class LaunchAdapter {
   async validateLaunch(_context: AdapterContext): Promise<void> {}
 
   extendEnvironment(_context: AdapterContext): NodeJS.ProcessEnv {
-    return {};
-  }
-
-  protected headroomEnv(
-    _context: AdapterContext,
-    _port: number,
-    _companionPath: string,
-    _env: NodeJS.ProcessEnv,
-  ): NodeJS.ProcessEnv {
     return {};
   }
 
@@ -115,11 +91,7 @@ export abstract class LaunchAdapter {
     return env;
   }
 
-  async prepareLaunch(
-    context: AdapterContext,
-    args: string[],
-    proxyDeps: ProxyDeps = {},
-  ): Promise<PreparedLaunch> {
+  async prepareLaunch(context: AdapterContext, args: string[]): Promise<PreparedLaunch> {
     const builtArgs = this.buildArgs(context, args);
     const baseEnv = this.environment(context);
     const extendedEnv = this.extendEnvironment(context);
@@ -134,67 +106,7 @@ export abstract class LaunchAdapter {
       }
     }
 
-    // Headroom behaves like any other capability: when it is enabled the launch
-    // is routed through the proxy, with no per-launch opt-in. It only falls back
-    // to a direct launch if the `headroom` binary is missing or the proxy fails
-    // to become ready (handled below).
-    const headroomCap = context.capabilities.find((c) => c.name === "headroom");
-    if (!headroomCap) {
-      return { command: this.toolName, args: builtArgs, env };
-    }
-
-    if (!isCommandOnPath("headroom", env.PATH ?? process.env.PATH ?? "")) {
-      return {
-        command: this.toolName,
-        args: builtArgs,
-        env,
-        warning: `${FRAMEWORK_NAME}: headroom capability enabled but \`headroom\` was not found on PATH; install with \`uv tool install "headroom-ai[all]"\`; launching ${this.toolName} directly\n`,
-      };
-    }
-
-    const probeProxy = proxyDeps.isProxyReachable ?? defaultIsProxyReachable;
-    const spawnProxy = proxyDeps.spawnProxyBackground ?? defaultSpawnProxyBackground;
-    const waitForProxy = proxyDeps.waitForProxyReachable ?? defaultWaitForProxyReachable;
-
-    const port = resolveHeadroomPort();
-    const reachable = await probeProxy(port);
-    if (!reachable) {
-      const maxProxyStartAttempts = 3;
-      let ready = false;
-
-      for (let attempt = 1; attempt <= maxProxyStartAttempts; attempt += 1) {
-        spawnProxy({ port });
-        if (await waitForProxy(port)) {
-          ready = true;
-          break;
-        }
-      }
-
-      if (!ready) {
-        const proxyErr = getProxyStderr(port).trim();
-        const errorDetail = proxyErr
-          ? `\nProxy error:\n${proxyErr
-              .split("\n")
-              .map((line) => `  ${line}`)
-              .join("\n")}`
-          : "";
-        return {
-          command: this.toolName,
-          args: builtArgs,
-          env,
-          warning: `${FRAMEWORK_NAME}: headroom proxy failed to become ready on port ${port} after ${maxProxyStartAttempts} attempts; launching ${this.toolName} directly${errorDetail}\n`,
-        };
-      }
-    }
-
-    return {
-      command: this.toolName,
-      args: builtArgs,
-      env: {
-        ...env,
-        ...this.headroomEnv(context, port, context.companionPath, env),
-      },
-    };
+    return { command: this.toolName, args: builtArgs, env };
   }
 
   async run(context: AdapterContext, args: string[]): Promise<AdapterResult> {
