@@ -123,7 +123,7 @@ export interface FrameworkConfig {
   engines?: EngineConstraints;
 }
 
-export interface WorkingRepoConfig {
+export interface CompanionRegistryConfig {
   repos: LinkedRepository[];
 }
 

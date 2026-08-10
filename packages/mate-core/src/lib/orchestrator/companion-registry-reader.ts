@@ -16,7 +16,7 @@ export interface CompanionRegistryReadResult {
 
 /**
  * Parses a companion's `registry.yaml` without the writes {@link
- * WorkingRepoStore.load} performs (legacy-field migration, stale-pointer
+ * CompanionRegistryStore.load} performs (legacy-field migration, stale-pointer
  * cleanup). Callers that must not mutate registry state on a read (e.g.
  * inventory, materialization) use this instead. Throws ENOENT when the file
  * doesn't exist; throws on unparsable YAML.

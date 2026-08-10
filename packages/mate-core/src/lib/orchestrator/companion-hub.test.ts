@@ -16,6 +16,7 @@ import {
   updateHubPlugins,
 } from "./companion-hub";
 import { ConfigStore } from "./config-store";
+import { GlobalConfigStore } from "./global-config-store";
 import type { FrameworkConfig } from "./types";
 
 const tempRoots: string[] = [];
@@ -24,6 +25,11 @@ async function makeTempDir(prefix: string): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   tempRoots.push(root);
   return root;
+}
+
+/** Every `initializeCompanionHub` call in this suite must pass this — its default constructs `~/.mate/config.yaml`, polluting the real developer registry with ephemeral test paths. */
+function isolatedGlobalConfigStore(root: string): GlobalConfigStore {
+  return new GlobalConfigStore(path.join(root, "global-config.yaml"));
 }
 
 function git(root: string, ...args: string[]): string {
@@ -70,7 +76,7 @@ describe("companion hub lifecycle", () => {
     const root = await makeTempDir("hub-init-");
     await fs.writeFile(path.join(root, "keep.txt"), "keep\n", "utf8");
 
-    await initializeCompanionHub(root);
+    await initializeCompanionHub(root, isolatedGlobalConfigStore(root));
 
     expect(await fs.readFile(path.join(root, "keep.txt"), "utf8")).toBe("keep\n");
     expect(
@@ -95,7 +101,9 @@ describe("companion hub lifecycle", () => {
       "utf8",
     );
 
-    await expect(initializeCompanionHub(root)).rejects.toThrow("linked working repository");
+    await expect(initializeCompanionHub(root, isolatedGlobalConfigStore(root))).rejects.toThrow(
+      "linked working repository",
+    );
     expect(
       await fs.stat(path.join(root, ".mate", "config", "framework.yaml")).catch(() => null),
     ).toBeNull();
@@ -106,7 +114,7 @@ describe("companion hub lifecycle", () => {
     const source = await writeCompanion(root, "source");
     await fs.mkdir(path.join(source, ".git"));
     const hub = path.join(root, "hub");
-    await initializeCompanionHub(hub);
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
 
     const member = await addHubMember(hub, discoverHubSource(source));
 
@@ -119,7 +127,7 @@ describe("companion hub lifecycle", () => {
     const root = await makeTempDir("hub-git-");
     const { source } = await makeGitCompanion(root);
     const hub = path.join(root, "hub");
-    await initializeCompanionHub(hub);
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
 
     const member = await addHubMember(hub, discoverGitSource(source));
 
@@ -134,7 +142,7 @@ describe("companion hub lifecycle", () => {
   test("removes a failed clone destination", async () => {
     const root = await makeTempDir("hub-failed-clone-");
     const hub = path.join(root, "hub");
-    await initializeCompanionHub(hub);
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
     const failingGit = () => ({ status: 1, stdout: "", stderr: "clone failed" });
 
     await expect(
@@ -151,7 +159,7 @@ describe("companion hub lifecycle", () => {
     const root = await makeTempDir("hub-sync-");
     const { source } = await makeGitCompanion(root);
     const hub = path.join(root, "hub");
-    await initializeCompanionHub(hub);
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
     const member = await addHubMember(hub, discoverGitSource(source));
 
     await fs.writeFile(path.join(source, "notes.md"), "updated\n", "utf8");
@@ -192,7 +200,7 @@ describe("companion hub lifecycle", () => {
     const root = await makeTempDir("hub-local-sync-");
     const source = await writeCompanion(root, "source");
     const hub = path.join(root, "hub");
-    await initializeCompanionHub(hub);
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
     await addHubMember(hub, { kind: "local", path: source });
     const calls: string[][] = [];
 
@@ -209,7 +217,7 @@ describe("companion hub lifecycle", () => {
     const root = await makeTempDir("hub-plugins-");
     const source = await writeCompanion(root, "source");
     const hub = path.join(root, "hub");
-    await initializeCompanionHub(hub);
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
     const member = await addHubMember(hub, { kind: "local", path: source });
     const childWorkspace = path.join(hub, member.path, ".mate", "plugins");
     await fs.mkdir(childWorkspace, { recursive: true });
@@ -251,7 +259,7 @@ describe("companion hub lifecycle", () => {
   test("backfills provider agents for hubs persisted with an empty allowedAgents list", async () => {
     const root = await makeTempDir("hub-backfill-");
     const hub = path.join(root, "hub");
-    await initializeCompanionHub(hub);
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
     const store = new ConfigStore(path.join(hub, ".mate", "config", "framework.yaml"));
     const legacy = await store.load();
     legacy.allowedAgents = [];

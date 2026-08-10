@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -22,8 +23,16 @@ export abstract class YamlFileStore<T> {
     }
   }
 
+  /** Writes via a sibling temp file + `fs.rename()` so a process killed mid-write cannot leave a truncated/corrupt file. */
   async save(data: T): Promise<void> {
     await fs.mkdir(path.dirname(this.configPath), { recursive: true });
-    await fs.writeFile(this.configPath, stringify(data), "utf8");
+    const tempPath = `${this.configPath}.${crypto.randomUUID()}.tmp`;
+    try {
+      await fs.writeFile(tempPath, stringify(data), "utf8");
+      await fs.rename(tempPath, this.configPath);
+    } catch (error) {
+      await fs.rm(tempPath, { force: true }).catch(() => {});
+      throw error;
+    }
   }
 }

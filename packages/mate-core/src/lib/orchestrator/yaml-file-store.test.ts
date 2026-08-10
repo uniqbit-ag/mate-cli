@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { YamlFileStore } from "./yaml-file-store";
 
@@ -57,5 +57,28 @@ describe("YamlFileStore", () => {
     await store.save({ value: "nested", count: 1 });
 
     await fs.access(path.join(root, "a", "b", "c", "data.yaml"));
+  });
+
+  test("a write interrupted before rename does not modify the existing file", async () => {
+    const root = await makeTempDir("yaml-store-interrupted-");
+    const configPath = path.join(root, "data.yaml");
+    const store = new TestStore(configPath);
+    await store.save({ value: "original", count: 1 });
+
+    const writeFileSpy = spyOn(fs, "writeFile").mockImplementation(async () => {
+      throw new Error("simulated crash before rename");
+    });
+
+    try {
+      await expect(store.save({ value: "new", count: 2 })).rejects.toThrow(
+        "simulated crash before rename",
+      );
+    } finally {
+      writeFileSpy.mockRestore();
+    }
+
+    expect(await store.load()).toEqual({ value: "original", count: 1 });
+    const entries = await fs.readdir(root);
+    expect(entries).toEqual(["data.yaml"]);
   });
 });

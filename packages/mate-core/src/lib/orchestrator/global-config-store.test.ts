@@ -74,4 +74,48 @@ describe("GlobalConfigStore", () => {
 
     expect(companions).toContain(path.resolve(companionPath));
   });
+
+  describe("prune", () => {
+    test("removes entries whose path is not a directory on disk", async () => {
+      const root = await makeTempDir("global-config-prune-stale-");
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+      const companionPath = path.join(root, "companion");
+      const goneCompanionPath = path.join(root, "gone");
+      await fs.mkdir(companionPath, { recursive: true });
+      await store.register(companionPath);
+      await store.register(goneCompanionPath);
+
+      const result = await store.prune();
+
+      expect(result.removed).toEqual([path.resolve(goneCompanionPath)]);
+      expect(await store.list()).toEqual([path.resolve(companionPath)]);
+    });
+
+    test("preserves entries that still exist on disk", async () => {
+      const root = await makeTempDir("global-config-prune-keep-");
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+      const companionPath = path.join(root, "companion");
+      await fs.mkdir(companionPath, { recursive: true });
+      await store.register(companionPath);
+
+      const result = await store.prune();
+
+      expect(result.removed).toEqual([]);
+      expect(await store.list()).toEqual([path.resolve(companionPath)]);
+    });
+
+    test("is idempotent on an already-clean registry", async () => {
+      const root = await makeTempDir("global-config-prune-idempotent-");
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+      const companionPath = path.join(root, "companion");
+      await fs.mkdir(companionPath, { recursive: true });
+      await store.register(companionPath);
+
+      await store.prune();
+      const result = await store.prune();
+
+      expect(result.removed).toEqual([]);
+      expect(await store.list()).toEqual([path.resolve(companionPath)]);
+    });
+  });
 });

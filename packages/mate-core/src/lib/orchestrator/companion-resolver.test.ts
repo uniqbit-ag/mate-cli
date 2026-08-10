@@ -6,6 +6,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { parse } from "yaml";
 
+import { CompanionRegistryStore } from "./companion-registry-store";
 import { CompanionResolver } from "./companion-resolver";
 import { GlobalConfigStore } from "./global-config-store";
 import { RepoLocalRegistryStore, repoLocalRegistryPath } from "./repo-local-registry";
@@ -158,6 +159,123 @@ describe("CompanionResolver", () => {
       expect(result.ambiguousMatches.map((m) => m.companionPath).sort()).toEqual(
         [companionA, companionB].sort(),
       );
+    });
+  });
+
+  describe("global registry fallback", () => {
+    async function writeCompanionRegistry(
+      companionPath: string,
+      repos: Array<{ id: string; path: string }>,
+    ): Promise<void> {
+      await fs.mkdir(path.join(companionPath, ".mate", "config"), { recursive: true });
+      await new CompanionRegistryStore(
+        path.join(companionPath, ".mate", "config", "registry.yaml"),
+      ).save({
+        repos,
+      });
+    }
+
+    test("resolves via fallback and self-heals the repo-local cache when the file is missing", async () => {
+      const root = await makeTempDir("resolver-fallback-missing-");
+      const repoPath = path.join(root, "project");
+      await fs.mkdir(repoPath, { recursive: true });
+      const companionPath = path.join(root, "companion");
+      await writeCompanionRegistry(companionPath, [{ id: "app", path: repoPath }]);
+
+      const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await globalStore.register(companionPath);
+
+      const result = await new CompanionResolver(globalStore).resolve(repoPath);
+
+      expect(result).toEqual({ companionPath: path.resolve(companionPath), repositoryId: "app" });
+      const healed = parse(await fs.readFile(repoLocalRegistryPath(repoPath), "utf8"));
+      expect(healed.companions).toEqual([
+        { path: path.resolve(companionPath), repositoryId: "app" },
+      ]);
+    });
+
+    test("falls back the same way when the repo-local file is corrupted", async () => {
+      const root = await makeTempDir("resolver-fallback-corrupt-");
+      const repoPath = path.join(root, "project");
+      await fs.mkdir(repoPath, { recursive: true });
+      await fs.mkdir(path.dirname(repoLocalRegistryPath(repoPath)), { recursive: true });
+      await fs.writeFile(repoLocalRegistryPath(repoPath), "companions: [unterminated", "utf8");
+
+      const companionPath = path.join(root, "companion");
+      await writeCompanionRegistry(companionPath, [{ id: "app", path: repoPath }]);
+
+      const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await globalStore.register(companionPath);
+
+      const result = await new CompanionResolver(globalStore).resolve(repoPath);
+
+      expect(result).toEqual({ companionPath: path.resolve(companionPath), repositoryId: "app" });
+    });
+
+    test("returns no match when no registered companion lists the repository", async () => {
+      const root = await makeTempDir("resolver-fallback-none-");
+      const repoPath = path.join(root, "project");
+      await fs.mkdir(repoPath, { recursive: true });
+      const companionPath = path.join(root, "companion");
+      await writeCompanionRegistry(companionPath, [
+        { id: "other", path: path.join(root, "other") },
+      ]);
+
+      const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await globalStore.register(companionPath);
+
+      const result = await new CompanionResolver(globalStore).resolve(repoPath);
+
+      expect(result).toBeNull();
+    });
+
+    test("surfaces multiple fallback matches as ambiguousMatches", async () => {
+      const root = await makeTempDir("resolver-fallback-ambiguous-");
+      const repoPath = path.join(root, "project");
+      await fs.mkdir(repoPath, { recursive: true });
+      const companionA = path.join(root, "companion-a");
+      const companionB = path.join(root, "companion-b");
+      await writeCompanionRegistry(companionA, [{ id: "from-a", path: repoPath }]);
+      await writeCompanionRegistry(companionB, [{ id: "from-b", path: repoPath }]);
+
+      const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await globalStore.register(companionA);
+      await globalStore.register(companionB);
+
+      const result = await new CompanionResolver(globalStore).resolveWithDiagnostics(repoPath);
+
+      expect(result.match).not.toBeNull();
+      expect(result.ambiguousMatches).toHaveLength(2);
+      expect(result.ambiguousMatches.map((m) => m.companionPath).sort()).toEqual(
+        [path.resolve(companionA), path.resolve(companionB)].sort(),
+      );
+
+      // Ambiguous fallback matches must not self-heal onto an arbitrary winner.
+      const healed = await fs.readFile(repoLocalRegistryPath(repoPath), "utf8").catch(() => null);
+      expect(healed).toBeNull();
+    });
+
+    test("a second resolution after self-heal takes the fast path only, without scanning again", async () => {
+      const root = await makeTempDir("resolver-fallback-heal-once-");
+      const repoPath = path.join(root, "project");
+      await fs.mkdir(repoPath, { recursive: true });
+      const companionPath = path.join(root, "companion");
+      await writeCompanionRegistry(companionPath, [{ id: "app", path: repoPath }]);
+
+      const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await globalStore.register(companionPath);
+      const listSpy = spyOn(globalStore, "list");
+
+      const resolver = new CompanionResolver(globalStore);
+      const first = await resolver.resolve(repoPath);
+      expect(first).toEqual({ companionPath: path.resolve(companionPath), repositoryId: "app" });
+      expect(listSpy).toHaveBeenCalledTimes(1);
+
+      const second = await resolver.resolve(repoPath);
+      expect(second).toEqual({ companionPath: path.resolve(companionPath), repositoryId: "app" });
+      expect(listSpy).toHaveBeenCalledTimes(1);
+
+      listSpy.mockRestore();
     });
   });
 });

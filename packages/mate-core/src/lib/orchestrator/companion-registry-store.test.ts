@@ -6,8 +6,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { stringify } from "yaml";
 
+import { CompanionRegistryStore } from "./companion-registry-store";
 import { ConfigError } from "./types";
-import { WorkingRepoStore } from "./working-repo-store";
 
 const tempRoots: string[] = [];
 
@@ -21,18 +21,18 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-describe("WorkingRepoStore", () => {
+describe("CompanionRegistryStore", () => {
   test("throws ConfigError when registry file is missing", async () => {
-    const root = await makeTempDir("working-repo-missing-");
-    const store = new WorkingRepoStore(path.join(root, "registry.yaml"));
+    const root = await makeTempDir("companion-registry-missing-");
+    const store = new CompanionRegistryStore(path.join(root, "registry.yaml"));
 
     await expect(store.load()).rejects.toThrow(ConfigError);
   });
 
   test("round-trips saved config", async () => {
-    const root = await makeTempDir("working-repo-roundtrip-");
-    const store = new WorkingRepoStore(path.join(root, "registry.yaml"));
-    const config = WorkingRepoStore.defaultConfig();
+    const root = await makeTempDir("companion-registry-roundtrip-");
+    const store = new CompanionRegistryStore(path.join(root, "registry.yaml"));
+    const config = CompanionRegistryStore.defaultConfig();
     config.repos.push({ id: "app", path: "/some/path" });
 
     await store.save(config);
@@ -42,7 +42,7 @@ describe("WorkingRepoStore", () => {
   });
 
   test("strips legacy activeRepoId field on load (migration)", async () => {
-    const root = await makeTempDir("working-repo-migrate-");
+    const root = await makeTempDir("companion-registry-migrate-");
     const registryPath = path.join(root, "registry.yaml");
     await fs.writeFile(
       registryPath,
@@ -53,7 +53,7 @@ describe("WorkingRepoStore", () => {
       "utf8",
     );
 
-    const store = new WorkingRepoStore(registryPath);
+    const store = new CompanionRegistryStore(registryPath);
     const loaded = await store.load();
 
     expect(loaded).toEqual({ repos: [{ id: "app", path: "/some/path" }] });
@@ -61,7 +61,7 @@ describe("WorkingRepoStore", () => {
   });
 
   test("strips legacy profile and overrides fields from repo entries on load", async () => {
-    const root = await makeTempDir("working-repo-legacy-policy-");
+    const root = await makeTempDir("companion-registry-legacy-policy-");
     const registryPath = path.join(root, "registry.yaml");
     await fs.writeFile(
       registryPath,
@@ -78,7 +78,7 @@ describe("WorkingRepoStore", () => {
       "utf8",
     );
 
-    const store = new WorkingRepoStore(registryPath);
+    const store = new CompanionRegistryStore(registryPath);
     const loaded = await store.load();
 
     expect(loaded).toEqual({ repos: [{ id: "app", path: "/some/path" }] });

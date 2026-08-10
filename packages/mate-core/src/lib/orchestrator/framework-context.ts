@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { parse } from "yaml";
+import { CompanionRegistryStore } from "./companion-registry-store";
 import { CompanionResolver } from "./companion-resolver";
 import { companionRootedStore } from "./companion-store";
 import { readCompanionRegistry } from "./companion-registry-reader";
@@ -18,11 +19,10 @@ import {
   RepositoryNotFoundError,
   WorkingRepoRequiredError,
 } from "./types";
-import { WorkingRepoStore } from "./working-repo-store";
 
 export interface FrameworkContext {
   configStore: ConfigStore;
-  workingRepoStore: WorkingRepoStore;
+  workingRepoStore: CompanionRegistryStore;
   companionPath: string;
   repository?: LinkedRepository;
   contextKind: "env" | "working-repo" | "companion-root" | "hub";
@@ -54,7 +54,7 @@ function makeContext(
   const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   return {
     configStore: new ConfigStore(path.join(configDir, "framework.yaml")),
-    workingRepoStore: new WorkingRepoStore(path.join(configDir, "registry.yaml")),
+    workingRepoStore: new CompanionRegistryStore(path.join(configDir, "registry.yaml")),
     companionPath,
     repository,
     contextKind,
