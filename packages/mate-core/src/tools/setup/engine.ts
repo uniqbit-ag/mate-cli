@@ -126,10 +126,22 @@ export async function executeSetupInstallationPlan(
   });
 
   for (const action of plan.actions) {
-    if (ctx.scope === "hub" && action.phase !== "provider") continue;
-
     const plugin = pluginById.get(action.pluginId);
     if (!plugin) {
+      continue;
+    }
+
+    if (ctx.scope === "hub" && action.phase !== "provider") {
+      if (action.phase === "capability" && !action.providerId) {
+        const capability = plugin as CapabilityPlugin;
+        const hubHandler = action.action === "apply" ? capability.applyHub : capability.teardownHub;
+        if (hubHandler) {
+          mediator.track(action.pluginId);
+          const actionCtx: SetupContext = { ...ctx, ...mediator.servicesFor(action.pluginId) };
+          await hubHandler(actionCtx);
+          executedActions.push(action);
+        }
+      }
       continue;
     }
 

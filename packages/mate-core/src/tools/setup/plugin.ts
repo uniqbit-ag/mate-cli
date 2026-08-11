@@ -228,4 +228,11 @@ export interface CapabilityPlugin extends Plugin {
       preflight?(ctx: LaunchPreflightContext): Promise<string[]>;
     }
   >;
+  /**
+   * Hub-scope counterparts to apply/teardown. The engine calls these instead
+   * of apply/teardown when ctx.scope === "hub", never in addition. Absent
+   * hooks keep the capability-phase action skipped for hub scope, unchanged.
+   */
+  applyHub?(ctx: SetupContext): Promise<void>;
+  teardownHub?(ctx: SetupContext): Promise<void>;
 }
