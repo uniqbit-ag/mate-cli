@@ -130,6 +130,8 @@ export async function resolveInstallContext(
   if (root.kind === "working") return workingContext();
   if (root.kind === "core" || !root.rootPath || !root.config) return coreContext();
 
+  const { hub: _hub, ...installConfig } = root.config;
+
   return {
     kind: root.kind,
     companionPath: root.rootPath,
@@ -137,7 +139,7 @@ export async function resolveInstallContext(
     fingerprint: fingerprint({
       kind: root.kind,
       companionPath: root.rootPath,
-      config: root.config,
+      config: installConfig,
     }),
   };
 }
