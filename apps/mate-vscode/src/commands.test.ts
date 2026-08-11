@@ -242,6 +242,50 @@ describe("mate.launchOpenCode / mate.launchClaude", () => {
   });
 });
 
+describe("mate.attachCompanionToWorkspace", () => {
+  test("appends the companion as a second workspace folder and notes the workspace is unsaved", async () => {
+    const { registerCommands, context, calls, registeredCommands, workspaceFolders } =
+      await setUp();
+    workspaceFolders.value = [{ uri: { fsPath: "/repos/app" } }];
+    registerCommands(context as never, {
+      workspaceService: materializingService([]),
+      refresh: async () => {},
+      isTrusted: () => true,
+    });
+
+    registeredCommands.get("mate.attachCompanionToWorkspace")?.(READY_NODE);
+
+    const [start, deleteCount, folderToAdd] = calls.updateWorkspaceFolders[0] as [
+      number,
+      number,
+      { uri: { fsPath: string } },
+    ];
+    expect(start).toBe(1);
+    expect(deleteCount).toBe(0);
+    expect(folderToAdd.uri.fsPath).toBe("/companions/a");
+    expect(String(calls.showInformationMessage[0]?.[0])).toContain("unsaved");
+  });
+
+  test("does not duplicate a companion folder that is already attached", async () => {
+    const { registerCommands, context, calls, registeredCommands, workspaceFolders } =
+      await setUp();
+    workspaceFolders.value = [
+      { uri: { fsPath: "/repos/app" } },
+      { uri: { fsPath: "/companions/a" } },
+    ];
+    registerCommands(context as never, {
+      workspaceService: materializingService([]),
+      refresh: async () => {},
+      isTrusted: () => true,
+    });
+
+    registeredCommands.get("mate.attachCompanionToWorkspace")?.(READY_NODE);
+
+    expect(calls.updateWorkspaceFolders).toEqual([]);
+    expect(String(calls.showInformationMessage[0]?.[0])).toContain("already attached");
+  });
+});
+
 describe("mate.refreshWorkspaces", () => {
   test("delegates to the host's refresh", async () => {
     const { registerCommands, context, registeredCommands } = await setUp();

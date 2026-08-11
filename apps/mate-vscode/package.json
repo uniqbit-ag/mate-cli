@@ -52,6 +52,10 @@
     "views": {
       "mate": [
         {
+          "id": "mateActiveChanges",
+          "name": "Active Changes"
+        },
+        {
           "id": "mateWorkspaces",
           "name": "Workspaces"
         },
@@ -69,6 +73,10 @@
       {
         "view": "mateCompanions",
         "contents": "No companions are registered yet.\n[Learn how to link a companion](https://github.com/uniqbit-ag/mate-cli)\nRun `mate companion link` from a working repository, then refresh."
+      },
+      {
+        "view": "mateActiveChanges",
+        "contents": "No active OpenSpec changes.\nInstall [openspec](https://github.com/uniqbit-ag/mate-cli) and, if it's not on PATH, set the `mate.openspecExecutablePath` setting, then refresh."
       }
     ],
     "commands": [
@@ -104,13 +112,53 @@
       {
         "command": "mate.launchClaude",
         "title": "Mate: Launch Claude"
+      },
+      {
+        "command": "mate.attachCompanionToWorkspace",
+        "title": "Mate: Attach Companion to Workspace"
+      },
+      {
+        "command": "mate.revealPairingFromStatusBar",
+        "title": "Mate: Reveal Current Pairing"
+      },
+      {
+        "command": "mate.quickOpenWorkspace",
+        "title": "Mate: Open Workspace (Choose Pairing)"
+      },
+      {
+        "command": "mate.quickLaunchOpenCode",
+        "title": "Mate: Launch OpenCode (Choose Pairing)"
+      },
+      {
+        "command": "mate.quickLaunchClaude",
+        "title": "Mate: Launch Claude (Choose Pairing)"
+      },
+      {
+        "command": "mate.quickRevealWorkingRepository",
+        "title": "Mate: Reveal Working Repository (Choose Pairing)"
+      },
+      {
+        "command": "mate.quickRevealCompanion",
+        "title": "Mate: Reveal Companion (Choose Pairing)"
+      },
+      {
+        "command": "mate.quickCopyWorkingRepositoryPath",
+        "title": "Mate: Copy Working Repository Path (Choose Pairing)"
+      },
+      {
+        "command": "mate.quickCopyCompanionPath",
+        "title": "Mate: Copy Companion Path (Choose Pairing)"
+      },
+      {
+        "command": "mate.openOpenSpecChange",
+        "title": "Mate: Open OpenSpec Change"
       }
     ],
     "menus": {
       "view/title": [
         {
           "command": "mate.refreshWorkspaces",
-          "when": "view == mateWorkspaces || view == mateCompanions",
+          "when": "view == mateWorkspaces || view == mateCompanions || view == mateActiveChanges",
           "group": "navigation"
         }
       ],
@@ -119,6 +167,11 @@
           "command": "mate.openWorkspace",
           "when": "(view == mateWorkspaces || view == mateCompanions) && viewItem =~ /\\bpairing-open\\b/",
           "group": "1_open@1"
+        },
+        {
+          "command": "mate.attachCompanionToWorkspace",
+          "when": "(view == mateWorkspaces || view == mateCompanions) && viewItem =~ /\\bpairing-open\\b/",
+          "group": "1_open@2"
         },
         {
           "command": "mate.launchOpenCode",
@@ -159,6 +212,11 @@
           "type": "string",
           "default": "",
           "description": "Absolute path to the mate executable. Leave empty to resolve `mate` from the extension host's PATH."
+        },
+        "mate.openspecExecutablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the openspec executable, used by the Active Changes view. Leave empty to resolve `openspec` from the extension host's PATH."
         }
       }
     }

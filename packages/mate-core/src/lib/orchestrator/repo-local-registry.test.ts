@@ -64,7 +64,7 @@ describe("writeRepoLocalRegistryEntry", () => {
     expect(framework.type).toBe("working");
 
     const exclude = await fs.readFile(path.join(repoPath, ".git", "info", "exclude"), "utf8");
-    expect(exclude).toContain(`.${FRAMEWORK_NAME}/`);
+    expect(exclude).toContain(`/.${FRAMEWORK_NAME}/`);
   });
 
   test("upserts a pointer for the same companion path instead of duplicating it", async () => {
@@ -158,7 +158,7 @@ describe("ensureRepoLocalDirExcluded", () => {
     await ensureRepoLocalDirExcluded(repoPath);
 
     const exclude = await fs.readFile(path.join(repoPath, ".git", "info", "exclude"), "utf8");
-    const matches = exclude.split("\n").filter((line) => line === `.${FRAMEWORK_NAME}/`);
+    const matches = exclude.split("\n").filter((line) => line === `/.${FRAMEWORK_NAME}/`);
     expect(matches).toHaveLength(1);
   });
 });

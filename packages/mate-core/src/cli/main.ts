@@ -18,6 +18,7 @@ import { runPluginCommand } from "./commands/plugin/plugin";
 import { runReportCommand } from "./commands/report";
 import { runUpdateCommand } from "./commands/update";
 import { runWorkspaceCommand } from "./commands/workspace/workspace";
+import { runWorkingCommand } from "./commands/working/working";
 import { runInstallCommand } from "./commands/install";
 import { inspectInstallPreflight } from "../lib/install";
 import { resolveRootContext } from "../lib/orchestrator/root-context";
@@ -219,6 +220,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       // update gating — an editor extension may call these frequently.
       if (!(await gate({}))) return;
       await runWorkspaceCommand(subcommand, rest);
+      return;
+    case "working":
+      if (!(await gate({}))) return;
+      await runWorkingCommand(subcommand, rest);
       return;
     default:
       // Unknown commands fail fast: no case matched, so no gate ever ran.

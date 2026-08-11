@@ -21,20 +21,6 @@ export type MateTreeNode =
       description: string;
     };
 
-/**
- * Space-separated token string consumed by `view/item/context` `when`
- * clauses (`viewItem =~ /\btoken\b/`) — never mutates or repairs anything,
- * purely a projection of {@link pairing.health} and workspace trust.
- */
-export function pairingContextValue(pairing: WorkspaceInventoryPairing, trusted: boolean): string {
-  const tokens = ["pairing"];
-  if (pairing.health === "ready") {
-    tokens.push("pairing-repo-available", "pairing-open");
-    if (trusted) tokens.push("pairing-launchable");
-  }
-  return tokens.join(" ");
-}
-
 export function isPairingLaunchable(pairing: WorkspaceInventoryPairing, trusted: boolean): boolean {
   return trusted && pairing.health === "ready";
 }
@@ -45,6 +31,21 @@ export function isPairingOpenable(pairing: WorkspaceInventoryPairing): boolean {
 
 export function isRepositoryRootAvailable(pairing: WorkspaceInventoryPairing): boolean {
   return pairing.health === "ready";
+}
+
+/**
+ * Space-separated token string consumed by `view/item/context` `when`
+ * clauses (`viewItem =~ /\btoken\b/`) — never mutates or repairs anything,
+ * purely a projection of the pairing-capability predicates above, so the
+ * tree's `viewItem` and any other caller (e.g. the quick-pick selector)
+ * share one notion of "is this pairing launchable/openable".
+ */
+export function pairingContextValue(pairing: WorkspaceInventoryPairing, trusted: boolean): string {
+  const tokens = ["pairing"];
+  if (isRepositoryRootAvailable(pairing)) tokens.push("pairing-repo-available");
+  if (isPairingOpenable(pairing)) tokens.push("pairing-open");
+  if (isPairingLaunchable(pairing, trusted)) tokens.push("pairing-launchable");
+  return tokens.join(" ");
 }
 
 function pairingNode(

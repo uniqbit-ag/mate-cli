@@ -26,7 +26,14 @@ function requirePairing(arg: unknown, action: string): WorkspaceInventoryPairing
   return pairing;
 }
 
-async function openWorkspace(host: CommandsHost, arg: unknown): Promise<void> {
+/**
+ * Underlying action functions, exported so the quick-pick palette selector
+ * ({@link ./quick-pick-actions}) delegates to the exact same behavior as
+ * the tree-context-menu commands instead of duplicating pairing-capability
+ * logic.
+ */
+
+export async function openWorkspace(host: CommandsHost, arg: unknown): Promise<void> {
   const pairing = requirePairing(arg, "Open Workspace");
   if (!pairing || !isPairingOpenable(pairing)) return;
 
@@ -47,31 +54,31 @@ async function openWorkspace(host: CommandsHost, arg: unknown): Promise<void> {
   }
 }
 
-function revealWorkingRepository(arg: unknown): void {
+export function revealWorkingRepository(arg: unknown): void {
   const pairing = pairingFromCommandArg(arg);
   if (!pairing || pairing.health !== "ready") return;
   void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(pairing.repository.path));
 }
 
-function revealCompanion(arg: unknown): void {
+export function revealCompanion(arg: unknown): void {
   const pairing = pairingFromCommandArg(arg);
   if (!pairing) return;
   void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(pairing.companionPath));
 }
 
-function copyWorkingRepositoryPath(arg: unknown): void {
+export function copyWorkingRepositoryPath(arg: unknown): void {
   const pairing = pairingFromCommandArg(arg);
   if (!pairing || pairing.health !== "ready") return;
   void vscode.env.clipboard.writeText(pairing.repository.path);
 }
 
-function copyCompanionPath(arg: unknown): void {
+export function copyCompanionPath(arg: unknown): void {
   const pairing = pairingFromCommandArg(arg);
   if (!pairing) return;
   void vscode.env.clipboard.writeText(pairing.companionPath);
 }
 
-function launchAgent(host: CommandsHost, agent: SupportedAgent, arg: unknown): void {
+export function launchAgent(host: CommandsHost, agent: SupportedAgent, arg: unknown): void {
   const pairing = requirePairing(arg, `Launch ${agent === "opencode" ? "OpenCode" : "Claude"}`);
   if (!pairing) return;
 
@@ -95,6 +102,33 @@ function launchAgent(host: CommandsHost, agent: SupportedAgent, arg: unknown): v
   terminal.sendText(plan.commandLine);
 }
 
+/**
+ * Appends the companion as a second workspace-folder root in the *current*
+ * window — an alternative to `mate.openWorkspace`'s new-window materialize,
+ * never persisting a `.code-workspace` file itself.
+ */
+export function attachCompanionToWorkspace(arg: unknown): void {
+  const pairing = requirePairing(arg, "Attach Companion to Workspace");
+  if (!pairing) return;
+
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  const companionUri = vscode.Uri.file(pairing.companionPath);
+  if (folders.some((folder) => folder.uri.fsPath === companionUri.fsPath)) {
+    void vscode.window.showInformationMessage(
+      `Mate: ${pairing.companionPath} is already attached to this workspace.`,
+    );
+    return;
+  }
+
+  const becomesMultiRoot = folders.length <= 1;
+  vscode.workspace.updateWorkspaceFolders(folders.length, 0, { uri: companionUri });
+  void vscode.window.showInformationMessage(
+    becomesMultiRoot
+      ? "Mate: companion attached — this workspace is now unsaved; VS Code will prompt to save it as a workspace file if you want to keep it."
+      : "Mate: companion attached to the current workspace.",
+  );
+}
+
 /** Registers every `mate.*` command declared in package.json's contributes.commands. */
 export function registerCommands(context: vscode.ExtensionContext, host: CommandsHost): void {
   context.subscriptions.push(
@@ -112,5 +146,6 @@ export function registerCommands(context: vscode.ExtensionContext, host: Command
     vscode.commands.registerCommand("mate.launchClaude", (arg: unknown) =>
       launchAgent(host, "claude", arg),
     ),
+    vscode.commands.registerCommand("mate.attachCompanionToWorkspace", attachCompanionToWorkspace),
   );
 }

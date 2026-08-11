@@ -18,6 +18,7 @@ import * as pluginCmd from "./commands/plugin/plugin";
 import * as reportCmd from "./commands/report";
 import * as updateCmd from "./commands/update";
 import * as workspaceCmd from "./commands/workspace/workspace";
+import * as workingCmd from "./commands/working/working";
 import { main, type MainDeps } from "./main";
 
 const BUILT_IN_COMMANDS = [
@@ -34,6 +35,7 @@ const BUILT_IN_COMMANDS = [
   "cap",
   "update",
   "workspace",
+  "working",
 ];
 
 describe("command gating", () => {
@@ -41,6 +43,10 @@ describe("command gating", () => {
   const spies: Array<{ mockRestore: () => void }> = [];
 
   beforeEach(() => {
+    setActiveDistribution({
+      config: { runtime: "bun", version: "test" },
+      registry: new PluginRegistry([]),
+    });
     dispatched.length = 0;
     const record = (name: string) => async () => {
       dispatched.push(name);
@@ -57,6 +63,7 @@ describe("command gating", () => {
       spyOn(artifactCmd, "runArtifactCommand").mockImplementation(record("artifact")),
       spyOn(capCmd, "runCapCommand").mockImplementation(record("cap")),
       spyOn(workspaceCmd, "runWorkspaceCommand").mockImplementation(record("workspace")),
+      spyOn(workingCmd, "runWorkingCommand").mockImplementation(record("working")),
       spyOn(installCmd, "runInstallCommand").mockImplementation(async () => {
         dispatched.push("install");
         return true;
@@ -70,6 +77,7 @@ describe("command gating", () => {
 
   afterEach(() => {
     while (spies.length > 0) spies.pop()?.mockRestore();
+    resetActiveDistribution();
   });
 
   function rootContextFor(kind: RootKind): RootContext {
@@ -141,6 +149,13 @@ describe("command gating", () => {
       expect(gateCalls).toEqual([]);
     }
     expect(dispatched).toEqual(["workspace", "workspace"]);
+  });
+
+  test("working cleanup dispatches without companion selection, install preflight, or root gating", async () => {
+    const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
+    await main(["node", "mate", "working", "cleanup"], deps);
+    expect(gateCalls).toEqual([]);
+    expect(dispatched).toEqual(["working"]);
   });
 
   test("companion setup, link, list, and unknown subcommands dispatch without companion selection or preflight", async () => {

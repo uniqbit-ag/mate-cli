@@ -4,7 +4,7 @@ import path from "node:path";
 import { parse, stringify } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { resolveGitInfoExcludePath } from "../../tools/setup/git-utils";
+import { ensureWorkingRepoLocalExcludes } from "../../tools/setup/working-repo-local-state";
 import { YamlFileStore } from "./yaml-file-store";
 import type { CompanionSource, LinkedRepository } from "./types";
 
@@ -20,7 +20,6 @@ export interface RepoLocalRegistry {
 }
 
 const repoLocalDirName = () => `.${FRAMEWORK_NAME}`;
-const repoLocalExcludeEntry = () => `${repoLocalDirName()}/`;
 const repoLocalScanSkipDirNames = () =>
   new Set([
     ".git",
@@ -59,26 +58,7 @@ export class RepoLocalRegistryStore extends YamlFileStore<RepoLocalRegistry> {
  * never needs a tracked `.gitignore` entry, mirroring `ensureTokensaveStoreExcluded`.
  */
 export async function ensureRepoLocalDirExcluded(repoPath: string): Promise<void> {
-  const excludePath = await resolveGitInfoExcludePath(repoPath);
-  if (!excludePath) return;
-
-  let existing = "";
-  try {
-    existing = await fs.readFile(excludePath, "utf8");
-  } catch {
-    // Fresh repos may not have created info/exclude yet.
-  }
-
-  const lines = existing
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.includes(repoLocalExcludeEntry())) return;
-
-  lines.push(repoLocalExcludeEntry());
-  await fs.mkdir(path.dirname(excludePath), { recursive: true });
-  await fs.writeFile(excludePath, lines.join("\n") + "\n", "utf8");
+  await ensureWorkingRepoLocalExcludes(repoPath);
 }
 
 /** Writes `.mate/config/framework.yaml` with `type: "working"` if it does not already exist. */
