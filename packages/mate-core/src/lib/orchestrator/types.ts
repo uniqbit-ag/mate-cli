@@ -102,7 +102,11 @@ export type PluginDeclarationPolicy = "default" | "optional";
 export interface PluginDeclaration {
   /** npm package name (e.g. `@acme/custom-plugin`). */
   package: string;
-  /** Exact version, semver range, or the literal `latest`. */
+  /**
+   * Exact version, semver range, or a moving tag (`latest`, `canary`). Moving
+   * tags are re-resolved via `npm update` on every `mate install`; anything
+   * else is pinned and only re-resolves when the declaration changes.
+   */
   version: string;
   /** Registration policy; absent means `optional`. */
   policy?: PluginDeclarationPolicy;

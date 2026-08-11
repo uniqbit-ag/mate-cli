@@ -44,7 +44,10 @@ function defaultNpmInstall(workspaceRoot: string): { ok: boolean; detail?: strin
   return { ok: true };
 }
 
-/** Runs `npm update <pkg...>` to force re-resolution of `latest`-declared plugins every run. */
+/** Version literals treated as moving targets: re-resolved via `npm update` on every run. */
+const MOVING_VERSION_TAGS = new Set(["latest", "canary"]);
+
+/** Runs `npm update <pkg...>` to force re-resolution of moving-tag-declared plugins every run. */
 function defaultNpmUpdate(
   workspaceRoot: string,
   packages: string[],
@@ -102,12 +105,13 @@ async function writeWorkspaceManifest(
  * `.mate/plugins/`. Builds a single `dependencies` map (package
  * → declared version, sorted by name) and diffs it against the workspace's
  * current `package.json` plus each package's actual installed presence; an
- * identical, fully-installed map with no `latest` declaration skips the
- * install entirely. Otherwise the map is written and `npm install` runs once
- * for the whole workspace. `latest`-declared plugins additionally get an
- * `npm update` every run, regardless of whether the map changed, so they
- * re-resolve on every run. The shared, committed `package-lock.json` is the
- * sole reproducibility record; nothing else pins versions. Private
+ * identical, fully-installed map with no moving-tag declaration (`latest` or
+ * `canary`) skips the install entirely. Otherwise the map is written and
+ * `npm install` runs once for the whole workspace. Moving-tag-declared
+ * plugins additionally get an `npm update` every run, regardless of whether
+ * the map changed, so they re-resolve on every run. The shared, committed
+ * `package-lock.json` is the sole reproducibility record; nothing else pins
+ * versions. Private
  * registries are never Mate's concern: installs run through the operator's
  * own ambient npm config, or a project-local, gitignored `.npmrc` dropped
  * next to the workspace's `package.json`.
@@ -134,12 +138,12 @@ export async function installDeclaredPlugins(
     ),
   ]);
 
-  const latestPackages = sorted
-    .filter((declaration) => declaration.version === "latest")
+  const movingPackages = sorted
+    .filter((declaration) => MOVING_VERSION_TAGS.has(declaration.version))
     .map((declaration) => declaration.package);
   const manifestMatches = JSON.stringify(desired) === JSON.stringify(current);
   const allInstalled = installedBefore.every((version) => version !== null);
-  const unchanged = latestPackages.length === 0 && manifestMatches && allInstalled;
+  const unchanged = movingPackages.length === 0 && manifestMatches && allInstalled;
 
   if (unchanged) {
     return sorted.map((declaration, index) => ({
@@ -156,8 +160,8 @@ export async function installDeclaredPlugins(
     : (installOutcome.detail ?? "npm install failed");
 
   let updateFailure: string | undefined;
-  if (latestPackages.length > 0) {
-    const updateOutcome = await runNpmUpdate(workspaceRoot, latestPackages);
+  if (movingPackages.length > 0) {
+    const updateOutcome = await runNpmUpdate(workspaceRoot, movingPackages);
     updateFailure = updateOutcome.ok ? undefined : (updateOutcome.detail ?? "npm update failed");
   }
 
@@ -168,8 +172,8 @@ export async function installDeclaredPlugins(
   );
 
   return sorted.map((declaration, index) => {
-    const isLatest = declaration.version === "latest";
-    const failure = installFailure ?? (isLatest ? updateFailure : undefined);
+    const isMoving = MOVING_VERSION_TAGS.has(declaration.version);
+    const failure = installFailure ?? (isMoving ? updateFailure : undefined);
     if (failure) {
       return { package: declaration.package, status: "failed", error: failure };
     }
