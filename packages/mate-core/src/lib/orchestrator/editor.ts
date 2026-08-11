@@ -1,14 +1,9 @@
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 type SpawnLike = typeof spawn;
-type StatusProcess = typeof execFileSync;
-type ReadStorage = typeof readFileSync;
-
-export type EditorWorkspaceState = "open" | "not-open" | "undetermined";
 
 const CURSOR_FALLBACK_PATHS = [
   "/usr/local/bin/cursor",
@@ -84,62 +79,6 @@ export function editorWorkspacePath(repoPath: string): string {
   return path.join(path.resolve(repoPath), ".mate", "workspace.code-workspace");
 }
 
-function editorStoragePath(cli: string): string {
-  const appName =
-    cli === "cursor" ? "Cursor" : cli === "code-insiders" ? "Code - Insiders" : "Code";
-  if (process.platform === "darwin") {
-    return path.join(
-      process.env.HOME ?? "",
-      "Library",
-      "Application Support",
-      appName,
-      "User",
-      "globalStorage",
-      "storage.json",
-    );
-  }
-  if (process.platform === "win32") {
-    return path.join(process.env.APPDATA ?? "", appName, "User", "globalStorage", "storage.json");
-  }
-  return path.join(
-    process.env.XDG_CONFIG_HOME ?? path.join(process.env.HOME ?? "", ".config"),
-    appName,
-    "User",
-    "globalStorage",
-    "storage.json",
-  );
-}
-
-export function detectEditorWorkspaceState(
-  workspacePath: string,
-  cli: string,
-  statusProcess: StatusProcess = execFileSync,
-  readStorage: ReadStorage = readFileSync,
-): EditorWorkspaceState {
-  const binary = resolveEditorBinary(cli);
-  if (!binary) return "undetermined";
-
-  try {
-    statusProcess(binary, ["--status"], { stdio: ["ignore", "pipe", "ignore"] });
-    const storage = JSON.parse(readStorage(editorStoragePath(cli), "utf8").toString()) as {
-      windowsState?: {
-        lastActiveWindow?: { workspaceIdentifier?: { configURIPath?: string } };
-        openedWindows?: Array<{ workspaceIdentifier?: { configURIPath?: string } }>;
-      };
-    };
-    const workspaceUri = pathToFileURL(path.resolve(workspacePath)).toString();
-    const windows = [
-      storage.windowsState?.lastActiveWindow,
-      ...(storage.windowsState?.openedWindows ?? []),
-    ];
-    return windows.some((window) => window?.workspaceIdentifier?.configURIPath === workspaceUri)
-      ? "open"
-      : "not-open";
-  } catch {
-    return "undetermined";
-  }
-}
-
 export interface WorkspaceDocument {
   workspacePath: string;
   folders: [string, string];
@@ -178,10 +117,6 @@ export async function injectEditorFolder(
   repoPath: string,
   cli = "code",
   spawnProcess: SpawnLike = spawn,
-  detectWorkspace: (
-    workspacePath: string,
-    cli: string,
-  ) => EditorWorkspaceState = detectEditorWorkspaceState,
 ): Promise<boolean> {
   const resolved = resolveEditorCli(cli);
   if (!resolved) {
@@ -194,14 +129,9 @@ export async function injectEditorFolder(
     return false;
   }
 
-  const { cli: resolvedCli, binary } = resolved;
+  const { binary } = resolved;
 
-  const { workspacePath, folders: workspaceFolders } = await writeWorkspaceDocument(
-    companionPath,
-    repoPath,
-  );
-
-  if (detectWorkspace(workspacePath, resolvedCli) === "open") return true;
+  const { folders: workspaceFolders } = await writeWorkspaceDocument(companionPath, repoPath);
 
   const child = spawnProcess(binary, ["--add", ...workspaceFolders], {
     stdio: "ignore",
