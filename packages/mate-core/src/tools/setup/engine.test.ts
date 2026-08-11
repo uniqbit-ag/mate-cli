@@ -151,6 +151,106 @@ describe("setup engine", () => {
     expect(appliedPaths).toEqual([hub]);
     expect(appliedPaths).not.toContain(child);
   });
+
+  test("hub-scope apply action calls applyHub, not apply", async () => {
+    const applyMock = mock(async () => {});
+    const applyHubMock = mock(async () => {});
+    const capability: CapabilityPlugin = {
+      ...makePlugin("hub-cap", "capability"),
+      apply: applyMock,
+      applyHub: applyHubMock,
+    };
+    const config = { allowedAgents: [] };
+    const ctx: SetupContext = { ...makeCtx(config), scope: "hub" };
+
+    const plan = buildSetupInstallationPlan(config, [capability]);
+    const outcome = await executeSetupInstallationPlan(ctx, [capability], plan);
+
+    expect(applyHubMock).toHaveBeenCalledTimes(1);
+    expect(applyMock).not.toHaveBeenCalled();
+    expect(outcome.executedActions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ pluginId: "hub-cap", action: "apply" })]),
+    );
+  });
+
+  test("hub-scope teardown action calls teardownHub, not teardown", async () => {
+    const teardownMock = mock(async () => {});
+    const teardownHubMock = mock(async () => {});
+    const capability: CapabilityPlugin = {
+      ...makePlugin("hub-cap", "capability", false),
+      teardown: teardownMock,
+      teardownHub: teardownHubMock,
+    };
+    const config = { allowedAgents: [] };
+    const ctx: SetupContext = { ...makeCtx(config), scope: "hub" };
+
+    const plan = buildSetupInstallationPlan(config, [capability]);
+    await executeSetupInstallationPlan(ctx, [capability], plan);
+
+    expect(teardownHubMock).toHaveBeenCalledTimes(1);
+    expect(teardownMock).not.toHaveBeenCalled();
+  });
+
+  test("hub-scope action for a capability declaring neither hook calls nothing", async () => {
+    const applyMock = mock(async () => {});
+    const teardownMock = mock(async () => {});
+    const capability: CapabilityPlugin = {
+      ...makePlugin("hub-cap", "capability"),
+      apply: applyMock,
+      teardown: teardownMock,
+    };
+    const config = { allowedAgents: [] };
+    const ctx: SetupContext = { ...makeCtx(config), scope: "hub" };
+
+    const plan = buildSetupInstallationPlan(config, [capability]);
+    const outcome = await executeSetupInstallationPlan(ctx, [capability], plan);
+
+    expect(applyMock).not.toHaveBeenCalled();
+    expect(teardownMock).not.toHaveBeenCalled();
+    expect(outcome.executedActions).toEqual([]);
+  });
+
+  test("companion-scope dispatch never calls applyHub/teardownHub", async () => {
+    const applyMock = mock(async () => {});
+    const applyHubMock = mock(async () => {});
+    const capability: CapabilityPlugin = {
+      ...makePlugin("hub-cap", "capability"),
+      apply: applyMock,
+      applyHub: applyHubMock,
+    };
+    const config = { allowedAgents: [] };
+    const ctx = makeCtx(config);
+
+    const plan = buildSetupInstallationPlan(config, [capability]);
+    await executeSetupInstallationPlan(ctx, [capability], plan);
+
+    expect(applyMock).toHaveBeenCalledTimes(1);
+    expect(applyHubMock).not.toHaveBeenCalled();
+  });
+
+  test("forProvider action stays skipped in hub scope even when the capability declares applyHub", async () => {
+    const providerApplyMock = mock(async () => {});
+    const applyHubMock = mock(async () => {});
+    const capability: CapabilityPlugin = {
+      ...makePlugin("hub-cap", "capability"),
+      applyHub: applyHubMock,
+      forProvider: {
+        claude: {
+          apply: providerApplyMock,
+          teardown: mock(async () => {}),
+        },
+      },
+    };
+    const provider = { ...makePlugin("claude", "provider"), isEnabled: () => true };
+    const config = { allowedAgents: ["claude"] };
+    const ctx: SetupContext = { ...makeCtx(config), scope: "hub", activeProviders: ["claude"] };
+
+    const plan = buildSetupInstallationPlan(config, [provider, capability]);
+    await executeSetupInstallationPlan(ctx, [provider, capability], plan);
+
+    expect(providerApplyMock).not.toHaveBeenCalled();
+    expect(applyHubMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("registration policy enforcement", () => {
