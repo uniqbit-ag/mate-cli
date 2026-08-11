@@ -73,7 +73,7 @@ export function collectManagedGitignoreEntries(ctx: SetupContext, plugins: Plugi
     // Holds absolute local paths of every linked working repo; never shared
     // across machines or committed to the companion repo.
     `.${FRAMEWORK_NAME}/config/registry.yaml`,
-    ".mcp.json*",
+    ".mcp.json.bak",
     ...plugins
       .filter((p) => p.kind !== "root" && (p.isEnabled(ctx.config) || p.persistGitignoreEntries))
       .flatMap((p) => p.gitignoreEntries?.(ctx) ?? []),
