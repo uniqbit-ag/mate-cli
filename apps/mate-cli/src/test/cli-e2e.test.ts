@@ -2026,7 +2026,7 @@ describe("mate CLI e2e", () => {
         path.join(scenario.working, ".git", "info", "exclude"),
         "utf8",
       );
-      expect(exclude).toContain(".claude/settings.local.json");
+      expect(exclude).toContain("/.claude/");
     });
   }
 
@@ -2088,7 +2088,7 @@ describe("mate CLI e2e", () => {
       path.join(scenario.working, ".git", "info", "exclude"),
       "utf8",
     );
-    expect(exclude).toContain(".claude/settings.local.json");
+    expect(exclude).toContain("/.claude/");
 
     // A second launch must converge on the same content — no duplicated hooks or
     // allow entries.
