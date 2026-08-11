@@ -41,14 +41,71 @@ export class FakeTreeItem {
 export const FakeTreeItemCollapsibleState = { None: 0, Collapsed: 1, Expanded: 2 };
 
 export class FakeUri {
-  private constructor(readonly fsPath: string) {}
+  private constructor(
+    readonly fsPath: string,
+    readonly scheme: string = "file",
+  ) {}
   static file(fsPath: string): FakeUri {
-    return new FakeUri(fsPath);
+    return new FakeUri(fsPath, "file");
+  }
+  static parse(value: string): FakeUri {
+    const [scheme, ...rest] = value.split(":");
+    return new FakeUri(rest.join(":"), scheme);
   }
   toString(): string {
-    return `file://${this.fsPath}`;
+    return `${this.scheme}:${this.fsPath}`;
   }
 }
+
+export class FakeRange {
+  constructor(
+    readonly startLine: number,
+    readonly startCol: number,
+    readonly endLine: number,
+    readonly endCol: number,
+  ) {}
+}
+
+export class FakeDiagnostic {
+  source?: string;
+  constructor(
+    readonly range: FakeRange,
+    readonly message: string,
+    readonly severity: number,
+  ) {}
+}
+
+export const FakeDiagnosticSeverity = { Error: 0, Warning: 1, Information: 2, Hint: 3 };
+
+export class FakeDiagnosticCollection {
+  private readonly entries = new Map<string, unknown[]>();
+  set(uri: FakeUri, diagnostics: unknown[]): void {
+    this.entries.set(uri.toString(), diagnostics);
+  }
+  get(uri: FakeUri): unknown[] | undefined {
+    return this.entries.get(uri.toString());
+  }
+  clear(): void {
+    this.entries.clear();
+  }
+  dispose(): void {
+    this.entries.clear();
+  }
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+export class FakeStatusBarItem {
+  text = "";
+  tooltip?: string;
+  command?: unknown;
+  backgroundColor?: unknown;
+  show(): void {}
+  dispose(): void {}
+}
+
+export const FakeStatusBarAlignment = { Left: 1, Right: 2 };
 
 export interface VscodeMockCalls {
   showInformationMessage: unknown[][];
@@ -57,6 +114,9 @@ export interface VscodeMockCalls {
   openExternal: unknown[][];
   executeCommand: unknown[][];
   createTerminal: unknown[][];
+  showQuickPick: unknown[][];
+  updateWorkspaceFolders: unknown[][];
+  showTextDocument: unknown[][];
 }
 
 export interface VscodeMockHandle {
@@ -65,6 +125,13 @@ export interface VscodeMockHandle {
   isTrusted: { value: boolean };
   registeredCommands: Map<string, (...args: unknown[]) => unknown>;
   fakeTerminal: { sendText: unknown[][]; show: unknown[]; dispose: unknown[] };
+  workspaceFolders: { value: Array<{ uri: FakeUri }> };
+  quickPickResult: { value: unknown };
+  configuration: { value: Record<string, unknown> };
+  diagnosticCollections: FakeDiagnosticCollection[];
+  treeViews: Map<string, { reveal: unknown[][] }>;
+  /** Set `.fn` to a rejecting function to simulate "no such document" (e.g. a missing proposal.md). */
+  openTextDocumentBehavior: { fn: (uri: FakeUri) => Promise<unknown> };
 }
 
 export function createVscodeMock(): VscodeMockHandle {
@@ -75,6 +142,9 @@ export function createVscodeMock(): VscodeMockHandle {
     openExternal: [],
     executeCommand: [],
     createTerminal: [],
+    showQuickPick: [],
+    updateWorkspaceFolders: [],
+    showTextDocument: [],
   };
   const isTrusted = { value: true };
   const registeredCommands = new Map<string, (...args: unknown[]) => unknown>();
@@ -82,6 +152,14 @@ export function createVscodeMock(): VscodeMockHandle {
     sendText: [] as unknown[][],
     show: [] as unknown[],
     dispose: [] as unknown[],
+  };
+  const workspaceFolders: { value: Array<{ uri: FakeUri }> } = { value: [] };
+  const quickPickResult: { value: unknown } = { value: undefined };
+  const configuration: { value: Record<string, unknown> } = { value: {} };
+  const diagnosticCollections: FakeDiagnosticCollection[] = [];
+  const treeViews = new Map<string, { reveal: unknown[][] }>();
+  const openTextDocumentBehavior: { fn: (uri: FakeUri) => Promise<unknown> } = {
+    fn: (uri) => Promise.resolve({ uri }),
   };
 
   const module = {
@@ -91,6 +169,10 @@ export function createVscodeMock(): VscodeMockHandle {
     ThemeColor: FakeThemeColor,
     EventEmitter: FakeEventEmitter,
     Uri: FakeUri,
+    Range: FakeRange,
+    Diagnostic: FakeDiagnostic,
+    DiagnosticSeverity: FakeDiagnosticSeverity,
+    StatusBarAlignment: FakeStatusBarAlignment,
     window: {
       showInformationMessage: (...args: unknown[]) => {
         calls.showInformationMessage.push(args);
@@ -100,6 +182,10 @@ export function createVscodeMock(): VscodeMockHandle {
         calls.showErrorMessage.push(args);
         return Promise.resolve(undefined);
       },
+      showQuickPick: (...args: unknown[]) => {
+        calls.showQuickPick.push(args);
+        return Promise.resolve(quickPickResult.value);
+      },
       createTerminal: (...args: unknown[]) => {
         calls.createTerminal.push(args);
         return {
@@ -108,7 +194,24 @@ export function createVscodeMock(): VscodeMockHandle {
           dispose: () => fakeTerminal.dispose.push(true),
         };
       },
+      createStatusBarItem: () => new FakeStatusBarItem(),
+      showTextDocument: (...args: unknown[]) => {
+        calls.showTextDocument.push(args);
+        return Promise.resolve(undefined);
+      },
       registerTreeDataProvider: () => ({ dispose: () => {} }),
+      createTreeView: (viewId: string) => {
+        const reveal: unknown[][] = [];
+        const treeView = {
+          reveal: (...args: unknown[]) => {
+            reveal.push(args);
+            return Promise.resolve(undefined);
+          },
+          dispose: () => {},
+        };
+        treeViews.set(viewId, { reveal });
+        return treeView;
+      },
     },
     env: {
       clipboard: {
@@ -136,11 +239,39 @@ export function createVscodeMock(): VscodeMockHandle {
       get isTrusted() {
         return isTrusted.value;
       },
+      get workspaceFolders() {
+        return workspaceFolders.value;
+      },
       onDidGrantWorkspaceTrust: () => ({ dispose: () => {} }),
-      getConfiguration: () => ({ get: () => undefined }),
+      getConfiguration: () => ({ get: (key: string) => configuration.value[key] }),
+      updateWorkspaceFolders: (...args: unknown[]) => {
+        calls.updateWorkspaceFolders.push(args);
+        return true;
+      },
+      registerTextDocumentContentProvider: () => ({ dispose: () => {} }),
+      openTextDocument: (uri: FakeUri) => openTextDocumentBehavior.fn(uri),
+    },
+    languages: {
+      createDiagnosticCollection: () => {
+        const collection = new FakeDiagnosticCollection();
+        diagnosticCollections.push(collection);
+        return collection;
+      },
     },
     ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
   };
 
-  return { module, calls, isTrusted, registeredCommands, fakeTerminal };
+  return {
+    module,
+    calls,
+    isTrusted,
+    registeredCommands,
+    fakeTerminal,
+    workspaceFolders,
+    quickPickResult,
+    configuration,
+    diagnosticCollections,
+    treeViews,
+    openTextDocumentBehavior,
+  };
 }

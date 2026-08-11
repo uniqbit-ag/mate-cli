@@ -114,6 +114,7 @@ abstract class MateTreeDataProvider implements vscode.TreeDataProvider<MateTreeN
 
   abstract grouping: "working-repository" | "companion";
   abstract childrenOf(node: MateTreeNode): MateTreeNode[];
+  abstract getParent(element: MateTreeNode): MateTreeNode | undefined;
 
   getChildren(element?: MateTreeNode): MateTreeNode[] {
     if (!element) return rootNodesForState(this.context.getState(), this.grouping);
@@ -129,6 +130,15 @@ export class WorkingRepositoryTreeProvider extends MateTreeDataProvider {
       ? childrenOfWorkingRepository(node, this.context.isTrusted())
       : [];
   }
+
+  /** Required for `TreeView.reveal` on a leaf pairing: finds the working-repository root that owns it. */
+  getParent(element: MateTreeNode): MateTreeNode | undefined {
+    if (element.kind !== "pairing") return undefined;
+    return rootNodesForState(this.context.getState(), this.grouping).find(
+      (node) =>
+        node.kind === "working-repository" && node.repositoryId === element.pairing.repository.id,
+    );
+  }
 }
 
 export class CompanionTreeProvider extends MateTreeDataProvider {
@@ -138,6 +148,15 @@ export class CompanionTreeProvider extends MateTreeDataProvider {
     return node.kind === "companion-group"
       ? childrenOfCompanionGroup(node, this.context.isTrusted())
       : [];
+  }
+
+  /** Required for `TreeView.reveal` on a leaf pairing: finds the companion-group root that owns it. */
+  getParent(element: MateTreeNode): MateTreeNode | undefined {
+    if (element.kind !== "pairing") return undefined;
+    return rootNodesForState(this.context.getState(), this.grouping).find(
+      (node) =>
+        node.kind === "companion-group" && node.companionPath === element.pairing.companionPath,
+    );
   }
 }
 

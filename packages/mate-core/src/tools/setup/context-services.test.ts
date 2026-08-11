@@ -14,6 +14,13 @@ const opencodePlugin = createOpenCodePlugin();
 const conciseReportingPolicy =
   "When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.";
 const jsdocBoundary = "Apply this same preference to JSDoc.";
+const rootGuidance = [
+  conciseReportingPolicy,
+  "Code comments: JSDoc format only",
+  "Never add a `Co-Authored-By: <model>` trailer",
+  "Never commit, push, or open a pull request in the working repo",
+  "Never connect to a database (local or remote)",
+];
 
 const tempRoots: string[] = [];
 
@@ -105,7 +112,7 @@ describe("ctx.templates.render", () => {
     expect(rendered.trim().length).toBeGreaterThan(0);
   });
 
-  test("provider setup renders concise reporting and JSDoc guidance in both root templates", async () => {
+  test("provider setup renders parallel root guidance without dropping policy", async () => {
     const root = await makeTempDir("mate-tpl-root-guidance-");
 
     await applySetupCompatibilities(root, configWith([], ["claude", "opencode"]), "sync", [
@@ -117,10 +124,12 @@ describe("ctx.templates.render", () => {
       fs.readFile(path.join(root, "AGENTS.md"), "utf8"),
       fs.readFile(path.join(root, "CLAUDE.md"), "utf8"),
     ]);
+    expect(agents).toBe(claude);
     for (const guidance of [agents, claude]) {
-      expect(guidance).toContain(conciseReportingPolicy);
+      for (const rule of rootGuidance) expect(guidance).toContain(rule);
       expect(guidance).toContain(jsdocBoundary);
       expect(guidance).not.toContain("smallest correct implementation");
+      expect(guidance).not.toContain("Claude Code receives");
     }
   });
 

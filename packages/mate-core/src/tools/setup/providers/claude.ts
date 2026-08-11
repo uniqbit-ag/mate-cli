@@ -16,8 +16,11 @@ import {
   upsertManagedBlock,
 } from "../context-services";
 import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "../plugin";
-import { resolveGitInfoExcludePath } from "../git-utils";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
+import {
+  ensureWorkingRepoLocalExcludes,
+  reconcileWorkingRepoCapabilityExcludes,
+} from "../working-repo-local-state";
 import {
   cutFromMarker,
   stripSectionFromFile,
@@ -59,13 +62,7 @@ async function configureClaudeGuidance(companionPath: string): Promise<void> {
   );
 }
 
-const BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES = [".claude/settings.local.json"];
-const COMPANION_GITIGNORE_ENTRIES = [...BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES, ".claude/state/"];
-// Union of all managed exclude entries — used to identify which lines we own.
-const ALL_MANAGED_EXCLUDE_ENTRIES = new Set([
-  ...BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES,
-  ...TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
-]);
+const COMPANION_GITIGNORE_ENTRIES = [".claude/settings.local.json", ".claude/state/"];
 
 // Command substrings that mark a working-repo hook group as Mate-managed.
 // The mate plugin hooks (validate-artifact-path, mate-session-banner,
@@ -151,66 +148,23 @@ function removeManagedHookGroups(
   return next;
 }
 
-export async function ensureWorkingRepoLocalExcludes(
-  workingRepoPath: string,
-  config: FrameworkConfig,
-): Promise<void> {
-  const excludePath = await resolveGitInfoExcludePath(workingRepoPath);
-  if (!excludePath) {
-    return;
-  }
-
-  const tokensaveEnabled = (config.capabilities ?? []).some((c) => c.name === "tokensave");
-  const desiredEntries = new Set([
-    ...BASE_WORKING_REPO_LOCAL_EXCLUDE_ENTRIES,
-    ...(tokensaveEnabled ? TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES : []),
-  ]);
-
-  let existing = "";
-  try {
-    existing = await fs.readFile(excludePath, "utf8");
-  } catch {
-    // Fresh repos may not have created info/exclude yet.
-  }
-
-  const lines = existing
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  // Reconcile: keep non-managed lines, add desired managed entries, remove undesired.
-  const nextLines = lines.filter((line) => !ALL_MANAGED_EXCLUDE_ENTRIES.has(line));
-  for (const entry of desiredEntries) {
-    if (!nextLines.includes(entry)) {
-      nextLines.push(entry);
-    }
-  }
-
-  const nextContent = nextLines.length > 0 ? nextLines.join("\n") + "\n" : "";
-  if (nextContent === existing) {
-    return;
-  }
-
-  await fs.mkdir(path.dirname(excludePath), { recursive: true });
-  await fs.writeFile(excludePath, nextContent, "utf8");
-}
-
-async function stripTokensaveClaudeMdAppend(workingRepoPath: string): Promise<void> {
+async function stripTokensaveClaudeMdAppend(workingRepoPath: string): Promise<boolean> {
   const claudeMdPath = path.join(workingRepoPath, "CLAUDE.md");
   let content: string;
   try {
     content = await fs.readFile(claudeMdPath, "utf8");
   } catch {
-    return;
+    return false;
   }
 
   const stripped = cutFromMarker(content, TOKENSAVE_CLAUDE_MD_MARKER);
-  if (stripped === content) return;
+  if (stripped === content) return false;
   if (stripped.length > 0) {
     await fs.writeFile(claudeMdPath, stripped, "utf8");
   } else {
     await fs.unlink(claudeMdPath);
   }
+  return true;
 }
 
 // Resolved path of the companion-owned Claude settings document. This is the
@@ -456,7 +410,15 @@ export async function syncWorkingRepoClaudeSettings(
   config: FrameworkConfig,
   globalConfigStore = new GlobalConfigStore(),
 ): Promise<void> {
-  await ensureWorkingRepoLocalExcludes(workingRepoPath, config);
+  await ensureWorkingRepoLocalExcludes(workingRepoPath);
+  const tokensaveEnabled = (config.capabilities ?? []).some(
+    (capability) => capability.name === "tokensave",
+  );
+  await reconcileWorkingRepoCapabilityExcludes(
+    workingRepoPath,
+    tokensaveEnabled ? TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES : [],
+    TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
+  );
   await syncWorkingRepoClaudeAdditionalDirectories(
     workingRepoPath,
     companionPath,
@@ -505,6 +467,56 @@ async function syncWorkingRepoClaudeAdditionalDirectories(
   };
 
   await writeClaudeSettings(settingsPath, settings);
+}
+
+export async function cleanupWorkingRepoClaudeSettings(
+  workingRepoPath: string,
+  registeredCompanionPaths: string[],
+): Promise<boolean> {
+  const settingsPath = path.join(workingRepoPath, ".claude", "settings.local.json");
+  let existing: ClaudeSettings;
+  try {
+    const parsed = JSON.parse(await fs.readFile(settingsPath, "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object") return stripTokensaveClaudeMdAppend(workingRepoPath);
+    existing = parsed as ClaudeSettings;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return stripTokensaveClaudeMdAppend(workingRepoPath);
+    }
+    return false;
+  }
+
+  const settings = removeManagedHookGroups(existing);
+  const permissions = { ...settings.permissions };
+  const managedPaths = new Set(
+    registeredCompanionPaths.map((candidate) => path.resolve(candidate)),
+  );
+  const currentDirectories = Array.isArray(permissions.additionalDirectories)
+    ? permissions.additionalDirectories
+    : [];
+  const additionalDirectories = currentDirectories.filter(
+    (candidate) => !managedPaths.has(path.resolve(candidate)),
+  );
+  if (additionalDirectories.length > 0) {
+    permissions.additionalDirectories = additionalDirectories;
+  } else {
+    delete permissions.additionalDirectories;
+  }
+  if (Object.keys(permissions).length > 0) {
+    settings.permissions = permissions;
+  } else {
+    delete settings.permissions;
+  }
+
+  const settingsChanged = JSON.stringify(settings) !== JSON.stringify(existing);
+  if (settingsChanged && Object.keys(settings).length === 0) {
+    await fs.unlink(settingsPath);
+    await pruneEmptyAncestors(path.join(workingRepoPath, ".claude"), workingRepoPath);
+  } else if (settingsChanged) {
+    await writeClaudeSettings(settingsPath, settings);
+  }
+  const guidanceChanged = await stripTokensaveClaudeMdAppend(workingRepoPath);
+  return settingsChanged || guidanceChanged;
 }
 
 async function configureClaude(companionPath: string): Promise<void> {

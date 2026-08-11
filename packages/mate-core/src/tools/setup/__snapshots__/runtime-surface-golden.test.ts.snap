@@ -3497,7 +3497,12 @@ User notes.
 "
 ,
   "gitExclude": 
-".claude/settings.local.json
+"# mate managed: start
+/.mate/
+/.claude/
+/.opencode/
+/.agents/
+# mate managed: end
 .tokensave/
 "
 ,
@@ -3537,7 +3542,12 @@ User notes.
 "
 ,
   "gitExclude": 
-".claude/settings.local.json
+"# mate managed: start
+/.mate/
+/.claude/
+/.opencode/
+/.agents/
+# mate managed: end
 "
 ,
   "settingsLocal": {

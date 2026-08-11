@@ -5,12 +5,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import {
   createClaudePlugin,
-  ensureWorkingRepoLocalExcludes,
   getCompanionClaudeMcpConfigPath,
   getCompanionClaudeSettingsPath,
   syncCompanionClaudeSettings,
   syncWorkingRepoClaudeSettings,
 } from "./claude";
+import {
+  ensureWorkingRepoLocalExcludes,
+  reconcileWorkingRepoCapabilityExcludes,
+} from "../working-repo-local-state";
 import { getWrapperBinPath } from "../../../lib/package-paths";
 import { createContextModePlugin } from "../capabilities/context-mode";
 import { createGraphifyPlugin } from "../capabilities/graphify";
@@ -683,25 +686,21 @@ describe("Claude provider apply (mate hook migration)", () => {
 });
 
 describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
-  test("adds .claude/settings.local.json to repo-local git exclude", async () => {
+  test("adds agent directories to the repo-local managed exclude block", async () => {
     const workingRepoPath = await makeTempDir("mate-claude-settings-exclude-");
     await fs.mkdir(path.join(workingRepoPath, ".git", "info"), {
       recursive: true,
     });
 
-    await ensureWorkingRepoLocalExcludes(workingRepoPath, {
-      allowedAgents: ["claude"],
-      capabilities: [],
-    });
+    await ensureWorkingRepoLocalExcludes(workingRepoPath);
 
     const excludePath = path.join(workingRepoPath, ".git", "info", "exclude");
     const exclude = await fs.readFile(excludePath, "utf8");
-    expect(exclude).toContain(".claude/settings.local.json\n");
+    expect(exclude).toContain("/.claude/\n");
+    expect(exclude).toContain("/.opencode/\n");
+    expect(exclude).toContain("/.agents/\n");
 
-    await ensureWorkingRepoLocalExcludes(workingRepoPath, {
-      allowedAgents: ["claude"],
-      capabilities: [],
-    });
+    await ensureWorkingRepoLocalExcludes(workingRepoPath);
     const secondPassExclude = await fs.readFile(excludePath, "utf8");
     expect(secondPassExclude).toBe(exclude);
   });
@@ -712,16 +711,14 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
       recursive: true,
     });
 
-    await ensureWorkingRepoLocalExcludes(workingRepoPath, {
-      allowedAgents: ["claude"],
-      capabilities: [{ name: "tokensave" }],
-    });
+    await ensureWorkingRepoLocalExcludes(workingRepoPath);
+    await reconcileWorkingRepoCapabilityExcludes(workingRepoPath, [".tokensave/"], [".tokensave/"]);
 
     const exclude = await fs.readFile(
       path.join(workingRepoPath, ".git", "info", "exclude"),
       "utf8",
     );
-    expect(exclude).toContain(".claude/settings.local.json\n");
+    expect(exclude).toContain("/.claude/\n");
     expect(exclude).toContain(".tokensave/\n");
   });
 
@@ -731,13 +728,10 @@ describe("syncWorkingRepoClaudeSettings (working-repo cleanup)", () => {
     await fs.mkdir(path.join(gitDir, "info"), { recursive: true });
     await fs.writeFile(path.join(workingRepoPath, ".git"), "gitdir: .worktrees/repo-git\n", "utf8");
 
-    await ensureWorkingRepoLocalExcludes(workingRepoPath, {
-      allowedAgents: ["claude"],
-      capabilities: [],
-    });
+    await ensureWorkingRepoLocalExcludes(workingRepoPath);
 
     const exclude = await fs.readFile(path.join(gitDir, "info", "exclude"), "utf8");
-    expect(exclude).toContain(".claude/settings.local.json\n");
+    expect(exclude).toContain("/.claude/\n");
   });
 
   test("removes obsolete Mate hooks and prunes empty hook containers", async () => {
