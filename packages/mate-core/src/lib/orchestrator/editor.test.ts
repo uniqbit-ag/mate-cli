@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { execFileSync, spawn } from "node:child_process";
+import type { spawn } from "node:child_process";
 import type { EventEmitter } from "node:events";
-import type { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -47,39 +46,6 @@ describe("editor helpers", () => {
     expect(editor.getPreferredEditorCli({ VSCODE_IPC_HOOK: "/tmp/vscode-ipc" })).toBe("code");
   });
 
-  test("returns a tri-state result from editor status output", () => {
-    spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
-    const workspacePath = "/tmp/repo/.mate/workspace.code-workspace";
-    const statusProcess = (() => Buffer.from("status ok")) as unknown as typeof execFileSync;
-    const openStorage = (() =>
-      Buffer.from(
-        JSON.stringify({
-          windowsState: {
-            openedWindows: [
-              {
-                workspaceIdentifier: {
-                  configURIPath: "file:///tmp/repo/.mate/workspace.code-workspace",
-                },
-              },
-            ],
-          },
-        }),
-      )) as unknown as typeof readFileSync;
-
-    expect(
-      editor.detectEditorWorkspaceState(workspacePath, "code", statusProcess, openStorage),
-    ).toBe("open");
-    expect(
-      editor.detectEditorWorkspaceState(workspacePath, "code", statusProcess, (() =>
-        Buffer.from('{"windowsState":{"openedWindows":[]}}')) as unknown as typeof readFileSync),
-    ).toBe("not-open");
-    expect(
-      editor.detectEditorWorkspaceState(workspacePath, "code", (() => {
-        throw new Error("status unavailable");
-      }) as unknown as typeof execFileSync),
-    ).toBe("undetermined");
-  });
-
   describe("injectEditorFolder", () => {
     test("writes guidance and returns false when the editor CLI is unavailable", async () => {
       spyOn(editor, "resolveEditorBinary").mockReturnValue(null);
@@ -119,18 +85,9 @@ describe("editor helpers", () => {
       await fs.mkdir(repoPath, { recursive: true });
       await fs.mkdir(companionPath, { recursive: true });
 
-      expect(
-        await editor.injectEditorFolder(
-          companionPath,
-          repoPath,
-          "code",
-          spawnProcess,
-          (_workspacePath, cli) => {
-            expect(cli).toBe("code-insiders");
-            return "not-open";
-          },
-        ),
-      ).toBe(true);
+      expect(await editor.injectEditorFolder(companionPath, repoPath, "code", spawnProcess)).toBe(
+        true,
+      );
 
       expect(spawnCalls).toEqual([
         {
@@ -140,7 +97,7 @@ describe("editor helpers", () => {
       ]);
     });
 
-    test("writes workspace metadata and falls back to --add when the workspace is not open", async () => {
+    test("writes workspace metadata and adds both folders to the current editor window", async () => {
       spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
       const spawnCalls: Array<{ command: string; args: string[]; options: object }> = [];
       const spawnProcess = ((command: string, args: string[], options: object) => {
@@ -156,15 +113,9 @@ describe("editor helpers", () => {
       await fs.mkdir(repoPath, { recursive: true });
       await fs.mkdir(companionPath, { recursive: true });
 
-      expect(
-        await editor.injectEditorFolder(
-          companionPath,
-          repoPath,
-          "code",
-          spawnProcess,
-          () => "not-open",
-        ),
-      ).toBe(true);
+      expect(await editor.injectEditorFolder(companionPath, repoPath, "code", spawnProcess)).toBe(
+        true,
+      );
 
       expect(JSON.parse(await fs.readFile(editor.editorWorkspacePath(repoPath), "utf8"))).toEqual({
         folders: [{ path: repoPath }, { path: companionPath }],
@@ -178,33 +129,7 @@ describe("editor helpers", () => {
       ]);
     });
 
-    test("writes workspace metadata without spawning --add when the workspace is open", async () => {
-      spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
-      const spawnProcess = mock(() => {
-        throw new Error("spawn should not be called");
-      }) as unknown as typeof spawn;
-      const root = await makeTempDir("editor-inject-open-");
-      const repoPath = path.join(root, "repo");
-      const companionPath = path.join(root, "companion");
-      await fs.mkdir(repoPath, { recursive: true });
-      await fs.mkdir(companionPath, { recursive: true });
-
-      expect(
-        await editor.injectEditorFolder(
-          companionPath,
-          repoPath,
-          "code",
-          spawnProcess,
-          () => "open",
-        ),
-      ).toBe(true);
-
-      expect(JSON.parse(await fs.readFile(editor.editorWorkspacePath(repoPath), "utf8"))).toEqual({
-        folders: [{ path: repoPath }, { path: companionPath }],
-      });
-    });
-
-    test("falls back to --add when workspace detection is undetermined", async () => {
+    test("adds both folders even when the persistent workspace is already open", async () => {
       spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
       const spawnCalls: string[][] = [];
       const spawnProcess = ((command: string, args: string[]) => {
@@ -214,20 +139,19 @@ describe("editor helpers", () => {
           unref: () => undefined,
         } as unknown as EventEmitter & { unref(): void };
       }) as typeof spawn;
-      const root = await makeTempDir("editor-inject-unknown-");
+      const root = await makeTempDir("editor-inject-open-");
       const repoPath = path.join(root, "repo");
       const companionPath = path.join(root, "companion");
       await fs.mkdir(repoPath, { recursive: true });
       await fs.mkdir(companionPath, { recursive: true });
 
-      await editor.injectEditorFolder(
-        companionPath,
-        repoPath,
-        "code",
-        spawnProcess,
-        () => "undetermined",
+      expect(await editor.injectEditorFolder(companionPath, repoPath, "code", spawnProcess)).toBe(
+        true,
       );
 
+      expect(JSON.parse(await fs.readFile(editor.editorWorkspacePath(repoPath), "utf8"))).toEqual({
+        folders: [{ path: repoPath }, { path: companionPath }],
+      });
       expect(spawnCalls).toEqual([["/usr/bin/code", "--add", repoPath, companionPath]]);
     });
   });

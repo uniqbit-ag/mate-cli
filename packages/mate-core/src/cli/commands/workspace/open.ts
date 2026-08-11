@@ -17,8 +17,8 @@ export const workspaceOpenCommandDeps = {
 /**
  * @command mate companion open
  * @description Updates the managed `.mate/workspace.code-workspace` file for
- * the active working repository and companion. When that workspace is open,
- * the editor reloads it in place; otherwise the command falls back to `--add`.
+ * the active working repository and companion, then adds both folders to the
+ * current editor window via `--add`.
  * @remarks Throws if the active repository (from `MATE_REPO_ID`) isn't found
  * in the registry; sets a non-zero exit code if the editor CLI is unavailable,
  * or if the working repo is linked from multiple companions and the ambiguity
@@ -59,5 +59,7 @@ export async function runWorkspaceOpenCommand(): Promise<void> {
     return;
   }
 
-  console.log('Workspace: updated .mate/workspace.code-workspace; open it via "Open Workspace"');
+  console.log(
+    "Workspace: added to the current editor window; persistent file at .mate/workspace.code-workspace",
+  );
 }
