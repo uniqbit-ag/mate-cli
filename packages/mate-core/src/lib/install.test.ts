@@ -226,6 +226,40 @@ describe("install execution and state", () => {
     expect(preflight.ok).toBe(true);
   });
 
+  test("hub contents do not invalidate install state", async () => {
+    const root = await tempRoot();
+    const configDir = path.join(root, ".mate", "config");
+    const configPath = path.join(configDir, "framework.yaml");
+    const store = new InstallStateStore(path.join(root, "install-state.yaml"));
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(
+      configPath,
+      ["type: hub", "allowedAgents: []", "hub:", "  companions: []", ""].join("\n"),
+    );
+    const context = await resolveInstallContext(root);
+    const plan = buildInstallPlan(context);
+    await saveCompleteInstallState(plan, [], store);
+
+    await fs.writeFile(
+      configPath,
+      [
+        "type: hub",
+        "allowedAgents: []",
+        "hub:",
+        "  companions:",
+        "    - id: acme",
+        "      path: companions/acme",
+        "      source:",
+        "        kind: local",
+        "        path: ../acme",
+        "",
+      ].join("\n"),
+    );
+
+    const preflight = await inspectInstallPreflight(root, { stateStore: store });
+    expect(preflight.ok).toBe(true);
+  });
+
   test("keeps install state separate for multiple companions", async () => {
     const root = await tempRoot();
     const stateRoot = path.join(root, "install-state");
