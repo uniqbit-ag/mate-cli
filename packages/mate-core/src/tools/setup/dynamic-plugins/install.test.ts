@@ -172,23 +172,45 @@ describe("installDeclaredPlugins", () => {
     ]);
   });
 
-  test("npm update only targets the latest-declared subset", async () => {
-    const companionPath = await makeTempDir("plugin-install-latest-subset-");
+  test("canary re-resolves via npm update on every run, even when nothing else changed", async () => {
+    const companionPath = await makeTempDir("plugin-install-canary-");
+    const decl = declaration({ version: "canary" });
+    await installDeclaredPlugins(companionPath, [decl], {
+      runNpmInstall: fakeNpmInstall(() => "1.2.0-canary.0").runner,
+    });
+
+    const install = fakeNpmInstall(() => "1.2.0-canary.0");
+    const update = fakeNpmUpdate(() => "1.3.0-canary.0");
+    const results = await installDeclaredPlugins(companionPath, [decl], {
+      runNpmInstall: install.runner,
+      runNpmUpdate: update.runner,
+    });
+
+    expect(update.calls).toEqual([["@acme/custom-plugin"]]);
+    expect(results).toEqual([
+      { package: "@acme/custom-plugin", status: "installed", resolvedVersion: "1.3.0-canary.0" },
+    ]);
+  });
+
+  test("npm update only targets the moving-tag-declared subset", async () => {
+    const companionPath = await makeTempDir("plugin-install-moving-subset-");
     const pinned = declaration({ package: "@acme/pinned", version: "^1.0.0" });
     const latest = declaration({ package: "@acme/latest", version: "latest" });
-    await installDeclaredPlugins(companionPath, [pinned, latest], {
+    const canary = declaration({ package: "@acme/canary", version: "canary" });
+    await installDeclaredPlugins(companionPath, [pinned, latest, canary], {
       runNpmInstall: fakeNpmInstall(() => "1.0.0").runner,
     });
 
     const install = fakeNpmInstall(() => "1.0.0");
     const update = fakeNpmUpdate(() => "1.1.0");
-    const results = await installDeclaredPlugins(companionPath, [pinned, latest], {
+    const results = await installDeclaredPlugins(companionPath, [pinned, latest, canary], {
       runNpmInstall: install.runner,
       runNpmUpdate: update.runner,
     });
 
-    expect(update.calls).toEqual([["@acme/latest"]]);
+    expect(update.calls).toEqual([["@acme/canary", "@acme/latest"]]);
     expect(results).toEqual([
+      { package: "@acme/canary", status: "installed", resolvedVersion: "1.1.0" },
       { package: "@acme/latest", status: "installed", resolvedVersion: "1.1.0" },
       { package: "@acme/pinned", status: "installed", resolvedVersion: "1.0.0" },
     ]);
