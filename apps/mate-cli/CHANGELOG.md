@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.15.5](https://github.com/uniqbit-ag/mate-cli/compare/0.15.4...0.15.5) (2026-08-12)
+
+## [0.15.5-canary.4](https://github.com/uniqbit-ag/mate-cli/compare/0.15.4...0.15.5) (2026-08-12)
+
+### Features
+
+- add local package packing workflow ([1261874](https://github.com/uniqbit-ag/mate-cli/commit/1261874c849b0c8c5a95a26c7f9e0ff49a51f255))
+
+### Bug Fixes
+
+- gitignore settings.local.json.bak in companion setup ([3d9f6fe](https://github.com/uniqbit-ag/mate-cli/commit/3d9f6fe6bab10ca7ccbf7a67433b43f35f4a064c))
+
+## [0.15.5-canary.3](https://github.com/uniqbit-ag/mate-cli/compare/0.15.4...0.15.5) (2026-08-11)
+
+### Bug Fixes
+
+- dispatch hub-scoped capability setup hooks ([88ee075](https://github.com/uniqbit-ag/mate-cli/commit/88ee075aa3ded12f69a8ccbaa3f4e13aaa558fdb))
+
+## [0.15.5-canary.2](https://github.com/uniqbit-ag/mate-cli/compare/0.15.4...0.15.5) (2026-08-11)
+
+### Features
+
+- re-resolve canary plugin versions on every install ([dbfdce6](https://github.com/uniqbit-ag/mate-cli/commit/dbfdce685dd4dd41c3ad2bf87e25c4d248b2960b))
+
+### Bug Fixes
+
+- narrow managed MCP gitignore entry ([99fde4b](https://github.com/uniqbit-ag/mate-cli/commit/99fde4b7d7995a3ba1026329715a68436bfac0b8))
+- restore companion workspace injection ([8711c96](https://github.com/uniqbit-ag/mate-cli/commit/8711c964bbd8558274db44d5facdbf8e8957f99d))
+
+## [0.15.5-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.15.4...0.15.5) (2026-08-11)
+
+### Features
+
+- add workspace list/materialize commands and mate-vscode extension ([2ebf515](https://github.com/uniqbit-ag/mate-cli/commit/2ebf515a551dc9a37dfa01fe45d8d5f449dd1a79))
+- expand workspace and OpenSpec tooling ([55bba6f](https://github.com/uniqbit-ag/mate-cli/commit/55bba6f802f9afba76e66845da25cce81ef24fdb))
+
+### Bug Fixes
+
+- **openspec:** reconcile canonical frontmatter on finish ([3f87bb7](https://github.com/uniqbit-ag/mate-cli/commit/3f87bb7a081a67114849be7d2a713a3ffbfb06ea))
+
+## [0.15.5-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.15.4...0.15.5) (2026-08-06)
+
+### Features
+
+- distinguish canonical spec frontmatter ([61f15bc](https://github.com/uniqbit-ag/mate-cli/commit/61f15bcc2dd675e66bd9891eae3ec36db75609f4))
+- refine OpenSpec scope guidance ([2e21492](https://github.com/uniqbit-ag/mate-cli/commit/2e2149210a1cd5e3f744d9a5994a24b7201988e4))
+
 ## [0.15.4](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-05)
 
 ## [0.15.4-canary.12](https://github.com/uniqbit-ag/mate-cli/compare/0.15.3...0.15.4) (2026-08-05)
