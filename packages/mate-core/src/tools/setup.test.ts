@@ -1540,6 +1540,7 @@ describe("updateProjectGitignore", () => {
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain(".claude/settings.local.json");
+    expect(gitignore).toContain(".claude/settings.local.json.bak");
     expect(gitignore).toContain(".claude/state/");
   });
 

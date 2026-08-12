@@ -62,7 +62,11 @@ async function configureClaudeGuidance(companionPath: string): Promise<void> {
   );
 }
 
-const COMPANION_GITIGNORE_ENTRIES = [".claude/settings.local.json", ".claude/state/"];
+const COMPANION_GITIGNORE_ENTRIES = [
+  ".claude/settings.local.json",
+  ".claude/settings.local.json.bak",
+  ".claude/state/",
+];
 
 // Command substrings that mark a working-repo hook group as Mate-managed.
 // The mate plugin hooks (validate-artifact-path, mate-session-banner,
