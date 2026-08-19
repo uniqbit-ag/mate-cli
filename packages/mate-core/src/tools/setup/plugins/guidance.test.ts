@@ -33,6 +33,15 @@ afterEach(async () => {
 });
 
 describe("refreshFromTemplate", () => {
+  test("Claude template imports shared AGENTS guidance", async () => {
+    const template = await fs.readFile(
+      path.resolve(import.meta.dirname, "../../../templates/root/TEMPLATE_CLAUDE.md"),
+      "utf8",
+    );
+
+    expect(template).toBe("@AGENTS.md\n");
+  });
+
   test("copies template when file does not exist", async () => {
     const root = await makeTempDir("mate-refresh-create-");
     const templatePath = await writeTemplate(root);

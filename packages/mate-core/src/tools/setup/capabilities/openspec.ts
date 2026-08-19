@@ -163,12 +163,12 @@ async function reconcileOpenSpecTools(
   }
 }
 
-async function warnIfOpenSpecOutdated(
+async function updateOpenSpecIfOutdated(
   ctx: SetupContext,
   deps: Required<
     Pick<
       OpenSpecPluginDeps,
-      "installCommand" | "confirm" | "pathValue" | "getInstalledVersion" | "fetchLatestVersion"
+      "installCommand" | "pathValue" | "getInstalledVersion" | "fetchLatestVersion"
     >
   >,
 ): Promise<void> {
@@ -178,21 +178,9 @@ async function warnIfOpenSpecOutdated(
   const latest = await deps.fetchLatestVersion();
   if (!latest || !isNewer(latest, installed)) return;
 
-  if (ctx.mode !== "setup") {
-    process.stderr.write(
-      `openspec: installed version ${installed} is outdated (latest ${latest}). Run \`${OPENSPEC_INSTALL_COMMAND}\` to upgrade.\n`,
-    );
-    return;
-  }
-
   process.stdout.write(
-    `openspec: installed version ${installed} is outdated (latest ${latest}).\n  ${OPENSPEC_INSTALL_COMMAND}\n`,
+    `openspec: installed version ${installed} is outdated (latest ${latest}). Updating now:\n  ${OPENSPEC_INSTALL_COMMAND}\n`,
   );
-  const ok = await deps.confirm("Upgrade openspec now?");
-  if (!ok) {
-    process.stderr.write("openspec: upgrade skipped - continuing with the installed version\n");
-    return;
-  }
 
   try {
     await deps.installCommand("npm", ["install", "-g", "@fission-ai/openspec@latest"], {
@@ -218,7 +206,7 @@ async function ensureOpenSpecInstalled(
   >,
 ): Promise<boolean> {
   if (deps.isCommandOnPath("openspec", deps.pathValue())) {
-    await warnIfOpenSpecOutdated(ctx, deps);
+    await updateOpenSpecIfOutdated(ctx, deps);
     return true;
   }
 
