@@ -128,7 +128,7 @@ describe("createOpenspecPlugin", () => {
     );
   });
 
-  test("setup prompts and upgrades when the installed openspec is outdated", async () => {
+  test("setup automatically upgrades when the installed openspec is outdated", async () => {
     const runCommand = mock(async () => {});
     const installCommand = mock(async () => {});
     const confirm = mock(async () => true);
@@ -151,7 +151,7 @@ describe("createOpenspecPlugin", () => {
       stdoutSpy.mockRestore();
     }
 
-    expect(confirm).toHaveBeenCalledWith("Upgrade openspec now?");
+    expect(confirm).not.toHaveBeenCalled();
     expect(installCommand).toHaveBeenCalledWith(
       "npm",
       ["install", "-g", "@fission-ai/openspec@latest"],
@@ -164,13 +164,14 @@ describe("createOpenspecPlugin", () => {
     );
   });
 
-  test("setup skips the upgrade when the user declines", async () => {
+  test("setup continues with the installed version when the automatic upgrade fails", async () => {
     const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
     const confirm = mock(async () => false);
     const plugin = createOpenspecPlugin({
       runCommand,
-      installCommand,
+      installCommand: mock(async () => {
+        throw new Error("install failed");
+      }),
       confirm,
       isCommandOnPath: (command) => command === "openspec",
       getInstalledVersion: async () => "1.2.0",
@@ -180,12 +181,12 @@ describe("createOpenspecPlugin", () => {
     const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("upgrade skipped"));
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("upgrade failed"));
     } finally {
       stderrSpy.mockRestore();
     }
 
-    expect(installCommand).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
     expect(runCommand).toHaveBeenCalledWith(
       "openspec",
       ["init", "--tools", "claude", "--force", "/tmp/companion"],
@@ -193,9 +194,14 @@ describe("createOpenspecPlugin", () => {
     );
   });
 
-  test("sync warns without prompting when the installed openspec is outdated", async () => {
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
+  test("sync automatically upgrades openspec before reconciliation", async () => {
+    const events: string[] = [];
+    const runCommand = mock(async (_command: string, args: string[]) => {
+      events.push(args[0]);
+    });
+    const installCommand = mock(async () => {
+      events.push("npm install");
+    });
     const confirm = mock(async () => true);
     const plugin = createOpenspecPlugin({
       runCommand,
@@ -209,15 +215,17 @@ describe("createOpenspecPlugin", () => {
     const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await plugin.apply(makeCtx("/tmp/companion", ["claude"], [{ name: "openspec" }], "sync"));
-      expect(stderrSpy).toHaveBeenCalledWith(
-        expect.stringContaining("installed version 1.2.0 is outdated (latest 1.6.0)"),
-      );
     } finally {
       stderrSpy.mockRestore();
     }
 
     expect(confirm).not.toHaveBeenCalled();
-    expect(installCommand).not.toHaveBeenCalled();
+    expect(installCommand).toHaveBeenCalledWith(
+      "npm",
+      ["install", "-g", "@fission-ai/openspec@latest"],
+      { cwd: "/tmp/companion" },
+    );
+    expect(events).toEqual(["npm install", "config", "init", "update"]);
   });
 
   test("does not prompt when the installed openspec version is current", async () => {
