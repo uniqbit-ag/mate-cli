@@ -160,7 +160,8 @@ test("passes through ambiguity diagnostics from the resolver", async () => {
 
   const context = await resolveRootContext(working, { globalConfigStore: globalStoreIn(root) });
 
-  expect(context.origin).toBe("registry");
+  expect(context.origin).toBe("local");
+  expect(context.rootPath).toBe(working);
   expect(context.resolution.ambiguousMatches).toHaveLength(2);
 });
 

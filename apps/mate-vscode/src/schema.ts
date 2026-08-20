@@ -8,6 +8,8 @@
 
 export const SUPPORTED_INVENTORY_SCHEMA_VERSION = 1;
 export const SUPPORTED_MATERIALIZED_SCHEMA_VERSION = 1;
+export const SUPPORTED_SESSION_ENVELOPE_SCHEMA_VERSION = 1;
+export const SUPPORTED_SESSION_ENVELOPE_RESOLUTION_SCHEMA_VERSION = 1;
 
 export type CompanionHealth = "ready" | "missing" | "unreadable";
 export type PairingHealth = "ready" | "missing-companion" | "missing-repository" | "unreadable";
@@ -36,6 +38,41 @@ export interface MaterializedWorkspaceV1 {
   schemaVersion: 1;
   workspacePath: string;
   folders: [string, string];
+}
+
+export interface SessionEnvelopeCandidateV1 {
+  schemaVersion: 1;
+  repository: { id: string; path: string };
+  companionPath: string;
+}
+
+export interface SessionEnvelopeCapabilityV1 {
+  name: string;
+  schemaProfile?: string;
+}
+
+export interface SessionEnvelopeV1 {
+  schemaVersion: 1;
+  host: string;
+  repositoryLink: SessionEnvelopeCandidateV1;
+  workingRepositoryPath: string;
+  companionRepositoryPath: string;
+  capabilities: SessionEnvelopeCapabilityV1[];
+  renderedGuidance: string;
+  permittedRoots: string[];
+}
+
+export interface SessionEnvelopeDiagnosticV1 {
+  code: string;
+  message: string;
+  candidates: SessionEnvelopeCandidateV1[];
+}
+
+export interface SessionEnvelopeResolutionV1 {
+  schemaVersion: 1;
+  status: "resolved" | "diagnostic";
+  envelope?: SessionEnvelopeV1;
+  diagnostics: SessionEnvelopeDiagnosticV1[];
 }
 
 export class InvalidMateResponseError extends Error {}
@@ -67,6 +104,70 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function validateSessionEnvelopeCandidate(entry: unknown): SessionEnvelopeCandidateV1 {
+  if (!isRecord(entry) || entry.schemaVersion !== SUPPORTED_SESSION_ENVELOPE_SCHEMA_VERSION) {
+    throw new InvalidMateResponseError("Invalid Session Envelope candidate schema version.");
+  }
+  if (!isRecord(entry.repository)) {
+    throw new InvalidMateResponseError("Session Envelope candidate is missing a repository.");
+  }
+  const repository = entry.repository;
+  if (
+    !isNonEmptyString(entry.companionPath) ||
+    !isNonEmptyString(repository.id) ||
+    !isNonEmptyString(repository.path)
+  ) {
+    throw new InvalidMateResponseError(
+      "Session Envelope candidate is missing a path or repository.",
+    );
+  }
+  return {
+    schemaVersion: 1,
+    companionPath: entry.companionPath,
+    repository: { id: repository.id, path: repository.path },
+  };
+}
+
+function validateSessionEnvelope(entry: unknown): SessionEnvelopeV1 {
+  if (!isRecord(entry) || entry.schemaVersion !== SUPPORTED_SESSION_ENVELOPE_SCHEMA_VERSION) {
+    throw new InvalidMateResponseError("Invalid Session Envelope schema version.");
+  }
+  const { host, workingRepositoryPath, companionRepositoryPath, renderedGuidance, permittedRoots } =
+    entry;
+  if (
+    !isNonEmptyString(host) ||
+    !isNonEmptyString(workingRepositoryPath) ||
+    !isNonEmptyString(companionRepositoryPath) ||
+    typeof renderedGuidance !== "string" ||
+    !Array.isArray(permittedRoots) ||
+    !permittedRoots.every(isNonEmptyString) ||
+    !Array.isArray(entry.capabilities)
+  ) {
+    throw new InvalidMateResponseError("Session Envelope is missing required context fields.");
+  }
+  const capabilities = entry.capabilities.map((capability) => {
+    if (!isRecord(capability) || !isNonEmptyString(capability.name)) {
+      throw new InvalidMateResponseError("Session Envelope contains an invalid capability.");
+    }
+    return {
+      name: capability.name,
+      ...(typeof capability.schemaProfile === "string"
+        ? { schemaProfile: capability.schemaProfile }
+        : {}),
+    };
+  });
+  return {
+    schemaVersion: 1,
+    host,
+    repositoryLink: validateSessionEnvelopeCandidate(entry.repositoryLink),
+    workingRepositoryPath,
+    companionRepositoryPath,
+    capabilities,
+    renderedGuidance,
+    permittedRoots: [...permittedRoots],
+  };
 }
 
 function parseJson(raw: string, contractName: string): unknown {
@@ -188,4 +289,59 @@ export function parseMaterializedWorkspace(raw: string): MaterializedWorkspaceV1
   }
 
   return { schemaVersion: 1, workspacePath, folders: [folders[0], folders[1]] };
+}
+
+/** Validates one `mate workspace resolve --json` response. */
+export function parseSessionEnvelopeResolution(raw: string): SessionEnvelopeResolutionV1 {
+  const data = parseJson(raw, "Session Envelope resolution");
+  if (!isRecord(data)) {
+    throw new InvalidMateResponseError("Session Envelope resolution was not a JSON object.");
+  }
+  if (data.schemaVersion !== SUPPORTED_SESSION_ENVELOPE_RESOLUTION_SCHEMA_VERSION) {
+    throw new UnsupportedSchemaVersionError(
+      data.schemaVersion,
+      SUPPORTED_SESSION_ENVELOPE_RESOLUTION_SCHEMA_VERSION,
+      "Session Envelope resolution",
+    );
+  }
+  if (data.status !== "resolved" && data.status !== "diagnostic") {
+    throw new InvalidMateResponseError("Session Envelope resolution has an unknown status.");
+  }
+  if (!Array.isArray(data.diagnostics)) {
+    throw new InvalidMateResponseError("Session Envelope resolution is missing diagnostics.");
+  }
+  const diagnostics = data.diagnostics.map((diagnostic) => {
+    if (
+      !isRecord(diagnostic) ||
+      !isNonEmptyString(diagnostic.code) ||
+      !isNonEmptyString(diagnostic.message) ||
+      !Array.isArray(diagnostic.candidates)
+    ) {
+      throw new InvalidMateResponseError(
+        "Session Envelope resolution contains an invalid diagnostic.",
+      );
+    }
+    return {
+      code: diagnostic.code,
+      message: diagnostic.message,
+      candidates: diagnostic.candidates.map(validateSessionEnvelopeCandidate),
+    };
+  });
+  const envelope = data.envelope === undefined ? undefined : validateSessionEnvelope(data.envelope);
+  if (data.status === "resolved" && !envelope) {
+    throw new InvalidMateResponseError(
+      "Resolved Session Envelope response is missing its envelope.",
+    );
+  }
+  if (data.status === "diagnostic" && envelope) {
+    throw new InvalidMateResponseError(
+      "Diagnostic Session Envelope response must not contain an envelope.",
+    );
+  }
+  return {
+    schemaVersion: 1,
+    status: data.status,
+    ...(envelope ? { envelope } : {}),
+    diagnostics,
+  };
 }

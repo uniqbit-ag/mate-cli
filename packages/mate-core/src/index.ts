@@ -55,3 +55,17 @@ export type {
   PluginDeclaration,
   PluginDeclarationPolicy,
 } from "./lib/orchestrator/types";
+export {
+  defaultSessionEnvelopeDeps,
+  resolveSessionEnvelope,
+  SESSION_ENVELOPE_RESOLUTION_SCHEMA_VERSION,
+  SESSION_ENVELOPE_SCHEMA_VERSION,
+  type SessionEnvelope,
+  type SessionEnvelopeCandidate,
+  type SessionEnvelopeDeps,
+  type SessionEnvelopeDiagnostic,
+  type SessionEnvelopeDiagnosticCode,
+  type SessionEnvelopeRequest,
+  type SessionEnvelopeResolution,
+  type SessionEnvelopeSelection,
+} from "./lib/orchestrator/session-envelope";

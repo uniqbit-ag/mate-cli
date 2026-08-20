@@ -244,7 +244,7 @@ describe("CompanionResolver", () => {
 
       const result = await new CompanionResolver(globalStore).resolveWithDiagnostics(repoPath);
 
-      expect(result.match).not.toBeNull();
+      expect(result.match).toBeNull();
       expect(result.ambiguousMatches).toHaveLength(2);
       expect(result.ambiguousMatches.map((m) => m.companionPath).sort()).toEqual(
         [path.resolve(companionA), path.resolve(companionB)].sort(),

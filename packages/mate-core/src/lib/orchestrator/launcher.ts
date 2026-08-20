@@ -1,17 +1,23 @@
 // oxlint-disable no-underscore-dangle
+import path from "node:path";
+
 import { syncCompanionFiles, syncWorkingRepoClaudeSettings } from "../../tools/setup";
 import { getActiveDistribution } from "../../distribution";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
 import type { LaunchAdapter, AdapterContext } from "./adapters/base";
 import { ClaudeAdapter } from "./adapters/claude";
 import { OpenCodeAdapter } from "./adapters/opencode";
+import { CompanionRegistryStore } from "./companion-registry-store";
 import { CompanionStore } from "./companion-store";
+import { ConfigStore } from "./config-store";
 import { syncCompanionGit } from "./companion-git-sync";
-import { resolveForLaunch, type LaunchContext } from "./framework-context";
+import { resolveSessionEnvelope, type SessionEnvelopeSelection } from "./session-envelope";
 import {
+  AmbiguousCompanionError,
   RepositoryNotSelectedError,
   LaunchPreflightError,
   ToolNotAllowedError,
+  WorkingRepoRequiredError,
   type FrameworkConfig,
   type LaunchRequest,
   type LaunchResult,
@@ -90,7 +96,7 @@ export class FrameworkLauncher {
       companionPath,
       repositoryId,
       repository: localRepository,
-    } = await this.resolveConfig();
+    } = await this.resolveConfig(request);
     const store = new CompanionStore(configStore, workingRepoStore);
     const repository = localRepository ?? (await store.getRepository(repositoryId));
     if (!repository) {
@@ -173,7 +179,45 @@ export class FrameworkLauncher {
     }
   }
 
-  private async resolveConfig(): Promise<LaunchContext> {
-    return resolveForLaunch(process.cwd());
+  private async resolveConfig(request: LaunchRequest): Promise<{
+    configStore: ConfigStore;
+    workingRepoStore: CompanionRegistryStore;
+    companionPath: string;
+    repositoryId: string;
+    repository: LinkedRepository;
+    contextKind: "working-repo";
+  }> {
+    const selection: SessionEnvelopeSelection | undefined = process.env.MATE_ARTIFACT_PATH
+      ? {
+          companionPath: process.env.MATE_ARTIFACT_PATH,
+          ...(process.env.MATE_REPO_ID ? { repositoryId: process.env.MATE_REPO_ID } : {}),
+          ...(process.env.MATE_REPO_PATH ? { repositoryPath: process.env.MATE_REPO_PATH } : {}),
+        }
+      : undefined;
+    const resolution = await resolveSessionEnvelope({
+      host: request.tool,
+      cwd: process.cwd(),
+      selection,
+    });
+    if (!resolution.envelope) {
+      const first = resolution.diagnostics[0];
+      if (first?.code === "selection-required") {
+        throw new AmbiguousCompanionError(
+          first.candidates.map((candidate) => candidate.companionPath),
+        );
+      }
+      throw new WorkingRepoRequiredError();
+    }
+
+    const { companionRepositoryPath, repositoryLink } = resolution.envelope;
+    const configDir = path.join(companionRepositoryPath, ".mate", "config");
+    return {
+      configStore: new ConfigStore(path.join(configDir, "framework.yaml")),
+      workingRepoStore: new CompanionRegistryStore(path.join(configDir, "registry.yaml")),
+      companionPath: companionRepositoryPath,
+      repositoryId: repositoryLink.repository.id,
+      repository: repositoryLink.repository,
+      contextKind: "working-repo",
+    };
   }
 }

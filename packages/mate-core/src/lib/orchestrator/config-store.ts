@@ -1,9 +1,11 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { getDefaultSetupSelections } from "./setup-compatibilities";
 import { YamlFileStore } from "./yaml-file-store";
 import { ConfigError, type FrameworkConfig } from "./types";
+import { parse } from "yaml";
 
 export const RTK_CAPABILITY_SPLIT_MIGRATION = "rtk-capability-split-v1";
 
@@ -69,6 +71,19 @@ export function migrateRtkCapabilitySplit(config: FrameworkConfig): FrameworkCon
     capabilities: hasHeadroom && !hasRtk ? [...capabilities, { name: "rtk" }] : capabilities,
     migrations: [...migrations, RTK_CAPABILITY_SPLIT_MIGRATION],
   };
+}
+
+/** Reads companion configuration without migrations or default persistence. */
+export async function readFrameworkConfigReadOnly(configPath: string): Promise<FrameworkConfig> {
+  const parsed = parse(
+    await fs.readFile(path.resolve(configPath), "utf8"),
+  ) as FrameworkConfig | null;
+  const merged = mergeWithDefaults(
+    migrateProfilesToAllowedAgents((parsed ?? {}) as FrameworkConfig),
+  );
+  validateHubConfig(merged);
+  validatePluginDeclarations(merged);
+  return migrateRtkCapabilitySplit(merged);
 }
 
 /** Validates the shape of a hub manifest before it is used. */

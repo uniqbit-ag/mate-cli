@@ -9,15 +9,17 @@ Discover your Mate repository pairings, open a paired workspace, and launch Mate
 - **Open Workspace**: materializes the selected pairing's `.mate/workspace.code-workspace` and opens it in a new window.
 - **Reveal / Copy Path**: reveal either root in your OS file browser, or copy its absolute path.
 - **Launch OpenCode / Launch Claude**: starts `mate opencode` or `mate claude` in an integrated terminal, pinned to the selected pairing via Mate's standard launch environment variables (`MATE_REPO_PATH`, `MATE_ARTIFACT_PATH`, `MATE_REPO_ID`).
+- **Native Mate chat**: the `@mate` chat participant resolves a Session Envelope before applying companion guidance, asks for an explicit Repository Link on ambiguity, and keeps that link pinned for the conversation.
+- **Claude Code chat context**: in trusted workspaces, Mate maintains `.claude/settings.local.json` hooks that inject the resolved Session Envelope into the Claude Code VS Code extension at session start and before each prompt.
 
 ## What it doesn't do
 
-This is a read-mostly navigator. It never creates, links, unlinks, or repairs companions and repositories — that stays a Mate CLI responsibility (`mate companion link`, `mate companion setup`). It also doesn't embed or manage native OpenCode/Claude chat surfaces; agent launches always go through Mate's own integrated-terminal pipeline.
+This is a read-mostly navigator. It never creates, links, unlinks, or repairs companions and repositories — that stays a Mate CLI responsibility (`mate companion link`, `mate companion setup`). Native Mate chat and Claude Code hooks use the read-only `mate workspace resolve --json` boundary; the Claude hook only persists its selected session variables through Claude Code's `CLAUDE_ENV_FILE`.
 
 ## Requirements
 
 - The `mate` CLI must be installed and resolvable — either on the extension host's `PATH`, or via the `mate.executablePath` setting.
-- Requires a Mate CLI version that provides `mate workspace list --json` and `mate workspace materialize --json` (0.15.5 or later).
+- Requires a Mate CLI version that provides `mate workspace list --json`, `mate workspace materialize --json`, and `mate workspace resolve --json`.
 
 ## Settings
 

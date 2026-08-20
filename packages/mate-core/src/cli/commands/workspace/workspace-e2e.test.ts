@@ -139,6 +139,66 @@ describe("mate workspace (real CLI, e2e)", () => {
     ]);
   });
 
+  test("resolve returns one versioned envelope and does not create runtime state", async () => {
+    const root = await makeTempDir("workspace-e2e-resolve-");
+    const home = path.join(root, "home");
+    const companionPath = path.join(home, ".mate", "companions", "app");
+    const repoPath = path.join(root, "repo");
+    const unlinkedCwd = path.join(root, "unrelated");
+
+    await Promise.all([
+      fs.mkdir(path.join(companionPath, ".mate", "config"), { recursive: true }),
+      fs.mkdir(repoPath, { recursive: true }),
+      fs.mkdir(unlinkedCwd, { recursive: true }),
+    ]);
+    await seedUpdateState(home);
+    await fs.writeFile(
+      path.join(home, ".mate", "config.yaml"),
+      `version: 1\ncompanions:\n  - path: ${companionPath}\n`,
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(companionPath, ".mate", "config", "framework.yaml"),
+      "type: companion\nallowedAgents: [claude]\ncapabilities: []\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(companionPath, ".mate", "config", "registry.yaml"),
+      `repos:\n  - id: app\n    path: ${repoPath}\n`,
+      "utf8",
+    );
+
+    const result = await runMate(unlinkedCwd, home, [
+      "workspace",
+      "resolve",
+      "--host",
+      "vscode-chat",
+      "--cwd",
+      repoPath,
+      "--active",
+      path.join(repoPath, "src", "index.ts"),
+      "--workspace-root",
+      repoPath,
+      "--json",
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout.trim())).toEqual({
+      schemaVersion: 1,
+      status: "resolved",
+      diagnostics: [],
+      envelope: expect.objectContaining({
+        schemaVersion: 1,
+        host: "vscode-chat",
+        workingRepositoryPath: repoPath,
+        companionRepositoryPath: companionPath,
+        permittedRoots: [repoPath, companionPath],
+      }),
+    });
+    await expect(fs.stat(path.join(repoPath, ".mate"))).rejects.toThrow();
+  });
+
   test("materialize writes the ordered workspace document for a valid pairing", async () => {
     const root = await makeTempDir("workspace-e2e-materialize-ok-");
     const home = path.join(root, "home");

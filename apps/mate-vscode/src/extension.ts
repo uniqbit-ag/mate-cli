@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import * as vscode from "vscode";
 
 import { registerCommands } from "./commands";
@@ -11,6 +13,8 @@ import { buildPairingSnapshot } from "./pairing-snapshot";
 import { registerQuickPickCommands } from "./quick-pick-actions";
 import type { WorkspaceInventoryPairing } from "./schema";
 import { MateStatusBarItem, REVEAL_STATUS_BAR_PAIRING_COMMAND } from "./status-bar";
+import { registerNativeChatHost } from "./native-chat-host";
+import { reconcileClaudeContextHooksForWorkspaces } from "./claude-context-hooks";
 import {
   buildWorkingRepositoryRoots,
   childrenOfWorkingRepository,
@@ -176,6 +180,35 @@ export function activate(
   };
 
   registerCommands(context, { workspaceService, refresh: refreshAll, isTrusted });
+  registerNativeChatHost(context, {
+    workspaceService,
+    getWorkspaceFolderPaths: workspaceFolderPaths,
+  });
+  if (isTrusted()) {
+    const executablePath =
+      vscode.workspace.getConfiguration("mate").get<string>("executablePath") ?? "mate";
+    const hookRunner =
+      executablePath === "mate"
+        ? {
+            command: "node",
+            args: [
+              path.join(
+                (context as unknown as { extensionPath?: string }).extensionPath ?? process.cwd(),
+                "dist",
+                "claude-context-hook.cjs",
+              ),
+            ],
+          }
+        : executablePath;
+    void reconcileClaudeContextHooksForWorkspaces(workspaceFolderPaths(), hookRunner).catch(
+      (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        void vscode.window.showWarningMessage(
+          `Mate: could not configure Claude Code context hooks — ${message}`,
+        );
+      },
+    );
+  }
   registerQuickPickCommands(context, {
     workspaceService,
     refresh: refreshAll,

@@ -80,7 +80,7 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   const isPluginCommand =
     command === "cap" && findPluginCliCommand(subcommand, rest[0]) !== undefined;
 
-  // `workspace list`/`workspace materialize` are machine-JSON contracts an
+  // `workspace` subcommands are machine-JSON contracts an
   // editor extension may poll frequently; their stdout must be pure JSON,
   // and the un-awaited scheduleBackgroundCheck() has been observed to race
   // a large final stdout write against process exit, truncating it. Both

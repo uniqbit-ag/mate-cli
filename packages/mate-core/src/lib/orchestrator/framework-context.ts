@@ -159,11 +159,16 @@ export async function resolveFrameworkContext(
     );
   }
 
-  const match = await new CompanionResolver(globalConfigStore).resolve(cwd);
-  if (match) {
+  const resolution = await new CompanionResolver(globalConfigStore).resolveWithDiagnostics(cwd);
+  if (resolution.ambiguousMatches.length > 1) {
+    throw new AmbiguousCompanionError(
+      resolution.ambiguousMatches.map((match) => match.companionPath),
+    );
+  }
+  if (resolution.match) {
     return withResolvedHub(
       makeContext(
-        match.companionPath,
+        resolution.match.companionPath,
         "working-repo",
         (await findRepoLocalLinkedRepository(cwd)) ?? undefined,
       ),
@@ -280,18 +285,23 @@ export async function resolveForCapability(
     return { ...ctx, repositoryId: "" };
   }
 
-  const match = await new CompanionResolver(globalConfigStore).resolve(cwd);
-  if (match) {
+  const resolution = await new CompanionResolver(globalConfigStore).resolveWithDiagnostics(cwd);
+  if (resolution.ambiguousMatches.length > 1) {
+    throw new AmbiguousCompanionError(
+      resolution.ambiguousMatches.map((match) => match.companionPath),
+    );
+  }
+  if (resolution.match) {
     const context = await withResolvedHub(
       makeContext(
-        match.companionPath,
+        resolution.match.companionPath,
         "working-repo",
         (await findRepoLocalLinkedRepository(cwd)) ?? undefined,
       ),
     );
     return {
       ...context,
-      repositoryId: match.repositoryId,
+      repositoryId: resolution.match.repositoryId,
     };
   }
 
