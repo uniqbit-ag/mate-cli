@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   InvalidMateResponseError,
   parseMaterializedWorkspace,
+  parseSessionEnvelopeResolution,
   parseWorkspaceInventory,
   UnsupportedSchemaVersionError,
 } from "./schema";
@@ -119,5 +120,56 @@ describe("parseMaterializedWorkspace", () => {
     });
 
     expect(() => parseMaterializedWorkspace(raw)).toThrow(InvalidMateResponseError);
+  });
+});
+
+describe("parseSessionEnvelopeResolution", () => {
+  const envelope = {
+    schemaVersion: 1,
+    host: "mate.chat",
+    repositoryLink: {
+      schemaVersion: 1,
+      repository: { id: "app", path: "/repos/app" },
+      companionPath: "/companions/a",
+    },
+    workingRepositoryPath: "/repos/app",
+    companionRepositoryPath: "/companions/a",
+    capabilities: [{ name: "tokensave" }],
+    renderedGuidance: "guidance",
+    permittedRoots: ["/repos/app", "/companions/a"],
+  };
+
+  test("accepts a resolved versioned envelope", () => {
+    const result = parseSessionEnvelopeResolution(
+      JSON.stringify({ schemaVersion: 1, status: "resolved", envelope, diagnostics: [] }),
+    );
+
+    expect(result.envelope?.repositoryLink.companionPath).toBe("/companions/a");
+  });
+
+  test("accepts an ambiguity diagnostic with candidates", () => {
+    const result = parseSessionEnvelopeResolution(
+      JSON.stringify({
+        schemaVersion: 1,
+        status: "diagnostic",
+        diagnostics: [
+          {
+            code: "selection-required",
+            message: "select a link",
+            candidates: [envelope.repositoryLink],
+          },
+        ],
+      }),
+    );
+
+    expect(result.diagnostics[0]?.candidates).toHaveLength(1);
+  });
+
+  test("rejects an unsupported envelope schema version", () => {
+    expect(() =>
+      parseSessionEnvelopeResolution(
+        JSON.stringify({ schemaVersion: 2, status: "diagnostic", diagnostics: [] }),
+      ),
+    ).toThrow(UnsupportedSchemaVersionError);
   });
 });

@@ -24,7 +24,7 @@
   "type": "module",
   "main": "./dist/extension.cjs",
   "scripts": {
-    "build": "bun build src/extension.ts --target node --format cjs --external vscode --outfile dist/extension.cjs",
+    "build": "bun build src/extension.ts --target node --format cjs --external vscode --outfile dist/extension.cjs && bun build src/claude-context-hook.ts --target node --format cjs --outfile dist/claude-context-hook.cjs",
     "test": "CI=1 bun test",
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
     "lint": "oxlint src/",
@@ -152,6 +152,15 @@
       {
         "command": "mate.openOpenSpecChange",
         "title": "Mate: Open OpenSpec Change"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "mate.chat",
+        "name": "mate",
+        "fullName": "Mate",
+        "description": "Resolve and apply Mate context to this conversation.",
+        "isSticky": true
       }
     ],
     "menus": {

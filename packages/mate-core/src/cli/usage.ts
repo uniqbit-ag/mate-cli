@@ -18,6 +18,8 @@ export function usage(): string {
     ` ${n} companion tui`,
     ` ${n} workspace list --json`,
     ` ${n} workspace materialize --repository ID --companion PATH --json`,
+    ` ${n} workspace resolve [--host ID] [--cwd PATH] [--active PATH] [--workspace-root PATH] [--companion PATH --repository ID --repository-path PATH] --json`,
+    ` ${n} workspace resolve-hook --event SessionStart|UserPromptSubmit`,
     ` ${n} working cleanup`,
     ` ${n} hub init [folder]`,
     ` ${n} hub add [source] [--id ID] [--path PATH]`,

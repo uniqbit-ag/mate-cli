@@ -105,10 +105,11 @@ async function activateWithMock(
 
 describe("activate", () => {
   test("registers both tree data providers plus the Active Changes view", async () => {
-    const { context, treeViews } = await activateWithMock(readyService());
+    const { context, treeViews, chatParticipants } = await activateWithMock(readyService());
 
     expect(context.subscriptions.length).toBeGreaterThan(0);
     expect(treeViews.has("mateWorkspaces")).toBe(true);
+    expect(chatParticipants.has("mate.chat")).toBe(true);
   });
 
   test("registers every mate.* command", async () => {

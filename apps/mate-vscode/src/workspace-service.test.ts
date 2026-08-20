@@ -67,6 +67,73 @@ describe("WorkspaceService.materialize", () => {
   });
 });
 
+describe("WorkspaceService.resolveSessionEnvelope", () => {
+  test("passes workspace context and selection through the JSON boundary", async () => {
+    const calls: string[][] = [];
+    const service = new WorkspaceService({
+      options: () => ({ cwd: "/repos/app" }),
+      runMateCli: async (args) => {
+        calls.push(args);
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            schemaVersion: 1,
+            status: "resolved",
+            diagnostics: [],
+            envelope: {
+              schemaVersion: 1,
+              host: "mate.chat",
+              repositoryLink: {
+                schemaVersion: 1,
+                repository: { id: "app", path: "/repos/app" },
+                companionPath: "/companions/a",
+              },
+              workingRepositoryPath: "/repos/app",
+              companionRepositoryPath: "/companions/a",
+              capabilities: [],
+              renderedGuidance: "guidance",
+              permittedRoots: ["/repos/app", "/companions/a"],
+            },
+          }),
+          stderr: "",
+        };
+      },
+    });
+
+    await service.resolveSessionEnvelope({
+      host: "mate.chat",
+      cwd: "/repos/app",
+      activePath: "/repos/app/index.ts",
+      workspaceRoots: ["/repos/app"],
+      repositoryId: "app",
+      repositoryPath: "/repos/app",
+      companionPath: "/companions/a",
+    });
+
+    expect(calls).toEqual([
+      [
+        "workspace",
+        "resolve",
+        "--json",
+        "--host",
+        "mate.chat",
+        "--cwd",
+        "/repos/app",
+        "--active",
+        "/repos/app/index.ts",
+        "--workspace-root",
+        "/repos/app",
+        "--companion",
+        "/companions/a",
+        "--repository",
+        "app",
+        "--repository-path",
+        "/repos/app",
+      ],
+    ]);
+  });
+});
+
 describe("WorkspaceService.isMateAvailable", () => {
   test("returns false when the CLI cannot be spawned", async () => {
     const service = new WorkspaceService({

@@ -110,6 +110,7 @@ export const FakeStatusBarAlignment = { Left: 1, Right: 2 };
 export interface VscodeMockCalls {
   showInformationMessage: unknown[][];
   showErrorMessage: unknown[][];
+  showWarningMessage: unknown[][];
   writeText: unknown[][];
   openExternal: unknown[][];
   executeCommand: unknown[][];
@@ -130,6 +131,7 @@ export interface VscodeMockHandle {
   configuration: { value: Record<string, unknown> };
   diagnosticCollections: FakeDiagnosticCollection[];
   treeViews: Map<string, { reveal: unknown[][] }>;
+  chatParticipants: Map<string, { handler: (...args: unknown[]) => unknown; dispose: () => void }>;
   /** Set `.fn` to a rejecting function to simulate "no such document" (e.g. a missing proposal.md). */
   openTextDocumentBehavior: { fn: (uri: FakeUri) => Promise<unknown> };
 }
@@ -138,6 +140,7 @@ export function createVscodeMock(): VscodeMockHandle {
   const calls: VscodeMockCalls = {
     showInformationMessage: [],
     showErrorMessage: [],
+    showWarningMessage: [],
     writeText: [],
     openExternal: [],
     executeCommand: [],
@@ -158,6 +161,10 @@ export function createVscodeMock(): VscodeMockHandle {
   const configuration: { value: Record<string, unknown> } = { value: {} };
   const diagnosticCollections: FakeDiagnosticCollection[] = [];
   const treeViews = new Map<string, { reveal: unknown[][] }>();
+  const chatParticipants = new Map<
+    string,
+    { handler: (...args: unknown[]) => unknown; dispose: () => void }
+  >();
   const openTextDocumentBehavior: { fn: (uri: FakeUri) => Promise<unknown> } = {
     fn: (uri) => Promise.resolve({ uri }),
   };
@@ -180,6 +187,10 @@ export function createVscodeMock(): VscodeMockHandle {
       },
       showErrorMessage: (...args: unknown[]) => {
         calls.showErrorMessage.push(args);
+        return Promise.resolve(undefined);
+      },
+      showWarningMessage: (...args: unknown[]) => {
+        calls.showWarningMessage.push(args);
         return Promise.resolve(undefined);
       },
       showQuickPick: (...args: unknown[]) => {
@@ -235,6 +246,17 @@ export function createVscodeMock(): VscodeMockHandle {
         return { dispose: () => registeredCommands.delete(name) };
       },
     },
+    chat: {
+      createChatParticipant: (id: string, handler: (...args: unknown[]) => unknown) => {
+        const participant = {
+          handler,
+          iconPath: undefined as unknown,
+          dispose: () => chatParticipants.delete(id),
+        };
+        chatParticipants.set(id, participant);
+        return participant;
+      },
+    },
     workspace: {
       get isTrusted() {
         return isTrusted.value;
@@ -272,6 +294,7 @@ export function createVscodeMock(): VscodeMockHandle {
     configuration,
     diagnosticCollections,
     treeViews,
+    chatParticipants,
     openTextDocumentBehavior,
   };
 }

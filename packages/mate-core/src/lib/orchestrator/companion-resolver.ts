@@ -37,6 +37,11 @@ export interface CompanionResolutionResult {
   failures: CompanionResolutionFailure[];
 }
 
+export interface CompanionResolutionOptions {
+  logFailures?: boolean;
+  repair?: boolean;
+}
+
 export class CompanionResolver {
   constructor(private readonly globalConfigStore: GlobalConfigStore) {}
 
@@ -46,14 +51,14 @@ export class CompanionResolver {
 
   async resolveWithDiagnostics(
     cwd: string,
-    options: { logFailures?: boolean } = {},
+    options: CompanionResolutionOptions = {},
   ): Promise<CompanionResolutionResult> {
     const resolvedCwd = path.resolve(cwd);
 
     const repoLocalResult = await this.resolveFromRepoLocalRegistry(resolvedCwd, options);
     if (repoLocalResult) return repoLocalResult;
 
-    return this.resolveFromGlobalRegistry(resolvedCwd);
+    return this.resolveFromGlobalRegistry(resolvedCwd, options);
   }
 
   /**
@@ -62,7 +67,10 @@ export class CompanionResolver {
    * repository path. A single match self-heals the repo-local cache so the
    * fast path succeeds on the next resolution without repeating this scan.
    */
-  private async resolveFromGlobalRegistry(resolvedCwd: string): Promise<CompanionResolutionResult> {
+  private async resolveFromGlobalRegistry(
+    resolvedCwd: string,
+    options: CompanionResolutionOptions,
+  ): Promise<CompanionResolutionResult> {
     const candidates = await this.globalConfigStore.list();
     const found = await Promise.all(
       candidates.map(async (candidate) => {
@@ -86,7 +94,7 @@ export class CompanionResolver {
 
     if (matches.length === 0) return { match: null, ambiguousMatches: [], failures: [] };
 
-    if (matches.length === 1) {
+    if (matches.length === 1 && options.repair !== false) {
       const store = new RepoLocalRegistryStore(repoLocalRegistryPath(resolvedCwd));
       await store.save({
         companions: [{ path: matches[0]!.companionPath, repositoryId: matches[0]!.repositoryId }],
@@ -94,7 +102,7 @@ export class CompanionResolver {
     }
 
     return {
-      match: matches[0]!,
+      match: matches.length === 1 ? matches[0]! : null,
       ambiguousMatches: matches.length > 1 ? matches : [],
       failures: [],
     };
@@ -109,7 +117,7 @@ export class CompanionResolver {
    */
   private async resolveFromRepoLocalRegistry(
     resolvedCwd: string,
-    options: { logFailures?: boolean },
+    options: CompanionResolutionOptions,
   ): Promise<CompanionResolutionResult | null> {
     const found = await findRepoLocalRegistryFile(resolvedCwd);
     if (!found) return null;
@@ -156,7 +164,7 @@ export class CompanionResolver {
       }
     }
 
-    if (changed) {
+    if (changed && options.repair !== false) {
       const store = new RepoLocalRegistryStore(found.registryPath);
       await store.save({ companions: survivors });
     }
@@ -171,7 +179,7 @@ export class CompanionResolver {
     });
 
     return {
-      match: ambiguousMatches[0]!,
+      match: ambiguousMatches.length === 1 ? ambiguousMatches[0]! : null,
       ambiguousMatches: ambiguousMatches.length > 1 ? ambiguousMatches : [],
       failures: [],
     };
