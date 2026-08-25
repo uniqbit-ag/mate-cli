@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   ensureUnambiguousCompanion,
   launchAmbiguityDeps,
+  launchCommandDeps,
   parseDirectLaunchArgs,
   parseLaunchArgs,
+  runLaunchToolCommand,
 } from "./shared";
+import { LaunchPreflightError, type LaunchRequest } from "../../../lib/orchestrator/types";
 
 let originalExitCode: number | undefined;
 const originalResolveCompanionMatches = launchAmbiguityDeps.resolveCompanionMatches;
@@ -77,6 +80,86 @@ describe("parseDirectLaunchArgs", () => {
 
   test("forwards --no-git when it is not after a separator", () => {
     expect(parseDirectLaunchArgs(["--no-git"])).toEqual({ agentArgs: ["--no-git"] });
+  });
+});
+
+describe("runLaunchToolCommand", () => {
+  test("passes a two-stream TTY capability and stops progress before preparation", async () => {
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    const events: string[] = [];
+    const requests: LaunchRequest[] = [];
+    const originalCreateLauncher = launchCommandDeps.createLauncher;
+    const originalCreateProgress = launchCommandDeps.createProgress;
+    const originalRunIndexCapCommand = launchCommandDeps.runIndexCapCommand;
+
+    launchCommandDeps.createLauncher = () => ({
+      prepare: async (request) => {
+        events.push("prepare");
+        requests.push(request);
+        return {
+          execute: async () => {
+            events.push("execute");
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+        };
+      },
+    });
+    launchCommandDeps.createProgress = () => ({
+      start: () => events.push("progress:start"),
+      succeed: () => events.push("progress:succeed"),
+      fail: () => events.push("progress:fail"),
+      failCurrent: () => events.push("progress:fail-current"),
+      stop: () => events.push("progress:stop"),
+    });
+    launchCommandDeps.runIndexCapCommand = async () => {
+      events.push("index");
+    };
+
+    try {
+      await runLaunchToolCommand("claude", [], { skipConfirmation: true });
+    } finally {
+      launchCommandDeps.createLauncher = originalCreateLauncher;
+      launchCommandDeps.createProgress = originalCreateProgress;
+      launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;
+    }
+
+    expect(requests[0]?.interactiveGit).toBe(true);
+    expect(events.indexOf("progress:stop")).toBeLessThan(events.indexOf("prepare"));
+    expect(events).toContain("execute");
+  });
+
+  test("uses captured Git mode and blocks launch failures without a two-stream TTY", async () => {
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = false;
+    const requests: LaunchRequest[] = [];
+    const originalCreateLauncher = launchCommandDeps.createLauncher;
+    const originalCreateProgress = launchCommandDeps.createProgress;
+    const originalRunIndexCapCommand = launchCommandDeps.runIndexCapCommand;
+
+    launchCommandDeps.createLauncher = () => ({
+      prepare: async (request) => {
+        requests.push(request);
+        throw new LaunchPreflightError("authentication failed");
+      },
+    });
+    launchCommandDeps.createProgress = () => {
+      throw new Error("progress must not render without two TTY streams");
+    };
+    launchCommandDeps.runIndexCapCommand = async () => {
+      throw new Error("index must not run after a blocked launch");
+    };
+
+    try {
+      await runLaunchToolCommand("claude", [], { skipConfirmation: true });
+    } finally {
+      launchCommandDeps.createLauncher = originalCreateLauncher;
+      launchCommandDeps.createProgress = originalCreateProgress;
+      launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;
+    }
+
+    expect(requests[0]?.interactiveGit).toBe(false);
+    expect(process.exitCode).toBe(1);
   });
 });
 

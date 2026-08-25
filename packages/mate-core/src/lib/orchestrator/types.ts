@@ -135,6 +135,7 @@ export interface LaunchRequest {
   tool: string;
   args: string[];
   skipGit?: boolean;
+  interactiveGit?: boolean;
 }
 
 export interface LaunchResult {

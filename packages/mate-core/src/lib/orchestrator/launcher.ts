@@ -63,7 +63,11 @@ export class FrameworkLauncher {
     const adapterContext = this.makeAdapterContext(state);
 
     if (!request.skipGit && state.config.git === "auto") {
-      await launcherDeps.syncCompanionGit(state.companionPath, state.repository.path);
+      await launcherDeps.syncCompanionGit(
+        state.companionPath,
+        state.repository.path,
+        request.interactiveGit ?? false,
+      );
     }
     await launcherDeps.syncCompanionFiles(state.companionPath, state.config, state.repository.path);
     await launcherDeps.syncWorkingRepoClaudeSettings(

@@ -55,8 +55,8 @@ function createLauncher(
   return { adapter, launcher };
 }
 
-function makeRequest(): LaunchRequest {
-  return { tool: "claude", args: ["--print", "hello"] };
+function makeRequest(overrides: Partial<LaunchRequest> = {}): LaunchRequest {
+  return { tool: "claude", args: ["--print", "hello"], ...overrides };
 }
 
 afterEach(() => {
@@ -167,9 +167,10 @@ describe("FrameworkLauncher", () => {
     });
 
     try {
-      const prepared = await launcher.prepare(makeRequest());
+      const prepared = await launcher.prepare(makeRequest({ interactiveGit: true }));
 
       expect(syncCompanionGit).toHaveBeenCalledTimes(1);
+      expect(syncCompanionGit).toHaveBeenCalledWith("/tmp/companion", "/tmp/repo", true);
       expect(syncCompanionFiles).toHaveBeenCalledTimes(1);
       expect(syncWorkingRepoClaudeSettings).toHaveBeenCalledTimes(1);
       expect(adapter.validateLaunch).toHaveBeenCalledTimes(1);
@@ -306,6 +307,7 @@ describe("FrameworkLauncher", () => {
     expect(syncCompanionFiles).not.toHaveBeenCalled();
     expect(adapter.validateLaunch).not.toHaveBeenCalled();
     expect(adapter.run).not.toHaveBeenCalled();
+    expect(syncCompanionGit).toHaveBeenCalledWith("/tmp/companion", "/tmp/repo", false);
   });
 
   test("skipGit bypasses only the Git preflight", async () => {
