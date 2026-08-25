@@ -1,6 +1,6 @@
 // Git index and merge operations must remain sequential.
 // oxlint-disable no-await-in-loop
-import { execFile as execFileCallback } from "node:child_process";
+import { execFile as execFileCallback, spawn as spawnChild } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -18,7 +18,13 @@ export interface GitCommandResult {
   stderr: string;
 }
 
-export type GitRunner = (args: readonly string[], cwd: string) => Promise<GitCommandResult>;
+export type GitExecutionMode = "captured" | "interactive";
+
+export type GitRunner = (
+  args: readonly string[],
+  cwd: string,
+  mode?: GitExecutionMode,
+) => Promise<GitCommandResult>;
 
 export interface CompanionGitSyncResult {
   skipped: boolean;
@@ -69,19 +75,45 @@ export class CompanionGitSyncError extends LaunchPreflightError {
 }
 
 export const companionGitSyncDeps: { runGit: GitRunner } = {
-  runGit: async (args, cwd) => {
+  runGit: async (args, cwd, mode = "captured") => {
+    const {
+      GIT_DIR: _gitDir,
+      GIT_WORK_TREE: _gitWorkTree,
+      GIT_COMMON_DIR: _gitCommonDir,
+      GIT_INDEX_FILE: _gitIndexFile,
+      GIT_TERMINAL_PROMPT: _gitTerminalPrompt,
+      ...gitEnv
+    } = process.env;
+    const env = mode === "captured" ? { ...gitEnv, GIT_TERMINAL_PROMPT: "0" } : gitEnv;
+
+    if (mode === "interactive") {
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (result: GitCommandResult) => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+
+        const child = spawnChild("git", [...args], {
+          cwd,
+          env,
+          stdio: "inherit",
+        });
+        child.once("error", (error) => {
+          finish({ status: 1, stdout: "", stderr: error.message });
+        });
+        child.once("close", (status) => {
+          finish({ status: status ?? 1, stdout: "", stderr: "" });
+        });
+      });
+    }
+
     try {
-      const {
-        GIT_DIR: _gitDir,
-        GIT_WORK_TREE: _gitWorkTree,
-        GIT_COMMON_DIR: _gitCommonDir,
-        GIT_INDEX_FILE: _gitIndexFile,
-        ...gitEnv
-      } = process.env;
       const result = await execFile("git", [...args], {
         cwd,
         encoding: "utf8",
-        env: gitEnv,
+        env,
         maxBuffer: GIT_MAX_BUFFER,
       });
       return { status: 0, stdout: String(result.stdout), stderr: String(result.stderr) };
@@ -132,6 +164,20 @@ function stripGitProgress(text: string): string {
     .trim();
 }
 
+function isAuthenticationFailure(result: GitCommandResult): boolean {
+  const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
+  return [
+    "terminal prompts disabled",
+    "could not read username",
+    "could not read password",
+    "authentication failed",
+    "permission denied (publickey)",
+    "could not open /dev/tty",
+    "can't open /dev/tty",
+    "cannot open /dev/tty",
+  ].some((marker) => output.includes(marker));
+}
+
 export function describeGitFailure(result: GitCommandResult): string {
   return stripGitProgress(result.stderr) || stripGitProgress(result.stdout) || "unknown Git error";
 }
@@ -139,7 +185,11 @@ export function describeGitFailure(result: GitCommandResult): string {
 export class CompanionGitSync {
   constructor(private readonly runGit: GitRunner = companionGitSyncDeps.runGit) {}
 
-  async sync(companionPath: string, workingRepoPath?: string): Promise<CompanionGitSyncResult> {
+  async sync(
+    companionPath: string,
+    workingRepoPath?: string,
+    interactiveGit = false,
+  ): Promise<CompanionGitSyncResult> {
     if (!(await this.assertSafeCompanionRoot(companionPath, workingRepoPath))) {
       return { skipped: true, changed: false, companionPath };
     }
@@ -157,13 +207,30 @@ export class CompanionGitSync {
     }
     const dirty = outputLines(before.stdout).length > 0;
 
-    const fetch = await this.command(companionPath, ["fetch", target.remote, target.branch]);
+    const fetch = await this.command(
+      companionPath,
+      ["fetch", target.remote, target.branch],
+      interactiveGit ? "interactive" : undefined,
+    );
     if (fetch.status !== 0) {
+      const authenticationFailure = isAuthenticationFailure(fetch);
+      const recovery = interactiveGit
+        ? authenticationFailure
+          ? "Retry the launch and complete Git authentication, or use the `--no-git` bypass."
+          : "Check the Git or SSH diagnostics above, then retry the launch."
+        : authenticationFailure
+          ? "Provide credentials through a non-interactive Git credential helper or SSH agent, retry from a terminal, or use the `--no-git` bypass."
+          : "Check the remote and network, or resolve the issue before retrying.";
+      const detail = this.detail(fetch);
+      const failureDetail =
+        interactiveGit && detail === "unknown Git error"
+          ? "Git fetch failed; review the Git or SSH diagnostics above."
+          : detail;
       throw this.failure(
         companionPath,
-        `Unable to fetch ${target.ref}: ${this.detail(fetch)}`,
+        `Unable to fetch ${target.ref}: ${failureDetail}`,
         [],
-        "Check the remote and network, or resolve the issue before retrying.",
+        recovery,
       );
     }
 
@@ -464,8 +531,12 @@ export class CompanionGitSync {
     }
   }
 
-  private async command(companionPath: string, args: readonly string[]): Promise<GitCommandResult> {
-    return this.runGit(args, companionPath);
+  private async command(
+    companionPath: string,
+    args: readonly string[],
+    mode?: GitExecutionMode,
+  ): Promise<GitCommandResult> {
+    return mode ? this.runGit(args, companionPath, mode) : this.runGit(args, companionPath);
   }
 
   private detail(result: GitCommandResult): string {
@@ -485,6 +556,11 @@ export class CompanionGitSync {
 export async function syncCompanionGit(
   companionPath: string,
   workingRepoPath?: string,
+  interactiveGit = false,
 ): Promise<CompanionGitSyncResult> {
-  return new CompanionGitSync(companionGitSyncDeps.runGit).sync(companionPath, workingRepoPath);
+  return new CompanionGitSync(companionGitSyncDeps.runGit).sync(
+    companionPath,
+    workingRepoPath,
+    interactiveGit,
+  );
 }

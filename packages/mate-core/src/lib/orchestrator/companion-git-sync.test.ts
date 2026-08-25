@@ -185,6 +185,84 @@ describe("CompanionGitSync", () => {
     expect(second.changed).toBe(false);
   });
 
+  test("keeps captured execution as the default", async () => {
+    const { companion } = await makeRepository();
+    const calls: Array<{ args: string[]; mode: string | undefined }> = [];
+    const recording: GitRunner = async (args, cwd, mode) => {
+      calls.push({ args: [...args], mode });
+      return companionGitSyncDeps.runGit(args, cwd, mode);
+    };
+
+    await new CompanionGitSync(recording).sync(companion);
+
+    expect(calls.every(({ mode }) => mode === undefined)).toBe(true);
+  });
+
+  test("attaches interactive execution only to the authentication-sensitive fetch", async () => {
+    const { companion } = await makeRepository();
+    const calls: Array<{ args: string[]; mode: string | undefined }> = [];
+    const recording: GitRunner = async (args, cwd, mode) => {
+      calls.push({ args: [...args], mode });
+      return companionGitSyncDeps.runGit(args, cwd, mode);
+    };
+
+    await new CompanionGitSync(recording).sync(companion, undefined, true);
+
+    expect(calls.find(({ args }) => args[0] === "fetch")?.mode).toBe("interactive");
+    expect(
+      calls.filter(({ args }) => args[0] !== "fetch").every(({ mode }) => mode === undefined),
+    ).toBe(true);
+  });
+
+  test("formats non-TTY authentication failures with non-interactive recovery guidance", async () => {
+    const { companion } = await makeRepository();
+    const recording: GitRunner = async (args, cwd, mode) => {
+      if (args[0] === "fetch") {
+        return {
+          status: 128,
+          stdout: "",
+          stderr: "fatal: could not read Username: terminal prompts disabled",
+        };
+      }
+      return companionGitSyncDeps.runGit(args, cwd, mode);
+    };
+
+    await expect(new CompanionGitSync(recording).sync(companion)).rejects.toThrow(
+      /non-interactive Git credential helper or SSH agent[\s\S]*retry from a terminal[\s\S]*--no-git/,
+    );
+  });
+
+  test("preserves TTY authentication diagnostics and retry guidance", async () => {
+    const { companion } = await makeRepository();
+    let fetchMode: string | undefined;
+    const recording: GitRunner = async (args, cwd, mode) => {
+      if (args[0] === "fetch") {
+        fetchMode = mode;
+        return { status: 128, stdout: "", stderr: "Permission denied (publickey)." };
+      }
+      return companionGitSyncDeps.runGit(args, cwd, mode);
+    };
+
+    await expect(new CompanionGitSync(recording).sync(companion, undefined, true)).rejects.toThrow(
+      /Permission denied \(publickey\)[\s\S]*Retry the launch[\s\S]*--no-git/,
+    );
+    expect(fetchMode).toBe("interactive");
+  });
+
+  test("keeps generic fetch failures on the existing recovery path", async () => {
+    const { companion } = await makeRepository();
+    const recording: GitRunner = async (args, cwd, mode) => {
+      if (args[0] === "fetch") {
+        return { status: 128, stdout: "", stderr: "fatal: unable to access remote" };
+      }
+      return companionGitSyncDeps.runGit(args, cwd, mode);
+    };
+
+    await expect(new CompanionGitSync(recording).sync(companion)).rejects.toThrow(
+      /Check the remote and network[\s\S]*--no-git/,
+    );
+  });
+
   test("captures Git output beyond 1 MiB without killing the process", async () => {
     const { companion } = await makeRepository();
     await fs.writeFile(path.join(companion, "big.txt"), "x".repeat(2 * 1024 * 1024));
@@ -195,6 +273,38 @@ describe("CompanionGitSync", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout.length).toBeGreaterThan(1024 * 1024);
+  });
+
+  test("disables terminal prompting for captured Git execution", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-git-runner-"));
+    tempRoots.push(root);
+    const bin = path.join(root, "bin");
+    const marker = path.join(root, "prompt-mode");
+    await fs.mkdir(bin);
+    const fakeGit = path.join(bin, "git");
+    await fs.writeFile(
+      fakeGit,
+      `#!/usr/bin/env bun
+await Bun.write(process.env.MATE_TEST_PROMPT_MODE!, process.env.GIT_TERMINAL_PROMPT ?? "unset");
+process.exit(1);
+`,
+    );
+    await fs.chmod(fakeGit, 0o755);
+
+    const originalPath = process.env.PATH;
+    const originalMarker = process.env.MATE_TEST_PROMPT_MODE;
+    process.env.PATH = `${bin}:${originalPath ?? ""}`;
+    process.env.MATE_TEST_PROMPT_MODE = marker;
+    try {
+      const result = await companionGitSyncDeps.runGit(["fetch"], root);
+      expect(result.status).toBe(1);
+      await expect(fs.readFile(marker, "utf8")).resolves.toBe("0");
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      if (originalMarker === undefined) delete process.env.MATE_TEST_PROMPT_MODE;
+      else process.env.MATE_TEST_PROMPT_MODE = originalMarker;
+    }
   });
 
   test("fetches and fast-forwards a companion behind origin/main", async () => {

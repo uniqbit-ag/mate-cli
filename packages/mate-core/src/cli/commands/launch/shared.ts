@@ -24,6 +24,20 @@ export interface ParsedLaunchArgs {
 
 export { ensureUnambiguousCompanion, launchAmbiguityDeps };
 
+export interface LaunchCommandDeps {
+  createLauncher: () => Pick<FrameworkLauncher, "prepare">;
+  createProgress: typeof createStartupProgress;
+  runIndexCapCommand: typeof runIndexCapCommand;
+  confirm: typeof confirm;
+}
+
+export const launchCommandDeps: LaunchCommandDeps = {
+  createLauncher: () => new FrameworkLauncher(),
+  createProgress: createStartupProgress,
+  runIndexCapCommand,
+  confirm,
+};
+
 export function parseDirectLaunchArgs(argv: string[]): ParsedLaunchArgs {
   const separatorIndex = argv.indexOf("--");
   if (separatorIndex < 0) return { agentArgs: argv };
@@ -72,15 +86,19 @@ export async function runLaunchToolCommand(
     skipGit?: boolean;
   } = {},
 ): Promise<void> {
-  const showProgress = !!(process.stdout.isTTY && process.stdin.isTTY);
-  const progress = showProgress ? createStartupProgress(`Starting ${tool}`) : undefined;
+  const interactiveGit = !!(process.stdin.isTTY && process.stdout.isTTY);
+  const progress = interactiveGit
+    ? launchCommandDeps.createProgress(`Starting ${tool}`)
+    : undefined;
 
   try {
     progress?.start("sync", STEP_LABELS.sync);
-    const prepared = await new FrameworkLauncher().prepare({
+    progress?.stop();
+    const prepared = await launchCommandDeps.createLauncher().prepare({
       tool,
       args,
       skipGit: options.skipGit,
+      interactiveGit,
     });
     progress?.succeed("sync");
     // Stop the Ink UI before running index steps: they spawn graphify/tokensave
@@ -89,14 +107,14 @@ export async function runLaunchToolCommand(
     progress?.stop();
 
     if (!options.skipConfirmation) {
-      const ok = await confirm("Continue? [y/N] ");
+      const ok = await launchCommandDeps.confirm("Continue? [y/N] ");
       if (!ok) {
         process.stderr.write("Aborted.\n");
         process.exit(1);
       }
     }
 
-    await runIndexCapCommand([], {
+    await launchCommandDeps.runIndexCapCommand([], {
       onStepStart: (step) => process.stdout.write(`${STEP_LABELS[step]}...\n`),
       onStepDone: (step, ok) => process.stdout.write(`${ok ? "✓" : "✗"} ${STEP_LABELS[step]}\n`),
     });
