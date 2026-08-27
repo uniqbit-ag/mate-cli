@@ -3,33 +3,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
-import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
-import {
-  TOKENSAVE_CLAUDE_MD_MARKER,
-  TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
-} from "../capabilities/tokensave-shared";
 import {
   instructionBlockKey,
   removeManagedBlocksForPlugin,
   upsertManagedBlock,
 } from "../context-services";
 import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "../plugin";
+import { surfaceRoot } from "../surface-target";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
-import {
-  ensureWorkingRepoLocalExcludes,
-  reconcileWorkingRepoCapabilityExcludes,
-} from "../working-repo-local-state";
-import {
-  cutFromMarker,
-  stripSectionFromFile,
-  type RemoveHeadingSectionOptions,
-} from "./agent-file-sections";
+import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
 import { patchSkillTreeMarkdownFiles } from "./skill-tree";
 import {
   filterClaudeHookGroups,
   mergeClaudeHookGroups,
+  removeManagedHookGroups,
   readClaudeMcpConfig,
   readClaudeSettings,
   toClaudeMcpEntry,
@@ -66,19 +55,6 @@ const COMPANION_GITIGNORE_ENTRIES = [
   ".claude/settings.local.json",
   ".claude/settings.local.json.bak",
   ".claude/state/",
-];
-
-// Command substrings that mark a working-repo hook group as Mate-managed.
-// The mate plugin hooks (validate-artifact-path, mate-session-banner,
-// mate-artifact-finish.sh) now ship in the bundled Claude plugin; their
-// markers are retained migration-only so stale managed groups written by
-// earlier releases keep being stripped, and are never re-added.
-const MANAGED_HOOK_MARKERS = [
-  "validate-artifact-path",
-  "mate-session-banner",
-  "react-doctor.sh",
-  "mate-artifact-finish.sh",
-  "tokensave",
 ];
 
 // Hook files earlier releases copied into the companion; the bundled Claude
@@ -126,51 +102,6 @@ function getAllManagedPermissionEntries(companionPath: string): Set<string> {
   ]);
 }
 
-function isManagedHookGroup(group: ClaudeHookGroup, extraMarkers: string[] = []): boolean {
-  return (group.hooks ?? []).some((hook) =>
-    [...MANAGED_HOOK_MARKERS, ...extraMarkers].some((marker) =>
-      (hook.command ?? "").includes(marker),
-    ),
-  );
-}
-
-function removeManagedHookGroups(
-  settings: ClaudeSettings,
-  extraMarkers: string[] = [],
-): ClaudeSettings {
-  const hooks = filterClaudeHookGroups(
-    settings.hooks ?? {},
-    (group) => !isManagedHookGroup(group, extraMarkers),
-  );
-
-  const next = { ...settings };
-  if (Object.keys(hooks).length > 0) {
-    next.hooks = hooks;
-  } else {
-    delete next.hooks;
-  }
-  return next;
-}
-
-async function stripTokensaveClaudeMdAppend(workingRepoPath: string): Promise<boolean> {
-  const claudeMdPath = path.join(workingRepoPath, "CLAUDE.md");
-  let content: string;
-  try {
-    content = await fs.readFile(claudeMdPath, "utf8");
-  } catch {
-    return false;
-  }
-
-  const stripped = cutFromMarker(content, TOKENSAVE_CLAUDE_MD_MARKER);
-  if (stripped === content) return false;
-  if (stripped.length > 0) {
-    await fs.writeFile(claudeMdPath, stripped, "utf8");
-  } else {
-    await fs.unlink(claudeMdPath);
-  }
-  return true;
-}
-
 // Resolved path of the companion-owned Claude settings document. This is the
 // single source of truth for Mate-managed Claude hooks, permissions, and MCP
 // servers; it is loaded at launch via `claude --settings`.
@@ -185,11 +116,42 @@ export function getCompanionClaudeMcpConfigPath(companionPath: string): string {
   return path.join(companionPath, ".mcp.json");
 }
 
+/**
+ * The Mate-managed `permissions.allow` entries of one pass, in emitted order.
+ * Rendered separately from the settings document so a working-target pass can
+ * obtain them without a write.
+ */
+export function renderManagedClaudePermissionEntries(
+  companionPath: string,
+  contributions: CapabilityContributionInput[] = [],
+): string[] {
+  return [
+    ...getBaseManagedPermissionEntries(companionPath),
+    ...contributions
+      .filter((input) => input.enabled)
+      .flatMap((input) => input.contributions.permissionEntries ?? []),
+  ];
+}
+
+/** The Mate-managed `.mcp.json` server map of one pass, as a value. */
+export function renderManagedClaudeMcpServers(
+  contributions: CapabilityContributionInput[] = [],
+): Record<string, unknown> {
+  const servers: Record<string, unknown> = {};
+  for (const input of contributions) {
+    if (!input.enabled) continue;
+    for (const descriptor of input.contributions.mcpServers ?? []) {
+      servers[descriptor.name] = toClaudeMcpEntry(descriptor);
+    }
+  }
+  return servers;
+}
+
 // Reconcile the Mate-managed Claude settings shape (hooks, permissions, MCP
 // servers) on top of whatever already exists in the settings document. Managed
 // groups/entries always lead their arrays so the emitted shape stays stable
 // across syncs; unmanaged content is preserved untouched.
-function buildManagedClaudeSettings(
+export function renderManagedClaudeSettings(
   existing: ClaudeSettings,
   companionPath: string,
   config: FrameworkConfig,
@@ -203,10 +165,6 @@ function buildManagedClaudeSettings(
   const declaredPermissionEntries = contributions.flatMap(
     (input) => input.contributions.permissionEntries ?? [],
   );
-  const enabledDeclaredPermissionEntries = contributions
-    .filter((input) => input.enabled)
-    .flatMap((input) => input.contributions.permissionEntries ?? []);
-
   // Mate's own hooks (artifact-path guard, session banner, archive-finish
   // nudge) ship in the bundled Claude plugin loaded at launch; settings-sync
   // only strips their legacy managed groups (via removeManagedHookGroups) and
@@ -233,10 +191,7 @@ function buildManagedClaudeSettings(
     ...getAllManagedPermissionEntries(companionPath),
     ...declaredPermissionEntries,
   ]);
-  const managedAllow = [
-    ...getBaseManagedPermissionEntries(companionPath),
-    ...enabledDeclaredPermissionEntries,
-  ];
+  const managedAllow = renderManagedClaudePermissionEntries(companionPath, contributions);
   const existingPermissions = existing.permissions ?? {};
   const existingAllow = Array.isArray(existingPermissions.allow) ? existingPermissions.allow : [];
   const nextAllow = [
@@ -284,7 +239,7 @@ export async function syncCompanionClaudeSettings(
 ): Promise<void> {
   const settingsPath = getCompanionClaudeSettingsPath(companionPath);
   const existing = await readClaudeSettings(settingsPath);
-  const settings = buildManagedClaudeSettings(existing, companionPath, config, contributions);
+  const settings = renderManagedClaudeSettings(existing, companionPath, config, contributions);
 
   await writeClaudeSettings(settingsPath, settings);
 
@@ -302,11 +257,13 @@ export async function reconcileClaudeContributions(
   ctx: SetupContext,
   inputs: CapabilityContributionInput[],
 ): Promise<void> {
-  const { companionPath, config } = ctx;
+  /** Resolved once per pass; every write site below is relative to it. */
+  const root = surfaceRoot(ctx);
+  const { config } = ctx;
 
   if (ctx.scope === "hub") {
-    await reconcileClaudeMcpContributions(ctx, inputs);
-    await reconcileClaudeAgentDefinitionContributions(ctx, inputs);
+    await reconcileClaudeMcpContributions(root, inputs);
+    await reconcileClaudeAgentDefinitionContributions(root, inputs);
     return;
   }
 
@@ -314,17 +271,17 @@ export async function reconcileClaudeContributions(
   // runs while the Claude runtime is active; a deactivated runtime's pass is
   // teardown-only and must not resurrect files the provider teardown removed.
   if (ctx.activeProviders.includes("claude")) {
-    await syncCompanionClaudeSettings(companionPath, config, inputs);
+    await syncCompanionClaudeSettings(root, config, inputs);
   }
 
-  await reconcileClaudeMcpContributions(ctx, inputs);
-  await reconcileClaudeAgentDefinitionContributions(ctx, inputs);
+  await reconcileClaudeMcpContributions(root, inputs);
+  await reconcileClaudeAgentDefinitionContributions(root, inputs);
 
   for (const input of inputs) {
     // Guidance sections are managed blocks in CLAUDE.md. Current sections are
     // upserted, then stale keys (content changes, disabled capability) are
     // swept. CLAUDE.md is Claude-exclusive, so no shared-file guard applies.
-    const guidancePath = path.join(companionPath, "CLAUDE.md");
+    const guidancePath = path.join(root, "CLAUDE.md");
     const sections = input.enabled ? (input.contributions.guidanceSections ?? []) : [];
     const keepKeys = new Set<string>();
     for (const section of sections) {
@@ -337,12 +294,12 @@ export async function reconcileClaudeContributions(
     }
 
     for (const skillTree of input.contributions.skillTrees ?? []) {
-      const skillDir = path.join(companionPath, ".claude", "skills", skillTree.name);
+      const skillDir = path.join(root, ".claude", "skills", skillTree.name);
       if (input.enabled) {
         await mergeDir(skillTree.sourceDir, skillDir);
       } else {
         await fs.rm(skillDir, { recursive: true, force: true });
-        await pruneEmptyAncestors(path.join(companionPath, ".claude", "skills"), companionPath);
+        await pruneEmptyAncestors(path.join(root, ".claude", "skills"), root);
       }
     }
   }
@@ -350,13 +307,13 @@ export async function reconcileClaudeContributions(
 
 /** Reconcile only MCP entries without touching Claude settings or guidance. */
 async function reconcileClaudeMcpContributions(
-  ctx: SetupContext,
+  root: string,
   inputs: CapabilityContributionInput[],
 ): Promise<void> {
   for (const input of inputs) {
     for (const descriptor of input.contributions.mcpServers ?? []) {
       await updateClaudeMcpServer(
-        getCompanionClaudeMcpConfigPath(ctx.companionPath),
+        getCompanionClaudeMcpConfigPath(root),
         descriptor.name,
         input.enabled ? toClaudeMcpEntry(descriptor) : null,
       );
@@ -370,10 +327,10 @@ async function reconcileClaudeMcpContributions(
  * (no shared-file merge), so it needs no companion-only surface.
  */
 async function reconcileClaudeAgentDefinitionContributions(
-  ctx: SetupContext,
+  root: string,
   inputs: CapabilityContributionInput[],
 ): Promise<void> {
-  const agentsDir = path.join(ctx.companionPath, ".claude", "agents");
+  const agentsDir = path.join(root, ".claude", "agents");
   for (const input of inputs) {
     for (const agent of input.contributions.agentDefinitions ?? []) {
       const agentPath = path.join(agentsDir, `${agent.name}.md`);
@@ -382,7 +339,7 @@ async function reconcileClaudeAgentDefinitionContributions(
         await fs.writeFile(agentPath, agent.content, "utf8");
       } else {
         await fs.rm(agentPath, { force: true });
-        await pruneEmptyAncestors(agentsDir, ctx.companionPath);
+        await pruneEmptyAncestors(agentsDir, root);
       }
     }
   }
@@ -399,128 +356,6 @@ async function syncCompanionClaudeMcpConfig(companionPath: string): Promise<void
     ...existing,
     mcpServers: { ...existing.mcpServers },
   });
-}
-
-// Reconcile the working repo for a Claude launch. Mate-managed Claude settings
-// now live in companion settings (see `syncCompanionClaudeSettings`) and are
-// loaded at launch via `--settings`, so Mate no longer writes them into the
-// working repo. Existing Mate-managed hooks are removed during migration;
-// user-authored settings remain in place. This also keeps the git exclude for
-// that file current and strips the TokenSave CLAUDE.md append the installer may
-// have added.
-export async function syncWorkingRepoClaudeSettings(
-  workingRepoPath: string,
-  companionPath: string,
-  config: FrameworkConfig,
-  globalConfigStore = new GlobalConfigStore(),
-): Promise<void> {
-  await ensureWorkingRepoLocalExcludes(workingRepoPath);
-  const tokensaveEnabled = (config.capabilities ?? []).some(
-    (capability) => capability.name === "tokensave",
-  );
-  await reconcileWorkingRepoCapabilityExcludes(
-    workingRepoPath,
-    tokensaveEnabled ? TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES : [],
-    TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
-  );
-  await syncWorkingRepoClaudeAdditionalDirectories(
-    workingRepoPath,
-    companionPath,
-    globalConfigStore,
-  );
-  await stripTokensaveClaudeMdAppend(workingRepoPath);
-}
-
-async function syncWorkingRepoClaudeAdditionalDirectories(
-  workingRepoPath: string,
-  companionPath: string,
-  globalConfigStore: GlobalConfigStore,
-): Promise<void> {
-  const settingsPath = path.join(workingRepoPath, ".claude", "settings.local.json");
-  // Migrate hooks only. Existing permissions and MCP entries stay in the
-  // working repo; additionalDirectories is reconciled below.
-  const existing = removeManagedHookGroups(await readClaudeSettings(settingsPath));
-  const permissions = { ...existing.permissions };
-  const existingAdditionalDirectories = Array.isArray(permissions.additionalDirectories)
-    ? permissions.additionalDirectories
-    : [];
-  const registeredCompanionPaths = new Set(
-    (await globalConfigStore.list()).map((registeredCompanionPath) =>
-      path.resolve(registeredCompanionPath),
-    ),
-  );
-  const resolvedCompanionPath = path.resolve(companionPath);
-  const additionalDirectories = Array.from(
-    new Set(
-      existingAdditionalDirectories
-        .map((directory) => path.resolve(directory))
-        .filter(
-          (directory) =>
-            !registeredCompanionPaths.has(directory) || directory === resolvedCompanionPath,
-        )
-        .concat(resolvedCompanionPath),
-    ),
-  );
-
-  const settings: ClaudeSettings = {
-    ...existing,
-    permissions: {
-      ...permissions,
-      additionalDirectories,
-    },
-  };
-
-  await writeClaudeSettings(settingsPath, settings);
-}
-
-export async function cleanupWorkingRepoClaudeSettings(
-  workingRepoPath: string,
-  registeredCompanionPaths: string[],
-): Promise<boolean> {
-  const settingsPath = path.join(workingRepoPath, ".claude", "settings.local.json");
-  let existing: ClaudeSettings;
-  try {
-    const parsed = JSON.parse(await fs.readFile(settingsPath, "utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object") return stripTokensaveClaudeMdAppend(workingRepoPath);
-    existing = parsed as ClaudeSettings;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return stripTokensaveClaudeMdAppend(workingRepoPath);
-    }
-    return false;
-  }
-
-  const settings = removeManagedHookGroups(existing);
-  const permissions = { ...settings.permissions };
-  const managedPaths = new Set(
-    registeredCompanionPaths.map((candidate) => path.resolve(candidate)),
-  );
-  const currentDirectories = Array.isArray(permissions.additionalDirectories)
-    ? permissions.additionalDirectories
-    : [];
-  const additionalDirectories = currentDirectories.filter(
-    (candidate) => !managedPaths.has(path.resolve(candidate)),
-  );
-  if (additionalDirectories.length > 0) {
-    permissions.additionalDirectories = additionalDirectories;
-  } else {
-    delete permissions.additionalDirectories;
-  }
-  if (Object.keys(permissions).length > 0) {
-    settings.permissions = permissions;
-  } else {
-    delete settings.permissions;
-  }
-
-  const settingsChanged = JSON.stringify(settings) !== JSON.stringify(existing);
-  if (settingsChanged && Object.keys(settings).length === 0) {
-    await fs.unlink(settingsPath);
-    await pruneEmptyAncestors(path.join(workingRepoPath, ".claude"), workingRepoPath);
-  } else if (settingsChanged) {
-    await writeClaudeSettings(settingsPath, settings);
-  }
-  const guidanceChanged = await stripTokensaveClaudeMdAppend(workingRepoPath);
-  return settingsChanged || guidanceChanged;
 }
 
 async function configureClaude(companionPath: string): Promise<void> {

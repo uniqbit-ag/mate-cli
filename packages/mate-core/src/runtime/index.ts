@@ -1,10 +1,18 @@
+export { FRAMEWORK_NAME } from "./framework";
 export {
   MATE_ENV,
   isManagedCompanionContext,
   readCompanionRuntimeContext,
+  resolveCompanionRuntime,
   type CompanionRuntimeContext,
+  type CompanionRuntimeResolution,
   type MateEnvVariable,
 } from "./env";
+export {
+  projectionFreshness,
+  projectionStalenessLines,
+  type ProjectionFreshness,
+} from "./freshness";
 export {
   CODEBASE_EXPLORATION_MARKER,
   COMPANION_POLICY_MARKER,
@@ -14,3 +22,41 @@ export {
   type GuidanceValidation,
   type MateGuidanceFile,
 } from "./guidance";
+export { mateInstallPath, mateVersion } from "./install";
+export {
+  companionFrameworkConfigPath,
+  emptyCompanionPolicy,
+  isCapabilityEnabled,
+  readCompanionPolicy,
+  type CompanionPolicy,
+} from "./policy";
+export {
+  PROJECTION_ENV_FILE,
+  PROJECTION_ENV_NAMES,
+  PROJECTION_FIELDS,
+  PROJECTION_STAMP_ENV_NAME,
+  PROJECTION_YAML_FILE,
+  computeProjectionStamp,
+  parseProjectionEnv,
+  parseProjectionYaml,
+  projectionEnvPath,
+  projectionYamlPath,
+  readProjectionFile,
+  renderProjectionEnv,
+  renderProjectionYaml,
+  resolveProjection,
+  writeProjectionPair,
+  type MateProjection,
+  type ProjectionFile,
+  type ProjectionStampInputs,
+  type ResolvedProjection,
+} from "./projection";
+export {
+  ancestorDirectories,
+  findRepoLocalRegistryFileSync,
+  repoLocalDirName,
+  repoLocalDirPath,
+  repoLocalFrameworkPath,
+  repoLocalRegistryPath,
+  type RepoLocalRegistryFile,
+} from "./repo-local";

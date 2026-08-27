@@ -59,7 +59,7 @@ function buildSystemPrompt(context: CompanionContext, guidance: MateGuidanceFile
 }
 
 export const CompanionPlugin: Plugin = async () => {
-  const context = readContext(process.env.MATE_ARTIFACT_PATH ?? "");
+  const context = readContext();
   if (!context.companionPath || !context.repositoryPath) {
     return {};
   }

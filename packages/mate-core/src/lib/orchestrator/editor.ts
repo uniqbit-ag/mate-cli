@@ -1,7 +1,9 @@
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import fs from "node:fs/promises";
 import path from "node:path";
+
+import { workspaceDocumentPath } from "./projection-entries";
+import { project } from "./working-repo-projection";
 
 type SpawnLike = typeof spawn;
 
@@ -75,9 +77,8 @@ export function writeMissingEditorCliGuidance(
   write(`mate: run "Install '${cli}' command in PATH" from the Command Palette to enable this.\n`);
 }
 
-export function editorWorkspacePath(repoPath: string): string {
-  return path.join(path.resolve(repoPath), ".mate", "workspace.code-workspace");
-}
+/** The Projection Root owns the path; this is the editor's name for it. */
+export const editorWorkspacePath = workspaceDocumentPath;
 
 export interface WorkspaceDocument {
   workspacePath: string;
@@ -95,21 +96,11 @@ export async function writeWorkspaceDocument(
   companionPath: string,
   repoPath: string,
 ): Promise<WorkspaceDocument> {
-  const folders: [string, string] = [path.resolve(repoPath), path.resolve(companionPath)];
-  const workspacePath = editorWorkspacePath(repoPath);
-  await fs.mkdir(path.dirname(workspacePath), { recursive: true });
-  await fs.writeFile(
-    workspacePath,
-    `${JSON.stringify(
-      {
-        folders: folders.map((candidate) => ({ path: candidate })),
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
-  return { workspacePath, folders };
+  await project("workspace", { repoPath, companionPath });
+  return {
+    workspacePath: workspaceDocumentPath(repoPath),
+    folders: [path.resolve(repoPath), path.resolve(companionPath)],
+  };
 }
 
 export async function injectEditorFolder(

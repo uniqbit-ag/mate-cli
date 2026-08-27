@@ -15,7 +15,26 @@ process.emitWarning = (warning, ...args) => {
   emitWarning.call(process, warning, ...args);
 };
 
+// Source imports are extensionless, which node's ESM resolver refuses. Probe
+// the TypeScript candidates the type-checker resolves so a hook module can
+// import the runtime subpath the same way the rest of the source tree does.
+const TS_CANDIDATE_SUFFIXES = [".ts", ".tsx", "/index.ts", "/index.tsx"];
+
 registerHooks({
+  resolve(specifier, context, next) {
+    if (!specifier.startsWith(".") || /\.[cm]?[jt]sx?$/.test(specifier)) {
+      return next(specifier, context);
+    }
+    const base = new URL(specifier, context.parentURL);
+    for (const suffix of TS_CANDIDATE_SUFFIXES) {
+      const candidate = new URL(`${base.href}${suffix}`);
+      if (fs.existsSync(fileURLToPath(candidate))) {
+        return { url: candidate.href, format: "module", shortCircuit: true };
+      }
+    }
+    return next(specifier, context);
+  },
+
   load(url, context, next) {
     if (!url.endsWith(".ts")) return next(url, context);
     const source = fs.readFileSync(fileURLToPath(url), "utf8");

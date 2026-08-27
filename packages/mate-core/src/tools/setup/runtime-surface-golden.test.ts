@@ -10,7 +10,9 @@ import { ClaudeAdapter } from "../../lib/orchestrator/adapters/claude";
 import { OpenCodeAdapter } from "../../lib/orchestrator/adapters/opencode";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { getClaudePluginRoot, getWrapperBinPath } from "../../lib/package-paths";
-import { executeSetup, syncWorkingRepoClaudeSettings } from "../setup";
+import { project } from "../../lib/orchestrator/working-repo-projection";
+import type { FrameworkConfig } from "../../lib/orchestrator/types";
+import { executeSetup, renderWorkingRuntimeDocuments } from "../setup";
 
 // Golden-fixture harness for the Runtime Surface refactor: runs the real
 // `executeSetup` across a capability × runtime matrix and snapshots the
@@ -313,6 +315,27 @@ async function collectLaunchSurface(
   ]);
 }
 
+// The second target of the same declarations: what a `mate wrap` would place
+// in a Working Repository, rendered rather than written. One axis on this
+// harness rather than a second harness — the companion snapshots above and the
+// working ones below are produced by the same pass over the same fixtures.
+async function collectWorkingTargetDocuments(
+  fixture: Fixture,
+  config: FrameworkConfig,
+): Promise<unknown> {
+  const documents = await renderWorkingRuntimeDocuments(
+    fixture.companionPath,
+    config,
+    path.join(fixture.root, "working"),
+  );
+  return normalize(documents, [
+    [await fs.realpath(fixture.root), "<root>"],
+    [fixture.root, "<root>"],
+    [getClaudePluginRoot(), "<claude-plugin>"],
+    [getWrapperBinPath(), "<wrapper-bin>"],
+  ]);
+}
+
 function runSetup(
   fixture: Fixture,
   agents: string[],
@@ -335,9 +358,10 @@ describe("runtime surface golden fixtures", () => {
         `setup ${capability} × ${agents.join("+")}`,
         async () => {
           const fixture = await makeFixture(`mate-golden-${capability}-`);
-          await runSetup(fixture, agents, [capability]);
+          const { config } = await runSetup(fixture, agents, [capability]);
           expect(await collectEffectiveState(fixture)).toMatchSnapshot();
           expect(await collectLaunchSurface(fixture, agents, [capability])).toMatchSnapshot();
+          expect(await collectWorkingTargetDocuments(fixture, config)).toMatchSnapshot();
         },
         { timeout: 30000 },
       );
@@ -348,11 +372,12 @@ describe("runtime surface golden fixtures", () => {
     "setup all capabilities × claude+opencode",
     async () => {
       const fixture = await makeFixture("mate-golden-all-");
-      await runSetup(fixture, ["claude", "opencode"], [...CAPABILITIES]);
+      const { config } = await runSetup(fixture, ["claude", "opencode"], [...CAPABILITIES]);
       expect(await collectEffectiveState(fixture)).toMatchSnapshot();
       expect(
         await collectLaunchSurface(fixture, ["claude", "opencode"], [...CAPABILITIES]),
       ).toMatchSnapshot();
+      expect(await collectWorkingTargetDocuments(fixture, config)).toMatchSnapshot();
     },
     { timeout: 30000 },
   );
@@ -387,8 +412,8 @@ describe("runtime surface golden fixtures", () => {
   );
 });
 
-// Working repos have their own Claude surface reconciled at launch time by
-// syncWorkingRepoClaudeSettings (additionalDirectories, managed-hook and
+// Working repos have their own Claude surface reconciled at launch time by the
+// Managed Projection's `launch` scope (additionalDirectories, managed-hook and
 // tokensave-append stripping, git excludes) — the working-repo-claude-settings
 // spec this change modifies. Hubs have no runtime surface: setup refuses them
 // before writing anything (guarded below).
@@ -461,12 +486,12 @@ describe("working repo golden fixtures", () => {
         const workingRepoPath = await makeWorkingRepo(fixture);
         const { config } = await runSetup(fixture, ["claude"], [...capabilities]);
 
-        await syncWorkingRepoClaudeSettings(
-          workingRepoPath,
-          fixture.companionPath,
+        await project("launch", {
+          repoPath: workingRepoPath,
+          companionPath: fixture.companionPath,
           config,
-          fixture.globalConfigStore,
-        );
+          globalConfigStore: fixture.globalConfigStore,
+        });
 
         expect(await collectWorkingRepoState(fixture, workingRepoPath)).toMatchSnapshot();
       },

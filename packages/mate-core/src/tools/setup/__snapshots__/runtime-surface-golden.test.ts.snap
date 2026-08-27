@@ -19,15 +19,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -141,6 +133,50 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "Skill(graphify)",
+          "Bash(graphify:*)",
+          "Bash(mate cap graphify:*)",
+          "Bash(<wrapper-bin>/graphify:*)",
+        ],
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
 {
   "agentsMd": 
@@ -168,7 +204,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -204,7 +240,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -281,6 +317,27 @@ exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup graphify × opencode 3`] = `
+[
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -300,15 +357,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -363,7 +412,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -399,7 +448,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -531,6 +580,66 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
 }
 `;
 
+exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "Skill(graphify)",
+          "Bash(graphify:*)",
+          "Bash(mate cap graphify:*)",
+          "Bash(<wrapper-bin>/graphify:*)",
+        ],
+      },
+    ],
+  },
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
 {
   "agentsMd": 
@@ -557,15 +666,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
     },
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -686,6 +787,66 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "mcp__tokensave__*",
+        ],
+      },
+    ],
+  },
+  {
+    "path": ".mcp.json",
+    "regions": [
+      {
+        "at": [
+          "mcpServers",
+        ],
+        "entries": {
+          "tokensave": {
+            "args": [
+              "serve",
+            ],
+            "command": "tokensave",
+          },
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
 {
   "agentsMd": 
@@ -723,7 +884,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -738,7 +899,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -812,6 +973,43 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
+[
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "mcp",
+        ],
+        "entries": {
+          "tokensave": {
+            "command": [
+              "tokensave",
+              "serve",
+            ],
+            "enabled": true,
+            "type": "local",
+          },
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -838,15 +1036,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
     },
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -921,7 +1111,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -936,7 +1126,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -1062,6 +1252,98 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
 }
 `;
 
+exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "mcp__tokensave__*",
+        ],
+      },
+    ],
+  },
+  {
+    "path": ".mcp.json",
+    "regions": [
+      {
+        "at": [
+          "mcpServers",
+        ],
+        "entries": {
+          "tokensave": {
+            "args": [
+              "serve",
+            ],
+            "command": "tokensave",
+          },
+        },
+        "kind": "map",
+      },
+    ],
+  },
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "mcp",
+        ],
+        "entries": {
+          "tokensave": {
+            "command": [
+              "tokensave",
+              "serve",
+            ],
+            "enabled": true,
+            "type": "local",
+          },
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
 {
   "agentsMd": 
@@ -1081,15 +1363,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -1163,6 +1437,48 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "Skill(context-mode:context-mode)",
+          "mcp__plugin_context-mode_context-mode__*",
+        ],
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup context-mode × opencode 1`] = `
 {
   "agentsMd": 
@@ -1198,7 +1514,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1214,7 +1530,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
       "context-mode@1.0.169",
     ],
   },
@@ -1281,6 +1597,27 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup context-mode × opencode 3`] = `
+[
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup context-mode × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -1308,15 +1645,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -1340,7 +1669,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1356,7 +1685,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
       "context-mode@1.0.169",
     ],
   },
@@ -1469,6 +1798,64 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
 }
 `;
 
+exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "Skill(context-mode:context-mode)",
+          "mcp__plugin_context-mode_context-mode__*",
+        ],
+      },
+    ],
+  },
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
 {
   "agentsMd": 
@@ -1490,15 +1877,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -1599,6 +1978,49 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "Skill(react-doctor)",
+          "Bash(npx react-doctor:*)",
+          "Bash(npx react-doctor@latest *)",
+        ],
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
 {
   "agentsMd": 
@@ -1626,7 +2048,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -1644,7 +2066,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -1710,6 +2132,27 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup react-doctor × opencode 3`] = `
+[
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -1731,15 +2174,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -1792,7 +2227,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -1810,7 +2245,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -1920,6 +2355,65 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
 }
 `;
 
+exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "Skill(react-doctor)",
+          "Bash(npx react-doctor:*)",
+          "Bash(npx react-doctor@latest *)",
+        ],
+      },
+    ],
+  },
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
 {
   "agentsMd": 
@@ -1939,15 +2433,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -2032,6 +2518,55 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "Skill(openspec-explore)",
+          "Skill(openspec-propose)",
+          "Skill(openspec-apply-change)",
+          "Skill(openspec-archive-change)",
+          "Skill(mate-artifact-finish)",
+          "Skill(mate-openspec-backfill)",
+          "Bash(openspec:*)",
+          "Bash(mate cap graphify:*)",
+          "Bash(<wrapper-bin>/openspec:*)",
+        ],
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
 {
   "agentsMd": 
@@ -2059,7 +2594,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -2079,7 +2614,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -2146,6 +2681,27 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
 }
 `;
 
+exports[`runtime surface golden fixtures setup openspec × opencode 3`] = `
+[
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -2165,15 +2721,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -2209,7 +2757,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -2229,7 +2777,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -2341,6 +2889,71 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
 }
 `;
 
+exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "Skill(openspec-explore)",
+          "Skill(openspec-propose)",
+          "Skill(openspec-apply-change)",
+          "Skill(openspec-archive-change)",
+          "Skill(mate-artifact-finish)",
+          "Skill(mate-openspec-backfill)",
+          "Bash(openspec:*)",
+          "Bash(mate cap graphify:*)",
+          "Bash(<wrapper-bin>/openspec:*)",
+        ],
+      },
+    ],
+  },
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures setup all capabilities × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -2377,15 +2990,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
     },
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -2530,7 +3135,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -2573,7 +3178,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
       "context-mode@1.0.169",
     ],
   },
@@ -2710,6 +3315,116 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
 }
 `;
 
+exports[`runtime surface golden fixtures setup all capabilities × claude+opencode 3`] = `
+[
+  {
+    "path": ".claude/settings.local.json",
+    "regions": [
+      {
+        "at": [
+          "hooks",
+          "PreToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+        ],
+      },
+      {
+        "at": [
+          "permissions",
+          "allow",
+        ],
+        "kind": "list",
+        "values": [
+          "Bash(mate:*)",
+          "Read(<root>/companion/**)",
+          "Edit(<root>/companion/**)",
+          "Skill(openspec-explore)",
+          "Skill(openspec-propose)",
+          "Skill(openspec-apply-change)",
+          "Skill(openspec-archive-change)",
+          "Skill(mate-artifact-finish)",
+          "Skill(mate-openspec-backfill)",
+          "Bash(openspec:*)",
+          "Bash(mate cap graphify:*)",
+          "Bash(<wrapper-bin>/openspec:*)",
+          "Skill(react-doctor)",
+          "Bash(npx react-doctor:*)",
+          "Bash(npx react-doctor@latest *)",
+          "mcp__tokensave__*",
+          "Skill(graphify)",
+          "Bash(graphify:*)",
+          "Bash(mate cap graphify:*)",
+          "Bash(<wrapper-bin>/graphify:*)",
+          "Skill(context-mode:context-mode)",
+          "mcp__plugin_context-mode_context-mode__*",
+        ],
+      },
+    ],
+  },
+  {
+    "path": ".mcp.json",
+    "regions": [
+      {
+        "at": [
+          "mcpServers",
+        ],
+        "entries": {
+          "tokensave": {
+            "args": [
+              "serve",
+            ],
+            "command": "tokensave",
+          },
+        },
+        "kind": "map",
+      },
+    ],
+  },
+  {
+    "path": ".opencode/opencode.json",
+    "regions": [
+      {
+        "at": [
+          "mcp",
+        ],
+        "entries": {
+          "tokensave": {
+            "command": [
+              "tokensave",
+              "serve",
+            ],
+            "enabled": true,
+            "type": "local",
+          },
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "permission",
+          "external_directory",
+        ],
+        "entries": {
+          "<root>/companion": "allow",
+          "<root>/companion/**": "allow",
+        },
+        "kind": "map",
+      },
+    ],
+  },
+]
+`;
+
 exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`] = `
 {
   "agentsMd": 
@@ -2729,15 +3444,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -2759,7 +3466,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -2774,7 +3481,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -2799,15 +3506,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -2829,7 +3528,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -2844,7 +3543,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -2870,15 +3569,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -2900,7 +3591,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -2915,7 +3606,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -2940,15 +3631,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -2970,7 +3653,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -2985,7 +3668,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -3010,15 +3693,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -3040,7 +3715,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
     "references": {
       "mate": "..",
@@ -3055,7 +3730,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5-canary.0",
+      "@uniqbit/mate-opencode-plugin@0.15.5",
     ],
   },
 }
@@ -3080,15 +3755,7 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
     "mcpServers": {},
   },
   "claudeMd": 
-"<!-- MATE:COMPANION:START -->
-
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
-- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
-- Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
-- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
-
-<!-- MATE:COMPANION:END -->
+"@AGENTS.md
 "
 ,
   "claudeSettingsLocal": {
@@ -3156,6 +3823,7 @@ User notes.
 /.claude/
 /.opencode/
 /.agents/
+/.mcp.json
 # mate managed: end
 .tokensave/
 "
@@ -3201,6 +3869,7 @@ User notes.
 /.claude/
 /.opencode/
 /.agents/
+/.mcp.json
 # mate managed: end
 "
 ,

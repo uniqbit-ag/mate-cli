@@ -5,6 +5,10 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
+import { MATE_ENV } from "./runtime/env-names";
+import { writeProjectionPair } from "./runtime/projection";
+import { repoLocalRegistryPath } from "./runtime/repo-local";
+
 // Packs the package once and executes every bundled Claude plugin hook shim
 // against fixture hook payloads, proving the shipped plugin is loadable and
 // speaks the hook protocol from inside the tarball layout.
@@ -34,6 +38,18 @@ beforeAll(async () => {
     encoding: "utf8",
   });
   expect(unpack.status).toBe(0);
+
+  // Hoist the runtime dependencies the hook import graph reaches, so the
+  // fixture is an installed package rather than a bare tarball: without them
+  // the shims would fail on resolution the real install satisfies.
+  for (const dependency of ["yaml"]) {
+    await fs.symlink(
+      await fs.realpath(path.join(packageRoot, "node_modules", dependency)),
+      path.join(root, "node_modules", dependency),
+      "dir",
+    );
+  }
+
   pluginRoot = path.join(extracted, "package", "claude-plugin");
 });
 
@@ -47,13 +63,42 @@ function runShim(
   shim: string,
   payload: unknown,
   env: Record<string, string> = {},
+  cwd?: string,
 ): { exitCode: number; stdout: string; stderr: string } {
+  const merged: Record<string, string | undefined> = { ...process.env, ...env };
+  /** An empty override unsets the variable: `hasLaunchEnvironment` counts "" as present. */
+  for (const [name, value] of Object.entries(env)) if (value === "") delete merged[name];
+
   const result = spawnSync("node", [path.join(pluginRoot, "hooks", shim)], {
     input: JSON.stringify(payload),
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: merged,
+    cwd,
   });
   return { exitCode: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
+}
+
+/** The harness may itself run under a Mate launch; an unmanaged shim must not inherit it. */
+function withoutLaunchEnvironment(): Record<string, string> {
+  return Object.fromEntries(Object.values(MATE_ENV).map((name) => [name, ""]));
+}
+
+async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> {
+  const registryPath = repoLocalRegistryPath(repoRoot);
+  await fs.mkdir(path.dirname(registryPath), { recursive: true });
+  await fs.writeFile(registryPath, "companions: []\n", "utf8");
+  writeProjectionPair(repoRoot, {
+    stamp: "written-by-another-mate",
+    projection: {
+      version: "0.0.0",
+      companionPath,
+      repositoryPath: repoRoot,
+      repositoryId: "acme",
+      wrapperBinPath: path.join(companionPath, "wrappers", "bin"),
+      reactDoctorBinPath: path.join(companionPath, "react-doctor"),
+      graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
+    },
+  });
 }
 
 describe("packed Claude plugin", () => {
@@ -100,6 +145,24 @@ describe("packed Claude plugin", () => {
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
     expect(allowed.exitCode).toBe(0);
+  });
+
+  test("validate-artifact-path shim resolves a projection from inside the install", async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-wrapped-"));
+    tempRoots.push(repo);
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    spawnSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
+    await wrapRepo(repo, companion);
+
+    const blocked = runShim(
+      "validate-artifact-path.mjs",
+      { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
+      withoutLaunchEnvironment(),
+      repo,
+    );
+    expect(blocked.stderr).toContain("artifact writes must go to the companion framework path");
+    expect(blocked.exitCode).toBe(2);
   });
 
   test("session-banner shim emits the managed-session banner", () => {

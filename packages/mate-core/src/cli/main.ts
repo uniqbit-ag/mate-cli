@@ -18,11 +18,15 @@ import { runPluginCommand } from "./commands/plugin/plugin";
 import { runReportCommand } from "./commands/report";
 import { runUpdateCommand } from "./commands/update";
 import { runWorkspaceCommand } from "./commands/workspace/workspace";
+import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
 import { runInstallCommand } from "./commands/install";
 import { inspectInstallPreflight } from "../lib/install";
 import { resolveRootContext } from "../lib/orchestrator/root-context";
-import { ensureUnambiguousCompanion } from "./commands/shared/companion-selection";
+import {
+  ensureUnambiguousCompanion,
+  type CompanionSelectionOptions,
+} from "./commands/shared/companion-selection";
 import { hydrateDynamicPlugins } from "../tools/setup/dynamic-plugins/hydrate";
 import { findPluginCliCommand } from "./plugin-commands";
 import { usage } from "./usage";
@@ -34,8 +38,12 @@ export interface GateNeeds {
   notHubRoot?: boolean;
   /** Block the command when the current directory resolves to a companion root. */
   notCompanionRoot?: boolean;
-  /** Require an unambiguous companion (selection wizard on ambiguity) before dispatch. */
-  companion?: boolean;
+  /**
+   * Require an unambiguous companion (selection wizard on ambiguity) before
+   * dispatch. Options select a companion explicitly or force the wizard past a
+   * recorded answer.
+   */
+  companion?: boolean | CompanionSelectionOptions;
   /** Require a complete installation (install preflight) before dispatch. */
   install?: boolean;
 }
@@ -120,7 +128,8 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       }
     }
 
-    if (needs.companion && !(await deps.ensureUnambiguousCompanion())) {
+    const companionOptions = typeof needs.companion === "object" ? needs.companion : {};
+    if (needs.companion && !(await deps.ensureUnambiguousCompanion(process.cwd(), companionOptions))) {
       process.exitCode = 1;
       return false;
     }
@@ -225,6 +234,20 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       if (!(await gate({}))) return;
       await runWorkingCommand(subcommand, rest);
       return;
+    case "wrap": {
+      // Recording the answer is the point, so a recorded one must not suppress
+      // the wizard; a bad flag is reported without prompting first.
+      const wrapArgs = argv.slice(3);
+      const parsedWrap = parseWrapArgs(wrapArgs);
+      if ("error" in parsedWrap) {
+        await runWrapCommand(wrapArgs);
+        return;
+      }
+      const needs = { ignoreProjection: true, companion: parsedWrap.companion };
+      if (!(await gate({ updateGuard: true, companion: needs, install: true }))) return;
+      await runWrapCommand(wrapArgs);
+      return;
+    }
     default:
       // Unknown commands fail fast: no case matched, so no gate ever ran.
       console.error(`Unknown command: ${command}`);

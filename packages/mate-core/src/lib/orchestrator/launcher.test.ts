@@ -1,4 +1,8 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { resetActiveDistribution, setActiveDistribution } from "../../distribution";
 import type { CapabilityPlugin } from "../../tools/setup/plugin";
 import { PluginRegistry } from "../../tools/setup/registry";
@@ -59,7 +63,17 @@ function makeRequest(overrides: Partial<LaunchRequest> = {}): LaunchRequest {
   return { tool: "claude", args: ["--print", "hello"], ...overrides };
 }
 
+/** Every launch refreshes the Projection Root; tests not about it stub it out. */
+const originalRefreshProjectionRoot = launcherDeps.refreshProjectionRoot;
+const refreshProjectionRoot = mock(async () => ({ kind: "current" }) as never);
+
+beforeEach(() => {
+  refreshProjectionRoot.mockClear();
+  launcherDeps.refreshProjectionRoot = refreshProjectionRoot;
+});
+
 afterEach(() => {
+  launcherDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
   resetActiveDistribution();
   mock.restore();
 });
@@ -97,14 +111,14 @@ describe("FrameworkLauncher", () => {
     const { launcher, adapter } = createLauncher();
     const syncCompanionGit = mock(async () => {});
     const syncCompanionFiles = mock(async () => {});
-    const syncWorkingRepoClaudeSettings = mock(async () => {});
+    const projectWorkingRepo = mock(async () => {});
 
     const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
     const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalSyncWorkingRepoClaudeSettings = launcherDeps.syncWorkingRepoClaudeSettings;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
     launcherDeps.syncCompanionGit = syncCompanionGit;
     launcherDeps.syncCompanionFiles = syncCompanionFiles;
-    launcherDeps.syncWorkingRepoClaudeSettings = syncWorkingRepoClaudeSettings;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
@@ -121,12 +135,12 @@ describe("FrameworkLauncher", () => {
     } finally {
       launcherDeps.syncCompanionGit = originalSyncCompanionGit;
       launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.syncWorkingRepoClaudeSettings = originalSyncWorkingRepoClaudeSettings;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
     }
 
     expect(syncCompanionFiles).not.toHaveBeenCalled();
     expect(syncCompanionGit).not.toHaveBeenCalled();
-    expect(syncWorkingRepoClaudeSettings).not.toHaveBeenCalled();
+    expect(projectWorkingRepo).not.toHaveBeenCalled();
     expect(adapter.validateLaunch).not.toHaveBeenCalled();
     expect(adapter.run).not.toHaveBeenCalled();
   });
@@ -150,16 +164,20 @@ describe("FrameworkLauncher", () => {
     const syncCompanionFiles = mock(async () => {
       events.push("setup");
     });
-    const syncWorkingRepoClaudeSettings = mock(async () => {
+    const projectWorkingRepo = mock(async () => {
       events.push("repo-settings");
+    });
+    launcherDeps.refreshProjectionRoot = mock(async () => {
+      events.push("projection");
+      return { kind: "current" } as never;
     });
 
     const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
     const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalSyncWorkingRepoClaudeSettings = launcherDeps.syncWorkingRepoClaudeSettings;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
     launcherDeps.syncCompanionGit = syncCompanionGit;
     launcherDeps.syncCompanionFiles = syncCompanionFiles;
-    launcherDeps.syncWorkingRepoClaudeSettings = syncWorkingRepoClaudeSettings;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
@@ -172,10 +190,10 @@ describe("FrameworkLauncher", () => {
       expect(syncCompanionGit).toHaveBeenCalledTimes(1);
       expect(syncCompanionGit).toHaveBeenCalledWith("/tmp/companion", "/tmp/repo", true);
       expect(syncCompanionFiles).toHaveBeenCalledTimes(1);
-      expect(syncWorkingRepoClaudeSettings).toHaveBeenCalledTimes(1);
+      expect(projectWorkingRepo).toHaveBeenCalledTimes(1);
       expect(adapter.validateLaunch).toHaveBeenCalledTimes(1);
       expect(adapter.run).not.toHaveBeenCalled();
-      expect(events).toEqual(["git", "setup", "repo-settings", "preflight", "adapter"]);
+      expect(events).toEqual(["git", "setup", "repo-settings", "projection", "preflight", "adapter"]);
 
       await expect(prepared.execute()).resolves.toEqual({
         exitCode: 0,
@@ -185,7 +203,7 @@ describe("FrameworkLauncher", () => {
     } finally {
       launcherDeps.syncCompanionGit = originalSyncCompanionGit;
       launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.syncWorkingRepoClaudeSettings = originalSyncWorkingRepoClaudeSettings;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
     }
 
     expect(adapter.run).toHaveBeenCalledTimes(1);
@@ -351,11 +369,11 @@ describe("FrameworkLauncher", () => {
       for (const vars of envVars) {
         const { launcher, adapter } = createLauncher();
         const syncCompanionFiles = mock(async () => {});
-        const syncWorkingRepoClaudeSettings = mock(async () => {});
+        const projectWorkingRepo = mock(async () => {});
         const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-        const originalSyncWorkingRepoClaudeSettings = launcherDeps.syncWorkingRepoClaudeSettings;
+        const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
         launcherDeps.syncCompanionFiles = syncCompanionFiles;
-        launcherDeps.syncWorkingRepoClaudeSettings = syncWorkingRepoClaudeSettings;
+        launcherDeps.projectWorkingRepo = projectWorkingRepo;
 
         spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
           id: "repo",
@@ -374,7 +392,7 @@ describe("FrameworkLauncher", () => {
             delete process.env[key];
           }
           launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-          launcherDeps.syncWorkingRepoClaudeSettings = originalSyncWorkingRepoClaudeSettings;
+          launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
         }
 
         expect(adapter.run).toHaveBeenCalledTimes(1);
@@ -382,6 +400,38 @@ describe("FrameworkLauncher", () => {
       }
     } finally {
       process.env = originalEnv;
+    }
+  });
+
+  test("a Working Repository that cannot be written warns and the launch proceeds", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-launcher-readonly-"));
+    const blocker = path.join(root, "not-a-directory");
+    await fs.writeFile(blocker, "", "utf8");
+
+    const { launcher, adapter } = createLauncher();
+    launcherDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
+    const syncCompanionFiles = mock(async () => {});
+    const projectWorkingRepo = mock(async () => {});
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
+    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    const warn = spyOn(console, "error").mockImplementation(() => {});
+
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "acme",
+      path: path.join(blocker, "repo"),
+    });
+
+    try {
+      await expect(launcher.prepare(makeRequest())).resolves.toBeDefined();
+      expect(adapter.validateLaunch).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls.flat().join("\n")).toContain("acme");
+    } finally {
+      warn.mockRestore();
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+      await fs.rm(root, { recursive: true, force: true });
     }
   });
 });

@@ -4,14 +4,26 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { version } from "../../../package.json";
 import { FRAMEWORK_NAME } from "../../framework";
+import {
+  parseProjectionEnv,
+  parseProjectionYaml,
+  renderProjectionYaml,
+  type ProjectionFile,
+} from "../../runtime/projection";
+import { fileExists } from "../fs-utils";
+import { getReactDoctorBinPath, getWrapperBinPath } from "../package-paths";
 import {
   resolveForCapability,
   resolveForLaunch,
   resolveFrameworkContext,
 } from "./framework-context";
 import { GlobalConfigStore } from "./global-config-store";
-import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
+import {
+  upsertRepoLocalCompanionPointer,
+  writeRepoLocalRegistryEntry,
+} from "./repo-local-registry";
 import {
   AmbiguousCompanionError,
   ConfigError,
@@ -382,5 +394,222 @@ describe("resolveForCapability", () => {
     expect(error.message).toContain(
       "Run `mate cap` from inside a directory you have registered with:",
     );
+  });
+});
+
+describe("durable projection refresh", () => {
+  const projectionDir = (repoPath: string) => path.join(repoPath, `.${FRAMEWORK_NAME}`);
+  const yamlPath = (repoPath: string) => path.join(projectionDir(repoPath), "projection.yaml");
+  const envPath = (repoPath: string) => path.join(projectionDir(repoPath), "projection.env");
+
+  async function readProjection(repoPath: string): Promise<ProjectionFile | null> {
+    return parseProjectionYaml(await fs.readFile(yamlPath(repoPath), "utf8"));
+  }
+
+  async function makeLinkedRepo(prefix: string): Promise<{
+    root: string;
+    repoPath: string;
+    companionPath: string;
+    store: GlobalConfigStore;
+  }> {
+    const root = await makeTempDir(prefix);
+    const repoPath = path.join(root, "working");
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(companionPath, { recursive: true });
+    await writeRepoLocalRegistryEntry(
+      repoPath,
+      companionPath,
+      { id: "app", path: repoPath },
+      "git",
+    );
+
+    const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await store.register(companionPath);
+    return { root, repoPath, companionPath, store };
+  }
+
+  async function captureStderr<T>(run: () => Promise<T>): Promise<{ result: T; lines: string[] }> {
+    const lines: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+    try {
+      return { result: await run(), lines };
+    } finally {
+      console.error = original;
+    }
+  }
+
+  test("resolveForLaunch writes both files with paths for disabled capabilities", async () => {
+    const { repoPath, companionPath, store } = await makeLinkedRepo("projection-launch-");
+
+    await resolveForLaunch(repoPath, store);
+
+    const file = await readProjection(repoPath);
+    expect(file?.projection).toEqual({
+      version,
+      companionPath,
+      repositoryPath: repoPath,
+      repositoryId: "app",
+      wrapperBinPath: getWrapperBinPath(),
+      reactDoctorBinPath: getReactDoctorBinPath(),
+      graphifyOut: path.join(companionPath, ".graphify", "app", "graphify-out"),
+    });
+    expect(parseProjectionEnv(await fs.readFile(envPath(repoPath), "utf8"))).toEqual(file);
+  });
+
+  test("the projection never carries a predicate or the session guidance payload", async () => {
+    const { repoPath, store } = await makeLinkedRepo("projection-no-predicates-");
+
+    await resolveForLaunch(repoPath, store);
+
+    for (const generated of [yamlPath(repoPath), envPath(repoPath)]) {
+      const contents = await fs.readFile(generated, "utf8");
+      expect(contents).not.toContain("allowedAgents");
+      expect(contents).not.toContain("GRAPHIFY_ENABLED");
+      expect(contents).not.toContain("GIT_AUTO_MODE");
+      expect(contents).not.toContain("REACT_DOCTOR_ENABLED");
+      expect(contents).not.toContain("MATE_GUIDANCE_JSON");
+      expect(contents).not.toContain("MATE_POLICY_JSON");
+    }
+  });
+
+  test("resolveForCapability writes the projection and keeps its returned match", async () => {
+    const { repoPath, companionPath, store } = await makeLinkedRepo("projection-cap-");
+
+    const ctx = await resolveForCapability(repoPath, store);
+
+    expect(ctx.companionPath).toBe(companionPath);
+    expect(ctx.repositoryId).toBe("app");
+    expect((await readProjection(repoPath))?.projection.companionPath).toBe(companionPath);
+  });
+
+  test("a current projection is not rewritten", async () => {
+    const { repoPath, store } = await makeLinkedRepo("projection-current-");
+    await resolveForLaunch(repoPath, store);
+
+    const stamp = (await readProjection(repoPath))!.stamp;
+    const sentinel = renderProjectionYaml({
+      stamp,
+      projection: { ...(await readProjection(repoPath))!.projection, repositoryId: "sentinel" },
+    });
+    await fs.writeFile(yamlPath(repoPath), sentinel, "utf8");
+
+    await resolveForLaunch(repoPath, store);
+    await resolveForCapability(repoPath, store);
+
+    expect((await readProjection(repoPath))?.projection.repositoryId).toBe("sentinel");
+  });
+
+  test("a stale projection is rewritten on the next capability resolution", async () => {
+    const { repoPath, store } = await makeLinkedRepo("projection-stale-");
+    await resolveForCapability(repoPath, store);
+    const fresh = (await readProjection(repoPath))!;
+
+    await fs.writeFile(
+      yamlPath(repoPath),
+      renderProjectionYaml({
+        stamp: "stale",
+        projection: { ...fresh.projection, companionPath: "/companions/old" },
+      }),
+      "utf8",
+    );
+
+    await resolveForCapability(repoPath, store);
+
+    expect(await readProjection(repoPath)).toEqual(fresh);
+  });
+
+  test("a nested managed invocation does not write a projection", async () => {
+    const { repoPath, companionPath, store } = await makeLinkedRepo("projection-managed-");
+    process.env.MATE_ARTIFACT_PATH = companionPath;
+    process.env.MATE_REPO_ID = "app";
+
+    await resolveForLaunch(repoPath, store);
+    await resolveForCapability(repoPath, store);
+
+    expect(await fileExists(yamlPath(repoPath))).toBe(false);
+  });
+
+  test("a read-only Working Repository still launches, warning instead of failing", async () => {
+    const { repoPath, companionPath, store } = await makeLinkedRepo("projection-readonly-");
+    await fs.chmod(projectionDir(repoPath), 0o555);
+
+    try {
+      const { result, lines } = await captureStderr(() => resolveForLaunch(repoPath, store));
+
+      expect(result.companionPath).toBe(companionPath);
+      expect(result.repositoryId).toBe("app");
+      expect(lines.some((line) => line.includes("failed to write the projection for app"))).toBe(
+        true,
+      );
+      expect(await fileExists(yamlPath(repoPath))).toBe(false);
+    } finally {
+      await fs.chmod(projectionDir(repoPath), 0o755);
+    }
+  });
+
+  test("resolveFrameworkContext writes nothing, even from a linked Working Repository", async () => {
+    const { repoPath, store } = await makeLinkedRepo("projection-framework-ctx-");
+
+    await resolveFrameworkContext(repoPath, store);
+
+    expect(await fileExists(yamlPath(repoPath))).toBe(false);
+    expect(await fileExists(envPath(repoPath))).toBe(false);
+  });
+
+  test("a companion resolved without a Working Repository writes nothing", async () => {
+    const root = await makeTempDir("projection-companion-only-");
+    await writeFrameworkConfig(root, "type: companion\n");
+    const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+
+    const { result, lines } = await captureStderr(() => resolveForCapability(root, store));
+
+    expect(result.companionPath).toBe(root);
+    expect(await fileExists(path.join(projectionDir(root), "projection.yaml"))).toBe(false);
+    expect(lines).toEqual([]);
+  });
+
+  describe("ambiguous companion link", () => {
+    async function linkSecondCompanion(root: string, repoPath: string): Promise<void> {
+      const second = path.join(root, "companion-b");
+      await fs.mkdir(second, { recursive: true });
+      await upsertRepoLocalCompanionPointer(repoPath, second, "app", "git");
+    }
+
+    test("resolveForCapability writes nothing and still resolves to the same companion", async () => {
+      const { root, repoPath, companionPath, store } =
+        await makeLinkedRepo("projection-ambig-cap-");
+      await linkSecondCompanion(root, repoPath);
+
+      const ctx = await resolveForCapability(repoPath, store);
+
+      expect(ctx.companionPath).toBe(companionPath);
+      expect(await fileExists(yamlPath(repoPath))).toBe(false);
+    });
+
+    test("resolveForLaunch reports the ambiguity and writes nothing", async () => {
+      const { root, repoPath, store } = await makeLinkedRepo("projection-ambig-launch-");
+      await linkSecondCompanion(root, repoPath);
+
+      await expect(resolveForLaunch(repoPath, store)).rejects.toBeInstanceOf(
+        AmbiguousCompanionError,
+      );
+      expect(await fileExists(yamlPath(repoPath))).toBe(false);
+    });
+
+    test("an existing projection survives ambiguity appearing later", async () => {
+      const { root, repoPath, companionPath, store } = await makeLinkedRepo(
+        "projection-ambig-existing-",
+      );
+      await resolveForLaunch(repoPath, store);
+      const before = await fs.readFile(yamlPath(repoPath), "utf8");
+
+      await linkSecondCompanion(root, repoPath);
+      await resolveForCapability(repoPath, store);
+
+      expect(await fs.readFile(yamlPath(repoPath), "utf8")).toBe(before);
+      expect(parseProjectionYaml(before)?.projection.companionPath).toBe(companionPath);
+    });
   });
 });

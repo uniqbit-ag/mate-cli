@@ -1,5 +1,5 @@
 // oxlint-disable no-underscore-dangle
-import { syncCompanionFiles, syncWorkingRepoClaudeSettings } from "../../tools/setup";
+import { syncCompanionFiles } from "../../tools/setup";
 import { getActiveDistribution } from "../../distribution";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
 import type { LaunchAdapter, AdapterContext } from "./adapters/base";
@@ -8,6 +8,8 @@ import { OpenCodeAdapter } from "./adapters/opencode";
 import { CompanionStore } from "./companion-store";
 import { syncCompanionGit } from "./companion-git-sync";
 import { resolveForLaunch, type LaunchContext } from "./framework-context";
+import type { ProjectionInput } from "./projection-types";
+import { project, projectWorkingRepositoryBestEffort } from "./working-repo-projection";
 import {
   RepositoryNotSelectedError,
   LaunchPreflightError,
@@ -38,7 +40,15 @@ interface ResolvedLaunchState {
 
 export const launcherDeps = {
   syncCompanionFiles,
-  syncWorkingRepoClaudeSettings,
+  /** The Managed Projection's launch scope; the working repo is written only here. */
+  projectWorkingRepo: (input: ProjectionInput) => project("launch", input),
+  /**
+   * The Projection Root a launch guarantees for itself. `resolveForLaunch` also
+   * writes it, but only on the branch that resolved a companion from the
+   * Working Repository; asking here makes the guarantee independent of which
+   * branch answered. Best-effort — a launch carries its own configuration.
+   */
+  refreshProjectionRoot: projectWorkingRepositoryBestEffort,
   syncCompanionGit,
 };
 
@@ -70,11 +80,12 @@ export class FrameworkLauncher {
       );
     }
     await launcherDeps.syncCompanionFiles(state.companionPath, state.config, state.repository.path);
-    await launcherDeps.syncWorkingRepoClaudeSettings(
-      state.repository.path,
-      state.companionPath,
-      state.config,
-    );
+    await launcherDeps.projectWorkingRepo({
+      repoPath: state.repository.path,
+      companionPath: state.companionPath,
+      config: state.config,
+    });
+    await launcherDeps.refreshProjectionRoot(state.companionPath, state.repository);
     await this.runCapabilityPreflight(state, request.tool);
     await state.adapter.validateLaunch(adapterContext);
 

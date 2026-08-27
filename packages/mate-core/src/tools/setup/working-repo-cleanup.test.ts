@@ -5,10 +5,16 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { fileExists } from "../../lib/fs-utils";
 import {
   repoLocalDirPath,
   writeRepoLocalRegistryEntry,
 } from "../../lib/orchestrator/repo-local-registry";
+import {
+  projectionEnvPath,
+  projectionYamlPath,
+  writeProjectionPair,
+} from "../../runtime/projection";
 import { ensureWorkingRepoLocalExcludes } from "./working-repo-local-state";
 import { cleanupWorkingRepository } from "./working-repo-cleanup";
 
@@ -106,11 +112,12 @@ describe("cleanupWorkingRepository", () => {
 
     const beforeStatus = (await execFileAsync("git", ["-C", repoPath, "status", "--porcelain"]))
       .stdout;
-    await cleanupWorkingRepository(repoPath, [companionPath]);
+    const result = await cleanupWorkingRepository(repoPath, [companionPath]);
     const afterStatus = (await execFileAsync("git", ["-C", repoPath, "status", "--porcelain"]))
       .stdout;
 
     expect(afterStatus).toBe(beforeStatus);
+    expect(result.retained).toContain("capability-excludes");
     await expect(
       fs.access(path.join(repoPath, ".claude", "settings.local.json")),
     ).rejects.toThrow();
@@ -136,5 +143,36 @@ describe("cleanupWorkingRepository", () => {
     expect(await fs.readFile(path.join(repoPath, ".git", "info", "exclude"), "utf8")).toContain(
       "/.mate/\n",
     );
+  });
+
+  test("removes both generated projection files with the repo-local directory", async () => {
+    const repoPath = await makeRepo("mate-working-cleanup-projection-");
+    const companionPath = path.join(repoPath, "..", "companion");
+    await writeRepoLocalRegistryEntry(
+      repoPath,
+      companionPath,
+      { id: "app", path: repoPath },
+      "existing",
+    );
+    writeProjectionPair(repoPath, {
+      stamp: "stamp",
+      projection: {
+        version: "0.15.5",
+        companionPath,
+        repositoryPath: repoPath,
+        repositoryId: "app",
+        wrapperBinPath: "/install/mate/wrappers/bin",
+        reactDoctorBinPath: "/install/mate/node_modules/.bin/react-doctor",
+        graphifyOut: path.join(companionPath, ".graphify", "app", "graphify-out"),
+      },
+    });
+    expect(await fileExists(projectionYamlPath(repoPath))).toBe(true);
+    expect(await fileExists(projectionEnvPath(repoPath))).toBe(true);
+
+    await cleanupWorkingRepository(repoPath);
+
+    expect(await fileExists(projectionYamlPath(repoPath))).toBe(false);
+    expect(await fileExists(projectionEnvPath(repoPath))).toBe(false);
+    expect(await fileExists(repoLocalDirPath(repoPath))).toBe(false);
   });
 });
