@@ -1,4 +1,7 @@
 // Show the active Mate companion paths in Claude Code.
+import { resolveCompanionRuntime } from "../runtime/env";
+import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
+import { mateVersion } from "../runtime/install";
 import type { HookEnv } from "./validate-artifact-path";
 
 export interface BannerOutcome {
@@ -6,15 +9,27 @@ export interface BannerOutcome {
   stdout: string;
 }
 
-// Fail-soft outside managed sessions: no MATE_* env, no banner.
-export function buildBanner(env: HookEnv): BannerOutcome {
-  const repoPath = env.MATE_REPO_PATH;
-  const artifactPath = env.MATE_ARTIFACT_PATH;
-  if (!repoPath || !artifactPath) return { exitCode: 0, stdout: "" };
+/**
+ * Resolves in-process from either source — no subprocess in either branch.
+ * With `mate doctor` out of scope this is one of only two surfaces where a
+ * drifted wrap becomes visible, so staleness is reported, never suppressed.
+ */
+export function buildBanner(env: HookEnv, cwd: string = process.cwd()): BannerOutcome {
+  const { context, projection } = resolveCompanionRuntime(env, cwd);
+  if (!context.repositoryPath || !context.companionPath) return { exitCode: 0, stdout: "" };
 
-  const mateVersion = env.MATE_VERSION || "unknown";
-  const message = `mate v${mateVersion}\n  repo:     ${repoPath}\n  mate: ${artifactPath}`;
-  return { exitCode: 0, stdout: JSON.stringify({ systemMessage: message }) + "\n" };
+  const lines = [
+    `mate v${env.MATE_VERSION || mateVersion()}`,
+    `  repo:     ${context.repositoryPath}`,
+    `  mate: ${context.companionPath}`,
+  ];
+  if (projection) {
+    for (const note of projectionStalenessLines(projection, projectionFreshness(projection))) {
+      lines.push(`  ${note}`);
+    }
+  }
+
+  return { exitCode: 0, stdout: JSON.stringify({ systemMessage: lines.join("\n") }) + "\n" };
 }
 
 // Plugin-shim entry.

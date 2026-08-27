@@ -124,13 +124,29 @@ describe("ctx.templates.render", () => {
       fs.readFile(path.join(root, "AGENTS.md"), "utf8"),
       fs.readFile(path.join(root, "CLAUDE.md"), "utf8"),
     ]);
-    expect(agents).toBe(claude);
+    /** `CLAUDE.md` imports the policy rather than restating it, so the two differ by design. */
+    expect(claude).toContain("@AGENTS.md");
+    for (const rule of rootGuidance) expect(claude).not.toContain(rule);
+
+    for (const rule of rootGuidance) expect(agents).toContain(rule);
+    expect(agents).toContain(jsdocBoundary);
     for (const guidance of [agents, claude]) {
-      for (const rule of rootGuidance) expect(guidance).toContain(rule);
-      expect(guidance).toContain(jsdocBoundary);
       expect(guidance).not.toContain("smallest correct implementation");
       expect(guidance).not.toContain("Claude Code receives");
     }
+  });
+
+  test("repeated provider setup does not duplicate the imported guidance", async () => {
+    const root = await makeTempDir("mate-tpl-root-guidance-twice-");
+    const config = configWith([], ["claude", "opencode"]);
+
+    await applySetupCompatibilities(root, config, "sync", [claudePlugin, opencodePlugin]);
+    const first = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
+    await applySetupCompatibilities(root, config, "sync", [claudePlugin, opencodePlugin]);
+    const second = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
+
+    expect(second).toBe(first);
+    expect(second.match(/@AGENTS\.md/g)).toHaveLength(1);
   });
 
   test("distribution asset root overrides the core template and data is substituted", async () => {

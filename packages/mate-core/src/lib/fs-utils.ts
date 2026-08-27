@@ -24,3 +24,12 @@ export async function fileExists(filePath: string): Promise<boolean> {
     return false;
   }
 }
+
+export async function pathIsDirectory(candidatePath: string): Promise<boolean> {
+  try {
+    const stats = await fs.stat(candidatePath);
+    return stats.isDirectory();
+  } catch {
+    return false;
+  }
+}

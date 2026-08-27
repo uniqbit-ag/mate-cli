@@ -18,6 +18,7 @@ import {
   upsertManagedBlock,
 } from "../context-services";
 import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "../plugin";
+import { surfaceRoot } from "../surface-target";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
 import {
   getOpenCodePluginReferences,
@@ -424,22 +425,23 @@ export async function reconcileOpenCodeContributions(
   ctx: SetupContext,
   inputs: CapabilityContributionInput[],
 ): Promise<void> {
-  const { companionPath } = ctx;
+  /** Resolved once per pass; every write site below is relative to it. */
+  const root = surfaceRoot(ctx);
 
   if (ctx.scope === "hub") {
-    await reconcileOpenCodeMcpContributions(ctx, inputs);
-    await reconcileOpenCodeAgentDefinitionContributions(ctx, inputs);
+    await reconcileOpenCodeMcpContributions(root, inputs);
+    await reconcileOpenCodeAgentDefinitionContributions(root, inputs);
     return;
   }
 
-  await reconcileOpenCodeMcpContributions(ctx, inputs);
-  await reconcileOpenCodeAgentDefinitionContributions(ctx, inputs);
+  await reconcileOpenCodeMcpContributions(root, inputs);
+  await reconcileOpenCodeAgentDefinitionContributions(root, inputs);
 
   for (const input of inputs) {
     for (const pluginReference of input.contributions.pluginReferences ?? []) {
       const configFiles = pluginReference.configFiles ?? OPENCODE_CONTRIBUTION_CONFIG_FILES;
       for (const name of configFiles) {
-        const configPath = path.join(companionPath, ".opencode", name);
+        const configPath = path.join(root, ".opencode", name);
         const { present, config } = await readOpenCodeConfig(configPath);
         if (!input.enabled && !present) continue;
         const preserved = getOpenCodePluginReferences(config).filter(
@@ -456,7 +458,7 @@ export async function reconcileOpenCodeContributions(
     // Guidance sections are managed blocks in AGENTS.md. Capability disable
     // strips them here; runtime teardown of the shared AGENTS.md is guarded in
     // the provider teardown paths (kept while another active runtime uses it).
-    const guidancePath = path.join(companionPath, "AGENTS.md");
+    const guidancePath = path.join(root, "AGENTS.md");
     const sections = input.enabled ? (input.contributions.guidanceSections ?? []) : [];
     const keepKeys = new Set<string>();
     for (const section of sections) {
@@ -469,12 +471,12 @@ export async function reconcileOpenCodeContributions(
     }
 
     for (const skillTree of input.contributions.skillTrees ?? []) {
-      const skillDir = path.join(companionPath, ".opencode", "skills", skillTree.name);
+      const skillDir = path.join(root, ".opencode", "skills", skillTree.name);
       if (input.enabled) {
         await mergeDir(skillTree.sourceDir, skillDir);
       } else {
         await fs.rm(skillDir, { recursive: true, force: true });
-        await pruneEmptyAncestors(path.join(companionPath, ".opencode", "skills"), companionPath);
+        await pruneEmptyAncestors(path.join(root, ".opencode", "skills"), root);
       }
     }
   }
@@ -482,18 +484,43 @@ export async function reconcileOpenCodeContributions(
 
 /** Reconcile only MCP entries without touching OpenCode plugins or guidance. */
 async function reconcileOpenCodeMcpContributions(
-  ctx: SetupContext,
+  root: string,
   inputs: CapabilityContributionInput[],
 ): Promise<void> {
   for (const input of inputs) {
     for (const descriptor of input.contributions.mcpServers ?? []) {
       await updateOpenCodeMcpServer(
-        getCompanionOpenCodeConfigPath(ctx.companionPath),
+        getCompanionOpenCodeConfigPath(root),
         descriptor.name,
         input.enabled ? toOpenCodeMcpEntry(descriptor) : null,
       );
     }
   }
+}
+
+/** The Mate-managed `mcp` map of one pass, as a value. */
+export function renderManagedOpenCodeMcpServers(
+  contributions: CapabilityContributionInput[] = [],
+): Record<string, unknown> {
+  const servers: Record<string, unknown> = {};
+  for (const input of contributions) {
+    if (!input.enabled) continue;
+    for (const descriptor of input.contributions.mcpServers ?? []) {
+      servers[descriptor.name] = toOpenCodeMcpEntry(descriptor);
+    }
+  }
+  return servers;
+}
+
+/**
+ * The Mate-managed `permission.external_directory` map, as a value. Rendered
+ * once for both destinations a session can reach it through — the projected
+ * document and the launch environment — so the two cannot drift.
+ */
+export function renderCompanionExternalDirectoryPermissions(
+  companionPath: string,
+): Record<string, string> {
+  return { [companionPath]: "allow", [`${companionPath}/**`]: "allow" };
 }
 
 /**
@@ -503,10 +530,10 @@ async function reconcileOpenCodeMcpContributions(
  * surface.
  */
 async function reconcileOpenCodeAgentDefinitionContributions(
-  ctx: SetupContext,
+  root: string,
   inputs: CapabilityContributionInput[],
 ): Promise<void> {
-  const agentsDir = path.join(ctx.companionPath, ".opencode", "agents");
+  const agentsDir = path.join(root, ".opencode", "agents");
   for (const input of inputs) {
     for (const agent of input.contributions.agentDefinitions ?? []) {
       const agentPath = path.join(agentsDir, `${agent.name}.md`);
@@ -515,7 +542,7 @@ async function reconcileOpenCodeAgentDefinitionContributions(
         await fs.writeFile(agentPath, agent.content, "utf8");
       } else {
         await fs.rm(agentPath, { force: true });
-        await pruneEmptyAncestors(agentsDir, ctx.companionPath);
+        await pruneEmptyAncestors(agentsDir, root);
       }
     }
   }

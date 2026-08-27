@@ -5,7 +5,8 @@ import { resolveGitInfoExcludePath } from "./git-utils";
 
 const MANAGED_BLOCK_START = "# mate managed: start";
 const MANAGED_BLOCK_END = "# mate managed: end";
-const CORE_EXCLUDE_ENTRIES = ["/.mate/", "/.claude/", "/.opencode/", "/.agents/"];
+/** `.mcp.json` is the one working-target document no directory entry covers. */
+const CORE_EXCLUDE_ENTRIES = ["/.mate/", "/.claude/", "/.opencode/", "/.agents/", "/.mcp.json"];
 const LEGACY_CORE_EXCLUDE_ENTRIES = new Set([".mate/", ".claude/settings.local.json"]);
 
 async function readExclude(excludePath: string): Promise<string> {
@@ -88,6 +89,25 @@ export async function reconcileWorkingRepoCapabilityExcludes(
     if (!lines.some((line) => line.trim() === entry)) lines.push(entry);
   }
   return writeExclude(excludePath, existing, lines);
+}
+
+/** Whether the managed block is on disk; the block, not the exclude file. */
+export async function managedWorkingRepoExcludesPresent(repoPath: string): Promise<boolean> {
+  const excludePath = await resolveGitInfoExcludePath(repoPath);
+  if (!excludePath) return false;
+  const lines = contentLines(await readExclude(excludePath));
+  return lines.some((line) => line.trim() === MANAGED_BLOCK_START);
+}
+
+/** Whether any Capability-owned exclusion is present outside the managed block. */
+export async function workingRepoCapabilityExcludesPresent(
+  repoPath: string,
+  candidateEntries: string[],
+): Promise<boolean> {
+  const excludePath = await resolveGitInfoExcludePath(repoPath);
+  if (!excludePath) return false;
+  const lines = withoutManagedBlocks(contentLines(await readExclude(excludePath)));
+  return candidateEntries.some((entry) => lines.some((line) => line.trim() === entry));
 }
 
 export async function removeWorkingRepoLocalExcludes(repoPath: string): Promise<boolean> {

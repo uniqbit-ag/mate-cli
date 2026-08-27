@@ -4,6 +4,13 @@ import type { ClaudeHookGroup } from "./providers/claude-format";
 
 export type SetupScope = "companion" | "hub";
 
+/**
+ * Where a reconcile pass lands its documents. `companion` writes the material's
+ * own repository; `working` renders the documents an Agent Runtime discovers by
+ * its own upward walk and leaves the placing to the Projection Root.
+ */
+export type ProjectionTarget = "companion" | "working";
+
 export interface SetupContext {
   companionPath: string;
   config: FrameworkConfig;
@@ -13,6 +20,8 @@ export interface SetupContext {
   scope?: SetupScope;
   /** Working repository path when syncing from a linked repo (e.g. during launch). */
   repoPath?: string;
+  /** Defaults to `companion`, so a caller that names no target is unchanged. */
+  target?: ProjectionTarget;
   /**
    * Provider-mediated context services. Always populated when the engine
    * executes a plugin; optional so hand-built contexts (tests, direct calls)

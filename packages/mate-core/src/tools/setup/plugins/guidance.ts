@@ -104,8 +104,18 @@ export async function refreshFromTemplate(
 
   remaining = removeGraphifySection(remaining).trimEnd();
 
+  const template = templateContent.trimEnd();
+  /**
+   * A template carrying no managed markers cannot be stripped by marker above,
+   * so without this it would be prepended again on every refresh. Consuming
+   * every leading copy also heals a file an earlier refresh already grew.
+   */
+  while (template && remaining.startsWith(template)) {
+    remaining = remaining.slice(template.length).trimStart();
+  }
+
   const sections = [
-    templateContent.trimEnd(),
+    template,
     ...(normalizedOptions.appendSections ?? []).map((section) => section.trim()).filter(Boolean),
   ];
   if (remaining) {

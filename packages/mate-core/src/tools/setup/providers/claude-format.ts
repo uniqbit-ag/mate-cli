@@ -13,9 +13,9 @@ export interface McpEntryDescriptor {
 }
 
 // Claude runtime config format primitives: parse/merge/serialize for
-// `settings.local.json` (hook maps, permissions) and `.mcp.json`. This module
-// owns the file formats only — which entries are Mate-managed is the callers'
-// (Runtime Surface) knowledge.
+// `settings.local.json` (hook maps, permissions) and `.mcp.json`. Which hook
+// groups are Mate-managed lives here too, because the companion-side reconcile
+// and the working-repo projection entry must strip the same set.
 
 export interface ClaudeHookCommand {
   type?: string;
@@ -82,6 +82,46 @@ export function filterClaudeHookGroups(
   return filtered;
 }
 
+// Command substrings that mark a hook group as Mate-managed. The mate plugin
+// hooks (validate-artifact-path, mate-session-banner, mate-artifact-finish.sh)
+// now ship in the bundled Claude plugin; their markers are retained
+// migration-only so stale managed groups written by earlier releases keep being
+// stripped, and are never re-added.
+export const MANAGED_HOOK_MARKERS = [
+  "validate-artifact-path",
+  "mate-session-banner",
+  "react-doctor.sh",
+  "mate-artifact-finish.sh",
+  "tokensave",
+];
+
+export function isManagedHookGroup(group: ClaudeHookGroup, extraMarkers: string[] = []): boolean {
+  return (group.hooks ?? []).some((hook) =>
+    [...MANAGED_HOOK_MARKERS, ...extraMarkers].some((marker) =>
+      (hook.command ?? "").includes(marker),
+    ),
+  );
+}
+
+/** Drops every managed hook group, and the `hooks` key itself when none remain. */
+export function removeManagedHookGroups(
+  settings: ClaudeSettings,
+  extraMarkers: string[] = [],
+): ClaudeSettings {
+  const hooks = filterClaudeHookGroups(
+    settings.hooks ?? {},
+    (group) => !isManagedHookGroup(group, extraMarkers),
+  );
+
+  const next = { ...settings };
+  if (Object.keys(hooks).length > 0) {
+    next.hooks = hooks;
+  } else {
+    delete next.hooks;
+  }
+  return next;
+}
+
 /** Tolerant read: absent or malformed settings read as an empty object. */
 export async function readClaudeSettings(settingsPath: string): Promise<ClaudeSettings> {
   try {
@@ -95,12 +135,17 @@ export async function readClaudeSettings(settingsPath: string): Promise<ClaudeSe
   return {};
 }
 
+/** The exact bytes a settings document is written as; comparable against a read. */
+export function serializeClaudeSettings(settings: ClaudeSettings): string {
+  return JSON.stringify(settings, null, 2) + "\n";
+}
+
 export async function writeClaudeSettings(
   settingsPath: string,
   settings: ClaudeSettings,
 ): Promise<void> {
   await fs.mkdir(path.dirname(settingsPath), { recursive: true });
-  await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
+  await fs.writeFile(settingsPath, serializeClaudeSettings(settings), "utf8");
 }
 
 /** Tolerant read of `.mcp.json`; `present` distinguishes absent from empty. */

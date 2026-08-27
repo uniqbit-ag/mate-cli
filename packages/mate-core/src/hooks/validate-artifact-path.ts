@@ -12,6 +12,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { readCompanionRuntimeContext } from "../runtime/env";
+import { companionLinkPath } from "../runtime/repo-local";
+
 export type HookEnv = Record<string, string | undefined>;
 
 export interface HookOutcome {
@@ -56,13 +59,53 @@ export function artifactLikePath(filePath: string): boolean {
   return false;
 }
 
-function repoRoot(env: HookEnv): string {
-  return env.MATE_REPO_PATH || process.cwd();
+/**
+ * Resolved once per evaluation: the companion may come from the launch
+ * environment or from the Working Repository's Projection Root, and every
+ * path check below is relative to whichever resolved.
+ */
+interface GuardContext {
+  env: HookEnv;
+  /** As resolved, for the operator: the message names the path they configured. */
+  companion: string;
+  /** Followed through every link, so filesystem identity decides the verdict. */
+  companionReal: string;
+  companionLink: string;
+  repoRoot: string;
 }
 
-function companionRoot(env: HookEnv): string | null {
-  const companion = env.MATE_ARTIFACT_PATH;
-  return companion ? path.normalize(companion) : null;
+/**
+ * The target's real path, resolved as far as it exists — a path being written
+ * does not yet, so the deepest existing ancestor is resolved and the rest
+ * appended.
+ */
+function realPath(target: string): string {
+  const absolute = path.resolve(target);
+  const trailing: string[] = [];
+  let current = absolute;
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(current), ...trailing);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return absolute;
+      trailing.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+function guardContext(env: HookEnv, cwd: string): GuardContext | null {
+  const resolved = readCompanionRuntimeContext(env, cwd);
+  if (!resolved.companionPath) return null;
+  const repoRoot = resolved.repositoryPath || cwd;
+  return {
+    env,
+    companion: path.normalize(resolved.companionPath),
+    companionReal: realPath(resolved.companionPath),
+    companionLink: companionLinkPath(repoRoot),
+    repoRoot,
+  };
 }
 
 // Claude Code's own config/state directory (plan files, settings, todos).
@@ -73,9 +116,9 @@ function claudeConfigRoot(env: HookEnv): string {
   return path.normalize(path.join(env.HOME || os.homedir(), ".claude"));
 }
 
-function normalizePath(filePath: string, env: HookEnv): string {
+function normalizePath(filePath: string, ctx: GuardContext): string {
   if (path.isAbsolute(filePath)) return path.normalize(filePath);
-  return path.normalize(path.join(repoRoot(env), filePath));
+  return path.normalize(path.join(ctx.repoRoot, filePath));
 }
 
 function isUnder(target: string, root: string): boolean {
@@ -83,8 +126,17 @@ function isUnder(target: string, root: string): boolean {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-function isGitignored(target: string, env: HookEnv): boolean {
-  const root = repoRoot(env);
+/**
+ * Under the Projection Root's companion link, or under the companion it lands
+ * in — the second answers for a link the operator made, and for the first once
+ * its target exists.
+ */
+function isCompanionPath(target: string, ctx: GuardContext): boolean {
+  return isUnder(target, ctx.companionLink) || isUnder(realPath(target), ctx.companionReal);
+}
+
+function isGitignored(target: string, ctx: GuardContext): boolean {
+  const root = ctx.repoRoot;
   if (!isUnder(target, root)) return false;
 
   const relPath = path.relative(root, target);
@@ -96,8 +148,8 @@ function isGitignored(target: string, env: HookEnv): boolean {
 
 // A file already tracked in the working repo is product code being edited,
 // not a new agent artifact (e.g. packaged SKILL.md/spec.md template sources).
-function isGitTracked(target: string, env: HookEnv): boolean {
-  const root = repoRoot(env);
+function isGitTracked(target: string, ctx: GuardContext): boolean {
+  const root = ctx.repoRoot;
   if (!isUnder(target, root)) return false;
 
   const relPath = path.relative(root, target);
@@ -107,8 +159,8 @@ function isGitTracked(target: string, env: HookEnv): boolean {
   return result.status === 0;
 }
 
-function isProductDocumentationPath(target: string, env: HookEnv): boolean {
-  const root = repoRoot(env);
+function isProductDocumentationPath(target: string, ctx: GuardContext): boolean {
+  const root = ctx.repoRoot;
   if (!isUnder(target, root)) return false;
 
   const relPath = path.relative(root, target);
@@ -140,31 +192,30 @@ function blockWrite(target: string, companion: string): HookOutcome {
 
 function checkFilePath(
   filePath: string,
-  companion: string | null,
-  env: HookEnv,
+  ctx: GuardContext,
   allowExisting = false,
 ): HookOutcome | null {
-  if (!filePath || !companion) return null;
+  if (!filePath) return null;
 
-  const normalized = normalizePath(filePath, env);
-  if (normalized.startsWith(companion)) return null;
+  const normalized = normalizePath(filePath, ctx);
+  if (isCompanionPath(normalized, ctx)) return null;
 
-  if (isUnder(normalized, claudeConfigRoot(env))) return null;
+  if (isUnder(normalized, claudeConfigRoot(ctx.env))) return null;
 
   if (allowExisting && fs.existsSync(normalized) && fs.statSync(normalized).isFile()) return null;
 
-  if (isProductDocumentationPath(normalized, env)) return null;
+  if (isProductDocumentationPath(normalized, ctx)) return null;
 
   if (!artifactLikePath(filePath)) return null;
 
   if (
-    isUnder(normalized, repoRoot(env)) &&
-    (isGitignored(normalized, env) || isGitTracked(normalized, env))
+    isUnder(normalized, ctx.repoRoot) &&
+    (isGitignored(normalized, ctx) || isGitTracked(normalized, ctx))
   ) {
     return null;
   }
 
-  return blockWrite(filePath, companion);
+  return blockWrite(filePath, ctx.companion);
 }
 
 export function commandMatches(command: string): string[] {
@@ -179,11 +230,15 @@ export function commandMatches(command: string): string[] {
   return targets;
 }
 
-export function evaluate(payload: unknown, env: HookEnv): HookOutcome {
+/**
+ * Fails open only when no Mate context resolves from either source; in a
+ * wrapped Working Repository the guard runs without a launch.
+ */
+export function evaluate(payload: unknown, env: HookEnv, cwd: string = process.cwd()): HookOutcome {
   const allow: HookOutcome = { exitCode: 0, stderr: "" };
 
-  const companion = companionRoot(env);
-  if (!companion) return allow;
+  const ctx = guardContext(env, cwd);
+  if (!ctx) return allow;
 
   const input = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
   const toolName = typeof input.tool_name === "string" ? input.tool_name : "";
@@ -195,8 +250,7 @@ export function evaluate(payload: unknown, env: HookEnv): HookOutcome {
   if (toolName === "Write" || toolName === "Edit" || toolName === "MultiEdit") {
     const outcome = checkFilePath(
       String(toolInput.file_path ?? ""),
-      companion,
-      env,
+      ctx,
       toolName === "Edit" || toolName === "MultiEdit",
     );
     return outcome ?? allow;
@@ -205,7 +259,7 @@ export function evaluate(payload: unknown, env: HookEnv): HookOutcome {
   if (toolName === "Bash") {
     const command = String(toolInput.command ?? "");
     for (const target of commandMatches(command)) {
-      const outcome = checkFilePath(target, companion, env);
+      const outcome = checkFilePath(target, ctx);
       if (outcome) return outcome;
     }
     return allow;

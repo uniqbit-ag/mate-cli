@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { pathIsDirectory } from "./repo-local-registry";
+import { pathIsDirectory } from "../fs-utils";
 import { YamlFileStore } from "./yaml-file-store";
 
 interface CompanionEntry {

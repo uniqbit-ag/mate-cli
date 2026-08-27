@@ -5,6 +5,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { writeProjectionPair, type MateProjection } from "../runtime/projection";
+import { companionLinkPath, repoLocalRegistryPath } from "../runtime/repo-local";
 import { evaluate } from "./validate-artifact-path";
 
 const tempRoots: string[] = [];
@@ -19,17 +21,98 @@ async function initGitRepo(root: string): Promise<void> {
   spawnSync("git", ["init", "-q"], { cwd: root, stdio: "ignore" });
 }
 
+/** Wraps `repoRoot` against `companionPath` the way `mate wrap` does. */
+async function wrapRepo(
+  repoRoot: string,
+  companionPath: string,
+  stamp = "deadbeef",
+): Promise<void> {
+  const registryPath = repoLocalRegistryPath(repoRoot);
+  await fs.mkdir(path.dirname(registryPath), { recursive: true });
+  await fs.writeFile(registryPath, "companions: []\n", "utf8");
+  const projection: MateProjection = {
+    version: "0.0.0",
+    companionPath,
+    repositoryPath: repoRoot,
+    repositoryId: "acme",
+    wrapperBinPath: path.join(companionPath, "wrappers", "bin"),
+    reactDoctorBinPath: path.join(companionPath, "react-doctor"),
+    graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
+  };
+  writeProjectionPair(repoRoot, { stamp, projection });
+}
+
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
 describe("validate-artifact-path hook module", () => {
-  test("fails open when MATE_ARTIFACT_PATH is unset", () => {
+  test("fails open when neither the environment nor a projection resolves", async () => {
+    const bare = await makeTempDir("mate-hook-unwrapped-");
     const result = evaluate(
       { tool_name: "Write", tool_input: { file_path: "/anywhere/design.md" } },
       {},
+      bare,
     );
     expect(result.exitCode).toBe(0);
+  });
+
+  test("blocks an artifact write in a wrapped repository with an empty environment", async () => {
+    const repo = await makeTempDir("mate-hook-wrapped-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    await wrapRepo(repo, companion);
+
+    const result = evaluate(
+      { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(companion);
+  });
+
+  test("keeps guarding when the projection stamp does not match", async () => {
+    const repo = await makeTempDir("mate-hook-stale-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    await wrapRepo(repo, companion, "written-by-another-mate");
+
+    expect(
+      evaluate(
+        { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
+        {},
+        repo,
+      ).exitCode,
+    ).toBe(2);
+  });
+
+  test("the launch environment outranks the projection", async () => {
+    const repo = await makeTempDir("mate-hook-outranks-");
+    const launched = path.join(repo, "launched");
+    const projected = path.join(repo, "projected");
+    await fs.mkdir(launched, { recursive: true });
+    await fs.mkdir(projected, { recursive: true });
+    await initGitRepo(repo);
+    await wrapRepo(repo, projected);
+
+    const env = { MATE_ARTIFACT_PATH: launched, MATE_REPO_PATH: repo };
+    expect(
+      evaluate(
+        { tool_name: "Write", tool_input: { file_path: path.join(launched, "design.md") } },
+        env,
+        repo,
+      ).exitCode,
+    ).toBe(0);
+    expect(
+      evaluate(
+        { tool_name: "Write", tool_input: { file_path: path.join(projected, "design.md") } },
+        env,
+        repo,
+      ).exitCode,
+    ).toBe(2);
   });
 
   test("allows writes under the companion path", async () => {
@@ -273,6 +356,48 @@ describe("validate-artifact-path hook module", () => {
         { ...env, CLAUDE_CONFIG_DIR: configDir },
       ).exitCode,
     ).toBe(2);
+  });
+
+  test("treats a write through the companion link as a companion write", async () => {
+    const repo = await makeTempDir("mate-hook-link-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    await wrapRepo(repo, companion);
+    await fs.symlink(companion, companionLinkPath(repo), "dir");
+
+    const throughLink = path.join(
+      companionLinkPath(repo),
+      "openspec",
+      "changes",
+      "acme",
+      "proposal.md",
+    );
+    expect(
+      evaluate({ tool_name: "Write", tool_input: { file_path: throughLink } }, {}, repo).exitCode,
+    ).toBe(0);
+    expect(
+      evaluate(
+        { tool_name: "Write", tool_input: { file_path: path.join(repo, "proposal.md") } },
+        {},
+        repo,
+      ).exitCode,
+    ).toBe(2);
+  });
+
+  test("judges an operator's own link by where it lands", async () => {
+    const repo = await makeTempDir("mate-hook-operator-link-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    await fs.symlink(companion, path.join(repo, "artifacts"), "dir");
+
+    const result = evaluate(
+      { tool_name: "Write", tool_input: { file_path: path.join(repo, "artifacts", "design.md") } },
+      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+      repo,
+    );
+    expect(result.exitCode).toBe(0);
   });
 
   test("tolerates malformed payloads", () => {

@@ -8,6 +8,9 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 mock.module("@opencode-ai/plugin", () => ({ tool: (definition: unknown) => definition }));
 
 const { CompanionHooksPlugin } = await import("./companion-hooks");
+const { MATE_ENV } = await import("../runtime/env-names");
+const { writeProjectionPair } = await import("../runtime/projection");
+const { repoLocalRegistryPath } = await import("../runtime/repo-local");
 const tempRoots: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -31,8 +34,72 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => Promise<T
   });
 }
 
+/** Every launch variable cleared: `hasLaunchEnvironment` counts any of them as a launch. */
+function noLaunchEnvironment(): Record<string, string | undefined> {
+  return Object.fromEntries(Object.values(MATE_ENV).map((name) => [name, undefined]));
+}
+
+async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> {
+  const registryPath = repoLocalRegistryPath(repoRoot);
+  await fs.mkdir(path.dirname(registryPath), { recursive: true });
+  await fs.writeFile(registryPath, "companions: []\n", "utf8");
+  writeProjectionPair(repoRoot, {
+    stamp: "deadbeef",
+    projection: {
+      version: "0.0.0",
+      companionPath,
+      repositoryPath: repoRoot,
+      repositoryId: "acme",
+      wrapperBinPath: path.join(companionPath, "wrappers", "bin"),
+      reactDoctorBinPath: path.join(companionPath, "react-doctor"),
+      graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
+    },
+  });
+}
+
+async function inDirectory<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  const previous = process.cwd();
+  process.chdir(dir);
+  try {
+    return await fn();
+  } finally {
+    process.chdir(previous);
+  }
+}
+
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
+
+describe("OpenCode companion hooks plugin without a launch", () => {
+  test("activates from a projection and blocks an artifact write", async () => {
+    const repo = await makeTempDir("mate-hooks-wrapped-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await wrapRepo(repo, companion);
+
+    const plugin = await withEnv(noLaunchEnvironment(), () =>
+      inDirectory(repo, () => CompanionHooksPlugin()),
+    );
+
+    const before = plugin["tool.execute.before"]!;
+    await expect(
+      before(
+        { tool: "write", sessionID: "s", callID: "c" },
+        { args: { filePath: path.join(repo, "design.md") } },
+      ),
+    ).rejects.toThrow("artifact writes must go to the companion framework path");
+  });
+
+  test("fails open when neither the environment nor a projection resolves", async () => {
+    const repo = await makeTempDir("mate-hooks-unwrapped-");
+
+    const plugin = await withEnv(noLaunchEnvironment(), () =>
+      inDirectory(repo, () => CompanionHooksPlugin()),
+    );
+
+    expect(plugin).toEqual({});
+  });
 });
 
 describe("OpenCode companion hooks plugin", () => {

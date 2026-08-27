@@ -1,14 +1,10 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 
-import { version } from "../../../../package.json";
 import { isCommandOnPath } from "../../fs-utils";
 import { FRAMEWORK_NAME } from "../../../framework";
-import { getReactDoctorBinPath, getWrapperBinPath } from "../../package-paths";
-import {
-  GRAPHIFY_OUTPUT_SUBDIR,
-  GRAPHIFY_STORE_SEGMENT,
-} from "../../../tools/setup/capabilities/graphify";
+import { MATE_ENV } from "../../../runtime/env-names";
+import { buildProjection, projectionEnvironment } from "../projection-record";
 import {
   type SpawnProxyOpts,
   getProxyStderr,
@@ -72,45 +68,28 @@ export abstract class LaunchAdapter {
     return {};
   }
 
+  /**
+   * The projected paths, materialized, plus the predicates the projection
+   * refuses to hold. Nothing here derives a path: a managed session and an
+   * Unmanaged Session read the same record, so they cannot disagree.
+   */
   environment(context: AdapterContext): NodeJS.ProcessEnv {
     const reactDoctorEnabled = context.capabilities.some((c) => c.name === "react-doctor");
-    const wrapperBinPath = getWrapperBinPath();
+    const projection = buildProjection(context.companionPath, context.repository);
     const env: NodeJS.ProcessEnv = {
       ...process.env,
+      ...projectionEnvironment(projection),
       MATE_NAME: FRAMEWORK_NAME,
-      MATE_VERSION: version,
-      MATE_ARTIFACT_PATH: context.companionPath,
-      MATE_WRAPPER_BIN_PATH: wrapperBinPath,
-      PATH: prependPathEntry(process.env.PATH, wrapperBinPath),
+      PATH: prependPathEntry(process.env.PATH, projection.wrapperBinPath),
       MATE_GRAPHIFY_ENABLED: context.capabilities.some((c) => c.name === "graphify") ? "1" : "0",
       MATE_OPENSPEC_ENABLED: context.capabilities.some((c) => c.name === "openspec") ? "1" : "0",
       MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
       MATE_GIT_AUTO_MODE: context.git === "auto" ? "1" : "0",
-      MATE_REPO_ID: context.repository.id,
-      MATE_REPO_PATH: context.repository.path,
       MATE_POLICY_JSON: JSON.stringify({ allowedAgents: context.allowedAgents }),
     };
 
-    if (reactDoctorEnabled) {
-      env.MATE_REACT_DOCTOR_BIN_PATH = getReactDoctorBinPath();
-    } else {
-      delete env.MATE_REACT_DOCTOR_BIN_PATH;
-    }
-
-    // Route launch-session graphify output to the companion store. graphifyy resolves its
-    // output dir from GRAPHIFY_OUT at import time (graphify/paths.py) and every
-    // reader honours it, so injecting it into the launch session env keeps the
-    // skill's per-shell `$GRAPHIFY_OUT` references and graphifyy's own defaults
-    // pointed at the companion store instead of leaking graphify-out/ into the
-    // working repo. Absolute value, matching the wrapper and deriveGraphifyPaths contract.
-    if (context.capabilities.some((c) => c.name === "graphify")) {
-      env.GRAPHIFY_OUT = path.join(
-        context.companionPath,
-        GRAPHIFY_STORE_SEGMENT,
-        context.repository.id,
-        GRAPHIFY_OUTPUT_SUBDIR,
-      );
-    }
+    /** The one field where a launch still narrows the projection rather than materializing it. */
+    if (!reactDoctorEnabled) delete env[MATE_ENV.reactDoctorBinPath];
 
     return env;
   }

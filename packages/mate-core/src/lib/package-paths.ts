@@ -3,8 +3,18 @@ import { createRequire } from "node:module";
 import path from "node:path";
 
 import { getActiveDistribution } from "../distribution";
+import { mateInstallPath } from "../runtime/install";
 
 const require = createRequire(import.meta.url);
+
+/**
+ * Root of the installed mate-core package. A stamp input for the durable
+ * projection: a mate installed at a different path resolves different wrapper
+ * and plugin assets.
+ */
+export function getMateInstallPath(): string {
+  return mateInstallPath();
+}
 
 /**
  * Resolved wrapper directory: a distribution asset root that ships

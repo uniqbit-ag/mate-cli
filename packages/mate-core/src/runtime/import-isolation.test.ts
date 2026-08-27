@@ -52,6 +52,21 @@ describe("runtime subpath import isolation", () => {
     expect(outside).toEqual([]);
   });
 
+  test("./hooks modules import ./runtime and nothing else from core", () => {
+    const hooksDir = path.join(SRC_ROOT, "hooks");
+    const modules = new Set<string>();
+    for (const entry of fs.readdirSync(hooksDir)) {
+      if (!/\.tsx?$/.test(entry) || entry.includes(".test.")) continue;
+      for (const module of collectTransitiveModules(path.join(hooksDir, entry))) {
+        modules.add(module);
+      }
+    }
+    const outside = relative(modules).filter(
+      (file) => !file.startsWith("hooks/") && !file.startsWith("runtime/"),
+    );
+    expect(outside).toEqual([]);
+  });
+
   test("./opencode modules stay on the session-runtime side of core", () => {
     const modules = collectTransitiveModules(path.join(SRC_ROOT, "opencode", "index.ts"));
     const outside = relative(modules).filter(

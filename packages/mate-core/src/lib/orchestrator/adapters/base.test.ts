@@ -5,6 +5,16 @@ import path from "node:path";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { LaunchPreflightError } from "../types";
+import { buildProjection } from "../projection-record";
+import { project } from "../working-repo-projection";
+import {
+  PROJECTION_ENV_NAMES,
+  PROJECTION_FIELDS,
+  resolveProjection,
+} from "../../../runtime/projection";
+import { readCompanionRuntimeContext } from "../../../runtime/env";
+import { repoLocalRegistryPath } from "../../../runtime/repo-local";
+import { renderCompanionExternalDirectoryPermissions } from "../../../tools/setup/providers/opencode";
 import { getContextModePackageRoot } from "../../context-mode-package";
 import { getOpenCodePluginPackageReference } from "../../opencode-plugin-package";
 import {
@@ -47,6 +57,23 @@ function makeContext(capabilities: AdapterContext["capabilities"] = []): Adapter
     companionPath: "/tmp/companion",
     capabilities,
   };
+}
+
+function projectionOf(context: AdapterContext) {
+  return buildProjection(context.companionPath, context.repository);
+}
+
+/** A Working Repository the session scope has actually written a projection into. */
+async function wrappedRepository(prefix: string) {
+  const repoRoot = await makeTempDir(prefix);
+  const repository = { id: "acme", path: repoRoot };
+  const companionPath = path.join(repoRoot, "companion");
+  await fs.mkdir(path.join(repoRoot, ".git", "info"), { recursive: true });
+  await fs.mkdir(companionPath, { recursive: true });
+  await fs.mkdir(path.dirname(repoLocalRegistryPath(repoRoot)), { recursive: true });
+  await fs.writeFile(repoLocalRegistryPath(repoRoot), "companions: []\n", "utf8");
+  await project("session", { repoPath: repoRoot, companionPath, repository });
+  return { repoRoot, repository, companionPath };
 }
 
 async function writeOpenCodeRuntime(
@@ -285,15 +312,16 @@ describe("graphify GRAPHIFY_OUT env injection", () => {
     expect(launch.env.GRAPHIFY_OUT).toBe(
       path.join("/tmp/companion", ".graphify", "app", "graphify-out"),
     );
+    expect(launch.env.GRAPHIFY_OUT).toBe(projectionOf(makeContext()).graphifyOut);
     expect(launch.env.MATE_GRAPHIFY_ENABLED).toBe("1");
   });
 
-  test("does not set GRAPHIFY_OUT when graphify capability is absent", async () => {
+  test("sets GRAPHIFY_OUT when graphify capability is absent, matching the projection", async () => {
     const launch = await withEnv("GRAPHIFY_OUT", undefined, () =>
       new ClaudeAdapter().prepareLaunch(makeContext(), []),
     );
 
-    expect(launch.env.GRAPHIFY_OUT).toBeUndefined();
+    expect(launch.env.GRAPHIFY_OUT).toBe(projectionOf(makeContext()).graphifyOut);
     expect(launch.env.MATE_GRAPHIFY_ENABLED).toBe("0");
   });
 });
@@ -343,6 +371,9 @@ describe("launch PATH injection", () => {
     );
 
     expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}/usr/bin`);
+    expect(launch.env.PATH).toBe(
+      `${projectionOf(makeContext()).wrapperBinPath}${path.delimiter}/usr/bin`,
+    );
     expect(launch.env.PATH).not.toContain(".tokensave");
   });
 
@@ -352,6 +383,64 @@ describe("launch PATH injection", () => {
     );
 
     expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}/usr/bin`);
+  });
+});
+
+/**
+ * Where the migrated assertions land: the launch environment is the projected
+ * record materialized, so every path assertion above is an assertion about the
+ * file `mate wrap` writes.
+ */
+describe("launch environment and the projection agree", () => {
+  test("materializes every projected field under its projection env name", async () => {
+    const context = makeContext([{ name: "react-doctor" }]);
+    const launch = await new ClaudeAdapter().prepareLaunch(context, []);
+    const projection = projectionOf(context);
+
+    for (const field of PROJECTION_FIELDS) {
+      expect(launch.env[PROJECTION_ENV_NAMES[field]]).toBe(projection[field]);
+    }
+  });
+
+  test("resolves the same Graphify output path through a launch and through a projection", async () => {
+    const { repoRoot, repository, companionPath } = await wrappedRepository("mate-launch-graphify-");
+
+    const enabled = await new ClaudeAdapter().prepareLaunch(
+      { ...makeContext([{ name: "graphify" }]), repository, companionPath },
+      [],
+    );
+    const disabled = await new ClaudeAdapter().prepareLaunch(
+      { ...makeContext(), repository, companionPath },
+      [],
+    );
+
+    expect(enabled.env.GRAPHIFY_OUT).toBe(resolveProjection(repoRoot)?.graphifyOut);
+    expect(disabled.env.GRAPHIFY_OUT).toBe(resolveProjection(repoRoot)?.graphifyOut);
+  });
+
+  test("grants the same companion directories a projected OpenCode document would", async () => {
+    const context = makeContext();
+    const launch = await withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
+      new OpenCodeAdapter().prepareLaunch(context, []),
+    );
+
+    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
+    expect(config.permission.external_directory).toEqual(
+      renderCompanionExternalDirectoryPermissions(context.companionPath),
+    );
+  });
+
+  test("the launch environment outranks the projection for every reader", async () => {
+    const { repoRoot, repository, companionPath } = await wrappedRepository("mate-launch-outranks-");
+    const launched = path.join(repoRoot, "launched-companion");
+
+    const launch = await new ClaudeAdapter().prepareLaunch(
+      { ...makeContext(), repository, companionPath: launched },
+      [],
+    );
+
+    expect(resolveProjection(repoRoot)?.companionPath).toBe(companionPath);
+    expect(readCompanionRuntimeContext(launch.env, repoRoot).companionPath).toBe(launched);
   });
 });
 

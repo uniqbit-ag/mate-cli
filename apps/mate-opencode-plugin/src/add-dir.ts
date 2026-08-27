@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { Config, Hooks, Plugin } from "@opencode-ai/plugin";
+import { readCompanionRuntimeContext } from "@uniqbit/mate-core/runtime";
 
 // OpenCode accepts a per-path rule map for external_directory at runtime even
 // though the published Config type narrows it to a single rule value.
@@ -17,8 +18,13 @@ function externalDirectoryRules(config: Config): ExternalDirectoryRules {
   return permission.external_directory as ExternalDirectoryRules;
 }
 
+/**
+ * Resolves through the composed reader — launch environment first, Projection
+ * Root second — so a wrapped Working Repository allow-lists its companion in a
+ * session Mate did not start. No variable name is spelled here.
+ */
 export const AddDirPlugin: Plugin = async () => {
-  const companionPath = process.env.MATE_ARTIFACT_PATH?.trim();
+  const companionPath = readCompanionRuntimeContext().companionPath.trim();
   if (!companionPath) {
     return {};
   }

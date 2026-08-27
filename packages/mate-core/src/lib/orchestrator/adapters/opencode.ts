@@ -14,6 +14,7 @@ import {
   mergeOpenCodeConfigContent,
   readOpenCodeConfig,
 } from "../../../tools/setup/providers/opencode-format";
+import { renderCompanionExternalDirectoryPermissions } from "../../../tools/setup/providers/opencode";
 import { buildOpenCodeGuidance } from "../opencode-guidance";
 import { LaunchPreflightError } from "../types";
 import { type AdapterContext, LaunchAdapter } from "./base";
@@ -38,10 +39,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
       OPENCODE_CONFIG_CONTENT: mergeOpenCodeConfigContent(
         {
           permission: {
-            external_directory: {
-              [context.companionPath]: "allow",
-              [`${context.companionPath}/**`]: "allow",
-            },
+            external_directory: renderCompanionExternalDirectoryPermissions(context.companionPath),
           },
           references: {
             mate: context.companionPath,

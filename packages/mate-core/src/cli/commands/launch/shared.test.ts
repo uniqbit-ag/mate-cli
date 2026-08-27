@@ -265,3 +265,209 @@ describe("ensureUnambiguousCompanion", () => {
     expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(false);
   });
 });
+
+describe("ensureUnambiguousCompanion precedence", () => {
+  const originalResolveLinkedCompanions = launchAmbiguityDeps.resolveLinkedCompanions;
+  const originalResolveProjection = launchAmbiguityDeps.resolveProjection;
+  const originalFindRepoLocalLinkedRepository = launchAmbiguityDeps.findRepoLocalLinkedRepository;
+  const originalProjectWorkingRepository = launchAmbiguityDeps.projectWorkingRepository;
+
+  const MATCHES = [
+    { companionPath: "/tmp/companion-a", repositoryId: "from-a" },
+    { companionPath: "/tmp/companion-b", repositoryId: "from-b" },
+  ];
+
+  const projecting = (companionPath: string) =>
+    mock(() => ({
+      repoRoot: "/tmp/repo",
+      version: "0.0.0",
+      companionPath,
+      repositoryPath: "/tmp/repo",
+      repositoryId: "app",
+      wrapperBinPath: "/bin",
+      reactDoctorBinPath: "/bin",
+      graphifyOut: "/out",
+    }));
+
+  const neverPicks = mock(async () => {
+    throw new Error("picker should not run");
+  });
+
+  beforeEach(() => {
+    delete process.env.MATE_ARTIFACT_PATH;
+    delete process.env.MATE_REPO_ID;
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    launchAmbiguityDeps.resolveCompanionMatches = mock(async () => MATCHES);
+    launchAmbiguityDeps.resolveProjection = mock(() => null);
+    launchAmbiguityDeps.findRepoLocalLinkedRepository = mock(async () => ({
+      id: "app",
+      path: "/tmp/repo",
+    }));
+    launchAmbiguityDeps.projectWorkingRepository = mock(async () => ({
+      kind: "written" as const,
+      projectionRoot: "/tmp/repo/.mate",
+      companionPath: "/tmp/companion-b",
+    }));
+  });
+
+  afterEach(() => {
+    launchAmbiguityDeps.resolveLinkedCompanions = originalResolveLinkedCompanions;
+    launchAmbiguityDeps.resolveProjection = originalResolveProjection;
+    launchAmbiguityDeps.findRepoLocalLinkedRepository = originalFindRepoLocalLinkedRepository;
+    launchAmbiguityDeps.projectWorkingRepository = originalProjectWorkingRepository;
+  });
+
+  function captureStderr(): { chunks: string[]; restore: () => void } {
+    const chunks: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    return { chunks, restore: () => void (process.stderr.write = originalWrite) };
+  }
+
+  test("a projected companion answers ambiguity without prompting", async () => {
+    launchAmbiguityDeps.resolveProjection = projecting("/tmp/companion-b");
+    launchAmbiguityDeps.selectCompanion = neverPicks;
+
+    expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(true);
+    expect(process.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion-b");
+    expect(process.env.MATE_REPO_ID).toBe("from-b");
+  });
+
+  test("a projected companion answers ambiguity without a TTY", async () => {
+    process.stdin.isTTY = false;
+    process.stdout.isTTY = false;
+    launchAmbiguityDeps.resolveProjection = projecting("/tmp/companion-a");
+
+    expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(true);
+    expect(process.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion-a");
+  });
+
+  test("the launch environment outranks the projection", async () => {
+    process.env.MATE_ARTIFACT_PATH = "/tmp/companion-a";
+    process.env.MATE_REPO_ID = "from-a";
+    launchAmbiguityDeps.resolveProjection = mock(() => {
+      throw new Error("projection should not be read");
+    });
+
+    expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(true);
+    expect(process.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion-a");
+  });
+
+  test("a projected companion that no longer links the repo falls through to the picker", async () => {
+    launchAmbiguityDeps.resolveProjection = projecting("/tmp/companion-gone");
+    launchAmbiguityDeps.selectCompanion = mock(async () => MATCHES[1]!);
+
+    expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(true);
+    expect(process.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion-b");
+  });
+
+  test("ignoreProjection asks again even when an answer is recorded", async () => {
+    launchAmbiguityDeps.resolveProjection = projecting("/tmp/companion-a");
+    launchAmbiguityDeps.selectCompanion = mock(async () => MATCHES[1]!);
+
+    expect(await ensureUnambiguousCompanion("/tmp/repo", { ignoreProjection: true })).toBe(true);
+    expect(process.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion-b");
+  });
+
+  test("reselect ignores the projection too", async () => {
+    launchAmbiguityDeps.resolveProjection = projecting("/tmp/companion-a");
+    launchAmbiguityDeps.selectCompanion = mock(async () => MATCHES[1]!);
+
+    expect(await ensureUnambiguousCompanion("/tmp/repo", { reselect: true })).toBe(true);
+    expect(process.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion-b");
+  });
+
+  test("the picker's answer is recorded at the Projection Root", async () => {
+    launchAmbiguityDeps.selectCompanion = mock(async () => MATCHES[1]!);
+
+    expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(true);
+    expect(launchAmbiguityDeps.projectWorkingRepository).toHaveBeenCalledWith("/tmp/companion-b", {
+      id: "app",
+      path: "/tmp/repo",
+    });
+  });
+
+  test("an unlinked working repo records nothing", async () => {
+    launchAmbiguityDeps.findRepoLocalLinkedRepository = mock(async () => null);
+    launchAmbiguityDeps.selectCompanion = mock(async () => MATCHES[1]!);
+
+    expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(true);
+    expect(launchAmbiguityDeps.projectWorkingRepository).not.toHaveBeenCalled();
+  });
+
+  test("a failed recording does not fail the command", async () => {
+    launchAmbiguityDeps.projectWorkingRepository = mock(async () => ({
+      kind: "failed" as const,
+      error: new Error("read-only"),
+    }));
+    launchAmbiguityDeps.selectCompanion = mock(async () => MATCHES[1]!);
+
+    expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(true);
+    expect(process.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion-b");
+  });
+
+  test("cancelling the picker records nothing and leaves the answer unset", async () => {
+    launchAmbiguityDeps.resolveProjection = projecting("/tmp/companion-a");
+    launchAmbiguityDeps.selectCompanion = mock(async () => null);
+    const { restore } = captureStderr();
+
+    try {
+      expect(await ensureUnambiguousCompanion("/tmp/repo", { ignoreProjection: true })).toBe(false);
+    } finally {
+      restore();
+    }
+
+    expect(launchAmbiguityDeps.projectWorkingRepository).not.toHaveBeenCalled();
+    expect(process.env.MATE_ARTIFACT_PATH).toBeUndefined();
+  });
+
+  test("an explicit companion outranks the launch environment", async () => {
+    process.env.MATE_ARTIFACT_PATH = "/tmp/companion-a";
+    process.env.MATE_REPO_ID = "from-a";
+    launchAmbiguityDeps.resolveLinkedCompanions = mock(async () => MATCHES);
+    launchAmbiguityDeps.selectCompanion = neverPicks;
+
+    expect(
+      await ensureUnambiguousCompanion("/tmp/repo", { companion: "/tmp/companion-b" }),
+    ).toBe(true);
+    expect(process.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion-b");
+    expect(process.env.MATE_REPO_ID).toBe("from-b");
+  });
+
+  test("an explicit companion that does not link the repo fails, listing the linked set", async () => {
+    launchAmbiguityDeps.resolveLinkedCompanions = mock(async () => MATCHES);
+    const { chunks, restore } = captureStderr();
+
+    try {
+      expect(
+        await ensureUnambiguousCompanion("/tmp/repo", { companion: "/tmp/companion-gone" }),
+      ).toBe(false);
+    } finally {
+      restore();
+    }
+
+    expect(chunks.join("")).toContain("does not link this working repo");
+    expect(chunks.join("")).toContain("/tmp/companion-a");
+    expect(chunks.join("")).toContain("/tmp/companion-b");
+    expect(process.env.MATE_ARTIFACT_PATH).toBeUndefined();
+  });
+
+  test("the non-TTY guidance names wrap alongside the env override", async () => {
+    process.stdin.isTTY = false;
+    process.stdout.isTTY = false;
+    const { chunks, restore } = captureStderr();
+
+    try {
+      expect(await ensureUnambiguousCompanion("/tmp/repo")).toBe(false);
+    } finally {
+      restore();
+    }
+
+    expect(chunks.join("")).toContain("wrap --companion");
+    expect(chunks.join("")).toContain("MATE_ARTIFACT_PATH");
+  });
+});
