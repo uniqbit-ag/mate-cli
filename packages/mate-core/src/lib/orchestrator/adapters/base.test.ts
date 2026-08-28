@@ -403,7 +403,8 @@ describe("launch environment and the projection agree", () => {
   });
 
   test("resolves the same Graphify output path through a launch and through a projection", async () => {
-    const { repoRoot, repository, companionPath } = await wrappedRepository("mate-launch-graphify-");
+    const { repoRoot, repository, companionPath } =
+      await wrappedRepository("mate-launch-graphify-");
 
     const enabled = await new ClaudeAdapter().prepareLaunch(
       { ...makeContext([{ name: "graphify" }]), repository, companionPath },
@@ -431,7 +432,8 @@ describe("launch environment and the projection agree", () => {
   });
 
   test("the launch environment outranks the projection for every reader", async () => {
-    const { repoRoot, repository, companionPath } = await wrappedRepository("mate-launch-outranks-");
+    const { repoRoot, repository, companionPath } =
+      await wrappedRepository("mate-launch-outranks-");
     const launched = path.join(repoRoot, "launched-companion");
 
     const launch = await new ClaudeAdapter().prepareLaunch(

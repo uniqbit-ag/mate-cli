@@ -431,9 +431,9 @@ describe("ensureUnambiguousCompanion precedence", () => {
     launchAmbiguityDeps.resolveLinkedCompanions = mock(async () => MATCHES);
     launchAmbiguityDeps.selectCompanion = neverPicks;
 
-    expect(
-      await ensureUnambiguousCompanion("/tmp/repo", { companion: "/tmp/companion-b" }),
-    ).toBe(true);
+    expect(await ensureUnambiguousCompanion("/tmp/repo", { companion: "/tmp/companion-b" })).toBe(
+      true,
+    );
     expect(process.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion-b");
     expect(process.env.MATE_REPO_ID).toBe("from-b");
   });

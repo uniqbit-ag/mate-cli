@@ -158,6 +158,41 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -322,6 +357,15 @@ exports[`runtime surface golden fixtures setup graphify × opencode 3`] = `
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "permission",
@@ -605,6 +649,41 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -624,6 +703,15 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "permission",
@@ -812,6 +900,41 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -826,10 +949,12 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
     ],
   },
   {
-    "path": ".mcp.json",
+    "path": "~/.claude.json",
     "regions": [
       {
         "at": [
+          "projects",
+          "<root>/working",
           "mcpServers",
         ],
         "entries": {
@@ -978,6 +1103,15 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "mcp",
@@ -1277,6 +1411,41 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -1291,10 +1460,12 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
     ],
   },
   {
-    "path": ".mcp.json",
+    "path": "~/.claude.json",
     "regions": [
       {
         "at": [
+          "projects",
+          "<root>/working",
           "mcpServers",
         ],
         "entries": {
@@ -1312,6 +1483,15 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "mcp",
@@ -1462,6 +1642,41 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -1602,6 +1817,15 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 3`] = `
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "permission",
@@ -1823,6 +2047,41 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -1840,6 +2099,15 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "permission",
@@ -2003,6 +2271,41 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -2137,6 +2440,15 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 3`] = `
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "permission",
@@ -2380,6 +2692,41 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -2398,6 +2745,15 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "permission",
@@ -2540,6 +2896,41 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
             "matcher": "Write|Edit|MultiEdit|Bash",
           },
         ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
       },
       {
         "at": [
@@ -2686,6 +3077,15 @@ exports[`runtime surface golden fixtures setup openspec × opencode 3`] = `
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "permission",
@@ -2914,6 +3314,41 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -2938,6 +3373,15 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "permission",
@@ -3340,6 +3784,41 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       },
       {
         "at": [
+          "hooks",
+          "SessionStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "env",
+        ],
+        "entries": {
+          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
+        },
+        "kind": "map",
+        "stripPrefix": "MATE_",
+      },
+      {
+        "at": [
           "permissions",
           "allow",
         ],
@@ -3372,10 +3851,12 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     ],
   },
   {
-    "path": ".mcp.json",
+    "path": "~/.claude.json",
     "regions": [
       {
         "at": [
+          "projects",
+          "<root>/working",
           "mcpServers",
         ],
         "entries": {
@@ -3393,6 +3874,15 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
   {
     "path": ".opencode/opencode.json",
     "regions": [
+      {
+        "at": [
+          "plugin",
+        ],
+        "kind": "list",
+        "values": [
+          "@uniqbit/mate-opencode-plugin@0.15.5",
+        ],
+      },
       {
         "at": [
           "mcp",

@@ -2,9 +2,17 @@ import path from "node:path";
 
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin";
-import { MATE_ENV, parseGuidanceContent, type MateGuidanceFile } from "@uniqbit/mate-core/runtime";
+import {
+  COMPANION_POLICY_MARKER,
+  MATE_ENV,
+  type MateGuidanceFile,
+} from "@uniqbit/mate-core/runtime";
 
-import { readContext, type CompanionContext } from "@uniqbit/mate-core/opencode";
+import {
+  readContext,
+  resolveOpenCodeGuidance,
+  type CompanionContext,
+} from "@uniqbit/mate-core/opencode";
 
 function prependPathEntry(pathValue: string | undefined, entry: string): string {
   const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
@@ -16,22 +24,19 @@ function buildStartupError(details: string[]): Error {
     [
       "Mate OpenCode companion plugin is incomplete and cannot start.",
       ...details.map((detail) => `- ${detail}`),
-      "Launch through `mate opencode` so the CLI injects the companion guidance.",
+      "Launch through `mate opencode`, or run `mate wrap` so the guidance resolves from the Projection Root.",
     ].join("\n"),
   );
 }
 
-function loadGuidance(): MateGuidanceFile {
-  const raw = process.env[MATE_ENV.guidanceJson];
-  if (!raw || !raw.trim()) {
-    throw buildStartupError([`missing ${MATE_ENV.guidanceJson} in the launch environment`]);
-  }
-
-  const { guidance, errors } = parseGuidanceContent(raw);
-  if (errors.length > 0) {
-    throw buildStartupError(errors);
-  }
-
+/**
+ * Env first, projection second. A session Mate launched carries the payload;
+ * an Unmanaged Session in a wrapped repository builds the same payload from the
+ * companion the projection names, with the Capability names read live.
+ */
+function loadGuidance(): MateGuidanceFile | null {
+  const { guidance, errors } = resolveOpenCodeGuidance();
+  if (errors.length > 0) throw buildStartupError(errors);
   return guidance;
 }
 
@@ -65,6 +70,7 @@ export const CompanionPlugin: Plugin = async () => {
   }
 
   const guidance = loadGuidance();
+  if (!guidance) return {};
 
   const wrapperBinPath = process.env.MATE_WRAPPER_BIN_PATH ?? "$MATE_WRAPPER_BIN_PATH";
 
@@ -96,6 +102,12 @@ export const CompanionPlugin: Plugin = async () => {
       }),
     },
     "experimental.chat.system.transform": async (_input: any, output: { system: string[] }) => {
+      // A wrapped repository lists this plugin in its own project config, so a
+      // managed launch — whose OPENCODE_CONFIG_DIR names the companion, which
+      // lists it too — loads it twice. The marker is what makes the second load
+      // inert instead of appending the companion block a second time.
+      if (output.system.some((part) => part.includes(COMPANION_POLICY_MARKER))) return;
+
       // Collapse the whole system prompt into a single entry. opencode expands
       // each `system[]` element into its own `role:"system"` wire message, and
       // some self-hosted chat templates (e.g. Qwen served via vLLM) reject any
@@ -113,6 +125,7 @@ export const CompanionPlugin: Plugin = async () => {
       }
     },
     "experimental.session.compacting": async (_input: any, output: { context: string[] }) => {
+      if (output.context.some((part) => part.includes(COMPANION_POLICY_MARKER))) return;
       output.context.push(buildSystemPrompt(context, guidance).join("\n"));
     },
     "shell.env": async (_input: any, output: { env: Record<string, string> }) => {

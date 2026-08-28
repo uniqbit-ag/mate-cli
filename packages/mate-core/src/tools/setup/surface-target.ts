@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { ProjectionTarget, SetupContext } from "./plugin";
 
 /**
@@ -13,6 +15,26 @@ export function projectionTarget(ctx: SetupContext): ProjectionTarget {
     );
   }
   return target;
+}
+
+/**
+ * The Working Repository a rendered document is addressed by, resolved so a
+ * symlinked working directory still matches what the runtime reports. Every
+ * document a reconcile pass renders is for a Working Repository, so a pass with
+ * none in scope refuses here rather than resolving an absent path: `path.resolve`
+ * answers the current working directory for an empty one, and a document keyed
+ * by wherever the process happened to start would file a Runtime Surface's MCP
+ * servers under a stranger's project in the user's global Claude config — a
+ * write no caller asked for and none would notice.
+ */
+export function projectionRepoRoot(ctx: SetupContext): string {
+  const target = projectionTarget(ctx);
+  if (!ctx.repoPath) {
+    throw new Error(
+      `a ${target}-target render needs a Working Repository in scope to address its documents by; none was supplied`,
+    );
+  }
+  return path.resolve(ctx.repoPath);
 }
 
 /**

@@ -22,11 +22,7 @@ import {
   workingRepoCapabilityExcludesPresent,
 } from "../../tools/setup/working-repo-local-state";
 import { getMateInstallPath } from "../package-paths";
-import {
-  companionLinkPresent,
-  linkCompanion,
-  unlinkCompanion,
-} from "./projection-companion-link";
+import { companionLinkPresent, linkCompanion, unlinkCompanion } from "./projection-companion-link";
 import { buildProjection } from "./projection-record";
 import {
   CLAUDE_WORKING_SETTINGS_PATH,
@@ -38,6 +34,7 @@ import {
   workingRepoClaudeSettingsPresent,
 } from "./projection-claude-entry";
 import {
+  CLAUDE_LOCAL_CONFIG_DOCUMENT,
   CLAUDE_MCP_DOCUMENT,
   CLAUDE_SETTINGS_DOCUMENT,
   OPENCODE_CONFIG_DOCUMENT,
@@ -287,21 +284,51 @@ function buildEntries(): readonly ProjectionEntry[] {
       removal: { by: "entry", entry: "projection-root" },
     },
     /**
-     * Last, and only under `wrap`: the documents an Agent Runtime discovers on
-     * its own. One declaration per destination, all three placing a value some
-     * Runtime Surface rendered — no format knowledge reaches this catalogue.
+     * Last: the documents an Agent Runtime discovers on its own. One declaration
+     * per destination, all three placing a value some Runtime Surface rendered —
+     * no format knowledge reaches this catalogue.
+     *
+     * A launch renders them again, because every value here is pinned to the
+     * mate that wrote it — the OpenCode plugin package's version, the plugin
+     * root the Claude hook commands name — and a repository wrapped once would
+     * otherwise keep the pins of whichever release wrapped it. Re-rendering is
+     * reconciliation, not an append: `placeRuntimeDocument` withdraws what the
+     * previous pass recorded before applying this one's, and a pass that
+     * supplied no render at all claims nothing and leaves the record standing.
      */
+    /**
+     * Removal-only, like the legacy CLAUDE.md append: releases before local
+     * scope projected the companion's MCP servers here, and a server left in
+     * `.mcp.json` would sit "pending approval" forever beside the live local
+     * one. Its `write` is the same strip, so a re-wrap heals a repository an
+     * older mate wrapped without waiting for a cleanup.
+     */
+    {
+      id: "mcp-runtime-document",
+      kind: "merged",
+      path: CLAUDE_MCP_DOCUMENT,
+      scopes: ["launch", "wrap"],
+      write: async (input) =>
+        (await removeRuntimeDocument(input.repoPath, CLAUDE_MCP_DOCUMENT)) === "removed"
+          ? "written"
+          : "current",
+      removal: {
+        by: "self",
+        remove: (input) => removeRuntimeDocument(input.repoPath, CLAUDE_MCP_DOCUMENT),
+      },
+      present: (repoPath) => runtimeDocumentPresent(repoPath, CLAUDE_MCP_DOCUMENT),
+    },
     ...(
       [
         ["claude-runtime-document", CLAUDE_SETTINGS_DOCUMENT],
-        ["mcp-runtime-document", CLAUDE_MCP_DOCUMENT],
+        ["claude-local-mcp-document", CLAUDE_LOCAL_CONFIG_DOCUMENT],
         ["opencode-runtime-document", OPENCODE_CONFIG_DOCUMENT],
       ] as const
     ).map(([id, documentPath]) => ({
       id,
       kind: "merged" as const,
       path: documentPath.split("/").join(path.sep),
-      scopes: ["wrap"] as const,
+      scopes: ["launch", "wrap"] as const,
       write: (input: ProjectionInput) =>
         placeRuntimeDocument(input.repoPath, documentPath, input.runtimeDocuments),
       removal: {

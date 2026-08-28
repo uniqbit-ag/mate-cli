@@ -42,9 +42,7 @@ function SessionContext({
       <text fg={theme.textMuted}>repo: {context.repositoryPath}</text>
       <text fg={theme.textMuted}>mate: {context.companionPath}</text>
       {context.stalenessLines.map((note) => (
-        <text fg={theme.warning ?? theme.textMuted}>
-          {note}
-        </text>
+        <text fg={theme.warning ?? theme.textMuted}>{note}</text>
       ))}
     </box>
   );

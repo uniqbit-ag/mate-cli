@@ -6,4 +6,5 @@
  */
 export { default as tuiPlugin } from "./tui";
 export { CompanionHooksPlugin } from "./companion-hooks";
+export { resolveOpenCodeGuidance, type OpenCodeGuidanceResolution } from "./projected-guidance";
 export * from "./companion-policy";

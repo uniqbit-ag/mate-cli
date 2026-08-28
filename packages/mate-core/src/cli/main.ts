@@ -129,7 +129,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     }
 
     const companionOptions = typeof needs.companion === "object" ? needs.companion : {};
-    if (needs.companion && !(await deps.ensureUnambiguousCompanion(process.cwd(), companionOptions))) {
+    if (
+      needs.companion &&
+      !(await deps.ensureUnambiguousCompanion(process.cwd(), companionOptions))
+    ) {
       process.exitCode = 1;
       return false;
     }

@@ -25,7 +25,7 @@ export type CompanionRuntimeContext = {
  * Any `MATE_*` variable present means a Mate launch configured this process,
  * so the environment is authoritative and the projection is not read.
  */
-function hasLaunchEnvironment(env: Record<string, string | undefined>): boolean {
+export function hasLaunchEnvironment(env: Record<string, string | undefined>): boolean {
   return Object.values(MATE_ENV).some((name) => env[name] !== undefined);
 }
 
