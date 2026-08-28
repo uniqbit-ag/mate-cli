@@ -73,8 +73,12 @@ export const launcherDeps = {
  * launching are exclusive rather than reconciled (ADR-015, superseding
  * ADR-014's judgement that the duplication is bounded enough to accept).
  *
- * Raised before the first write of `prepare`, so a refused launch leaves the
- * Working Repository, the companion and the companion's Git state untouched.
+ * Raised before every write the launch itself performs: the companion Git sync,
+ * the companion file sync, the launch scope's projection and the runtime
+ * invocation. Companion resolution has already refreshed the Projection Root by
+ * this point — `resolveForLaunch` writes it while resolving — but that write is
+ * idempotent and byte-identical to the one `mate wrap` performs, so it cannot
+ * change what the repository holds.
  */
 function wrappedRepositoryRefusal(repository: LinkedRepository): string {
   return [

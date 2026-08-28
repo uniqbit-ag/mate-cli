@@ -604,7 +604,12 @@ describe("launching in a wrapped working repository", () => {
       launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
     }
 
-    /** Nothing in the working repo, the companion, or its Git state was touched. */
+    /**
+     * Every write the launch itself performs is skipped. The Projection-Root
+     * refresh inside companion resolution is not one of them — it has already
+     * run by the time `prepare` is entered, and `resolveConfig` is stubbed here —
+     * so `refreshProjectionRoot` below is the launcher's own site 4 call.
+     */
     expect(syncCompanionGit).not.toHaveBeenCalled();
     expect(syncCompanionFiles).not.toHaveBeenCalled();
     expect(projectWorkingRepo).not.toHaveBeenCalled();
