@@ -486,6 +486,9 @@ describe("working repo golden fixtures", () => {
         const workingRepoPath = await makeWorkingRepo(fixture);
         const { config } = await runSetup(fixture, ["claude"], [...capabilities]);
 
+        // Exactly what `FrameworkLauncher.prepare` passes — no render, so no
+        // runtime document is placed. A launch that supplied one would show up
+        // here as working-repo state the snapshots do not expect.
         await project("launch", {
           repoPath: workingRepoPath,
           companionPath: fixture.companionPath,

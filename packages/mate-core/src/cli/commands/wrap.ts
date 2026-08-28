@@ -153,4 +153,12 @@ export async function runWrapCommand(
   for (const document of documents.documents) {
     console.log(`  Runtime:   ${document}`);
   }
+  /**
+   * Said at the moment the mode is switched, not left to be discovered at the
+   * next launch: wrapping makes `mate claude` and `mate opencode` refuse here,
+   * and the operator has no other way to learn that from a successful command.
+   */
+  console.log(
+    `Start sessions yourself now: \`claude\` or \`opencode\`. \`${FRAMEWORK_NAME} claude\` and \`${FRAMEWORK_NAME} opencode\` do not run in a wrapped repository — \`${FRAMEWORK_NAME} unwrap\` reverses this.`,
+  );
 }

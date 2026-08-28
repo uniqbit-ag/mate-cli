@@ -19,6 +19,7 @@ import * as reportCmd from "./commands/report";
 import * as updateCmd from "./commands/update";
 import * as workspaceCmd from "./commands/workspace/workspace";
 import * as workingCmd from "./commands/working/working";
+import * as unwrapCmd from "./commands/unwrap";
 import * as wrapCmd from "./commands/wrap";
 import { main, type MainDeps } from "./main";
 
@@ -38,6 +39,7 @@ const BUILT_IN_COMMANDS = [
   "workspace",
   "working",
   "wrap",
+  "unwrap",
 ];
 
 describe("command gating", () => {
@@ -67,6 +69,7 @@ describe("command gating", () => {
       spyOn(workspaceCmd, "runWorkspaceCommand").mockImplementation(record("workspace")),
       spyOn(workingCmd, "runWorkingCommand").mockImplementation(record("working")),
       spyOn(wrapCmd, "runWrapCommand").mockImplementation(record("wrap")),
+      spyOn(unwrapCmd, "runUnwrapCommand").mockImplementation(record("unwrap")),
       spyOn(installCmd, "runInstallCommand").mockImplementation(async () => {
         dispatched.push("install");
         return true;
@@ -180,6 +183,18 @@ describe("command gating", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]![1]).toEqual({ ignoreProjection: true, companion: "/tmp/companion-a" });
+  });
+
+  /**
+   * A recovery path: it withdraws what a wrap placed and consults neither a
+   * companion nor an installation, so gating it on either would lock a user out
+   * of the one command that lifts the launch refusal.
+   */
+  test("unwrap dispatches without companion selection or install preflight", async () => {
+    const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
+    await main(["node", "mate", "unwrap"], deps);
+    expect(gateCalls).toEqual([]);
+    expect(dispatched).toEqual(["unwrap"]);
   });
 
   test("wrap blocked by companion selection never dispatches", async () => {

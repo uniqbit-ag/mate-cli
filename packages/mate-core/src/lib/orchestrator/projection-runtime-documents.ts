@@ -323,25 +323,96 @@ export async function removeRuntimeDocument(
   const regions = manifest.documents[documentPath];
   if (!regions) return "absent";
 
-  const target = documentPathIn(repoPath, documentPath);
-  const raw = await readRaw(target);
-  if (raw !== null) {
-    const document = parseDocument(raw, target);
-    for (const region of regions) revertRegion(document, region);
-    if (Object.keys(document).length === 0 && !isExternalDocument(documentPath)) {
-      await fs.unlink(target);
-      const holder = path.dirname(target);
-      if (holder !== path.resolve(repoPath)) {
-        await pruneEmptyAncestors(holder, path.resolve(repoPath));
-      }
-    } else {
-      await writeAtomic(target, serialize(document));
-    }
-  }
-
+  await revertDocumentOnDisk(repoPath, documentPath, regions);
   delete manifest.documents[documentPath];
   await writeManifest(repoPath, manifest);
   return "removed";
+}
+
+/**
+ * One document's regions, taken back out of the file that holds them. Knows
+ * nothing of the manifest, which is what lets several destinations be reverted
+ * at once: every document is a distinct file, while the manifest recording them
+ * all is not.
+ */
+async function revertDocumentOnDisk(
+  repoPath: string,
+  documentPath: string,
+  regions: readonly ManagedRegion[],
+): Promise<void> {
+  const target = documentPathIn(repoPath, documentPath);
+  const raw = await readRaw(target);
+  if (raw === null) return;
+
+  const document = parseDocument(raw, target);
+  for (const region of regions) revertRegion(document, region);
+  if (Object.keys(document).length === 0 && !isExternalDocument(documentPath)) {
+    await fs.unlink(target);
+    const holder = path.dirname(target);
+    if (holder !== path.resolve(repoPath)) {
+      await pruneEmptyAncestors(holder, path.resolve(repoPath));
+    }
+  } else {
+    await writeAtomic(target, serialize(document));
+  }
+}
+
+/**
+ * Withdraws several destinations against a single read and a single write of the
+ * manifest. `removeRuntimeDocument` per destination cannot be run concurrently —
+ * each rewrites the whole manifest, so the last write restores the keys the
+ * others removed — and running it sequentially rewrites the manifest once per
+ * document. Reverting the files together and recording the outcome once is both
+ * safe and one write.
+ *
+ * A document that throws keeps its manifest entry, so the record still names
+ * what is left behind, and the destinations that did succeed are still
+ * withdrawn. The first error is returned rather than raised: unwrapping reports
+ * per document, and a rejected batch would lose which one failed.
+ */
+export async function removeRuntimeDocuments(
+  repoPath: string,
+  documentPaths: readonly string[],
+): Promise<{ removed: string[]; absent: string[]; error?: { document: string; error: Error } }> {
+  const manifest = await readManifest(repoPath);
+  const recorded = documentPaths.filter((candidate) => manifest.documents[candidate] !== undefined);
+  const absent = documentPaths.filter((candidate) => manifest.documents[candidate] === undefined);
+  if (recorded.length === 0) return { removed: [], absent };
+
+  const settled = await Promise.allSettled(
+    recorded.map((documentPath) =>
+      revertDocumentOnDisk(repoPath, documentPath, manifest.documents[documentPath]!),
+    ),
+  );
+
+  const removed: string[] = [];
+  let failure: { document: string; error: Error } | undefined;
+  for (const [index, result] of settled.entries()) {
+    const documentPath = recorded[index]!;
+    if (result.status === "rejected") {
+      failure ??= {
+        document: documentPath,
+        error: result.reason instanceof Error ? result.reason : new Error(String(result.reason)),
+      };
+      continue;
+    }
+    delete manifest.documents[documentPath];
+    removed.push(documentPath);
+  }
+
+  await writeManifest(repoPath, manifest);
+  return { removed, absent, ...(failure ? { error: failure } : {}) };
+}
+
+/**
+ * Every destination the manifest records, in the order it recorded them. This
+ * is what makes a Working Repository "wrapped": the manifest is written only by
+ * a pass that placed a runtime document, and `mate wrap` is the only pass that
+ * places one. Reported as data so neither the launch refusal nor `mate unwrap`
+ * holds a list of destinations that the entry catalogue could outgrow.
+ */
+export async function recordedRuntimeDocuments(repoPath: string): Promise<string[]> {
+  return Object.keys((await readManifest(repoPath)).documents);
 }
 
 /** Present when Mate recorded regions for it, not merely when the file exists. */
