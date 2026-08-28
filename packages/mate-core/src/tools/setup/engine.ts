@@ -1,6 +1,7 @@
 // oxlint-disable no-await-in-loop
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
+import type { RenderedRuntimeDocument } from "../../lib/orchestrator/projection-types";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
 import { collectHostingProviders, ContextServiceMediator } from "./context-services";
 import type {
@@ -12,6 +13,7 @@ import type {
 } from "./plugin";
 import { reconcileClaudeContributions } from "./providers/claude";
 import { reconcileOpenCodeContributions } from "./providers/opencode";
+import { renderDocumentsForTarget } from "./runtime-documents";
 import { normalizeRegistration, type NormalizedRegistration } from "./registry";
 
 export interface SetupInstallationPlanAction {
@@ -189,16 +191,14 @@ const RUNTIME_SURFACE_RECONCILERS: Record<
 };
 
 /**
- * Reconcile declared Capability contributions through every active runtime's
- * Runtime Surface (spec: plugin-engine). Runs after all plugin phases, so
- * providers are always done first. Disabled capabilities participate with
- * `enabled: false` and drive teardown of their managed entries.
+ * The declared Capability contributions of one pass, keyed by runtime. Shared
+ * by both targets: what a companion pass writes is what a working pass renders.
  */
-async function reconcileCapabilityContributions(
+async function collectContributionInputs(
   ctx: SetupContext,
   plugins: Plugin[],
   plan: SetupInstallationPlan,
-): Promise<void> {
+): Promise<Map<string, CapabilityContributionInput[]>> {
   // The plan already resolved enablement (policy, saved selection, package
   // manager requirements); mirror it instead of recomputing.
   const enabledByPluginId = new Map(
@@ -225,10 +225,38 @@ async function reconcileCapabilityContributions(
       inputsByRuntime.set(runtimeId, inputs);
     }
   }
+  return inputsByRuntime;
+}
 
+/**
+ * Reconcile declared Capability contributions through every active runtime's
+ * Runtime Surface (spec: plugin-engine). Runs after all plugin phases, so
+ * providers are always done first. Disabled capabilities participate with
+ * `enabled: false` and drive teardown of their managed entries.
+ */
+async function reconcileCapabilityContributions(
+  ctx: SetupContext,
+  plugins: Plugin[],
+  plan: SetupInstallationPlan,
+): Promise<void> {
+  const inputsByRuntime = await collectContributionInputs(ctx, plugins, plan);
   for (const [runtimeId, inputs] of inputsByRuntime) {
     const reconcile = RUNTIME_SURFACE_RECONCILERS[runtimeId];
     if (!reconcile || inputs.length === 0) continue;
     await reconcile(ctx, inputs);
   }
+}
+
+/**
+ * The same declarations, rendered rather than written: a working-target pass
+ * produces the documents and the Projection Root places them, so no Runtime
+ * Surface reaches inside a Working Repository.
+ */
+export async function renderRuntimeDocuments(
+  ctx: SetupContext,
+  registrations: PluginRegistration[],
+  plan: SetupInstallationPlan,
+): Promise<RenderedRuntimeDocument[]> {
+  const plugins = registrations.map((entry) => normalizeRegistration(entry).plugin);
+  return renderDocumentsForTarget(ctx, await collectContributionInputs(ctx, plugins, plan));
 }

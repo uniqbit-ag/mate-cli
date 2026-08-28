@@ -10,6 +10,7 @@ import { readCompanionRegistry } from "./companion-registry-reader";
 import { ConfigStore } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
 import { findRepoLocalLinkedRepository } from "./repo-local-registry";
+import { projectWorkingRepositoryBestEffort } from "./working-repo-projection";
 import {
   AmbiguousCompanionError,
   ConfigError,
@@ -216,6 +217,7 @@ export async function resolveForLaunch(
     const repository = (await findRepoLocalLinkedRepository(cwd)) ?? undefined;
     if (repository) {
       await backfillCompanionRegistration(resolution.match.companionPath, repository);
+      await projectWorkingRepositoryBestEffort(resolution.match.companionPath, repository);
     }
     const context = await withResolvedHub(
       makeContext(resolution.match.companionPath, "working-repo", repository),
@@ -280,14 +282,23 @@ export async function resolveForCapability(
     return { ...ctx, repositoryId: "" };
   }
 
-  const match = await new CompanionResolver(globalConfigStore).resolve(cwd);
+  /**
+   * `resolveWithDiagnostics` only to learn whether the match is ambiguous;
+   * `resolve()` is this same call with `logFailures`, so the returned match is
+   * unchanged. Unlike `resolveForLaunch` this does not refuse on ambiguity —
+   * it only declines to make a guessed companion durable.
+   */
+  const resolution = await new CompanionResolver(globalConfigStore).resolveWithDiagnostics(cwd, {
+    logFailures: true,
+  });
+  const match = resolution.match;
   if (match) {
+    const repository = (await findRepoLocalLinkedRepository(cwd)) ?? undefined;
+    if (repository && resolution.ambiguousMatches.length <= 1) {
+      await projectWorkingRepositoryBestEffort(match.companionPath, repository);
+    }
     const context = await withResolvedHub(
-      makeContext(
-        match.companionPath,
-        "working-repo",
-        (await findRepoLocalLinkedRepository(cwd)) ?? undefined,
-      ),
+      makeContext(match.companionPath, "working-repo", repository),
     );
     return {
       ...context,

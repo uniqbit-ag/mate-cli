@@ -19,6 +19,8 @@ import * as reportCmd from "./commands/report";
 import * as updateCmd from "./commands/update";
 import * as workspaceCmd from "./commands/workspace/workspace";
 import * as workingCmd from "./commands/working/working";
+import * as unwrapCmd from "./commands/unwrap";
+import * as wrapCmd from "./commands/wrap";
 import { main, type MainDeps } from "./main";
 
 const BUILT_IN_COMMANDS = [
@@ -36,6 +38,8 @@ const BUILT_IN_COMMANDS = [
   "update",
   "workspace",
   "working",
+  "wrap",
+  "unwrap",
 ];
 
 describe("command gating", () => {
@@ -64,6 +68,8 @@ describe("command gating", () => {
       spyOn(capCmd, "runCapCommand").mockImplementation(record("cap")),
       spyOn(workspaceCmd, "runWorkspaceCommand").mockImplementation(record("workspace")),
       spyOn(workingCmd, "runWorkingCommand").mockImplementation(record("working")),
+      spyOn(wrapCmd, "runWrapCommand").mockImplementation(record("wrap")),
+      spyOn(unwrapCmd, "runUnwrapCommand").mockImplementation(record("unwrap")),
       spyOn(installCmd, "runInstallCommand").mockImplementation(async () => {
         dispatched.push("install");
         return true;
@@ -156,6 +162,45 @@ describe("command gating", () => {
     await main(["node", "mate", "working", "cleanup"], deps);
     expect(gateCalls).toEqual([]);
     expect(dispatched).toEqual(["working"]);
+  });
+
+  test("wrap declares companion selection and install preflight", async () => {
+    const { gateCalls, deps } = recordingDeps();
+    await main(["node", "mate", "wrap"], deps);
+    expect(gateCalls).toEqual(["companion", "install"]);
+    expect(dispatched).toEqual(["wrap"]);
+  });
+
+  test("wrap asks past a recorded answer and forwards an explicit companion", async () => {
+    const calls: Array<[string, unknown]> = [];
+    const { deps } = recordingDeps();
+    deps.ensureUnambiguousCompanion = async (cwd = "", options = {}) => {
+      calls.push([cwd, options]);
+      return true;
+    };
+
+    await main(["node", "mate", "wrap", "--companion", "/tmp/companion-a"], deps);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![1]).toEqual({ ignoreProjection: true, companion: "/tmp/companion-a" });
+  });
+
+  /**
+   * A recovery path: it withdraws what a wrap placed and consults neither a
+   * companion nor an installation, so gating it on either would lock a user out
+   * of the one command that lifts the launch refusal.
+   */
+  test("unwrap dispatches without companion selection or install preflight", async () => {
+    const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
+    await main(["node", "mate", "unwrap"], deps);
+    expect(gateCalls).toEqual([]);
+    expect(dispatched).toEqual(["unwrap"]);
+  });
+
+  test("wrap blocked by companion selection never dispatches", async () => {
+    const { deps } = recordingDeps({ companion: false });
+    await main(["node", "mate", "wrap"], deps);
+    expect(dispatched).toEqual([]);
   });
 
   test("companion setup, link, list, and unknown subcommands dispatch without companion selection or preflight", async () => {

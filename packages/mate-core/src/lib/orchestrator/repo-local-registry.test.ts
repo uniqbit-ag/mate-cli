@@ -9,7 +9,6 @@ import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import {
-  ensureRepoLocalDirExcluded,
   findDescendantRepoLocalRegistries,
   findRepoLocalLinkedRepository,
   findRepoLocalRegistryFile,
@@ -139,23 +138,31 @@ describe("writeRepoLocalRegistryEntry", () => {
   });
 });
 
-describe("ensureRepoLocalDirExcluded", () => {
-  test("is a no-op when the repo has no .git directory", async () => {
+describe("the managed exclude block a Repository Link writes", () => {
+  test("is skipped when the repo has no .git directory", async () => {
     const root = await makeTempDir("repo-local-nogit-");
     const repoPath = path.join(root, "repo");
     await fs.mkdir(repoPath, { recursive: true });
 
-    await expect(ensureRepoLocalDirExcluded(repoPath)).resolves.toBeUndefined();
+    await writeRepoLocalRegistryEntry(
+      repoPath,
+      path.join(root, "companion"),
+      { id: "acme", path: repoPath },
+      "git",
+    );
+
     await expect(fs.access(path.join(repoPath, ".git"))).rejects.toThrow();
   });
 
-  test("does not duplicate the exclude entry on repeated calls", async () => {
+  test("does not duplicate the exclude entry on repeated links", async () => {
     const root = await makeTempDir("repo-local-exclude-dedupe-");
     const repoPath = path.join(root, "repo");
+    const companionPath = path.join(root, "companion");
     await initGitRepo(repoPath);
 
-    await ensureRepoLocalDirExcluded(repoPath);
-    await ensureRepoLocalDirExcluded(repoPath);
+    const repository = { id: "acme", path: repoPath };
+    await writeRepoLocalRegistryEntry(repoPath, companionPath, repository, "git");
+    await writeRepoLocalRegistryEntry(repoPath, companionPath, repository, "git");
 
     const exclude = await fs.readFile(path.join(repoPath, ".git", "info", "exclude"), "utf8");
     const matches = exclude.split("\n").filter((line) => line === `/.${FRAMEWORK_NAME}/`);

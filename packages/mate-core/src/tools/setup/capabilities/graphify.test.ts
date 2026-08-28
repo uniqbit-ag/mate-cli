@@ -182,10 +182,11 @@ describe("createGraphifyPlugin forProvider — wrapper generation", () => {
       expect(content).toContain("#!/usr/bin/env bash");
       expect(content).toContain("MATE_ARTIFACT_PATH");
       expect(content).toContain("MATE_REPO_PATH");
-      expect(content).toContain("MATE_REPO_ID");
-      expect(content).toContain(".graphify/");
-      expect(content).toContain("graphify-out");
+      expect(content).toContain("GRAPHIFY_OUT");
       expect(content).toContain("--graph");
+      // The store layout is read, never rebuilt: no companion-plus-id expression.
+      expect(content).not.toContain(".graphify/");
+      expect(content).not.toContain("graphify-out");
     });
 
     test(`wrapper is executable for ${providerId}`, async () => {
@@ -289,7 +290,8 @@ describe("graphify wrapper script content", () => {
     const wrapperPath = path.join(getWrapperBinPath(), "graphify");
     const content = await fs.readFile(wrapperPath, "utf8");
 
-    expect(content).toContain("MATE_ARTIFACT_PATH not set");
+    expect(content).toContain("graphify: no mate context here");
+    expect(content).toContain("mate wrap");
     expect(content).toContain("exit 1");
   });
 
@@ -305,7 +307,8 @@ describe("graphify wrapper script content", () => {
     const wrapperPath = path.join(getWrapperBinPath(), "graphify");
     const content = await fs.readFile(wrapperPath, "utf8");
 
-    expect(content).toContain("MATE_REPO_PATH not set");
+    expect(content).toContain("graphify: no working repository in the mate context");
+    expect(content).toContain("mate wrap");
     expect(content).toContain("exit 1");
   });
 
@@ -356,8 +359,8 @@ describe("graphify wrapper script content", () => {
 
     expect(content).toContain("update)");
     expect(content).toContain("extract|watch|cluster-only|label|check-update)");
-    expect(content).toContain('exec "$_real" "$MATE_REPO_PATH" --update "${@:2}"');
-    expect(content).toContain('exec "$_real" "$_cmd" "$MATE_REPO_PATH" "${@:2}"');
+    expect(content).toContain('exec "$_real" "$_repo_path" --update "${@:2}"');
+    expect(content).toContain('exec "$_real" "$_cmd" "$_repo_path" "${@:2}"');
   });
 
   test("wrapper keeps lookup as a compatibility alias over query", async () => {
@@ -418,12 +421,13 @@ describe("graphify wrapper invocation (E2E: path routing and env guard)", () => 
 
     const wrapperPath = path.join(getWrapperBinPath(), "graphify");
     const result = spawnSync("bash", [wrapperPath, "build"], {
+      cwd: root,
       env: { MATE_REPO_PATH: "/tmp/repo", PATH: process.env.PATH },
       encoding: "utf8",
     });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("MATE_ARTIFACT_PATH not set");
+    expect(result.stderr).toContain("graphify: no mate context here");
   });
 
   test("wrapper exits non-zero and prints error when MATE_REPO_PATH is missing", async () => {
@@ -436,12 +440,13 @@ describe("graphify wrapper invocation (E2E: path routing and env guard)", () => 
 
     const wrapperPath = path.join(getWrapperBinPath(), "graphify");
     const result = spawnSync("bash", [wrapperPath, "build"], {
+      cwd: root,
       env: { MATE_ARTIFACT_PATH: root, PATH: process.env.PATH },
       encoding: "utf8",
     });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("MATE_REPO_PATH not set");
+    expect(result.stderr).toContain("graphify: no working repository in the mate context");
   });
 
   test("wrapper routes build command through extract with MATE_REPO_PATH as scan root and companion graphify root as output", async () => {
@@ -466,6 +471,7 @@ describe("graphify wrapper invocation (E2E: path routing and env guard)", () => 
         MATE_ARTIFACT_PATH: companionPath,
         MATE_REPO_PATH: repoPath,
         MATE_REPO_ID: repoId,
+        GRAPHIFY_OUT: path.join(companionPath, ".graphify", repoId, "graphify-out"),
         PATH: `${realBinDir}:${process.env.PATH ?? ""}`,
       },
       encoding: "utf8",
@@ -517,6 +523,7 @@ describe("graphify wrapper invocation (E2E: path routing and env guard)", () => 
         MATE_ARTIFACT_PATH: companionPath,
         MATE_REPO_PATH: repoPath,
         MATE_REPO_ID: repoId,
+        GRAPHIFY_OUT: path.join(companionPath, ".graphify", repoId, "graphify-out"),
         PATH: `${realBinDir}:${process.env.PATH ?? ""}`,
       },
       encoding: "utf8",
@@ -559,6 +566,7 @@ describe("graphify wrapper invocation (E2E: path routing and env guard)", () => 
         MATE_ARTIFACT_PATH: root,
         MATE_REPO_PATH: repoPath,
         MATE_REPO_ID: "my-repo",
+        GRAPHIFY_OUT: path.join(root, ".graphify", "my-repo", "graphify-out"),
         PATH: `${realBinDir}:${process.env.PATH ?? ""}`,
       },
       encoding: "utf8",

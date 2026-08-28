@@ -1,58 +1,6 @@
-import { GUIDANCE_FILE_VERSION, type MateGuidanceFile } from "../../runtime/guidance";
-
-import {
-  buildCodebaseExplorationGuidanceSection,
-  buildCompanionPolicyXml,
-  hasGraphifyCapability,
-  hasTokensaveCapability,
-} from "../../playbooks/companion-guidance";
-import type { CapabilityConfig } from "./types";
-
 /**
- * Build the companion guidance payload delivered to the OpenCode plugin
- * through the `MATE_GUIDANCE_JSON` launch environment variable. The guidance
- * text carries `$MATE_*` placeholders; the plugin materializes them from the
- * session environment, so the same payload shape serves every companion.
- *
- * Real capabilities are passed through (not just the graphify/tokensave
- * flags) so capability-gated companion-policy rules — e.g. openspec-finish —
- * render exactly as they do for the Claude provider.
+ * The OpenCode guidance payload. Built in `runtime/` so the plugin can build
+ * the same payload from the Projection Root when no launch injected one; this
+ * module stays as the orchestrator-side name the launch adapter imports.
  */
-export function buildOpenCodeGuidance(capabilities: CapabilityConfig[]): MateGuidanceFile {
-  const companionGuidance = buildCompanionPolicyXml(
-    {
-      companionPath: "$MATE_ARTIFACT_PATH",
-      repository: {
-        id: "$MATE_REPO_ID",
-        path: "$MATE_REPO_PATH",
-      },
-      allowedAgents: [],
-      capabilities,
-    },
-    { wrapperBinPath: "$MATE_WRAPPER_BIN_PATH" },
-  );
-  const graphifyEnabled = hasGraphifyCapability(capabilities);
-  const tokensaveEnabled = hasTokensaveCapability(capabilities);
-  const codebaseExplorationGuidance = buildCodebaseExplorationGuidanceSection({
-    useGraphify: graphifyEnabled,
-    useTokensave: tokensaveEnabled,
-  });
-  const errors: string[] = [];
-
-  if (!companionGuidance.includes("<companion-policy ")) {
-    errors.push("companion guidance was not injected");
-  }
-  if (
-    (graphifyEnabled || tokensaveEnabled) &&
-    !codebaseExplorationGuidance.includes("<codebase-exploration-rules ")
-  ) {
-    errors.push("codebase exploration guidance was not injected");
-  }
-
-  return {
-    version: GUIDANCE_FILE_VERSION,
-    companionGuidance,
-    codebaseExplorationGuidance,
-    errors,
-  };
-}
+export { buildOpenCodeGuidance } from "../../runtime/companion-guidance";

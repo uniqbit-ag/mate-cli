@@ -1,25 +1,35 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { parse, stringify } from "yaml";
+import { parse } from "yaml";
 
-import { FRAMEWORK_NAME } from "../../framework";
-import { ensureWorkingRepoLocalExcludes } from "../../tools/setup/working-repo-local-state";
-import { YamlFileStore } from "./yaml-file-store";
+import {
+  ancestorDirectories,
+  repoLocalDirName,
+  repoLocalRegistryPath,
+  type RepoLocalRegistryFile,
+} from "../../runtime/repo-local";
+import { firstFailure } from "./projection-types";
+import { normalizeLinkedRepository } from "./repo-local-store";
+import { project } from "./working-repo-projection";
+import type { RepoLocalRegistry } from "./repo-local-store";
 import type { CompanionSource, LinkedRepository } from "./types";
 
-export interface RepoLocalCompanionPointer {
-  path: string;
-  repositoryId: string;
-  source?: CompanionSource;
-}
+export {
+  repoLocalDirPath,
+  repoLocalFrameworkPath,
+  repoLocalRegistryPath,
+} from "../../runtime/repo-local";
+export { pathIsDirectory } from "../fs-utils";
+export {
+  RepoLocalRegistryStore,
+  upsertRepoLocalCompanionPointer,
+  upsertRepoLocalLinkedRepository,
+  writeRepoLocalFrameworkConfig,
+  type RepoLocalCompanionPointer,
+  type RepoLocalRegistry,
+} from "./repo-local-store";
 
-export interface RepoLocalRegistry {
-  repository?: LinkedRepository;
-  companions: RepoLocalCompanionPointer[];
-}
-
-const repoLocalDirName = () => `.${FRAMEWORK_NAME}`;
 const repoLocalScanSkipDirNames = () =>
   new Set([
     ".git",
@@ -35,100 +45,11 @@ const repoLocalScanSkipDirNames = () =>
     ".cache",
   ]);
 
-export function repoLocalDirPath(repoPath: string): string {
-  return path.join(path.resolve(repoPath), repoLocalDirName());
-}
-
-export function repoLocalRegistryPath(repoPath: string): string {
-  return path.join(repoLocalDirPath(repoPath), "config", "registry.yaml");
-}
-
-export function repoLocalFrameworkPath(repoPath: string): string {
-  return path.join(repoLocalDirPath(repoPath), "config", "framework.yaml");
-}
-
-export class RepoLocalRegistryStore extends YamlFileStore<RepoLocalRegistry> {
-  protected async onMissing(): Promise<RepoLocalRegistry> {
-    return { companions: [] };
-  }
-}
-
 /**
- * Adds the working repo's `.mate` directory to `.git/info/exclude` so it
- * never needs a tracked `.gitignore` entry, mirroring `ensureTokensaveStoreExcluded`.
- */
-export async function ensureRepoLocalDirExcluded(repoPath: string): Promise<void> {
-  await ensureWorkingRepoLocalExcludes(repoPath);
-}
-
-/** Writes `.mate/config/framework.yaml` with `type: "working"` if it does not already exist. */
-export async function writeRepoLocalFrameworkConfig(repoPath: string): Promise<void> {
-  const frameworkPath = repoLocalFrameworkPath(repoPath);
-  try {
-    await fs.access(frameworkPath);
-    return;
-  } catch {
-    // fall through to create it
-  }
-
-  await fs.mkdir(path.dirname(frameworkPath), { recursive: true });
-  await fs.writeFile(frameworkPath, stringify({ type: "working" }), "utf8");
-}
-
-async function loadRepoLocalRegistry(repoPath: string): Promise<RepoLocalRegistry> {
-  const store = new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath));
-  return store.load();
-}
-
-async function saveRepoLocalRegistry(repoPath: string, registry: RepoLocalRegistry): Promise<void> {
-  const store = new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath));
-  await store.save(registry);
-}
-
-// Field-explicit on purpose: also strips legacy per-repo policy fields
-// (profile/overrides) from entries read from or written to disk.
-function normalizeLinkedRepository(repository: LinkedRepository): LinkedRepository {
-  return {
-    id: repository.id,
-    path: path.resolve(repository.path),
-  };
-}
-
-async function upsertRepoLocalLinkedRepository(
-  repoPath: string,
-  repository: LinkedRepository,
-): Promise<void> {
-  const registry = await loadRepoLocalRegistry(repoPath);
-  registry.repository = normalizeLinkedRepository(repository);
-  await saveRepoLocalRegistry(repoPath, registry);
-}
-
-/** Upserts a companion pointer (by path) into the working repo's local registry. */
-export async function upsertRepoLocalCompanionPointer(
-  repoPath: string,
-  companionPath: string,
-  repositoryId: string,
-  source: CompanionSource,
-): Promise<void> {
-  const resolvedCompanionPath = path.resolve(companionPath);
-  const registry = await loadRepoLocalRegistry(repoPath);
-  const existingIndex = registry.companions.findIndex(
-    (pointer) => path.resolve(pointer.path) === resolvedCompanionPath,
-  );
-
-  if (existingIndex >= 0) {
-    registry.companions[existingIndex] = { path: resolvedCompanionPath, repositoryId, source };
-  } else {
-    registry.companions.push({ path: resolvedCompanionPath, repositoryId, source });
-  }
-
-  await saveRepoLocalRegistry(repoPath, registry);
-}
-
-/**
- * Single entry point for the dual-write at link time: ensures the `.mate`
- * directory exists, is git-excluded, has a working-repo `framework.yaml`,
- * and records the companion pointer in the repo-local registry.
+ * Records a Repository Link. Deliberately writes no projection file: wrapping is
+ * an explicit act, which is why the scope and not the inputs picks the entries.
+ * Throws on the first failed entry — this caller's own callers warn on it, so
+ * the owner's per-entry best-effort report must not silently become success.
  */
 export async function writeRepoLocalRegistryEntry(
   repoPath: string,
@@ -136,10 +57,9 @@ export async function writeRepoLocalRegistryEntry(
   repository: LinkedRepository,
   source: CompanionSource,
 ): Promise<void> {
-  await ensureRepoLocalDirExcluded(repoPath);
-  await writeRepoLocalFrameworkConfig(repoPath);
-  await upsertRepoLocalLinkedRepository(repoPath, repository);
-  await upsertRepoLocalCompanionPointer(repoPath, companionPath, repository.id, source);
+  const { outcomes } = await project("link", { repoPath, companionPath, repository, source });
+  const failure = firstFailure(outcomes);
+  if (failure) throw failure.error ?? new Error(`failed to project ${failure.path}`);
 }
 
 export async function findRepoLocalLinkedRepository(cwd: string): Promise<LinkedRepository | null> {
@@ -180,23 +100,16 @@ export async function listOtherRepoLocalCompanionPaths(
 /** Walks up from `cwd` looking for the nearest ancestor holding a repo-local registry file. */
 export async function findRepoLocalRegistryFile(
   cwd: string,
-): Promise<{ repoRoot: string; registryPath: string } | null> {
-  let dir = path.resolve(cwd);
-  for (;;) {
+): Promise<RepoLocalRegistryFile | null> {
+  for (const dir of ancestorDirectories(cwd)) {
     const candidate = repoLocalRegistryPath(dir);
     try {
-      const stats = await fs.stat(candidate);
-      if (stats.isFile()) {
-        return { repoRoot: dir, registryPath: candidate };
-      }
+      if ((await fs.stat(candidate)).isFile()) return { repoRoot: dir, registryPath: candidate };
     } catch {
       // keep walking up
     }
-
-    const parent = path.dirname(dir);
-    if (parent === dir) return null;
-    dir = parent;
   }
+  return null;
 }
 
 /** Finds repo-local registries strictly beneath `rootPath`, skipping noisy directories. */
@@ -249,13 +162,4 @@ export async function findDescendantRepoLocalRegistries(rootPath: string): Promi
     }),
   );
   return shadowedPaths.filter((candidate): candidate is string => candidate !== null).sort();
-}
-
-export async function pathIsDirectory(candidatePath: string): Promise<boolean> {
-  try {
-    const stats = await fs.stat(candidatePath);
-    return stats.isDirectory();
-  } catch {
-    return false;
-  }
 }
