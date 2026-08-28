@@ -11,7 +11,7 @@ import {
   writeProjectionPair,
 } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
-import { buildBanner } from "./session-banner";
+import { buildBanner, PROJECTED_BANNER_FLAG } from "./session-banner";
 
 const tempRoots: string[] = [];
 const REGISTRY_CONTENT = "companions: []\n";
@@ -151,5 +151,44 @@ describe("session-banner hook module", () => {
     fs.writeFileSync(yamlPath, fs.readFileSync(yamlPath, "utf8").slice(0, 45), "utf8");
 
     expect(buildBanner({}, repoRoot)).toEqual({ exitCode: 0, stdout: "" });
+  });
+
+  /**
+   * A managed launch loads the bundled plugin *and* the Working Repository's
+   * settings, and both register the same resolved command — so the copy the
+   * wrap carried is flagged, and defers rather than doubling the banner.
+   */
+  describe(`the ${PROJECTED_BANNER_FLAG} copy a wrap carries`, () => {
+    test("defers to the launch's own copy under a Mate environment", () => {
+      const result = buildBanner(
+        { MATE_REPO_PATH: "/work/acme", MATE_ARTIFACT_PATH: "/companions/acme-companion" },
+        "/work/acme",
+        [PROJECTED_BANNER_FLAG],
+      );
+
+      expect(result).toEqual({ exitCode: 0, stdout: "" });
+    });
+
+    test("prints in a session Mate did not launch", () => {
+      const repoRoot = makeTempDir("banner-projected-");
+      const companion = path.join(repoRoot, "companion");
+      fs.mkdirSync(companion, { recursive: true });
+      wrapRepo(repoRoot, companion, currentStamp());
+
+      const message = bannerMessage(buildBanner({}, repoRoot, [PROJECTED_BANNER_FLAG]));
+
+      expect(message).toContain(repoRoot);
+      expect(message).toContain(companion);
+    });
+
+    /** The plugin's own copy is unflagged, so a launch never silences it. */
+    test("leaves the unflagged copy printing under the same environment", () => {
+      const result = buildBanner(
+        { MATE_REPO_PATH: "/work/acme", MATE_ARTIFACT_PATH: "/companions/acme-companion" },
+        "/work/acme",
+      );
+
+      expect(bannerMessage(result)).toContain("/work/acme");
+    });
   });
 });

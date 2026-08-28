@@ -45,6 +45,7 @@ export function getClaudePluginRoot(): string {
 export const CLAUDE_PLUGIN_HOOK_SHIMS = [
   "validate-artifact-path.mjs",
   "session-banner.mjs",
+  "session-guidance.mjs",
   "artifact-finish-nudge.mjs",
 ] as const;
 

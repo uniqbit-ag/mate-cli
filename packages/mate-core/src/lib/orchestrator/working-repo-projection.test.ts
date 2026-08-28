@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,11 +7,20 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { getActiveDistribution, setActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import { parseProjectionYaml, type ProjectionFile } from "../../runtime/projection";
 import { renderWorkingRuntimeDocuments } from "../../tools/setup";
+import {
+  OPENCODE_PLUGIN_PACKAGE_NAME,
+  getOpenCodeCacheDir,
+  getOpenCodePluginPackageReference,
+  opencodePluginCacheDeps,
+  warmOpenCodePluginCache,
+} from "../opencode-plugin-package";
 import { GlobalConfigStore } from "./global-config-store";
-import { firstFailure } from "./projection-types";
+import { runtimeDocumentDeps } from "./projection-runtime-documents";
+import { firstFailure, type RenderedRuntimeDocument } from "./projection-types";
 import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
 import type { LinkedRepository } from "./types";
 import {
@@ -18,6 +28,7 @@ import {
   project,
   projectWorkingRepository,
   projectWorkingRepositoryBestEffort,
+  projectWorkingRuntimeDocuments,
   unproject,
 } from "./working-repo-projection";
 
@@ -354,9 +365,9 @@ describe("the companion link", () => {
 
     expect((await fs.lstat(linkPath(repoPath))).isSymbolicLink()).toBe(true);
     expect(await fs.realpath(linkPath(repoPath))).toBe(await fs.realpath(companionPath));
-    expect(
-      await fs.readFile(path.join(linkPath(repoPath), "openspec", "spec.md"), "utf8"),
-    ).toBe("# Acme\n");
+    expect(await fs.readFile(path.join(linkPath(repoPath), "openspec", "spec.md"), "utf8")).toBe(
+      "# Acme\n",
+    );
   });
 
   test("a re-pin repoints it, and an unchanged pin rewrites nothing", async () => {
@@ -413,6 +424,201 @@ describe("the companion link", () => {
       (await unproject({ repoPath })).outcomes.find((outcome) => outcome.id === "companion-link")
         ?.state,
     ).toBe("absent");
+  });
+});
+
+/**
+ * Every value these documents carry is pinned to the mate that wrote it — the
+ * OpenCode plugin package's version above all. A repository is wrapped once and
+ * launched for the rest of its life, so the launch scope renders them again
+ * rather than leaving a working repository pointing at whichever release
+ * happened to wrap it.
+ */
+describe("the runtime documents under a launch", () => {
+  const originalHomeDir = runtimeDocumentDeps.homeDir;
+  const originalDistribution = getActiveDistribution();
+  const config = { allowedAgents: ["claude", "opencode"], capabilities: [{ name: "tokensave" }] };
+
+  afterEach(() => {
+    runtimeDocumentDeps.homeDir = originalHomeDir;
+    setActiveDistribution(originalDistribution);
+  });
+
+  async function makeWrappable(prefix: string): Promise<{
+    repoPath: string;
+    companionPath: string;
+    /** One pass of a scope, as the mate at `version` would have run it. */
+    at(scope: "launch" | "wrap", version: string): Promise<Awaited<ReturnType<typeof project>>>;
+  }> {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+    tempRoots.push(root);
+    const repoPath = path.join(root, "working");
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(companionPath, { recursive: true });
+    /** Local scope lands in the user's home; a test must never use the real one. */
+    runtimeDocumentDeps.homeDir = () => root;
+    const repository: LinkedRepository = { id: "acme", path: repoPath };
+    const store = new GlobalConfigStore(path.join(root, "global-config.yaml"));
+    await store.register(companionPath);
+
+    return {
+      repoPath,
+      companionPath,
+      at: async (scope, version) => {
+        setActiveDistribution({
+          ...originalDistribution,
+          config: { ...originalDistribution.config, version },
+        });
+        return project(scope, {
+          repoPath,
+          companionPath,
+          repository,
+          config,
+          globalConfigStore: store,
+          runtimeDocuments: await renderWorkingRuntimeDocuments(companionPath, config, repoPath),
+        });
+      },
+    };
+  }
+
+  interface OpenCodeDocument {
+    plugin?: string[];
+    mcp?: Record<string, unknown>;
+    permission?: { external_directory?: Record<string, string> };
+  }
+
+  async function readOpenCode(repoPath: string): Promise<OpenCodeDocument> {
+    return JSON.parse(
+      await fs.readFile(path.join(repoPath, ".opencode", "opencode.json"), "utf8"),
+    ) as OpenCodeDocument;
+  }
+
+  function stateOf(result: Awaited<ReturnType<typeof project>>, id: string): string | undefined {
+    return result.outcomes.find((outcome) => outcome.id === id)?.state;
+  }
+
+  test("a launch re-pins the plugin reference the wrap baked in", async () => {
+    const { repoPath, at } = await makeWrappable("projection-launch-repin-");
+    await at("wrap", "0.15.5");
+    expect((await readOpenCode(repoPath)).plugin).toEqual([
+      getOpenCodePluginPackageReference("0.15.5"),
+    ]);
+
+    const launched = await at("launch", "0.16.0");
+
+    expect(stateOf(launched, "opencode-runtime-document")).toBe("written");
+    /** One entry, not the old one with its successor beside it. */
+    expect((await readOpenCode(repoPath)).plugin).toEqual([
+      getOpenCodePluginPackageReference("0.16.0"),
+    ]);
+  });
+
+  test("a launch at the version that wrapped rewrites nothing", async () => {
+    const { repoPath, at } = await makeWrappable("projection-launch-current-");
+    await at("wrap", "0.15.5");
+    const target = path.join(repoPath, ".opencode", "opencode.json");
+    const before = await fs.readFile(target, "utf8");
+
+    const launched = await at("launch", "0.15.5");
+
+    expect(stateOf(launched, "opencode-runtime-document")).toBe("current");
+    expect(await fs.readFile(target, "utf8")).toBe(before);
+  });
+
+  /**
+   * Re-rendering reconciles the whole destination, so a launch whose render
+   * omitted a document would withdraw it rather than leave it. The launch
+   * renders exactly what the wrap renders, and this is what says so.
+   */
+  test("a launch keeps every region the wrap placed, in every destination", async () => {
+    const { repoPath, companionPath, at } = await makeWrappable("projection-launch-keeps-");
+    await at("wrap", "0.15.5");
+    const wrapped = await readOpenCode(repoPath);
+    const settingsPath = path.join(repoPath, ".claude", "settings.local.json");
+    const settings = JSON.parse(await fs.readFile(settingsPath, "utf8")) as Record<string, unknown>;
+    const localConfigPath = path.join(runtimeDocumentDeps.homeDir(), ".claude.json");
+    const localConfig = await fs.readFile(localConfigPath, "utf8");
+    expect(Object.keys(wrapped.mcp ?? {})).toEqual(["tokensave"]);
+
+    await at("launch", "0.16.0");
+
+    const launched = await readOpenCode(repoPath);
+    expect(launched.mcp).toEqual(wrapped.mcp!);
+    expect(launched.permission?.external_directory?.[companionPath]).toBe("allow");
+    expect(launched.permission).toEqual(wrapped.permission!);
+    expect(JSON.parse(await fs.readFile(settingsPath, "utf8"))).toEqual(settings);
+    expect(await fs.readFile(localConfigPath, "utf8")).toBe(localConfig);
+  });
+
+  /**
+   * The pre-fetch and the projection have to name one version. An Unmanaged
+   * OpenCode session resolves the plugin the projected document names, and a
+   * version the cache never warmed sends it to the registry at startup — the
+   * launch that fails offline. Both derive from the running mate; this is the
+   * assertion that holds them to it.
+   */
+  test("pins the version the plugin cache pre-fetches", async () => {
+    const { repoPath, at } = await makeWrappable("projection-launch-warm-");
+    await at("launch", "0.16.0");
+    const cacheHome = await fs.mkdtemp(path.join(os.tmpdir(), "projection-launch-cache-"));
+    tempRoots.push(cacheHome);
+
+    const originalRunInstall = opencodePluginCacheDeps.runInstall;
+    opencodePluginCacheDeps.runInstall = ((cwd: string) => {
+      const manifest = path.join(
+        cwd,
+        "node_modules",
+        ...OPENCODE_PLUGIN_PACKAGE_NAME.split("/"),
+        "package.json",
+      );
+      fsSync.mkdirSync(path.dirname(manifest), { recursive: true });
+      fsSync.writeFileSync(manifest, "{}\n");
+      return { error: undefined, status: 0, stderr: "" };
+    }) as typeof opencodePluginCacheDeps.runInstall;
+    let warmed: Awaited<ReturnType<typeof warmOpenCodePluginCache>>;
+    try {
+      warmed = await warmOpenCodePluginCache(undefined, { XDG_CACHE_HOME: cacheHome });
+    } finally {
+      opencodePluginCacheDeps.runInstall = originalRunInstall;
+    }
+
+    expect(warmed.ok).toBe(true);
+    /** The spec directory the warm created is named by the projected reference. */
+    const pinned = (await readOpenCode(repoPath)).plugin![0]!;
+    const specDir = path.join(
+      getOpenCodeCacheDir({ XDG_CACHE_HOME: cacheHome }),
+      "packages",
+      pinned,
+    );
+    const manifest = JSON.parse(await fs.readFile(path.join(specDir, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(manifest.dependencies).toEqual({ [OPENCODE_PLUGIN_PACKAGE_NAME]: "0.16.0" });
+  });
+
+  /**
+   * `unproject` takes back what the manifest records, and the launch that
+   * re-pinned is the pass that recorded last — so a re-pinned repository is
+   * still restorable to the bytes it had before any of this.
+   */
+  test("cleanup after a re-pinning launch leaves nothing of Mate's behind", async () => {
+    const { repoPath, companionPath, at } = await makeWrappable("projection-launch-cleanup-");
+    await at("wrap", "0.15.5");
+    await at("launch", "0.16.0");
+
+    await unproject({ repoPath, registeredCompanionPaths: [companionPath] });
+
+    expect(
+      await fs
+        .readFile(path.join(repoPath, ".opencode", "opencode.json"), "utf8")
+        .catch(() => null),
+    ).toBeNull();
+    expect(
+      await fs
+        .readFile(path.join(repoPath, ".claude", "settings.local.json"), "utf8")
+        .catch(() => null),
+    ).toBeNull();
   });
 });
 
@@ -501,6 +707,117 @@ describe("the owner's reporting", () => {
     expect(presence.get("projection-pair")).toBe(true);
     expect(presence.get("workspace-document")).toBe(false);
     expect(presence.get("claude-working-settings")).toBe(false);
+  });
+});
+
+/**
+ * A runtime document Git already tracks: the managed exclude cannot hide it,
+ * and the companion paths Mate writes into it are this machine's.
+ */
+describe("a tracked runtime document", () => {
+  const document: RenderedRuntimeDocument = {
+    path: ".opencode/opencode.json",
+    regions: [{ at: ["plugin"], kind: "list", values: ["@acme/plugin@1.0.0"] }],
+  };
+  const config = { allowedAgents: ["opencode"], capabilities: [] };
+
+  async function makeRepo(
+    prefix: string,
+    options: { git?: boolean; track?: boolean } = {},
+  ): Promise<{ repoPath: string; companionPath: string; repository: LinkedRepository }> {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+    tempRoots.push(root);
+    const repoPath = path.join(root, "working");
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(path.join(repoPath, ".opencode"), { recursive: true });
+    await fs.mkdir(companionPath, { recursive: true });
+    if (options.git !== false) await execFileAsync("git", ["init", "-q", repoPath]);
+    if (options.track) {
+      await fs.writeFile(path.join(repoPath, ".opencode", "opencode.json"), "{}\n", "utf8");
+      await execFileAsync("git", ["-C", repoPath, "add", "--force", ".opencode/opencode.json"]);
+    }
+    return { repoPath, companionPath, repository: { id: "acme", path: repoPath } };
+  }
+
+  async function collectWarnings(run: () => Promise<void>): Promise<string[]> {
+    const lines: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
+    try {
+      await run();
+    } finally {
+      console.error = original;
+    }
+    return lines;
+  }
+
+  test("warns on the wrap pass and still writes the document", async () => {
+    const { repoPath, companionPath, repository } = await makeRepo("projection-tracked-", {
+      track: true,
+    });
+
+    let result: Awaited<ReturnType<typeof projectWorkingRuntimeDocuments>> | undefined;
+    const lines = await collectWarnings(async () => {
+      result = await projectWorkingRuntimeDocuments(companionPath, repository, config, [document]);
+    });
+
+    expect(result?.kind).toBe("written");
+    expect(await fs.readFile(path.join(repoPath, ".opencode", "opencode.json"), "utf8")).toContain(
+      "@acme/plugin@1.0.0",
+    );
+    expect(lines.join("\n")).toContain(
+      `${FRAMEWORK_NAME}: warning: .opencode/opencode.json is tracked by Git in acme;`,
+    );
+    expect(lines.join("\n")).toContain("git rm --cached .opencode/opencode.json");
+  });
+
+  test("says nothing about a document Git does not track", async () => {
+    const { companionPath, repository } = await makeRepo("projection-untracked-");
+
+    const lines = await collectWarnings(async () => {
+      await projectWorkingRuntimeDocuments(companionPath, repository, config, [document]);
+    });
+
+    expect(lines).toEqual([]);
+  });
+
+  test("a directory that is no Git repository writes without failing", async () => {
+    const { repoPath, companionPath, repository } = await makeRepo("projection-nogit-", {
+      git: false,
+    });
+
+    let result: Awaited<ReturnType<typeof projectWorkingRuntimeDocuments>> | undefined;
+    const lines = await collectWarnings(async () => {
+      result = await projectWorkingRuntimeDocuments(companionPath, repository, config, [document]);
+    });
+
+    expect(lines).toEqual([]);
+    expect(result?.kind).toBe("written");
+    expect(await fs.readFile(path.join(repoPath, ".opencode", "opencode.json"), "utf8")).toContain(
+      "@acme/plugin@1.0.0",
+    );
+  });
+
+  /** The launch scope renders the same documents on every start; only wrap says it. */
+  test("the launch scope writes the same tracked document silently", async () => {
+    const { repoPath, companionPath, repository } = await makeRepo("projection-launch-quiet-", {
+      track: true,
+    });
+
+    const lines = await collectWarnings(async () => {
+      await project("launch", {
+        repoPath,
+        companionPath,
+        repository,
+        config,
+        runtimeDocuments: [document],
+      });
+    });
+
+    expect(lines).toEqual([]);
+    expect(await fs.readFile(path.join(repoPath, ".opencode", "opencode.json"), "utf8")).toContain(
+      "@acme/plugin@1.0.0",
+    );
   });
 });
 

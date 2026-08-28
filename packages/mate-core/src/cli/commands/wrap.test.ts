@@ -1,3 +1,4 @@
+import fs2 from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,7 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { resolveForLaunch } from "../../lib/orchestrator/framework-context";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
+import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
 import { project } from "../../lib/orchestrator/working-repo-projection";
 import type { LinkedRepository } from "../../lib/orchestrator/types";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
@@ -16,13 +18,22 @@ import { parseWrapArgs, runWrapCommand } from "./wrap";
 const tempRoots: string[] = [];
 let originalExitCode: number | undefined;
 const originalArtifactPath = process.env.MATE_ARTIFACT_PATH;
+const originalHomeDir = runtimeDocumentDeps.homeDir;
 
 beforeEach(() => {
   originalExitCode = process.exitCode;
   delete process.env.MATE_ARTIFACT_PATH;
+  /**
+   * Local-scope MCP writes to the user's home; never the real one from a test.
+   * One stable directory per test, so a second wrap sees what the first wrote.
+   */
+  const home = fs2.mkdtempSync(path.join(os.tmpdir(), "mate-home-"));
+  tempRoots.push(home);
+  runtimeDocumentDeps.homeDir = () => home;
 });
 
 afterEach(async () => {
+  runtimeDocumentDeps.homeDir = originalHomeDir;
   process.exitCode = originalExitCode ?? 0;
   if (originalArtifactPath === undefined) delete process.env.MATE_ARTIFACT_PATH;
   else process.env.MATE_ARTIFACT_PATH = originalArtifactPath;

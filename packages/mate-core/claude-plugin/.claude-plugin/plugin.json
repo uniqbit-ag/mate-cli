@@ -1,4 +1,4 @@
 {
-  "name": "mate",
-  "description": "Mate-managed Claude Code hooks: artifact-path guardrail, session banner, and the OpenSpec archive-finish nudge. Ships inside @uniqbit/mate-core and is loaded per managed launch via --plugin-dir; it is never published separately."
+  "name": "mate-claude-plugin",
+  "description": "Mate-managed Claude Code hooks: artifact-path guardrail, session banner, companion guidance, and the OpenSpec archive-finish nudge. Ships inside @uniqbit/mate-core and is never published separately. A managed launch loads it with --plugin-dir; a wrapped repository instead inlines the guard and guidance commands into its settings, with ${CLAUDE_PLUGIN_ROOT} already resolved."
 }

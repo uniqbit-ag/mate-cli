@@ -106,7 +106,7 @@ describe("packed Claude plugin", () => {
     const manifest = JSON.parse(
       await fs.readFile(path.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8"),
     ) as { name: string };
-    expect(manifest.name).toBe("mate");
+    expect(manifest.name).toBe("mate-claude-plugin");
 
     const wiring = JSON.parse(
       await fs.readFile(path.join(pluginRoot, "hooks", "hooks.json"), "utf8"),
@@ -116,6 +116,7 @@ describe("packed Claude plugin", () => {
     for (const shim of [
       "validate-artifact-path.mjs",
       "session-banner.mjs",
+      "session-guidance.mjs",
       "artifact-finish-nudge.mjs",
     ]) {
       const stat = await fs.stat(path.join(pluginRoot, "hooks", shim));

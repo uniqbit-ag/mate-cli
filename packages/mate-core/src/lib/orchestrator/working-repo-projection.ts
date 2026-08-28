@@ -4,8 +4,10 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../framework";
 import { readProjectionFile } from "../../runtime/projection";
 import { repoLocalDirPath } from "../../runtime/repo-local";
+import { companionGitSyncDeps } from "./companion-git-sync";
 import type { GlobalConfigStore } from "./global-config-store";
 import { projectionEntries } from "./projection-entries";
+import { isExternalDocument } from "./projection-runtime-documents";
 import {
   firstFailure,
   type RenderedRuntimeDocument,
@@ -162,6 +164,60 @@ export type RuntimeDocumentsResult =
   | { kind: "written" | "current"; documents: string[] }
   | { kind: "failed"; document: string; error: Error };
 
+/**
+ * Which of the given repo-relative paths Git already has in its index. Asked
+ * through the same runner the companion sync uses rather than a second spawn.
+ * Best-effort by construction: a directory that is no repository, a Git that is
+ * not installed, and a `ls-files` that fails for any other reason all answer
+ * "nothing tracked" — this feeds a warning, and a warning may not fail a wrap.
+ */
+async function trackedDocuments(repoPath: string, documentPaths: string[]): Promise<string[]> {
+  if (documentPaths.length === 0) return [];
+  try {
+    const result = await companionGitSyncDeps.runGit(
+      ["ls-files", "-z", "--", ...documentPaths],
+      path.resolve(repoPath),
+    );
+    if (result.status !== 0) return [];
+    return result.stdout.split("\0").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The managed exclude block only hides a file Git does not already track, so a
+ * repository that commits one of these documents keeps it in the index and the
+ * regions land in a tracked file. Those regions carry machine-absolute
+ * companion paths — keys naming directories under this user's home — so a
+ * routine `git add -A` pushes one machine's layout to everyone else. Warn and
+ * write anyway: refusing would silently drop the projection the repository was
+ * wrapped for.
+ *
+ * Asked here rather than while rendering because the render also runs on every
+ * launch; the wrap pass is the one that is a deliberate act, so this is the
+ * scope where saying it once is information rather than noise.
+ */
+async function warnAboutTrackedDocuments(
+  repository: LinkedRepository,
+  runtimeDocuments: readonly RenderedRuntimeDocument[],
+): Promise<void> {
+  const tracked = await trackedDocuments(
+    repository.path,
+    runtimeDocuments
+      .map((document) => document.path)
+      .filter((documentPath) => !isExternalDocument(documentPath)),
+  );
+  for (const documentPath of tracked) {
+    console.error(
+      `${FRAMEWORK_NAME}: warning: ${documentPath} is tracked by Git in ${repository.id}; ${FRAMEWORK_NAME} writes machine-absolute companion paths into it, so committing it would push this machine's paths to everyone else on the repository.`,
+    );
+    console.error(
+      `Untrack it with \`git rm --cached ${documentPath}\` if those paths should stay local.`,
+    );
+  }
+}
+
 export async function projectWorkingRuntimeDocuments(
   companionPath: string,
   repository: LinkedRepository,
@@ -169,6 +225,7 @@ export async function projectWorkingRuntimeDocuments(
   runtimeDocuments: readonly RenderedRuntimeDocument[],
   globalConfigStore?: GlobalConfigStore,
 ): Promise<RuntimeDocumentsResult> {
+  await warnAboutTrackedDocuments(repository, runtimeDocuments);
   const result = await project("wrap", {
     repoPath: repository.path,
     companionPath: path.resolve(companionPath),

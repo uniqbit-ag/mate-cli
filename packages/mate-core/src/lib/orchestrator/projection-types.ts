@@ -29,6 +29,7 @@ export type ProjectionEntryId =
   | "claude-working-settings"
   | "legacy-tokensave-claude-md"
   | "claude-runtime-document"
+  | "claude-local-mcp-document"
   | "mcp-runtime-document"
   | "opencode-runtime-document";
 
@@ -37,10 +38,20 @@ export type ProjectionEntryId =
  * syntax, so the region is recorded rather than marked in the file: `list`
  * appends values not already there, `map` sets entries by key, `value` sets one
  * key — and removal takes back exactly those, leaving anything a human added.
+ *
+ * `stripPrefix` is the one exception to "removal takes back exactly what was
+ * written": it deletes keys Mate never wrote, and removal does not restore
+ * them. It exists for keys an older Mate wrote and a current one must not
+ * leave behind, so a re-wrap heals a repository an old version configured.
  */
 export type ManagedRegion =
   | { readonly at: string[]; readonly kind: "list"; readonly values: unknown[] }
-  | { readonly at: string[]; readonly kind: "map"; readonly entries: Record<string, unknown> }
+  | {
+      readonly at: string[];
+      readonly kind: "map";
+      readonly entries: Record<string, unknown>;
+      readonly stripPrefix?: string;
+    }
   | { readonly at: string[]; readonly kind: "value"; readonly value: unknown };
 
 /**
@@ -48,7 +59,7 @@ export type ManagedRegion =
  * document, without a destination. The surface renders; the entry places.
  */
 export interface RenderedRuntimeDocument {
-  /** Repo-relative, POSIX separators. */
+  /** Repo-relative with POSIX separators, or `~/`-prefixed for a user-global target. */
   readonly path: string;
   readonly regions: readonly ManagedRegion[];
 }

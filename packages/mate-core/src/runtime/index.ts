@@ -1,6 +1,19 @@
+export {
+  GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
+  buildCodebaseExplorationGuidanceSection,
+  buildCompanionGuidance,
+  buildCompanionPolicyXml,
+  buildOpenCodeGuidance,
+  hasGraphifyCapability,
+  hasOpenspecCapability,
+  hasTokensaveCapability,
+  type GuidanceCapability,
+  type GuidanceContext,
+} from "./companion-guidance";
 export { FRAMEWORK_NAME } from "./framework";
 export {
   MATE_ENV,
+  hasLaunchEnvironment,
   isManagedCompanionContext,
   readCompanionRuntimeContext,
   resolveCompanionRuntime,
@@ -23,6 +36,7 @@ export {
   type MateGuidanceFile,
 } from "./guidance";
 export { mateInstallPath, mateVersion } from "./install";
+export { buildProjectedGuidance } from "./projected-guidance";
 export {
   companionFrameworkConfigPath,
   emptyCompanionPolicy,

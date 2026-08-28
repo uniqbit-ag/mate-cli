@@ -7,14 +7,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
 import type { SetupContext } from "./plugin";
-import { renderDocumentsForTarget } from "./runtime-documents";
+import { CLAUDE_LOCAL_CONFIG_DOCUMENT, renderDocumentsForTarget } from "./runtime-documents";
 import { renderWorkingRuntimeDocuments } from "../setup";
-import { projectionTarget, surfaceRoot } from "./surface-target";
+import { projectionRepoRoot, projectionTarget, surfaceRoot } from "./surface-target";
 
 /**
  * The target parameter itself: its default, its refusal, and the two things a
  * working-target pass must never do — write anywhere, or name the Working
- * Repository inside a document it renders.
+ * Repository inside a value it renders.
  */
 
 const tempRoots: string[] = [];
@@ -87,6 +87,33 @@ describe("the projection target", () => {
     );
   });
 
+  /**
+   * The companion default is the dangerous one: `projectionTarget` lets it
+   * through with no repository, and an absent path used to resolve to the
+   * current working directory — so a render started anywhere would have keyed
+   * its MCP servers under that directory in the user's global Claude config.
+   */
+  test("refuses to address a render by the current directory when no repository is in scope", () => {
+    const ctx: SetupContext = {
+      companionPath: "/companions/acme",
+      config,
+      mode: "sync",
+      activeProviders: ["claude"],
+    };
+
+    expect(() => projectionRepoRoot(ctx)).toThrow(/needs a Working Repository in scope/);
+    expect(() => renderDocumentsForTarget(ctx, new Map())).toThrow(
+      /needs a Working Repository in scope/,
+    );
+  });
+
+  test("resolves the repository a render is addressed by to one absolute path", async () => {
+    const { repoPath, companionPath } = await makeFixture("mate-target-repo-root-");
+    const ctx = { ...contextFor(companionPath, path.join(repoPath, "src", "..")) };
+
+    expect(projectionRepoRoot(ctx)).toBe(path.resolve(repoPath));
+  });
+
   test("gives a working-target pass no surface root to write into", async () => {
     const { repoPath, companionPath } = await makeFixture("mate-target-root-");
 
@@ -104,14 +131,39 @@ describe("the projection target", () => {
     expect(await tree(companionPath)).toEqual(before.companion);
   });
 
-  test("names the Companion Repository inside every rendered document, never the working one", async () => {
+  /**
+   * The invariant is about what a document *points at*: a hook command, an MCP
+   * server, a permitted directory. Rewriting one of those working-relative is
+   * what would turn the projection into a copy. A region's `at` is an address,
+   * not a path to a resource, so it is excluded here and asserted separately
+   * below — the one place a working path legitimately appears.
+   */
+  test("names the Companion Repository inside every rendered value, never the working one", async () => {
     const { repoPath, companionPath } = await makeFixture("mate-target-paths-");
 
-    const rendered = JSON.stringify(
-      await renderWorkingRuntimeDocuments(companionPath, config, repoPath),
+    const documents = await renderWorkingRuntimeDocuments(companionPath, config, repoPath);
+    const values = JSON.stringify(
+      documents.map((document) => ({
+        ...document,
+        regions: document.regions.map(({ at: _at, ...region }) => region),
+      })),
     );
 
-    expect(rendered).toContain(companionPath);
-    expect(rendered).not.toContain(repoPath);
+    expect(values).toContain(companionPath);
+    expect(values).not.toContain(repoPath);
+  });
+
+  /**
+   * Local scope is keyed by the directory Claude Code files the project under,
+   * so this address — and only this one — is the Working Repository.
+   */
+  test("addresses the local MCP region by the working repository path", async () => {
+    const { repoPath, companionPath } = await makeFixture("mate-target-local-mcp-");
+
+    const documents = await renderWorkingRuntimeDocuments(companionPath, config, repoPath);
+    const local = documents.find((document) => document.path === CLAUDE_LOCAL_CONFIG_DOCUMENT);
+
+    expect(local?.regions).toHaveLength(1);
+    expect(local?.regions[0]?.at).toEqual(["projects", path.resolve(repoPath), "mcpServers"]);
   });
 });
