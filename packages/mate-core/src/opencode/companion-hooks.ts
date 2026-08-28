@@ -324,7 +324,7 @@ interface ArchiveCallSnapshot {
 
 export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInput) => {
   const { client, $ } = pluginInput;
-  const context = readContext(process.env.MATE_ARTIFACT_PATH ?? "");
+  const context = readContext();
   if (!context.companionPath || !context.repositoryPath) return {};
 
   const archiveDir = path.join(context.companionPath, "openspec", "changes", "archive");

@@ -20,3 +20,5 @@ __pycache__/
 build/
 dist/
 # mate managed: end
+.disco/kanban-dev/
+.disco/kanban/

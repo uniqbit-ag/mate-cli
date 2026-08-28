@@ -2,10 +2,13 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-import { readCompanionRuntimeContext, type CompanionRuntimeContext } from "../runtime/env";
+import { resolveCompanionRuntime, type CompanionRuntimeContext } from "../runtime/env";
+import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
 
 export type CompanionContext = CompanionRuntimeContext & {
   agentsMd: string;
+  /** Empty for a managed session and for a projection that is current. */
+  stalenessLines: string[];
 };
 
 const ARTIFACT_BASENAMES = new Set([
@@ -158,20 +161,34 @@ export function buildArtifactError(context: CompanionContext, filePath: string):
   ].join("\n");
 }
 
-export function readContext(companionPath: string): CompanionContext {
-  const agentsMdPath = path.join(companionPath, "AGENTS.md");
+/**
+ * Resolves its own companion — launch environment first, Projection Root
+ * second — rather than taking one from the caller. `AGENTS.md` follows the
+ * resolved companion so the two cannot name different repositories.
+ */
+export function readContext(
+  env: Record<string, string | undefined> = process.env,
+  cwd: string = process.cwd(),
+): CompanionContext {
+  const { context, projection } = resolveCompanionRuntime(env, cwd);
+
   let agentsMd = "";
-  try {
-    if (fs.existsSync(agentsMdPath)) {
-      agentsMd = fs.readFileSync(agentsMdPath, "utf8");
+  if (context.companionPath) {
+    const agentsMdPath = path.join(context.companionPath, "AGENTS.md");
+    try {
+      if (fs.existsSync(agentsMdPath)) {
+        agentsMd = fs.readFileSync(agentsMdPath, "utf8");
+      }
+    } catch {
+      // Ignore read errors; AGENTS.md is optional
     }
-  } catch {
-    // Ignore read errors; AGENTS.md is optional
   }
 
   return {
-    ...readCompanionRuntimeContext(process.env),
-    companionPath,
+    ...context,
     agentsMd,
+    stalenessLines: projection
+      ? projectionStalenessLines(projection, projectionFreshness(projection))
+      : [],
   };
 }

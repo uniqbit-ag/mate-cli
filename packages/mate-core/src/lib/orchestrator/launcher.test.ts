@@ -1,4 +1,8 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { resetActiveDistribution, setActiveDistribution } from "../../distribution";
 import type { CapabilityPlugin } from "../../tools/setup/plugin";
 import { PluginRegistry } from "../../tools/setup/registry";
@@ -7,7 +11,8 @@ import { CompanionStore } from "./companion-store";
 import * as editor from "./editor";
 import { FrameworkLauncher, launcherDeps } from "./launcher";
 import type { LaunchContext } from "./framework-context";
-import type { CapabilityConfig, LaunchRequest } from "./types";
+import type { ProjectionInput, ProjectionResult } from "./projection-types";
+import { LaunchPreflightError, type CapabilityConfig, type LaunchRequest } from "./types";
 
 class TestAdapter extends LaunchAdapter {
   readonly toolName = "claude";
@@ -59,7 +64,34 @@ function makeRequest(overrides: Partial<LaunchRequest> = {}): LaunchRequest {
   return { tool: "claude", args: ["--print", "hello"], ...overrides };
 }
 
+/** `prepare` answers for the launch scope's outcomes, so a stub has to report some. */
+function projectedNothing(): ProjectionResult {
+  return { root: "/tmp/repo/.mate", scope: "launch", outcomes: [] };
+}
+
+/** Every launch refreshes the Projection Root; tests not about it stub it out. */
+const originalRefreshProjectionRoot = launcherDeps.refreshProjectionRoot;
+const refreshProjectionRoot = mock(async () => ({ kind: "current" }) as never);
+
+/**
+ * Every launch first asks whether the repository is wrapped. Stubbed rather
+ * than left to read the real `/tmp/repo`, so the suite cannot be decided by a
+ * directory that happens to exist on the machine running it.
+ */
+const originalIsWrapped = launcherDeps.isWrapped;
+const isWrapped = mock(async () => false);
+
+beforeEach(() => {
+  refreshProjectionRoot.mockClear();
+  launcherDeps.refreshProjectionRoot = refreshProjectionRoot;
+  isWrapped.mockClear();
+  isWrapped.mockResolvedValue(false);
+  launcherDeps.isWrapped = isWrapped;
+});
+
 afterEach(() => {
+  launcherDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
+  launcherDeps.isWrapped = originalIsWrapped;
   resetActiveDistribution();
   mock.restore();
 });
@@ -97,14 +129,14 @@ describe("FrameworkLauncher", () => {
     const { launcher, adapter } = createLauncher();
     const syncCompanionGit = mock(async () => {});
     const syncCompanionFiles = mock(async () => {});
-    const syncWorkingRepoClaudeSettings = mock(async () => {});
+    const projectWorkingRepo = mock(async () => projectedNothing());
 
     const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
     const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalSyncWorkingRepoClaudeSettings = launcherDeps.syncWorkingRepoClaudeSettings;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
     launcherDeps.syncCompanionGit = syncCompanionGit;
     launcherDeps.syncCompanionFiles = syncCompanionFiles;
-    launcherDeps.syncWorkingRepoClaudeSettings = syncWorkingRepoClaudeSettings;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
@@ -121,12 +153,12 @@ describe("FrameworkLauncher", () => {
     } finally {
       launcherDeps.syncCompanionGit = originalSyncCompanionGit;
       launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.syncWorkingRepoClaudeSettings = originalSyncWorkingRepoClaudeSettings;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
     }
 
     expect(syncCompanionFiles).not.toHaveBeenCalled();
     expect(syncCompanionGit).not.toHaveBeenCalled();
-    expect(syncWorkingRepoClaudeSettings).not.toHaveBeenCalled();
+    expect(projectWorkingRepo).not.toHaveBeenCalled();
     expect(adapter.validateLaunch).not.toHaveBeenCalled();
     expect(adapter.run).not.toHaveBeenCalled();
   });
@@ -150,16 +182,21 @@ describe("FrameworkLauncher", () => {
     const syncCompanionFiles = mock(async () => {
       events.push("setup");
     });
-    const syncWorkingRepoClaudeSettings = mock(async () => {
+    const projectWorkingRepo = mock(async () => {
       events.push("repo-settings");
+      return projectedNothing();
+    });
+    launcherDeps.refreshProjectionRoot = mock(async () => {
+      events.push("projection");
+      return { kind: "current" } as never;
     });
 
     const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
     const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalSyncWorkingRepoClaudeSettings = launcherDeps.syncWorkingRepoClaudeSettings;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
     launcherDeps.syncCompanionGit = syncCompanionGit;
     launcherDeps.syncCompanionFiles = syncCompanionFiles;
-    launcherDeps.syncWorkingRepoClaudeSettings = syncWorkingRepoClaudeSettings;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
@@ -172,10 +209,17 @@ describe("FrameworkLauncher", () => {
       expect(syncCompanionGit).toHaveBeenCalledTimes(1);
       expect(syncCompanionGit).toHaveBeenCalledWith("/tmp/companion", "/tmp/repo", true);
       expect(syncCompanionFiles).toHaveBeenCalledTimes(1);
-      expect(syncWorkingRepoClaudeSettings).toHaveBeenCalledTimes(1);
+      expect(projectWorkingRepo).toHaveBeenCalledTimes(1);
       expect(adapter.validateLaunch).toHaveBeenCalledTimes(1);
       expect(adapter.run).not.toHaveBeenCalled();
-      expect(events).toEqual(["git", "setup", "repo-settings", "preflight", "adapter"]);
+      expect(events).toEqual([
+        "git",
+        "setup",
+        "repo-settings",
+        "projection",
+        "preflight",
+        "adapter",
+      ]);
 
       await expect(prepared.execute()).resolves.toEqual({
         exitCode: 0,
@@ -185,10 +229,47 @@ describe("FrameworkLauncher", () => {
     } finally {
       launcherDeps.syncCompanionGit = originalSyncCompanionGit;
       launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.syncWorkingRepoClaudeSettings = originalSyncWorkingRepoClaudeSettings;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
     }
 
     expect(adapter.run).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The inverse of what a wrap does, and the reason the two commands cannot
+   * collide: the launch scope declares the runtime document entries so
+   * `mate working cleanup` reaches them, but hands them no render. An entry
+   * given no render claims nothing about its destination, so a launch cannot
+   * create one — and only `mate wrap` ever places a document in a Working
+   * Repository.
+   */
+  test("hands the launch scope no render, so it can place no runtime document", async () => {
+    const { launcher } = createLauncher();
+    const projectWorkingRepo = mock(async (_input: ProjectionInput) => projectedNothing());
+    const syncCompanionFiles = mock(async () => {});
+
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+    });
+
+    try {
+      await launcher.prepare(makeRequest());
+    } finally {
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+    }
+
+    const input = projectWorkingRepo.mock.calls[0]?.[0];
+    expect(input?.runtimeDocuments).toBeUndefined();
+    /** And the launch scope is still what writes the rest of the working repo. */
+    expect(input?.repoPath).toBe("/tmp/repo");
+    expect(input?.companionPath).toBe("/tmp/companion");
   });
 
   test("runs only enabled capability hooks for the selected provider", async () => {
@@ -351,11 +432,11 @@ describe("FrameworkLauncher", () => {
       for (const vars of envVars) {
         const { launcher, adapter } = createLauncher();
         const syncCompanionFiles = mock(async () => {});
-        const syncWorkingRepoClaudeSettings = mock(async () => {});
+        const projectWorkingRepo = mock(async () => projectedNothing());
         const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-        const originalSyncWorkingRepoClaudeSettings = launcherDeps.syncWorkingRepoClaudeSettings;
+        const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
         launcherDeps.syncCompanionFiles = syncCompanionFiles;
-        launcherDeps.syncWorkingRepoClaudeSettings = syncWorkingRepoClaudeSettings;
+        launcherDeps.projectWorkingRepo = projectWorkingRepo;
 
         spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
           id: "repo",
@@ -374,7 +455,7 @@ describe("FrameworkLauncher", () => {
             delete process.env[key];
           }
           launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-          launcherDeps.syncWorkingRepoClaudeSettings = originalSyncWorkingRepoClaudeSettings;
+          launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
         }
 
         expect(adapter.run).toHaveBeenCalledTimes(1);
@@ -383,5 +464,180 @@ describe("FrameworkLauncher", () => {
     } finally {
       process.env = originalEnv;
     }
+  });
+
+  test("a Working Repository that cannot be written warns and the launch proceeds", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-launcher-readonly-"));
+    const blocker = path.join(root, "not-a-directory");
+    await fs.writeFile(blocker, "", "utf8");
+
+    const { launcher, adapter } = createLauncher();
+    launcherDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
+    const syncCompanionFiles = mock(async () => {});
+    const projectWorkingRepo = mock(async () => projectedNothing());
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
+    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    const warn = spyOn(console, "error").mockImplementation(() => {});
+
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "acme",
+      path: path.join(blocker, "repo"),
+    });
+
+    try {
+      await expect(launcher.prepare(makeRequest())).resolves.toBeDefined();
+      expect(adapter.validateLaunch).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls.flat().join("\n")).toContain("acme");
+    } finally {
+      warn.mockRestore();
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a launch-scope entry that cannot be written fails the launch", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-launcher-projection-"));
+    const repoPath = path.join(root, "repo");
+    const claudeDir = path.join(repoPath, ".claude");
+    await fs.mkdir(claudeDir, { recursive: true });
+    await fs.chmod(claudeDir, 0o555);
+
+    const { launcher, adapter } = createLauncher();
+    const syncCompanionFiles = mock(async () => {});
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "acme",
+      path: repoPath,
+    });
+
+    try {
+      const failure = await launcher.prepare(makeRequest()).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(LaunchPreflightError);
+      expect((failure as Error).message).toContain(path.join(".claude", "settings.local.json"));
+      expect((failure as Error).message).toContain("acme");
+      expect(adapter.validateLaunch).not.toHaveBeenCalled();
+    } finally {
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      await fs.chmod(claudeDir, 0o755);
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a degradable launch-scope failure warns and the launch proceeds", async () => {
+    const { launcher, adapter } = createLauncher();
+    const syncCompanionFiles = mock(async () => {});
+    const projectWorkingRepo = mock(async () => ({
+      ...projectedNothing(),
+      outcomes: [
+        {
+          id: "companion-link" as const,
+          path: path.join(".mate", "companion"),
+          kind: "owned" as const,
+          state: "failed" as const,
+          error: new Error("EPERM: operation not permitted"),
+          degradable: true,
+        },
+      ],
+    }));
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
+    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    const warn = spyOn(console, "error").mockImplementation(() => {});
+
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "acme",
+      path: "/tmp/repo",
+    });
+
+    try {
+      await expect(launcher.prepare(makeRequest())).resolves.toBeDefined();
+      expect(adapter.validateLaunch).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls.flat().join("\n")).toContain("EPERM: operation not permitted");
+    } finally {
+      warn.mockRestore();
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+    }
+  });
+});
+
+/**
+ * Wrapping and a Managed Session are exclusive (ADR-015). A wrapped repository
+ * already delivers the companion through documents the runtime discovers itself,
+ * and the launch flags that deliver it a second time are irreducible (ADR-014),
+ * so a launch on top would double every contribution rather than replace one.
+ */
+describe("launching in a wrapped working repository", () => {
+  test("is refused before anything is written", async () => {
+    const { launcher, adapter } = createLauncher();
+    const syncCompanionGit = mock(async () => {});
+    const syncCompanionFiles = mock(async () => {});
+    const projectWorkingRepo = mock(async () => projectedNothing());
+
+    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
+    launcherDeps.syncCompanionGit = syncCompanionGit;
+    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    isWrapped.mockResolvedValue(true);
+
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+    });
+
+    try {
+      await expect(launcher.prepare(makeRequest())).rejects.toThrow(LaunchPreflightError);
+      await expect(launcher.prepare(makeRequest())).rejects.toThrow(
+        /repo is wrapped[\s\S]*mate unwrap/,
+      );
+    } finally {
+      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+    }
+
+    /**
+     * Every write the launch itself performs is skipped. The Projection-Root
+     * refresh inside companion resolution is not one of them — it has already
+     * run by the time `prepare` is entered, and `resolveConfig` is stubbed here —
+     * so `refreshProjectionRoot` below is the launcher's own site 4 call.
+     */
+    expect(syncCompanionGit).not.toHaveBeenCalled();
+    expect(syncCompanionFiles).not.toHaveBeenCalled();
+    expect(projectWorkingRepo).not.toHaveBeenCalled();
+    expect(refreshProjectionRoot).not.toHaveBeenCalled();
+    expect(adapter.validateLaunch).not.toHaveBeenCalled();
+    expect(adapter.run).not.toHaveBeenCalled();
+  });
+
+  test("an unwrapped repository still launches", async () => {
+    const { launcher, adapter } = createLauncher();
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
+    launcherDeps.syncCompanionFiles = mock(async () => {});
+    launcherDeps.projectWorkingRepo = mock(async () => projectedNothing());
+
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+    });
+
+    try {
+      await (await launcher.prepare(makeRequest())).execute();
+    } finally {
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+    }
+
+    expect(isWrapped).toHaveBeenCalledWith("/tmp/repo");
+    expect(adapter.run).toHaveBeenCalled();
   });
 });

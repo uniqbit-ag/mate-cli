@@ -1,6 +1,53 @@
 #!/usr/bin/env bash
-[ -n "$MATE_ARTIFACT_PATH" ] || { echo "openspec: must be run via mate claude or mate opencode" >&2; exit 1; }
 _this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Mate context: the launch environment first, the Working Repository's
+# Projection Root second. Projected values stay in private shell variables and
+# no MATE_-prefixed variable is exported: the projection carries paths and
+# never predicates, so a partial MATE_* environment would read to any child as
+# authoritative with every predicate disabled.
+_mate_projection_file() {
+  local dir="$PWD"
+  while :; do
+    if [ -f "$dir/.mate/config/registry.yaml" ]; then
+      [ -f "$dir/.mate/projection.env" ] && printf '%s' "$dir/.mate/projection.env"
+      return
+    fi
+    [ "$dir" = "/" ] && return
+    dir="$(dirname "$dir")"
+  done
+}
+
+_mate_projected() {
+  sed -n "s/^$2='\\(.*\\)'\$/\\1/p" "$1" | head -n 1 | sed "s/'\\\\''/'/g"
+}
+
+_mate_same_dir() {
+  local left="$1" right="$2"
+  [ -d "$left" ] && left="$(cd "$left" && pwd)"
+  [ -d "$right" ] && right="$(cd "$right" && pwd)"
+  [ "$left" = "$right" ]
+}
+
+_companion="$MATE_ARTIFACT_PATH"
+if [ -z "$_companion" ]; then
+  _projection="$(_mate_projection_file)"
+  if [ -n "$_projection" ]; then
+    _companion="$(_mate_projected "$_projection" MATE_ARTIFACT_PATH)"
+    _projected_wrapper_dir="$(_mate_projected "$_projection" MATE_WRAPPER_BIN_PATH)"
+    if [ -n "$_companion" ] && ! _mate_same_dir "$_projected_wrapper_dir" "$_this_dir"; then
+      {
+        echo "openspec: this repository was wrapped by a different mate install."
+        echo "  projected wrappers: $_projected_wrapper_dir"
+        echo "  running wrapper:    $_this_dir"
+        echo "  re-run \`mate wrap\` with this install."
+      } >&2
+      exit 1
+    fi
+  fi
+fi
+[ -n "$_companion" ] || { echo "openspec: no mate context here — run \`mate wrap\` in this repository" >&2; exit 1; }
+
 _real=""
 IFS=:
 for _dir in $PATH; do
@@ -22,7 +69,7 @@ if [ "$command" = "templates" ]; then
   done
   if [ "$has_schema" -eq 0 ]; then
     _schema=""
-    for _cfg in "$MATE_ARTIFACT_PATH/openspec/config.yaml" "$MATE_ARTIFACT_PATH/openspec/config.yml"; do
+    for _cfg in "$_companion/openspec/config.yaml" "$_companion/openspec/config.yml"; do
       [ -f "$_cfg" ] || continue
       while IFS= read -r _line; do
         case "$_line" in
@@ -45,4 +92,4 @@ if [ "$command" = "templates" ]; then
     fi
   fi
 fi
-exec env -C "$MATE_ARTIFACT_PATH" "$_real" "$@"
+exec env -C "$_companion" "$_real" "$@"

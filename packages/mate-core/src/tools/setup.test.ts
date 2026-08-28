@@ -9,13 +9,13 @@ import { FRAMEWORK_NAME } from "../framework";
 import { ConfigStore } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repo-local-registry";
+import { project } from "../lib/orchestrator/working-repo-projection";
 import { TOKENSAVE_STORE_DIR, tokensaveDeps } from "./setup/capabilities/tokensave";
 import {
   applySetupCompatibilities,
   createUvPluginForTest,
   executeSetup,
   syncCompanionFiles,
-  syncWorkingRepoClaudeSettings,
   updateProjectGitignore,
 } from "./setup";
 import type { SetupContext } from "./setup/plugin";
@@ -743,7 +743,7 @@ describe("executeSetup", () => {
     });
 
     const rootClaudeMd = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
-    expect(rootClaudeMd).toContain("<!-- MATE:COMPANION:START -->");
+    expect(rootClaudeMd).toContain("@AGENTS.md");
     expect(rootClaudeMd).not.toContain("legacy guidance");
     await expect(fs.access(path.join(root, ".claude", "CLAUDE.md"))).rejects.toThrow();
   });
@@ -1393,7 +1393,11 @@ describe("applySetupCompatibilities — tokensave", () => {
       );
 
       await syncCompanionFiles(companionRoot, config, workingRepoRoot);
-      await syncWorkingRepoClaudeSettings(workingRepoRoot, companionRoot, config);
+      await project("launch", {
+        repoPath: workingRepoRoot,
+        companionPath: companionRoot,
+        config,
+      });
 
       const companionSettings = JSON.parse(
         await fs.readFile(path.join(companionRoot, ".claude", "settings.local.json"), "utf8"),

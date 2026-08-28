@@ -1,35 +1,14 @@
-/**
- * Stable Mate launch environment contract shared by the CLI (writer) and the
- * OpenCode runtime plugins (readers). The CLI materializes these variables for
- * every managed session; plugins must consume them through this module instead
- * of hard-coding variable names.
- */
-export const MATE_ENV = {
-  frameworkName: "MATE_NAME",
-  version: "MATE_VERSION",
-  companionPath: "MATE_ARTIFACT_PATH",
-  wrapperBinPath: "MATE_WRAPPER_BIN_PATH",
-  repositoryPath: "MATE_REPO_PATH",
-  repositoryId: "MATE_REPO_ID",
-  policyJson: "MATE_POLICY_JSON",
-  graphifyEnabled: "MATE_GRAPHIFY_ENABLED",
-  gitAutoMode: "MATE_GIT_AUTO_MODE",
-  reactDoctorEnabled: "MATE_REACT_DOCTOR_ENABLED",
-  reactDoctorBinPath: "MATE_REACT_DOCTOR_BIN_PATH",
-  /**
-   * Serialized `MateGuidanceFile` JSON built by the CLI per managed launch.
-   * Session-scoped: the plugin consumes it at startup and masks it from
-   * spawned shells so it never leaks into subprocess environments.
-   */
-  guidanceJson: "MATE_GUIDANCE_JSON",
-} as const;
+import { MATE_ENV } from "./env-names";
+import { FRAMEWORK_NAME } from "./framework";
+import { isCapabilityEnabled, readCompanionPolicy } from "./policy";
+import { resolveProjection, type ResolvedProjection } from "./projection";
 
-export type MateEnvVariable = (typeof MATE_ENV)[keyof typeof MATE_ENV];
+export { MATE_ENV, type MateEnvVariable } from "./env-names";
 
 /**
- * Normalized companion runtime context derived from the Mate launch
- * environment. Contains no repository-specific defaults; every value comes
- * from the active session environment.
+ * Normalized companion runtime context. Values come from the Mate launch
+ * environment when it is present, and from the durable projection at the
+ * Projection Root otherwise.
  */
 export type CompanionRuntimeContext = {
   frameworkName: string;
@@ -42,11 +21,17 @@ export type CompanionRuntimeContext = {
   reactDoctorEnabled: boolean;
 };
 
-export function readCompanionRuntimeContext(
-  env: Record<string, string | undefined> = process.env,
-): CompanionRuntimeContext {
+/**
+ * Any `MATE_*` variable present means a Mate launch configured this process,
+ * so the environment is authoritative and the projection is not read.
+ */
+export function hasLaunchEnvironment(env: Record<string, string | undefined>): boolean {
+  return Object.values(MATE_ENV).some((name) => env[name] !== undefined);
+}
+
+function fromEnvironment(env: Record<string, string | undefined>): CompanionRuntimeContext {
   return {
-    frameworkName: env[MATE_ENV.frameworkName] ?? "mate",
+    frameworkName: env[MATE_ENV.frameworkName] ?? FRAMEWORK_NAME,
     companionPath: env[MATE_ENV.companionPath] ?? "",
     repositoryPath: env[MATE_ENV.repositoryPath] ?? "",
     repositoryId: env[MATE_ENV.repositoryId] ?? "",
@@ -58,8 +43,55 @@ export function readCompanionRuntimeContext(
 }
 
 /**
- * A session is Mate-managed only when the CLI exported both the companion
- * path and the working repository path. Plugins must stay inert otherwise.
+ * The resolved context together with the projection it came from, so a reader
+ * that surfaces session state can judge that projection's freshness without a
+ * second upward walk. `projection` is null for a managed session.
+ */
+export interface CompanionRuntimeResolution {
+  context: CompanionRuntimeContext;
+  projection: ResolvedProjection | null;
+}
+
+/**
+ * The environment always wins: the projection is consulted only when no
+ * `MATE_*` variable is set, so a managed session never reads it and no stale
+ * or malformed projection can degrade a session a Mate launch configured.
+ */
+export function resolveCompanionRuntime(
+  env: Record<string, string | undefined> = process.env,
+  cwd: string = process.cwd(),
+): CompanionRuntimeResolution {
+  if (hasLaunchEnvironment(env)) return { context: fromEnvironment(env), projection: null };
+
+  const projection = resolveProjection(cwd);
+  if (!projection) return { context: fromEnvironment(env), projection: null };
+
+  const policy = readCompanionPolicy(projection.companionPath);
+  return {
+    projection,
+    context: {
+      frameworkName: FRAMEWORK_NAME,
+      companionPath: projection.companionPath,
+      repositoryPath: projection.repositoryPath,
+      repositoryId: projection.repositoryId,
+      policyJson: JSON.stringify({ allowedAgents: policy.allowedAgents }),
+      graphifyEnabled: isCapabilityEnabled(policy, "graphify"),
+      gitAutoModeEnabled: policy.gitAutoMode,
+      reactDoctorEnabled: isCapabilityEnabled(policy, "react-doctor"),
+    },
+  };
+}
+
+export function readCompanionRuntimeContext(
+  env: Record<string, string | undefined> = process.env,
+  cwd: string = process.cwd(),
+): CompanionRuntimeContext {
+  return resolveCompanionRuntime(env, cwd).context;
+}
+
+/**
+ * A session is Mate-managed only when both the companion path and the working
+ * repository path resolved. Plugins must stay inert otherwise.
  */
 export function isManagedCompanionContext(context: CompanionRuntimeContext): boolean {
   return Boolean(context.companionPath && context.repositoryPath);

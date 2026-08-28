@@ -1,12 +1,18 @@
 /** @jsxImportSource @opentui/solid */
-/* oxlint-disable react/no-unknown-property, react/react-in-jsx-scope */
+/* oxlint-disable react/no-unknown-property, react/react-in-jsx-scope, react/jsx-key, react-doctor/jsx-key */
+/**
+ * Solid JSX, not React: `key` is not a reconciliation prop here and `TextProps`
+ * does not accept it, so the jsx-key rules cannot be satisfied — only suppressed.
+ * Static arrays render through `.map`; a reactive one would need `<For>`.
+ */
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui";
 
+import { mateVersion } from "../runtime/install";
 import { readContext } from "./companion-policy";
 
 const MIDNIGHT_PURPLE_BRIGHT = "#c084fc";
 const NARROW_TERMINAL_WIDTH = 80;
-const MATE_VERSION = process.env.MATE_VERSION ?? "unknown";
+const MATE_VERSION = process.env.MATE_VERSION ?? mateVersion();
 
 function SessionContext({
   api,
@@ -17,7 +23,7 @@ function SessionContext({
   compact?: boolean;
   sidebar?: boolean;
 }) {
-  const context = readContext(process.env.MATE_ARTIFACT_PATH ?? "");
+  const context = readContext();
   const theme = api.theme.current;
 
   if (compact) {
@@ -35,12 +41,15 @@ function SessionContext({
       <text fg={MIDNIGHT_PURPLE_BRIGHT}>mate v{MATE_VERSION}</text>
       <text fg={theme.textMuted}>repo: {context.repositoryPath}</text>
       <text fg={theme.textMuted}>mate: {context.companionPath}</text>
+      {context.stalenessLines.map((note) => (
+        <text fg={theme.warning ?? theme.textMuted}>{note}</text>
+      ))}
     </box>
   );
 }
 
 const tui: TuiPlugin = async (api) => {
-  const context = readContext(process.env.MATE_ARTIFACT_PATH ?? "");
+  const context = readContext();
   if (!context.companionPath || !context.repositoryPath) {
     return;
   }

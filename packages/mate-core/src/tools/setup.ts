@@ -19,7 +19,6 @@ import {
   type CapabilityConfig,
   type FrameworkConfig,
 } from "../lib/orchestrator/types";
-import { syncWorkingRepoClaudeSettings } from "./setup/providers/claude";
 import {
   collectManagedGitignoreEntries,
   writeManagedGitignoreBlock,
@@ -35,10 +34,10 @@ import { installDeclaredPlugins } from "./setup/dynamic-plugins/install";
 import {
   buildSetupInstallationPlan,
   executeSetupInstallationPlan,
+  renderRuntimeDocuments,
   type SetupInstallationOutcome,
 } from "./setup/engine";
-
-export { syncWorkingRepoClaudeSettings };
+import type { RenderedRuntimeDocument } from "../lib/orchestrator/projection-types";
 
 export interface SetupInput {
   allowedAgents?: string[];
@@ -65,6 +64,29 @@ export async function applySetupCompatibilities(
   const activeProviders = plan.activeProviders;
   const ctx: SetupContext = { companionPath, config, mode, activeProviders, repoPath, scope };
   return executeSetupInstallationPlan(ctx, plugins, plan);
+}
+
+/**
+ * The active Agent Runtimes' documents for a Working Repository, rendered
+ * without a write. Runs no plugin phase: the working target reconciles
+ * declarations only, so nothing is written to the companion on its behalf.
+ */
+export async function renderWorkingRuntimeDocuments(
+  companionPath: string,
+  config: FrameworkConfig,
+  repoPath: string,
+  plugins: PluginRegistration[] = getActiveDistribution().registry.getAll(),
+): Promise<RenderedRuntimeDocument[]> {
+  const plan = buildSetupInstallationPlan(config, plugins);
+  const ctx: SetupContext = {
+    companionPath,
+    config,
+    mode: "sync",
+    activeProviders: plan.activeProviders,
+    repoPath,
+    target: "working",
+  };
+  return renderRuntimeDocuments(ctx, plugins, plan);
 }
 
 export async function updateProjectGitignore(

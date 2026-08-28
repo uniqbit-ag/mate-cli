@@ -1,8 +1,59 @@
 #!/usr/bin/env bash
-[ -n "$MATE_ARTIFACT_PATH" ] || { echo "graphify: must be run via mate claude or mate opencode (MATE_ARTIFACT_PATH not set)" >&2; exit 1; }
-[ -n "$MATE_REPO_PATH" ] || { echo "graphify: must be run via mate claude or mate opencode (MATE_REPO_PATH not set)" >&2; exit 1; }
-
 _this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Mate context: the launch environment first, the Working Repository's
+# Projection Root second. Projected values stay in private shell variables and
+# no MATE_-prefixed variable is exported: the projection carries paths and
+# never predicates, so a partial MATE_* environment would read to any child as
+# authoritative with every predicate disabled.
+_mate_projection_file() {
+  local dir="$PWD"
+  while :; do
+    if [ -f "$dir/.mate/config/registry.yaml" ]; then
+      [ -f "$dir/.mate/projection.env" ] && printf '%s' "$dir/.mate/projection.env"
+      return
+    fi
+    [ "$dir" = "/" ] && return
+    dir="$(dirname "$dir")"
+  done
+}
+
+_mate_projected() {
+  sed -n "s/^$2='\\(.*\\)'\$/\\1/p" "$1" | head -n 1 | sed "s/'\\\\''/'/g"
+}
+
+_mate_same_dir() {
+  local left="$1" right="$2"
+  [ -d "$left" ] && left="$(cd "$left" && pwd)"
+  [ -d "$right" ] && right="$(cd "$right" && pwd)"
+  [ "$left" = "$right" ]
+}
+
+_companion="$MATE_ARTIFACT_PATH"
+_repo_path="$MATE_REPO_PATH"
+_graphify_out="$GRAPHIFY_OUT"
+if [ -z "$_companion" ]; then
+  _projection="$(_mate_projection_file)"
+  if [ -n "$_projection" ]; then
+    _companion="$(_mate_projected "$_projection" MATE_ARTIFACT_PATH)"
+    _repo_path="$(_mate_projected "$_projection" MATE_REPO_PATH)"
+    _graphify_out="$(_mate_projected "$_projection" GRAPHIFY_OUT)"
+    _projected_wrapper_dir="$(_mate_projected "$_projection" MATE_WRAPPER_BIN_PATH)"
+    if [ -n "$_companion" ] && ! _mate_same_dir "$_projected_wrapper_dir" "$_this_dir"; then
+      {
+        echo "graphify: this repository was wrapped by a different mate install."
+        echo "  projected wrappers: $_projected_wrapper_dir"
+        echo "  running wrapper:    $_this_dir"
+        echo "  re-run \`mate wrap\` with this install."
+      } >&2
+      exit 1
+    fi
+  fi
+fi
+[ -n "$_companion" ] || { echo "graphify: no mate context here — run \`mate wrap\` in this repository" >&2; exit 1; }
+[ -n "$_repo_path" ] || { echo "graphify: no working repository in the mate context — run \`mate wrap\` in this repository" >&2; exit 1; }
+[ -n "$_graphify_out" ] || { echo "graphify: no graphify output path in the mate context — run \`mate wrap\` in this repository" >&2; exit 1; }
+
 _real=""
 IFS=:
 for _dir in $PATH; do
@@ -14,8 +65,6 @@ done
 unset IFS
 [ -n "$_real" ] || { echo "graphify wrapper: real graphify binary not found in PATH" >&2; exit 1; }
 
-_repo_id="${MATE_REPO_ID:-unknown}"
-_graphify_out="$MATE_ARTIFACT_PATH/.graphify/$_repo_id/graphify-out"
 _graphify_root="$(dirname "$_graphify_out")"
 _graph_json="$_graphify_out/graph.json"
 export GRAPHIFY_OUT="$_graphify_out"
@@ -32,18 +81,18 @@ case "$_cmd" in
         *) _rest+=("$_a") ;;
       esac
     done
-    exec "$_real" extract "$MATE_REPO_PATH" --out "$_graphify_root" "${_rest[@]}"
+    exec "$_real" extract "$_repo_path" --out "$_graphify_root" "${_rest[@]}"
     ;;
   update)
     if [ "$#" -eq 1 ] || [[ "$2" == -* ]]; then
-      exec "$_real" "$MATE_REPO_PATH" --update "${@:2}"
+      exec "$_real" "$_repo_path" --update "${@:2}"
     else
       exec "$_real" "$2" --update "${@:3}"
     fi
     ;;
   extract|watch|cluster-only|label|check-update)
     if [ "$#" -eq 1 ] || [[ "$2" == -* ]]; then
-      exec "$_real" "$_cmd" "$MATE_REPO_PATH" "${@:2}"
+      exec "$_real" "$_cmd" "$_repo_path" "${@:2}"
     else
       exec "$_real" "$@"
     fi
