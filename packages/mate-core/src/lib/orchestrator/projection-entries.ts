@@ -295,6 +295,11 @@ function buildEntries(): readonly ProjectionEntry[] {
      * reconciliation, not an append: `placeRuntimeDocument` withdraws what the
      * previous pass recorded before applying this one's, and a pass that
      * supplied no render at all claims nothing and leaves the record standing.
+     *
+     * The `launch` scope declares them so `mate working cleanup` reaches them
+     * and so a launch answers for a destination it finds recorded, but a launch
+     * renders nothing for them: a Managed Session is refused in a wrapped
+     * repository, so the only pass that ever places one is `mate wrap`.
      */
     /**
      * Removal-only, like the legacy CLAUDE.md append: releases before local

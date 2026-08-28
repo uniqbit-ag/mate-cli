@@ -266,6 +266,26 @@ describe("runWrapCommand", () => {
     expect(await fs.exists(yamlPath(repoPath))).toBe(true);
   });
 
+  /**
+   * Wrapping switches the repository out of managed launches, and a successful
+   * command is the only place the operator can learn that before hitting the
+   * refusal.
+   */
+  test("says that the managed launches no longer run here", async () => {
+    const { repoPath } = await makeLinkedRepo("wrap-notice-");
+
+    const { out, restore } = capture();
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      restore();
+    }
+
+    const printed = out.join("\n");
+    expect(printed).toContain(`${FRAMEWORK_NAME} claude`);
+    expect(printed).toContain(`${FRAMEWORK_NAME} unwrap`);
+  });
+
   test("a managed launch does not reconcile the working target", async () => {
     const { repoPath, companionPath, store } = await makeLinkedRepo("wrap-launch-");
     await runWrapCommand([], repoPath);

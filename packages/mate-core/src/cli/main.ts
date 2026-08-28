@@ -18,6 +18,7 @@ import { runPluginCommand } from "./commands/plugin/plugin";
 import { runReportCommand } from "./commands/report";
 import { runUpdateCommand } from "./commands/update";
 import { runWorkspaceCommand } from "./commands/workspace/workspace";
+import { runUnwrapCommand } from "./commands/unwrap";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
 import { runInstallCommand } from "./commands/install";
@@ -251,6 +252,12 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runWrapCommand(wrapArgs);
       return;
     }
+    case "unwrap":
+      // A recovery path: it withdraws what a wrap placed, so it must never be
+      // gated on a companion or an installation it does not consult.
+      if (!(await gate({}))) return;
+      await runUnwrapCommand(argv.slice(3));
+      return;
     default:
       // Unknown commands fail fast: no case matched, so no gate ever ran.
       console.error(`Unknown command: ${command}`);

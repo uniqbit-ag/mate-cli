@@ -7,7 +7,11 @@ import { repoLocalDirPath } from "../../runtime/repo-local";
 import { companionGitSyncDeps } from "./companion-git-sync";
 import type { GlobalConfigStore } from "./global-config-store";
 import { projectionEntries } from "./projection-entries";
-import { isExternalDocument } from "./projection-runtime-documents";
+import {
+  isExternalDocument,
+  recordedRuntimeDocuments,
+  removeRuntimeDocuments,
+} from "./projection-runtime-documents";
 import {
   firstFailure,
   type RenderedRuntimeDocument,
@@ -253,6 +257,51 @@ export async function projectWorkingRuntimeDocuments(
     kind: outcomes.some((outcome) => outcome.state === "written") ? "written" : "current",
     documents: [...new Set(outcomes.map((outcome) => outcome.path))],
   };
+}
+
+/**
+ * Whether `mate wrap` configured this Working Repository. Asked of the runtime
+ * document manifest rather than of the Projection Root, because the root is not
+ * evidence of a wrap: a launch and every Capability command write the
+ * projection pair too. The manifest is written only by a pass that placed a
+ * runtime document, and wrapping is the only pass that places one.
+ */
+export async function isWorkingRepositoryWrapped(repoPath: string): Promise<boolean> {
+  return (await recordedRuntimeDocuments(repoPath)).length > 0;
+}
+
+export type UnwrapResult =
+  | { kind: "unwrapped" | "absent"; documents: string[] }
+  | { kind: "failed"; document: string; error: Error };
+
+/**
+ * The inverse of {@link projectWorkingRuntimeDocuments}, and only of that: the
+ * runtime documents are withdrawn and the Projection Root, the Repository Link
+ * and the companion link are left exactly as they were. That asymmetry with
+ * `mate working cleanup` is the point — cleanup removes Mate's whole local
+ * integration including the Repository Link, while unwrapping takes back only
+ * what wrapping added, leaving a linked repository that was never wrapped. That
+ * is what makes unwrapping the way back to a Managed Session rather than a
+ * teardown.
+ *
+ * Driven by the manifest, so it withdraws whatever the wrap that ran recorded,
+ * including a destination this release no longer renders.
+ */
+export async function unwrapWorkingRuntimeDocuments(repoPath: string): Promise<UnwrapResult> {
+  const documents = await recordedRuntimeDocuments(repoPath);
+  if (documents.length === 0) return { kind: "absent", documents: [] };
+
+  /**
+   * One manifest read and one manifest write for the whole withdrawal. A
+   * per-document call could not be run concurrently — each rewrites the whole
+   * manifest, so the last write would restore the keys the others removed, and
+   * a surviving key reads back as still wrapped — leaving a launch refused after
+   * a successful unwrap.
+   */
+  const { removed, error } = await removeRuntimeDocuments(repoPath, documents);
+  /** Reported after the successful withdrawals are already durable. */
+  if (error) return { kind: "failed", document: error.document, error: error.error };
+  return { kind: "unwrapped", documents: removed };
 }
 
 /**

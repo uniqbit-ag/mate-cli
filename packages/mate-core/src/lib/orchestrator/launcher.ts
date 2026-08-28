@@ -1,5 +1,5 @@
 // oxlint-disable no-underscore-dangle
-import { renderWorkingRuntimeDocuments, syncCompanionFiles } from "../../tools/setup";
+import { syncCompanionFiles } from "../../tools/setup";
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
@@ -15,7 +15,11 @@ import {
   type ProjectionInput,
   type ProjectionResult,
 } from "./projection-types";
-import { project, projectWorkingRepositoryBestEffort } from "./working-repo-projection";
+import {
+  isWorkingRepositoryWrapped,
+  project,
+  projectWorkingRepositoryBestEffort,
+} from "./working-repo-projection";
 import {
   RepositoryNotSelectedError,
   LaunchPreflightError,
@@ -46,14 +50,6 @@ interface ResolvedLaunchState {
 
 export const launcherDeps = {
   syncCompanionFiles,
-  /**
-   * The same render `mate wrap` hands the projection, from the same companion,
-   * configuration and Working Repository — so a launch refreshes the pins the
-   * documents carry instead of leaving a repository on whichever release
-   * wrapped it, and so no document a wrap placed is withdrawn for having been
-   * left out of the launch's render.
-   */
-  renderRuntimeDocuments: renderWorkingRuntimeDocuments,
   /** The Managed Projection's launch scope; the working repo is written only here. */
   projectWorkingRepo: (input: ProjectionInput) => project("launch", input),
   /**
@@ -64,7 +60,29 @@ export const launcherDeps = {
    */
   refreshProjectionRoot: projectWorkingRepositoryBestEffort,
   syncCompanionGit,
+  isWrapped: isWorkingRepositoryWrapped,
 };
+
+/**
+ * A wrapped Working Repository delivers the companion to sessions the operator
+ * starts themselves, through documents the Agent Runtime discovers by its own
+ * upward walk. A Managed Session loads those *and* everything the launch
+ * injects through `--settings`, `--mcp-config` and `--plugin-dir`, which
+ * ADR-014 established can never be withdrawn. Two delivery channels that cannot
+ * be merged must therefore not both be live for one repository, so wrapping and
+ * launching are exclusive rather than reconciled (ADR-015, superseding
+ * ADR-014's judgement that the duplication is bounded enough to accept).
+ *
+ * Raised before the first write of `prepare`, so a refused launch leaves the
+ * Working Repository, the companion and the companion's Git state untouched.
+ */
+function wrappedRepositoryRefusal(repository: LinkedRepository): string {
+  return [
+    `${FRAMEWORK_NAME}: ${repository.id} is wrapped — \`${FRAMEWORK_NAME} claude\` and \`${FRAMEWORK_NAME} opencode\` do not run in a wrapped working repository.`,
+    "Start the session yourself: `claude` or `opencode` — the wrap delivers the companion guidance.",
+    `Or restore managed launches: \`${FRAMEWORK_NAME} unwrap\`.`,
+  ].join("\n");
+}
 
 /**
  * The shape `projectWorkingRepositoryBestEffort` reports a failed projection
@@ -96,6 +114,10 @@ export class FrameworkLauncher {
     const state = await this.resolveLaunchState(request);
     const adapterContext = this.makeAdapterContext(state);
 
+    if (await launcherDeps.isWrapped(state.repository.path)) {
+      throw new LaunchPreflightError(wrappedRepositoryRefusal(state.repository));
+    }
+
     if (!request.skipGit && state.config.git === "auto") {
       await launcherDeps.syncCompanionGit(
         state.companionPath,
@@ -109,11 +131,6 @@ export class FrameworkLauncher {
         repoPath: state.repository.path,
         companionPath: state.companionPath,
         config: state.config,
-        runtimeDocuments: await launcherDeps.renderRuntimeDocuments(
-          state.companionPath,
-          state.config,
-          state.repository.path,
-        ),
       }),
       state.repository,
     );

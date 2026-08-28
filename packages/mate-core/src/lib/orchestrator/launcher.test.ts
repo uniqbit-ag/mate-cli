@@ -4,19 +4,14 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { resetActiveDistribution, setActiveDistribution } from "../../distribution";
-import type { CapabilityPlugin, ProviderPlugin } from "../../tools/setup/plugin";
+import type { CapabilityPlugin } from "../../tools/setup/plugin";
 import { PluginRegistry } from "../../tools/setup/registry";
 import { LaunchAdapter } from "./adapters/base";
 import { CompanionStore } from "./companion-store";
 import * as editor from "./editor";
 import { FrameworkLauncher, launcherDeps } from "./launcher";
-import { CLAUDE_LOCAL_CONFIG_DOCUMENT } from "./projection-runtime-documents";
 import type { LaunchContext } from "./framework-context";
-import type {
-  ProjectionInput,
-  ProjectionResult,
-  RenderedRuntimeDocument,
-} from "./projection-types";
+import type { ProjectionInput, ProjectionResult } from "./projection-types";
 import { LaunchPreflightError, type CapabilityConfig, type LaunchRequest } from "./types";
 
 class TestAdapter extends LaunchAdapter {
@@ -78,13 +73,25 @@ function projectedNothing(): ProjectionResult {
 const originalRefreshProjectionRoot = launcherDeps.refreshProjectionRoot;
 const refreshProjectionRoot = mock(async () => ({ kind: "current" }) as never);
 
+/**
+ * Every launch first asks whether the repository is wrapped. Stubbed rather
+ * than left to read the real `/tmp/repo`, so the suite cannot be decided by a
+ * directory that happens to exist on the machine running it.
+ */
+const originalIsWrapped = launcherDeps.isWrapped;
+const isWrapped = mock(async () => false);
+
 beforeEach(() => {
   refreshProjectionRoot.mockClear();
   launcherDeps.refreshProjectionRoot = refreshProjectionRoot;
+  isWrapped.mockClear();
+  isWrapped.mockResolvedValue(false);
+  launcherDeps.isWrapped = isWrapped;
 });
 
 afterEach(() => {
   launcherDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
+  launcherDeps.isWrapped = originalIsWrapped;
   resetActiveDistribution();
   mock.restore();
 });
@@ -229,83 +236,15 @@ describe("FrameworkLauncher", () => {
   });
 
   /**
-   * The launch scope places the documents `mate wrap` placed, so it has to
-   * render them too: an entry handed no render claims nothing about its
-   * destination, and the pins a wrap baked in would never move again.
+   * The inverse of what a wrap does, and the reason the two commands cannot
+   * collide: the launch scope declares the runtime document entries so
+   * `mate working cleanup` reaches them, but hands them no render. An entry
+   * given no render claims nothing about its destination, so a launch cannot
+   * create one — and only `mate wrap` ever places a document in a Working
+   * Repository.
    */
-  test("hands the launch scope its own render of the runtime documents", async () => {
+  test("hands the launch scope no render, so it can place no runtime document", async () => {
     const { launcher } = createLauncher();
-    const rendered: RenderedRuntimeDocument[] = [
-      {
-        path: ".opencode/opencode.json",
-        regions: [
-          { at: ["plugin"], kind: "list", values: ["@uniqbit/mate-opencode-plugin@0.16.0"] },
-        ],
-      },
-    ];
-    const renderRuntimeDocuments = mock(async () => rendered);
-    const projectWorkingRepo = mock(async (_input: ProjectionInput) => projectedNothing());
-    const syncCompanionFiles = mock(async () => {});
-
-    const originalRenderRuntimeDocuments = launcherDeps.renderRuntimeDocuments;
-    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    launcherDeps.renderRuntimeDocuments = renderRuntimeDocuments;
-    launcherDeps.projectWorkingRepo = projectWorkingRepo;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
-
-    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
-      id: "repo",
-      path: "/tmp/repo",
-    });
-
-    try {
-      await launcher.prepare(makeRequest());
-    } finally {
-      launcherDeps.renderRuntimeDocuments = originalRenderRuntimeDocuments;
-      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-    }
-
-    /** The same companion, configuration and Working Repository the wrap renders from. */
-    expect(renderRuntimeDocuments.mock.calls[0]).toEqual([
-      "/tmp/companion",
-      expect.objectContaining({ allowedAgents: ["claude"] }),
-      "/tmp/repo",
-    ]);
-    expect(projectWorkingRepo.mock.calls[0]?.[0]?.runtimeDocuments).toBe(rendered);
-  });
-
-  /**
-   * The render refuses a pass with no Working Repository rather than addressing
-   * its local MCP region by the current directory, and every launch now runs
-   * it — not just a wrap. So the real dependency runs here, unstubbed: a launch
-   * that stopped supplying the repository would fail this test instead of
-   * writing servers under a stray key in the user's global configuration.
-   */
-  test("renders through the real dependency, addressed by the Working Repository", async () => {
-    const { launcher } = createLauncher();
-    /** A provider has to be registered for the render to reach a Runtime Surface at all. */
-    const claude: ProviderPlugin = {
-      id: "claude",
-      kind: "provider",
-      label: "claude",
-      description: "",
-      defaultSelected: true,
-      isEnabled: () => true,
-      async apply() {},
-      async teardown() {},
-    };
-    const headroom: CapabilityPlugin = {
-      ...makeCapability("headroom"),
-      getRuntimeContributions: () => ({
-        claude: { mcpServers: [{ name: "headroom", command: "mate", args: ["cap", "headroom"] }] },
-      }),
-    };
-    setActiveDistribution({
-      config: { runtime: "bun", version: "1.0.0" },
-      registry: new PluginRegistry([claude, headroom]),
-    });
     const projectWorkingRepo = mock(async (_input: ProjectionInput) => projectedNothing());
     const syncCompanionFiles = mock(async () => {});
 
@@ -326,11 +265,11 @@ describe("FrameworkLauncher", () => {
       launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
     }
 
-    const documents = projectWorkingRepo.mock.calls[0]?.[0]?.runtimeDocuments ?? [];
-    const local = documents.find((document) => document.path === CLAUDE_LOCAL_CONFIG_DOCUMENT);
-
-    expect(local?.regions[0]?.at).toEqual(["projects", path.resolve("/tmp/repo"), "mcpServers"]);
-    expect(local?.regions[0]?.at).not.toContain(process.cwd());
+    const input = projectWorkingRepo.mock.calls[0]?.[0];
+    expect(input?.runtimeDocuments).toBeUndefined();
+    /** And the launch scope is still what writes the rest of the working repo. */
+    expect(input?.repoPath).toBe("/tmp/repo");
+    expect(input?.companionPath).toBe("/tmp/companion");
   });
 
   test("runs only enabled capability hooks for the selected provider", async () => {
@@ -625,5 +564,75 @@ describe("FrameworkLauncher", () => {
       launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
       launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
     }
+  });
+});
+
+/**
+ * Wrapping and a Managed Session are exclusive (ADR-015). A wrapped repository
+ * already delivers the companion through documents the runtime discovers itself,
+ * and the launch flags that deliver it a second time are irreducible (ADR-014),
+ * so a launch on top would double every contribution rather than replace one.
+ */
+describe("launching in a wrapped working repository", () => {
+  test("is refused before anything is written", async () => {
+    const { launcher, adapter } = createLauncher();
+    const syncCompanionGit = mock(async () => {});
+    const syncCompanionFiles = mock(async () => {});
+    const projectWorkingRepo = mock(async () => projectedNothing());
+
+    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
+    launcherDeps.syncCompanionGit = syncCompanionGit;
+    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    isWrapped.mockResolvedValue(true);
+
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+    });
+
+    try {
+      await expect(launcher.prepare(makeRequest())).rejects.toThrow(LaunchPreflightError);
+      await expect(launcher.prepare(makeRequest())).rejects.toThrow(
+        /repo is wrapped[\s\S]*mate unwrap/,
+      );
+    } finally {
+      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+    }
+
+    /** Nothing in the working repo, the companion, or its Git state was touched. */
+    expect(syncCompanionGit).not.toHaveBeenCalled();
+    expect(syncCompanionFiles).not.toHaveBeenCalled();
+    expect(projectWorkingRepo).not.toHaveBeenCalled();
+    expect(refreshProjectionRoot).not.toHaveBeenCalled();
+    expect(adapter.validateLaunch).not.toHaveBeenCalled();
+    expect(adapter.run).not.toHaveBeenCalled();
+  });
+
+  test("an unwrapped repository still launches", async () => {
+    const { launcher, adapter } = createLauncher();
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
+    launcherDeps.syncCompanionFiles = mock(async () => {});
+    launcherDeps.projectWorkingRepo = mock(async () => projectedNothing());
+
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+    });
+
+    try {
+      await (await launcher.prepare(makeRequest())).execute();
+    } finally {
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+    }
+
+    expect(isWrapped).toHaveBeenCalledWith("/tmp/repo");
+    expect(adapter.run).toHaveBeenCalled();
   });
 });
