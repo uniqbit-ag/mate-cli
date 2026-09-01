@@ -1,4 +1,10 @@
-// Show the active Mate companion paths in Claude Code.
+// Show the active Mate companion paths in Claude Code, and repair the
+// companion's Git state before the session reads it.
+import {
+  syncCompanionUnattended,
+  unattendedSyncStalenessLines,
+  type UnattendedSyncOptions,
+} from "../runtime/companion-sync";
 import { hasLaunchEnvironment, resolveCompanionRuntime } from "../runtime/env";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
 import { mateVersion } from "../runtime/install";
@@ -28,6 +34,7 @@ export function buildBanner(
   env: HookEnv,
   cwd: string = process.cwd(),
   argv: readonly string[] = [],
+  syncOptions: UnattendedSyncOptions = {},
 ): BannerOutcome {
   if (argv.includes(PROJECTED_BANNER_FLAG) && hasLaunchEnvironment(env)) {
     return { exitCode: 0, stdout: "" };
@@ -35,6 +42,17 @@ export function buildBanner(
 
   const { context, projection } = resolveCompanionRuntime(env, cwd);
   if (!context.repositoryPath || !context.companionPath) return { exitCode: 0, stdout: "" };
+
+  /**
+   * Session start is the only moment at which the companion may move without
+   * invalidating a read the session has already taken, so the repair happens
+   * here and nowhere later. The launch-environment check comes first, so a
+   * Managed Session pays nothing at all — not the freshness read, not the
+   * policy read; and the consent gate is the operation's own.
+   */
+  const gitNotes = hasLaunchEnvironment(env)
+    ? []
+    : unattendedSyncStalenessLines(syncCompanionUnattended(context.companionPath, syncOptions));
 
   const lines = [
     `mate v${env.MATE_VERSION || mateVersion()}`,
@@ -46,6 +64,8 @@ export function buildBanner(
       lines.push(`  ${note}`);
     }
   }
+  /** `systemMessage` only: the model must never be told to run the command. */
+  for (const note of gitNotes) lines.push(`  ${note}`);
 
   return { exitCode: 0, stdout: JSON.stringify({ systemMessage: lines.join("\n") }) + "\n" };
 }

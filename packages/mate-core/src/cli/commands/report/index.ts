@@ -135,12 +135,17 @@ export async function runReportCommand(
           .map((a) => a.trim())
           .filter(Boolean)
       : [];
+    const reportNow = new Date();
+    const collectorDeps: CollectorDeps = {
+      spawn: deps.spawn,
+      now: deps.now ?? (() => reportNow),
+    };
 
     const tokensaveEnabled = enabledCapabilities.includes("tokensave");
     const headroomEnabled = enabledCapabilities.includes("headroom");
     const rtkEnabled = enabledCapabilities.includes("rtk");
 
-    const ccusageResult = await collectCcusageSpending(options.days, deps);
+    const ccusageResult = await collectCcusageSpending(options.days, collectorDeps);
     if (ccusageResult.friendlyError) console.warn(ccusageResult.friendlyError);
 
     let tokensaveWorking: Awaited<ReturnType<typeof collectTokenSaveSavings>> = {
@@ -162,12 +167,13 @@ export async function runReportCommand(
 
     if (tokensaveEnabled) {
       [tokensaveWorking, tokensaveCompanion] = await Promise.all([
-        collectTokenSaveSavings(workingRepoPath, options.days, deps),
-        collectTokenSaveSavings(companionPath, options.days, deps),
+        collectTokenSaveSavings(workingRepoPath, options.days, collectorDeps),
+        collectTokenSaveSavings(companionPath, options.days, collectorDeps),
       ]);
     }
-    if (rtkEnabled) rtkResult = await collectRTKSavings(workingRepoPath, deps);
-    if (headroomEnabled) headroomResult = await collectHeadroomSavings(options.days, deps);
+    if (rtkEnabled)
+      rtkResult = await collectRTKSavings(workingRepoPath, options.days, collectorDeps);
+    if (headroomEnabled) headroomResult = await collectHeadroomSavings(options.days, collectorDeps);
 
     const merged = mergeResults(
       ccusageResult.entries,

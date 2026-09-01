@@ -4,8 +4,16 @@ import path from "node:path";
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
 
 import {
+  companionForkRefusal,
+  syncCompanionUnattended,
+  unattendedSyncStalenessLines,
+} from "../runtime/companion-sync";
+import { hasLaunchEnvironment } from "../runtime/env";
+import {
   buildArtifactError,
   extractPatchPaths,
+  isArtifactPath,
+  normalizeTargetPath,
   readContext,
   shouldBlockArtifactWrite,
   type CompanionContext,
@@ -311,6 +319,75 @@ async function runReactDoctorScan(
   }
 }
 
+/**
+ * Keyed by companion so a double-loaded plugin repairs at most once per
+ * session, which is the guarantee the spec asks for.
+ */
+const repairedCompanions = new Set<string>();
+
+/**
+ * Session start is the only point at which the companion may move without
+ * invalidating a read the session has already taken. The launch-environment
+ * gate comes first so a Managed Session does no Git work at all; the consent
+ * gate is the operation's own.
+ */
+export async function repairCompanionGitOnce(
+  context: CompanionContext,
+  client: PluginInput["client"] | undefined,
+  env: Record<string, string | undefined> = process.env,
+): Promise<string[]> {
+  if (!context.companionPath || hasLaunchEnvironment(env)) return [];
+  if (repairedCompanions.has(context.companionPath)) return [];
+  repairedCompanions.add(context.companionPath);
+
+  const notes = unattendedSyncStalenessLines(syncCompanionUnattended(context.companionPath));
+  if (notes.length === 0) return [];
+
+  /**
+   * Operator-facing only: a model told to run the command would run it
+   * unattended. Delivery is best-effort in both directions — a client that
+   * throws rather than rejecting must not cost the caller its notes.
+   */
+  try {
+    await client?.tui?.showToast({
+      query: { directory: context.repositoryPath },
+      body: {
+        title: `${context.frameworkName} companion`,
+        message: notes.join("\n"),
+        variant: "warning",
+      },
+    });
+  } catch {
+    /** The note survives in the persisted record and the TUI's staleness lines. */
+  }
+  return notes;
+}
+
+/** Test seam: the once-per-session guard is process-wide by design. */
+export function resetCompanionGitRepairGuard(): void {
+  repairedCompanions.clear();
+}
+
+/**
+ * Writing artifacts on top of a forked companion is the state in which the
+ * eventual reconciliation destroys work. The verdict comes from `runtime/`, so
+ * the Claude hook and this middleware refuse the same writes for the same
+ * reason — including the launch-environment gate that keeps a Managed
+ * Launch's Git decision authoritative for the session it started.
+ */
+export function refuseForkedCompanionWrite(
+  context: CompanionContext,
+  filePath: string,
+  env: Record<string, string | undefined> = process.env,
+): void {
+  if (!filePath || !isArtifactPath(filePath)) return;
+  if (!normalizeTargetPath(context, filePath).startsWith(path.normalize(context.companionPath))) {
+    return;
+  }
+  const refusal = companionForkRefusal(env, context.companionPath);
+  if (refusal) throw new Error(refusal);
+}
+
 type PluginEventInput = Parameters<NonNullable<Hooks["event"]>>[0];
 type ToolBeforeInput = Parameters<NonNullable<Hooks["tool.execute.before"]>>[0];
 type ToolBeforeOutput = Parameters<NonNullable<Hooks["tool.execute.before"]>>[1];
@@ -326,6 +403,14 @@ export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInp
   const { client, $ } = pluginInput;
   const context = readContext();
   if (!context.companionPath || !context.repositoryPath) return {};
+
+  /**
+   * The repair sits above the returned hooks, so anything escaping it would
+   * cost the session every guardrail below — the artifact guard, the finish
+   * nudge, the React Doctor scan — to save a synchronization that is optional
+   * by design.
+   */
+  await repairCompanionGitOnce(context, client).catch(() => []);
 
   const archiveDir = path.join(context.companionPath, "openspec", "changes", "archive");
   const archiveCallSnapshots = new Map<string, ArchiveCallSnapshot>();
@@ -361,12 +446,14 @@ export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInp
         if (filePath && shouldBlockArtifactWrite(context, filePath)) {
           throw new Error(buildArtifactError(context, filePath));
         }
+        refuseForkedCompanionWrite(context, filePath);
       }
       if (toolName === "apply_patch") {
         for (const filePath of extractPatchPaths(String(args.patchText ?? ""))) {
           if (shouldBlockArtifactWrite(context, filePath)) {
             throw new Error(buildArtifactError(context, filePath));
           }
+          refuseForkedCompanionWrite(context, filePath);
         }
       }
       if (context.gitAutoModeEnabled) {

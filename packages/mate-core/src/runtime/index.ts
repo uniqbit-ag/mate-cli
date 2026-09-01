@@ -10,6 +10,50 @@ export {
   type GuidanceCapability,
   type GuidanceContext,
 } from "./companion-guidance";
+export {
+  companionForkState,
+  describeGitFailure,
+  forkStateAgainst,
+  gitEnvironment,
+  GIT_QUERY_TIMEOUT_MS,
+  isAuthenticationFailure,
+  outputLines,
+  resolveUpstreamTargetSync,
+  resolveUpstreamTargetWith,
+  runGitSync,
+  stripGitProgress,
+  upstreamTargetSteps,
+  type CompanionForkState,
+  type GitResult,
+  type UpstreamTarget,
+} from "./companion-git";
+export {
+  companionGitStatePath,
+  companionGitStateRoot,
+  COMPANION_SYNC_TTL_MS,
+  FORK_VERDICT_TTL_MS,
+  isCompanionSyncDue,
+  readCachedForkRecord,
+  readCompanionGitRecord,
+  recordCompanionSync,
+  recordForkVerdict,
+  writeCompanionGitRecord,
+  type CompanionForkRecord,
+  type CompanionGitRecord,
+} from "./companion-git-state";
+export {
+  cachedCompanionForkState,
+  companionForkRefusal,
+  COMPANION_SYNC_COMMAND,
+  COMPANION_SYNC_TIMEOUT_MS,
+  forkRefusalMessage,
+  syncCompanionUnattended,
+  unattendedSyncStalenessLines,
+  type ForkGuardOptions,
+  type UnattendedSyncOptions,
+  type UnattendedSyncOutcome,
+  type UnattendedSyncStatus,
+} from "./companion-sync";
 export { FRAMEWORK_NAME } from "./framework";
 export {
   MATE_ENV,
