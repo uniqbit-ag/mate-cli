@@ -5,6 +5,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import {
+  describeGitFailure,
+  gitEnvironment,
+  isAuthenticationFailure,
+  outputLines,
+  resolveUpstreamTargetWith,
+  type GitResult,
+} from "../../runtime/companion-git";
+import { recordCompanionSync } from "../../runtime/companion-git-state";
 import { LaunchPreflightError } from "./types";
 
 const execFile = promisify(execFileCallback);
@@ -12,11 +21,9 @@ const execFile = promisify(execFileCallback);
 /** Bounded but far above any diagnostic output; default 1 MiB kills git mid-merge on large trees. */
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 
-export interface GitCommandResult {
-  status: number;
-  stdout: string;
-  stderr: string;
-}
+export type GitCommandResult = GitResult;
+
+export { describeGitFailure };
 
 export type GitExecutionMode = "captured" | "interactive";
 
@@ -76,15 +83,9 @@ export class CompanionGitSyncError extends LaunchPreflightError {
 
 export const companionGitSyncDeps: { runGit: GitRunner } = {
   runGit: async (args, cwd, mode = "captured") => {
-    const {
-      GIT_DIR: _gitDir,
-      GIT_WORK_TREE: _gitWorkTree,
-      GIT_COMMON_DIR: _gitCommonDir,
-      GIT_INDEX_FILE: _gitIndexFile,
-      GIT_TERMINAL_PROMPT: _gitTerminalPrompt,
-      ...gitEnv
-    } = process.env;
-    const env = mode === "captured" ? { ...gitEnv, GIT_TERMINAL_PROMPT: "0" } : gitEnv;
+    const captured = gitEnvironment(process.env);
+    const { GIT_TERMINAL_PROMPT: _prompt, ...interactive } = captured;
+    const env = mode === "captured" ? captured : interactive;
 
     if (mode === "interactive") {
       return new Promise((resolve) => {
@@ -144,42 +145,6 @@ interface SyncTarget {
 function isManagedPath(filePath: string): boolean {
   const normalized = filePath.replaceAll("\\", "/").replace(/^\.\//, "");
   return MANAGED_ROOTS.some((root) => normalized === root || normalized.startsWith(`${root}/`));
-}
-
-function outputLines(stdout: string): string[] {
-  return stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-/** Matches Git progress-meter lines such as `Updating files:  76% (11340/14790)` or `..., done.` */
-const GIT_PROGRESS_LINE = /^\S.*?: +\d+% \(\d+\/\d+\)(?:, done\.)?$/;
-
-function stripGitProgress(text: string): string {
-  return text
-    .split(/\r\n|\r|\n/)
-    .filter((line) => !GIT_PROGRESS_LINE.test(line.trim()))
-    .join("\n")
-    .trim();
-}
-
-function isAuthenticationFailure(result: GitCommandResult): boolean {
-  const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
-  return [
-    "terminal prompts disabled",
-    "could not read username",
-    "could not read password",
-    "authentication failed",
-    "permission denied (publickey)",
-    "could not open /dev/tty",
-    "can't open /dev/tty",
-    "cannot open /dev/tty",
-  ].some((marker) => output.includes(marker));
-}
-
-export function describeGitFailure(result: GitCommandResult): string {
-  return stripGitProgress(result.stderr) || stripGitProgress(result.stdout) || "unknown Git error";
 }
 
 export class CompanionGitSync {
@@ -274,6 +239,8 @@ export class CompanionGitSync {
     }
 
     const headAfter = await this.command(companionPath, ["rev-parse", "HEAD"]);
+    /** Best-effort bookkeeping: a launch that synchronized must not fail on it. */
+    recordCompanionSync(companionPath);
     return {
       skipped: false,
       changed: headBefore.stdout.trim() !== headAfter.stdout.trim(),
@@ -386,35 +353,13 @@ export class CompanionGitSync {
     }
   }
 
+  /**
+   * Delegates to `runtime/`: the blind half resolves the same ref, and the two
+   * must never disagree about which upstream they mean.
+   */
   private async resolveSyncTarget(companionPath: string): Promise<SyncTarget> {
-    const upstream = await this.command(companionPath, [
-      "rev-parse",
-      "--abbrev-ref",
-      "--symbolic-full-name",
-      "@{u}",
-    ]);
-    const configured = this.parseRemoteRef(upstream.stdout);
-    if (upstream.status === 0 && configured) return configured;
-
-    const remoteHead = await this.command(companionPath, [
-      "symbolic-ref",
-      "--short",
-      "refs/remotes/origin/HEAD",
-    ]);
-    const fromRemoteHead = this.parseRemoteRef(remoteHead.stdout);
-    if (remoteHead.status === 0 && fromRemoteHead) return fromRemoteHead;
-
-    for (const branch of ["main", "master"]) {
-      const exists = await this.command(companionPath, [
-        "show-ref",
-        "--verify",
-        "--quiet",
-        `refs/remotes/origin/${branch}`,
-      ]);
-      if (exists.status === 0) {
-        return { remote: "origin", branch, ref: `origin/${branch}` };
-      }
-    }
+    const target = await resolveUpstreamTargetWith((args) => this.command(companionPath, args));
+    if (target) return target;
 
     throw this.failure(
       companionPath,
@@ -422,17 +367,6 @@ export class CompanionGitSync {
       [],
       "Set an upstream with `git branch --set-upstream-to <remote>/<branch>`, then retry.",
     );
-  }
-
-  private parseRemoteRef(stdout: string): SyncTarget | undefined {
-    const ref = stdout.trim();
-    const separator = ref.indexOf("/");
-    if (separator <= 0 || separator === ref.length - 1) return undefined;
-    return {
-      remote: ref.slice(0, separator),
-      branch: ref.slice(separator + 1),
-      ref,
-    };
   }
 
   private async assertNoUnfinishedOperation(companionPath: string): Promise<void> {

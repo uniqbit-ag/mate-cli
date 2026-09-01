@@ -282,10 +282,10 @@ describe("command gating", () => {
     expect(dispatched).toEqual(["hub"]);
   });
 
-  test("companion open and tui require an unambiguous companion but no install", async () => {
+  test("companion open, tui and sync require an unambiguous companion but no install", async () => {
     const originalExitCode = process.exitCode;
     try {
-      for (const subcommand of ["open", "tui"]) {
+      for (const subcommand of ["open", "tui", "sync"]) {
         const { gateCalls, deps } = recordingDeps({ companion: false });
         process.exitCode = 0;
         await main(["node", "mate", "companion", subcommand], deps);
