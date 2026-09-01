@@ -891,23 +891,23 @@ describe("executeSetup", () => {
     expect(gitignore).toContain("dist/");
   });
 
-  test("setup writes headroom capability to config when headroom binary is present", async () => {
-    const root = await makeTempDir("mate-setup-headroom-");
+  test("setup writes the rtk capability to config when the rtk binary is present", async () => {
+    const root = await makeTempDir("mate-setup-rtk-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
     );
 
-    // Put a headroom stub on PATH so apply() skips the install prompt
+    /** rtk stub on PATH so apply() skips the install prompt */
     const binDir = path.join(root, "bin");
     await fs.mkdir(binDir, { recursive: true });
-    await fs.writeFile(path.join(binDir, "headroom"), "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(path.join(binDir, "headroom"), 0o755);
+    await fs.writeFile(path.join(binDir, "rtk"), "#!/bin/sh\nexit 0\n", "utf8");
+    await fs.chmod(path.join(binDir, "rtk"), 0o755);
     process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
 
     await executeSetup(
       {
         allowedAgents: ["claude"],
-        capabilities: [{ name: "headroom" }],
+        capabilities: [{ name: "rtk" }],
       },
       { cwd: root, globalConfigStore },
     );
@@ -916,10 +916,10 @@ describe("executeSetup", () => {
       path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "utf8",
     );
-    expect(config).toContain("name: headroom");
+    expect(config).toContain("name: rtk");
     expect(config).not.toContain("memory: true");
 
-    // teardown is a no-op: re-running setup without headroom just removes it from config
+    /** teardown is a no-op: re-running setup without rtk just removes it from config */
     await executeSetup(
       {
         allowedAgents: ["claude"],
@@ -932,7 +932,7 @@ describe("executeSetup", () => {
       path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "utf8",
     );
-    expect(updatedConfig).not.toContain("name: headroom");
+    expect(updatedConfig).not.toContain("name: rtk");
   });
 });
 
@@ -1451,14 +1451,14 @@ describe("applySetupCompatibilities — tokensave", () => {
 });
 
 describe("applySetupCompatibilities", () => {
-  test("headroom capability applies without uv since it no longer requires a package manager", async () => {
-    const root = await makeTempDir("mate-setup-headroom-no-uv-");
+  test("rtk capability applies without uv since it requires no package manager", async () => {
+    const root = await makeTempDir("mate-setup-rtk-no-uv-");
     await installOpenSpecStub(root);
 
-    // Put a headroom stub on PATH so apply() skips the install prompt
+    /** rtk stub on PATH so apply() skips the install prompt */
     const binDir = path.join(root, "bin");
-    await fs.writeFile(path.join(binDir, "headroom"), "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(path.join(binDir, "headroom"), 0o755);
+    await fs.writeFile(path.join(binDir, "rtk"), "#!/bin/sh\nexit 0\n", "utf8");
+    await fs.chmod(path.join(binDir, "rtk"), 0o755);
     process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
 
     const stderrChunks: string[] = [];
@@ -1474,7 +1474,7 @@ describe("applySetupCompatibilities", () => {
         {
           allowedAgents: [],
           packageManagers: ["bun"],
-          capabilities: [{ name: "headroom" }],
+          capabilities: [{ name: "rtk" }],
         },
         "setup",
       );
@@ -1482,7 +1482,7 @@ describe("applySetupCompatibilities", () => {
       process.stderr.write = originalWrite;
     }
 
-    expect(stderrChunks.join("")).not.toContain("headroom capability disabled");
+    expect(stderrChunks.join("")).not.toContain("rtk capability disabled");
   });
 
   test("removes legacy settings.json and generates managed settings.local.json during setup", async () => {
@@ -1608,32 +1608,32 @@ describe("updateProjectGitignore", () => {
     expect(gitignore).toContain(".venv/");
   });
 
-  test("adds headroom entries to the unified managed block", async () => {
-    const root = await makeTempDir("mate-sync-headroom-gitignore-");
+  test("adds capability entries to the unified managed block", async () => {
+    const root = await makeTempDir("mate-sync-capability-gitignore-");
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
 
     await updateProjectGitignore(root, {
       allowedAgents: [],
       packageManagers: ["bun"],
-      capabilities: [{ name: "headroom" }],
+      capabilities: [{ name: "graphify" }],
     });
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain("node_modules/");
     expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
-    expect(gitignore).toContain(".headroom/");
+    expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
   });
 
-  test("removes headroom entries but keeps sticky managed entries when headroom is disabled", async () => {
-    const root = await makeTempDir("mate-sync-headroom-gitignore-remove-");
+  test("rebuilding the managed block drops stale entries but keeps sticky managed entries", async () => {
+    const root = await makeTempDir("mate-sync-stale-gitignore-remove-");
     await fs.writeFile(
       path.join(root, ".gitignore"),
       [
         "node_modules/",
         "",
         `# ${FRAMEWORK_NAME} managed: start`,
-        "# headroom",
-        ".headroom/",
+        "# retired capability",
+        ".retired-capability/",
         `# ${FRAMEWORK_NAME} managed: end`,
         "",
       ].join("\n"),
@@ -1648,24 +1648,24 @@ describe("updateProjectGitignore", () => {
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain("node_modules/");
     expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
-    expect(gitignore).not.toContain(".headroom/");
+    expect(gitignore).not.toContain(".retired-capability/");
   });
 
-  test("combines uv and headroom entries in one managed block", async () => {
-    const root = await makeTempDir("mate-sync-uv-headroom-gitignore-");
+  test("combines uv and capability entries in one managed block", async () => {
+    const root = await makeTempDir("mate-sync-uv-capability-gitignore-");
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
 
     await updateProjectGitignore(root, {
       allowedAgents: [],
       packageManagers: ["bun", "uv"],
-      capabilities: [{ name: "headroom" }],
+      capabilities: [{ name: "graphify" }],
     });
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
     expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: end`, "g"))?.length).toBe(1);
     expect(gitignore).toContain(".venv/");
-    expect(gitignore).toContain(".headroom/");
+    expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
     expect(gitignore).toContain("node_modules/");
   });
 });

@@ -122,7 +122,6 @@ describe("install context and planning", () => {
     );
     expect(ids).toContain("capability:openspec");
     expect(ids).not.toContain("capability:graphify");
-    expect(ids).not.toContain("capability:headroom");
     expect(ids).not.toContain("capability:rtk");
   });
 
@@ -141,7 +140,6 @@ describe("install context and planning", () => {
 
     const ids = buildInstallPlan(context).requirements.map((requirement) => requirement.id);
     expect(ids).toContain("capability:rtk");
-    expect(ids).not.toContain("capability:headroom");
   });
 });
 

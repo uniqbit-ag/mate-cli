@@ -10,7 +10,7 @@ const tempRoots: string[] = [];
 afterEach(async () => {
   // Cleans up a temp dir containing a full `bun install` of two packed
   // tarballs (node_modules + lockfile); on a loaded CI box the recursive
-  // rm can outrun bun's 5s default hook timeout, so give it real headroom.
+  /** rm can outrun bun's 5s default hook timeout, so allow a wider margin. */
   await Promise.all(
     tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })),
   );

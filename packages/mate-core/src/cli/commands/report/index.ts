@@ -4,7 +4,6 @@ import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-con
 import { ensureUnambiguousCompanion } from "../shared/companion-selection";
 import {
   collectCcusageSpending,
-  collectHeadroomSavings,
   collectRTKSavings,
   collectTokenSaveSavings,
   mergeResults,
@@ -142,7 +141,6 @@ export async function runReportCommand(
     };
 
     const tokensaveEnabled = enabledCapabilities.includes("tokensave");
-    const headroomEnabled = enabledCapabilities.includes("headroom");
     const rtkEnabled = enabledCapabilities.includes("rtk");
 
     const ccusageResult = await collectCcusageSpending(options.days, collectorDeps);
@@ -160,10 +158,6 @@ export async function runReportCommand(
       entry: null,
       status: { name: "rtk", enabled: false, status: "not enabled" },
     };
-    let headroomResult: Awaited<ReturnType<typeof collectHeadroomSavings>> = {
-      entry: null,
-      status: { name: "headroom", enabled: false, status: "not enabled" },
-    };
 
     if (tokensaveEnabled) {
       [tokensaveWorking, tokensaveCompanion] = await Promise.all([
@@ -173,14 +167,12 @@ export async function runReportCommand(
     }
     if (rtkEnabled)
       rtkResult = await collectRTKSavings(workingRepoPath, options.days, collectorDeps);
-    if (headroomEnabled) headroomResult = await collectHeadroomSavings(options.days, collectorDeps);
 
     const merged = mergeResults(
       ccusageResult.entries,
       tokensaveWorking.entry,
       tokensaveCompanion.entry,
       rtkResult.entry,
-      headroomResult.entry,
     );
     const reportData: ReportData = {
       days: options.days,
@@ -191,12 +183,7 @@ export async function runReportCommand(
       enabledCapabilities,
       spending: merged.spending,
       savings: merged.savings,
-      toolStatus: [
-        ccusageResult.status,
-        tokensaveWorking.status,
-        rtkResult.status,
-        headroomResult.status,
-      ],
+      toolStatus: [ccusageResult.status, tokensaveWorking.status, rtkResult.status],
       totalSpending: merged.totalSpending,
       totalSavings: merged.totalSavings,
       netSpend: merged.netSpend,

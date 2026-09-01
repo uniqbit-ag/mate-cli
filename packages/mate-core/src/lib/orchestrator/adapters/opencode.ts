@@ -58,34 +58,6 @@ export class OpenCodeAdapter extends LaunchAdapter {
     return buildOpenCodeGuidance(context.capabilities);
   }
 
-  protected headroomEnv(
-    context: AdapterContext,
-    port: number,
-    _companionPath: string,
-    env: NodeJS.ProcessEnv,
-  ): NodeJS.ProcessEnv {
-    const project = encodeURIComponent(context.repository.id);
-    const baseUrl = `http://127.0.0.1:${port}/p/${project}`;
-    const configContent = mergeOpenCodeConfigContent(
-      {
-        provider: {
-          anthropic: {
-            options: { baseURL: baseUrl },
-          },
-          openai: {
-            options: { baseURL: `${baseUrl}/v1` },
-          },
-        },
-      },
-      env,
-    );
-    return {
-      ANTHROPIC_BASE_URL: baseUrl,
-      OPENAI_BASE_URL: `${baseUrl}/v1`,
-      OPENCODE_CONFIG_CONTENT: configContent,
-    };
-  }
-
   async validateLaunch(context: AdapterContext): Promise<void> {
     const missingAssets = await Promise.all(
       this.requiredRuntimeAssets.map(async (asset) => {

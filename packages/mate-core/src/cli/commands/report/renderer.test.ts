@@ -8,7 +8,7 @@ const makeReport = (overrides: Partial<ReportData> = {}): ReportData => ({
   workingRepoPath: "/tmp/work",
   companionRepoPath: "/tmp/companion",
   activeAgents: ["claude", "opencode"],
-  enabledCapabilities: ["tokensave", "headroom"],
+  enabledCapabilities: ["tokensave", "rtk"],
   spending: [
     {
       model: "claude-sonnet-5",
@@ -29,12 +29,12 @@ const makeReport = (overrides: Partial<ReportData> = {}): ReportData => ({
   ],
   savings: [
     { tool: "tokensave", tokensSaved: 500000, calls: 50, costSaved: 5.0, efficiency: "10K/call" },
-    { tool: "headroom", tokensSaved: 1000000, calls: 100, costSaved: 10.0, efficiency: "10K/call" },
+    { tool: "rtk", tokensSaved: 1000000, calls: 100, costSaved: 10.0, efficiency: "10K/call" },
   ],
   toolStatus: [
     { name: "ccusage", enabled: true, status: "ok" },
     { name: "tokensave", enabled: true, status: "ok" },
-    { name: "headroom", enabled: true, status: "ok" },
+    { name: "rtk", enabled: true, status: "ok" },
   ],
   totalSpending: 37.5,
   totalSavings: 15.0,
@@ -49,7 +49,7 @@ describe("renderMarkdown", () => {
     expect(md).toContain("Last 7 days");
     expect(md).toContain("Capabilities");
     expect(md).toContain("tokensave");
-    expect(md).toContain("headroom");
+    expect(md).toContain("rtk");
   });
 
   test("renders spending table", () => {
@@ -67,14 +67,14 @@ describe("renderMarkdown", () => {
     const md = renderMarkdown(makeReport());
     expect(md).toContain("## Savings");
     expect(md).toContain("tokensave");
-    expect(md).toContain("headroom");
+    expect(md).toContain("rtk");
   });
 
   test("renders tool status table", () => {
     const md = renderMarkdown(makeReport());
     expect(md).toContain("## Tool Status");
     expect(md).toContain("ccusage");
-    expect(md).toContain("headroom");
+    expect(md).toContain("rtk");
   });
 
   test("renders summary with totals", () => {

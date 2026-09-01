@@ -25,8 +25,7 @@ import {
 } from "../../package-paths";
 import { ClaudeAdapter } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
-import type { AdapterContext, ProxyDeps } from "./base";
-import type { SpawnProxyOpts } from "../headroom/proxy";
+import type { AdapterContext } from "./base";
 import { withEnv } from "../../../../test/helpers";
 
 const tempRoots: string[] = [];
@@ -93,111 +92,35 @@ async function writeOpenCodeRuntime(
   );
 }
 
-function noProxyDeps(): ProxyDeps {
-  return {
-    isProxyReachable: mock(async () => false),
-    spawnProxyBackground: mock(() => {}),
-    waitForProxyReachable: mock(async () => true),
-  };
-}
-
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
 describe("LaunchAdapter.prepareLaunch", () => {
-  test("returns direct Claude invocation when headroom capability is disabled", async () => {
-    const launch = await new ClaudeAdapter().prepareLaunch(makeContext(), ["--print", "hello"]);
+  test("builds the Claude invocation without rewriting the model base URL", async () => {
+    const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
+      new ClaudeAdapter().prepareLaunch(makeContext(), ["--print", "hello"]),
+    );
 
     expect(launch.command).toBe("claude");
     expect(launch.args[0]).toBe("--add-dir");
     expect(launch.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("1");
-    expect(launch.warning).toBeUndefined();
+    expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
 
-  test("launches agent directly (not via headroom wrap) when proxy is not reachable", async () => {
-    const binDir = await makeTempDir("mate-headroom-bin-");
-    const headroomPath = path.join(binDir, "headroom");
-    await fs.writeFile(headroomPath, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(headroomPath, 0o755);
+  test("an unrecognized capability leaves the OpenCode invocation and PATH untouched", async () => {
+    const binDir = await makeTempDir("mate-launch-bin-");
 
     await withPath(binDir, async () => {
-      const spawnMock = mock(() => {});
       const launch = await new OpenCodeAdapter().prepareLaunch(
-        makeContext([{ name: "headroom" }]),
+        makeContext([{ name: "retired-capability" }]),
         ["--mode", "chat"],
-        {
-          isProxyReachable: async () => false,
-          spawnProxyBackground: spawnMock,
-          waitForProxyReachable: async () => true,
-        },
       );
 
       expect(launch.command).toBe("opencode");
-      expect(launch.args).not.toContain("wrap");
       expect(launch.args).toContain("--mode");
       expect(launch.args).toContain("chat");
       expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}${binDir}`);
-      expect(launch.env.HEADROOM_MEMORY_DB_PATH).toBeUndefined();
-      expect(launch.env.HEADROOM_MEMORY_PROJECT_ROOT).toBeUndefined();
-      expect(launch.warning).toBeUndefined();
-      expect(spawnMock).toHaveBeenCalledTimes(1);
-      expect(spawnMock).toHaveBeenCalledWith({ port: 8787 });
-    });
-  });
-
-  test("skips proxy spawn when proxy is already reachable", async () => {
-    const binDir = await makeTempDir("mate-headroom-bin-");
-    const headroomPath = path.join(binDir, "headroom");
-    await fs.writeFile(headroomPath, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(headroomPath, 0o755);
-
-    await withPath(binDir, async () => {
-      const spawnMock = mock(() => {});
-      const launch = await new ClaudeAdapter().prepareLaunch(
-        makeContext([{ name: "headroom" }]),
-        ["--print", "hello"],
-        { isProxyReachable: async () => true, spawnProxyBackground: spawnMock },
-      );
-
-      expect(launch.command).toBe("claude");
-      expect(spawnMock).not.toHaveBeenCalled();
-    });
-  });
-
-  test("spawns the proxy with only the resolved port and no memory settings", async () => {
-    const binDir = await makeTempDir("mate-headroom-bin-");
-    const headroomPath = path.join(binDir, "headroom");
-    await fs.writeFile(headroomPath, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(headroomPath, 0o755);
-
-    await withPath(binDir, async () => {
-      let capturedOpts: SpawnProxyOpts | null = null;
-      const spawnMock = mock((opts: SpawnProxyOpts) => {
-        capturedOpts = opts;
-      });
-
-      await new ClaudeAdapter().prepareLaunch(makeContext([{ name: "headroom" }]), [], {
-        isProxyReachable: async () => false,
-        spawnProxyBackground: spawnMock as unknown as (opts: SpawnProxyOpts) => void,
-        waitForProxyReachable: async () => true,
-      });
-
-      expect(capturedOpts).toEqual({ port: 8787 });
-    });
-  });
-
-  test("headroom binary not on PATH produces warning and launches agent directly", async () => {
-    await withPath("", async () => {
-      const launch = await new ClaudeAdapter().prepareLaunch(makeContext([{ name: "headroom" }]), [
-        "--print",
-        "hello",
-      ]);
-
-      expect(launch.command).toBe("claude");
-      expect(launch.warning).toContain("headroom capability enabled");
-      expect(launch.warning).toContain("`headroom` was not found on PATH");
-      expect(launch.warning).toContain("launching claude directly");
     });
   });
 
@@ -534,37 +457,8 @@ describe("Claude companion settings launch flags", () => {
   });
 });
 
-describe("Adapter headroom env wiring", () => {
-  async function launchWithHeadroom(
-    adapter: InstanceType<typeof ClaudeAdapter | typeof OpenCodeAdapter>,
-    extra: Record<string, unknown> = {},
-  ) {
-    const binDir = await makeTempDir("mate-headroom-bin-");
-    const headroomPath = path.join(binDir, "headroom");
-    await fs.writeFile(headroomPath, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(headroomPath, 0o755);
-
-    return withPath(binDir, () =>
-      adapter.prepareLaunch(
-        { ...makeContext([{ name: "headroom" }]), ...extra },
-        [],
-        noProxyDeps(),
-      ),
-    );
-  }
-
-  test("ClaudeAdapter sets ANTHROPIC_BASE_URL when headroom cap is present", async () => {
-    const launch = await withEnv("OPENAI_BASE_URL", undefined, () =>
-      withEnv("OPENCODE_CONFIG_CONTENT", undefined, () => launchWithHeadroom(new ClaudeAdapter())),
-    );
-
-    expect(launch.env.ANTHROPIC_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/p\/app$/);
-    expect(launch.env.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
-    expect(launch.env.OPENAI_BASE_URL).toBeUndefined();
-    expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeUndefined();
-  });
-
-  test("ClaudeAdapter does not set ANTHROPIC_BASE_URL when headroom cap is absent", async () => {
+describe("Adapter base-URL rewriting is gone", () => {
+  test("ClaudeAdapter sets no ANTHROPIC_BASE_URL of Mate's own", async () => {
     const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
       new ClaudeAdapter().prepareLaunch(makeContext(), []),
     );
@@ -607,7 +501,7 @@ describe("Adapter headroom env wiring", () => {
     expect(config.model).toBe("anthropic/test");
   });
 
-  test("OpenCodeAdapter sets ANTHROPIC_BASE_URL, OPENAI_BASE_URL, and OPENCODE_CONFIG_CONTENT when headroom cap is present", async () => {
+  test("OpenCodeAdapter contributes no provider baseURL while still projecting the companion", async () => {
     const companionPath = await makeTempDir("mate-opencode-companion-");
     await fs.mkdir(path.join(companionPath, ".opencode", "plugins"), { recursive: true });
     await fs.writeFile(path.join(companionPath, ".opencode", "opencode.json"), "{}\n", "utf8");
@@ -627,76 +521,40 @@ describe("Adapter headroom env wiring", () => {
       "utf8",
     );
 
-    const launch = await launchWithHeadroom(new OpenCodeAdapter(), { companionPath });
+    const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
+      withEnv("OPENAI_BASE_URL", undefined, () =>
+        withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
+          new OpenCodeAdapter().prepareLaunch({ ...makeContext(), companionPath }, []),
+        ),
+      ),
+    );
 
-    expect(launch.env.ANTHROPIC_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/p\/app$/);
-    expect(launch.env.OPENAI_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/p\/app\/v1$/);
+    expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(launch.env.OPENAI_BASE_URL).toBeUndefined();
     expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeDefined();
     const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
     expect(config.references.mate).toBe(companionPath);
     expect(config.permission.external_directory[companionPath]).toBe("allow");
     expect(config.permission.external_directory[`${companionPath}/**`]).toBe("allow");
-    expect(config.provider.anthropic.options.baseURL).toMatch(
-      /^http:\/\/127\.0\.0\.1:\d+\/p\/app$/,
-    );
-    expect(config.provider.openai.options.baseURL).toMatch(
-      /^http:\/\/127\.0\.0\.1:\d+\/p\/app\/v1$/,
-    );
-    expect(config.provider.anthropic.options.headers).toBeUndefined();
-    expect(config.provider.openai.options.headers).toBeUndefined();
+    expect(config.provider).toBeUndefined();
   });
 
-  test("reuses the shared proxy across companion launches", async () => {
-    const binDir = await makeTempDir("mate-headroom-bin-");
-    const headroomPath = path.join(binDir, "headroom");
-    await fs.writeFile(headroomPath, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(headroomPath, 0o755);
-
-    await withPath(binDir, async () => {
-      const reachability = mock(async () => reachability.mock.calls.length > 1);
-      const spawnMock = mock(() => {});
-      const waitMock = mock(async () => true);
-
-      const firstLaunch = await new ClaudeAdapter().prepareLaunch(
-        makeContext([{ name: "headroom" }]),
-        ["--print", "hello"],
-        {
-          isProxyReachable: reachability,
-          spawnProxyBackground: spawnMock,
-          waitForProxyReachable: waitMock,
-        },
-      );
-
-      const secondLaunch = await new ClaudeAdapter().prepareLaunch(
-        { ...makeContext([{ name: "headroom" }]), companionPath: "/tmp/other-companion" },
-        ["--print", "world"],
-        {
-          isProxyReachable: reachability,
-          spawnProxyBackground: spawnMock,
-          waitForProxyReachable: waitMock,
-        },
-      );
-
-      expect(spawnMock).toHaveBeenCalledTimes(1);
-      expect(waitMock).toHaveBeenCalledTimes(1);
-      expect(firstLaunch.env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:8787/p/app");
-      expect(secondLaunch.env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:8787/p/app");
-    });
-  });
-
-  test("does not inject headroom cwd headers per companion", async () => {
+  test("injects no custom Anthropic headers, whichever companion is launched", async () => {
     const firstLaunch = await withEnv("ANTHROPIC_CUSTOM_HEADERS", undefined, () =>
-      launchWithHeadroom(new ClaudeAdapter()),
+      new ClaudeAdapter().prepareLaunch(makeContext(), []),
     );
     const secondLaunch = await withEnv("ANTHROPIC_CUSTOM_HEADERS", undefined, () =>
-      launchWithHeadroom(new ClaudeAdapter(), { companionPath: "/tmp/other-companion" }),
+      new ClaudeAdapter().prepareLaunch(
+        { ...makeContext(), companionPath: "/tmp/other-companion" },
+        [],
+      ),
     );
 
     expect(firstLaunch.env.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
     expect(secondLaunch.env.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
   });
 
-  test("OpenCodeAdapter does not set headroom env vars when headroom cap is absent", async () => {
+  test("OpenCodeAdapter sets neither provider base URL of Mate's own", async () => {
     const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
       withEnv("OPENAI_BASE_URL", undefined, () =>
         withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
@@ -711,88 +569,5 @@ describe("Adapter headroom env wiring", () => {
     expect(config.references.mate).toBe("/tmp/companion");
     expect(config.permission.external_directory["/tmp/companion"]).toBe("allow");
     expect(config.permission.external_directory["/tmp/companion/**"]).toBe("allow");
-  });
-
-  test("waits for spawned headroom proxy before enabling Claude headroom env", async () => {
-    const binDir = await makeTempDir("mate-headroom-bin-");
-    const headroomPath = path.join(binDir, "headroom");
-    await fs.writeFile(headroomPath, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(headroomPath, 0o755);
-
-    await withPath(binDir, async () => {
-      const spawnMock = mock(() => {});
-      const waitMock = mock(async () => true);
-      const launch = await new ClaudeAdapter().prepareLaunch(
-        makeContext([{ name: "headroom" }]),
-        ["--print", "hello"],
-        {
-          isProxyReachable: async () => false,
-          spawnProxyBackground: spawnMock,
-          waitForProxyReachable: waitMock,
-        },
-      );
-
-      expect(spawnMock).toHaveBeenCalledTimes(1);
-      expect(waitMock).toHaveBeenCalledTimes(1);
-      expect(launch.env.ANTHROPIC_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/p\/app$/);
-      expect(launch.warning).toBeUndefined();
-    });
-  });
-
-  test("retries headroom proxy startup up to three times before succeeding", async () => {
-    const binDir = await makeTempDir("mate-headroom-bin-");
-    const headroomPath = path.join(binDir, "headroom");
-    await fs.writeFile(headroomPath, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(headroomPath, 0o755);
-
-    await withPath(binDir, async () => {
-      const spawnMock = mock(() => {});
-      const waitMock = mock(async () => waitMock.mock.calls.length >= 3);
-      const launch = await new ClaudeAdapter().prepareLaunch(
-        makeContext([{ name: "headroom" }]),
-        ["--print", "hello"],
-        {
-          isProxyReachable: async () => false,
-          spawnProxyBackground: spawnMock,
-          waitForProxyReachable: waitMock,
-        },
-      );
-
-      expect(spawnMock).toHaveBeenCalledTimes(3);
-      expect(waitMock).toHaveBeenCalledTimes(3);
-      expect(launch.env.ANTHROPIC_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/p\/app$/);
-      expect(launch.warning).toBeUndefined();
-    });
-  });
-
-  test("falls back to direct Claude launch when spawned headroom proxy never becomes ready", async () => {
-    const binDir = await makeTempDir("mate-headroom-bin-");
-    const headroomPath = path.join(binDir, "headroom");
-    await fs.writeFile(headroomPath, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(headroomPath, 0o755);
-
-    await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
-      withPath(binDir, async () => {
-        const spawnMock = mock(() => {});
-        const waitMock = mock(async () => false);
-        const launch = await new ClaudeAdapter().prepareLaunch(
-          makeContext([{ name: "headroom" }]),
-          ["--print", "hello"],
-          {
-            isProxyReachable: async () => false,
-            spawnProxyBackground: spawnMock,
-            waitForProxyReachable: waitMock,
-          },
-        );
-
-        expect(spawnMock).toHaveBeenCalledTimes(3);
-        expect(waitMock).toHaveBeenCalledTimes(3);
-        expect(launch.command).toBe("claude");
-        expect(launch.warning).toContain("headroom proxy failed to become ready");
-        expect(launch.warning).toContain("after 3 attempts");
-        expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
-        expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}${binDir}`);
-      }),
-    );
   });
 });

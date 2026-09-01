@@ -30,7 +30,7 @@ class TestAdapter extends LaunchAdapter {
 
 function createLauncher(
   adapter = new TestAdapter(),
-  capabilities: CapabilityConfig[] = [{ name: "headroom" }],
+  capabilities: CapabilityConfig[] = [{ name: "tokensave" }],
   git?: "auto",
   plugins: CapabilityPlugin[] = [],
 ) {
@@ -169,13 +169,13 @@ describe("FrameworkLauncher", () => {
     adapter.validateLaunch.mockImplementation(async () => {
       events.push("adapter");
     });
-    const capability = makeCapability("headroom", {
+    const capability = makeCapability("tokensave", {
       preflight: async () => {
         events.push("preflight");
         return [];
       },
     });
-    const { launcher } = createLauncher(adapter, [{ name: "headroom" }], "auto", [capability]);
+    const { launcher } = createLauncher(adapter, [{ name: "tokensave" }], "auto", [capability]);
     const syncCompanionGit = mock(async () => {
       events.push("git");
     });
@@ -364,7 +364,11 @@ describe("FrameworkLauncher", () => {
   });
 
   test("failed Git preflight prevents setup and adapter execution", async () => {
-    const { launcher, adapter } = createLauncher(new TestAdapter(), [{ name: "headroom" }], "auto");
+    const { launcher, adapter } = createLauncher(
+      new TestAdapter(),
+      [{ name: "tokensave" }],
+      "auto",
+    );
     const syncCompanionGit = mock(async () => {
       throw new Error("sync failed");
     });
@@ -392,7 +396,11 @@ describe("FrameworkLauncher", () => {
   });
 
   test("skipGit bypasses only the Git preflight", async () => {
-    const { launcher, adapter } = createLauncher(new TestAdapter(), [{ name: "headroom" }], "auto");
+    const { launcher, adapter } = createLauncher(
+      new TestAdapter(),
+      [{ name: "tokensave" }],
+      "auto",
+    );
     const syncCompanionGit = mock(async () => {});
     const syncCompanionFiles = mock(async () => {});
     const originalSyncCompanionGit = launcherDeps.syncCompanionGit;

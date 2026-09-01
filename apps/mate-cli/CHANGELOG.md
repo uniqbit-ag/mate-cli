@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- **BREAKING** The Headroom capability. `mate cap headroom [args...]` no longer exists, Headroom is no longer offered during setup, and `mate report` no longer collects Headroom savings.
+- **BREAKING** Managed launches are no longer routed through a proxy. Mate supplies no `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` or provider `baseURL`; a caller that relied on Mate setting one must supply it in its own environment or OpenCode configuration.
+- **BREAKING** The `rtk-capability-split-v1` configuration migration. A Companion Repository configured before RTK was split out of Headroom, upgrading directly to this release, will not have `rtk` back-filled — reselect RTK with `mate setup` if it is missing.
+
+### Changed
+
+- Loading a companion configuration is now a pure read: `ConfigStore.load()` writes nothing. Creating a configuration that does not yet exist is still a write.
+- A `framework.yaml` still listing `{ name: "headroom" }` is inert. Loading succeeds, the entry is neither removed nor rewritten, and no migration strips it.
+
+### Notes
+
+- Mate no longer installs the `headroom-ai` uv tool and no longer removes it. Uninstall it manually with `uv tool uninstall headroom-ai`, and delete any leftover `.headroom/` directory. A detached `headroom proxy` started by an earlier release keeps running until it is killed or the machine restarts.
+
 ## [0.15.5](https://github.com/uniqbit-ag/mate-cli/compare/0.15.4...0.15.5) (2026-08-12)
 
 ## [0.15.5-canary.4](https://github.com/uniqbit-ag/mate-cli/compare/0.15.4...0.15.5) (2026-08-12)
