@@ -6,19 +6,8 @@ node_modules/
 !apps/mate-cli/src/templates/**/.claude/
 tmp/
 .DS_Store
+# bundlers bake absolute local paths into build output
+dist/
 coverage/
 .venv/
 __pycache__/
-
-# mate managed: start
-# python / uv
-.venv/
-.uv/
-__pycache__/
-*.py[cod]
-*.egg-info/
-build/
-dist/
-# mate managed: end
-.disco/kanban-dev/
-.disco/kanban/

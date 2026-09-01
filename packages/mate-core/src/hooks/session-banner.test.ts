@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { mateInstallPath, mateVersion } from "../runtime/install";
+import { mateVersion } from "../runtime/install";
 import {
   computeProjectionStamp,
   projectionYamlPath,
@@ -25,7 +25,6 @@ function makeTempDir(prefix: string): string {
 function currentStamp(): string {
   return computeProjectionStamp({
     version: mateVersion(),
-    installPath: mateInstallPath(),
     registryContent: REGISTRY_CONTENT,
   });
 }

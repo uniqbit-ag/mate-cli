@@ -13,6 +13,10 @@ const makeSpawn =
   () =>
     ({ stdout, status, error: null }) as ReturnType<typeof spawnSync>;
 
+const REPORT_NOW = new Date("2026-08-31T12:00:00Z");
+
+const epochDay = (date: string) => Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000);
+
 describe("collectCcusageSpending", () => {
   test("parses valid ccusage JSON response", async () => {
     const deps = {
@@ -130,15 +134,70 @@ describe("collectCcusageSpending", () => {
 });
 
 describe("collectTokenSaveSavings", () => {
-  test("parses valid JSON response", async () => {
+  test("aggregates history from the inclusive report cutoff", async () => {
+    const calls: string[][] = [];
     const deps = {
-      spawn: makeSpawn(JSON.stringify({ saved_tokens: 50000, calls: 10, usd: 2.5 })),
+      spawn: (command: string, args: string[]) => {
+        calls.push([command, ...args]);
+        return {
+          stdout: JSON.stringify([
+            { day: epochDay("2026-08-23"), saved_tokens: 100, calls: 1, usd: 1 },
+            { day: epochDay("2026-08-24"), saved_tokens: 200, calls: 2, usd: 2 },
+            { day: epochDay("2026-08-25"), saved_tokens: 300, calls: 3, usd: 3 },
+          ]),
+          status: 0,
+          error: null,
+        } as ReturnType<typeof spawnSync>;
+      },
+      now: () => REPORT_NOW,
     };
     const result = await collectTokenSaveSavings("/tmp/repo", 7, deps);
     expect(result.entry).not.toBeNull();
-    expect(result.entry!.tokensSaved).toBe(50000);
-    expect(result.entry!.calls).toBe(10);
+    expect(calls).toEqual([["tokensave", "gain", "--history", "--json", "--range", "all"]]);
+    expect(result.entry!.tokensSaved).toBe(500);
+    expect(result.entry!.calls).toBe(5);
+    expect(result.entry!.costSaved).toBe(5);
+    expect(result.entry!.efficiency).toBe("100/call");
     expect(result.status.enabled).toBe(true);
+  });
+
+  test("does not request an unsupported arbitrary range", async () => {
+    const calls: string[][] = [];
+    const result = await collectTokenSaveSavings("/tmp/repo", 31, {
+      spawn: (command: string, args: string[]) => {
+        calls.push([command, ...args]);
+        return {
+          stdout: JSON.stringify([]),
+          status: 0,
+          error: null,
+        } as ReturnType<typeof spawnSync>;
+      },
+      now: () => REPORT_NOW,
+    });
+    expect(calls[0]).toEqual(["tokensave", "gain", "--history", "--json", "--range", "all"]);
+    expect(result.status.status).toBe("no data");
+  });
+
+  test("returns no window data when history misses the report period", async () => {
+    const result = await collectTokenSaveSavings("/tmp/repo", 7, {
+      spawn: makeSpawn(
+        JSON.stringify([{ day: epochDay("2026-08-23"), saved_tokens: 100, calls: 1, usd: 1 }]),
+      ),
+      now: () => REPORT_NOW,
+    });
+    expect(result.entry).toBeNull();
+    expect(result.status.status).toBe("no window data");
+  });
+
+  test("returns no data for an empty or malformed history", async () => {
+    const empty = await collectTokenSaveSavings("/tmp/repo", 7, {
+      spawn: makeSpawn("[]"),
+    });
+    const malformed = await collectTokenSaveSavings("/tmp/repo", 7, {
+      spawn: makeSpawn("not json"),
+    });
+    expect(empty.status.status).toBe("no data");
+    expect(malformed.status.status).toBe("no data");
   });
 
   test("returns disabled when command fails", async () => {
@@ -150,19 +209,53 @@ describe("collectTokenSaveSavings", () => {
 });
 
 describe("collectRTKSavings", () => {
-  test("parses valid JSON response", async () => {
+  test("aggregates daily data from the inclusive report cutoff", async () => {
+    const calls: string[][] = [];
     const deps = {
-      spawn: makeSpawn(
-        JSON.stringify({
-          summary: { total_saved: 30000, total_commands: 5, avg_savings_pct: 15 },
-        }),
-      ),
+      spawn: (command: string, args: string[]) => {
+        calls.push([command, ...args]);
+        return {
+          stdout: JSON.stringify({
+            summary: { total_saved: 90000, total_commands: 90 },
+            daily: [
+              { date: "2026-08-23", saved_tokens: 100, commands: 1 },
+              { date: "2026-08-24", saved_tokens: 200, commands: 2 },
+              { date: "2026-08-25", saved_tokens: 300, commands: 3 },
+            ],
+          }),
+          status: 0,
+          error: null,
+        } as ReturnType<typeof spawnSync>;
+      },
+      now: () => REPORT_NOW,
     };
-    const result = await collectRTKSavings("/tmp/repo", deps);
+    const result = await collectRTKSavings("/tmp/repo", 7, deps);
     expect(result.entry).not.toBeNull();
+    expect(calls).toEqual([["rtk", "gain", "--project", "--daily", "--format", "json"]]);
     expect(result.entry!.tool).toBe("rtk");
-    expect(result.entry!.tokensSaved).toBe(30000);
+    expect(result.entry!.tokensSaved).toBe(500);
+    expect(result.entry!.calls).toBe(5);
     expect(result.status.enabled).toBe(true);
+  });
+
+  test("returns no data for malformed or empty daily data", async () => {
+    const malformed = await collectRTKSavings("/tmp/repo", 7, {
+      spawn: makeSpawn("not json"),
+    });
+    const empty = await collectRTKSavings("/tmp/repo", 7, {
+      spawn: makeSpawn(JSON.stringify({ daily: [] })),
+    });
+    expect(malformed.status.status).toBe("no data");
+    expect(empty.status.status).toBe("no data");
+  });
+
+  test("returns no window data when daily data misses the report period", async () => {
+    const result = await collectRTKSavings("/tmp/repo", 7, {
+      spawn: makeSpawn(JSON.stringify({ daily: [{ date: "2026-08-23", saved_tokens: 100 }] })),
+      now: () => REPORT_NOW,
+    });
+    expect(result.entry).toBeNull();
+    expect(result.status.status).toBe("no window data");
   });
 
   test("returns disabled when binary missing", async () => {
@@ -170,7 +263,7 @@ describe("collectRTKSavings", () => {
       spawn: () =>
         ({ stdout: "", status: null, error: new Error("ENOENT") }) as ReturnType<typeof spawnSync>,
     };
-    const result = await collectRTKSavings("/tmp/repo", deps);
+    const result = await collectRTKSavings("/tmp/repo", 7, deps);
     expect(result.status.enabled).toBe(false);
   });
 });

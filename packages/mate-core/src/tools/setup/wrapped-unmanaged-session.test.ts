@@ -111,6 +111,66 @@ function runHookCommand(
   return { exitCode: result.status ?? 1, stderr: result.stderr, stdout: result.stdout };
 }
 
+/**
+ * A companion that is a Git working tree with an upstream, so the session-start
+ * repair and the fork refusal have something real to act on.
+ */
+async function gitBackCompanion(
+  fixture: Fixture,
+  gitPolicy: "auto" | "manual",
+): Promise<{ upstreamPath: string }> {
+  const { companionPath } = fixture;
+  const root = path.dirname(companionPath);
+  const remotePath = path.join(root, "remote.git");
+  const upstreamPath = path.join(root, "upstream");
+
+  await fs.appendFile(
+    path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
+    `git: ${gitPolicy}\n`,
+    "utf8",
+  );
+
+  const run = (cwd: string, ...args: string[]) => {
+    const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+    if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+  };
+  run(root, "init", "--bare", "-q", "--initial-branch=main", remotePath);
+  run(companionPath, "init", "-q", "--initial-branch=main");
+  run(companionPath, "config", "user.email", "mate-tests@example.com");
+  run(companionPath, "config", "user.name", "Mate Tests");
+  await fs.mkdir(path.join(companionPath, "openspec", "changes", "acme"), { recursive: true });
+  await fs.writeFile(path.join(companionPath, "notes.md"), "base\n", "utf8");
+  run(companionPath, "add", ".");
+  run(companionPath, "commit", "-qm", "base");
+  run(companionPath, "remote", "add", "origin", remotePath);
+  run(companionPath, "push", "-q", "-u", "origin", "main");
+  run(root, "clone", "-q", remotePath, upstreamPath);
+  run(upstreamPath, "config", "user.email", "mate-tests@example.com");
+  run(upstreamPath, "config", "user.name", "Mate Tests");
+
+  return { upstreamPath };
+}
+
+async function forkCompanionHistory(fixture: Fixture, upstreamPath: string): Promise<void> {
+  const run = (cwd: string, ...args: string[]) => {
+    const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+    if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+  };
+  await fs.appendFile(path.join(upstreamPath, "notes.md"), "remote\n", "utf8");
+  run(upstreamPath, "commit", "-aqm", "remote");
+  run(upstreamPath, "push", "-q", "origin", "main");
+  await fs.appendFile(path.join(fixture.companionPath, "local.md"), "local\n", "utf8");
+  run(fixture.companionPath, "add", ".");
+  run(fixture.companionPath, "commit", "-qm", "local");
+}
+
+function companionHead(companionPath: string): string {
+  return spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: companionPath,
+    encoding: "utf8",
+  }).stdout.trim();
+}
+
 describe("a wrapped Working Repository with an empty Mate environment", () => {
   test("registers a guard that blocks an artifact write into the Working Repository", async () => {
     const { repoPath, companionPath } = await makeCompanionAndRepo("mate-m3-guard-", []);
@@ -281,6 +341,103 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     expect(managed.exitCode).toBe(0);
     expect(managed.stdout).toBe("");
   }, 20000);
+
+  /**
+   * The whole change lives behind the companion's automatic Git policy. With it
+   * off, a bare session must behave exactly as it did before: no fetch, no
+   * record, no refusal.
+   */
+  test("a companion with Git handling off does no Git work and refuses nothing", async () => {
+    const fixture = await makeCompanionAndRepo("mate-m3-git-off-", []);
+    const { upstreamPath } = await gitBackCompanion(fixture, "manual");
+    await forkCompanionHistory(fixture, upstreamPath);
+    await runWrapCommand(["--companion", fixture.companionPath], fixture.repoPath);
+    const head = companionHead(fixture.companionPath);
+
+    const settings = await readSettings(fixture.repoPath);
+    const banner = hookCommands(settings, "SessionStart").find((command) =>
+      command.includes("session-banner"),
+    )!;
+    const guard = hookCommands(settings, "PreToolUse")[0]!;
+    const home = { HOME: fixtureHome };
+
+    const printed = runHookCommand(banner, {}, fixture.repoPath, home);
+    expect(printed.exitCode).toBe(0);
+    expect(printed.stdout).not.toContain("companion sync");
+
+    const write = runHookCommand(
+      guard,
+      {
+        tool_name: "Write",
+        tool_input: {
+          file_path: path.join(fixture.companionPath, "openspec", "changes", "acme", "proposal.md"),
+        },
+      },
+      fixture.repoPath,
+      home,
+    );
+    expect(write.exitCode).toBe(0);
+    expect(companionHead(fixture.companionPath)).toBe(head);
+    await expect(
+      fs.access(path.join(fixtureHome, `.${FRAMEWORK_NAME}`, "companion-git-state")),
+    ).rejects.toThrow();
+  }, 30000);
+
+  test("repairs the companion at session start and refuses artifact writes on a fork", async () => {
+    const fixture = await makeCompanionAndRepo("mate-m3-git-repair-", []);
+    const { upstreamPath } = await gitBackCompanion(fixture, "auto");
+    await runWrapCommand(["--companion", fixture.companionPath], fixture.repoPath);
+
+    const settings = await readSettings(fixture.repoPath);
+    const banner = hookCommands(settings, "SessionStart").find((command) =>
+      command.includes("session-banner"),
+    )!;
+    const guard = hookCommands(settings, "PreToolUse")[0]!;
+    const home = { HOME: fixtureHome };
+    const artifact = path.join(fixture.companionPath, "openspec", "changes", "acme", "proposal.md");
+
+    /** Behind only: the repair fast-forwards and the banner carries no note. */
+    const run = (cwd: string, ...args: string[]) =>
+      spawnSync("git", args, { cwd, encoding: "utf8" });
+    await fs.appendFile(path.join(upstreamPath, "notes.md"), "remote\n", "utf8");
+    run(upstreamPath, "commit", "-aqm", "remote");
+    run(upstreamPath, "push", "-q", "origin", "main");
+    const before = companionHead(fixture.companionPath);
+
+    const repaired = runHookCommand(banner, {}, fixture.repoPath, home);
+    expect(repaired.exitCode).toBe(0);
+    expect(companionHead(fixture.companionPath)).not.toBe(before);
+    expect(repaired.stdout).not.toContain("companion sync");
+    expect(
+      runHookCommand(
+        guard,
+        { tool_name: "Write", tool_input: { file_path: artifact } },
+        fixture.repoPath,
+        home,
+      ).exitCode,
+    ).toBe(0);
+
+    /** Forked: the repair declines and reports, and the guard refuses. */
+    await forkCompanionHistory(fixture, upstreamPath);
+    await fs.rm(path.join(fixtureHome, `.${FRAMEWORK_NAME}`, "companion-git-state"), {
+      recursive: true,
+      force: true,
+    });
+
+    const reported = runHookCommand(banner, {}, fixture.repoPath, home);
+    expect(reported.exitCode).toBe(0);
+    expect(reported.stdout).toContain(`${FRAMEWORK_NAME} companion sync`);
+
+    const refused = runHookCommand(
+      guard,
+      { tool_name: "Write", tool_input: { file_path: artifact } },
+      fixture.repoPath,
+      home,
+    );
+    expect(refused.exitCode).toBe(2);
+    expect(refused.stderr).toContain("forked");
+    expect(refused.stderr).toContain(`${FRAMEWORK_NAME} companion sync`);
+  }, 40000);
 
   test("leaves an unwrapped Working Repository inert", async () => {
     const { repoPath } = await makeCompanionAndRepo("mate-m3-inert-", []);

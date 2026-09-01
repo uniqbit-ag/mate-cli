@@ -2,12 +2,17 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+import { persistedCompanionGitStalenessLines } from "../runtime/companion-sync";
 import { resolveCompanionRuntime, type CompanionRuntimeContext } from "../runtime/env";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
 
 export type CompanionContext = CompanionRuntimeContext & {
   agentsMd: string;
-  /** Empty for a managed session and for a projection that is current. */
+  /**
+   * Operator-facing session state: a stale projection, and an unfinished
+   * companion Git synchronization. Never reaches a model payload — the TUI is
+   * its only reader.
+   */
   stalenessLines: string[];
 };
 
@@ -188,7 +193,10 @@ export function readContext(
     ...context,
     agentsMd,
     stalenessLines: projection
-      ? projectionStalenessLines(projection, projectionFreshness(projection))
+      ? [
+          ...projectionStalenessLines(projection, projectionFreshness(projection)),
+          ...persistedCompanionGitStalenessLines(context.companionPath),
+        ]
       : [],
   };
 }

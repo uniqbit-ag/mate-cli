@@ -50,10 +50,18 @@ export const PROJECTION_STAMP_ENV_NAME = "MATE_PROJECTION_STAMP";
 /**
  * Stamp inputs. The companion's `framework.yaml` is deliberately absent: no
  * predicate is projected, so nothing derived from it can go stale.
+ *
+ * The running install's path is absent for a stronger reason: the readers
+ * cannot agree on it. Every input has to be computable identically by the
+ * writer and by each reader, and several copies of one Mate version coexist by
+ * design — the global CLI writes the stamp, the OpenCode plugin runs from
+ * OpenCode's own npm cache, and each resolves its own location. Including the
+ * path made the plugin report every projection as another install's, session
+ * after session, with `mate wrap` unable to fix what it had just written. The
+ * version alone answers what the stamp is for.
  */
 export interface ProjectionStampInputs {
   version: string;
-  installPath: string;
   registryContent: string;
 }
 
@@ -67,8 +75,6 @@ export function computeProjectionStamp(inputs: ProjectionStampInputs): string {
   return crypto
     .createHash("sha256")
     .update(inputs.version)
-    .update("\0")
-    .update(inputs.installPath)
     .update("\0")
     .update(inputs.registryContent)
     .digest("hex");

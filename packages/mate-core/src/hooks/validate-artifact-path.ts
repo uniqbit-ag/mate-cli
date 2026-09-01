@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
 import { companionLinkPath } from "../runtime/repo-local";
 
@@ -218,6 +219,21 @@ function checkFilePath(
   return blockWrite(filePath, ctx.companion);
 }
 
+/**
+ * The fork refusal, unlike the path refusal, is not a function of the tool
+ * input alone: it depends on companion Git state, which a Managed Launch may
+ * have settled on purpose (`--no-git`, a non-automatic Git policy). So it is
+ * gated on the absence of a launch environment, and the path refusal keeps its
+ * input-only verdict and its double-load tolerance untouched.
+ */
+function checkForkedCompanion(filePath: string, ctx: GuardContext): HookOutcome | null {
+  if (!filePath || !artifactLikePath(filePath)) return null;
+  if (!isCompanionPath(normalizePath(filePath, ctx), ctx)) return null;
+
+  const refusal = companionForkRefusal(ctx.env, ctx.companion);
+  return refusal ? { exitCode: 2, stderr: `${refusal}\n` } : null;
+}
+
 export function commandMatches(command: string): string[] {
   const targets: string[] = [];
   for (const pattern of [MD_REDIRECT_PATTERN, MD_TEE_PATTERN]) {
@@ -248,18 +264,21 @@ export function evaluate(payload: unknown, env: HookEnv, cwd: string = process.c
       : {};
 
   if (toolName === "Write" || toolName === "Edit" || toolName === "MultiEdit") {
-    const outcome = checkFilePath(
-      String(toolInput.file_path ?? ""),
-      ctx,
-      toolName === "Edit" || toolName === "MultiEdit",
-    );
-    return outcome ?? allow;
+    const filePath = String(toolInput.file_path ?? "");
+    /** The path refusal wins when both apply: its message is not replaced. */
+    const outcome = checkFilePath(filePath, ctx, toolName === "Edit" || toolName === "MultiEdit");
+    return outcome ?? checkForkedCompanion(filePath, ctx) ?? allow;
   }
 
   if (toolName === "Bash") {
     const command = String(toolInput.command ?? "");
-    for (const target of commandMatches(command)) {
+    const targets = commandMatches(command);
+    for (const target of targets) {
       const outcome = checkFilePath(target, ctx);
+      if (outcome) return outcome;
+    }
+    for (const target of targets) {
+      const outcome = checkForkedCompanion(target, ctx);
       if (outcome) return outcome;
     }
     return allow;
