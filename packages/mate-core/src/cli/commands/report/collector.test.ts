@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import type { spawnSync } from "node:child_process";
 import {
   collectCcusageSpending,
-  collectHeadroomSavings,
   collectRTKSavings,
   collectTokenSaveSavings,
   mergeResults,
@@ -268,29 +267,6 @@ describe("collectRTKSavings", () => {
   });
 });
 
-describe("collectHeadroomSavings", () => {
-  test("parses valid JSON response", async () => {
-    const deps = {
-      spawn: makeSpawn(
-        JSON.stringify({
-          windows: { last_7_days: { tokens_saved: 100000, calls: 20, cost_usd: 5.0 } },
-        }),
-      ),
-    };
-    const result = await collectHeadroomSavings(7, deps);
-    expect(result.entry).not.toBeNull();
-    expect(result.entry!.tool).toBe("headroom");
-    expect(result.status.enabled).toBe(true);
-  });
-
-  test("returns disabled when command fails", async () => {
-    const deps = { spawn: makeSpawn("", 1) };
-    const result = await collectHeadroomSavings(7, deps);
-    expect(result.entry).toBeNull();
-    expect(result.status.enabled).toBe(false);
-  });
-});
-
 describe("mergeResults", () => {
   test("merges spending from ccusage with savings", () => {
     const result = mergeResults(
@@ -315,23 +291,21 @@ describe("mergeResults", () => {
       { tool: "tokensave", tokensSaved: 1000, calls: 5, costSaved: 0.5, efficiency: "200/call" },
       { tool: "tokensave", tokensSaved: 500, calls: 3, costSaved: 0.3, efficiency: "166/call" },
       { tool: "rtk", tokensSaved: 30000, calls: 5, costSaved: 0, efficiency: "6000/call" },
-      { tool: "headroom", tokensSaved: 5000, calls: 10, costSaved: 1.0, efficiency: "500/call" },
     );
     expect(result.spending).toHaveLength(2);
     expect(result.totalSpending).toBe(1.5);
-    expect(result.savings).toHaveLength(3);
+    expect(result.savings).toHaveLength(2);
     expect(result.savings[0].tool).toBe("tokensave");
     expect(result.savings[0].tokensSaved).toBe(1500);
     expect(result.savings[0].calls).toBe(8);
     expect(result.savings[0].costSaved).toBe(0.8);
     expect(result.savings[1].tool).toBe("rtk");
-    expect(result.savings[2].tool).toBe("headroom");
-    expect(result.totalSavings).toBeCloseTo(1.8);
-    expect(result.netSpend).toBeCloseTo(-0.3);
+    expect(result.totalSavings).toBeCloseTo(0.8);
+    expect(result.netSpend).toBeCloseTo(0.7);
   });
 
   test("handles empty inputs", () => {
-    const result = mergeResults([], null, null, null, null);
+    const result = mergeResults([], null, null, null);
     expect(result.spending).toHaveLength(0);
     expect(result.savings).toHaveLength(0);
     expect(result.totalSpending).toBe(0);
@@ -343,7 +317,6 @@ describe("mergeResults", () => {
     const result = mergeResults(
       [],
       { tool: "tokensave", tokensSaved: 1000, calls: 5, costSaved: 0.5, efficiency: "200/call" },
-      null,
       null,
       null,
     );

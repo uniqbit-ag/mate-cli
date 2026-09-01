@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import path from "node:path";
 import type { spawn as SpawnFn } from "node:child_process";
-import type { AdapterContext, PreparedLaunch } from "./base";
+import type { AdapterContext } from "./base";
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
@@ -61,13 +61,6 @@ class PlainAdapter extends LaunchAdapter {
 
 class InteractiveAdapter extends TestAdapter {
   override readonly interactive = true;
-}
-
-class WarningAdapter extends TestAdapter {
-  override prepareLaunch(context: AdapterContext, args: string[]): PreparedLaunch {
-    const launch = super.prepareLaunch(context, args);
-    return { ...launch, warning: "warn now\n" };
-  }
 }
 
 beforeEach(() => {
@@ -158,20 +151,6 @@ describe("LaunchAdapter runtime", () => {
     expect((spawnCalls[0]?.options?.env as Record<string, string> | undefined)?.EXTRA_ENV).toBe(
       "1",
     );
-  });
-
-  test("writes warnings before spawning", async () => {
-    const stderrWrite = mock(() => true);
-    const originalWrite = process.stderr.write;
-    process.stderr.write = stderrWrite as typeof process.stderr.write;
-
-    try {
-      await new WarningAdapter().run(makeContext(), []);
-    } finally {
-      process.stderr.write = originalWrite;
-    }
-
-    expect(stderrWrite).toHaveBeenCalledWith("warn now\n");
   });
 
   test("uses inherited stdio for interactive launches and defaults missing exit codes to one", async () => {

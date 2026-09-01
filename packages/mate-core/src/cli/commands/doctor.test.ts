@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import packageJson from "../../../package.json";
 import { FRAMEWORK_NAME } from "../../framework";
-import { ConfigStore, RTK_CAPABILITY_SPLIT_MIGRATION } from "../../lib/orchestrator/config-store";
+import { ConfigStore } from "../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
@@ -103,12 +103,10 @@ describe("runDoctorCommand", () => {
     await fs.mkdir(repoPath, { recursive: true });
     await fs.mkdir(binPath, { recursive: true });
     await makeExecutable(binPath, "uv");
-    await makeExecutable(binPath, "openspec");
     const companionPath = await setupCompanion(root, repoPath, {
       allowedAgents: ["claude"],
       packageManagers: ["uv"],
-      capabilities: [{ name: "openspec" }, { name: "headroom" }],
-      migrations: [RTK_CAPABILITY_SPLIT_MIGRATION],
+      capabilities: [{ name: "openspec" }],
     });
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
     await globalConfigStore.register(companionPath);
@@ -120,7 +118,6 @@ describe("runDoctorCommand", () => {
     expect(output).toContain("Tool Installations");
     expect(output).toContain("uv");
     expect(output).toContain("openspec");
-    expect(output).toContain("headroom");
     expect(output).not.toContain("rtk");
     expect(output).toContain("ok");
     expect(output).toContain("missing");
@@ -128,7 +125,7 @@ describe("runDoctorCommand", () => {
     expect(output).not.toContain("graphify");
   });
 
-  test("checks RTK independently without reporting Headroom", async () => {
+  test("checks RTK when it is the only selected capability", async () => {
     const root = await makeTempDir("doctor-rtk-only-");
     const repoPath = path.join(root, "working");
     const binPath = path.join(root, "bin");
@@ -148,7 +145,7 @@ describe("runDoctorCommand", () => {
     );
 
     expect(output).toContain("rtk");
-    expect(output).not.toContain("headroom");
+    expect(output).not.toContain("openspec");
   });
 
   test("reports companion repository state for a local companion config", async () => {

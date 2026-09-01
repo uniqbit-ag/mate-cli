@@ -2,7 +2,6 @@ import { version } from "../package.json";
 import { setFallbackDistribution } from "../src/distribution";
 import { createContextModePlugin } from "../src/tools/setup/capabilities/context-mode";
 import { createGraphifyPlugin } from "../src/tools/setup/capabilities/graphify";
-import { createHeadroomPlugin } from "../src/tools/setup/capabilities/headroom";
 import { createRtkPlugin } from "../src/tools/setup/capabilities/rtk";
 import { createOpenspecPlugin } from "../src/tools/setup/capabilities/openspec";
 import { createReactDoctorPlugin } from "../src/tools/setup/capabilities/react-doctor";
@@ -27,7 +26,6 @@ function buildTestPluginEntries(): PluginRegistration[] {
     createOpenspecPlugin(),
     createReactDoctorPlugin(),
     createTokensavePlugin(),
-    createHeadroomPlugin(),
     createRtkPlugin(),
     createGraphifyPlugin(),
     createContextModePlugin(),

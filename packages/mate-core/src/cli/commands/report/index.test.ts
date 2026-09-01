@@ -14,7 +14,7 @@ beforeEach(async () => {
 const makeResolveContext = () => ({
   configStore: {
     load: async () => ({
-      capabilities: [{ name: "tokensave" }, { name: "headroom" }],
+      capabilities: [{ name: "tokensave" }, { name: "graphify" }],
     }),
   },
   workingRepoStore: {

@@ -70,7 +70,7 @@ describe("parseCapabilities", () => {
   test("maps a single capability name using the full capability config", () => {
     expect(parseCapabilities({ capability: "react-doctor" })).toEqual([{ name: "react-doctor" }]);
     expect(parseCapabilities({ capability: "tokensave" })).toEqual([{ name: "tokensave" }]);
-    expect(parseCapabilities({ capability: "headroom" })).toEqual([{ name: "headroom" }]);
+    expect(parseCapabilities({ capability: "rtk" })).toEqual([{ name: "rtk" }]);
   });
 
   test("maps multiple capability names using the full capability config from setup compatibilities", () => {

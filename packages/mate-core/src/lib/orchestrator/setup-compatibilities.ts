@@ -186,19 +186,11 @@ export const BUILTIN_SETUP_COMPATIBILITIES: SetupCompatibility[] = [
     defaultSelected: false,
   },
   {
-    id: "headroom",
-    kind: "capability",
-    capability: { name: "headroom" },
-    label: "Headroom",
-    description: "Wrap supported agent launches through Headroom when the binary is installed.",
-    defaultSelected: false,
-  },
-  {
     id: "rtk",
     kind: "capability",
     capability: { name: "rtk" },
     label: "RTK",
-    description: "Patch supported agent providers with RTK independently from Headroom.",
+    description: "Patch supported agent providers with the RTK token-optimizing CLI proxy.",
     defaultSelected: false,
   },
   {
