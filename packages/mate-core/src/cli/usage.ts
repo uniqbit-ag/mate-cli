@@ -14,6 +14,7 @@ export function usage(): string {
     ` ${n} companion link`,
     ` ${n} companion setup`,
     ` ${n} companion list`,
+    ` ${n} companion sync`,
     ` ${n} companion open`,
     ` ${n} companion tui`,
     ` ${n} workspace list --json`,

@@ -21,7 +21,6 @@ import {
   removeWorkingRepoLocalExcludes,
   workingRepoCapabilityExcludesPresent,
 } from "../../tools/setup/working-repo-local-state";
-import { getMateInstallPath } from "../package-paths";
 import { companionLinkPresent, linkCompanion, unlinkCompanion } from "./projection-companion-link";
 import { buildProjection } from "./projection-record";
 import {
@@ -71,15 +70,11 @@ async function writeProjectionPairEntry(input: ProjectionInput): Promise<"writte
   const registryContent = await fs
     .readFile(repoLocalRegistryPath(input.repoPath), "utf8")
     .catch(() => "");
-  const stamp = computeProjectionStamp({
-    version,
-    installPath: getMateInstallPath(),
-    registryContent,
-  });
+  const stamp = computeProjectionStamp({ version, registryContent });
 
   /**
-   * The stamp cannot see a re-pin: none of its inputs — mate version, install
-   * path, repo-local registry — change when a differently-linked companion is
+   * The stamp cannot see a re-pin: neither of its inputs — mate version,
+   * repo-local registry — changes when a differently-linked companion is
    * resolved, so the projected companion is compared alongside it.
    */
   const existing = readProjectionFile(input.repoPath);

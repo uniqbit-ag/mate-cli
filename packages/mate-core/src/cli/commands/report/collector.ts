@@ -4,6 +4,7 @@ import type { SavingsEntry, SpendingEntry, ToolStatus } from "./types";
 
 export interface CollectorDeps {
   spawn?: typeof spawnSync;
+  now?: () => Date;
 }
 
 function spawnCmd(cmd: string, args: string[], opts: { cwd: string }, deps: CollectorDeps) {
@@ -21,14 +22,28 @@ function parseJson<T>(output: string): T | null {
   }
 }
 
+function reportSince(days: number, deps: CollectorDeps): string {
+  const since = new Date(deps.now?.() ?? new Date());
+  since.setDate(since.getDate() - days);
+  return since.toISOString().slice(0, 10);
+}
+
+function utcDateFromEpochSeconds(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const date = new Date(value * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+function finiteNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 // ccusage JSON: { daily: [{ period, totalCost, totalTokens, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, modelBreakdowns: [{ modelName, cost, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens }] }], totals: { totalCost, totalTokens, ... } }
 export async function collectCcusageSpending(
   days: number,
   deps: CollectorDeps = {},
 ): Promise<{ entries: SpendingEntry[]; status: ToolStatus; friendlyError?: string }> {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceStr = since.toISOString().slice(0, 10);
+  const sinceStr = reportSince(days, deps);
 
   // Try bunx first, then npx
   const runners = [
@@ -96,7 +111,7 @@ export async function collectCcusageSpending(
   };
 }
 
-// tokensave gain JSON: { saved_tokens, calls, usd }
+/** tokensave gain --history JSON: [{ day, saved_tokens, calls, usd }] */
 export async function collectTokenSaveSavings(
   repoPath: string,
   days: number,
@@ -104,7 +119,7 @@ export async function collectTokenSaveSavings(
 ): Promise<{ entry: SavingsEntry | null; status: ToolStatus }> {
   const result = spawnCmd(
     "tokensave",
-    ["gain", "--json", "--range", `${days}d`],
+    ["gain", "--history", "--json", "--range", "all"],
     { cwd: repoPath },
     deps,
   );
@@ -116,37 +131,58 @@ export async function collectTokenSaveSavings(
     };
   }
 
-  const data = parseJson<{ saved_tokens?: number; calls?: number; usd?: number }>(result.stdout);
-  if (!data) {
+  const data = parseJson<
+    Array<{ day?: number; saved_tokens?: number; calls?: number; usd?: number } | null>
+  >(result.stdout);
+  if (!data || !Array.isArray(data) || data.length === 0) {
     return {
       entry: null,
       status: { name: "tokensave", enabled: false, status: "no data" },
     };
   }
 
+  const sinceStr = reportSince(days, deps);
+  let matchingDays = 0;
+  let tokensSaved = 0;
+  let calls = 0;
+  let costSaved = 0;
+  for (const day of data) {
+    const date = utcDateFromEpochSeconds(day?.day);
+    if (!date || date < sinceStr) continue;
+    matchingDays++;
+    tokensSaved += finiteNumber(day?.saved_tokens);
+    calls += finiteNumber(day?.calls);
+    costSaved += finiteNumber(day?.usd);
+  }
+
+  if (matchingDays === 0) {
+    return {
+      entry: null,
+      status: { name: "tokensave", enabled: false, status: "no window data" },
+    };
+  }
+
   return {
     entry: {
       tool: "tokensave",
-      tokensSaved: data.saved_tokens ?? 0,
-      calls: data.calls ?? 0,
-      costSaved: data.usd ?? 0,
-      efficiency:
-        (data.calls ?? 0) > 0
-          ? `${formatEfficiency(data.saved_tokens ?? 0, data.calls ?? 0)}`
-          : "N/A",
+      tokensSaved,
+      calls,
+      costSaved,
+      efficiency: calls > 0 ? formatEfficiency(tokensSaved, calls) : "N/A",
     },
     status: { name: "tokensave", enabled: true, status: "ok" },
   };
 }
 
-// rtk gain JSON: { summary: { total_saved, total_commands, avg_savings_pct } }
+/** rtk gain --daily JSON: { daily: [{ date, saved_tokens, commands }] } */
 export async function collectRTKSavings(
   repoPath: string,
+  days: number,
   deps: CollectorDeps = {},
 ): Promise<{ entry: SavingsEntry | null; status: ToolStatus }> {
   const result = spawnCmd(
     "rtk",
-    ["gain", "--project", "--format", "json"],
+    ["gain", "--project", "--daily", "--format", "json"],
     { cwd: repoPath },
     deps,
   );
@@ -159,26 +195,40 @@ export async function collectRTKSavings(
   }
 
   const data = parseJson<{
-    summary?: { total_saved?: number; total_commands?: number; avg_savings_pct?: number };
+    daily?: Array<{ date?: string; saved_tokens?: number; commands?: number } | null>;
   }>(result.stdout);
-  if (!data || !data.summary) {
+  if (!data || !Array.isArray(data.daily) || data.daily.length === 0) {
     return {
       entry: null,
       status: { name: "rtk", enabled: false, status: "no data" },
     };
   }
 
-  const s = data.summary;
+  const sinceStr = reportSince(days, deps);
+  let matchingDays = 0;
+  let tokensSaved = 0;
+  let calls = 0;
+  for (const day of data.daily) {
+    if (typeof day?.date !== "string" || day.date < sinceStr) continue;
+    matchingDays++;
+    tokensSaved += finiteNumber(day?.saved_tokens);
+    calls += finiteNumber(day?.commands);
+  }
+
+  if (matchingDays === 0) {
+    return {
+      entry: null,
+      status: { name: "rtk", enabled: false, status: "no window data" },
+    };
+  }
+
   return {
     entry: {
       tool: "rtk",
-      tokensSaved: s.total_saved ?? 0,
-      calls: s.total_commands ?? 0,
+      tokensSaved,
+      calls,
       costSaved: 0,
-      efficiency:
-        (s.total_commands ?? 0) > 0
-          ? `${formatEfficiency(s.total_saved ?? 0, s.total_commands ?? 0)}`
-          : "N/A",
+      efficiency: calls > 0 ? formatEfficiency(tokensSaved, calls) : "N/A",
     },
     status: { name: "rtk", enabled: true, status: "ok" },
   };

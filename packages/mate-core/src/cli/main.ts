@@ -184,9 +184,10 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
         case "hub":
           if (!(await gate({ updateGuard: true, notCompanionRoot: true }))) return;
           break;
-        // open/tui consume a companion context.
+        // open/tui/sync consume a companion context.
         case "open":
         case "tui":
+        case "sync":
           if (!(await gate({ updateGuard: true, notHubRoot: true, companion: true }))) return;
           break;
         // list and unknown subcommands (which fail inside the command).

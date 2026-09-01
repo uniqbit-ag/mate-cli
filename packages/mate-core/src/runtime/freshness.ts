@@ -1,13 +1,14 @@
 import fs from "node:fs";
 
-import { mateInstallPath, mateVersion } from "./install";
+import { mateVersion } from "./install";
 import { computeProjectionStamp, type ResolvedProjection } from "./projection";
 import { repoLocalRegistryPath } from "./repo-local";
 
 /**
- * Two independent axes. A stamp answers only "was this written by a mate that
- * isn't me"; it cannot see a moved or deleted companion, because
- * `companionPath` is not a stamp input.
+ * Two independent axes. A stamp answers only "was this written by a mate whose
+ * version, or whose view of the repo-local registry, differs from mine"; it
+ * cannot see a moved or deleted companion, because `companionPath` is not a
+ * stamp input.
  */
 export interface ProjectionFreshness {
   stampCurrent: boolean;
@@ -25,12 +26,7 @@ export function projectionFreshness(projection: ResolvedProjection): ProjectionF
   })();
 
   const stampCurrent =
-    projection.stamp ===
-    computeProjectionStamp({
-      version: mateVersion(),
-      installPath: mateInstallPath(),
-      registryContent,
-    });
+    projection.stamp === computeProjectionStamp({ version: mateVersion(), registryContent });
 
   const companionExists = (() => {
     try {

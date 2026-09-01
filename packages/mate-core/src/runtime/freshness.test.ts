@@ -28,7 +28,6 @@ function writeRepoLocalRegistry(repoRoot: string): void {
 function currentStamp(): string {
   return computeProjectionStamp({
     version: mateVersion(),
-    installPath: mateInstallPath(),
     registryContent: REGISTRY_CONTENT,
   });
 }

@@ -5,6 +5,7 @@ import { runReportCommand } from "./index";
 import { REPORT_DOCUMENT_VERSION } from "./types";
 
 const COMPANION_PATH = "/tmp/test-companion";
+const REPORT_NOW = new Date("2026-08-31T12:00:00Z");
 
 beforeEach(async () => {
   await fs.mkdir(COMPANION_PATH, { recursive: true });
@@ -133,6 +134,82 @@ describe("runReportCommand", () => {
     };
     await runReportCommand([], deps);
     // Command should complete without throwing
+  });
+
+  test("uses bounded savings entries for report summary totals", async () => {
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    const resolveFrameworkContext = () => ({
+      configStore: {
+        load: async () => ({ capabilities: [{ name: "tokensave" }, { name: "rtk" }] }),
+      },
+      workingRepoStore: {
+        load: async () => ({ repos: [{ id: "test", path: "/tmp/test-work" }] }),
+      },
+      companionPath: COMPANION_PATH,
+    });
+    const spawn = (command: string) => {
+      if (command === "tokensave") {
+        return {
+          stdout: JSON.stringify([
+            { day: 1787443200, saved_tokens: 100, calls: 1, usd: 1 },
+            { day: 1787529600, saved_tokens: 200, calls: 2, usd: 2 },
+          ]),
+          status: 0,
+          error: null,
+        } as ReturnType<typeof spawnSync>;
+      }
+      if (command === "rtk") {
+        return {
+          stdout: JSON.stringify({
+            summary: { total_saved: 90000, total_commands: 90 },
+            daily: [{ date: "2026-08-24", saved_tokens: 300, commands: 3 }],
+          }),
+          status: 0,
+          error: null,
+        } as ReturnType<typeof spawnSync>;
+      }
+      return {
+        stdout: JSON.stringify({
+          daily: [
+            {
+              modelBreakdowns: [
+                {
+                  modelName: "claude-sonnet-5",
+                  cost: 1,
+                  inputTokens: 100,
+                  outputTokens: 50,
+                  cacheReadTokens: 0,
+                  cacheCreationTokens: 0,
+                },
+              ],
+            },
+          ],
+        }),
+        status: 0,
+        error: null,
+      } as ReturnType<typeof spawnSync>;
+    };
+
+    await runReportCommand(["--days", "7", "--json"], {
+      ensureUnambiguousCompanion: async () => true,
+      resolveFrameworkContext,
+      spawn,
+      now: () => REPORT_NOW,
+    });
+
+    const document = JSON.parse(String(logSpy.mock.calls[0]?.[0]));
+    expect(document.summary).toEqual([
+      { label: "Total spending", value: "$1.00" },
+      { label: "Total savings", value: "$4.00" },
+      { label: "Net spend", value: "$-3.00" },
+    ]);
+    expect(
+      document.sections.find((section: { id: string }) => section.id === "savings").rows,
+    ).toEqual([
+      ["tokensave", "400", "4", "$4.00", "100/call"],
+      ["rtk", "300", "3", "N/A", "100/call"],
+    ]);
+    logSpy.mockRestore();
   });
 
   test("supports --json flag", async () => {

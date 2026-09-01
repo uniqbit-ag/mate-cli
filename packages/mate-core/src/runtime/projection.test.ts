@@ -88,23 +88,36 @@ describe("projection contract", () => {
 });
 
 describe("computeProjectionStamp", () => {
-  const inputs = { version: "1.0.0", installPath: "/install/mate", registryContent: "a: 1\n" };
+  const inputs = { version: "1.0.0", registryContent: "a: 1\n" };
 
   test("is stable for identical inputs", () => {
     expect(computeProjectionStamp(inputs)).toBe(computeProjectionStamp({ ...inputs }));
   });
 
-  test("changes with the mate version, the install path, and the repo-local registry", () => {
+  test("changes with the mate version and with the repo-local registry", () => {
     const base = computeProjectionStamp(inputs);
     expect(computeProjectionStamp({ ...inputs, version: "1.0.1" })).not.toBe(base);
-    expect(computeProjectionStamp({ ...inputs, installPath: "/elsewhere" })).not.toBe(base);
     expect(computeProjectionStamp({ ...inputs, registryContent: "a: 2\n" })).not.toBe(base);
   });
 
   test("does not separate its inputs ambiguously", () => {
-    expect(
-      computeProjectionStamp({ version: "ab", installPath: "c", registryContent: "d" }),
-    ).not.toBe(computeProjectionStamp({ version: "a", installPath: "bc", registryContent: "d" }));
+    expect(computeProjectionStamp({ version: "ab", registryContent: "d" })).not.toBe(
+      computeProjectionStamp({ version: "a", registryContent: "bd" }),
+    );
+  });
+
+  /**
+   * Pinned so the input set cannot grow unnoticed. Every input has to be
+   * computable identically by the writer and by each reader, and the readers
+   * run from separate copies of one version — the global CLI, the Claude hook
+   * shims, the plugin in OpenCode's npm cache. An input any of them resolves
+   * differently makes the projection permanently stale to that reader, which is
+   * what the running install's path did before it was removed.
+   */
+  test("hashes exactly the version and the repo-local registry", () => {
+    expect(computeProjectionStamp(inputs)).toBe(
+      "cdeffa3a4e4ddc0ca51f831e7310796a59fc974e601e0e274630c53613d14836",
+    );
   });
 });
 
