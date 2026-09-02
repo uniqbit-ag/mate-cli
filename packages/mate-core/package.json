@@ -35,6 +35,7 @@
     "@opentui/core": "^0.4.5",
     "@opentui/keymap": "^0.4.5",
     "@opentui/solid": "^0.4.5",
+    "hono": "^4.13.5",
     "ink": "^7.1.0",
     "react": "^19.2.7",
     "react-doctor": "0.8.1",

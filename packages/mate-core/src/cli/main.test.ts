@@ -16,6 +16,7 @@ import * as claudeCmd from "./commands/launch/claude";
 import * as opencodeCmd from "./commands/launch/opencode";
 import * as pluginCmd from "./commands/plugin/plugin";
 import * as reportCmd from "./commands/report";
+import * as studioCmd from "./commands/studio";
 import * as updateCmd from "./commands/update";
 import * as workspaceCmd from "./commands/workspace/workspace";
 import * as workingCmd from "./commands/working/working";
@@ -32,6 +33,7 @@ const BUILT_IN_COMMANDS = [
   "claude",
   "opencode",
   "report",
+  "studio",
   "config",
   "doctor",
   "cap",
@@ -62,6 +64,7 @@ describe("command gating", () => {
       spyOn(hubCmd, "runHubCommand").mockImplementation(record("hub")),
       spyOn(configCmd, "runConfigCommand").mockImplementation(record("config")),
       spyOn(reportCmd, "runReportCommand").mockImplementation(record("report")),
+      spyOn(studioCmd, "runStudioCommand").mockImplementation(record("studio")),
       spyOn(claudeCmd, "runLaunchClaudeCommand").mockImplementation(record("claude")),
       spyOn(opencodeCmd, "runLaunchOpenCodeCommand").mockImplementation(record("opencode")),
       spyOn(artifactCmd, "runArtifactCommand").mockImplementation(record("artifact")),

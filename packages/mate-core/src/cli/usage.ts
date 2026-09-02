@@ -28,6 +28,7 @@ export function usage(): string {
     ` ${n} artifact finish <change-name> [--type openspec] [--force] [--no-push] [--json]`,
     ` ${n} doctor`,
     ` ${n} report [--days N] [--input FILE|-] [--json]`,
+    ` ${n} studio`,
     ` ${n} config`,
     ` ${n} claude [args...] (use -- --no-git to bypass companion Git sync)`,
     ` ${n} opencode [args...] (use -- --no-git to bypass companion Git sync)`,

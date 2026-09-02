@@ -31,6 +31,9 @@ import {
 
 // Storage contract: <companionPath>/.graphify/<repositoryId>/graphify-out/
 export const GRAPHIFY_STORE_SEGMENT = ".graphify";
+
+/** Skill tree the external `graphify install` CLI writes into a runtime directory. */
+export const GRAPHIFY_SKILL_NAME = "graphify";
 export const GRAPHIFY_OUTPUT_SUBDIR = "graphify-out";
 
 const GRAPHIFY_INSTALL_CMD = `uv tool install graphifyy`;
@@ -271,9 +274,12 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
             // every setup/sync so it survives graphifyy regenerating the skill.
             const patchSkillTree =
               providerId === "claude" ? patchClaudeSkillTree : patchOpenCodeSkillTree;
-            await patchSkillTree(ctx.companionPath, "graphify", rewriteGraphifySkillOutputPaths, {
-              excludeFiles: GRAPHIFY_SKILL_REWRITE_EXCLUDE,
-            });
+            await patchSkillTree(
+              ctx.companionPath,
+              GRAPHIFY_SKILL_NAME,
+              rewriteGraphifySkillOutputPaths,
+              { excludeFiles: GRAPHIFY_SKILL_REWRITE_EXCLUDE },
+            );
           },
 
           async teardown(ctx: SetupContext) {
@@ -282,10 +288,13 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
             // Remove the Graphify-managed skills directory (written by the
             // external CLI, so removed here rather than via a declaration).
             try {
-              await fs.rm(path.join(ctx.companionPath, providerDir, "skills", "graphify"), {
-                recursive: true,
-                force: true,
-              });
+              await fs.rm(
+                path.join(ctx.companionPath, providerDir, "skills", GRAPHIFY_SKILL_NAME),
+                {
+                  recursive: true,
+                  force: true,
+                },
+              );
             } catch {
               /* not present */
             }

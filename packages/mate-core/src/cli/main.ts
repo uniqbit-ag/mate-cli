@@ -16,6 +16,7 @@ import { runLaunchClaudeCommand } from "./commands/launch/claude";
 import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
 import { runPluginCommand } from "./commands/plugin/plugin";
 import { runReportCommand } from "./commands/report";
+import { runStudioCommand } from "./commands/studio";
 import { runUpdateCommand } from "./commands/update";
 import { runWorkspaceCommand } from "./commands/workspace/workspace";
 import { runUnwrapCommand } from "./commands/unwrap";
@@ -212,6 +213,14 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     case "report":
       if (!(await gate({ updateGuard: true, install: true }))) return;
       await runReportCommand(argv.slice(3));
+      return;
+    case "studio":
+      /**
+       * Serves the machine-wide inventory read-only, so it resolves no
+       * companion context and stays runnable from any directory.
+       */
+      if (!(await gate({ updateGuard: true }))) return;
+      await runStudioCommand(argv.slice(3));
       return;
     case "config":
       if (!(await gate({ updateGuard: true }))) return;
