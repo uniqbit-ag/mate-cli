@@ -112,6 +112,9 @@ Artifact finish options are `--type openspec`, `--force`, `--no-push`, and
 ## Exit And Recovery Behavior
 
 Unknown commands print the current usage text and exit non-zero. Missing or
-stale installation state prints the reason and points to `mate install`.
+stale installation state is repaired automatically when every requirement is
+already available. If a requirement is missing, the companion is ambiguous, or
+the Mate engine requirement is unsatisfied, Mate prints the reason and points
+to `mate install` instead.
 Doctor, setup, link, update, help, and version remain available so the state
 can be repaired.

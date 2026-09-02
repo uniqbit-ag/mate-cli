@@ -59,7 +59,11 @@ package managers and capabilities. Already available requirements are skipped,
 and unselected capabilities are not enabled. Use `mate install --yes` in
 non-interactive environments.
 
-Normal commands are blocked when installation state is missing or stale. These
+Before normal commands run, Mate checks the local requirements. When every
+requirement is already available and only the recorded installation state is
+missing or stale, Mate repairs that bookkeeping and continues. If a requirement
+is missing, the companion is ambiguous, or the Mate engine requirement is
+unsatisfied, the command is blocked and Mate points to `mate install`. These
 recovery commands remain available:
 
 ```sh
@@ -72,9 +76,9 @@ mate --help
 mate --version
 ```
 
-Run `mate install` again after changing companion selections or updating Mate.
-Linking a different companion installs that companion's requirements as part of
-the link flow.
+Run `mate install` after changing companion selections or when a requirement is
+missing. Linking a different companion installs that companion's requirements
+as part of the link flow.
 
 ## Commands
 

@@ -9,11 +9,14 @@ import {
   buildInstallPlan,
   getInstallStatePath,
   INSTALL_CONTRACT_REVISION,
+  isRepairableInstallPreflight,
   InstallStateStore,
   inspectInstallPreflight,
+  inspectInstallPlan,
   installStateStoreForContext,
   invalidateInstallState,
   readInstallState,
+  repairInstallState,
   resolveInstallContext,
   runInstallPlan,
   saveCompleteInstallState,
@@ -21,6 +24,7 @@ import {
 
 const tempRoots: string[] = [];
 const originalArtifactPath = process.env.MATE_ARTIFACT_PATH;
+const originalHome = process.env.HOME;
 
 beforeEach(() => {
   process.env.MATE_ARTIFACT_PATH = "";
@@ -32,6 +36,8 @@ afterEach(async () => {
   );
   if (originalArtifactPath === undefined) delete process.env.MATE_ARTIFACT_PATH;
   else process.env.MATE_ARTIFACT_PATH = originalArtifactPath;
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
 });
 
 async function tempRoot(): Promise<string> {
@@ -213,7 +219,7 @@ describe("install execution and state", () => {
     const store = new InstallStateStore(path.join(root, "install-state.yaml"));
     const context = await resolveInstallContext(root);
     const plan = buildInstallPlan(context);
-    const inspected = await (await import("./install")).inspectInstallPlan(plan);
+    const inspected = await inspectInstallPlan(plan);
     const execution = await runInstallPlan(inspected);
     expect(execution.ok).toBe(true);
     await saveCompleteInstallState(inspected, execution.results, store);
@@ -222,6 +228,102 @@ describe("install execution and state", () => {
 
     const preflight = await inspectInstallPreflight(root, { stateStore: store });
     expect(preflight.ok).toBe(true);
+  });
+
+  test("repairs a satisfied plan with the same skipped results as install", async () => {
+    const home = await tempRoot();
+    process.env.HOME = home;
+    const context = { kind: "core" as const, config: {} as never, fingerprint: "context" };
+    const plan = {
+      context,
+      fingerprint: "requirements",
+      requirements: [
+        {
+          id: "test:tool",
+          label: "Test tool",
+          group: "core" as const,
+          source: "test",
+          command: "install test-tool",
+          satisfied: true,
+          detect: () => true,
+          install: async () => {
+            throw new Error("repair must not install");
+          },
+        },
+      ],
+    };
+
+    const execution = await runInstallPlan(plan);
+    await repairInstallState(plan);
+    const repaired = await readInstallState(new InstallStateStore(getInstallStatePath(context)));
+
+    expect(execution.results).toEqual([{ id: "test:tool", status: "skipped", verified: true }]);
+    expect(repaired?.requirements).toEqual(execution.results);
+    expect(repaired).toMatchObject({
+      contractRevision: INSTALL_CONTRACT_REVISION,
+      contextFingerprint: "context",
+      requirementFingerprint: "requirements",
+    });
+  });
+
+  test("repair state passes a following preflight without running installers", async () => {
+    const home = await tempRoot();
+    process.env.HOME = home;
+    const root = await tempRoot();
+    const context = await resolveInstallContext(root);
+    const plan = await inspectInstallPlan(buildInstallPlan(context));
+    const installs = plan.requirements.map((item) => {
+      item.install = async () => {
+        throw new Error("repair must not install");
+      };
+      return item;
+    });
+    const originalFetch = globalThis.fetch;
+    let requests = 0;
+    globalThis.fetch = async () => {
+      requests++;
+      throw new Error("repair must not use the network");
+    };
+
+    try {
+      await repairInstallState(plan);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(installs).toHaveLength(plan.requirements.length);
+    expect(requests).toBe(0);
+    expect((await inspectInstallPreflight(root)).ok).toBe(true);
+  });
+
+  test("repeating a repair over the same plan keeps the recorded state stable", async () => {
+    const home = await tempRoot();
+    process.env.HOME = home;
+    const plan = {
+      context: { kind: "core" as const, config: {} as never, fingerprint: "context" },
+      fingerprint: "requirements",
+      requirements: [],
+    };
+
+    await repairInstallState(plan);
+    const first = await readInstallState(new InstallStateStore(getInstallStatePath(plan.context)));
+    await repairInstallState(plan);
+    const second = await readInstallState(new InstallStateStore(getInstallStatePath(plan.context)));
+
+    expect(second).toEqual(first);
+  });
+
+  test("inspection reports a missing state without writing one", async () => {
+    const home = await tempRoot();
+    process.env.HOME = home;
+    const root = await tempRoot();
+    const context = await resolveInstallContext(root);
+    const store = new InstallStateStore(path.join(home, "install-state.yaml"));
+
+    const preflight = await inspectInstallPreflight(root, { stateStore: store });
+
+    expect(preflight.ok).toBe(false);
+    await expect(readInstallState(store)).resolves.toBeNull();
   });
 
   test("hub contents do not invalidate install state", async () => {
@@ -294,6 +396,48 @@ describe("install execution and state", () => {
   });
 });
 
+describe("install preflight repairability", () => {
+  test("depends on the inspected plan rather than the reason", () => {
+    const plan = {
+      context: { kind: "core" as const, config: {} as never, fingerprint: "context" },
+      requirements: [
+        {
+          id: "test:tool",
+          label: "Test tool",
+          group: "core" as const,
+          source: "test",
+          command: "install test-tool",
+          satisfied: true,
+          detect: () => true,
+          install: async () => {},
+        },
+      ],
+      fingerprint: "requirements",
+    };
+
+    expect(isRepairableInstallPreflight({ ok: false, reason: "reworded", plan })).toBe(true);
+    expect(isRepairableInstallPreflight({ ok: true, plan })).toBe(false);
+    expect(isRepairableInstallPreflight({ ok: false, reason: "missing" })).toBe(false);
+    expect(
+      isRepairableInstallPreflight({
+        ok: false,
+        reason: "ambiguous",
+        plan: { ...plan, context: { ...plan.context, kind: "ambiguous" } },
+      }),
+    ).toBe(false);
+    expect(
+      isRepairableInstallPreflight({
+        ok: false,
+        reason: "missing requirement",
+        plan: {
+          ...plan,
+          requirements: [{ ...plan.requirements[0]!, satisfied: false }],
+        },
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("engines.mate version guard", () => {
   async function writeCompanionConfig(root: string, enginesYaml: string): Promise<string> {
     const configDir = path.join(root, ".mate", "config");
@@ -314,6 +458,7 @@ describe("engines.mate version guard", () => {
     expect(preflight.reason).toContain(">=99.0.0");
     expect(preflight.reason).toContain(packageJson.version);
     expect(preflight.plan).toBeUndefined();
+    expect(isRepairableInstallPreflight(preflight)).toBe(false);
   });
 
   test("blocks with a distinct message when engines.mate is an invalid range", async () => {
@@ -324,6 +469,42 @@ describe("engines.mate version guard", () => {
     expect(preflight.ok).toBe(false);
     expect(preflight.reason).toContain(">=0.x.y");
     expect(preflight.reason).not.toContain(packageJson.version);
+  });
+
+  test("does not repair an ambiguous companion preflight", async () => {
+    const root = await tempRoot();
+    const working = path.join(root, "working");
+    const companions = [path.join(root, "companion-a"), path.join(root, "companion-b")];
+    await fs.mkdir(path.join(working, ".mate", "config"), { recursive: true });
+    for (const companion of companions) {
+      await fs.mkdir(path.join(companion, ".mate", "config"), { recursive: true });
+      await fs.writeFile(
+        path.join(companion, ".mate", "config", "framework.yaml"),
+        "type: companion\nallowedAgents: []\n",
+      );
+    }
+    await fs.writeFile(
+      path.join(working, ".mate", "config", "registry.yaml"),
+      [
+        "repository:",
+        "  id: working",
+        `  path: ${working}`,
+        "  profile: default",
+        "companions:",
+        ...companions.flatMap((companion) => [
+          `  - path: ${companion}`,
+          "    repositoryId: working",
+          "    source: existing",
+        ]),
+        "",
+      ].join("\n"),
+    );
+
+    const preflight = await inspectInstallPreflight(working);
+
+    expect(preflight.ok).toBe(false);
+    expect(preflight.plan?.context.kind).toBe("ambiguous");
+    expect(isRepairableInstallPreflight(preflight)).toBe(false);
   });
 
   test("proceeds to existing checks when engines.mate is satisfied", async () => {

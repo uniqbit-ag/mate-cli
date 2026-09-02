@@ -100,22 +100,16 @@ async function runMate(root: string, cwd: string, args: string[]): Promise<RunRe
 }
 
 describe("install lifecycle CLI", () => {
-  test("blocks first normal use, installs core state, and blocks stale state", async () => {
+  test("blocks first normal use and installs core state", async () => {
     const entry = await scenario();
     const before = await runMate(entry.root, entry.root, ["report"]);
     expect(before.status).toBe(1);
-    expect(before.stderr).toContain("Run `mate install`");
+    expect(before.stderr).toContain("repaired installation state");
+    expect(before.stderr).toContain("No companion found");
 
     const installed = await runMate(entry.root, entry.root, ["install", "--yes"]);
     expect(installed.status).toBe(0);
     expect(installed.stdout).toContain("Mate installation complete.");
-
-    const statePath = path.join(entry.root, "home", ".mate", "install-state", "core.yaml");
-    const state = await fs.readFile(statePath, "utf8");
-    await fs.writeFile(statePath, state.replace("contractRevision: 1", "contractRevision: 0"));
-    const stale = await runMate(entry.root, entry.root, ["report"]);
-    expect(stale.status).toBe(1);
-    expect(stale.stderr).toContain("install contract has changed");
   });
 
   test("installs a current companion without enabling unselected capabilities", async () => {
@@ -180,14 +174,55 @@ describe("install lifecycle CLI", () => {
 
   test("blocks a linked companion without companion install state", async () => {
     const entry = await scenario();
-    await writeCompanionConfig(entry.companion, ["openspec"]);
+    await writeCompanionConfig(entry.companion);
     await fs.mkdir(path.join(entry.working, ".mate", "config"), { recursive: true });
     await fs.writeFile(
       path.join(entry.working, ".mate", "config", "registry.yaml"),
       `repository:\n  id: working\n  path: ${entry.working}\n  profile: default\ncompanions:\n  - path: ${entry.companion}\n    repositoryId: working\n    source: existing\n`,
     );
     const result = await runMate(entry.root, entry.working, ["report"]);
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("repaired installation state");
+  });
+
+  test("blocks a linked companion when a requirement is unsatisfied", async () => {
+    const entry = await scenario();
+    await writeCompanionConfig(entry.companion, ["openspec"]);
+    await fs.mkdir(path.join(entry.working, ".mate", "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(entry.working, ".mate", "config", "registry.yaml"),
+      `repository:\n  id: working\n  path: ${entry.working}\n  profile: default\ncompanions:\n  - path: ${entry.companion}\n    repositoryId: working\n    source: existing\n`,
+    );
+
+    const result = await runMate(entry.root, entry.working, ["report"]);
+
     expect(result.status).toBe(1);
+    expect(result.stderr).toContain("OpenSpec CLI");
     expect(result.stderr).toContain("Run `mate install`");
+  });
+
+  test("repairs a stale contract over a satisfied plan", async () => {
+    const entry = await scenario();
+    await writeCompanionConfig(entry.companion);
+    await fs.mkdir(path.join(entry.working, ".mate", "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(entry.working, ".mate", "config", "registry.yaml"),
+      `repository:\n  id: working\n  path: ${entry.working}\n  profile: default\ncompanions:\n  - path: ${entry.companion}\n    repositoryId: working\n    source: existing\n`,
+    );
+
+    const installed = await runMate(entry.root, entry.working, ["install", "--yes"]);
+    expect(installed.status).toBe(0);
+
+    const stateDir = path.join(entry.root, "home", ".mate", "install-state");
+    const [stateFile] = await fs.readdir(stateDir);
+    expect(stateFile).toBeDefined();
+    const statePath = path.join(stateDir, stateFile!);
+    const state = await fs.readFile(statePath, "utf8");
+    await fs.writeFile(statePath, state.replace("contractRevision: 1", "contractRevision: 0"));
+
+    const result = await runMate(entry.root, entry.working, ["report"]);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("repaired installation state");
   });
 });

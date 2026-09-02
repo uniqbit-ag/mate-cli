@@ -278,6 +278,15 @@ export interface InstallPreflightResult {
   plan?: InstallPlan;
 }
 
+export function isRepairableInstallPreflight(result: InstallPreflightResult): boolean {
+  return Boolean(
+    !result.ok &&
+    result.plan &&
+    result.plan.context.kind !== "ambiguous" &&
+    result.plan.requirements.every((requirement) => requirement.satisfied),
+  );
+}
+
 export async function inspectInstallPreflight(
   cwd = process.cwd(),
   deps: { stateStore?: InstallStateStore; globalConfigStore?: GlobalConfigStore } = {},
@@ -327,4 +336,28 @@ export async function reconcileInstalledCompanion(plan: InstallPlan): Promise<vo
 
   const { syncCompanionFiles } = await import("../tools/setup");
   await syncCompanionFiles(plan.context.companionPath, plan.context.config);
+}
+
+export async function repairInstallState(plan: InstallPlan): Promise<void> {
+  const results = plan.requirements.map((requirement) => ({
+    id: requirement.id,
+    status: "skipped" as const,
+    verified: true,
+  }));
+  await reconcileInstalledCompanion(plan);
+
+  const store = installStateStoreForContext(plan.context);
+  const state = await readInstallState(store);
+  const version = getActiveDistribution().config.version;
+  if (
+    state?.contractRevision === INSTALL_CONTRACT_REVISION &&
+    state.mateVersion === version &&
+    state.contextFingerprint === plan.context.fingerprint &&
+    state.requirementFingerprint === plan.fingerprint &&
+    JSON.stringify(state.requirements) === JSON.stringify(results)
+  ) {
+    return;
+  }
+
+  await saveCompleteInstallState(plan, results, store);
 }

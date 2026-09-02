@@ -113,6 +113,9 @@ describe("command gating", () => {
           ? { ok: false, reason: "test preflight" }
           : { ok: true };
       },
+      repairInstallState: async () => {
+        gateCalls.push("repair");
+      },
       hydrateDynamicPlugins: async () => {},
       resolveRootContext: async () => {
         gateCalls.push("root");
@@ -120,6 +123,14 @@ describe("command gating", () => {
       },
     };
     return { gateCalls, deps };
+  }
+
+  function satisfiedPlan() {
+    return {
+      context: { kind: "core" as const, config: {} as never, fingerprint: "context" },
+      fingerprint: "requirements",
+      requirements: [],
+    };
   }
 
   test("every built-in command dispatches through its declared gates", async () => {
@@ -385,6 +396,95 @@ describe("command gating", () => {
     }
   });
 
+  test("repairs recoverable installation state once before dispatch", async () => {
+    const { gateCalls, deps } = recordingDeps();
+    let inspections = 0;
+    deps.inspectInstallPreflight = async () => {
+      gateCalls.push("install");
+      inspections++;
+      return inspections === 1
+        ? { ok: false, reason: "stale state", plan: satisfiedPlan() }
+        : { ok: true };
+    };
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
+    const originalExitCode = process.exitCode;
+
+    try {
+      process.exitCode = 0;
+      await main(["node", "mate", "report"], deps);
+      expect(gateCalls).toEqual(["install", "repair", "install"]);
+      expect(dispatched).toEqual(["report"]);
+      expect(stderrSpy).toHaveBeenCalledWith("mate: repaired installation state; continuing.\n");
+      expect(process.exitCode).toBe(0);
+    } finally {
+      stderrSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
+  test("refuses with the first reason when reinspection still fails", async () => {
+    const { gateCalls, deps } = recordingDeps();
+    let inspections = 0;
+    deps.inspectInstallPreflight = async () => {
+      gateCalls.push("install");
+      inspections++;
+      return {
+        ok: false,
+        reason: inspections === 1 ? "first preflight reason" : "second preflight reason",
+        plan: satisfiedPlan(),
+      };
+    };
+    const errors: string[] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.join(" "));
+    });
+    const originalExitCode = process.exitCode;
+
+    try {
+      process.exitCode = 0;
+      await main(["node", "mate", "report"], deps);
+      expect(gateCalls).toEqual(["install", "repair", "install"]);
+      expect(dispatched).toEqual([]);
+      expect(errors[0]).toBe("mate: first preflight reason");
+      expect(errors.join("\n")).not.toContain("second preflight reason");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
+  test("refuses instead of propagating a throwing repair", async () => {
+    const { gateCalls, deps } = recordingDeps();
+    deps.inspectInstallPreflight = async () => {
+      gateCalls.push("install");
+      return { ok: false, reason: "stale state", plan: satisfiedPlan() };
+    };
+    let repairs = 0;
+    deps.repairInstallState = async () => {
+      repairs++;
+      throw new Error("write failed");
+    };
+    const errors: string[] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.join(" "));
+    });
+    const originalExitCode = process.exitCode;
+
+    try {
+      process.exitCode = 0;
+      await expect(main(["node", "mate", "report"], deps)).resolves.toBeUndefined();
+      expect(repairs).toBe(1);
+      expect(gateCalls).toEqual(["install"]);
+      expect(dispatched).toEqual([]);
+      expect(errors[0]).toBe("mate: stale state");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
   test("an enforced update still blocks normal commands", async () => {
     const originalExitCode = process.exitCode;
     const enforce = spyOn(updateChecker, "enforceUpdateIfRequired").mockImplementation(
@@ -487,6 +587,51 @@ describe("plugin CLI commands", () => {
     await main(["node", "mate", "cap", "acme", "mcp", "--flag"], okDeps);
 
     expect(received).toEqual([["--flag"]]);
+  });
+
+  test("reports a repair on stderr without taking over plugin stdout", async () => {
+    const logs: string[] = [];
+    const logSpy = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logs.push(args.join(" "));
+    });
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
+    let inspections = 0;
+    activate(
+      makePlugin("acme", [
+        {
+          name: "mcp",
+          description: "Start the acme MCP server.",
+          run: async () => console.log("plugin output"),
+        },
+      ]),
+    );
+    const deps: MainDeps = {
+      ...okDeps,
+      inspectInstallPreflight: async () => {
+        inspections++;
+        return inspections === 1
+          ? {
+              ok: false,
+              reason: "stale state",
+              plan: {
+                context: { kind: "core" as const, config: {} as never, fingerprint: "context" },
+                requirements: [],
+                fingerprint: "requirements",
+              },
+            }
+          : { ok: true };
+      },
+      repairInstallState: async () => {},
+    };
+
+    try {
+      await main(["node", "mate", "cap", "acme", "mcp"], deps);
+      expect(logs).toEqual(["plugin output"]);
+      expect(stderrSpy).toHaveBeenCalledWith("mate: repaired installation state; continuing.\n");
+    } finally {
+      logSpy.mockRestore();
+      stderrSpy.mockRestore();
+    }
   });
 
   test("cliNamespace overrides the plugin id as the cap namespace", async () => {
