@@ -23,7 +23,11 @@ import { runUnwrapCommand } from "./commands/unwrap";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
 import { runInstallCommand } from "./commands/install";
-import { inspectInstallPreflight } from "../lib/install";
+import {
+  inspectInstallPreflight,
+  isRepairableInstallPreflight,
+  repairInstallState,
+} from "../lib/install";
 import { resolveRootContext } from "../lib/orchestrator/root-context";
 import {
   ensureUnambiguousCompanion,
@@ -53,6 +57,7 @@ export interface GateNeeds {
 export interface MainDeps {
   ensureUnambiguousCompanion: typeof ensureUnambiguousCompanion;
   inspectInstallPreflight: typeof inspectInstallPreflight;
+  repairInstallState?: typeof repairInstallState;
   hydrateDynamicPlugins: typeof hydrateDynamicPlugins;
   resolveRootContext: typeof resolveRootContext;
 }
@@ -60,6 +65,7 @@ export interface MainDeps {
 const mainDeps: MainDeps = {
   ensureUnambiguousCompanion,
   inspectInstallPreflight,
+  repairInstallState,
   hydrateDynamicPlugins,
   resolveRootContext,
 };
@@ -101,6 +107,7 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
   // needs before it may run. Declared gates run in fixed order — update
   // enforcement, companion selection, install preflight — and a blocked gate
   // sets the exit code, so callers only need `if (!(await gate(...))) return`.
+  let installRepairAttempted = false;
   const gate = async (needs: GateNeeds): Promise<boolean> => {
     if (!ownsStdout) {
       const updateStore = new UpdateStateStore();
@@ -142,6 +149,14 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     if (needs.install) {
       const preflight = await deps.inspectInstallPreflight();
       if (!preflight.ok) {
+        if (!installRepairAttempted && isRepairableInstallPreflight(preflight)) {
+          installRepairAttempted = true;
+          try {
+            await (deps.repairInstallState ?? repairInstallState)(preflight.plan!);
+            process.stderr.write(`${FRAMEWORK_NAME}: repaired installation state; continuing.\n`);
+            if ((await deps.inspectInstallPreflight()).ok) return true;
+          } catch {}
+        }
         console.error(`${FRAMEWORK_NAME}: ${preflight.reason ?? "installation is incomplete"}`);
         console.error(`Run \`${FRAMEWORK_NAME} install\` before continuing.`);
         process.exitCode = 1;
