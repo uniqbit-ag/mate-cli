@@ -18,3 +18,7 @@ afterEach(() => {
 test("lists working cleanup", () => {
   expect(usage()).toContain("mate working cleanup");
 });
+
+test("lists studio", () => {
+  expect(usage()).toContain("mate studio");
+});

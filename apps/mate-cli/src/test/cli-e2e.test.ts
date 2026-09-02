@@ -570,6 +570,23 @@ async function writeOpenSpecStub(scenario: E2EScenario): Promise<string> {
     "}",
     "if (command === 'config' && args[1] === 'reset') process.exit(0);",
     "if (command === 'update' || command === 'templates') { process.exit(0); }",
+    /** The JSON collection commands `mate studio` reads. */
+    "if (command === 'list' && args.includes('--specs')) {",
+    "  console.log(JSON.stringify({ specs: [{ id: 'acme-checkout', requirementCount: 2 }] }));",
+    "  process.exit(0);",
+    "}",
+    "if (command === 'list') {",
+    "  console.log(JSON.stringify({ changes: [{ name: 'add-acme-checkout', completedTasks: 1, totalTasks: 3, status: 'in-progress' }] }));",
+    "  process.exit(0);",
+    "}",
+    "if (command === 'status') {",
+    "  console.log(JSON.stringify({ changes: [{ changeName: 'add-acme-checkout', schemaName: 'mate-v1', planningHome: { root: process.cwd(), defaultSchema: 'mate-v1' }, artifacts: [{ id: 'proposal', status: 'done' }] }] }));",
+    "  process.exit(0);",
+    "}",
+    "if (command === 'validate') {",
+    "  console.log(JSON.stringify({ items: [{ id: 'add-acme-checkout', type: 'change', valid: true, issues: [] }] }));",
+    "  process.exit(0);",
+    "}",
     "process.exit(1);",
     "",
   ].join("\n");
@@ -2254,5 +2271,267 @@ describe("mate CLI e2e", () => {
     await expect(
       fs.access(path.join(scenario.companion, ".claude", "CLAUDE.md")),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * Stubs the platform browser launchers on the scenario PATH; no real browser
+ * may open during a test run.
+ */
+async function writeBrowserStub(scenario: E2EScenario): Promise<string> {
+  const capturePath = path.join(scenario.root, "browser-capture.txt");
+  const source = ["#!/usr/bin/env bash", `printf '%s\\n' "$@" >> ${capturePath}`, ""].join("\n");
+  for (const name of ["open", "xdg-open"]) {
+    const stubPath = path.join(scenario.bin, name);
+    await fs.writeFile(stubPath, source, "utf8");
+    await fs.chmod(stubPath, 0o755);
+  }
+  return capturePath;
+}
+
+interface StudioProcess {
+  url: string;
+  browserCapturePath: string;
+  stderr: () => string;
+  stop: (signal: NodeJS.Signals) => Promise<number>;
+}
+
+/**
+ * Starts `mate studio` and resolves once it has reported its URL. The child is
+ * a foreground server, so it is driven by signal rather than awaited to exit.
+ */
+async function startStudio(scenario: E2EScenario, cwd: string): Promise<StudioProcess> {
+  const browserCapturePath = await writeBrowserStub(scenario);
+  const child = spawn("bun", [path.join(APP_ROOT, "src/cli.ts"), "studio"], {
+    cwd,
+    env: {
+      ...process.env,
+      HOME: scenario.home,
+      PATH: `${scenario.bin}:${process.env.PATH ?? ""}`,
+      CI: "",
+      MATE_ARTIFACT_PATH: "",
+      MATE_REPO_ID: "",
+      MATE_REPO_PATH: "",
+      MATE_POLICY_JSON: "",
+      MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
+    },
+    stdio: "pipe",
+  });
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk.toString();
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  const exited = new Promise<number>((resolve) => {
+    child.on("close", (code) => resolve(code ?? 1));
+  });
+
+  const deadline = Date.now() + 20_000;
+  let url: string | undefined;
+  while (Date.now() < deadline && url === undefined) {
+    url = stdout.match(/http:\/\/localhost:\d+/)?.[0];
+    if (url === undefined) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (url === undefined) {
+    child.kill("SIGKILL");
+    throw new Error(
+      `studio never reported a URL\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`,
+    );
+  }
+
+  return {
+    url,
+    browserCapturePath,
+    stderr: () => stderr,
+    stop: async (signal) => {
+      child.kill(signal);
+      return exited;
+    },
+  };
+}
+
+/**
+ * The digest the served selector hands out for a companion path. Studio
+ * addresses a companion by digest, so the page is the only place a URL for one
+ * can be read from.
+ */
+function companionDigestFrom(markup: string, companionPath: string): string {
+  const match = markup.match(
+    new RegExp(`<option value="([0-9a-f]+)"[^>]*>${escapeRegex(companionPath)}`),
+  );
+  if (!match?.[1]) throw new Error(`no companion option for ${companionPath}`);
+  return match[1];
+}
+
+async function listPaths(root: string): Promise<string[]> {
+  const found: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      found.push(path.relative(root, full));
+      if (entry.isDirectory()) await walk(full);
+    }
+  };
+  await walk(root);
+  return found.sort();
+}
+
+describe("mate studio e2e", () => {
+  test("serves the document at the reported URL", async () => {
+    const scenario = await createScenario("mate-cli-e2e-studio-");
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+
+    const studio = await startStudio(scenario, scenario.root);
+    try {
+      const document = await fetch(studio.url);
+      expect(document.status).toBe(200);
+      expect(document.headers.get("content-type")).toContain("text/html");
+
+      const markup = await document.text();
+      expect(markup).toContain("<!doctype html>");
+      expect(markup).toContain("Mate Studio");
+      expect(markup).toContain('aria-label="Companion Repository"');
+      expect(markup).toContain(scenario.companion);
+      /** Nothing is named, so no companion state is assembled. */
+      expect(markup).toContain("Select a Companion Repository.");
+      expect(markup).not.toContain("add-acme-checkout");
+    } finally {
+      await studio.stop("SIGINT");
+    }
+  });
+
+  test("a URL naming a companion renders that companion's state", async () => {
+    const scenario = await createScenario("mate-cli-e2e-studio-url-");
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+
+    const studio = await startStudio(scenario, scenario.root);
+    try {
+      const digest = companionDigestFrom(
+        await (await fetch(studio.url)).text(),
+        scenario.companion,
+      );
+
+      const dashboard = await fetch(`${studio.url}/?companion=${digest}`);
+      expect(dashboard.status).toBe(200);
+      const dashboardMarkup = await dashboard.text();
+      expect(dashboardMarkup).toContain("<h3>Changes</h3>");
+      expect(dashboardMarkup).toContain("<h3>Specs by Area</h3>");
+      expect(dashboardMarkup).toContain("add-acme-checkout");
+      expect(dashboardMarkup).not.toContain("Select a Companion Repository.");
+
+      const workflow = await fetch(
+        `${studio.url}/?companion=${digest}&change=add-acme-checkout&view=workflow`,
+      );
+      expect(workflow.status).toBe(200);
+      const workflowMarkup = await workflow.text();
+      expect(workflowMarkup).toContain("Mate Studio / workflow");
+      expect(workflowMarkup).toContain("add-acme-checkout");
+      expect(workflowMarkup).not.toContain("<h3>Changes</h3>");
+    } finally {
+      await studio.stop("SIGINT");
+    }
+  });
+
+  test("a URL naming no registered companion renders the selector", async () => {
+    const scenario = await createScenario("mate-cli-e2e-studio-unknown-");
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+
+    const studio = await startStudio(scenario, scenario.root);
+    try {
+      const response = await fetch(`${studio.url}/?companion=deadbeef00`);
+      expect(response.status).toBe(200);
+
+      const markup = await response.text();
+      expect(markup).toContain('aria-label="Companion Repository"');
+      expect(markup).toContain(scenario.companion);
+      expect(markup).toContain("Select a Companion Repository.");
+      expect(markup).not.toContain("Could not read this companion");
+    } finally {
+      await studio.stop("SIGINT");
+    }
+  });
+
+  test("the removed JSON endpoints answer as unrouted", async () => {
+    const scenario = await createScenario("mate-cli-e2e-studio-endpoints-");
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+
+    const studio = await startStudio(scenario, scenario.root);
+    try {
+      for (const route of [
+        "/api/inventory",
+        `/api/companion?path=${encodeURIComponent(scenario.companion)}`,
+      ]) {
+        const response = await fetch(`${studio.url}${route}`);
+        expect(response.status).toBe(404);
+        expect(response.headers.get("content-type") ?? "").not.toContain("application/json");
+        expect(await response.text()).not.toContain("companions");
+      }
+    } finally {
+      await studio.stop("SIGINT");
+    }
+  });
+
+  test("opens the platform browser at the served URL", async () => {
+    const scenario = await createScenario("mate-cli-e2e-studio-browser-");
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+
+    const studio = await startStudio(scenario, scenario.root);
+    try {
+      await waitForFile(studio.browserCapturePath, 10_000);
+      expect(await fs.readFile(studio.browserCapturePath, "utf8")).toContain(studio.url);
+    } finally {
+      await studio.stop("SIGINT");
+    }
+  });
+
+  test("refuses a write method", async () => {
+    const scenario = await createScenario("mate-cli-e2e-studio-readonly-");
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+
+    const studio = await startStudio(scenario, scenario.root);
+    try {
+      const response = await fetch(studio.url, { method: "POST" });
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("GET, HEAD");
+    } finally {
+      await studio.stop("SIGINT");
+    }
+  });
+
+  test("an interrupt ends the server and leaves no process or state behind", async () => {
+    const scenario = await createScenario("mate-cli-e2e-studio-lifecycle-");
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+
+    const before = await listPaths(scenario.home);
+    const studio = await startStudio(scenario, scenario.root);
+    expect((await fetch(studio.url)).status).toBe(200);
+
+    await studio.stop("SIGINT");
+
+    await expect(fetch(studio.url)).rejects.toThrow();
+    expect(await listPaths(scenario.home)).toEqual(before);
+    expect(studio.stderr()).not.toContain("could not bind");
+  });
+
+  test("runs from a directory that is not a working repository", async () => {
+    const scenario = await createScenario("mate-cli-e2e-studio-anywhere-");
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+
+    const outside = path.join(scenario.root, "outside");
+    await fs.mkdir(outside, { recursive: true });
+
+    const studio = await startStudio(scenario, outside);
+    try {
+      expect((await fetch(studio.url)).status).toBe(200);
+      expect(studio.stderr()).not.toContain("not linked");
+    } finally {
+      await studio.stop("SIGINT");
+    }
   });
 });

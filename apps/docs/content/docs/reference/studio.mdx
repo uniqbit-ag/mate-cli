@@ -1,0 +1,155 @@
+---
+title: mate studio
+description: A local, read-only page over the Mate and workflow and the state of every registered companion.
+---
+
+`mate studio` serves one local page that shows the Mate and workflow
+with real state on it: the skills and prompts a change is driven by, alongside
+that companion's changes and specs.
+
+```sh
+mate studio
+```
+
+The command takes no arguments. An unrecognized argument is reported and the
+command exits non-zero without starting a server.
+
+## Invocation Context
+
+Studio does not resolve a repository link and does not require a working
+repository, so it runs from any directory. The content is the same wherever it
+is started: every companion registered on this machine.
+
+It prints the URL it bound and opens that URL in the platform's default
+browser:
+
+```text
+http://localhost:53219
+Press Ctrl+C to stop.
+```
+
+If a browser cannot be opened, Studio says so on stderr, keeps serving, and
+keeps reporting the URL so it can be opened by hand. If no port can be bound,
+Studio reports the failure on stderr and exits non-zero without opening a
+browser.
+
+## The Selections
+
+A companion repository and a change. There is no working repository selection:
+everything Studio serves is companion-scoped, so there would be nothing for one
+to filter.
+
+- the companion selection lists every registered companion repository
+- a companion whose health is not ready stays listed, de-emphasized and
+  annotated with the reported reason
+- the selected companion's linked working repositories are shown beneath it as
+  context, marking any repository that is also paired with another companion
+- the change selection fills the workflow prompts. It also offers naming a
+  change that does not exist yet, so a companion with no active change still
+  shows a usable workflow; unnamed, the prompts carry a `<change-name>`
+  placeholder
+
+Studio reports health; it does not repair it. Use `mate doctor` for that.
+
+## URL State
+
+Both selections and the active view live in the request URL, so requesting a URL
+renders exactly the state it names:
+
+```text
+http://localhost:53219/?companion=9f2c14ab07&change=add-acme-checkout&view=workflow
+```
+
+Changing a selection or switching a view is a navigation. The served page is
+already correct for what was asked, deep links work, and the browser's back and
+forward buttons move between states that have been rendered.
+
+A companion is addressed by a short digest of its path rather than by the path
+itself, so absolute companion paths are not written into the browser's address
+bar, history, or autocomplete. The page names the selected companion in full, so
+the URL never has to be read. A URL naming no companion, or a digest that
+resolves to no registered companion, renders the selector with nothing selected
+rather than failing the request.
+
+## The Two Views
+
+**Dashboard** shows the selected companion's changes — completed and total task
+counts, status, and per-artifact state — and its specs grouped by the areas they
+bind. A section with nothing to show says so explicitly.
+
+**Workflow** presents the prompts a change is driven by, in order, one card per
+prompt. Each card carries two colored boxes — **What** states the action the
+stage performs, **Why** states the reason it sits at that position in the
+sequence — plus the prompt itself and a control that copies it.
+
+The workflow is a built-in sequence, not a scan of skill directories on disk:
+
+- an optional grilling/questionnaire step appears before `explore`, asking 3-5
+  high-leverage questions through the `/grill-me` or `/interview-me` skills
+- `openspec explore` uses `/openspec-explore` to frame the change
+- `openspec propose` uses `/openspec-propose` to create the proposal, specs,
+  design, and tasks as one planning step
+- `openspec apply` uses `/openspec-apply-change` to implement those tasks
+- an optional `mate simplify code` step uses `/mate-simplify-code` after
+  implementation, with a reminder to preserve behavior and rerun tests
+- `/mate-artifact-finish` runs `mate artifact finish`, which archives the change
+  and applies its delta specs to the main specs; it is the only sanctioned
+  completion
+- the panel beside the deck carries the selected change's task counts and
+  per-artifact state
+
+Studio presents these optional actions as guidance; it does not inspect or
+execute installed skills.
+
+Every view is rendered on the server for the URL that requested it, so the
+response already carries the content and nothing is fetched after the page
+loads.
+
+Reading a Companion Repository runs the OpenSpec CLI, so Studio reads each
+companion once and keeps what it read for as long as the server runs. Selecting
+a companion for the first time takes about a second; switching between the
+Overview and the Workflow view after that is immediate, and both views show the
+same reading. The rail names the time that reading was taken.
+
+`Refresh` reads the selected companion again and replaces what Studio holds. It
+is the only thing that does: Studio does not watch the file system and holds no
+streaming connection, so state that changes while the page is open is shown
+after the next refresh.
+
+## Appearance
+
+The page ships a dark and a light theme from one palette. It follows the
+system preference by default; the theme control in the rail cycles system,
+dark, and light, and the choice is remembered in the browser. Nothing about the
+theme is written to a companion or to Mate state.
+
+## Reading the Same Data Elsewhere
+
+Studio answers HTML only. Earlier versions also served `/api/inventory` and
+`/api/companion`; both are gone, and a request for either is unrouted. They
+existed to feed a browser-side renderer that no longer exists.
+
+The data itself is still reachable:
+
+- `mate workspace list --json` reports every registered companion with its
+  pairings, health, and ambiguity — the source Studio's inventory is projected
+  from, and the supported machine-readable interface for it
+- the OpenSpec CLI reports a companion's state directly, through the same calls
+  Studio makes against it: `openspec list --json`, `openspec list --specs
+--json`, `openspec status --all --json`, and `openspec validate --json`
+
+## Lifecycle
+
+Studio is a foreground, read-only server:
+
+- it binds a port the operating system assigns, on the loopback interface only,
+  so two invocations never collide and nothing off this machine is served
+- no request writes to a companion repository, a working repository, or any Mate
+  state
+- the document is rendered on the server and carries its styles and its behavior
+  inline, so it loads nothing from any external host and needs no build step
+- `Ctrl+C` ends it; nothing outlives the invocation, so there is no stop
+  subcommand, no process-identifier file, and no state written anywhere
+
+Because the page is read-only, there is nothing to confirm and nothing to undo.
+Work still happens through the CLI and agent sessions.

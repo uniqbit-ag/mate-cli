@@ -30,6 +30,7 @@ mate opencode
 | `mate doctor`                                       | Show context, policy, selected capabilities, and tool status.                      |
 | `mate config [--vscode]`                            | Open the global `~/.mate` configuration directory.                                 |
 | `mate report [--days N] [--input FILE\|-] [--json]` | Generate a built-in or structured report.                                          |
+| `mate studio`                                       | Serve a local, read-only page over the workflow and every registered companion.    |
 
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
@@ -49,6 +50,17 @@ self-contained HTML to a temporary file and opens it in the default browser.
 The HTML includes a browser-native `Print / Save as PDF` control; selecting
 `Save as PDF` in the print dialog creates the PDF. No PDF runtime or server is
 required.
+
+### Studio
+
+`mate studio` serves one local page showing the Mate and workflow with
+the selected companion's real state on it: a Dashboard over its changes and
+specs, and a Workflow view presenting the prompts a change is driven by — one
+card per prompt, copied by clicking it.
+It runs from any directory, binds a port the operating system assigns on the
+loopback interface, opens the platform browser, and serves in the foreground
+until interrupted. Every endpoint is read-only.
+See [mate studio](/mate-cli/reference/studio).
 
 ## Agent Launch
 
