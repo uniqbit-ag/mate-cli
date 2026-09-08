@@ -1,5 +1,6 @@
 import { usage } from "../../usage";
 import { runArtifactFinishCommand } from "./finish";
+import { runArtifactPendingCommand } from "./pending";
 
 /**
  * @command mate artifact <subcommand>
@@ -13,6 +14,9 @@ export async function runArtifactCommand(
   switch (subcommand) {
     case "finish":
       await runArtifactFinishCommand(argv);
+      return;
+    case "pending":
+      await runArtifactPendingCommand(argv);
       return;
     default:
       console.error(`Unknown artifact command: ${subcommand ?? ""}`);

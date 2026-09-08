@@ -111,18 +111,21 @@ describe("packed Claude plugin", () => {
     const wiring = JSON.parse(
       await fs.readFile(path.join(pluginRoot, "hooks", "hooks.json"), "utf8"),
     ) as { hooks: Record<string, unknown> };
-    expect(Object.keys(wiring.hooks).sort()).toEqual(["PostToolUse", "PreToolUse", "SessionStart"]);
+    expect(Object.keys(wiring.hooks).sort()).toEqual(["PreToolUse", "SessionStart"]);
 
     for (const shim of [
       "validate-artifact-path.mjs",
       "session-banner.mjs",
       "session-guidance.mjs",
-      "artifact-finish-nudge.mjs",
     ]) {
       const stat = await fs.stat(path.join(pluginRoot, "hooks", shim));
       expect(stat.isFile()).toBe(true);
       expect(stat.mode & 0o111).toBeGreaterThan(0);
     }
+
+    await expect(
+      fs.stat(path.join(pluginRoot, "hooks", "artifact-finish-nudge.mjs")),
+    ).rejects.toThrow();
   });
 
   test("validate-artifact-path shim blocks artifact writes to the working repo", async () => {
@@ -180,34 +183,5 @@ describe("packed Claude plugin", () => {
     const payload = JSON.parse(result.stdout) as { systemMessage: string };
     expect(payload.systemMessage).toContain("mate v9.9.9");
     expect(payload.systemMessage).toContain("/companions/acme-companion");
-  });
-
-  test("artifact-finish-nudge shim nudges only when the gate is on", () => {
-    const payload = {
-      hook_event_name: "PostToolUse",
-      tool_name: "Bash",
-      tool_input: { command: "openspec archive acme --yes" },
-      tool_response: { stdout: "ok", stderr: "", interrupted: false },
-    };
-
-    const gated = runShim("artifact-finish-nudge.mjs", payload, {
-      MATE_OPENSPEC_ENABLED: "1",
-      MATE_GIT_AUTO_MODE: "1",
-    });
-    expect(gated.exitCode).toBe(0);
-    const output = JSON.parse(gated.stdout) as {
-      hookSpecificOutput: { hookEventName: string; additionalContext: string };
-    };
-    expect(output.hookSpecificOutput.hookEventName).toBe("PostToolUse");
-    expect(output.hookSpecificOutput.additionalContext).toContain(
-      'mate artifact finish "acme" --json',
-    );
-
-    const gateOff = runShim("artifact-finish-nudge.mjs", payload, {
-      MATE_OPENSPEC_ENABLED: "0",
-      MATE_GIT_AUTO_MODE: "1",
-    });
-    expect(gateOff.exitCode).toBe(0);
-    expect(gateOff.stdout).toBe("");
   });
 });

@@ -69,7 +69,7 @@ function stepPrompt(
     case "simplify":
       return `/mate-simplify-code${changeNote}`;
     case "finish":
-      return `/mate-artifact-finish${changeNote}`;
+      return `/mate-artifact-publish${changeNote}`;
     default:
       return `Use ${step.title}${schemaNote}${changeNote}`;
   }
@@ -268,8 +268,8 @@ export function workflowPlan(
   const finishStep = {
     kind: "completion" as const,
     id: "finish",
-    title: "mate artifact finish",
-    what: "Archives the change and applies its delta specs to the canonical specs.",
+    title: "mate artifact publish",
+    what: "Selects archived changes, confirms that each will be committed, tagged, and pushed to the companion Git repository, then runs `mate artifact finish` for each to apply its delta specs to the canonical specs.",
     why: "It is the only sanctioned completion; a hand-committed finish leaves the canonical specs stale.",
     badges: ["skill"] as WorkflowStepBadge[],
   };

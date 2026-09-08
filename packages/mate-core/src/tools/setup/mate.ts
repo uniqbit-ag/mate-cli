@@ -3,9 +3,9 @@ import path from "node:path";
 
 import { pruneEmptyAncestors } from "./utils";
 
-export const MATE_ARTIFACT_SKILLS = ["mate-artifact-finish"] as const;
+export const MATE_ARTIFACT_SKILLS = ["mate-artifact-publish"] as const;
 export const MATE_SKILLS = [
-  "mate-artifact-finish",
+  "mate-artifact-publish",
   "mate-create-report",
   "mate-openspec-backfill",
   "mate-interview-me",
@@ -15,7 +15,7 @@ export const MATE_SKILLS = [
   "mate-domain-modeling",
   "mate-simplify-code",
 ] as const;
-const LEGACY_MATE_SKILLS = ["mate-openspec-artifact-finish"] as const;
+const LEGACY_MATE_SKILLS = ["mate-artifact-finish", "mate-openspec-artifact-finish"] as const;
 
 const MATE_SKILLS_SOURCE = path.join(import.meta.dirname, "../../templates/mate-skills");
 
@@ -90,10 +90,8 @@ const DEFAULT_MATE_SKILLS_BUCKET = "agents";
 /**
  * A skill's source lives under a provider bucket so its folder name always
  * matches its `name:` frontmatter: `<tool>/<skill>/` when that tool needs its
- * own behavior (e.g. Claude Code always confirms before `mate artifact
- * finish` pushes, since a push is a shared-state action), falling back to
- * `agents/<skill>/` — the shared default every other tool (e.g. opencode,
- * which pushes automatically) uses.
+ * own behavior, falling back to `agents/<skill>/` — the shared default every
+ * other tool uses.
  */
 async function resolveMateSkillSource(skill: string, tool: string): Promise<string> {
   const providerDir = path.join(MATE_SKILLS_SOURCE, tool, skill);

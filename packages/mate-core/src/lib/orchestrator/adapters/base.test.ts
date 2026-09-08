@@ -249,7 +249,7 @@ describe("graphify GRAPHIFY_OUT env injection", () => {
   });
 });
 
-describe("openspec archive-nudge gate env injection", () => {
+describe("openspec capability env injection", () => {
   test("marks openspec enabled only when the capability is selected", async () => {
     const enabled = await new ClaudeAdapter().prepareLaunch(
       makeContext([{ name: "openspec" }]),

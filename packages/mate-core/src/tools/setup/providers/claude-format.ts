@@ -83,10 +83,10 @@ export function filterClaudeHookGroups(
 }
 
 // Command substrings that mark a hook group as Mate-managed. The mate plugin
-// hooks (validate-artifact-path, mate-session-banner, mate-artifact-finish.sh)
-// now ship in the bundled Claude plugin; their markers are retained
-// migration-only so stale managed groups written by earlier releases keep being
-// stripped, and are never re-added.
+// hooks (validate-artifact-path, mate-session-banner) now ship in the bundled
+// Claude plugin, and the retired mate-artifact-finish.sh archive hook is gone
+// entirely; their markers are retained migration-only so stale managed groups
+// written by earlier releases keep being stripped, and are never re-added.
 export const MANAGED_HOOK_MARKERS = [
   "validate-artifact-path",
   "mate-session-banner",

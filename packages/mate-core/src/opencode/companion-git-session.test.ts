@@ -278,8 +278,8 @@ describe("an unfinished synchronization reaches the operator only", () => {
 describe("a broken operator channel costs the session nothing", () => {
   /**
    * The repair is awaited above the plugin's returned hooks, so anything
-   * escaping it would cost the session the artifact guard, the finish nudge and
-   * the React Doctor scan — to save a synchronization that is optional.
+   * escaping it would cost the session the artifact guard and the React
+   * Doctor scan — to save a synchronization that is optional.
    */
   for (const [name, showToast] of [
     [

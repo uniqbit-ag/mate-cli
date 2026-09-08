@@ -165,8 +165,8 @@ export function renderManagedClaudeSettings(
   const declaredPermissionEntries = contributions.flatMap(
     (input) => input.contributions.permissionEntries ?? [],
   );
-  // Mate's own hooks (artifact-path guard, session banner, archive-finish
-  // nudge) ship in the bundled Claude plugin loaded at launch; settings-sync
+  // Mate's own hooks (artifact-path guard, session banner, companion
+  // guidance) ship in the bundled Claude plugin loaded at launch; settings-sync
   // only strips their legacy managed groups (via removeManagedHookGroups) and
   // reconciles the capability hooks that remain settings-delivered.
   const hooks = removeManagedHookGroups(existing, declaredMarkers).hooks ?? {};

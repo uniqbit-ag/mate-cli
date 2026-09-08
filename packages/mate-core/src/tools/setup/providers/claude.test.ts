@@ -191,7 +191,7 @@ describe("syncCompanionClaudeSettings", () => {
     ]);
   });
 
-  test("does not write the openspec nudge hook even with git auto (plugin-delivered)", async () => {
+  test("does not write an openspec archive-finish hook even with git auto", async () => {
     const companionPath = await makeTempDir("mate-companion-openspec-");
     await syncCompanionClaudeSettings(companionPath, {
       allowedAgents: ["claude"],
@@ -205,7 +205,7 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.hooks?.Stop).toBeUndefined();
   });
 
-  test("does not register the openspec nudge hook when git auto mode is disabled", async () => {
+  test("does not register an openspec archive-finish hook when git auto mode is disabled", async () => {
     const companionPath = await makeTempDir("mate-companion-openspec-no-auto-");
     await syncCompanionClaudeSettings(companionPath, {
       allowedAgents: ["claude"],

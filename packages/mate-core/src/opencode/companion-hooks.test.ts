@@ -186,69 +186,7 @@ describe("OpenCode companion hooks plugin", () => {
     expect(runtime.shellCalls[0]?.expressions.flat()).toContain(mateBin);
   });
 
-  test("nudges only for an archive entry created during the tool call", async () => {
-    const { companion, repo, archiveDir } = await setupCompanion();
-    const output = { title: "", output: "", metadata: {} };
-    await withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "1",
-      },
-      async () => {
-        const plugin = await CompanionHooksPlugin();
-        const before = plugin["tool.execute.before"]!;
-        const after = plugin["tool.execute.after"]!;
-        await before({ tool: "read", sessionID: "session", callID: "call" }, { args: {} });
-        await fs.mkdir(path.join(archiveDir, "2026-07-14-my-change"));
-        await after({ tool: "read", sessionID: "session", callID: "call", args: {} }, output);
-      },
-    );
-    expect(output.output).toContain("mate-artifact-finish");
-    expect(output.output).toContain("my-change");
-    expect(output.output).toContain("without asking for confirmation");
-    expect(output.output?.match(/ACTION REQUIRED:/g)).toHaveLength(1);
-  });
-
-  test("does not nudge for an archive entry created before the tool call", async () => {
-    const { companion, repo, archiveDir } = await setupCompanion();
-    const plugin = await getHooks(companion, repo);
-    const output = { title: "", output: "", metadata: {} };
-
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-external-change"));
-    await plugin["tool.execute.before"]!(
-      { tool: "read", sessionID: "session", callID: "call" },
-      { args: {} },
-    );
-    await plugin["tool.execute.after"]!(
-      { tool: "read", sessionID: "session", callID: "call", args: {} },
-      output,
-    );
-
-    expect(output.output).toBe("");
-  });
-
-  test("keeps overlapping tool-call snapshots independent", async () => {
-    const { companion, repo, archiveDir } = await setupCompanion();
-    const plugin = await getHooks(companion, repo);
-    const before = plugin["tool.execute.before"]!;
-    const after = plugin["tool.execute.after"]!;
-    const firstOutput = { title: "", output: "", metadata: {} };
-    const secondOutput = { title: "", output: "", metadata: {} };
-
-    await before({ tool: "read", sessionID: "one", callID: "first" }, { args: {} });
-    await before({ tool: "read", sessionID: "two", callID: "second" }, { args: {} });
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-my-change"));
-    await after({ tool: "read", sessionID: "one", callID: "first", args: {} }, firstOutput);
-    await after({ tool: "read", sessionID: "two", callID: "second", args: {} }, secondOutput);
-
-    expect(firstOutput.output).toContain("my-change");
-    expect(secondOutput.output).toContain("my-change");
-  });
-
-  test("discards pending snapshots when their session is deleted", async () => {
+  test("neither nudges nor blocks when an archive entry appears during a tool call", async () => {
     const { companion, repo, archiveDir } = await setupCompanion();
     const plugin = await getHooks(companion, repo);
     const output = { title: "", output: "", metadata: {} };
@@ -257,10 +195,7 @@ describe("OpenCode companion hooks plugin", () => {
       { tool: "read", sessionID: "session", callID: "call" },
       { args: {} },
     );
-    await plugin.event!({
-      event: { type: "session.deleted", properties: { info: { id: "session" } } },
-    } as never);
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-external-change"));
+    await fs.mkdir(path.join(archiveDir, "2026-07-14-acme"));
     await plugin["tool.execute.after"]!(
       { tool: "read", sessionID: "session", callID: "call", args: {} },
       output,
@@ -269,106 +204,35 @@ describe("OpenCode companion hooks plugin", () => {
     expect(output.output).toBe("");
   });
 
-  test("discards pending snapshots when the plugin is disposed", async () => {
-    const { companion, repo, archiveDir } = await setupCompanion();
-    const plugin = await getHooks(companion, repo);
-    const output = { title: "", output: "", metadata: {} };
-
-    await plugin["tool.execute.before"]!(
-      { tool: "read", sessionID: "session", callID: "call" },
-      { args: {} },
-    );
-    await plugin.dispose!();
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-external-change"));
-    await plugin["tool.execute.after"]!(
-      { tool: "read", sessionID: "session", callID: "call", args: {} },
-      output,
-    );
-
-    expect(output.output).toBe("");
-  });
-
-  test("nudges after a direct archive command", async () => {
+  test("allows an archive command and a raw archive move without guidance", async () => {
     const { companion, repo } = await setupCompanion();
-    const output = { title: "", output: "", metadata: {} };
-    await withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "1",
-      },
-      async () => {
-        const plugin = await CompanionHooksPlugin();
-        await plugin["tool.execute.after"]!(
-          {
-            tool: "bash",
-            sessionID: "session",
-            callID: "call",
-            args: { command: "openspec archive my-change --json --yes" },
-          },
-          output,
-        );
-      },
-    );
-    expect(output.output).toContain("my-change");
+    const plugin = await getHooks(companion, repo);
+
+    for (const command of [
+      "openspec archive acme --json --yes",
+      'mv "acme" "openspec/changes/archive/2026-07-14-acme"',
+    ]) {
+      const output = { title: "", output: "", metadata: {} };
+      await plugin["tool.execute.before"]!(
+        { tool: "bash", sessionID: "session", callID: "call" },
+        { args: { command } },
+      );
+      await plugin["tool.execute.after"]!(
+        { tool: "bash", sessionID: "session", callID: "call", args: { command } },
+        output,
+      );
+      expect(output.output).toBe("");
+    }
   });
 
-  test("nudges after a move command and ignores non-archive names", async () => {
+  test("keeps the tool hooks registered regardless of Git auto mode", async () => {
     const { companion, repo } = await setupCompanion();
-    const output = { title: "", output: "", metadata: {} };
-    await withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "1",
-      },
-      async () => {
-        const plugin = await CompanionHooksPlugin();
-        await plugin["tool.execute.after"]!(
-          {
-            tool: "bash",
-            sessionID: "session",
-            callID: "call",
-            args: { command: 'mv "my-change" "openspec/changes/archive/2026-07-14-my-change"' },
-          },
-          output,
-        );
-      },
-    );
-    expect(output.output).toContain("my-change");
-  });
 
-  test("does not nudge initial entries or disabled auto mode", async () => {
-    const { companion, repo, archiveDir } = await setupCompanion();
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-existing-change"));
-    const output = { title: "", output: "", metadata: {} };
-    await withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "1",
-      },
-      async () => {
-        const plugin = await CompanionHooksPlugin();
-        await plugin["tool.execute.before"]!(
-          { tool: "bash", sessionID: "session", callID: "call" },
-          { args: {} },
-        );
-        await plugin["tool.execute.after"]!(
-          { tool: "bash", sessionID: "session", callID: "call", args: {} },
-          output,
-        );
-      },
-    );
-    expect(output.output).toBe("");
-    const disabled = await getHooks(companion, repo, "0");
-    expect(disabled["tool.execute.after"]).toBeDefined();
+    for (const autoMode of ["1", "0"]) {
+      const plugin = await getHooks(companion, repo, autoMode);
+      expect(plugin["tool.execute.before"]).toBeDefined();
+      expect(plugin["tool.execute.after"]).toBeDefined();
+    }
   });
 
   async function setupRepoFixture(prefix: string) {

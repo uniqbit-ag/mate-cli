@@ -2802,13 +2802,14 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
         "Bash(openspec:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
-        "Skill(mate-artifact-finish)",
+        "Skill(mate-artifact-publish)",
         "Skill(mate-domain-modeling)",
         "Skill(mate-grill-me)",
         "Skill(mate-grill-with-docs)",
         "Skill(mate-grilling)",
         "Skill(mate-interview-me)",
         "Skill(mate-openspec-backfill)",
+        "Skill(mate-simplify-code)",
         "Skill(openspec-apply-change)",
         "Skill(openspec-archive-change)",
         "Skill(openspec-explore)",
@@ -2817,17 +2818,18 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-artifact-finish/SKILL.md": "9341954094cf",
-    "mate-artifact-finish/references/openspec.md": "b5030ef82fed",
+    "mate-artifact-publish/SKILL.md": "14bd712db754",
+    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "78c84680f365",
+    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-grill-me/SKILL.md": "a705c050cb3b",
-    "mate-grill-with-docs/SKILL.md": "a5a762b44755",
-    "mate-grilling/SKILL.md": "5bedb7daec87",
-    "mate-interview-me/SKILL.md": "40201a04b304",
-    "mate-openspec-backfill/SKILL.md": "8baa99df7d36",
+    "mate-grill-me/SKILL.md": "bbccd2654f71",
+    "mate-grill-with-docs/SKILL.md": "d79278237d49",
+    "mate-grilling/SKILL.md": "9fa3fb50cc73",
+    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
     "openspec-explore/SKILL.md": "477fdec2cdb0",
@@ -2871,7 +2873,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -2962,13 +2964,14 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           "Skill(openspec-propose)",
           "Skill(openspec-apply-change)",
           "Skill(openspec-archive-change)",
-          "Skill(mate-artifact-finish)",
+          "Skill(mate-artifact-publish)",
           "Skill(mate-openspec-backfill)",
           "Skill(mate-interview-me)",
           "Skill(mate-grill-me)",
           "Skill(mate-grilling)",
           "Skill(mate-grill-with-docs)",
           "Skill(mate-domain-modeling)",
+          "Skill(mate-simplify-code)",
           "Bash(openspec:*)",
           "Bash(mate cap graphify:*)",
           "Bash(<wrapper-bin>/openspec:*)",
@@ -3018,17 +3021,18 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   },
   "opencodePlugins": {},
   "opencodeSkills": {
-    "mate-artifact-finish/SKILL.md": "ad4b5ad3b2fb",
-    "mate-artifact-finish/references/openspec.md": "868462a01e02",
+    "mate-artifact-publish/SKILL.md": "14bd712db754",
+    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "78c84680f365",
+    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-grill-me/SKILL.md": "a705c050cb3b",
-    "mate-grill-with-docs/SKILL.md": "a5a762b44755",
-    "mate-grilling/SKILL.md": "5bedb7daec87",
-    "mate-interview-me/SKILL.md": "40201a04b304",
-    "mate-openspec-backfill/SKILL.md": "8baa99df7d36",
+    "mate-grill-me/SKILL.md": "bbccd2654f71",
+    "mate-grill-with-docs/SKILL.md": "d79278237d49",
+    "mate-grilling/SKILL.md": "9fa3fb50cc73",
+    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "cb6e43b175c8",
     "openspec-archive-change/SKILL.md": "920c4cc68edf",
     "openspec-explore/SKILL.md": "87d1237e5ffa",
@@ -3076,7 +3080,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -3166,13 +3170,14 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
         "Bash(openspec:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
-        "Skill(mate-artifact-finish)",
+        "Skill(mate-artifact-publish)",
         "Skill(mate-domain-modeling)",
         "Skill(mate-grill-me)",
         "Skill(mate-grill-with-docs)",
         "Skill(mate-grilling)",
         "Skill(mate-interview-me)",
         "Skill(mate-openspec-backfill)",
+        "Skill(mate-simplify-code)",
         "Skill(openspec-apply-change)",
         "Skill(openspec-archive-change)",
         "Skill(openspec-explore)",
@@ -3181,17 +3186,18 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "claudeSkills": {
-    "mate-artifact-finish/SKILL.md": "9341954094cf",
-    "mate-artifact-finish/references/openspec.md": "b5030ef82fed",
+    "mate-artifact-publish/SKILL.md": "14bd712db754",
+    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "78c84680f365",
+    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-grill-me/SKILL.md": "a705c050cb3b",
-    "mate-grill-with-docs/SKILL.md": "a5a762b44755",
-    "mate-grilling/SKILL.md": "5bedb7daec87",
-    "mate-interview-me/SKILL.md": "40201a04b304",
-    "mate-openspec-backfill/SKILL.md": "8baa99df7d36",
+    "mate-grill-me/SKILL.md": "bbccd2654f71",
+    "mate-grill-with-docs/SKILL.md": "d79278237d49",
+    "mate-grilling/SKILL.md": "9fa3fb50cc73",
+    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
     "openspec-explore/SKILL.md": "477fdec2cdb0",
@@ -3217,17 +3223,18 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   },
   "opencodePlugins": {},
   "opencodeSkills": {
-    "mate-artifact-finish/SKILL.md": "ad4b5ad3b2fb",
-    "mate-artifact-finish/references/openspec.md": "868462a01e02",
+    "mate-artifact-publish/SKILL.md": "14bd712db754",
+    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "78c84680f365",
+    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-grill-me/SKILL.md": "a705c050cb3b",
-    "mate-grill-with-docs/SKILL.md": "a5a762b44755",
-    "mate-grilling/SKILL.md": "5bedb7daec87",
-    "mate-interview-me/SKILL.md": "40201a04b304",
-    "mate-openspec-backfill/SKILL.md": "8baa99df7d36",
+    "mate-grill-me/SKILL.md": "bbccd2654f71",
+    "mate-grill-with-docs/SKILL.md": "d79278237d49",
+    "mate-grilling/SKILL.md": "9fa3fb50cc73",
+    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "cb6e43b175c8",
     "openspec-archive-change/SKILL.md": "920c4cc68edf",
     "openspec-explore/SKILL.md": "87d1237e5ffa",
@@ -3273,7 +3280,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -3320,7 +3327,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -3420,13 +3427,14 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
           "Skill(openspec-propose)",
           "Skill(openspec-apply-change)",
           "Skill(openspec-archive-change)",
-          "Skill(mate-artifact-finish)",
+          "Skill(mate-artifact-publish)",
           "Skill(mate-openspec-backfill)",
           "Skill(mate-interview-me)",
           "Skill(mate-grill-me)",
           "Skill(mate-grilling)",
           "Skill(mate-grill-with-docs)",
           "Skill(mate-domain-modeling)",
+          "Skill(mate-simplify-code)",
           "Bash(openspec:*)",
           "Bash(mate cap graphify:*)",
           "Bash(<wrapper-bin>/openspec:*)",
@@ -3590,13 +3598,14 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
         "Read(<root>/companion/**)",
         "Skill(context-mode:context-mode)",
         "Skill(graphify)",
-        "Skill(mate-artifact-finish)",
+        "Skill(mate-artifact-publish)",
         "Skill(mate-domain-modeling)",
         "Skill(mate-grill-me)",
         "Skill(mate-grill-with-docs)",
         "Skill(mate-grilling)",
         "Skill(mate-interview-me)",
         "Skill(mate-openspec-backfill)",
+        "Skill(mate-simplify-code)",
         "Skill(openspec-apply-change)",
         "Skill(openspec-archive-change)",
         "Skill(openspec-explore)",
@@ -3623,17 +3632,18 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-artifact-finish/SKILL.md": "9341954094cf",
-    "mate-artifact-finish/references/openspec.md": "b5030ef82fed",
+    "mate-artifact-publish/SKILL.md": "14bd712db754",
+    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "78c84680f365",
+    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-grill-me/SKILL.md": "a705c050cb3b",
-    "mate-grill-with-docs/SKILL.md": "a5a762b44755",
-    "mate-grilling/SKILL.md": "5bedb7daec87",
-    "mate-interview-me/SKILL.md": "40201a04b304",
-    "mate-openspec-backfill/SKILL.md": "8baa99df7d36",
+    "mate-grill-me/SKILL.md": "bbccd2654f71",
+    "mate-grill-with-docs/SKILL.md": "d79278237d49",
+    "mate-grilling/SKILL.md": "9fa3fb50cc73",
+    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
     "openspec-explore/SKILL.md": "477fdec2cdb0",
@@ -3692,17 +3702,18 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-artifact-finish/SKILL.md": "ad4b5ad3b2fb",
-    "mate-artifact-finish/references/openspec.md": "868462a01e02",
+    "mate-artifact-publish/SKILL.md": "14bd712db754",
+    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "78c84680f365",
+    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
-    "mate-grill-me/SKILL.md": "a705c050cb3b",
-    "mate-grill-with-docs/SKILL.md": "a5a762b44755",
-    "mate-grilling/SKILL.md": "5bedb7daec87",
-    "mate-interview-me/SKILL.md": "40201a04b304",
-    "mate-openspec-backfill/SKILL.md": "8baa99df7d36",
+    "mate-grill-me/SKILL.md": "bbccd2654f71",
+    "mate-grill-with-docs/SKILL.md": "d79278237d49",
+    "mate-grilling/SKILL.md": "9fa3fb50cc73",
+    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "cb6e43b175c8",
     "openspec-archive-change/SKILL.md": "920c4cc68edf",
     "openspec-explore/SKILL.md": "87d1237e5ffa",
@@ -3751,7 +3762,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>
 
@@ -3822,7 +3833,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Finish OpenSpec changes by archiving them: the archive triggers a nudge directing you to run mate artifact finish "<name>" --json — if no nudge arrives, invoke that command yourself. It is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -3922,13 +3933,14 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           "Skill(openspec-propose)",
           "Skill(openspec-apply-change)",
           "Skill(openspec-archive-change)",
-          "Skill(mate-artifact-finish)",
+          "Skill(mate-artifact-publish)",
           "Skill(mate-openspec-backfill)",
           "Skill(mate-interview-me)",
           "Skill(mate-grill-me)",
           "Skill(mate-grilling)",
           "Skill(mate-grill-with-docs)",
           "Skill(mate-domain-modeling)",
+          "Skill(mate-simplify-code)",
           "Bash(openspec:*)",
           "Bash(mate cap graphify:*)",
           "Bash(<wrapper-bin>/openspec:*)",

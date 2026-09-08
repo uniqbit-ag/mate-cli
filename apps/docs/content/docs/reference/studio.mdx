@@ -92,9 +92,11 @@ The workflow is a built-in sequence, not a scan of skill directories on disk:
 - `openspec apply` uses `/openspec-apply-change` to implement those tasks
 - an optional `mate simplify code` step uses `/mate-simplify-code` after
   implementation, with a reminder to preserve behavior and rerun tests
-- `/mate-artifact-finish` runs `mate artifact finish`, which archives the change
-  and applies its delta specs to the main specs; it is the only sanctioned
-  completion
+- `/mate-artifact-publish` selects archived changes and runs
+  `mate artifact finish` for each after confirming that each will be committed,
+  tagged, and pushed to the companion Git repository; the command archives the
+  change and applies its delta specs to the main specs, making it the only
+  sanctioned completion
 - the panel beside the deck carries the selected change's task counts and
   per-artifact state
 

@@ -57,7 +57,7 @@ Create a spec for one feature that already exists in the working repository. The
 
 5. **Stop.** Report the change as ready-to-finish and hand off:
    - Verify: `openspec-apply-change` works through tasks.md, checking each requirement against the code.
-   - Finish: `mate-artifact-finish` applies the deltas to main specs and anchors the change.
+   - Publish: `mate-artifact-publish` applies the deltas to main specs and anchors the change.
 
 ## Guardrails
 

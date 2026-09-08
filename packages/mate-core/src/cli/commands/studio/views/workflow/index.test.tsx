@@ -22,12 +22,12 @@ function render(data: StudioCompanionPayload = payload()): string {
 }
 
 describe("workflowPlan", () => {
-  it("starts with optional pre-explore and ends with artifact finish", () => {
+  it("starts with optional pre-explore and ends with artifact publish", () => {
     const plan = workflowPlan();
     expect(plan.start.id).toBe("pre-explore");
     expect(plan.finish.id).toBe("finish");
     expect(plan.start.title).toBe("pre-explore");
-    expect(plan.finish.title).toBe("mate artifact finish");
+    expect(plan.finish.title).toBe("mate artifact publish");
   });
 
   it("offers full and minimal schema profiles", () => {
@@ -123,7 +123,7 @@ describe("workflowPlan", () => {
     expect(minimal.find((step) => step.id === "apply")?.sessionBreakBefore).toBe(true);
     expect(full.find((step) => step.id === "explore")?.sessionBreakBefore).toBeUndefined();
     expect(full.find((step) => step.id === "finish")?.prompt).toBe(
-      "/mate-artifact-finish for <change-name>",
+      "/mate-artifact-publish for <change-name>",
     );
     expect(full.find((step) => step.id === "specs")?.badges).toEqual(["human-in-loop", "openspec"]);
     expect(full.find((step) => step.id === "design")?.badges).toEqual([
@@ -153,6 +153,7 @@ describe("workflowPlan", () => {
       expect(step.what).not.toBe(step.why);
     }
     const finish = workflowPlan().finish;
+    expect(finish.what).toContain("committed, tagged, and pushed");
     expect(finish.what).toContain("delta specs");
     expect(finish.why).toContain("only sanctioned completion");
   });

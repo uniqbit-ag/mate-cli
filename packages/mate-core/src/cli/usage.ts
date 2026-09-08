@@ -26,6 +26,7 @@ export function usage(): string {
     ` ${n} hub add [source] [--id ID] [--path PATH]`,
     ` ${n} hub sync [--json] (companions + hub plugins)`,
     ` ${n} artifact finish <change-name> [--type openspec] [--force] [--no-push] [--json]`,
+    ` ${n} artifact pending [--json]`,
     ` ${n} doctor`,
     ` ${n} report [--days N] [--input FILE|-] [--json]`,
     ` ${n} studio`,

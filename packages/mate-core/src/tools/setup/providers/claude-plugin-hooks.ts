@@ -12,12 +12,11 @@ import type { ClaudeHookGroup } from "./claude-format";
  *
  * A managed session loads the Working Repository's settings as its `local`
  * source *alongside* the plugin, so every group carried over runs twice there.
- * Three survive that: the guard, whose verdict is a function of the tool input
- * alone; the guidance hook, which yields nothing when a launch environment is
- * present and so cannot double the prompt the launch already appended; and the
- * banner, whose carried copy is marked so it defers to the launch's. The
- * archive nudge stays companion-only — it emits unconditionally, and its gate
- * reads launch-only variables an Unmanaged Session never has anyway.
+ * All three survive that: the guard, whose verdict is a function of the tool
+ * input alone; the guidance hook, which yields nothing when a launch
+ * environment is present and so cannot double the prompt the launch already
+ * appended; and the banner, whose carried copy is marked so it defers to the
+ * launch's.
  */
 
 const GUARD_HOOK_SHIM = "validate-artifact-path.mjs";

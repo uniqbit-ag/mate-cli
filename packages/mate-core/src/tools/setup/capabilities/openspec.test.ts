@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -376,9 +377,11 @@ describe("createOpenspecPlugin", () => {
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
 
     for (const runtimeDir of [".claude", ".opencode"]) {
-      const retired = path.join(root, runtimeDir, "skills", "mate-openspec-artifact-finish");
-      await fs.mkdir(retired, { recursive: true });
-      await fs.writeFile(path.join(retired, "SKILL.md"), "retired\n", "utf8");
+      for (const name of ["mate-artifact-finish", "mate-openspec-artifact-finish"]) {
+        const retired = path.join(root, runtimeDir, "skills", name);
+        await fs.mkdir(retired, { recursive: true });
+        await fs.writeFile(path.join(retired, "SKILL.md"), "retired\n", "utf8");
+      }
     }
 
     await plugin.apply(
@@ -387,7 +390,7 @@ describe("createOpenspecPlugin", () => {
 
     for (const runtimeDir of [".claude", ".opencode"]) {
       const markers: Record<(typeof MATE_SKILLS)[number], string> = {
-        "mate-artifact-finish": "artifact finish",
+        "mate-artifact-publish": "artifact pending --json",
         "mate-create-report": "report --input",
         "mate-openspec-backfill": "backfill-spec-",
         "mate-interview-me": "one-question-at-a-time",
@@ -402,27 +405,75 @@ describe("createOpenspecPlugin", () => {
           fs.readFile(path.join(root, runtimeDir, "skills", skill, "SKILL.md"), "utf8"),
         ).resolves.toContain(markers[skill]);
       }
-      await expect(
-        fs.access(path.join(root, runtimeDir, "skills", "mate-openspec-artifact-finish")),
-      ).rejects.toThrow();
+      for (const retired of ["mate-artifact-finish", "mate-openspec-artifact-finish"]) {
+        await expect(fs.access(path.join(root, runtimeDir, "skills", retired))).rejects.toThrow();
+      }
     }
 
-    // Claude Code always confirms with the user before the finish pipeline
-    // commits, tags, and pushes; other tools do it in one unattended call.
-    const claudeSkill = await fs.readFile(
-      path.join(root, ".claude", "skills", "mate-artifact-finish", "SKILL.md"),
-      "utf8",
-    );
-    expect(claudeSkill).toContain("Always ask before finishing completely");
-    const opencodeSkill = await fs.readFile(
-      path.join(root, ".opencode", "skills", "mate-artifact-finish", "SKILL.md"),
-      "utf8",
-    );
-    expect(opencodeSkill).not.toContain("Always ask before finishing completely");
-    expect(opencodeSkill).toContain('artifact finish "<artifact-name>" --json\n');
+    // Every runtime confirms the commit + tag + push before the first finish
+    // call and keeps the deterministic CLI as the publication primitive.
+    for (const runtimeDir of [".claude", ".opencode"]) {
+      const publishSkill = await fs.readFile(
+        path.join(root, runtimeDir, "skills", "mate-artifact-publish", "SKILL.md"),
+        "utf8",
+      );
+      expect(publishSkill).toContain("commit, tag, and push");
+      expect(publishSkill).toContain("numbered list");
+      expect(publishSkill).toContain('artifact finish "<change-name>" --json');
+      await expect(
+        fs.readFile(
+          path.join(
+            root,
+            runtimeDir,
+            "skills",
+            "mate-artifact-publish",
+            "references",
+            "openspec.md",
+          ),
+          "utf8",
+        ),
+      ).resolves.toContain("Sequencing A Multi-Change Selection");
+    }
   });
 
-  test("does not install a Claude hook file (nudge ships in the bundled plugin)", async () => {
+  test("reconciliation preserves existing archives and their finish markers", async () => {
+    const root = await makeTempDir("mate-openspec-migration-");
+    const anchor = "2026-09-07-acme";
+    const archiveDir = path.join(root, "openspec", "changes", "archive", anchor);
+    await fs.mkdir(archiveDir, { recursive: true });
+    await fs.writeFile(path.join(archiveDir, "proposal.md"), "archived acme\n", "utf8");
+    const git = (...args: string[]) => spawnSync("git", args, { cwd: root, stdio: "ignore" });
+    git("init");
+    git("config", "user.email", "acme@example.test");
+    git("config", "user.name", "acme");
+    git("add", "-A");
+    git("commit", "-m", "seed archive");
+    git("tag", "-a", `openspec/${anchor}`, "-m", `Finish ${anchor}`);
+    /** A previously deployed runtime still carrying the retired skill. */
+    const retired = path.join(root, ".claude", "skills", "mate-artifact-finish");
+    await fs.mkdir(retired, { recursive: true });
+    await fs.writeFile(path.join(retired, "SKILL.md"), "retired\n", "utf8");
+
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    await plugin.apply(
+      makeCtx(root, ["claude", "opencode"], [{ name: "openspec" }], "reconcile", "auto"),
+    );
+    await plugin.forProvider!.claude.apply(
+      makeCtx(root, ["claude"], [{ name: "openspec" }], "reconcile", "auto"),
+    );
+
+    await expect(fs.readFile(path.join(archiveDir, "proposal.md"), "utf8")).resolves.toBe(
+      "archived acme\n",
+    );
+    const tags = spawnSync("git", ["tag", "--list"], { cwd: root, encoding: "utf8" });
+    expect(tags.stdout.trim()).toBe(`openspec/${anchor}`);
+    await expect(fs.access(retired)).rejects.toThrow();
+    await expect(
+      fs.access(path.join(root, ".claude", "skills", "mate-artifact-publish", "SKILL.md")),
+    ).resolves.toBeNull();
+  });
+
+  test("does not install a Claude archive-finish hook file", async () => {
     const root = await makeTempDir("mate-openspec-claude-hook-");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
 
@@ -435,11 +486,10 @@ describe("createOpenspecPlugin", () => {
     ).rejects.toThrow();
   });
 
-  test("removes only legacy Claude archive snapshot state", async () => {
+  test("creates no Claude archive-finish state and preserves unrelated state", async () => {
     const root = await makeTempDir("mate-openspec-claude-state-");
     const stateDir = path.join(root, ".claude", "state");
     await fs.mkdir(stateDir, { recursive: true });
-    await fs.writeFile(path.join(stateDir, "mate-artifact-finish.session.json"), "{}\n");
     await fs.writeFile(path.join(stateDir, "other.json"), "{}\n");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
 
@@ -447,30 +497,14 @@ describe("createOpenspecPlugin", () => {
       makeCtx(root, ["claude"], [{ name: "openspec" }], "setup", "auto"),
     );
 
-    await expect(
-      fs.access(path.join(stateDir, "mate-artifact-finish.session.json")),
-    ).rejects.toThrow();
-    await expect(fs.readFile(path.join(stateDir, "other.json"), "utf8")).resolves.toBe("{}\n");
-  });
-
-  test("removes legacy Claude archive snapshot state regardless of Git auto mode", async () => {
-    const root = await makeTempDir("mate-openspec-claude-hook-off-");
-    const stateDir = path.join(root, ".claude", "state");
-    await fs.mkdir(stateDir, { recursive: true });
-    await fs.writeFile(path.join(stateDir, "mate-artifact-finish.session.json"), "{}\n");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
-
-    await plugin.forProvider!.claude.apply(makeCtx(root, ["claude"]));
-
-    await expect(
-      fs.access(path.join(stateDir, "mate-artifact-finish.session.json")),
-    ).rejects.toThrow();
+    expect(await fs.readdir(stateDir)).toEqual(["other.json"]);
   });
 
   test("Claude runtime contributions include mate skill permissions", () => {
     const plugin = createOpenspecPlugin({ wrapperBinPath: () => "/bin" });
     const entries = plugin.getRuntimeContributions?.().claude?.permissionEntries ?? [];
-    expect(entries).toContain("Skill(mate-artifact-finish)");
+    expect(entries).toContain("Skill(mate-artifact-publish)");
+    expect(entries).not.toContain("Skill(mate-artifact-finish)");
     expect(entries).toContain("Skill(mate-openspec-backfill)");
     for (const skill of [
       "mate-interview-me",
@@ -502,6 +536,7 @@ describe("createOpenspecPlugin", () => {
       for (const skill of [
         ...MATE_SKILLS,
         ...MATE_ARTIFACT_SKILLS,
+        "mate-artifact-finish",
         "mate-openspec-artifact-finish",
       ]) {
         await fs.mkdir(path.join(root, runtimeDir, "skills", skill), { recursive: true });
