@@ -1,11 +1,13 @@
 /** @jsxImportSource hono/jsx */
 
-import { REFRESH_PARAM, type StudioSelection } from "../selection";
+import { companionDigest, REFRESH_PARAM, type StudioSelection } from "../selection";
 import { STUDIO_CLIENT_SCRIPT, STUDIO_PREPAINT_SCRIPT } from "./client";
+import { CompanionPicker } from "./companion-picker";
 import { CompanionSelector } from "./companion-selector";
 import { Dashboard } from "./dashboard/index";
 import { CompanionError } from "./error";
 import { formatCollectedAt, type StudioPage } from "./model";
+import { Specs } from "./specs/index";
 import { STUDIO_STYLES } from "./styles";
 import { Workflow } from "./workflow/index";
 
@@ -35,10 +37,17 @@ export function renderStudioDocument(page: StudioPage): string {
 `;
 }
 
+/**
+ * `data-companion` names the resolved companion only: the browser stores what
+ * it can be served again, never a digest the server just failed to resolve.
+ */
 function StudioShell({ page }: { page: StudioPage }) {
   return (
     <>
-      <div className="shell">
+      <div
+        className="shell"
+        data-companion={page.companion ? companionDigest(page.companion.path) : undefined}
+      >
         <Sidebar page={page} />
         <main className="main">
           <Content page={page} />
@@ -50,21 +59,22 @@ function StudioShell({ page }: { page: StudioPage }) {
 }
 
 function Content({ page }: { page: StudioPage }) {
+  if (!page.companion) {
+    return <CompanionPicker inventory={page.inventory} selection={page.selection} />;
+  }
   if (page.error) {
     return <CompanionError companionPath={page.error.companionPath} reason={page.error.reason} />;
   }
   if (!page.payload) {
     return (
       <section className="panel">
-        <p className="empty">Select a Companion Repository.</p>
+        <p className="empty">No state collected for this companion.</p>
       </section>
     );
   }
-  return page.selection.view === "workflow" ? (
-    <Workflow payload={page.payload} />
-  ) : (
-    <Dashboard payload={page.payload} />
-  );
+  if (page.selection.view === "workflow") return <Workflow payload={page.payload} />;
+  if (page.selection.view === "specs") return <Specs payload={page.payload} />;
+  return <Dashboard payload={page.payload} />;
 }
 
 function Sidebar({ page }: { page: StudioPage }) {
@@ -102,6 +112,9 @@ function ViewNav({ selection }: { selection: StudioSelection }) {
             aria-pressed={selection.view === "dashboard"}
           >
             <span>Overview</span>
+          </button>
+          <button type="submit" name="view" value="specs" aria-pressed={selection.view === "specs"}>
+            <span>Specs</span>
           </button>
           <button
             type="submit"

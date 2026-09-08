@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 
 import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 
-export type StudioView = "dashboard" | "workflow";
+export type StudioView = "dashboard" | "workflow" | "specs";
 
-export const STUDIO_VIEWS: readonly StudioView[] = ["dashboard", "workflow"];
+export const STUDIO_VIEWS: readonly StudioView[] = ["dashboard", "workflow", "specs"];
 
 export const COMPANION_PARAM = "companion";
 export const VIEW_PARAM = "view";
@@ -30,6 +30,9 @@ export interface StudioSelection {
  * enough that no absolute Companion Repository path is written into browser
  * history, autocomplete, or a shared URL.
  */
+/** The shape a digest must have to be trusted from outside the server: a URL, a browser store. */
+export const COMPANION_DIGEST_PATTERN = new RegExp(`^[0-9a-f]{${DIGEST_LENGTH}}$`);
+
 export function companionDigest(companionPath: string): string {
   return createHash("sha256").update(companionPath).digest("hex").slice(0, DIGEST_LENGTH);
 }

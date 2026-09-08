@@ -1,6 +1,7 @@
 /** @jsxImportSource hono/jsx */
 
-import type { StudioSpec } from "../../payload";
+import type { StudioCompanionPayload, StudioSpec } from "../../payload";
+import { Warnings } from "../warnings";
 
 const UNASSIGNED_AREA = "unassigned";
 
@@ -25,10 +26,20 @@ function specStatus(spec: StudioSpec): { label: string; invalid: boolean } {
 }
 
 interface SpecsProps {
-  specs: StudioSpec[];
+  payload: StudioCompanionPayload;
 }
 
-export function Specs({ specs }: SpecsProps) {
+/** Its own view: an Area map is read on its own, not alongside the changes. */
+export function Specs({ payload }: SpecsProps) {
+  return (
+    <>
+      <SpecsByArea specs={payload.specs} />
+      <Warnings warnings={payload.warnings} />
+    </>
+  );
+}
+
+function SpecsByArea({ specs }: { specs: StudioSpec[] }) {
   const groups = groupSpecsByArea(specs);
 
   return (

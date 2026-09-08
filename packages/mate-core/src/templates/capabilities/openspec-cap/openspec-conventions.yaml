@@ -1,0 +1,30 @@
+name: mate-openspec-conventions
+version: 1
+description: Shared scope, frontmatter, delta, and canonical-spec rules for Mate schemas.
+rules: |
+  - Every change artifact MUST name at least one paired repository and area in its frontmatter scopes list.
+  - Repository identity comes from the Git remote. Normalize SSH and HTTPS forms such as git@github.com:org/repository.git and https://github.com/org/repository.git to org/repository.
+  - In a monorepo, an Area is the owning workspace or package root: the directory containing the nearest package manifest (package.json, Cargo.toml, go.mod, and similar). A non-monorepo may use the exact affected path and uses . only when the repository root is affected.
+  - Do not use a local checkout basename, internal repository ID, synthetic Area, or N/A as durable metadata.
+  - Preserve each repository/Area pair. Never use separate repositories and areas arrays.
+  - Default a new capability to one owning package root. Use one capability per repository when a change crosses repositories. A capability spec names exactly one repository, although a change may name several.
+  - Area identity comes only from frontmatter. Capability and change folder names are descriptive and have no scope authority.
+  - A delta lives at openspec/changes/<name>/specs/<capability>/spec.md.
+  - A canonical spec lives at openspec/specs/<capability>/spec.md. The archive command merges delta requirement blocks into this durable file.
+  - OpenSpec parses only ## ADDED Requirements, ## MODIFIED Requirements, ## REMOVED Requirements, and ## RENAMED Requirements. Every parsed requirement starts with ### Requirement:. Do not substitute User Stories in these headers.
+  - Every requirement MUST carry an Area marker whose values appear in the delta frontmatter. This survives archive, which copies requirement blocks but discards delta frontmatter.
+  - A canonical spec uses flat frontmatter: type: spec, capability, scalar repository, areas list, and tags: [openspec/spec]. It MUST NOT retain a nested scopes list or delta-only change and delta tags.
+  - To project a delta, all its scope entries MUST name the same repository. Emit that repository as the canonical scalar and distinct Areas as areas in their original order. If repositories differ, split the capability before archive.
+example_delta_frontmatter: |
+  ---
+  type: delta-spec
+  change: <change-name>
+  capability: <capability>
+  tags: [openspec/change, openspec/spec, openspec/delta]
+  scopes:
+    - repository: org/repository
+      area: .
+  ---
+notes:
+  - "Change frontmatter uses paired scopes. Canonical frontmatter uses flat repository and areas scalars instead."
+  - "Do not add a ## Scopes body section; frontmatter is the only source of scope identity."

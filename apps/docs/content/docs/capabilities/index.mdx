@@ -16,6 +16,16 @@ capability.
 - [TokenSave](https://github.com/aovestdipaperino/tokensave) for code-graph exploration through MCP
 - [React Doctor](https://www.react.doctor/) for React diagnostics
 
+## Skill Acknowledgements
+
+Mate's bundled process skills are adapted from open-source work by:
+
+- [Addy Osmani's `agent-skills`](https://github.com/addyosmani/agent-skills), including `mate-interview-me` and `mate-simplify-code`
+- [Matt Pocock's `skills`](https://github.com/mattpocock/skills), including `mate-domain-modeling`, `mate-grill-me`, `mate-grilling`, and `mate-grill-with-docs`
+
+These adaptations add Mate-specific workflow, policy, and companion integration
+while preserving credit to the original authors.
+
 ## How They Fit
 
 The default workflow starts with `mate install` in the working repository, then
@@ -37,7 +47,48 @@ OpenSpec commands are routed through the companion context:
 mate cap openspec <subcommand> [args...]
 ```
 
-Setup can use OpenSpec's default schema or Mate's `mate-v1` schema.
+Mate ships two schema profiles and installs both into the companion. Schema choice
+selects the artifact set; it does not make stages inside a profile optional:
+
+- `mate-v1`: the complete `proposal → specs → design → tasks` workflow
+- `mate-minimal`: the short `specs → tasks` workflow, with parser-compatible
+  requirements written as user stories and Given/When/Then acceptance criteria
+
+Choose `mate-minimal` only when every gate is true:
+
+- one repository and one Area
+- no new dependency or data migration
+- no public API change or breaking behavior
+- no cross-cutting architecture or unresolved technical decision
+
+If any gate is false or unclear, use `mate-v1`. Its explore and design artifacts
+are required, but they can stay concise for simple changes. Installing a schema
+does not activate it. Setup keeps OpenSpec's own default unless `mate-v1` is
+explicitly selected as the companion default during `mate companion setup`, which
+is the only flow that writes `openspec/config.yaml`. `mate-minimal` is never the
+companion default.
+
+Both profiles can be selected for one change without changing the companion
+default:
+
+```sh
+mate cap openspec new change <name> --schema mate-v1
+mate cap openspec new change <name> --schema mate-minimal
+```
+
+OpenSpec records the selected profile in the change's `.openspec.yaml`.
+
+### Delta And Canonical Specs
+
+A change writes proposed requirements as delta specs under
+`openspec/changes/<name>/specs/<capability>/spec.md`. The durable current
+contract lives under `openspec/specs/<capability>/spec.md` as the canonical spec.
+Do not edit canonical specs while planning a change.
+
+`openspec archive` is the bridge: it merges the delta requirement blocks into the
+canonical spec and moves the change into `openspec/changes/archive/<date>-<name>/`.
+`mate artifact finish` is the sanctioned terminal flow for that archive and its
+follow-up Git work.
 
 ### Graphify
 

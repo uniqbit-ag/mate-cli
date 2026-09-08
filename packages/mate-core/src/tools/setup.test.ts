@@ -802,7 +802,12 @@ describe("executeSetup", () => {
     );
 
     await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
-    await expect(fs.access(path.join(root, "openspec", "schemas", "mate-v1"))).rejects.toThrow();
+    await expect(
+      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
+    ).resolves.toBeNull();
+    await expect(
+      fs.access(path.join(root, "openspec", "schemas", "mate-minimal", "schema.yaml")),
+    ).resolves.toBeNull();
   });
 
   test("setup persists git auto mode selection", async () => {

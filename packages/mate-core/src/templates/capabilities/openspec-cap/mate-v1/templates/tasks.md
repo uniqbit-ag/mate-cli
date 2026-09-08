@@ -3,6 +3,9 @@ type: change-tasks
 change: <change-name>
 schema: mate-v1
 tags: [openspec/change, openspec/tasks]
+scopes:
+  - repository: org/repository
+    area: .
 ---
 
 ## 1. Setup

@@ -16,11 +16,9 @@ scopes:
 
 ### Requirement: <!-- requirement name -->
 
-<!-- requirement text. EVERY requirement carries an **Area:** marker naming the Areas it
-binds, using values from the frontmatter scopes — always, even when there is only one
-Area. Put it on the line below, e.g.:
-**Area:** `packages/ui`
-Every scopes entry names the same repository, so no **Repository:** marker is ever used. -->
+<!-- Write the normative requirement. EVERY requirement carries an **Area:** marker from the
+frontmatter scopes, for example **Area:** `packages/ui`. No **Repository:** marker is ever used.
+See openspec/mate-conventions.yaml for shared scope and canonical-spec rules. -->
 
 #### Scenario: <!-- scenario name -->
 

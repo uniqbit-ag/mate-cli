@@ -9,6 +9,8 @@ metadata:
   version: "1.0"
 ---
 
+# Mate OpenSpec Backfill
+
 Create a spec for one feature that already exists in the working repository. The run ends with a standard ready-to-finish change — it never edits main specs and never finishes.
 
 ## Scope rules

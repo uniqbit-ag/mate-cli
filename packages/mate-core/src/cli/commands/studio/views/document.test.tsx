@@ -27,6 +27,7 @@ const selected: StudioPage = page({
     companionPath: acme,
     changes: [{ name: "add-auth", completedTasks: 1, totalTasks: 4, artifacts: [] }],
     specs: [{ capability: "acme-login", areas: ["acme"] }],
+    skills: ["mate-interview-me", "mate-grill-me", "mate-grill-with-docs"],
     topology: null,
     warnings: [],
   },
@@ -84,18 +85,42 @@ describe("renderStudioDocument", () => {
     }
   });
 
-  it("asks for a companion when none is named", () => {
+  it("offers every companion as a card when none is named", () => {
     const markup = renderStudioDocument(page());
-    expect(markup).toContain("Select a Companion Repository.");
+    expect(markup).toContain("<h3>Choose a Companion Repository</h3>");
+    expect(markup).toContain(`value="${digest}" class="picker-card"`);
+    expect(markup).toContain("acme-companion");
     expect(markup).not.toContain("<h3>Changes</h3>");
+  });
+
+  it("names the resolved companion for the browser to remember, and nothing else", () => {
+    expect(renderStudioDocument(selected)).toContain(
+      `<div class="shell" data-companion="${digest}"`,
+    );
+    expect(renderStudioDocument(page())).toContain('<div class="shell">');
+    expect(
+      renderStudioDocument(
+        page({ selection: { companionDigest: "deadbeef00", view: "dashboard", refresh: false } }),
+      ),
+    ).toContain('<div class="shell">');
   });
 
   it("presents the named companion's Dashboard", () => {
     const markup = renderStudioDocument(selected);
     expect(markup).toContain("<h3>Changes</h3>");
-    expect(markup).toContain("<h3>Specs by Area</h3>");
+    expect(markup).not.toContain("<h3>Specs by Area</h3>");
     expect(markup).toContain("add-auth");
     expect(markup).toContain('aria-pressed="true"');
+  });
+
+  it("presents the Specs view when the URL names it", () => {
+    const markup = renderStudioDocument({
+      ...selected,
+      selection: { ...selected.selection, view: "specs" },
+    });
+    expect(markup).toContain("<h3>Specs by Area</h3>");
+    expect(markup).not.toContain("<h3>Changes</h3>");
+    expect(markup).toContain('name="view" value="specs" aria-pressed="true"');
   });
 
   it("presents the Workflow view when the URL names it", () => {
@@ -106,6 +131,17 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain("<h2>Workflow</h2>");
     expect(markup).not.toContain('id="studio-change"');
     expect(markup).not.toContain("<h3>Changes</h3>");
+  });
+
+  it("renders the two pre-explore choices without offering documentation mode", () => {
+    const markup = renderStudioDocument({
+      ...selected,
+      selection: { ...selected.selection, view: "workflow" },
+    });
+    expect(markup).toContain('data-copy-label="mate-interview-me prompt"');
+    expect(markup).toContain('data-copy-label="mate-grill-me prompt"');
+    expect(markup).not.toContain('data-copy-label="mate-grill-with-docs command"');
+    expect(markup).toContain("Skip pre-explore");
   });
 
   it("presents an unreadable companion as an error while the selector stays usable", () => {

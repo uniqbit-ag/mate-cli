@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { parse as parseYaml } from "yaml";
 
 import type { SetupContext } from "../plugin";
+
 import {
   createOpenspecPlugin,
   deriveOpenSpecTools,
@@ -12,6 +14,13 @@ import {
   MATE_SKILLS,
   OPENSPEC_SKILLS,
 } from "./openspec";
+
+interface MinimalSchema {
+  name: string;
+  version: number;
+  artifacts: { id: string; template: string; requires: string[] }[];
+  apply: { requires: string[]; tracks: string; instruction: string };
+}
 
 const tempRoots: string[] = [];
 
@@ -381,6 +390,12 @@ describe("createOpenspecPlugin", () => {
         "mate-artifact-finish": "artifact finish",
         "mate-create-report": "report --input",
         "mate-openspec-backfill": "backfill-spec-",
+        "mate-interview-me": "one-question-at-a-time",
+        "mate-grill-me": "mate-grilling",
+        "mate-grilling": "design tree",
+        "mate-grill-with-docs": "mate-domain-modeling",
+        "mate-domain-modeling": "CONTEXT-MAP.md",
+        "mate-simplify-code": "Preserve Behavior Exactly",
       };
       for (const skill of MATE_SKILLS) {
         await expect(
@@ -453,17 +468,27 @@ describe("createOpenspecPlugin", () => {
   });
 
   test("Claude runtime contributions include mate skill permissions", () => {
-    const plugin = createOpenspecPlugin();
+    const plugin = createOpenspecPlugin({ wrapperBinPath: () => "/bin" });
     const entries = plugin.getRuntimeContributions?.().claude?.permissionEntries ?? [];
     expect(entries).toContain("Skill(mate-artifact-finish)");
     expect(entries).toContain("Skill(mate-openspec-backfill)");
+    for (const skill of [
+      "mate-interview-me",
+      "mate-grill-me",
+      "mate-grilling",
+      "mate-grill-with-docs",
+      "mate-domain-modeling",
+      "mate-simplify-code",
+    ]) {
+      expect(entries).toContain(`Skill(${skill})`);
+    }
   });
 
-  test("does not install mate-authored skills for inactive providers", async () => {
+  test("does not install mate-authored skills for unsupported providers", async () => {
     const root = await makeTempDir("mate-openspec-mate-skills-inactive-");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
 
-    await plugin.apply(makeCtx(root, ["claude"]));
+    await plugin.apply(makeCtx(root, ["custom"]));
 
     await expect(fs.access(path.join(root, ".claude", "skills"))).rejects.toThrow();
     await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
@@ -474,7 +499,11 @@ describe("createOpenspecPlugin", () => {
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}) });
 
     for (const runtimeDir of [".claude", ".opencode"]) {
-      for (const skill of [...MATE_ARTIFACT_SKILLS, "mate-openspec-artifact-finish"]) {
+      for (const skill of [
+        ...MATE_SKILLS,
+        ...MATE_ARTIFACT_SKILLS,
+        "mate-openspec-artifact-finish",
+      ]) {
         await fs.mkdir(path.join(root, runtimeDir, "skills", skill), { recursive: true });
         await fs.writeFile(
           path.join(root, runtimeDir, "skills", skill, "SKILL.md"),
@@ -497,6 +526,36 @@ describe("createOpenspecPlugin", () => {
     await plugin.apply(makeCtx("/tmp/companion", []));
 
     expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  test("re-syncs bundled Mate skills idempotently without duplicating files", async () => {
+    const root = await makeTempDir("mate-openspec-mate-skills-resync-");
+    const runCommand = mock(async () => {});
+    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
+    const ctx = makeCtx(root, ["claude"], [{ name: "openspec" }], "sync");
+
+    await plugin.apply(ctx);
+    await plugin.apply(ctx);
+
+    const skillPath = path.join(root, ".claude", "skills", "mate-grill-me", "SKILL.md");
+    await expect(fs.readFile(skillPath, "utf8")).resolves.toContain("/mate-grilling");
+    await expect(fs.readdir(path.dirname(skillPath))).resolves.toEqual(["SKILL.md"]);
+  });
+
+  test("preserves unmanaged skill trees during setup and teardown", async () => {
+    const root = await makeTempDir("mate-openspec-mate-skills-unmanaged-");
+    const unmanaged = path.join(root, ".claude", "skills", "custom-skill", "SKILL.md");
+    await fs.mkdir(path.dirname(unmanaged), { recursive: true });
+    await fs.writeFile(unmanaged, "keep me\n", "utf8");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+
+    await plugin.apply(makeCtx(root, ["claude"]));
+    await plugin.teardown(makeCtx(root, []));
+
+    await expect(fs.readFile(unmanaged, "utf8")).resolves.toBe("keep me\n");
+    await expect(
+      fs.access(path.join(root, ".claude", "skills", "mate-grill-me")),
+    ).rejects.toThrow();
   });
 
   test("setup installs openspec even when no supported providers are active", async () => {
@@ -545,18 +604,93 @@ describe("createOpenspecPlugin", () => {
       path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml"),
       "utf8",
     );
-    expect(schema).toContain("version: 6");
-    expect(schema).toContain(
-      "Every delta and canonical spec MUST record a `scopes` frontmatter list",
+    expect(schema).toContain("version: 8");
+    expect(schema).toContain("openspec/mate-conventions.yaml");
+    expect(schema).toContain("id: proposal");
+    expect(schema).not.toContain("id: explore");
+    expect(schema).not.toContain("explore-brief.md");
+    await expect(
+      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "templates", "explore-brief.md")),
+    ).rejects.toThrow();
+    await expect(
+      fs.readFile(path.join(root, "openspec", "mate-conventions.yaml"), "utf8"),
+    ).resolves.toContain("name: mate-openspec-conventions");
+  });
+
+  test("seeds mate-minimal without activating a companion default", async () => {
+    const root = await makeTempDir("mate-openspec-minimal-schema-seed-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
+
+    const schemaDir = path.join(root, "openspec", "schemas", "mate-minimal");
+    const schema = parseYaml(
+      await fs.readFile(path.join(schemaDir, "schema.yaml"), "utf8"),
+    ) as MinimalSchema;
+
+    expect(schema.name).toBe("mate-minimal");
+    expect(schema.version).toBeGreaterThan(0);
+    expect(schema.artifacts.map((artifact) => artifact.id)).toEqual(["specs", "tasks"]);
+    expect(schema.artifacts[0].requires).toEqual([]);
+    expect(schema.artifacts[1].requires).toEqual(["specs"]);
+    expect(schema.apply).toEqual({
+      requires: ["tasks"],
+      tracks: "tasks.md",
+      instruction: expect.any(String),
+    });
+    await expect(fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")).rejects.toThrow();
+  });
+
+  test("mate-minimal templates carry parser-compatible user-story rules", async () => {
+    const root = await makeTempDir("mate-openspec-minimal-schema-templates-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
+
+    const schemaDir = path.join(root, "openspec", "schemas", "mate-minimal");
+    const schema = parseYaml(
+      await fs.readFile(path.join(schemaDir, "schema.yaml"), "utf8"),
+    ) as MinimalSchema;
+    const spec = await fs.readFile(
+      path.join(schemaDir, "templates", schema.artifacts[0].template),
+      "utf8",
     );
-    expect(schema).toContain(
-      "Mark unconditionally, never by cascade: a requirement's Area is then readable without consulting the frontmatter",
+    const tasks = await fs.readFile(
+      path.join(schemaDir, "templates", schema.artifacts[1].template),
+      "utf8",
     );
-    expect(schema).toContain("Every change MUST name at least one scope");
-    expect(schema).toContain("local checkout directory basename");
-    expect(schema).toContain("or `N/A`");
-    expect(schema).toContain("id: explore");
-    expect(schema).toContain("generates: explore-brief.md");
+
+    expect(spec).toContain("## ADDED Requirements");
+    expect(spec).toContain("### Requirement:");
+    expect(spec).not.toContain("## ADDED User Stories");
+    expect(spec).toContain("As a <!-- role -->, I want");
+    expect(spec).toContain("The system MUST support");
+    expect(spec).toContain("#### Acceptance Criteria");
+    for (const marker of ["- **Given**", "- **When**", "- **Then**"]) {
+      expect(spec).toContain(marker);
+    }
+    expect(tasks).toContain("schema: mate-minimal");
+    expect(tasks).toContain("scopes:");
+    expect(schema.artifacts.some((artifact) => ["proposal", "design"].includes(artifact.id))).toBe(
+      false,
+    );
+  });
+
+  test("deselection leaves a config.yaml Mate did not write", async () => {
+    const root = await makeTempDir("mate-openspec-schema-user-config-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
+    const userConfig = "schema: spec-driven\n";
+    await fs.writeFile(path.join(root, "openspec", "config.yaml"), userConfig, "utf8");
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
+
+    await expect(fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")).resolves.toBe(
+      userConfig,
+    );
+    await expect(
+      fs.access(path.join(root, "openspec", "schemas", "mate-minimal", "schema.yaml")),
+    ).resolves.toBeNull();
   });
 
   test("never rewrites an existing config.yaml, even with user-added keys", async () => {
@@ -574,7 +708,7 @@ describe("createOpenspecPlugin", () => {
     );
   });
 
-  test("default schema profile removes prior mate-v1 managed files", async () => {
+  test("default schema profile keeps schemas available without activating a default", async () => {
     const root = await makeTempDir("mate-openspec-schema-default-");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
     await fs.mkdir(path.join(root, "openspec", "schemas", "mate-v1"), { recursive: true });
@@ -589,7 +723,10 @@ describe("createOpenspecPlugin", () => {
     await plugin.apply(makeCtx(root, ["claude"]));
 
     await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
-    await expect(fs.access(path.join(root, "openspec", "schemas", "mate-v1"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, "openspec", "schemas", "mate-v1"))).resolves.toBeNull();
+    await expect(
+      fs.access(path.join(root, "openspec", "schemas", "mate-minimal")),
+    ).resolves.toBeNull();
   });
 
   test("provider teardown removes only that runtime's openspec skills", async () => {
@@ -609,6 +746,10 @@ describe("createOpenspecPlugin", () => {
         "opencode\n",
         "utf8",
       );
+    }
+    for (const skill of MATE_SKILLS) {
+      await fs.mkdir(path.join(root, ".claude", "skills", skill), { recursive: true });
+      await fs.mkdir(path.join(root, ".opencode", "skills", skill), { recursive: true });
     }
 
     await plugin.forProvider!.claude.teardown(makeCtx(root, ["opencode"]));
@@ -655,5 +796,9 @@ describe("createOpenspecPlugin", () => {
 
     await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
     await expect(fs.access(path.join(root, "openspec", "schemas", "mate-v1"))).rejects.toThrow();
+    await expect(
+      fs.access(path.join(root, "openspec", "schemas", "mate-minimal")),
+    ).rejects.toThrow();
+    await expect(fs.access(path.join(root, "openspec", "mate-conventions.yaml"))).rejects.toThrow();
   });
 });

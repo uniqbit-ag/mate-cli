@@ -8,17 +8,17 @@ scopes:
     area: .
 ---
 
-## Problem
+## Evidence
 
-<!-- State the problem or opportunity in a few concise sentences. -->
+<!-- Summarize relevant repository facts, behavior, and constraints. -->
 
-## Current State
-
-<!-- Summarize the relevant repository, Area, existing behavior, and constraints. -->
-
-## Questions
+## Unknowns
 
 <!-- Record only unresolved, high-leverage questions and their answers. -->
+
+## Options
+
+<!-- List plausible directions and the trade-offs that matter. -->
 
 ## Direction
 

@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { readSpecAreas } from "./areas";
+import { collectMateSkillNames } from "./mate-inventory";
 import {
   listChanges,
   listSpecs,
@@ -40,6 +41,7 @@ export interface StudioCompanionPayload {
   companionPath: string;
   changes: StudioChange[];
   specs: StudioSpec[];
+  skills?: string[];
   topology: WorkflowTopology | null;
   warnings: string[];
 }
@@ -57,6 +59,7 @@ export interface CompanionPayloadDeps {
   validateAll?: typeof validateAll;
   readWorkflowTopology?: typeof readWorkflowTopology;
   readSpecAreas?: (specsRoot: string, specId: string) => Promise<string[]>;
+  collectMateSkillNames?: typeof collectMateSkillNames;
 }
 
 function describe(failure: OpenSpecFailure): string {
@@ -89,13 +92,18 @@ export async function assembleCompanionPayload(
   const collectValidation = deps.validateAll ?? validateAll;
   const collectTopology = deps.readWorkflowTopology ?? readWorkflowTopology;
   const collectAreas = deps.readSpecAreas ?? readSpecAreas;
+  const collectSkills = deps.collectMateSkillNames ?? collectMateSkillNames;
 
-  const [changeList, specList, status, validation, topology] = await Promise.all([
+  const [changeList, specList, status, validation, topology, skillInventory] = await Promise.all([
     collectChanges(companionPath),
     collectSpecs(companionPath),
     collectStatus(companionPath),
     collectValidation(companionPath),
     collectTopology(companionPath),
+    collectSkills(companionPath).then(
+      (skills) => ({ skills }),
+      (error: unknown) => ({ error }),
+    ),
   ]);
 
   for (const required of [changeList, specList, status]) {
@@ -110,6 +118,11 @@ export async function assembleCompanionPayload(
   const warnings: string[] = [];
   if (!topology.ok) warnings.push(describe(topology.failure));
   if (!validation.ok) warnings.push(describe(validation.failure));
+  if ("error" in skillInventory) {
+    warnings.push(
+      `Mate skill inventory: ${skillInventory.error instanceof Error ? skillInventory.error.message : String(skillInventory.error)}`,
+    );
+  }
   const validationItems = validation.ok ? validation.value.items : undefined;
 
   const statusByChange = new Map(
@@ -151,6 +164,7 @@ export async function assembleCompanionPayload(
     companionPath,
     changes,
     specs,
+    skills: "skills" in skillInventory ? skillInventory.skills : [],
     topology: topology.ok ? topology.value : null,
     warnings,
   };

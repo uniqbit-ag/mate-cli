@@ -4,7 +4,6 @@ import { describe, expect, it } from "bun:test";
 
 import type { StudioCompanionPayload } from "../../payload";
 import { Dashboard } from "./index";
-import { groupSpecsByArea } from "./specs";
 
 function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompanionPayload {
   return {
@@ -18,7 +17,7 @@ function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompani
 }
 
 describe("Dashboard", () => {
-  it("presents distinct sections for changes and for specs by Area", () => {
+  it("presents the changes, and leaves the specs to their own view", () => {
     const markup = String(
       <Dashboard
         payload={payload({
@@ -28,8 +27,8 @@ describe("Dashboard", () => {
       />,
     );
     expect(markup).toContain("<h3>Changes</h3>");
-    expect(markup).toContain("<h3>Specs by Area</h3>");
-    expect(markup).toContain('aria-label="Area acme"');
+    expect(markup).not.toContain("<h3>Specs by Area</h3>");
+    expect(markup).not.toContain("acme-login");
   });
 
   it("shows a change's completed and total task counts", () => {
@@ -74,37 +73,12 @@ describe("Dashboard", () => {
     expect(markup).toContain("2 issues");
   });
 
-  it("gives each empty section an explicit no-data message", () => {
-    const markup = String(<Dashboard payload={payload()} />);
-    expect(markup).toContain("No changes in this companion.");
-    expect(markup).toContain("No specs in this companion.");
+  it("gives an empty section an explicit no-data message", () => {
+    expect(String(<Dashboard payload={payload()} />)).toContain("No changes in this companion.");
   });
 
   it("reports collection warnings", () => {
     const markup = String(<Dashboard payload={payload({ warnings: ["topology: unreadable"] })} />);
     expect(markup).toContain("topology: unreadable");
-  });
-
-  it("renders an Area containing markup characters as text", () => {
-    const markup = String(
-      <Dashboard payload={payload({ specs: [{ capability: "c", areas: ["<i>a</i>"] }] })} />,
-    );
-    expect(markup).not.toContain("<i>a</i>");
-    expect(markup).toContain("&lt;i&gt;a&lt;/i&gt;");
-  });
-});
-
-describe("groupSpecsByArea", () => {
-  it("lists a spec under every Area it binds, ordered by Area", () => {
-    const groups = groupSpecsByArea([
-      { capability: "acme-login", areas: ["packages/core", "apps/web"] },
-      { capability: "acme-search", areas: ["apps/web"] },
-    ]);
-    expect(groups.map(([area]) => area)).toEqual(["apps/web", "packages/core"]);
-    expect(groups[0]![1].map((spec) => spec.capability)).toEqual(["acme-login", "acme-search"]);
-  });
-
-  it("groups a spec binding no Area as unassigned", () => {
-    expect(groupSpecsByArea([{ capability: "acme-login", areas: [] }])[0]![0]).toBe("unassigned");
   });
 });

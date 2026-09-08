@@ -48,7 +48,36 @@ describe("CompanionSelector", () => {
       ],
     });
     expect(markup).not.toContain("no companion registered");
-    expect(markup.match(/<option/g)).toHaveLength(2);
+    expect(markup.match(/<option/g)).toHaveLength(3);
+  });
+
+  it("offers an unselectable placeholder while no companion is chosen", () => {
+    const markup = render({
+      companions: [
+        { path: acme, health: "ready", pairings: [] },
+        { path: beta, health: "ready", pairings: [] },
+      ],
+    });
+    expect(markup).toContain('<option value="" selected="" disabled="" class="placeholder">');
+    expect(markup).toContain("select a companion");
+    expect(markup).toContain("Select a Companion Repository to see its state.");
+  });
+
+  it("keeps the placeholder when the named companion cannot be resolved", () => {
+    const markup = render(
+      { companions: [{ path: acme, health: "ready", pairings: [] }] },
+      { ...dashboard, companionDigest: "deadbeef00" },
+    );
+    expect(markup).toContain('class="placeholder"');
+  });
+
+  it("drops the placeholder once a companion is chosen", () => {
+    const markup = render(
+      { companions: [{ path: acme, health: "ready", pairings: [] }] },
+      { ...dashboard, companionDigest: companionDigest(acme) },
+    );
+    expect(markup).not.toContain("placeholder");
+    expect(markup.match(/<option/g)).toHaveLength(1);
   });
 
   it("marks the selected companion and states its reason", () => {

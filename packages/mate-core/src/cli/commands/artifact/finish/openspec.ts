@@ -108,7 +108,7 @@ function projectDeltaScopes(scopes: ScopePair[]): ProjectionResult {
   };
 }
 
-async function archivedChangeUsesMateV1(
+async function archivedChangeUsesMateSchema(
   companionPath: string,
   anchorName: string,
 ): Promise<boolean> {
@@ -124,7 +124,7 @@ async function archivedChangeUsesMateV1(
     const parsed = parse(await fs.readFile(metadataPath, "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object") return false;
     const schema = (parsed as Record<string, unknown>).schema;
-    return typeof schema === "string" && schema.trim() === "mate-v1";
+    return typeof schema === "string" && ["mate-v1", "mate-minimal"].includes(schema.trim());
   } catch {
     return false;
   }
@@ -159,7 +159,7 @@ async function reconcileMainSpecFrontmatter(
   companionPath: string,
   anchorName: string,
 ): Promise<string[]> {
-  if (!(await archivedChangeUsesMateV1(companionPath, anchorName))) return [];
+  if (!(await archivedChangeUsesMateSchema(companionPath, anchorName))) return [];
 
   const deltaSpecsDir = path.join(
     companionPath,

@@ -1,0 +1,56 @@
+name: mate-minimal
+version: 2
+description: Mate's short OpenSpec workflow for one-Area, low-risk changes - specs → tasks
+artifacts:
+  - id: specs
+    generates: specs/**/*.md
+    description: Delta specification answering what behavior must change through a concise user story
+    template: spec.md
+    instruction: |
+      This schema is a deliberate shortcut, not an optional subset of mate-v1. Use it only when
+      the change passes the documented gate: one repository and one Area; no new dependency,
+      data migration, public API change, breaking behavior, or cross-cutting design decision.
+      Use mate-v1 if any gate item is false or uncertain.
+
+      Read `openspec/mate-conventions.yaml` before writing the artifact. Create one delta spec
+      per affected capability under `specs/<capability>/spec.md`, using a kebab-case capability
+      name. Never place specs under an Area folder.
+
+      Write requirements as user stories: `As a <role>, I want <capability>, so that <benefit>.`
+      Keep the OpenSpec parser contract around each story:
+      - Use `## ADDED Requirements`, `## MODIFIED Requirements`, and `## REMOVED Requirements`.
+      - Start every story with `### Requirement: <story title>`. `### User Story:` is ignored.
+      - Follow the story with one SHALL/MUST sentence so `openspec validate --strict` can check it.
+      - Give every story an `#### Acceptance Criteria` block using `- **Given**`, `- **When**`,
+        `- **Then**` bullets. This is the minimal profile's readable form of a scenario.
+      - MODIFIED entries MUST include the full updated story and criteria. REMOVED entries MUST
+        include **Reason** and **Migration**.
+
+      Every user story carries an **Area:** marker naming the Areas it binds, using values from
+      the frontmatter scopes - always, even when there is only one Area.
+
+      **Obsidian**: Emit YAML frontmatter with `type: delta-spec`, the actual change name, the
+      capability, the `openspec/change`, `openspec/spec`, and `openspec/delta` tags, and paired
+      `scopes` metadata.
+    requires: []
+  - id: tasks
+    generates: tasks.md
+    description: Short task list answering how to complete and verify the delta
+    template: tasks.md
+    instruction: |
+      Create a flat implementation checklist that satisfies the delta specs. Keep it short: this
+      workflow intentionally has no explore, proposal, or design artifact.
+
+      Number tasks `N.M` and group them under `## N. <group>` headers so apply tracking can address them individually.
+      Read `openspec/mate-conventions.yaml` before writing the artifact and preserve its scope rules.
+
+      **Obsidian**: Emit YAML frontmatter with `type: change-tasks`, the actual change name, `schema: mate-minimal`, and the `openspec/change` and `openspec/tasks` tags. At the end of the file, add a `## References` section with `[[wiki-links]]` for each affected spec area.
+    requires:
+      - specs
+apply:
+  requires:
+    - tasks
+  tracks: tasks.md
+  instruction: |
+    Read the delta specs and work through pending tasks only within the affected Areas. Mark complete as you go.
+    Pause if you hit blockers or need clarification.

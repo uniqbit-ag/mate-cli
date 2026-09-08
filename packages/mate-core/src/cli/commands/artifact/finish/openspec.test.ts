@@ -250,7 +250,18 @@ scopes:
     expect(await readCanonical(root, "cap")).toContain("repository: acme/product");
   });
 
-  test("skips non-mate-v1 archived schemas even when the project default is mate-v1", async () => {
+  test("reconciles archived mate-minimal schemas", async () => {
+    const root = await makeCompanion();
+    const folder = "2026-08-06-probe";
+    await seedArchivedDelta(root, folder, "cap", SINGLE_SCOPE, "schema: mate-minimal\n");
+    await seedCanonical(root, "cap", BARE_CANONICAL);
+
+    await openspecFinisher(root).detectProduced("probe");
+
+    expect(await readCanonical(root, "cap")).toContain("repository: acme/product");
+  });
+
+  test("skips non-Mate archived schemas even when the project default is mate-v1", async () => {
     for (const schema of ["default", "spec-driven", "custom"]) {
       const root = await makeCompanion();
       const folder = "2026-08-06-probe";

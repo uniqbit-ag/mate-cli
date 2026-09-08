@@ -106,7 +106,20 @@ describe("assembleCompanionPayload", () => {
       },
     ]);
     expect(payload.topology?.schemaName).toBe("acme-v1");
+    expect(payload.skills).toEqual([]);
     expect(payload.warnings).toEqual([]);
+  });
+
+  test("includes Mate-owned runtime skill names without collecting hand-authored trees", async () => {
+    const payload = await assembleCompanionPayload(
+      "/companions/acme",
+      deps({
+        collectMateSkillNames: async () => ["mate-grill-me", "mate-interview-me"],
+      }),
+    );
+
+    if ("error" in payload) throw new Error(`unexpected error payload: ${payload.error.reason}`);
+    expect(payload.skills).toEqual(["mate-grill-me", "mate-interview-me"]);
   });
 
   test("resolves spec Areas under the planning home the status reports", async () => {

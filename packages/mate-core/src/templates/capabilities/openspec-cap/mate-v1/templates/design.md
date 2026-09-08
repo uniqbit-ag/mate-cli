@@ -3,6 +3,9 @@ type: change-design
 change: <change-name>
 schema: mate-v1
 tags: [openspec/change, openspec/design]
+scopes:
+  - repository: org/repository
+    area: .
 ---
 
 ## Context

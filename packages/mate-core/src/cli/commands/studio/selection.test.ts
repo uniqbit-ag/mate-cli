@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { StudioInventory } from "./inventory";
-import { companionDigest, parseStudioSelection, resolveCompanion } from "./selection";
+import { companionDigest, parseStudioSelection, resolveCompanion, STUDIO_VIEWS } from "./selection";
 
 const inventory: StudioInventory = {
   companions: [
@@ -40,6 +40,12 @@ describe("resolveCompanion", () => {
 });
 
 describe("parseStudioSelection", () => {
+  it("reads every view the sidebar can name", () => {
+    for (const view of STUDIO_VIEWS) {
+      expect(parseStudioSelection(new URL(`http://localhost:1/?view=${view}`)).view).toBe(view);
+    }
+  });
+
   it("reads the companion and the view", () => {
     const parsed = parseStudioSelection(
       new URL("http://localhost:1/?companion=abc123&view=workflow"),
@@ -53,7 +59,7 @@ describe("parseStudioSelection", () => {
 
   it("falls back to the Dashboard for an absent or unknown view", () => {
     expect(parseStudioSelection(new URL("http://localhost:1/")).view).toBe("dashboard");
-    expect(parseStudioSelection(new URL("http://localhost:1/?view=specs")).view).toBe("dashboard");
+    expect(parseStudioSelection(new URL("http://localhost:1/?view=skills")).view).toBe("dashboard");
   });
 
   it("treats a blank parameter as unset", () => {

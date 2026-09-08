@@ -3,4 +3,7 @@
   "editor.formatOnSave": true,
   "editor.formatOnSaveMode": "file",
   "oxc.enable.oxfmt": true
+  // "git.autoRepositoryDetection": "subFolders",
+  // "git.scanRepositories": [".mate/companion"],
+  // "scm.alwaysShowRepositories": true
 }

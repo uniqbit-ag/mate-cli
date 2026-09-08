@@ -8,13 +8,16 @@ export const MATE_SKILLS = [
   "mate-artifact-finish",
   "mate-create-report",
   "mate-openspec-backfill",
+  "mate-interview-me",
+  "mate-grill-me",
+  "mate-grilling",
+  "mate-grill-with-docs",
+  "mate-domain-modeling",
+  "mate-simplify-code",
 ] as const;
 const LEGACY_MATE_SKILLS = ["mate-openspec-artifact-finish"] as const;
 
-const MATE_SKILLS_SOURCE = path.join(
-  import.meta.dirname,
-  "../../templates/capabilities/openspec-cap/mate-skills",
-);
+const MATE_SKILLS_SOURCE = path.join(import.meta.dirname, "../../templates/mate-skills");
 
 const MATE_CREATE_REPORT_SKILL = `---
 name: mate-create-report
@@ -98,8 +101,15 @@ async function resolveMateSkillSource(skill: string, tool: string): Promise<stri
     await fs.access(providerDir);
     return providerDir;
   } catch {
-    return path.join(MATE_SKILLS_SOURCE, DEFAULT_MATE_SKILLS_BUCKET, skill);
+    const sharedDir = path.join(MATE_SKILLS_SOURCE, DEFAULT_MATE_SKILLS_BUCKET, skill);
+    try {
+      await fs.access(sharedDir);
+      return sharedDir;
+    } catch {
+      /* source is missing */
+    }
   }
+  throw new Error(`Mate skill source not found: ${skill}`);
 }
 
 export async function applyMateSkills(skillsDir: string, tool: string): Promise<void> {
