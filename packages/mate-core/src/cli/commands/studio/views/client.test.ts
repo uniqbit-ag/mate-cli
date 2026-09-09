@@ -76,6 +76,14 @@ describe("studio browser code", () => {
     expect(STUDIO_CLIENT_SCRIPT).not.toContain("location.search = params.toString()");
   });
 
+  it("switches Skills tabs in memory without changing the URL", () => {
+    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-skills-root]")');
+    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-skill-profile]")');
+    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-skill-panel]")');
+    expect(STUDIO_CLIENT_SCRIPT).toContain('getAttribute("data-skill-profile")');
+    expect(STUDIO_CLIENT_SCRIPT).toContain('getAttribute("data-skill-panel")');
+  });
+
   it("restores the remembered companion into the URL before the page paints", () => {
     expect(runPrepaint("", { [COMPANION_STORAGE_KEY]: acmeDigest })).toEqual([
       `/?companion=${acmeDigest}`,

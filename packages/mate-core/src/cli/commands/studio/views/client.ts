@@ -144,9 +144,40 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
     });
   }
 
+  function wireSkillTabs() {
+    document.querySelectorAll("[data-skills-root]").forEach(function (root) {
+      var tabs = root.querySelectorAll("[data-skill-profile]");
+      var panels = root.querySelectorAll("[data-skill-panel]");
+
+      function select(profile) {
+        tabs.forEach(function (tab) {
+          tab.setAttribute(
+            "aria-selected",
+            tab.getAttribute("data-skill-profile") === profile ? "true" : "false",
+          );
+        });
+        panels.forEach(function (panel) {
+          var active = panel.getAttribute("data-skill-panel") === profile;
+          panel.setAttribute("data-active", active ? "true" : "false");
+          panel.setAttribute("aria-hidden", active ? "false" : "true");
+        });
+      }
+
+      tabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          select(tab.getAttribute("data-skill-profile"));
+        });
+      });
+
+      var selected = root.querySelector('[aria-selected="true"]');
+      if (selected) select(selected.getAttribute("data-skill-profile"));
+    });
+  }
+
   applyTheme(theme);
   rememberCompanion();
   wireWorkflowSchemaTabs();
+  wireSkillTabs();
 
   var toggle = document.getElementById("studio-theme");
   if (toggle) {

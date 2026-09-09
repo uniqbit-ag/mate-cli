@@ -9,9 +9,29 @@ import { CompanionError } from "./error";
 import { formatCollectedAt, type StudioPage } from "./model";
 import { Specs } from "./specs/index";
 import { STUDIO_STYLES } from "./styles";
+import { Skills } from "./skills/index";
 import { Workflow } from "./workflow/index";
 
 const STUDIO_TITLE = "Mate Studio";
+
+const VIEW_DETAILS = {
+  dashboard: {
+    eyebrow: "Companion lookup",
+    title: "Overview",
+  },
+  specs: {
+    eyebrow: "Companion lookup",
+    title: "Specs",
+  },
+  workflow: {
+    eyebrow: "Companion lookup",
+    title: "Workflow",
+  },
+  skills: {
+    eyebrow: "Agent guidance",
+    title: "Skills",
+  },
+} as const;
 
 /**
  * `<style>` and `<script>` are HTML raw-text elements: a character reference
@@ -50,6 +70,7 @@ function StudioShell({ page }: { page: StudioPage }) {
       >
         <Sidebar page={page} />
         <main className="main">
+          {page.companion ? <PageHeader page={page} /> : null}
           <Content page={page} />
         </main>
       </div>
@@ -76,6 +97,7 @@ function Content({ page }: { page: StudioPage }) {
     return <Workflow payload={page.payload} />;
   }
   if (page.selection.view === "specs") return <Specs payload={page.payload} />;
+  if (page.selection.view === "skills") return <Skills skills={page.payload.skillInventory} />;
   return <Dashboard payload={page.payload} />;
 }
 
@@ -86,6 +108,7 @@ function Sidebar({ page }: { page: StudioPage }) {
         <span className="sidebar-brand-mark">M</span>
         <div className="sidebar-brand-copy">
           <strong>{STUDIO_TITLE}</strong>
+          <span>Developer lookup</span>
         </div>
       </div>
       <CompanionSelector inventory={page.inventory} selection={page.selection} />
@@ -96,6 +119,31 @@ function Sidebar({ page }: { page: StudioPage }) {
   );
 }
 
+function PageHeader({ page }: { page: StudioPage }) {
+  if (!page.companion) return null;
+
+  const details = VIEW_DETAILS[page.selection.view];
+
+  return (
+    <header className="page-header">
+      <div className="page-heading">
+        <p className="page-eyebrow">{details.eyebrow}</p>
+        <h1>{details.title}</h1>
+      </div>
+      <div className="page-context">
+        <span className="page-context-label">Companion Repository</span>
+        <code>{page.companion.path}</code>
+        <span className="snapshot-status">
+          <span className="snapshot-dot" aria-hidden="true" />
+          {page.collectedAt === null
+            ? "No snapshot"
+            : `Snapshot ${formatCollectedAt(page.collectedAt)}`}
+        </span>
+      </div>
+    </header>
+  );
+}
+
 /**
  * Submit buttons, so switching a view is a navigation to the URL naming it and
  * the browser's history moves between rendered states.
@@ -103,7 +151,7 @@ function Sidebar({ page }: { page: StudioPage }) {
 function ViewNav({ selection }: { selection: StudioSelection }) {
   return (
     <nav className="sidebar-nav" aria-label="Studio views">
-      <span className="sidebar-label">Navigate</span>
+      <span className="sidebar-label">Views</span>
       <form method="get" action="/">
         <SelectionFields selection={selection} omit="view" />
         <div className="sidebar-nav-list">
@@ -125,6 +173,14 @@ function ViewNav({ selection }: { selection: StudioSelection }) {
             aria-pressed={selection.view === "workflow"}
           >
             <span>Workflow</span>
+          </button>
+          <button
+            type="submit"
+            name="view"
+            value="skills"
+            aria-pressed={selection.view === "skills"}
+          >
+            <span>Skills</span>
           </button>
         </div>
       </form>

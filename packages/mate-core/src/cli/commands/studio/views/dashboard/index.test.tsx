@@ -70,6 +70,8 @@ describe("Dashboard", () => {
     );
     expect(markup).toContain('class="chip chip-done">proposal<');
     expect(markup).toContain('class="chip chip-pending">tasks<');
+    expect(markup).toContain('class="change-cell"');
+    expect(markup).toContain('class="artifact-list"');
     expect(markup).toContain("2 issues");
   });
 

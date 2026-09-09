@@ -28,6 +28,11 @@ const selected: StudioPage = page({
     changes: [{ name: "add-auth", completedTasks: 1, totalTasks: 4, artifacts: [] }],
     specs: [{ capability: "acme-login", areas: ["acme"] }],
     skills: ["mate-interview-me", "mate-grill-me", "mate-grill-with-docs"],
+    skillInventory: {
+      claude: ["mate-interview-me", "mate-grill-me", "mate-grill-with-docs"],
+      opencode: ["mate-interview-me", "mate-grill-me"],
+      agents: ["mate-domain-modeling"],
+    },
     topology: null,
     warnings: [],
   },
@@ -79,6 +84,7 @@ describe("renderStudioDocument", () => {
       expect(markup).toContain('aria-label="Companion Repository"');
       expect(markup).not.toContain("Working repositories");
       expect(markup).toContain('name="view" value="workflow"');
+      expect(markup).toContain('name="view" value="skills"');
       expect(markup).not.toContain('id="studio-change"');
       expect(markup).toContain('id="studio-theme"');
       expect(markup).toContain('id="studio-toast"');
@@ -113,6 +119,14 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain('aria-pressed="true"');
   });
 
+  it("surfaces the current view and snapshot context", () => {
+    const markup = renderStudioDocument(selected);
+    expect(markup).toContain("<h1>Overview</h1>");
+    expect(markup).toContain('<span class="page-context-label">Companion Repository</span>');
+    expect(markup).toContain(`<code>${acme}</code>`);
+    expect(markup).toContain("Snapshot 12:34:56");
+  });
+
   it("presents the Specs view when the URL names it", () => {
     const markup = renderStudioDocument({
       ...selected,
@@ -134,7 +148,23 @@ describe("renderStudioDocument", () => {
     expect(markup).not.toContain("<h3>Changes</h3>");
   });
 
-  it("renders the two pre-explore choices without offering documentation mode", () => {
+  it("presents the Skills view with runtime tabs", () => {
+    const markup = renderStudioDocument({
+      ...selected,
+      selection: { ...selected.selection, view: "skills" },
+    });
+    expect(markup).toContain("<h3>Agent Skills</h3>");
+    expect(markup).toContain('role="tablist" aria-label="Skill source"');
+    expect(markup).toContain('id="skills-tab-claude"');
+    expect(markup).toContain('id="skills-tab-opencode"');
+    expect(markup).toContain('id="skills-tab-agents"');
+    expect(markup).toContain("mate-grill-with-docs");
+    expect(markup).toContain("mate-interview-me");
+    expect(markup).toContain("mate-domain-modeling");
+    expect(markup).toContain('name="view" value="skills" aria-pressed="true"');
+  });
+
+  it("renders the two pre-explore choices without offering documentation mode or skip copy", () => {
     const markup = renderStudioDocument({
       ...selected,
       selection: { ...selected.selection, view: "workflow" },
@@ -142,7 +172,7 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain('data-copy-label="mate-interview-me prompt"');
     expect(markup).toContain('data-copy-label="mate-grill-me prompt"');
     expect(markup).not.toContain('data-copy-label="mate-grill-with-docs command"');
-    expect(markup).toContain("Skip pre-explore");
+    expect(markup).not.toContain("Skip pre-explore");
   });
 
   it("presents an unreadable companion as an error while the selector stays usable", () => {

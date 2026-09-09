@@ -19,37 +19,58 @@ function progressPercent(change: StudioChange): number {
 
 export function Changes({ changes }: ChangesProps) {
   return (
-    <section className="panel">
-      <h3>Changes</h3>
+    <section className="panel lookup-panel">
+      <div className="section-header">
+        <div>
+          <h3>Changes</h3>
+          <p className="section-note">Active work tracked by this Companion Repository.</p>
+        </div>
+        <span className="section-count">
+          {changes.length} {changes.length === 1 ? "change" : "changes"}
+        </span>
+      </div>
       {changes.length === 0 ? (
         <p className="empty">No changes in this companion.</p>
       ) : (
         <div className="scroll">
-          <table>
+          <table className="lookup-table">
             <thead>
               <tr>
                 <th scope="col">Change</th>
                 <th scope="col">Status</th>
-                <th scope="col">Tasks</th>
+                <th scope="col">Progress</th>
                 <th scope="col">Artifacts</th>
               </tr>
             </thead>
             <tbody>
               {changes.map((change) => (
                 <tr key={change.name}>
-                  <td>
-                    <span className="mono">{change.name}</span>
-                    {change.valid === false ? (
-                      <span className="chip chip-invalid">
-                        {`${change.issueCount ?? 0} issues`}
-                      </span>
-                    ) : null}
+                  <td data-label="Change">
+                    <div className="change-cell">
+                      <span className="mono">{change.name}</span>
+                      {change.valid === false ? (
+                        <span className="chip chip-invalid">
+                          {`${change.issueCount ?? 0} issues`}
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
-                  <td>{change.status ?? "unknown"}</td>
-                  <td className="numeric">
-                    {progressLabel(change)}
+                  <td data-label="Status">
+                    <span className="status-chip" data-status={change.status ?? "unknown"}>
+                      {change.status ?? "unknown"}
+                    </span>
+                  </td>
+                  <td className="numeric" data-label="Progress">
+                    <span className="progress-label">{progressLabel(change)}</span>
                     {(change.totalTasks ?? 0) === 0 ? null : (
-                      <span className="bar">
+                      <span
+                        className="bar"
+                        role="progressbar"
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        aria-valuenow={progressPercent(change)}
+                        aria-label={`${progressLabel(change)} tasks complete`}
+                      >
                         <span
                           className="bar-fill"
                           style={{ width: `${progressPercent(change)}%` }}
@@ -57,10 +78,12 @@ export function Changes({ changes }: ChangesProps) {
                       </span>
                     )}
                   </td>
-                  <td>
-                    {change.artifacts.length === 0
-                      ? "—"
-                      : change.artifacts.map((artifact) => (
+                  <td data-label="Artifacts">
+                    {change.artifacts.length === 0 ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      <div className="artifact-list">
+                        {change.artifacts.map((artifact) => (
                           <span
                             key={artifact.id}
                             className={
@@ -70,6 +93,8 @@ export function Changes({ changes }: ChangesProps) {
                             {artifact.id}
                           </span>
                         ))}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -44,7 +44,15 @@ function SpecsByArea({ specs }: { specs: StudioSpec[] }) {
 
   return (
     <section className="panel">
-      <h3>Specs by Area</h3>
+      <div className="section-header">
+        <div>
+          <h3>Specs by Area</h3>
+          <p className="section-note">Capabilities grouped by the Areas they serve.</p>
+        </div>
+        <span className="section-count">
+          {specs.length} {specs.length === 1 ? "spec" : "specs"}
+        </span>
+      </div>
       {groups.length === 0 ? (
         <p className="empty">No specs in this companion.</p>
       ) : (

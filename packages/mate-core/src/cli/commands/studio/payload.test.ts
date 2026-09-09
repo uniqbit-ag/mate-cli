@@ -107,6 +107,7 @@ describe("assembleCompanionPayload", () => {
     ]);
     expect(payload.topology?.schemaName).toBe("acme-v1");
     expect(payload.skills).toEqual([]);
+    expect(payload.skillInventory).toEqual({ claude: [], opencode: [], agents: [] });
     expect(payload.warnings).toEqual([]);
   });
 
@@ -114,12 +115,21 @@ describe("assembleCompanionPayload", () => {
     const payload = await assembleCompanionPayload(
       "/companions/acme",
       deps({
-        collectMateSkillNames: async () => ["mate-grill-me", "mate-interview-me"],
+        collectSkillInventory: async () => ({
+          claude: ["mate-grill-me"],
+          opencode: ["mate-interview-me"],
+          agents: ["mate-domain-modeling"],
+        }),
       }),
     );
 
     if ("error" in payload) throw new Error(`unexpected error payload: ${payload.error.reason}`);
-    expect(payload.skills).toEqual(["mate-grill-me", "mate-interview-me"]);
+    expect(payload.skills).toEqual(["mate-domain-modeling", "mate-grill-me", "mate-interview-me"]);
+    expect(payload.skillInventory).toEqual({
+      claude: ["mate-grill-me"],
+      opencode: ["mate-interview-me"],
+      agents: ["mate-domain-modeling"],
+    });
   });
 
   test("resolves spec Areas under the planning home the status reports", async () => {

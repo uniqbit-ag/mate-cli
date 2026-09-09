@@ -59,7 +59,9 @@ describe("parseStudioSelection", () => {
 
   it("falls back to the Dashboard for an absent or unknown view", () => {
     expect(parseStudioSelection(new URL("http://localhost:1/")).view).toBe("dashboard");
-    expect(parseStudioSelection(new URL("http://localhost:1/?view=skills")).view).toBe("dashboard");
+    expect(parseStudioSelection(new URL("http://localhost:1/?view=unknown")).view).toBe(
+      "dashboard",
+    );
   });
 
   it("treats a blank parameter as unset", () => {

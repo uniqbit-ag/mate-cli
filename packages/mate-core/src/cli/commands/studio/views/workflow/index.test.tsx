@@ -201,10 +201,17 @@ describe("Workflow", () => {
 
   it("keeps workflow context and copy controls in the transcript", () => {
     const markup = render();
-    expect(markup.match(/class="runway-step-copy"/g)).toHaveLength(11);
+    expect(markup.match(/class="runway-step-copy"/g)).toHaveLength(10);
     expect(markup.match(/class="workflow-option-list"/g)).toHaveLength(1);
     expect(markup.match(/class="workflow-option"/g)).toHaveLength(2);
-    expect(markup.match(/<span>\$<\/span>/g)).toHaveLength(11);
+    expect(markup).toContain('class="workflow-console-command-label">Run</span>');
+    expect(markup).toContain('class="workflow-console-command-label">Review</span>');
+    expect(markup).not.toContain(
+      "<code>/mate-interview-me or /mate-grill-me for &lt;change-name&gt;</code>",
+    );
+    expect(markup.indexOf('class="workflow-option-list"')).toBeLessThan(
+      markup.indexOf('class="workflow-console-explanation"'),
+    );
     expect(markup).toContain("<code>/mate-interview-me for &lt;change-name&gt;</code>");
     expect(markup).toContain("<code>/mate-grill-me for &lt;change-name&gt;</code>");
     expect(markup.match(/class="workflow-session-break"/g)).toHaveLength(3);
@@ -220,14 +227,14 @@ describe("Workflow", () => {
     expect(markup).toContain('data-copy="/openspec-archive-change for"');
     expect(markup.match(/class="workflow-console-divider"/g)).toHaveLength(2);
     expect(markup).toContain("feature is on production");
-    expect(markup).toContain("Human review");
+    expect(markup).toContain("Review specs/");
     expect(markup).not.toContain('data-copy-label="specs prompt"');
     expect(markup).not.toContain('data-copy-label="design prompt"');
     expect(markup).not.toContain('data-copy-label="tasks prompt"');
     expect(markup).toContain("for &lt;change-name&gt;");
     expect(markup).toContain('data-copy="/openspec-apply-change (use schema: mate-v1) for"');
     expect(markup).not.toMatch(/data-copy="[^"]*change-name/);
-    expect(markup).toContain("Skip pre-explore");
+    expect(markup).not.toContain("Skip pre-explore");
   });
 
   it("renders the built-in workflow without a resolved schema", () => {

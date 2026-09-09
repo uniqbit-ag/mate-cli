@@ -16,10 +16,13 @@ export function WorkflowTranscript({ payload }: { payload: StudioCompanionPayloa
 
 function CommandTranscript({ plan }: { plan: WorkflowPlan }) {
   return (
-    <section className="workflow-console">
+    <section className="workflow-console" aria-label="Workflow execution map">
       <header className="workflow-console-header">
-        <span className="workflow-console-lights">● ● ●</span>
-        <span>FLOW 01 / 01</span>
+        <div className="workflow-console-header-title">
+          <span>Workflow map</span>
+          <strong>Companion delivery path</strong>
+        </div>
+        <span>Read-only guide</span>
       </header>
       <div className="workflow-console-body">
         <ConsoleLine step={plan.start} marker="01" />
@@ -97,31 +100,42 @@ function planningRule(profile: WorkflowBranch["profile"]): string {
 }
 
 function ConsoleLine({ step, marker }: { step: WorkflowStep; marker: string }) {
+  const hasAlternatives = Boolean(step.alternatives?.length);
+
   return (
     <article className="workflow-console-line">
       <span className="workflow-console-gutter">{marker}</span>
       <div className="workflow-console-line-body">
-        {step.kind === "review" ? (
-          <div className="workflow-console-command workflow-console-review">
-            <span>Human review</span>
-            <code>{step.prompt}</code>
-          </div>
-        ) : (
-          <div className="workflow-console-command">
-            <span>$</span>
-            <code>{step.prompt}</code>
-            <WorkflowCopy text={step.copyPrompt} label={`${step.title} prompt`} />
-          </div>
-        )}
-        <div className="workflow-console-explanation">
-          <div className="workflow-console-step-title">
-            <strong>{step.title}</strong>
-            <WorkflowBadges badges={step.badges} />
-          </div>
-          <p>{step.what}</p>
-          <small>{step.why}</small>
+        <div className="workflow-console-step-title">
+          <strong>{step.title}</strong>
+          <WorkflowBadges badges={step.badges} />
         </div>
-        <WorkflowOptions step={step} />
+        {!hasAlternatives ? (
+          step.kind === "review" ? (
+            <div className="workflow-console-command workflow-console-review">
+              <span className="workflow-console-command-label">Review</span>
+              <code>{step.prompt}</code>
+            </div>
+          ) : (
+            <div className="workflow-console-command">
+              <span className="workflow-console-command-label">Run</span>
+              <code>{step.prompt}</code>
+              <WorkflowCopy text={step.copyPrompt} label={`${step.title} prompt`} />
+            </div>
+          )
+        ) : null}
+        {hasAlternatives ? <WorkflowOptions step={step} /> : null}
+        <div className="workflow-console-explanation">
+          <div className="workflow-console-detail">
+            <span>What</span>
+            <p>{step.what}</p>
+          </div>
+          <div className="workflow-console-detail">
+            <span>Why</span>
+            <small>{step.why}</small>
+          </div>
+        </div>
+        {!hasAlternatives ? <WorkflowOptions step={step} /> : null}
       </div>
     </article>
   );
@@ -134,17 +148,13 @@ function WorkflowOptions({ step }: { step: WorkflowStep }) {
       {step.alternatives.map((alternative) => (
         <div key={alternative.name} className="workflow-option">
           <div className="workflow-console-command">
-            <span>$</span>
+            <span className="workflow-console-command-label">Option</span>
             <code>{alternative.prompt}</code>
             <WorkflowCopy text={alternative.copyPrompt} label={`${alternative.name} prompt`} />
           </div>
           <small>{alternative.description}</small>
         </div>
       ))}
-      <small className="workflow-option-skip">
-        Skip pre-explore: continue to the next workflow prompt without invoking a conversational
-        skill.
-      </small>
     </div>
   );
 }

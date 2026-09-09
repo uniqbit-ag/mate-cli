@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { readSpecAreas } from "./areas";
-import { collectMateSkillNames } from "./mate-inventory";
+import { collectSkillInventory, type StudioSkillInventory } from "./mate-inventory";
 import {
   listChanges,
   listSpecs,
@@ -41,7 +41,9 @@ export interface StudioCompanionPayload {
   companionPath: string;
   changes: StudioChange[];
   specs: StudioSpec[];
+  /** Flattened names retained for the workflow's skill-availability check. */
   skills?: string[];
+  skillInventory?: StudioSkillInventory;
   topology: WorkflowTopology | null;
   warnings: string[];
 }
@@ -59,7 +61,7 @@ export interface CompanionPayloadDeps {
   validateAll?: typeof validateAll;
   readWorkflowTopology?: typeof readWorkflowTopology;
   readSpecAreas?: (specsRoot: string, specId: string) => Promise<string[]>;
-  collectMateSkillNames?: typeof collectMateSkillNames;
+  collectSkillInventory?: typeof collectSkillInventory;
 }
 
 function describe(failure: OpenSpecFailure): string {
@@ -92,7 +94,7 @@ export async function assembleCompanionPayload(
   const collectValidation = deps.validateAll ?? validateAll;
   const collectTopology = deps.readWorkflowTopology ?? readWorkflowTopology;
   const collectAreas = deps.readSpecAreas ?? readSpecAreas;
-  const collectSkills = deps.collectMateSkillNames ?? collectMateSkillNames;
+  const collectSkills = deps.collectSkillInventory ?? collectSkillInventory;
 
   const [changeList, specList, status, validation, topology, skillInventory] = await Promise.all([
     collectChanges(companionPath),
@@ -164,7 +166,18 @@ export async function assembleCompanionPayload(
     companionPath,
     changes,
     specs,
-    skills: "skills" in skillInventory ? skillInventory.skills : [],
+    skills:
+      "skills" in skillInventory
+        ? [
+            ...new Set([
+              ...skillInventory.skills.claude,
+              ...skillInventory.skills.opencode,
+              ...skillInventory.skills.agents,
+            ]),
+          ].toSorted()
+        : [],
+    skillInventory:
+      "skills" in skillInventory ? skillInventory.skills : { claude: [], opencode: [], agents: [] },
     topology: topology.ok ? topology.value : null,
     warnings,
   };

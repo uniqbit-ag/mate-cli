@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 
 import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 
-export type StudioView = "dashboard" | "workflow" | "specs";
+export type StudioView = "dashboard" | "workflow" | "specs" | "skills";
 
-export const STUDIO_VIEWS: readonly StudioView[] = ["dashboard", "workflow", "specs"];
+export const STUDIO_VIEWS: readonly StudioView[] = ["dashboard", "workflow", "specs", "skills"];
 
 export const COMPANION_PARAM = "companion";
 export const VIEW_PARAM = "view";

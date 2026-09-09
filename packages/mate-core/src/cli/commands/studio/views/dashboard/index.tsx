@@ -8,7 +8,7 @@ interface DashboardProps {
   payload: StudioCompanionPayload;
 }
 
-/** Changes only: specs have their own view, and skills belong to the Workflow view. */
+/** Changes only: specs and skills have their own views. */
 export function Dashboard({ payload }: DashboardProps) {
   return (
     <>

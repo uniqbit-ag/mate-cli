@@ -21,6 +21,11 @@ describe("studio styles", () => {
     expect(STUDIO_STYLES).toContain("color: var(--text)");
   });
 
+  it("uses one wider content cap for every page", () => {
+    expect(STUDIO_STYLES).toContain(".main > * { width: min(100%, 1180px);");
+    expect(STUDIO_STYLES).not.toContain(".workflow-view { width:");
+  });
+
   it("carries the token palette every view reads", () => {
     for (const token of [
       "--bg",
