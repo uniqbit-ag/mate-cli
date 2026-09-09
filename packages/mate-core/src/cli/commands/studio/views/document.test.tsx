@@ -128,7 +128,8 @@ describe("renderStudioDocument", () => {
       ...selected,
       selection: { ...selected.selection, view: "workflow" },
     });
-    expect(markup).toContain("<h2>Workflow</h2>");
+    expect(markup).toContain('class="workflow-console"');
+    expect(markup).not.toContain("mate workflow --read-only");
     expect(markup).not.toContain('id="studio-change"');
     expect(markup).not.toContain("<h3>Changes</h3>");
   });

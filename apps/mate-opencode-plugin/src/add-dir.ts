@@ -7,15 +7,30 @@ import { readCompanionRuntimeContext } from "@uniqbit/mate-core/runtime";
 // though the published Config type narrows it to a single rule value.
 type ExternalDirectoryRules = Record<string, "allow" | "ask" | "deny" | undefined>;
 type ConfigHook = NonNullable<Hooks["config"]>;
+type SkillConfig = { skills?: { paths?: string[] } };
 
 function companionPathRules(companionPath: string): string[] {
   return [companionPath, `${companionPath}/**`];
+}
+
+function companionSkillPaths(companionPath: string): string[] {
+  return [
+    path.join(companionPath, ".agents", "skills"),
+    path.join(companionPath, ".opencode", "skills"),
+  ];
 }
 
 function externalDirectoryRules(config: Config): ExternalDirectoryRules {
   const permission = (config.permission ??= {}) as { external_directory?: unknown };
   permission.external_directory ??= {};
   return permission.external_directory as ExternalDirectoryRules;
+}
+
+function skillPaths(config: Config): string[] {
+  const skillConfig = config as Config & SkillConfig;
+  skillConfig.skills ??= {};
+  skillConfig.skills.paths ??= [];
+  return skillConfig.skills.paths;
 }
 
 /**
@@ -38,6 +53,13 @@ export const AddDirPlugin: Plugin = async () => {
       for (const rule of companionPathRules(resolvedCompanionPath)) {
         if (externalDirectory[rule] === undefined) {
           externalDirectory[rule] = "allow";
+        }
+      }
+
+      const paths = skillPaths(cfg);
+      for (const skillPath of companionSkillPaths(resolvedCompanionPath)) {
+        if (!paths.includes(skillPath)) {
+          paths.push(skillPath);
         }
       }
     }) satisfies ConfigHook,

@@ -68,6 +68,8 @@ function stepPrompt(
       return `/openspec-apply-change${schemaNote}${changeNote}`;
     case "simplify":
       return `/mate-simplify-code${changeNote}`;
+    case "archive":
+      return `/openspec-archive-change${changeNote}`;
     case "finish":
       return `/mate-artifact-publish${changeNote}`;
     default:
@@ -265,6 +267,12 @@ export function workflowPlan(
       "Cleanup lands before the specs are archived, so shipped code and recorded specs stay aligned.",
     ),
   );
+  const archive = skillStep(
+    "archive",
+    "openspec archive change",
+    "Archives the verified change and its approved artifacts.",
+    "Archiving preserves the completed change before it is published and its specs are finalized.",
+  );
   const finishStep = {
     kind: "completion" as const,
     id: "finish",
@@ -277,7 +285,7 @@ export function workflowPlan(
   return {
     start,
     branches,
-    shared: [simplify],
+    shared: [simplify, archive],
     finish: {
       ...finishStep,
       prompt: stepPrompt(finishStep),

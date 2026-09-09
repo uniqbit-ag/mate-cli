@@ -125,6 +125,29 @@ describe("runWrapCommand", () => {
     expect(await fs.readFile(envPath(repoPath), "utf8")).toContain(companionPath);
   });
 
+  test("links companion Claude skills without replacing project skills", async () => {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-claude-skills-");
+    const source = path.join(companionPath, ".claude", "skills", "acme");
+    await fs.mkdir(source, { recursive: true });
+    await fs.writeFile(path.join(source, "SKILL.md"), "acme skill\n", "utf8");
+    const custom = path.join(repoPath, ".claude", "skills", "custom", "SKILL.md");
+    await fs.mkdir(path.dirname(custom), { recursive: true });
+    await fs.writeFile(custom, "user skill\n", "utf8");
+
+    await runWrapCommand([], repoPath);
+
+    const link = path.join(repoPath, ".claude", "skills", "acme");
+    expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
+    expect(await fs.realpath(link)).toBe(await fs.realpath(source));
+    expect(await fs.readFile(custom, "utf8")).toBe("user skill\n");
+
+    await cleanupWorkingRepository(repoPath, [companionPath]);
+
+    await expect(fs.lstat(link)).rejects.toThrow();
+    await expect(fs.readFile(path.join(source, "SKILL.md"), "utf8")).resolves.toBe("acme skill\n");
+    await expect(fs.readFile(custom, "utf8")).resolves.toBe("user skill\n");
+  });
+
   test("reports an unchanged Projection Root as already wrapped", async () => {
     const { repoPath } = await makeLinkedRepo("wrap-idempotent-");
     await runWrapCommand([], repoPath);

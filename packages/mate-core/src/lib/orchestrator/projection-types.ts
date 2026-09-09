@@ -24,6 +24,7 @@ export type ProjectionEntryId =
   | "repo-local-framework"
   | "repo-local-registry"
   | "projection-pair"
+  | "claude-skill-links"
   | "workspace-document"
   | "capability-excludes"
   | "claude-working-settings"

@@ -48,7 +48,7 @@ describe("workflowPlan", () => {
       "apply",
     ]);
     expect(plan.branches[1]?.description).toContain("only specs and tasks");
-    expect(plan.shared.map((step) => step.id)).toEqual(["simplify"]);
+    expect(plan.shared.map((step) => step.id)).toEqual(["simplify", "archive"]);
   });
 
   it("flattens either profile into an executable sequence", () => {
@@ -61,6 +61,7 @@ describe("workflowPlan", () => {
       "tasks",
       "apply",
       "simplify",
+      "archive",
       "finish",
     ]);
     expect(workflowSteps("mate-minimal").map((step) => step.id)).toEqual([
@@ -70,6 +71,7 @@ describe("workflowPlan", () => {
       "tasks",
       "apply",
       "simplify",
+      "archive",
       "finish",
     ]);
   });
@@ -125,6 +127,12 @@ describe("workflowPlan", () => {
     expect(full.find((step) => step.id === "finish")?.prompt).toBe(
       "/mate-artifact-publish for <change-name>",
     );
+    expect(full.find((step) => step.id === "archive")?.prompt).toBe(
+      "/openspec-archive-change for <change-name>",
+    );
+    expect(full.find((step) => step.id === "archive")?.copyPrompt).toBe(
+      "/openspec-archive-change for",
+    );
     expect(full.find((step) => step.id === "specs")?.badges).toEqual(["human-in-loop", "openspec"]);
     expect(full.find((step) => step.id === "design")?.badges).toEqual([
       "human-in-loop",
@@ -177,51 +185,54 @@ describe("workflowPlan", () => {
 });
 
 describe("Workflow", () => {
-  it("renders a fixed start, profile switch, shared cleanup, and fixed finish", () => {
+  it("renders the command transcript with schema tabs", () => {
     const markup = render();
-    expect(markup).toContain("<h2>Workflow</h2>");
-    expect(markup).toContain("02 / choose a schema");
-    expect(markup).not.toContain("How much planning does this change need?");
-    expect(markup.match(/data-workflow-profile/g)).toHaveLength(2);
-    expect(markup).toContain('data-workflow-branch="mate-v1"');
-    expect(markup).toContain('data-workflow-branch="mate-minimal"');
-    expect(markup).toContain('data-active="true"');
-    expect(markup).toContain('data-active="false"');
-    expect(markup).toContain("workflow-shared-step");
-    expect(markup).toContain("END");
-    expect(markup.match(/class="workflow-session-break"/g)).toHaveLength(3);
-    expect(markup.match(/<span>New Session or clean chat<\/span>/g)).toHaveLength(3);
+    expect(markup).toContain('<div class="workflow-eyebrow">Workflow</div>');
+    expect(markup).toContain('class="workflow-console"');
+    expect(markup).not.toContain("mate workflow --read-only");
+    expect(markup).not.toContain('if planning_depth = "full"');
+    expect(markup).not.toContain('if planning_depth = "minimal"');
+    expect(markup.match(/class="workflow-console-branch-rule-description"/g)).toHaveLength(2);
+    expect(markup.match(/data-workflow-schema-profile/g)).toHaveLength(2);
+    expect(markup.match(/data-workflow-schema-panel/g)).toHaveLength(2);
+    expect(markup).toContain('data-workflow-schema-panel="mate-v1" data-active="true"');
+    expect(markup).toContain('data-workflow-schema-panel="mate-minimal" data-active="false"');
   });
 
-  it("renders workflow badges, what/why boxes, and one copy control per rendered step", () => {
+  it("keeps workflow context and copy controls in the transcript", () => {
     const markup = render();
-    expect(markup.match(/class="runway-step-copy"/g)).toHaveLength(9);
-    expect(markup).not.toContain('data-copy-label="design prompt"');
-    expect(markup).not.toContain('data-copy-label="tasks prompt"');
-    expect(markup.match(/runway-step-badge-optional">Optional/g)).toHaveLength(2);
-    expect(markup.match(/runway-step-badge-skill">Skill/g)).toHaveLength(8);
-    expect(markup.match(/runway-step-badge-openspec">OpenSpec/g)).toHaveLength(10);
-    expect(markup.match(/runway-step-badge-human-in-loop">Human in the loop/g)).toHaveLength(5);
-    expect(markup.match(/class="runway-step-facet runway-step-what"/g)).toHaveLength(13);
-    expect(markup.match(/class="runway-step-facet runway-step-why"/g)).toHaveLength(13);
-    expect(markup.match(/<strong>What<\/strong>/g)).toHaveLength(13);
-    expect(markup.match(/<strong>Why<\/strong>/g)).toHaveLength(13);
-    expect(markup.match(/class="workflow-prompt-label">Prompt to agent/g)).toHaveLength(8);
-    expect(markup.match(/class="workflow-prompt-label">Human review/g)).toHaveLength(5);
-    expect(markup.match(/<pre><code>/g)).toHaveLength(14);
+    expect(markup.match(/class="runway-step-copy"/g)).toHaveLength(11);
+    expect(markup.match(/class="workflow-option-list"/g)).toHaveLength(1);
+    expect(markup.match(/class="workflow-option"/g)).toHaveLength(2);
+    expect(markup.match(/<span>\$<\/span>/g)).toHaveLength(11);
+    expect(markup).toContain("<code>/mate-interview-me for &lt;change-name&gt;</code>");
+    expect(markup).toContain("<code>/mate-grill-me for &lt;change-name&gt;</code>");
+    expect(markup.match(/class="workflow-session-break"/g)).toHaveLength(3);
+    expect(markup).toContain("The desired change, its scope, and the risk involved are clear.");
+    expect(markup).not.toContain("intent = clear");
+    expect(markup).not.toContain("planning_depth = choose");
+    expect(markup).toContain("solution, repository evidence, or risk still needs exploration");
+    expect(markup).toContain("intent and scope are clear");
     expect(markup).toContain("pre-explore");
     expect(markup).toContain("mate simplify code");
-    expect(markup).toContain('data-copy-label="mate-interview-me prompt"');
-    expect(markup).toContain('data-copy-label="mate-grill-me prompt"');
+    expect(markup).toContain("openspec archive change");
+    expect(markup).toContain("/openspec-archive-change for &lt;change-name&gt;");
+    expect(markup).toContain('data-copy="/openspec-archive-change for"');
+    expect(markup.match(/class="workflow-console-divider"/g)).toHaveLength(2);
+    expect(markup).toContain("feature is on production");
+    expect(markup).toContain("Human review");
+    expect(markup).not.toContain('data-copy-label="specs prompt"');
+    expect(markup).not.toContain('data-copy-label="design prompt"');
+    expect(markup).not.toContain('data-copy-label="tasks prompt"');
+    expect(markup).toContain("for &lt;change-name&gt;");
     expect(markup).toContain('data-copy="/openspec-apply-change (use schema: mate-v1) for"');
     expect(markup).not.toMatch(/data-copy="[^"]*change-name/);
-    expect(markup.match(/>Copy prompt<\/button>/g)).toHaveLength(9);
     expect(markup).toContain("Skip pre-explore");
   });
 
   it("renders the built-in workflow without a resolved schema", () => {
     const markup = render(payload());
-    expect(markup).toContain("<h2>Workflow</h2>");
+    expect(markup).not.toContain("mate workflow --read-only");
     expect(markup).toContain("mate-v1");
     expect(markup).toContain("mate-minimal");
   });

@@ -38,7 +38,7 @@ export const STUDIO_PREPAINT_SCRIPT = `(function () {
 
 /**
  * The only browser code Studio ships: cycling the appearance, remembering the
- * companion on screen, switching the workflow profile, and copying a prompt.
+ * companion on screen, switching workflow schema tabs, and copying a prompt.
  * Each needs an API the server does not have, and nothing else here renders,
  * fetches, or holds state.
  */
@@ -113,31 +113,40 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
     }
   }
 
-  function wireWorkflowSwitch() {
-    document.querySelectorAll("[data-workflow-switch]").forEach(function (switcher) {
+  function wireWorkflowSchemaTabs() {
+    document.querySelectorAll("[data-workflow-schema-root]").forEach(function (root) {
+      var tabs = root.querySelectorAll("[data-workflow-schema-profile]");
+      var panels = root.querySelectorAll("[data-workflow-schema-panel]");
+
       function select(profile) {
-        switcher.querySelectorAll("[data-workflow-branch]").forEach(function (branch) {
-          branch.setAttribute(
+        tabs.forEach(function (tab) {
+          tab.setAttribute(
+            "aria-selected",
+            tab.getAttribute("data-workflow-schema-profile") === profile ? "true" : "false",
+          );
+        });
+        panels.forEach(function (panel) {
+          panel.setAttribute(
             "data-active",
-            branch.getAttribute("data-workflow-branch") === profile ? "true" : "false",
+            panel.getAttribute("data-workflow-schema-panel") === profile ? "true" : "false",
           );
         });
       }
 
-      switcher.querySelectorAll("[data-workflow-profile]").forEach(function (input) {
-        input.addEventListener("change", function () {
-          if (input.checked) select(input.value);
+      tabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          select(tab.getAttribute("data-workflow-schema-profile"));
         });
       });
 
-      var selected = switcher.querySelector("[data-workflow-profile]:checked");
-      if (selected) select(selected.value);
+      var selected = root.querySelector('[aria-selected="true"]');
+      if (selected) select(selected.getAttribute("data-workflow-schema-profile"));
     });
   }
 
   applyTheme(theme);
   rememberCompanion();
-  wireWorkflowSwitch();
+  wireWorkflowSchemaTabs();
 
   var toggle = document.getElementById("studio-theme");
   if (toggle) {

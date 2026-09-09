@@ -22,6 +22,10 @@ import {
   workingRepoCapabilityExcludesPresent,
 } from "../../tools/setup/working-repo-local-state";
 import { companionLinkPresent, linkCompanion, unlinkCompanion } from "./projection-companion-link";
+import {
+  reconcileWorkingRepoClaudeSkillLinks,
+  removeWorkingRepoClaudeSkillLinks,
+} from "./projection-claude-skills";
 import { buildProjection } from "./projection-record";
 import {
   CLAUDE_WORKING_SETTINGS_PATH,
@@ -198,6 +202,29 @@ function buildEntries(): readonly ProjectionEntry[] {
       write: async (input) =>
         input.companionPath && input.repository ? writeProjectionPairEntry(input) : "skipped",
       removal: { by: "entry", entry: "projection-root" },
+    },
+    {
+      id: "claude-skill-links",
+      kind: "merged",
+      path: path.join(".claude", "skills"),
+      scopes: ["wrap"],
+      write: async (input) => {
+        if (!input.config) return "skipped";
+        const registeredCompanionPaths = input.globalConfigStore
+          ? await input.globalConfigStore.list()
+          : [];
+        return reconcileWorkingRepoClaudeSkillLinks(
+          input.repoPath,
+          input.companionPath ?? null,
+          input.config.allowedAgents?.includes("claude") ?? false,
+          registeredCompanionPaths,
+        );
+      },
+      removal: {
+        by: "self",
+        remove: (input) =>
+          removeWorkingRepoClaudeSkillLinks(input.repoPath, input.registeredCompanionPaths ?? []),
+      },
     },
     /**
      * Deliberately outside the managed block, so a Capability's exclusion

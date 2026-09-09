@@ -68,11 +68,12 @@ describe("studio browser code", () => {
     expect(STUDIO_CLIENT_SCRIPT).toContain(`"${COMPANION_STORAGE_KEY}"`);
   });
 
-  it("switches the visible workflow branch without rebuilding the page", () => {
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-workflow-switch]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-workflow-profile]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('getAttribute("data-workflow-branch")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('"data-active"');
+  it("switches workflow schema tabs in memory without changing the URL", () => {
+    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-workflow-schema-root]")');
+    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-workflow-schema-profile]")');
+    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-workflow-schema-panel]")');
+    expect(STUDIO_CLIENT_SCRIPT).toContain('"aria-selected"');
+    expect(STUDIO_CLIENT_SCRIPT).not.toContain("location.search = params.toString()");
   });
 
   it("restores the remembered companion into the URL before the page paints", () => {

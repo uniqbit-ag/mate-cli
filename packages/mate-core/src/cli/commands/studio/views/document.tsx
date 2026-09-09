@@ -72,7 +72,9 @@ function Content({ page }: { page: StudioPage }) {
       </section>
     );
   }
-  if (page.selection.view === "workflow") return <Workflow payload={page.payload} />;
+  if (page.selection.view === "workflow") {
+    return <Workflow payload={page.payload} />;
+  }
   if (page.selection.view === "specs") return <Specs payload={page.payload} />;
   return <Dashboard payload={page.payload} />;
 }

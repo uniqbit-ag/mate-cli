@@ -77,6 +77,25 @@ function wrappedRepo(companionPath: string): string {
 }
 
 describe("OpenCode add-dir plugin", () => {
+  test("adds companion skill roots without replacing user paths", async () => {
+    await withEnv("MATE_ARTIFACT_PATH", "/tmp/companion", async () => {
+      const plugin = await AddDirPlugin();
+      const config: Config = {
+        skills: {
+          paths: ["../team-skills", "/tmp/companion/.agents/skills"],
+        },
+      };
+
+      await (plugin.config as ConfigHook | undefined)?.(config);
+
+      expect(config.skills?.paths).toEqual([
+        "../team-skills",
+        "/tmp/companion/.agents/skills",
+        "/tmp/companion/.opencode/skills",
+      ]);
+    });
+  });
+
   test("adds companion path external_directory allow rules without replacing user config", async () => {
     await withEnv("MATE_ARTIFACT_PATH", "/tmp/companion", async () => {
       const plugin = await AddDirPlugin();
@@ -97,6 +116,9 @@ describe("OpenCode add-dir plugin", () => {
             "/tmp/companion": "allow",
             "/tmp/companion/**": "allow",
           },
+        },
+        skills: {
+          paths: ["/tmp/companion/.agents/skills", "/tmp/companion/.opencode/skills"],
         },
       });
     });
@@ -124,6 +146,12 @@ describe("OpenCode add-dir plugin", () => {
           "/tmp/projected-companion": "allow",
           "/tmp/projected-companion/**": "allow",
         },
+      },
+      skills: {
+        paths: [
+          "/tmp/projected-companion/.agents/skills",
+          "/tmp/projected-companion/.opencode/skills",
+        ],
       },
     });
   });
@@ -168,6 +196,9 @@ describe("OpenCode add-dir plugin", () => {
             "/tmp/companion": "deny",
             "/tmp/companion/**": "ask",
           },
+        },
+        skills: {
+          paths: ["/tmp/companion/.agents/skills", "/tmp/companion/.opencode/skills"],
         },
       });
     });
