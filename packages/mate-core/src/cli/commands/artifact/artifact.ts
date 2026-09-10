@@ -1,6 +1,12 @@
 import { usage } from "../../usage";
-import { runArtifactFinishCommand } from "./finish";
+import { runArtifactPublishCommand } from "./finish";
 import { runArtifactPendingCommand } from "./pending";
+
+/**
+ * Pre-rename spelling of `publish`. Kept so companions whose materialized skills were
+ * written before the rename keep working until they re-sync.
+ */
+const DEPRECATED_PUBLISH_ALIAS = "finish";
 
 /**
  * @command mate artifact <subcommand>
@@ -12,8 +18,14 @@ export async function runArtifactCommand(
   argv: string[],
 ): Promise<void> {
   switch (subcommand) {
-    case "finish":
-      await runArtifactFinishCommand(argv);
+    case DEPRECATED_PUBLISH_ALIAS:
+      console.error(
+        "mate: `artifact finish` is deprecated and will be removed; use `artifact publish`.",
+      );
+      await runArtifactPublishCommand(argv);
+      return;
+    case "publish":
+      await runArtifactPublishCommand(argv);
       return;
     case "pending":
       await runArtifactPendingCommand(argv);

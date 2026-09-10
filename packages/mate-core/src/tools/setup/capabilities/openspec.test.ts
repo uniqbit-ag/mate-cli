@@ -419,7 +419,7 @@ describe("createOpenspecPlugin", () => {
       );
       expect(publishSkill).toContain("commit, tag, and push");
       expect(publishSkill).toContain("numbered list");
-      expect(publishSkill).toContain('artifact finish "<change-name>" --json');
+      expect(publishSkill).toContain('artifact publish "<change-name>" --json');
       await expect(
         fs.readFile(
           path.join(
@@ -448,7 +448,7 @@ describe("createOpenspecPlugin", () => {
     git("config", "user.name", "acme");
     git("add", "-A");
     git("commit", "-m", "seed archive");
-    git("tag", "-a", `openspec/${anchor}`, "-m", `Finish ${anchor}`);
+    git("tag", "-a", `openspec/${anchor}`, "-m", `Publish ${anchor}`);
     /** A previously deployed runtime still carrying the retired skill. */
     const retired = path.join(root, ".claude", "skills", "mate-artifact-finish");
     await fs.mkdir(retired, { recursive: true });

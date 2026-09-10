@@ -23,7 +23,7 @@
     "typecheck": "bun run --filter @uniqbit/mate typecheck",
     "lint": "bunx oxlint apps packages --no-error-on-unmatched-pattern",
     "lint:fix": "bunx oxlint apps packages --fix --no-error-on-unmatched-pattern",
-    "format": "bunx oxfmt apps packages --no-error-on-unmatched-pattern",
-    "format:check": "bunx oxfmt apps packages --check --no-error-on-unmatched-pattern"
+    "format": "bunx oxfmt apps packages \"!**/*.generated.*\" --no-error-on-unmatched-pattern",
+    "format:check": "bunx oxfmt apps packages \"!**/*.generated.*\" --check --no-error-on-unmatched-pattern"
   }
 }

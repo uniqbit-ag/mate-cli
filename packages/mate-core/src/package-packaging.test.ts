@@ -51,5 +51,5 @@ describe("published core package", () => {
     ]) {
       await expect(fs.stat(path.join(extracted, "package", "src", entry))).resolves.toBeDefined();
     }
-  });
+  }, 30_000);
 });

@@ -22,7 +22,7 @@ const ARCHIVE_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}-/;
 
 export const ARCHIVE_RELATIVE_DIR = "openspec/changes/archive";
 
-/** The finish marker is the tag `mate artifact finish` creates, never a recomputed date. */
+/** The finish marker is the tag `mate artifact publish` creates, never a recomputed date. */
 export function finishMarker(anchor: string): string {
   return `openspec/${anchor}`;
 }

@@ -128,3 +128,33 @@ describe("parseGitMode", () => {
     expect(parseGitMode({ "git-mode": "manual" })).toBeUndefined();
   });
 });
+
+describe("parseFlags boolean flags", () => {
+  const booleans = new Set(["json", "force", "no-push"]);
+
+  test("a listed boolean does not swallow the following positional", () => {
+    expect(parseFlags(["--no-push", "my-change"], booleans)).toEqual({ "no-push": true });
+    expect(parseFlags(["--force", "my-change", "--json"], booleans)).toEqual({
+      force: true,
+      json: true,
+    });
+    expect(parseFlags(["--json", "my-change"], booleans)).toEqual({ json: true });
+  });
+
+  test("an unlisted flag still takes the next token as its value", () => {
+    expect(parseFlags(["--type", "openspec", "my-change", "--json"], booleans)).toEqual({
+      type: "openspec",
+      json: true,
+    });
+  });
+
+  test("supports --key=value for both value and boolean flags", () => {
+    expect(parseFlags(["--type=openspec"], booleans)).toEqual({ type: "openspec" });
+    expect(parseFlags(["--json=false"], booleans)).toEqual({ json: false });
+    expect(parseFlags(["--json=true"], booleans)).toEqual({ json: true });
+  });
+
+  test("without a boolean set the legacy behaviour is unchanged", () => {
+    expect(parseFlags(["--no-push", "my-change"])).toEqual({ "no-push": "my-change" });
+  });
+});

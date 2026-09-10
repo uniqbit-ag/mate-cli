@@ -42,6 +42,26 @@ describe("openspecFinisher.detectProduced", () => {
     await expect(openspecFinisher(root).detectProduced("my-change")).resolves.toBeNull();
   });
 
+  test("returns null when the change is still active, so a stale same-name archive is not resumed", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-01-01-my-change");
+    const activeDir = path.join(root, "openspec", "changes", "my-change");
+    await fs.mkdir(activeDir, { recursive: true });
+    await fs.writeFile(path.join(activeDir, "tasks.md"), "- [ ] open\n", "utf8");
+
+    await expect(openspecFinisher(root).detectProduced("my-change")).resolves.toBeNull();
+  });
+
+  test("resumes the newest archive once the active change directory is gone", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-01-01-my-change");
+    await seedArchive(root, "2026-07-14-my-change");
+
+    const produced = await openspecFinisher(root).detectProduced("my-change");
+
+    expect(produced?.anchorName).toBe("2026-07-14-my-change");
+  });
+
   test("finds the dated archive folder with exact active, archive, and canonical spec file paths", async () => {
     const root = await makeCompanion();
     await seedArchive(root, "2026-07-14-my-change", ["z-capability", "a-capability"]);

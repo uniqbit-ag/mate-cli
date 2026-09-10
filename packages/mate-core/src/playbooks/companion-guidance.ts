@@ -28,7 +28,7 @@ export {
 
 /**
  * Build just the `<companion-policy>` XML block: paths, CLI tools, and
- * mandatory rules (including the capability-gated `openspec-finish` rule).
+ * mandatory rules (including the capability-gated `openspec-publish` rule).
  * Does not include codebase-exploration guidance — see
  * `buildCompanionGuidance` for the merged single-string form, or call
  * `buildCodebaseExplorationGuidanceSection` directly when that guidance is

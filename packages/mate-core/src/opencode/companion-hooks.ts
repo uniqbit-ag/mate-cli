@@ -19,7 +19,7 @@ import {
   type CompanionContext,
 } from "./companion-policy";
 
-const REACT_DOCTOR_VERSION = "0.8.1";
+const REACT_DOCTOR_VERSION = "0.9.13";
 
 const REACT_DOCTOR_NON_LINT_FAILURES = [
   /No React dependency found/i,

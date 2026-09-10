@@ -11,5 +11,10 @@
   "importOrder": {
     "enabled": true
   },
-  "ignore": ["node_modules", "dist", "_artifacts", "apps/mate-cli/src/templates"]
+  "ignore": [
+    "node_modules",
+    "dist",
+    "_artifacts",
+    "apps/mate-cli/src/templates"
+  ]
 }

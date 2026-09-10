@@ -166,7 +166,7 @@ export async function runFinishEngine(
       // Post-produce failure: retain the produced artifact — it is the resume state.
       fail(
         "cap-sync",
-        "mate: cap sync failed; the produced artifact was retained — re-run `mate artifact finish` to resume.",
+        "mate: cap sync failed; the produced artifact was retained — re-run `mate artifact publish` to resume.",
       );
       return result;
     }
@@ -187,7 +187,7 @@ export async function runFinishEngine(
     // Post-produce failure: retain the produced artifact — it is the resume state.
     fail(
       "commit",
-      `mate: commit failed: ${String(err)}; the produced artifact was retained — re-run \`mate artifact finish\` to resume.`,
+      `mate: commit failed: ${String(err)}; the produced artifact was retained — re-run \`mate artifact publish\` to resume.`,
     );
     return result;
   }
@@ -223,7 +223,7 @@ export async function runFinishEngine(
   result.step = "tag";
   try {
     if (!(await git.tagExists(tagName))) {
-      await git.tag(tagName, `Finish ${produced.anchorName}`);
+      await git.tag(tagName, `Publish ${produced.anchorName}`);
     }
   } catch (err) {
     // Post-commit failure: retain the commit, do not roll back.

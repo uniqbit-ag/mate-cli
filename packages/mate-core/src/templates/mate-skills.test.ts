@@ -241,24 +241,24 @@ describe("bundled Mate artifact publish skill", () => {
     }
   });
 
-  test("keeps the deterministic finish CLI as the publication primitive", async () => {
+  test("keeps the deterministic publish CLI as the publication primitive", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
-      expect(source).toContain('mate artifact finish "<change-name>" --json');
+      expect(source).toContain('mate artifact publish "<change-name>" --json');
       expect(source).toContain("once per selected change, sequentially");
-      expect(source).toContain("never hand-commit or hand-tag instead of the finish CLI");
+      expect(source).toContain("never hand-commit or hand-tag instead of the publish CLI");
       /** Publication logic stays in the CLI: no hand-rolled Git in the workflow body. */
       expect(source).not.toMatch(/```bash\n(?:[^`]*\n)?git (?:commit|tag|push)/);
     }
   });
 
-  test("reads finish semantics from a reference instead of another skill", async () => {
+  test("reads publish semantics from a reference instead of another skill", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
       expect(source).toContain("[references/openspec.md](references/openspec.md)");
       expect(source).not.toMatch(/invoke the [a-z-]*skill/i);
       const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
-      expect(reference).toContain("never invoke another skill to interpret a finish result");
+      expect(reference).toContain("never invoke another skill to interpret a publish result");
     }
   });
 
@@ -274,7 +274,7 @@ describe("bundled Mate artifact publish skill", () => {
     }
   });
 
-  test("branches on every finish status and reports the resumed case", async () => {
+  test("branches on every publish status and reports the resumed case", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
       for (const status of ["`ok`", "`skipped`", "`conflict`", "`error`"]) {
@@ -291,7 +291,7 @@ describe("bundled Mate artifact publish skill", () => {
   test("stops on the first unsafe failure and reports partial completion", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
-      expect(source).toContain("Do not invoke finish for any remaining selection");
+      expect(source).toContain("Do not invoke publish for any remaining selection");
       expect(source).toContain("Report completed, failed, and remaining");
       expect(source).toContain("never report the selected set as published while one remains");
       const reference = await readReference(root, "mate-artifact-publish", "openspec.md");

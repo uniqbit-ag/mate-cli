@@ -226,12 +226,13 @@ tests before release.
 ### Artifacts And Updates
 
 ```sh
-mate artifact finish <change-name> [--type openspec] [--force] [--no-push] [--json]
+mate artifact publish <change-name> [--type openspec] [--force] [--no-push] [--json]
 mate update
 mate update --check
 ```
 
-`artifact finish` finalizes a change artifact workflow. `update` upgrades the
+`artifact publish` commits, tags, and pushes a completed change artifact
+(`artifact finish` is a deprecated alias). `update` upgrades the
 npm-managed Mate package and starts a fresh post-update install. Self-update is
 supported only for npm global installations. `update --check` reports whether a
 new version exists without installing it.

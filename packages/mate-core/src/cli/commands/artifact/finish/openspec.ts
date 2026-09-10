@@ -271,7 +271,7 @@ export function openspecFinisher(
 
   return {
     type: "openspec",
-    disabledReason: "mate: the openspec capability must be enabled to run artifact finish.",
+    disabledReason: "mate: the openspec capability must be enabled to run artifact publish.",
     isEnabled(capabilities) {
       return hasOpenspecCapability(capabilities);
     },
@@ -310,6 +310,20 @@ export function openspecFinisher(
       }
     },
     async detectProduced(name) {
+      /**
+       * An active change directory means a fresh finish, not a resume: a genuinely
+       * half-completed finish already moved it into the archive. Without this, a stale
+       * same-name archive reads as produced output, so both guards are skipped and the
+       * un-archived change is committed under the previous run's anchor.
+       */
+      try {
+        if ((await fs.stat(path.join(companionPath, "openspec", "changes", name))).isDirectory()) {
+          return null;
+        }
+      } catch {
+        /** No active directory: a resume is possible. */
+      }
+
       const archiveDir = path.join(companionPath, "openspec", "changes", "archive");
       let entries;
       try {

@@ -3,17 +3,17 @@ import { describe, expect, test } from "bun:test";
 import { buildOpenCodeGuidance } from "./opencode-guidance";
 
 describe("buildOpenCodeGuidance", () => {
-  test("includes the openspec-finish rule when the openspec capability is enabled", () => {
+  test("includes the openspec-publish rule when the openspec capability is enabled", () => {
     const guidance = buildOpenCodeGuidance([{ name: "openspec" }]);
 
-    expect(guidance.companionGuidance).toContain("openspec-finish");
+    expect(guidance.companionGuidance).toContain("openspec-publish");
     expect(guidance.errors).toEqual([]);
   });
 
-  test("omits the openspec-finish rule when openspec is not enabled", () => {
+  test("omits the openspec-publish rule when openspec is not enabled", () => {
     const guidance = buildOpenCodeGuidance([{ name: "tokensave" }]);
 
-    expect(guidance.companionGuidance).not.toContain("openspec-finish");
+    expect(guidance.companionGuidance).not.toContain("openspec-publish");
   });
 
   test("delivers codebase exploration guidance as its own field, not embedded twice", () => {
@@ -50,7 +50,7 @@ describe("buildOpenCodeGuidance", () => {
 
     expect(guidance.version).toBe(1);
     expect(guidance.companionGuidance).toContain("<companion-policy ");
-    expect(guidance.companionGuidance).not.toContain("openspec-finish");
+    expect(guidance.companionGuidance).not.toContain("openspec-publish");
     expect(guidance.codebaseExplorationGuidance).toBe("");
     expect(guidance.errors).toEqual([]);
   });

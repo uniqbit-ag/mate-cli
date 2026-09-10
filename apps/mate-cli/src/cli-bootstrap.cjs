@@ -90,10 +90,14 @@ async function main() {
       stdio.push(3);
     } catch {}
   }
-  const result = spawnSync("bun", [path.join(__dirname, "cli.ts"), ...process.argv.slice(2)], {
-    stdio,
-    env,
-  });
+  const result = spawnSync(
+    "bun",
+    [path.join(__dirname, "..", "dist", "cli.mjs"), ...process.argv.slice(2)],
+    {
+      stdio,
+      env,
+    },
+  );
   if (result.error) process.stderr.write(`mate: failed to launch bun: ${result.error.message}\n`);
   process.exitCode = result.status ?? 1;
 }

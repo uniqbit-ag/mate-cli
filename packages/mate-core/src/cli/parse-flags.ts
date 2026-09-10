@@ -7,8 +7,27 @@ import type { CapabilityConfig } from "../lib/orchestrator/types";
 
 export type CliFlags = Record<string, string | string[] | boolean>;
 
-export function parseFlags(argv: string[]): CliFlags {
+/**
+ * Flags whose presence is the whole value. A flag not listed here consumes the next
+ * non-`--` token, so an unlisted boolean silently swallows a positional and then reads
+ * as absent — e.g. `--no-push my-change` yielding `{"no-push": "my-change"}`.
+ */
+export type BooleanFlagSet = ReadonlySet<string>;
+
+const NO_BOOLEAN_FLAGS: BooleanFlagSet = new Set<string>();
+
+export function parseFlags(
+  argv: string[],
+  booleanFlags: BooleanFlagSet = NO_BOOLEAN_FLAGS,
+): CliFlags {
   const flags: CliFlags = {};
+
+  const assign = (key: string, value: string): void => {
+    const current = flags[key];
+    if (current === undefined) flags[key] = value;
+    else if (Array.isArray(current)) current.push(value);
+    else flags[key] = [current as string, value];
+  };
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -16,22 +35,28 @@ export function parseFlags(argv: string[]): CliFlags {
       continue;
     }
 
-    const key = token.slice(2);
-    const next = argv[index + 1];
-
-    if (!next || next.startsWith("--")) {
-      flags[key] = true;
+    const body = token.slice(2);
+    const equals = body.indexOf("=");
+    if (equals !== -1) {
+      const key = body.slice(0, equals);
+      const value = body.slice(equals + 1);
+      if (booleanFlags.has(key)) flags[key] = value !== "false";
+      else assign(key, value);
       continue;
     }
 
-    if (flags[key] === undefined) {
-      flags[key] = next;
-    } else if (Array.isArray(flags[key])) {
-      flags[key].push(next);
-    } else {
-      flags[key] = [flags[key] as string, next];
+    if (booleanFlags.has(body)) {
+      flags[body] = true;
+      continue;
     }
 
+    const next = argv[index + 1];
+    if (!next || next.startsWith("--")) {
+      flags[body] = true;
+      continue;
+    }
+
+    assign(body, next);
     index += 1;
   }
 

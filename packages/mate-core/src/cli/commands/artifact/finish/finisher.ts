@@ -35,7 +35,7 @@ export interface ProduceResult {
 }
 
 /**
- * The variable, per-artifact-kind half of `mate artifact finish`. The engine
+ * The variable, per-artifact-kind half of `mate artifact publish`. The engine
  * ({@link ../engine}) owns everything type-agnostic — scoped rollback,
  * commit, remote-sync, conflict handoff, tag, push. A finisher supplies only what
  * differs between artifact kinds (openspec changes today; ADRs, etc. later).

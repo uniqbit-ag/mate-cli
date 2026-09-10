@@ -93,7 +93,7 @@ export function buildCodebaseExplorationGuidanceSection(
 
 /**
  * Build just the `<companion-policy>` XML block: paths, CLI tools, and
- * mandatory rules (including the capability-gated `openspec-finish` rule).
+ * mandatory rules (including the capability-gated `openspec-publish` rule).
  * Does not include codebase-exploration guidance — see
  * `buildCompanionGuidance` for the merged single-string form, or call
  * `buildCodebaseExplorationGuidanceSection` directly when that guidance is
@@ -133,7 +133,7 @@ export function buildCompanionPolicyXml(
 
   if (hasOpenspecCapability(context.capabilities)) {
     lines.push(
-      `    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with ${FRAMEWORK_NAME} artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs ${FRAMEWORK_NAME} artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>`,
+      `    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with ${FRAMEWORK_NAME} artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs ${FRAMEWORK_NAME} artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before publishing. Publishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a publish afterwards.</rule>`,
     );
   }
 
@@ -180,7 +180,7 @@ export function buildCompanionGuidance(
  * same payload shape serves every companion and no path is resolved here.
  *
  * Real capabilities are passed through (not just the graphify/tokensave flags)
- * so capability-gated companion-policy rules — e.g. openspec-finish — render
+ * so capability-gated companion-policy rules — e.g. openspec-publish — render
  * exactly as they do for the Claude provider.
  */
 export function buildOpenCodeGuidance(capabilities: GuidanceCapability[]): MateGuidanceFile {

@@ -2139,7 +2139,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
 "
 ,
   "claudeHooks": {
-    "react-doctor.sh": "e25569935b64",
+    "react-doctor.sh": "a33e1b4ac810",
   },
   "claudeMcpConfig": {
     "mcpServers": {},
@@ -2480,7 +2480,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
 "
 ,
   "claudeHooks": {
-    "react-doctor.sh": "e25569935b64",
+    "react-doctor.sh": "a33e1b4ac810",
   },
   "claudeMcpConfig": {
     "mcpServers": {},
@@ -2818,17 +2818,17 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-artifact-publish/SKILL.md": "14bd712db754",
-    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
+    "mate-artifact-publish/SKILL.md": "2e00bd90d372",
+    "mate-artifact-publish/references/openspec.md": "19e18dd3e23b",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
+    "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
     "mate-interview-me/SKILL.md": "a922defdf427",
-    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
@@ -2873,7 +2873,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before publishing. Publishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a publish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -3021,17 +3021,17 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   },
   "opencodePlugins": {},
   "opencodeSkills": {
-    "mate-artifact-publish/SKILL.md": "14bd712db754",
-    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
+    "mate-artifact-publish/SKILL.md": "2e00bd90d372",
+    "mate-artifact-publish/references/openspec.md": "19e18dd3e23b",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
+    "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
     "mate-interview-me/SKILL.md": "a922defdf427",
-    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "cb6e43b175c8",
     "openspec-archive-change/SKILL.md": "920c4cc68edf",
@@ -3080,7 +3080,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before publishing. Publishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a publish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -3186,17 +3186,17 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "claudeSkills": {
-    "mate-artifact-publish/SKILL.md": "14bd712db754",
-    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
+    "mate-artifact-publish/SKILL.md": "2e00bd90d372",
+    "mate-artifact-publish/references/openspec.md": "19e18dd3e23b",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
+    "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
     "mate-interview-me/SKILL.md": "a922defdf427",
-    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
@@ -3223,17 +3223,17 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   },
   "opencodePlugins": {},
   "opencodeSkills": {
-    "mate-artifact-publish/SKILL.md": "14bd712db754",
-    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
+    "mate-artifact-publish/SKILL.md": "2e00bd90d372",
+    "mate-artifact-publish/references/openspec.md": "19e18dd3e23b",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
+    "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
     "mate-interview-me/SKILL.md": "a922defdf427",
-    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "cb6e43b175c8",
     "openspec-archive-change/SKILL.md": "920c4cc68edf",
@@ -3280,7 +3280,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before publishing. Publishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a publish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -3327,7 +3327,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before publishing. Publishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a publish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,
@@ -3493,7 +3493,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
 "
 ,
   "claudeHooks": {
-    "react-doctor.sh": "e25569935b64",
+    "react-doctor.sh": "a33e1b4ac810",
   },
   "claudeMcpConfig": {
     "mcpServers": {
@@ -3632,17 +3632,17 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-artifact-publish/SKILL.md": "14bd712db754",
-    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
+    "mate-artifact-publish/SKILL.md": "2e00bd90d372",
+    "mate-artifact-publish/references/openspec.md": "19e18dd3e23b",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
+    "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
     "mate-interview-me/SKILL.md": "a922defdf427",
-    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
@@ -3702,17 +3702,17 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-artifact-publish/SKILL.md": "14bd712db754",
-    "mate-artifact-publish/references/openspec.md": "9709fbe7984c",
+    "mate-artifact-publish/SKILL.md": "2e00bd90d372",
+    "mate-artifact-publish/references/openspec.md": "19e18dd3e23b",
     "mate-create-report/SKILL.md": "ef0c338f7ace",
-    "mate-domain-modeling/SKILL.md": "1fce395ae2eb",
+    "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
     "mate-interview-me/SKILL.md": "a922defdf427",
-    "mate-openspec-backfill/SKILL.md": "29563f7564b2",
+    "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-simplify-code/SKILL.md": "f0d8f4ab643f",
     "openspec-apply-change/SKILL.md": "cb6e43b175c8",
     "openspec-archive-change/SKILL.md": "920c4cc68edf",
@@ -3762,7 +3762,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before publishing. Publishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a publish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>
 
@@ -3833,7 +3833,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
-    <rule id="openspec-finish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact finish "<name>" --json per selected change. That command is the only sanctioned completion; never hand-commit or hand-tag a finish. Finishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before finishing. Finishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a finish afterwards.</rule>
+    <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing a still-active change archives it and applies its delta specs itself, so do not pre-apply them to openspec/specs right before publishing. Publishing an already-archived change resumes without re-applying delta specs, so an archive flow that already synced specs (e.g. openspec-sync-specs) composes fine with a publish afterwards.</rule>
   </mandatory-rules>
 </companion-policy>"
 ,

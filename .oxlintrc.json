@@ -1,6 +1,11 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "import", "unicorn"],
+  "plugins": [
+    "react",
+    "typescript",
+    "import",
+    "unicorn"
+  ],
   "env": {
     "node": true
   },
@@ -21,9 +26,20 @@
   "rules": {
     "no-console": "off",
     "no-unused-vars": "off",
-    "typescript/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "typescript/no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
     "typescript/no-explicit-any": "warn",
-    "typescript/consistent-type-imports": ["error", { "prefer": "type-imports" }],
+    "typescript/consistent-type-imports": [
+      "error",
+      {
+        "prefer": "type-imports"
+      }
+    ],
     "import/no-cycle": "error",
     "import/no-duplicates": "error",
     "import/no-self-import": "error",
@@ -35,9 +51,21 @@
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx"
+      ],
       "rules": {
         "typescript/no-explicit-any": "off"
+      }
+    },
+    {
+      "files": ["packages/mate-core/src/cli/commands/studio/views/**/*.tsx"],
+      "rules": {
+        "react/no-unknown-property": "off",
+        "react/jsx-key": "off"
       }
     }
   ],
@@ -47,6 +75,7 @@
     "_artifacts",
     "apps/mate-cli/src/templates",
     "*.test.{ts,tsx}",
-    "*.spec.{ts,tsx}"
+    "*.spec.{ts,tsx}",
+    "*.generated.{ts,js}"
   ]
 }

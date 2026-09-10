@@ -86,7 +86,7 @@ try {
 NODE
 }
 
-REACT_DOCTOR_VERSION=${REACT_DOCTOR_VERSION:-0.8.1}
+REACT_DOCTOR_VERSION=${REACT_DOCTOR_VERSION:-0.9.13}
 
 run_react_doctor() {
   if [ -n "${MATE_REACT_DOCTOR_BIN_PATH:-}" ] && [ -x "$MATE_REACT_DOCTOR_BIN_PATH" ]; then
@@ -133,7 +133,7 @@ if (/^react-doctor: executable unavailable/i.test(scanOutput)) {
   console.log(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'Stop',
-      additionalContext: `${scanOutput}\nReact Doctor was not run. Install the pinned Mate runtime dependency with \`bun install\` in the Mate checkout, or install \`react-doctor@0.8.1\` in the project root, then retry.`,
+      additionalContext: `${scanOutput}\nReact Doctor was not run. Install the pinned Mate runtime dependency with \`bun install\` in the Mate checkout, or install \`react-doctor@0.9.13\` in the project root, then retry.`,
     },
   }));
   process.exit(0);

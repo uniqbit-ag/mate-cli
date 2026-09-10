@@ -2,14 +2,14 @@ import { resolveForCapability } from "../../../../lib/orchestrator/framework-con
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig } from "../../../../lib/orchestrator/types";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
-import { parseFlags } from "../../../parse-flags";
+import { type BooleanFlagSet, parseFlags } from "../../../parse-flags";
 import { ensureUnambiguousCompanion } from "../../shared/companion-selection";
 import { runFinishEngine } from "./engine";
 import type { FinishContext, FinisherFactory } from "./finisher";
 import { defaultGitOps, type GitOps } from "./git";
 import { DEFAULT_FINISHER_TYPE, knownFinisherTypes, selectFinisher } from "./registry";
 
-export interface FinishCommandDeps {
+export interface PublishCommandDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
   resolveContext?: (cwd: string) => Promise<LaunchContext>;
   loadCapabilities?: (context: LaunchContext) => Promise<CapabilityConfig[]>;
@@ -19,18 +19,21 @@ export interface FinishCommandDeps {
   stderr?: (line: string) => void;
 }
 
-const VALUE_FLAGS = new Set(["--type"]);
+/** Presence-only flags; every other `--flag` consumes the following token as its value. */
+const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["force", "no-push", "json"]);
 
-/** First non-flag token, skipping the value of any value-taking flag (e.g. `--type x`). */
+/**
+ * First non-flag token. Consumes the value of a value-taking flag exactly as
+ * {@link parseFlags} does, so the name and the flags can never disagree about which
+ * token belongs to whom.
+ */
 function positionalName(argv: string[]): string | undefined {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
-    if (VALUE_FLAGS.has(token)) {
-      index += 1;
-      continue;
-    }
-    if (token.startsWith("--")) continue;
-    return token;
+    if (!token.startsWith("--")) return token;
+    const key = token.slice(2);
+    if (key.includes("=") || BOOLEAN_FLAGS.has(key)) continue;
+    index += 1;
   }
   return undefined;
 }
@@ -41,7 +44,7 @@ async function defaultLoadCapabilities(context: LaunchContext): Promise<Capabili
 }
 
 /**
- * @command mate artifact finish <name>
+ * @command mate artifact publish <name>
  * @description Finishes and archives a completed artifact/change named `<name>`.
  * Resolves the launch context for the current working repo, loads the enabled
  * capabilities, selects a {@link FinisherFactory} for `--type` (defaulting to
@@ -58,14 +61,14 @@ async function defaultLoadCapabilities(context: LaunchContext): Promise<Capabili
  * disabled for the repo's configured capabilities — nothing is validated,
  * produced, or mutated in that case.
  */
-export async function runArtifactFinishCommand(
+export async function runArtifactPublishCommand(
   argv: string[],
-  deps: FinishCommandDeps = {},
+  deps: PublishCommandDeps = {},
 ): Promise<void> {
   const emitOut = deps.stdout ?? ((line: string) => process.stdout.write(`${line}\n`));
   const emitErr = deps.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
 
-  const flags = parseFlags(argv);
+  const flags = parseFlags(argv, BOOLEAN_FLAGS);
   const force = flags.force === true;
   const noPush = flags["no-push"] === true;
   const json = flags.json === true;
@@ -73,7 +76,7 @@ export async function runArtifactFinishCommand(
   const name = positionalName(argv);
 
   if (!name) {
-    emitErr("mate: artifact finish requires a change name.");
+    emitErr("mate: artifact publish requires a change name.");
     process.exitCode = 1;
     return;
   }
@@ -129,7 +132,7 @@ export async function runArtifactFinishCommand(
       context.repository?.path ?? process.env.MATE_REPO_PATH,
     );
   } catch (err) {
-    const message = `mate: finish Git guard rejected the target: ${String(err)}`;
+    const message = `mate: publish Git guard rejected the target: ${String(err)}`;
     if (json) {
       emitOut(
         JSON.stringify({

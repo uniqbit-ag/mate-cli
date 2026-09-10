@@ -205,15 +205,15 @@ describe("LaunchAdapter.prepareLaunch", () => {
 
     // Regression test: buildOpenCodeGuidance previously hardcoded an empty
     // capabilities array when calling buildCompanionGuidance, so
-    // capability-gated rules (e.g. openspec-finish) never rendered for
+    // capability-gated rules (e.g. openspec-publish) never rendered for
     // OpenCode regardless of what was actually enabled.
     const openspecEnv = adapter.extendEnvironment(makeContext([{ name: "openspec" }]));
     const openspecGuidance = JSON.parse(openspecEnv.MATE_GUIDANCE_JSON ?? "{}");
-    expect(openspecGuidance.companionGuidance).toContain("openspec-finish");
+    expect(openspecGuidance.companionGuidance).toContain("openspec-publish");
 
     const withoutOpenspecEnv = adapter.extendEnvironment(makeContext([{ name: "tokensave" }]));
     const withoutOpenspecGuidance = JSON.parse(withoutOpenspecEnv.MATE_GUIDANCE_JSON ?? "{}");
-    expect(withoutOpenspecGuidance.companionGuidance).not.toContain("openspec-finish");
+    expect(withoutOpenspecGuidance.companionGuidance).not.toContain("openspec-publish");
 
     // codebase-exploration-rules must appear exactly once (as the separate
     // field), never embedded a second time inside companionGuidance.

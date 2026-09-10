@@ -3,7 +3,7 @@ import { resolveForCapability } from "../../../../lib/orchestrator/framework-con
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig } from "../../../../lib/orchestrator/types";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
-import { parseFlags } from "../../../parse-flags";
+import { type BooleanFlagSet, parseFlags } from "../../../parse-flags";
 import { ensureUnambiguousCompanion } from "../../shared/companion-selection";
 import { defaultGitOps, type GitOps } from "../finish/git";
 import { discoverArchives, pendingArchives, type ArchiveEntry } from "./discovery";
@@ -20,6 +20,9 @@ export interface PendingCommandDeps {
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
+
+/** Presence-only flags; every other `--flag` consumes the following token as its value. */
+const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["json"]);
 
 /** Machine-readable result emitted with `--json`. */
 export interface PendingResult {
@@ -60,7 +63,7 @@ export async function runArtifactPendingCommand(
 ): Promise<void> {
   const emitOut = deps.stdout ?? ((line: string) => process.stdout.write(`${line}\n`));
   const emitErr = deps.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
-  const json = parseFlags(argv).json === true;
+  const json = parseFlags(argv, BOOLEAN_FLAGS).json === true;
 
   const ensureCompanion = deps.ensureUnambiguousCompanion ?? ensureUnambiguousCompanion;
   if (!(await ensureCompanion(process.cwd()))) {

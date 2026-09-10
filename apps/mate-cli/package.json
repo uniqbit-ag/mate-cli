@@ -6,7 +6,8 @@
     "mate": "src/cli-bootstrap.cjs"
   },
   "files": [
-    "src/"
+    "dist/",
+    "src/cli-bootstrap.cjs"
   ],
   "type": "module",
   "publishConfig": {
@@ -15,6 +16,8 @@
   },
   "scripts": {
     "prepare": "bun scripts/prepare.ts",
+    "build": "tsdown --config tsdown.config.ts",
+    "prepack": "bun run build",
     "release": "release-it --config ../../.release-it.json && ../../publish.sh latest",
     "release:canary": "release-it --config ../../.release-it.canary.json --preRelease=canary && ../../publish.sh canary",
     "release:dry-run": "release-it --config ../../.release-it.json --dry-run --no-git.push",
@@ -44,6 +47,7 @@
     "oxfmt": "^0.58.0",
     "oxlint": "^1.73.0",
     "release-it": "^20.2.1",
+    "tsdown": "0.23.0",
     "typescript": "latest"
   },
   "engines": {

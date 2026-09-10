@@ -64,7 +64,7 @@ describe("resolveOpenCodeGuidance", () => {
     );
 
     expect(errors).toEqual([]);
-    expect(guidance?.companionGuidance).toContain('rule id="openspec-finish"');
+    expect(guidance?.companionGuidance).toContain('rule id="openspec-publish"');
     expect(guidance?.codebaseExplorationGuidance).toBe("");
   });
 

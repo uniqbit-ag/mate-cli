@@ -88,7 +88,7 @@ describe("session-guidance hook module", () => {
     const context = additionalContext(buildSessionGuidance({}, repoRoot).stdout);
 
     expect(context).toContain("<codebase-exploration-rules ");
-    expect(context).toContain('rule id="openspec-finish"');
+    expect(context).toContain('rule id="openspec-publish"');
   });
 
   test("omits exploration rules when no exploration capability is enabled", () => {

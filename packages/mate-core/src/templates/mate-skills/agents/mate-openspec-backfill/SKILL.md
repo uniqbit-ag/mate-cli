@@ -62,6 +62,6 @@ Create a spec for one feature that already exists in the working repository. The
 ## Guardrails
 
 - Never write files under `openspec/specs/` — main specs change only through finished changes.
-- Never invoke any finish flow (`mate artifact finish`, `openspec archive`); stop at ready-to-finish.
+- Never invoke any finish flow (`mate artifact publish`, `openspec archive`); stop at ready-to-finish.
 - Never emit a requirement without a citation, and never spec a suspected bug without the user's ruling.
 - Keep capability ids opaque kebab-case; extend existing capabilities before creating new ones.
