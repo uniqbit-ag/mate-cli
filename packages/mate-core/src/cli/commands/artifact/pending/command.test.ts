@@ -22,20 +22,29 @@ function makeContext(): LaunchContext {
   };
 }
 
-function stubGit(tags: string[] = []): GitOps {
+function stubGit(uncommitted: string[] = []): GitOps {
   return {
-    async tagExists(name: string) {
-      return tags.includes(name);
+    async changedPaths() {
+      return uncommitted;
     },
   } as unknown as GitOps;
 }
 
-function entry(anchor: string, state: ArchiveEntry["state"] = "unpublished"): ArchiveEntry {
+function entry(
+  anchor: string,
+  state: ArchiveEntry["state"] = "uncommitted",
+  uncommittedPaths: string[] = state === "uncommitted"
+    ? [`openspec/changes/archive/${anchor}/`]
+    : [],
+  uncommittedSpecs: string[] = [],
+): ArchiveEntry {
   return {
     name: anchor.replace(/^\d{4}-\d{2}-\d{2}-/, ""),
     anchor,
     path: `openspec/changes/archive/${anchor}`,
     tag: `openspec/${anchor}`,
+    uncommittedPaths,
+    uncommittedSpecs,
     state,
   };
 }
@@ -72,10 +81,10 @@ function sink(): Pick<PendingCommandDeps, "stdout" | "stderr"> {
 }
 
 describe("mate artifact pending", () => {
-  test("emits only unpublished archives as JSON", async () => {
+  test("emits only uncommitted archives as JSON", async () => {
     await runArtifactPendingCommand(["--json"], {
       ...baseDeps({
-        discover: async () => [entry("2026-09-07-acme", "published"), entry("2026-09-08-acme-two")],
+        discover: async () => [entry("2026-09-07-acme", "committed"), entry("2026-09-08-acme-two")],
       }),
       ...sink(),
     });
@@ -87,6 +96,7 @@ describe("mate artifact pending", () => {
       companionPath: COMPANION,
       count: 1,
       pending: [entry("2026-09-08-acme-two")],
+      unattributedSpecs: [],
     });
   });
 
@@ -97,23 +107,61 @@ describe("mate artifact pending", () => {
     expect(process.exitCode).toBe(0);
   });
 
-  test("passes the local finish marker to the Git tag lookup", async () => {
-    const asked: string[] = [];
+  test("passes the companion working-tree changes to discovery", async () => {
+    const seen: string[][] = [];
     await runArtifactPendingCommand(["--json"], {
       ...baseDeps({
-        git: () => stubGit(["openspec/2026-09-07-acme"]),
-        discover: async (companionPath, tagExists) => {
+        git: () => stubGit(["openspec/specs/widget-api/spec.md", "openspec/changes/archive/"]),
+        discover: async (companionPath, uncommittedPaths) => {
           expect(companionPath).toBe(COMPANION);
-          for (const anchor of ["2026-09-07-acme", "2026-09-08-acme-two"]) {
-            asked.push(`${anchor}:${await tagExists(`openspec/${anchor}`)}`);
-          }
+          seen.push(uncommittedPaths);
           return [entry("2026-09-08-acme-two")];
         },
       }),
       ...sink(),
     });
 
-    expect(asked).toEqual(["2026-09-07-acme:true", "2026-09-08-acme-two:false"]);
+    expect(seen).toEqual([["openspec/specs/widget-api/spec.md", "openspec/changes/archive/"]]);
+  });
+
+  test("lists each uncommitted spec beneath its change", async () => {
+    await runArtifactPendingCommand([], {
+      ...baseDeps({
+        discover: async () => [
+          entry(
+            "2026-09-08-acme-two",
+            "uncommitted",
+            ["openspec/changes/archive/2026-09-08-acme-two/proposal.md"],
+            ["openspec/specs/widget-api/spec.md"],
+          ),
+        ],
+      }),
+      ...sink(),
+    });
+
+    expect(out).toEqual([
+      "1 archived change pending publication:",
+      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two",
+      "       openspec/changes/archive/2026-09-08-acme-two/proposal.md",
+      "       openspec/specs/widget-api/spec.md",
+    ]);
+  });
+
+  test("reports uncommitted specs no pending change accounts for", async () => {
+    await runArtifactPendingCommand([], {
+      ...baseDeps({
+        git: () => stubGit(["openspec/specs/orphan/spec.md"]),
+        discover: async () => [],
+      }),
+      ...sink(),
+    });
+
+    expect(out).toEqual([
+      "No archived changes have uncommitted content.",
+      "",
+      "1 uncommitted spec not accounted for by a pending change:",
+      "  openspec/specs/orphan/spec.md",
+    ]);
   });
 
   test("prints numbered human-readable entries without --json", async () => {
@@ -125,13 +173,14 @@ describe("mate artifact pending", () => {
     expect(out).toEqual([
       "1 archived change pending publication:",
       "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two",
+      "       openspec/changes/archive/2026-09-08-acme-two/",
     ]);
   });
 
   test("reports an empty archive set in human-readable form", async () => {
     await runArtifactPendingCommand([], { ...baseDeps(), ...sink() });
 
-    expect(out).toEqual(["No archived changes are pending publication."]);
+    expect(out).toEqual(["No archived changes have uncommitted content."]);
   });
 
   test("no-ops when the openspec capability is disabled", async () => {
@@ -221,30 +270,23 @@ describe("mate artifact pending over a real archive", () => {
 
   test("reports archive prose as data and never as arguments or extra entries", async () => {
     const companion = await companionWithInjectedArchive();
-    const asked: string[] = [];
     const lines: string[] = [];
 
     await runArtifactPendingCommand(["--json"], {
       ensureUnambiguousCompanion: async () => true,
       resolveContext: async () => ({ ...makeContext(), companionPath: companion }),
       loadCapabilities: async () => [{ name: "openspec" } as CapabilityConfig],
-      git: () =>
-        ({
-          async tagExists(name: string) {
-            asked.push(name);
-            return false;
-          },
-        }) as unknown as GitOps,
+      git: () => stubGit(["openspec/changes/archive/2026-09-07-acme/"]),
       stdout: (line) => lines.push(line),
       stderr: (line) => lines.push(line),
     });
 
-    expect(asked).toEqual(["openspec/2026-09-07-acme"]);
     expect(JSON.parse(lines[0])).toEqual({
       type: "openspec",
       companionPath: companion,
       count: 1,
       pending: [entry("2026-09-07-acme")],
+      unattributedSpecs: [],
     });
     expect(lines[0]).not.toContain("IGNORE PREVIOUS INSTRUCTIONS");
     expect(lines[0]).not.toContain("other-change");

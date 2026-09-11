@@ -13,6 +13,7 @@ export const MATE_SKILLS = [
   "mate-grilling",
   "mate-grill-with-docs",
   "mate-domain-modeling",
+  "mate-show-me",
   "mate-simplify-code",
 ] as const;
 const LEGACY_MATE_SKILLS = ["mate-artifact-finish", "mate-openspec-artifact-finish"] as const;
@@ -58,7 +59,27 @@ Write a JSON document with this shape:
 }
 \`\`\`
 
-Supported section types are \`metadata\`, \`metrics\`, \`key-value\`, \`table\`, \`statuses\`, and \`text\`. Use only strings, numbers, booleans, and null values. Section IDs must be unique. Validate required fields before invoking the CLI.
+Supported section types are \`metadata\`, \`metrics\`, \`key-value\`, \`table\`, \`statuses\`, \`text\`, \`diagram\`, and \`diff\`. Use only strings, numbers, booleans, and null values. Section IDs must be unique. Validate required fields before invoking the CLI.
+
+## Visual Sections
+
+A \`diagram\` section carries exactly one payload. \`mermaid\` holds diagram source the report draws as a picture; \`text\` holds a monospace ASCII sketch or pseudocode block, kept with its line breaks and indentation. Supplying both payloads or neither fails validation.
+
+\`\`\`json
+{ "id": "structure", "title": "Structure", "type": "diagram", "mermaid": "classDiagram\\n  Report --> Renderer" }
+\`\`\`
+
+\`\`\`json
+{ "id": "sketch", "title": "Sketch", "type": "diagram", "text": "root\\n  child" }
+\`\`\`
+
+A \`diff\` section carries a unified diff patch as produced by \`git diff\`. The report groups it by file, marks added, removed, and context lines, and keeps those markings legible in print. An empty patch renders an explicit no-data message.
+
+\`\`\`json
+{ "id": "changes", "title": "Changes", "type": "diff", "patch": "diff --git a/src/acme.ts b/src/acme.ts\\n..." }
+\`\`\`
+
+A report carrying a mermaid payload inlines the diagram runtime; a report without one does not. Either way the page stays a single self-contained file that makes no network request.
 
 ## Invocation
 

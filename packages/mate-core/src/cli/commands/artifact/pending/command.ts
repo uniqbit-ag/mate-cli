@@ -6,17 +6,19 @@ import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
 import { type BooleanFlagSet, parseFlags } from "../../../parse-flags";
 import { ensureUnambiguousCompanion } from "../../shared/companion-selection";
 import { defaultGitOps, type GitOps } from "../finish/git";
-import { discoverArchives, pendingArchives, type ArchiveEntry } from "./discovery";
+import {
+  discoverArchives,
+  pendingArchives,
+  unattributedSpecs,
+  type ArchiveEntry,
+} from "./discovery";
 
 export interface PendingCommandDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
   resolveContext?: (cwd: string) => Promise<LaunchContext>;
   loadCapabilities?: (context: LaunchContext) => Promise<CapabilityConfig[]>;
   git?: (companionPath: string, workingRepoPath?: string) => GitOps;
-  discover?: (
-    companionPath: string,
-    tagExists: (name: string) => Promise<boolean>,
-  ) => Promise<ArchiveEntry[]>;
+  discover?: (companionPath: string, uncommittedPaths: string[]) => Promise<ArchiveEntry[]>;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
@@ -30,6 +32,8 @@ export interface PendingResult {
   companionPath: string;
   count: number;
   pending: ArchiveEntry[];
+  /** Uncommitted canonical specs no pending change accounts for. */
+  unattributedSpecs: string[];
 }
 
 async function defaultLoadCapabilities(context: LaunchContext): Promise<CapabilityConfig[]> {
@@ -37,21 +41,38 @@ async function defaultLoadCapabilities(context: LaunchContext): Promise<Capabili
   return config.capabilities ?? [];
 }
 
-function renderHuman(result: PendingResult): string[] {
-  if (result.count === 0) return ["No archived changes are pending publication."];
+function renderUnattributed(specs: string[]): string[] {
+  if (specs.length === 0) return [];
   return [
-    `${result.count} archived change${result.count === 1 ? "" : "s"} pending publication:`,
-    ...result.pending.map(
-      (entry, index) => `  ${index + 1}. ${entry.name}  ${entry.tag}  ${entry.path}`,
-    ),
+    "",
+    `${specs.length} uncommitted spec${specs.length === 1 ? "" : "s"} not accounted for by a pending change:`,
+    ...specs.map((spec) => `  ${spec}`),
   ];
+}
+
+function renderHuman(result: PendingResult): string[] {
+  const pending =
+    result.count === 0
+      ? ["No archived changes have uncommitted content."]
+      : [
+          `${result.count} archived change${result.count === 1 ? "" : "s"} pending publication:`,
+          ...result.pending.flatMap((entry, index) => [
+            `  ${index + 1}. ${entry.name}  ${entry.tag}  ${entry.path}`,
+            ...entry.uncommittedPaths.map((uncommitted) => `       ${uncommitted}`),
+            ...entry.uncommittedSpecs.map((spec) => `       ${spec}`),
+          ]),
+        ];
+  return [...pending, ...renderUnattributed(result.unattributedSpecs)];
 }
 
 /**
  * @command mate artifact pending
- * @description Lists archived OpenSpec changes that have no local finish marker, so the
- * publication workflow can offer exact selectable entries instead of parsing OpenSpec
- * prose. Read-only: nothing is validated, produced, committed, tagged, or pushed.
+ * @description Lists archived OpenSpec changes whose own files — the archive directory or
+ * the active directory archiving deleted — are still uncommitted in the companion working
+ * tree, each with the uncommitted canonical specs it applied to, so the publication
+ * workflow can offer exact selectable entries instead of parsing OpenSpec prose.
+ * Uncommitted specs no pending change accounts for are reported separately. Read-only:
+ * nothing is validated, produced, committed, tagged, or pushed.
  * @flags
  * - `--json` — emit a machine-readable {@link PendingResult} instead of human-readable text.
  * @remarks No-ops (with a message on stderr) when the openspec capability is disabled for
@@ -103,14 +124,14 @@ export async function runArtifactPendingCommand(
   }
 
   const discover = deps.discover ?? discoverArchives;
-  const pending = pendingArchives(
-    await discover(context.companionPath, (name) => git.tagExists(name)),
-  );
+  const changed = await git.changedPaths();
+  const pending = pendingArchives(await discover(context.companionPath, changed));
   const result: PendingResult = {
     type: "openspec",
     companionPath: context.companionPath,
     count: pending.length,
     pending,
+    unattributedSpecs: unattributedSpecs(changed, pending),
   };
 
   if (json) emitOut(JSON.stringify(result));

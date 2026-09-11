@@ -2399,7 +2399,7 @@ describe("mate studio e2e", () => {
       expect(markup).toContain('aria-label="Companion Repository"');
       expect(markup).toContain(scenario.companion);
       /** Nothing is named, so no companion state is assembled. */
-      expect(markup).toContain("Select a Companion Repository.");
+      expect(markup).toContain("<h3>Choose a Companion Repository</h3>");
       expect(markup).not.toContain("add-acme-checkout");
     } finally {
       await studio.stop("SIGINT");
@@ -2421,17 +2421,24 @@ describe("mate studio e2e", () => {
       expect(dashboard.status).toBe(200);
       const dashboardMarkup = await dashboard.text();
       expect(dashboardMarkup).toContain("<h3>Changes</h3>");
-      expect(dashboardMarkup).toContain("<h3>Specs by Area</h3>");
+      expect(dashboardMarkup).not.toContain("<h3>Specs by Area</h3>");
       expect(dashboardMarkup).toContain("add-acme-checkout");
-      expect(dashboardMarkup).not.toContain("Select a Companion Repository.");
+      expect(dashboardMarkup).not.toContain("<h3>Choose a Companion Repository</h3>");
 
-      const workflow = await fetch(
-        `${studio.url}/?companion=${digest}&change=add-acme-checkout&view=workflow`,
-      );
+      /** Areas are their own view, read apart from the changes. */
+      const specs = await fetch(`${studio.url}/?companion=${digest}&view=specs`);
+      expect(specs.status).toBe(200);
+      const specsMarkup = await specs.text();
+      expect(specsMarkup).toContain("<h3>Specs by Area</h3>");
+      expect(specsMarkup).not.toContain("<h3>Changes</h3>");
+
+      /** The workflow console is change-agnostic: prompts carry the placeholder. */
+      const workflow = await fetch(`${studio.url}/?companion=${digest}&view=workflow`);
       expect(workflow.status).toBe(200);
       const workflowMarkup = await workflow.text();
-      expect(workflowMarkup).toContain("Mate Studio / workflow");
-      expect(workflowMarkup).toContain("add-acme-checkout");
+      expect(workflowMarkup).toContain("<h1>Workflow</h1>");
+      expect(workflowMarkup).toContain('class="workflow-console"');
+      expect(workflowMarkup).toContain("&lt;change-name&gt;");
       expect(workflowMarkup).not.toContain("<h3>Changes</h3>");
     } finally {
       await studio.stop("SIGINT");
@@ -2450,7 +2457,7 @@ describe("mate studio e2e", () => {
       const markup = await response.text();
       expect(markup).toContain('aria-label="Companion Repository"');
       expect(markup).toContain(scenario.companion);
-      expect(markup).toContain("Select a Companion Repository.");
+      expect(markup).toContain("<h3>Choose a Companion Repository</h3>");
       expect(markup).not.toContain("Could not read this companion");
     } finally {
       await studio.stop("SIGINT");

@@ -18,7 +18,6 @@ import * as pluginCmd from "./commands/plugin/plugin";
 import * as reportCmd from "./commands/report";
 import * as studioCmd from "./commands/studio";
 import * as updateCmd from "./commands/update";
-import * as workspaceCmd from "./commands/workspace/workspace";
 import * as workingCmd from "./commands/working/working";
 import * as unwrapCmd from "./commands/unwrap";
 import * as wrapCmd from "./commands/wrap";
@@ -38,7 +37,6 @@ const BUILT_IN_COMMANDS = [
   "doctor",
   "cap",
   "update",
-  "workspace",
   "working",
   "wrap",
   "unwrap",
@@ -69,7 +67,6 @@ describe("command gating", () => {
       spyOn(opencodeCmd, "runLaunchOpenCodeCommand").mockImplementation(record("opencode")),
       spyOn(artifactCmd, "runArtifactCommand").mockImplementation(record("artifact")),
       spyOn(capCmd, "runCapCommand").mockImplementation(record("cap")),
-      spyOn(workspaceCmd, "runWorkspaceCommand").mockImplementation(record("workspace")),
       spyOn(workingCmd, "runWorkingCommand").mockImplementation(record("working")),
       spyOn(wrapCmd, "runWrapCommand").mockImplementation(record("wrap")),
       spyOn(unwrapCmd, "runUnwrapCommand").mockImplementation(record("unwrap")),
@@ -159,16 +156,29 @@ describe("command gating", () => {
     expect(dispatched).toEqual(["update", "doctor"]);
   });
 
-  test("workspace list and materialize dispatch without companion selection, install preflight, or root gating", async () => {
-    for (const argv of [
-      ["workspace", "list"],
-      ["workspace", "materialize"],
-    ]) {
-      const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
-      await main(["node", "mate", ...argv], deps);
-      expect(gateCalls).toEqual([]);
+  test("the retired workspace namespace is rejected as an unknown command", async () => {
+    const errors: string[] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.join(" "));
+    });
+    try {
+      for (const argv of [["workspace"], ["workspace", "list"], ["workspace", "materialize"]]) {
+        const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
+        process.exitCode = 0;
+        await main(["node", "mate", ...argv], deps);
+        expect(gateCalls).toEqual([]);
+        expect(process.exitCode).toBe(1);
+      }
+      expect(dispatched).toEqual([]);
+      expect(errors.filter((line) => line.startsWith("Unknown command"))).toEqual([
+        "Unknown command: workspace",
+        "Unknown command: workspace",
+        "Unknown command: workspace",
+      ]);
+    } finally {
+      errorSpy.mockRestore();
+      process.exitCode = 0;
     }
-    expect(dispatched).toEqual(["workspace", "workspace"]);
   });
 
   test("working cleanup dispatches without companion selection, install preflight, or root gating", async () => {

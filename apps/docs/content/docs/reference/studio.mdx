@@ -131,11 +131,13 @@ Studio answers HTML only. Earlier versions also served `/api/inventory` and
 `/api/companion`; both are gone, and a request for either is unrouted. They
 existed to feed a browser-side renderer that no longer exists.
 
-The data itself is still reachable:
+The aggregate inventory Studio projects its view from has no supported
+machine-readable interface. `mate workspace list --json` used to be that
+interface and has been removed along with the `mate workspace` namespace; the
+inventory is now a private in-process library that only Studio reads.
 
-- `mate workspace list --json` reports every registered companion with its
-  pairings, health, and ambiguity — the source Studio's inventory is projected
-  from, and the supported machine-readable interface for it
+A companion's own state is still reachable:
+
 - the OpenSpec CLI reports a companion's state directly, through the same calls
   Studio makes against it: `openspec list --json`, `openspec list --specs
 --json`, `openspec status --all --json`, and `openspec validate --json`

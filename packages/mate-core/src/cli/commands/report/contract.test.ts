@@ -56,6 +56,70 @@ describe("ReportDocument contract", () => {
     );
   });
 
+  test("accepts a diagram with either payload and a diff", () => {
+    const document: ReportDocument = {
+      ...validDocument,
+      sections: [
+        {
+          id: "structure",
+          title: "Structure",
+          type: "diagram",
+          mermaid: "classDiagram\n  A --> B",
+        },
+        { id: "sketch", title: "Sketch", type: "diagram", text: "  A -> B" },
+        { id: "changes", title: "Changes", type: "diff", patch: "diff --git a/a.ts b/a.ts" },
+        { id: "nothing", title: "Nothing", type: "diff", patch: "" },
+      ],
+    };
+
+    expect(validateReportDocument(document)).toEqual(document);
+  });
+
+  test("rejects diagrams that carry both payloads or neither", () => {
+    const both = getReportDocumentIssues({
+      ...validDocument,
+      sections: [{ id: "both", title: "Both", type: "diagram", mermaid: "graph TD", text: "A" }],
+    });
+    const neither = getReportDocumentIssues({
+      ...validDocument,
+      sections: [{ id: "neither", title: "Neither", type: "diagram" }],
+    });
+
+    expect(both).toEqual([
+      {
+        path: "sections[0]",
+        message: 'section "both" must carry exactly one of mermaid or text, but carries both',
+      },
+    ]);
+    expect(neither).toEqual([
+      {
+        path: "sections[0]",
+        message: 'section "neither" must carry exactly one of mermaid or text, but carries neither',
+      },
+    ]);
+  });
+
+  test("rejects non-string payloads and a missing patch", () => {
+    const issues = getReportDocumentIssues({
+      ...validDocument,
+      sections: [
+        { id: "typed", title: "Typed", type: "diagram", mermaid: 7 },
+        { id: "blank", title: "Blank", type: "diagram", text: "   " },
+        { id: "patchless", title: "Patchless", type: "diff" },
+        { id: "typed-patch", title: "Typed patch", type: "diff", patch: ["a"] },
+      ],
+    });
+
+    expect(issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining([
+        "sections[0].mermaid",
+        "sections[1].text",
+        "sections[2].patch",
+        "sections[3].patch",
+      ]),
+    );
+  });
+
   test("rejects invalid JSON and unsupported section shapes", () => {
     expect(() => parseReportDocument("not json")).toThrow(ReportValidationError);
     expect(() =>

@@ -3,7 +3,7 @@ import { runCompanionLinkCommand } from "./link";
 import { runSetupCommand } from "../setup";
 import { runCompanionListCommand } from "./list";
 import { runCompanionSyncCommand } from "./sync";
-import { runWorkspaceOpenCommand } from "../workspace/open";
+import { runWorkspaceOpenCommand } from "./open";
 import { runCompanionTuiCommand } from "./tui";
 
 export async function runCompanionCommand(

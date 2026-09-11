@@ -88,9 +88,8 @@ export interface WorkspaceDocument {
 /**
  * Writes the generated `.mate/workspace.code-workspace` file (working
  * repository first, companion second) and returns its path and folder
- * order. Shared by editor-launching `injectEditorFolder` and the
- * non-launching `workspace materialize` command — both must produce the
- * same document for the same pairing.
+ * order. Called by editor-launching `injectEditorFolder`, which backs
+ * `mate companion open`.
  */
 export async function writeWorkspaceDocument(
   companionPath: string,

@@ -398,6 +398,7 @@ describe("createOpenspecPlugin", () => {
         "mate-grilling": "design tree",
         "mate-grill-with-docs": "mate-domain-modeling",
         "mate-domain-modeling": "CONTEXT-MAP.md",
+        "mate-show-me": "Browser Report Required",
         "mate-simplify-code": "Preserve Behavior Exactly",
       };
       for (const skill of MATE_SKILLS) {
@@ -512,6 +513,7 @@ describe("createOpenspecPlugin", () => {
       "mate-grilling",
       "mate-grill-with-docs",
       "mate-domain-modeling",
+      "mate-show-me",
       "mate-simplify-code",
     ]) {
       expect(entries).toContain(`Skill(${skill})`);

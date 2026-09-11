@@ -239,8 +239,8 @@ export async function runCompanionLinkCommandWithDeps(
   };
 
   // Writes both the companion-side registry entry (companionRootedStore, the
-  // source of truth for `mate workspace list`) and the repo-local pointer
-  // (CompanionStore's internal dual write) in one call.
+  // source of truth for the aggregate pairing inventory) and the repo-local
+  // pointer (CompanionStore's internal dual write) in one call.
   const registerRepository =
     deps.registerRepository ??
     ((nextRepository, options) =>

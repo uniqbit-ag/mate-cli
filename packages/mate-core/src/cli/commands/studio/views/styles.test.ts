@@ -26,6 +26,16 @@ describe("studio styles", () => {
     expect(STUDIO_STYLES).not.toContain(".workflow-view { width:");
   });
 
+  it("keeps secondary header context unboxed and aligned to the header row", () => {
+    expect(STUDIO_STYLES).toContain(".page-header { display: flex; align-items: stretch;");
+    expect(STUDIO_STYLES).toContain(
+      ".page-context { display: grid; align-content: start; gap: 6px;",
+    );
+    expect(STUDIO_STYLES).toContain(
+      "padding: 0; border: 0; border-radius: 0; background: transparent;",
+    );
+  });
+
   it("carries the token palette every view reads", () => {
     for (const token of [
       "--bg",

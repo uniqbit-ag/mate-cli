@@ -42,6 +42,14 @@ export interface WorkflowPlan {
 
 const PRE_EXPLORE_SKILLS = ["mate-interview-me", "mate-grill-me"] as const;
 
+/** The optional post-apply stretch, in presented order, each keyed to the skill that drives it. */
+const SHARED_OPTIONAL_SKILLS = {
+  "show-me": "mate-show-me",
+  simplify: "mate-simplify-code",
+} as const;
+
+type SharedOptionalId = keyof typeof SHARED_OPTIONAL_SKILLS;
+
 function stepPrompt(
   step: Omit<WorkflowStep, "prompt" | "copyPrompt">,
   profile?: WorkflowProfile,
@@ -66,6 +74,8 @@ function stepPrompt(
       return `Review tasks.md${schemaNote}${changeNote}`;
     case "apply":
       return `/openspec-apply-change${schemaNote}${changeNote}`;
+    case "show-me":
+      return `/mate-show-me${changeNote}`;
     case "simplify":
       return `/mate-simplify-code${changeNote}`;
     case "archive":
@@ -122,7 +132,7 @@ function reviewStep(
 }
 
 function optionalStep(
-  id: "pre-explore" | "simplify",
+  id: "pre-explore" | SharedOptionalId,
   title: string,
   what: string,
   why: string,
@@ -149,14 +159,16 @@ function withSessionBreak(step: WorkflowStep): WorkflowStep {
 }
 
 export function workflowPlan(
-  availableSkills: readonly string[] = [...PRE_EXPLORE_SKILLS],
+  availableSkills: readonly string[] = [
+    ...PRE_EXPLORE_SKILLS,
+    ...Object.values(SHARED_OPTIONAL_SKILLS),
+  ],
 ): WorkflowPlan {
-  const start = optionalStep(
-    "pre-explore",
-    "pre-explore",
-    "Clarifies intent with confidence and explicit confirmation, or stress-tests the full design frontier before the schema path turns it into artifacts.",
-    "One conversational choice settles uncertainty early without invoking documentation or implementation work.",
-    PRE_EXPLORE_SKILLS.filter((name) => availableSkills.includes(name)).map((name) => ({
+  const availableSkillSet = new Set(availableSkills);
+  const preExploreAlternatives: WorkflowAlternative[] = [];
+  for (const name of PRE_EXPLORE_SKILLS) {
+    if (!availableSkillSet.has(name)) continue;
+    preExploreAlternatives.push({
       name,
       description:
         name === "mate-interview-me"
@@ -164,7 +176,14 @@ export function workflowPlan(
           : "Difference: adversarial, round-based review of the full design-tree frontier. Best when: the direction is mostly known but hidden assumptions, risks, and downstream impacts need surfacing.",
       prompt: `/${name} for ${CHANGE_PLACEHOLDER}`,
       copyPrompt: `/${name} for`,
-    })),
+    });
+  }
+  const start = optionalStep(
+    "pre-explore",
+    "pre-explore",
+    "Clarifies intent with confidence and explicit confirmation, or stress-tests the full design frontier before the schema path turns it into artifacts.",
+    "One conversational choice settles uncertainty early without invoking documentation or implementation work.",
+    preExploreAlternatives,
   );
 
   const branches: WorkflowBranch[] = [
@@ -259,14 +278,24 @@ export function workflowPlan(
     },
   ];
 
-  const simplify = withSessionBreak(
-    optionalStep(
-      "simplify",
-      "mate simplify code",
-      "Looks for smaller, clearer code once the tests pass, preserving behavior and rerunning the relevant tests.",
-      "Cleanup lands before the specs are archived, so shipped code and recorded specs stay aligned.",
-    ),
+  const showMe = optionalStep(
+    "show-me",
+    "mate show me",
+    "Shows what the applied change did as a rendered diagram and a colorized diff, delivered as a Mate report.",
+    "Seeing the resulting structure and the actual diff is what tells the reviewer whether cleanup is warranted.",
   );
+  const simplify = optionalStep(
+    "simplify",
+    "mate simplify code",
+    "Looks for smaller, clearer code once the tests pass, preserving behavior and rerunning the relevant tests.",
+    "Cleanup lands before the specs are archived, so shipped code and recorded specs stay aligned.",
+  );
+  /** Peers, not prerequisites: an unreported skill drops its step and the rest keep their order. */
+  const optionalReview: WorkflowStep[] = [];
+  for (const step of [showMe, simplify]) {
+    if (!availableSkillSet.has(SHARED_OPTIONAL_SKILLS[step.id as SharedOptionalId])) continue;
+    optionalReview.push(optionalReview.length === 0 ? withSessionBreak(step) : step);
+  }
   const archive = skillStep(
     "archive",
     "openspec archive change",
@@ -285,7 +314,7 @@ export function workflowPlan(
   return {
     start,
     branches,
-    shared: [simplify, archive],
+    shared: [...optionalReview, archive],
     finish: {
       ...finishStep,
       prompt: stepPrompt(finishStep),

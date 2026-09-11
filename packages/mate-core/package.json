@@ -27,14 +27,15 @@
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
     "lint": "oxlint src/",
     "lint:fix": "oxlint src/ --fix",
-    "format": "oxfmt src/ \"!**/*.generated.*\"",
-    "format:check": "oxfmt src/ \"!**/*.generated.*\" --check"
+    "format": "oxfmt src/ \"!**/*.generated.*\" \"!**/report-assets/**\"",
+    "format:check": "oxfmt src/ \"!**/*.generated.*\" \"!**/report-assets/**\" --check"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.18.3",
     "@opentui/core": "^0.4.5",
     "@opentui/keymap": "^0.4.5",
     "@opentui/solid": "^0.4.5",
+    "@tanstack/highlight": "0.0.10",
     "hono": "^4.13.5",
     "ink": "^7.1.0",
     "react": "^19.2.7",

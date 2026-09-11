@@ -5,7 +5,7 @@ import { readCompanionRegistry } from "./companion-registry-reader";
 import { GlobalConfigStore } from "./global-config-store";
 import type { LinkedRepository } from "./types";
 
-/** Envelope version for `mate workspace list --json`; bump on any breaking shape change. */
+/** Envelope version for the aggregate inventory shape; bump on any breaking shape change. */
 export const WORKSPACE_INVENTORY_SCHEMA_VERSION = 1;
 
 export type CompanionInventoryHealth = "ready" | "missing" | "unreadable";

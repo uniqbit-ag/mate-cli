@@ -1,5 +1,7 @@
 import {
   REPORT_DOCUMENT_VERSION,
+  type ReportDiagramSection,
+  type ReportDiffSection,
   type ReportDocument,
   type ReportKeyValue,
   type ReportMetric,
@@ -114,6 +116,32 @@ function validateStatuses(value: unknown, path: string, issues: ReportValidation
   return true;
 }
 
+const DIAGRAM_PAYLOADS = ["mermaid", "text"] as const;
+
+/** A diagram carries exactly one payload; an empty or non-string payload counts as absent. */
+function validateDiagram(
+  value: Record<string, unknown>,
+  path: string,
+  issues: ReportValidationIssue[],
+): void {
+  const supplied = DIAGRAM_PAYLOADS.filter((key) => value[key] !== undefined);
+  for (const key of supplied) {
+    if (typeof value[key] !== "string" || (value[key] as string).trim() === "") {
+      issues.push({ path: `${path}.${key}`, message: "must be a non-empty string" });
+    }
+  }
+  if (supplied.length === 1) return;
+
+  const name = typeof value.id === "string" && value.id.trim() !== "" ? value.id : path;
+  issues.push({
+    path,
+    message:
+      supplied.length === 0
+        ? `section "${name}" must carry exactly one of mermaid or text, but carries neither`
+        : `section "${name}" must carry exactly one of mermaid or text, but carries both`,
+  });
+}
+
 function validateSection(value: unknown, path: string, issues: ReportValidationIssue[]): void {
   if (!isRecord(value)) {
     issues.push({ path, message: "must be an object" });
@@ -182,10 +210,19 @@ function validateSection(value: unknown, path: string, issues: ReportValidationI
         issues.push({ path: `${path}.content`, message: "must be a string" });
       }
       return;
+    case "diagram":
+      validateDiagram(value, path, issues);
+      return;
+    case "diff":
+      if (typeof value.patch !== "string") {
+        issues.push({ path: `${path}.patch`, message: "must be a string" });
+      }
+      return;
     default:
       issues.push({
         path: `${path}.type`,
-        message: "must be one of metadata, metrics, key-value, table, statuses, or text",
+        message:
+          "must be one of metadata, metrics, key-value, table, statuses, text, diagram, or diff",
       });
   }
 }
@@ -248,6 +285,8 @@ export function parseReportDocument(json: string): ReportDocument {
 }
 
 export type {
+  ReportDiagramSection,
+  ReportDiffSection,
   ReportDocument,
   ReportKeyValue,
   ReportMetric,

@@ -13,6 +13,7 @@ const skillNames = [
   "mate-grilling",
   "mate-grill-with-docs",
   "mate-domain-modeling",
+  "mate-show-me",
   "mate-simplify-code",
 ] as const;
 
@@ -22,6 +23,7 @@ const attributedSkillNames = [
   "mate-grilling",
   "mate-grill-with-docs",
   "mate-domain-modeling",
+  "mate-show-me",
   "mate-simplify-code",
 ] as const;
 
@@ -38,6 +40,8 @@ const attributionBySkill = {
     "> Inspired by [Matt Pocock's domain-modeling skill](https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling) and adapted here as a Mate process-driven skill.",
   "mate-simplify-code":
     "> Inspired by [Addy Osmani's code-simplification skill](https://github.com/addyosmani/agent-skills/tree/main/skills/code-simplification) and adapted here as a Mate process-driven skill.",
+  "mate-show-me":
+    "> Inspired by [humanlayer's show-me skill](https://github.com/humanlayer/skills/tree/main/plugins/show-me/skills/show-me) and adapted here as a Mate process-driven skill.",
 } as const;
 
 async function readReference(root: string, name: string, file: string): Promise<string> {
@@ -175,6 +179,27 @@ describe("bundled Mate pre-explore skills", () => {
     expect(source).toContain("shared understanding");
   });
 
+  test("keeps the visual explanation skill explanation-only and report-delivered", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = await readSkillFrom(root, "mate-show-me");
+      for (const marker of [
+        "Explanation only",
+        "Never write or edit source code",
+        "mate report --input",
+        "Never hand-write an HTML file, never start a server",
+        "Browser Report Required",
+        "exactly one payload",
+        "git diff` in the Working Repository",
+        "Never invent a patch",
+        "Do not use ELK-only layouts or math labels",
+        "sequenceDiagram` for interaction",
+        "Never commit, push, or create a pull request",
+      ]) {
+        expect(source).toContain(marker);
+      }
+    }
+  });
+
   test("preserves the upstream simplification guardrails", async () => {
     const source = await readSkill("mate-simplify-code");
     for (const marker of [
@@ -209,6 +234,65 @@ describe("bundled Mate artifact publish skill", () => {
       expect(source).toContain("mate artifact pending --json");
       expect(source).toContain("Do not `ls` the archive");
       expect(source).toContain("recompute names, dates, anchors, or tags");
+    }
+  });
+
+  test("scopes discovery to archives whose own files are uncommitted", async () => {
+    for (const root of bothRoots) {
+      const source = await readSkillFrom(root, "mate-artifact-publish");
+      expect(source).toContain(
+        "whose own files are still uncommitted in the companion working tree",
+      );
+      expect(source).toContain("uncommittedPaths");
+      expect(source).toContain('"state": "uncommitted"');
+      expect(source).toContain("already committed is not pending, whatever tags exist");
+      /** Commit state comes from the CLI, never from the agent shelling out itself. */
+      expect(source).toContain("run `git status` yourself");
+      const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
+      expect(reference).toContain("git status --porcelain");
+      expect(reference).toContain(
+        "An archive whose own paths are committed is excluded from `pending`",
+      );
+    }
+  });
+
+  test("owns the archive and the deleted active directory, never a shared spec", async () => {
+    for (const root of bothRoots) {
+      const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
+      expect(reference).toContain("openspec/changes/archive/<anchor>/");
+      expect(reference).toContain("openspec/changes/<name>/");
+      /** A shared canonical spec must never resurrect a long-published change. */
+      expect(reference).toContain("deliberately **not** part of that test");
+      expect(reference).toContain(
+        "would resurrect long-published changes whose own files are committed",
+      );
+    }
+  });
+
+  test("reports owned specs on an entry and unattributed specs separately", async () => {
+    for (const root of bothRoots) {
+      const source = await readSkillFrom(root, "mate-artifact-publish");
+      expect(source).toContain("uncommittedSpecs");
+      expect(source).toContain("unattributedSpecs");
+      expect(source).toContain(
+        "every `uncommittedPaths` and `uncommittedSpecs` value indented beneath its entry so the uncommitted archive files and specs are visible",
+      );
+      expect(source).toContain(
+        "Report `unattributedSpecs` separately, after the list, as uncommitted specs publishing will not pick up",
+      );
+      const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
+      expect(reference).toContain("work that is not archived yet");
+      expect(reference).toContain("Publishing will not pick them up");
+    }
+  });
+
+  test("treats a clean working tree as no proof of a remote push", async () => {
+    for (const root of bothRoots) {
+      const source = await readSkillFrom(root, "mate-artifact-publish");
+      expect(source).toContain("neither does a clean working tree");
+      const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
+      expect(reference).toContain("neither is a clean working tree");
+      expect(reference).toContain("leaves nothing uncommitted, so `pending` no longer lists it");
     }
   });
 

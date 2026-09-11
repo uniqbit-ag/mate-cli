@@ -17,13 +17,13 @@
     "release": "bun run --cwd ./apps/mate-cli release",
     "release:canary": "bun run --cwd ./apps/mate-cli release:canary",
     "release:dry-run": "bun run --cwd ./apps/mate-cli release:dry-run",
-    "test": "bun run --filter @uniqbit/mate --filter @uniqbit/mate-core --filter @uniqbit/mate-opencode-plugin --filter mate-vscode test",
+    "test": "bun run --filter @uniqbit/mate --filter @uniqbit/mate-core --filter @uniqbit/mate-opencode-plugin test",
     "test:ci": "bun run --filter @uniqbit/mate test:ci",
     "test:coverage": "bun run --filter @uniqbit/mate test:coverage",
     "typecheck": "bun run --filter @uniqbit/mate typecheck",
     "lint": "bunx oxlint apps packages --no-error-on-unmatched-pattern",
     "lint:fix": "bunx oxlint apps packages --fix --no-error-on-unmatched-pattern",
-    "format": "bunx oxfmt apps packages \"!**/*.generated.*\" --no-error-on-unmatched-pattern",
-    "format:check": "bunx oxfmt apps packages \"!**/*.generated.*\" --check --no-error-on-unmatched-pattern"
+    "format": "bunx oxfmt apps packages \"!**/*.generated.*\" \"!**/report-assets/**\" --no-error-on-unmatched-pattern",
+    "format:check": "bunx oxfmt apps packages \"!**/*.generated.*\" \"!**/report-assets/**\" --check --no-error-on-unmatched-pattern"
   }
 }

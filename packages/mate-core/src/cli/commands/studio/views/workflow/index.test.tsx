@@ -48,7 +48,7 @@ describe("workflowPlan", () => {
       "apply",
     ]);
     expect(plan.branches[1]?.description).toContain("only specs and tasks");
-    expect(plan.shared.map((step) => step.id)).toEqual(["simplify", "archive"]);
+    expect(plan.shared.map((step) => step.id)).toEqual(["show-me", "simplify", "archive"]);
   });
 
   it("flattens either profile into an executable sequence", () => {
@@ -60,6 +60,7 @@ describe("workflowPlan", () => {
       "design",
       "tasks",
       "apply",
+      "show-me",
       "simplify",
       "archive",
       "finish",
@@ -70,6 +71,7 @@ describe("workflowPlan", () => {
       "specs",
       "tasks",
       "apply",
+      "show-me",
       "simplify",
       "archive",
       "finish",
@@ -99,6 +101,35 @@ describe("workflowPlan", () => {
     expect(workflowPlan([]).start.alternatives).toEqual([]);
   });
 
+  it("presents the optional review steps as peers after implementation", () => {
+    const plan = workflowPlan();
+    const showMe = plan.shared.find((step) => step.id === "show-me");
+    const simplify = plan.shared.find((step) => step.id === "simplify");
+
+    expect(showMe?.kind).toBe("optional");
+    expect(simplify?.kind).toBe("optional");
+    expect(showMe?.badges).toEqual(["optional", "skill"]);
+    expect(simplify?.badges).toEqual(["optional", "skill"]);
+    expect(showMe?.alternatives).toBeUndefined();
+    expect(simplify?.alternatives).toBeUndefined();
+    expect(showMe?.prompt).toBe("/mate-show-me for <change-name>");
+    expect(showMe?.copyPrompt).toBe("/mate-show-me for");
+    expect(plan.shared.indexOf(showMe!)).toBeLessThan(plan.shared.indexOf(simplify!));
+    expect(plan.shared.at(-1)?.id).toBe("archive");
+  });
+
+  it("omits an optional review step whose skill is not reported", () => {
+    const withoutShowMe = workflowPlan(["mate-simplify-code"]);
+    expect(withoutShowMe.shared.map((step) => step.id)).toEqual(["simplify", "archive"]);
+    expect(withoutShowMe.shared[0]?.sessionBreakBefore).toBe(true);
+
+    const withoutSimplify = workflowPlan(["mate-show-me"]);
+    expect(withoutSimplify.shared.map((step) => step.id)).toEqual(["show-me", "archive"]);
+    expect(withoutSimplify.shared[0]?.sessionBreakBefore).toBe(true);
+
+    expect(workflowPlan([]).shared.map((step) => step.id)).toEqual(["archive"]);
+  });
+
   it("shows the skill invocation needed for each profile", () => {
     const full = workflowSteps("mate-v1");
     const minimal = workflowSteps("mate-minimal");
@@ -121,7 +152,8 @@ describe("workflowPlan", () => {
       "/openspec-apply-change (use schema: mate-v1) for",
     );
     expect(full.find((step) => step.id === "apply")?.sessionBreakBefore).toBe(true);
-    expect(full.find((step) => step.id === "simplify")?.sessionBreakBefore).toBe(true);
+    expect(full.find((step) => step.id === "show-me")?.sessionBreakBefore).toBe(true);
+    expect(full.find((step) => step.id === "simplify")?.sessionBreakBefore).toBeUndefined();
     expect(minimal.find((step) => step.id === "apply")?.sessionBreakBefore).toBe(true);
     expect(full.find((step) => step.id === "explore")?.sessionBreakBefore).toBeUndefined();
     expect(full.find((step) => step.id === "finish")?.prompt).toBe(
@@ -201,7 +233,7 @@ describe("Workflow", () => {
 
   it("keeps workflow context and copy controls in the transcript", () => {
     const markup = render();
-    expect(markup.match(/class="runway-step-copy"/g)).toHaveLength(10);
+    expect(markup.match(/class="runway-step-copy"/g)).toHaveLength(11);
     expect(markup.match(/class="workflow-option-list"/g)).toHaveLength(1);
     expect(markup.match(/class="workflow-option"/g)).toHaveLength(2);
     expect(markup).toContain('class="workflow-console-command-label">Run</span>');

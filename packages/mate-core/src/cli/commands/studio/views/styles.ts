@@ -149,10 +149,10 @@ option.unready { color: var(--warn); font-style: italic; }
 option.placeholder { color: var(--muted); font-style: italic; }
 .scroll { overflow-x: auto; }
 
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; padding-bottom: 24px; margin-bottom: 18px; border-bottom: 1px solid var(--border-soft); }
+.page-header { display: flex; align-items: stretch; justify-content: space-between; gap: 32px; padding-bottom: 24px; margin-bottom: 18px; border-bottom: 1px solid var(--border-soft); }
 .page-heading { min-width: 0; }
 .page-eyebrow { margin: 0 0 8px; color: var(--accent); font-family: var(--mono); font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.page-context { display: grid; gap: 6px; min-width: min(100%, 300px); max-width: 380px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.page-context { display: grid; align-content: start; gap: 6px; min-width: min(100%, 300px); max-width: 380px; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .page-context-label { color: var(--muted); font-size: .64rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .page-context code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snapshot-status { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .75rem; }

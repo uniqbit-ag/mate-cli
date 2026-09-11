@@ -354,6 +354,7 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
             "Skill(mate-grilling)",
             "Skill(mate-grill-with-docs)",
             "Skill(mate-domain-modeling)",
+            "Skill(mate-show-me)",
             "Skill(mate-simplify-code)",
             "Bash(openspec:*)",
             `Bash(${FRAMEWORK_NAME} cap graphify:*)`,

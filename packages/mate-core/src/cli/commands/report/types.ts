@@ -93,13 +93,38 @@ export interface ReportTextSection extends ReportSectionBase {
   content: string;
 }
 
+export interface ReportDiagramSectionBase extends ReportSectionBase {
+  type: "diagram";
+}
+
+export interface ReportMermaidDiagramSection extends ReportDiagramSectionBase {
+  mermaid: string;
+  text?: never;
+}
+
+export interface ReportTextDiagramSection extends ReportDiagramSectionBase {
+  text: string;
+  mermaid?: never;
+}
+
+/** Exactly one payload: `mermaid` source drawn by the runtime, or `text` kept as a monospace block. */
+export type ReportDiagramSection = ReportMermaidDiagramSection | ReportTextDiagramSection;
+
+export interface ReportDiffSection extends ReportSectionBase {
+  type: "diff";
+  /** Unified diff as produced by `git diff`. */
+  patch: string;
+}
+
 export type ReportSection =
   | ReportMetadataSection
   | ReportMetricsSection
   | ReportKeyValueSection
   | ReportTableSection
   | ReportStatusesSection
-  | ReportTextSection;
+  | ReportTextSection
+  | ReportDiagramSection
+  | ReportDiffSection;
 
 export interface ReportDocument {
   version: typeof REPORT_DOCUMENT_VERSION;

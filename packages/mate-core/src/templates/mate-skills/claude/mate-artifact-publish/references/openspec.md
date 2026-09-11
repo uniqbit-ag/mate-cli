@@ -4,21 +4,30 @@ Use this reference for the OpenSpec-specific parts of `mate-artifact-publish`: w
 
 ## Pending Discovery
 
-`mate artifact pending --json` is the only sanctioned discovery surface. It reports dated archive directories under `openspec/changes/archive/` and derives publication state from the local publication marker `openspec/<anchor>` — the same tag the publish engine creates.
+`mate artifact pending --json` is the only sanctioned discovery surface. It reports dated archive directories under `openspec/changes/archive/` and derives state from the companion working tree, as `git status --porcelain` reports it.
+
+A change owns two paths outright:
+
+- its dated archive directory, `openspec/changes/archive/<anchor>/`;
+- the active change directory archiving deleted, `openspec/changes/<name>/`.
+
+An archive is pending while either is uncommitted, and `uncommittedPaths` names the ones that are. Canonical specs under `openspec/specs/<capability>/...` are deliberately **not** part of that test: a canonical spec is shared by every change that ever amended it, so treating a dirty spec as a trigger would resurrect long-published changes whose own files are committed. A pending entry still reports the uncommitted canonical specs its deltas applied to, in `uncommittedSpecs`, because they are the rest of its publication scope.
+
+`unattributedSpecs` collects uncommitted canonical specs that no pending change accounts for — work that is not archived yet. Publishing will not pick them up; archive that work first if it should ship.
 
 - Entries are ordered by archive anchor, oldest first.
 - Files and directories that are not `YYYY-MM-DD-<name>` are ignored; they are not publishable changes.
-- An archive whose publication marker already exists locally is excluded from `pending`.
-- Archive contents are never read, so archived prose cannot influence discovery.
+- An archive whose own paths are committed is excluded from `pending`, whether or not its tag exists.
+- Only directory entry names under the archive's `specs/` tree are read, never file contents, so archived prose cannot influence discovery.
 - `count: 0` means nothing is pending. That is a normal, successful result.
 
 `openspec list --json` reports **active** changes only and never lists archived ones. Do not use it for publication discovery.
 
 ## Explicit Retry Outside Discovery
 
-A publish that got as far as the tag and then failed to push keeps the commit and the tag locally. Its publication marker therefore exists, so `pending` no longer lists it — while the remote still has neither the branch commit nor the tag.
+A publish that got as far as the commit and then failed to push leaves nothing uncommitted, so `pending` no longer lists it — while the remote still has neither the branch commit nor the tag.
 
-A locally existing tag is not proof of a remote push. When the user names such a change explicitly, run the publish command for that exact name; the engine resumes and retries the push. If no active or archived change matches the name, the command reports the lookup failure and nothing is committed, tagged, or pushed.
+A locally existing tag is not proof of a remote push, and neither is a clean working tree. When the user names such a change explicitly, run the publish command for that exact name; the engine resumes and retries the push. If no active or archived change matches the name, the command reports the lookup failure and nothing is committed, tagged, or pushed.
 
 ## Resumable Behavior
 

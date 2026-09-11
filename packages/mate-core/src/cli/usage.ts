@@ -17,8 +17,6 @@ export function usage(): string {
     ` ${n} companion sync`,
     ` ${n} companion open`,
     ` ${n} companion tui`,
-    ` ${n} workspace list --json`,
-    ` ${n} workspace materialize --repository ID --companion PATH --json`,
     ` ${n} working cleanup`,
     ` ${n} wrap [--companion PATH]`,
     ` ${n} unwrap`,
