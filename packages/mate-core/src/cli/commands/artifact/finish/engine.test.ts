@@ -10,12 +10,13 @@ const COMMIT_PATHS = [
   `openspec/changes/archive/${ANCHOR}`,
   "openspec/specs/a",
 ];
-const PRODUCED: Produced = { anchorName: ANCHOR, commitPaths: COMMIT_PATHS };
+const RESOLVED: Produced = { anchorName: ANCHOR, commitPaths: COMMIT_PATHS };
 
 type GitCall = { op: string; args: unknown[] };
 
 interface FakeGitOptions {
-  head?: string;
+  currentBranch?: string | null;
+  defaultBranch?: string;
   changedPaths?: string[];
   stagedPaths?: string[];
   hasStaged?: boolean;
@@ -35,8 +36,15 @@ function makeGit(options: FakeGitOptions = {}): { git: GitOps; calls: GitCall[] 
     return value;
   };
   const git: GitOps = {
-    async headRef() {
-      return record("headRef", [], options.head ?? "HEAD_SHA");
+    async currentBranch() {
+      return record(
+        "currentBranch",
+        [],
+        options.currentBranch === undefined ? "main" : options.currentBranch,
+      );
+    },
+    async defaultBranch() {
+      return record("defaultBranch", [], options.defaultBranch ?? "main");
     },
     async changedPaths() {
       return record("changedPaths", [], options.changedPaths ?? []);
@@ -52,9 +60,6 @@ function makeGit(options: FakeGitOptions = {}): { git: GitOps; calls: GitCall[] 
     },
     async commit(message, paths) {
       return record("commit", [message, paths], undefined);
-    },
-    async restorePaths(ref, paths) {
-      return record("restorePaths", [ref, paths], undefined);
     },
     async hasUpstream() {
       return record("hasUpstream", [], options.hasUpstream ?? true);
@@ -80,14 +85,8 @@ function makeGit(options: FakeGitOptions = {}): { git: GitOps; calls: GitCall[] 
 }
 
 interface FakeFinisherOptions {
-  valid?: boolean;
-  validationErrors?: string[];
-  complete?: boolean;
-  total?: number;
-  remaining?: number;
-  detected?: Produced | null;
-  produceOk?: boolean;
-  producedAnchor?: string | null;
+  resolved?: Produced;
+  resolveError?: string;
   capSync?: boolean | "absent";
 }
 
@@ -100,32 +99,11 @@ function makeFinisher(options: FakeFinisherOptions = {}): {
     type: "openspec",
     disabledReason: "disabled",
     isEnabled: () => true,
-    async validate(name) {
-      calls.push(`validate:${name}`);
-      return { valid: options.valid ?? true, errors: options.validationErrors ?? [] };
-    },
-    async isComplete(name) {
-      calls.push(`isComplete:${name}`);
-      return {
-        complete: options.complete ?? true,
-        total: options.total ?? 5,
-        remaining: options.remaining ?? 0,
-      };
-    },
-    async detectProduced(name) {
-      calls.push(`detectProduced:${name}`);
-      return options.detected ?? null;
-    },
-    async produce(name) {
-      calls.push(`produce:${name}`);
-      return {
-        ok: options.produceOk ?? true,
-        produced:
-          options.producedAnchor === null
-            ? null
-            : { anchorName: options.producedAnchor ?? ANCHOR, commitPaths: COMMIT_PATHS },
-        message: "archived",
-      };
+    async resolve(target) {
+      calls.push(`resolve:${target}`);
+      return options.resolveError
+        ? { ok: false, message: options.resolveError }
+        : { ok: true, resolved: options.resolved ?? RESOLVED };
     },
   };
   if (options.capSync !== "absent") {
@@ -154,20 +132,23 @@ function harness(g: FakeGitOptions = {}, f: FakeFinisherOptions = {}): Harness {
 
 function runEngine(
   h: Harness,
-  options: { name?: string; force?: boolean; noPush?: boolean } = {},
+  options: { name?: string; noPush?: boolean } = {},
 ): Promise<FinishResult> {
   return runFinishEngine(
     h.finisher,
-    {
-      name: options.name ?? "my-change",
-      force: options.force ?? false,
-      noPush: options.noPush ?? false,
-    },
+    { name: options.name ?? "my-change", noPush: options.noPush ?? false },
     { git: h.git, json: true, stdout: (l) => h.stdout.push(l), stderr: (l) => h.stderr.push(l) },
   );
 }
 
 const ops = (h: Harness) => h.gitCalls.map((c) => c.op);
+
+/** No step may reset, restore, or delete a path: the archive is durable input. */
+const MUTATING_UNDO_OPS = ["restorePaths", "resetHard", "resetSoft"];
+
+function expectNoUndo(h: Harness): void {
+  for (const op of MUTATING_UNDO_OPS) expect(ops(h)).not.toContain(op);
+}
 
 beforeEach(() => {
   process.exitCode = 0;
@@ -176,21 +157,16 @@ afterEach(() => {
   process.exitCode = 0;
 });
 
-describe("runFinishEngine — fresh finish", () => {
-  test("happy path: validate → produce → cap sync → commit → sync → tag → push", async () => {
+describe("runFinishEngine — publication pipeline", () => {
+  test("happy path: resolve → branch guard → cap sync → commit → sync → tag → push", async () => {
     const h = harness();
 
     const result = await runEngine(h);
 
-    expect(h.finisherCalls).toEqual([
-      "detectProduced:my-change",
-      "validate:my-change",
-      "isComplete:my-change",
-      "produce:my-change",
-      "capSync",
-    ]);
+    expect(h.finisherCalls).toEqual(["resolve:my-change", "capSync"]);
     expect(ops(h)).toEqual([
-      "headRef",
+      "defaultBranch",
+      "currentBranch",
       "add",
       "hasStagedChanges",
       "commit",
@@ -207,44 +183,27 @@ describe("runFinishEngine — fresh finish", () => {
     expect(process.exitCode).toBe(0);
   });
 
-  test("validation failure is never bypassable, even with --force", async () => {
-    const h = harness({}, { valid: false, validationErrors: ["missing spec"] });
+  test("the pipeline has no validate, complete-guard, or produce step", async () => {
+    const h = harness();
 
-    const result = await runEngine(h, { force: true });
+    await runEngine(h);
 
-    expect(h.finisherCalls).toEqual(["detectProduced:my-change", "validate:my-change"]);
+    for (const gone of ["validate", "isComplete", "produce"]) {
+      expect(h.finisherCalls.join(",")).not.toContain(gone);
+    }
+  });
+
+  test("an unresolvable target fails at resolve and mutates nothing", async () => {
+    const h = harness({}, { resolveError: "mate: not archived; run `openspec archive x` first." });
+
+    const result = await runEngine(h);
+
     expect(ops(h)).toEqual([]);
-    expect(result.step).toBe("validate");
+    expect(result.step).toBe("resolve");
+    expect(result.status).toBe("error");
+    expect(result.anchorName).toBeNull();
+    expect(result.message).toContain("openspec archive");
     expect(process.exitCode).toBe(1);
-  });
-
-  test("incomplete change is refused without --force", async () => {
-    const h = harness({}, { complete: false, remaining: 2 });
-
-    const result = await runEngine(h);
-
-    expect(result.step).toBe("complete-guard");
-    expect(ops(h)).not.toContain("commit");
-    expect(process.exitCode).toBe(1);
-  });
-
-  test("unrelated dirty work is preserved without --force", async () => {
-    const h = harness({ changedPaths: ["README.md"] });
-
-    const result = await runEngine(h);
-
-    expect(result.status).toBe("ok");
-    expect(h.finisherCalls).toContain("produce:my-change");
-  });
-
-  test("--force overrides the completeness guard", async () => {
-    const h = harness({ changedPaths: ["README.md"] }, { complete: false });
-
-    const result = await runEngine(h, { force: true });
-
-    expect(h.finisherCalls).not.toContain("isComplete:my-change");
-    expect(ops(h)).not.toContain("changedPaths");
-    expect(result.status).toBe("ok");
   });
 
   test("commit stages only the finisher's scoped paths", async () => {
@@ -252,51 +211,52 @@ describe("runFinishEngine — fresh finish", () => {
 
     await runEngine(h);
 
-    const add = h.gitCalls.find((c) => c.op === "add");
-    expect(add?.args).toEqual([COMMIT_PATHS]);
+    expect(h.gitCalls.find((c) => c.op === "add")?.args).toEqual([COMMIT_PATHS]);
   });
 
-  test("produce failure does not destroy unrelated work", async () => {
-    const h = harness({ head: "PRIOR" }, { produceOk: false, producedAnchor: null });
+  test("cap sync failure leaves the archive on disk and never commits", async () => {
+    const h = harness({}, { capSync: false });
 
     const result = await runEngine(h);
 
-    expect(ops(h)).not.toContain("restorePaths");
+    expectNoUndo(h);
     expect(ops(h)).not.toContain("commit");
-    expect(result.step).toBe("produce");
-    expect(result.message).toContain("retained for inspection");
+    expect(ops(h)).not.toContain("tag");
+    expect(result.step).toBe("cap-sync");
+    expect(result.message).toContain("left in place");
     expect(process.exitCode).toBe(1);
   });
 
-  test("cap sync failure retains the produced artifact for resume", async () => {
-    const h = harness({ head: "PRIOR_UNPUSHED" }, { capSync: false });
-
-    const result = await runEngine(h);
-
-    expect(ops(h)).not.toContain("restorePaths");
-    expect(ops(h)).not.toContain("commit");
-    expect(result.step).toBe("cap-sync");
-    expect(result.message).toContain("retained");
-    expect(result.message).toContain("resume");
-  });
-
-  test("commit failure retains the produced artifact for resume", async () => {
+  test("commit failure leaves the archive in place for a retry", async () => {
     const h = harness({ failOn: { commit: true } });
 
     const result = await runEngine(h);
 
-    expect(ops(h)).not.toContain("restorePaths");
+    expectNoUndo(h);
     expect(ops(h)).not.toContain("tag");
     expect(result.step).toBe("commit");
     expect(result.status).toBe("error");
-    expect(result.message).toContain("retained");
-    expect(result.message).toContain("resume");
+    expect(result.message).toContain("left in place");
     expect(result.local.committed).toBe(false);
     expect(process.exitCode).toBe(1);
   });
 
-  test("tag name derives from the produced anchor", async () => {
-    const h = harness({}, { producedAnchor: "2020-01-01-legacy" });
+  test("unrelated dirty work survives a failure untouched", async () => {
+    const h = harness({ changedPaths: ["README.md", "notes.txt"] }, { capSync: false });
+
+    await runEngine(h);
+
+    expectNoUndo(h);
+    /** The engine never even inspects unrelated paths; there is no dirty guard left. */
+    expect(ops(h)).not.toContain("changedPaths");
+    expect(ops(h)).not.toContain("stagedPaths");
+  });
+
+  test("tag name derives from the resolved anchor", async () => {
+    const h = harness(
+      {},
+      { resolved: { anchorName: "2020-01-01-legacy", commitPaths: COMMIT_PATHS } },
+    );
 
     const result = await runEngine(h);
 
@@ -309,7 +269,15 @@ describe("runFinishEngine — fresh finish", () => {
 
     const result = await runEngine(h, { noPush: true });
 
-    expect(ops(h)).toEqual(["headRef", "add", "hasStagedChanges", "commit", "tagExists", "tag"]);
+    expect(ops(h)).toEqual([
+      "defaultBranch",
+      "currentBranch",
+      "add",
+      "hasStagedChanges",
+      "commit",
+      "tagExists",
+      "tag",
+    ]);
     expect(result.status).toBe("skipped");
     expect(result.local).toEqual({ committed: true, tagged: true, pushed: false });
     expect(process.exitCode).toBe(0);
@@ -322,7 +290,7 @@ describe("runFinishEngine — fresh finish", () => {
 
     expect(ops(h)).toContain("commit");
     expect(ops(h)).not.toContain("tag");
-    expect(ops(h)).not.toContain("resetHard");
+    expectNoUndo(h);
     expect(result.step).toBe("sync-remote");
     expect(result.status).toBe("conflict");
     expect(result.conflictedPaths).toEqual(["openspec/specs/a/spec.md"]);
@@ -330,111 +298,108 @@ describe("runFinishEngine — fresh finish", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  test("post-tag push failure retains commit + tag (no rollback)", async () => {
+  test("post-tag push failure retains commit + tag for retry", async () => {
     const h = harness({ pushOk: false, pushError: "rejected" });
 
     const result = await runEngine(h);
 
-    expect(ops(h)).not.toContain("resetHard");
+    expectNoUndo(h);
     expect(result.step).toBe("push");
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("retained locally");
     expect(result.local).toEqual({ committed: true, tagged: true, pushed: false });
     expect(process.exitCode).toBe(1);
   });
+});
 
-  test("existing tag is not recreated (idempotent tagging)", async () => {
+describe("runFinishEngine — resumed publication", () => {
+  test("an existing tag is not recreated and reports resumed", async () => {
     const h = harness({ tagExists: true });
 
     const result = await runEngine(h);
 
     expect(ops(h)).not.toContain("tag");
+    expect(result.resumed).toBe(true);
     expect(result.local.tagged).toBe(true);
     expect(result.status).toBe("ok");
-  });
-});
-
-describe("runFinishEngine — resume (already produced)", () => {
-  test("skips validate/complete/produce and finishes commit → tag → push", async () => {
-    const h = harness(
-      { stagedPaths: [`openspec/changes/archive/${ANCHOR}/proposal.md`] },
-      { detected: PRODUCED },
-    );
-
-    const result = await runEngine(h);
-
-    expect(h.finisherCalls).toEqual(["detectProduced:my-change", "capSync"]);
-    expect(h.finisherCalls).not.toContain("validate:my-change");
-    expect(h.finisherCalls).not.toContain("produce:my-change");
-    expect(result.resumed).toBe(true);
-    expect(result.tag).toBe(`openspec/${ANCHOR}`);
-    expect(result.local).toEqual({ committed: true, tagged: true, pushed: true });
-    expect(process.exitCode).toBe(0);
+    expect(result.message).toContain("resumed");
   });
 
-  test("unrelated staged changes do not block a scoped resume", async () => {
-    const inScope = harness({ stagedPaths: ["openspec/specs/a/spec.md"] }, { detected: PRODUCED });
-    const outScope = harness(
-      { stagedPaths: ["openspec/specs/a/spec.md", "src/other.ts"] },
-      { detected: PRODUCED },
-    );
-
-    const okResult = await runEngine(inScope);
-    const badResult = await runEngine(outScope);
-
-    expect(okResult.status).toBe("ok");
-    expect(badResult.status).toBe("ok");
-  });
-
-  test("dirty guard ignores unrelated unstaged paths when only artifact paths are staged", async () => {
-    const h = harness(
-      {
-        changedPaths: ["openspec/specs/a/spec.md", "src/other.ts", "notes.txt"],
-        stagedPaths: ["openspec/specs/a/spec.md"],
-      },
-      { detected: PRODUCED },
-    );
-
-    const result = await runEngine(h);
-
-    expect(result.status).toBe("ok");
-    expect(ops(h)).not.toContain("changedPaths");
-    expect(ops(h)).not.toContain("stagedPaths");
-  });
-
-  test("staged paths from another openspec change remain outside the finish commit", async () => {
-    const h = harness(
-      { stagedPaths: ["openspec/changes/other-change/proposal.md"] },
-      { detected: PRODUCED },
-    );
-
-    const result = await runEngine(h);
-
-    expect(result.status).toBe("ok");
-    expect(ops(h)).toContain("commit");
-  });
-
-  test("nothing to commit (prior finish already committed) skips commit and pushes", async () => {
-    const h = harness({ hasStaged: false }, { detected: PRODUCED });
+  test("nothing to commit means a prior publication committed this anchor", async () => {
+    const h = harness({ hasStaged: false });
 
     const result = await runEngine(h);
 
     expect(ops(h)).toContain("add");
     expect(ops(h)).not.toContain("commit");
+    expect(result.resumed).toBe(true);
     expect(result.local.committed).toBe(true);
     expect(result.local.pushed).toBe(true);
     expect(process.exitCode).toBe(0);
   });
 
-  test("cap sync failure never destroys the developer's manual produce", async () => {
-    const h = harness(
-      { stagedPaths: [`openspec/changes/archive/${ANCHOR}/proposal.md`] },
-      { detected: PRODUCED, capSync: false },
-    );
+  test("a first publication is not reported as resumed", async () => {
+    const h = harness();
 
     const result = await runEngine(h);
 
-    expect(ops(h)).not.toContain("resetHard");
-    expect(ops(h)).not.toContain("resetSoft");
-    expect(result.step).toBe("cap-sync");
+    expect(result.resumed).toBe(false);
+    expect(result.message).not.toContain("resumed");
+  });
+});
+
+describe("runFinishEngine — default-branch guard", () => {
+  test("the companion's default branch passes through to cap sync", async () => {
+    const h = harness({ currentBranch: "main", defaultBranch: "main" });
+
+    const result = await runEngine(h);
+
+    expect(h.finisherCalls).toContain("capSync");
+    expect(result.status).toBe("ok");
+  });
+
+  test("a feature branch is refused before any mutation", async () => {
+    const h = harness({ currentBranch: "feature/x", defaultBranch: "main" });
+
+    const result = await runEngine(h);
+
+    expect(h.finisherCalls).toEqual(["resolve:my-change"]);
+    expect(ops(h)).toEqual(["defaultBranch", "currentBranch"]);
+    expect(result.step).toBe("branch-guard");
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("feature/x");
+    expect(result.message).toContain("main");
     expect(process.exitCode).toBe(1);
+  });
+
+  test("a detached HEAD is refused", async () => {
+    const h = harness({ currentBranch: null });
+
+    const result = await runEngine(h);
+
+    expect(ops(h)).not.toContain("add");
+    expect(result.step).toBe("branch-guard");
+    expect(result.message).toContain("detached");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("--no-push is guarded too, because the local tag is the same anchor", async () => {
+    const h = harness({ currentBranch: "feature/x" });
+
+    const result = await runEngine(h, { noPush: true });
+
+    expect(ops(h)).not.toContain("commit");
+    expect(ops(h)).not.toContain("tag");
+    expect(result.step).toBe("branch-guard");
+    expect(result.status).toBe("error");
+  });
+
+  test("a companion with no configured remote HEAD falls back to its resolved default", async () => {
+    const h = harness({ currentBranch: "trunk", defaultBranch: "trunk" });
+
+    const result = await runEngine(h);
+
+    expect(result.status).toBe("ok");
+    expect(result.step).toBe("done");
   });
 });

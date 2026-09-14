@@ -12,15 +12,21 @@ export interface PushResult {
   error: string;
 }
 
+export type WorkingTreeChange = "new" | "modified";
+
 /**
  * Git operations the finish engine needs, injectable for deterministic tests. All
  * operations run against the companion working tree.
  */
 export interface GitOps {
-  /** Full SHA of the current HEAD (recorded pre-finish for rollback). */
-  headRef(): Promise<string>;
+  /** Checked-out branch name, or null in a detached HEAD. */
+  currentBranch(): Promise<string | null>;
+  /** Branch publication is allowed on: remote HEAD, then `init.defaultBranch`, then `main`. */
+  defaultBranch(): Promise<string>;
   /** Paths with uncommitted changes (porcelain), for scope-aware guards. */
   changedPaths(): Promise<string[]>;
+  /** Git change kind by path, for consumers that need new versus modified metadata. */
+  changedPathKinds?(): Promise<Record<string, WorkingTreeChange>>;
   /** Paths already present in the index. */
   stagedPaths(): Promise<string[]>;
   /** Stage the given pathspecs. */
@@ -29,8 +35,6 @@ export interface GitOps {
   hasStagedChanges(paths?: string[]): Promise<boolean>;
   /** Commit only the supplied pathspecs, leaving unrelated staged work untouched. */
   commit(message: string, paths?: string[]): Promise<void>;
-  /** Restore only produced artifact paths to a recorded ref. */
-  restorePaths(ref: string, paths: string[]): Promise<void>;
   hasUpstream(): Promise<boolean>;
   fetch(): Promise<void>;
   rebaseOntoUpstream(): Promise<RebaseResult>;
@@ -98,6 +102,11 @@ function parsePorcelainPath(line: string): string {
   return arrow === -1 ? body : body.slice(arrow + 4);
 }
 
+function parsePorcelainKind(line: string): WorkingTreeChange {
+  const status = line.slice(0, 2);
+  return status.includes("?") || status.includes("A") ? "new" : "modified";
+}
+
 export function defaultGitOps(
   companionPath: string,
   workingRepoPath = process.env.MATE_REPO_PATH,
@@ -112,13 +121,32 @@ export function defaultGitOps(
     return res;
   };
   return {
-    async headRef() {
-      return execOrThrow(["rev-parse", "HEAD"]).out;
+    async currentBranch() {
+      const res = exec(["symbolic-ref", "--quiet", "--short", "HEAD"]);
+      return res.status === 0 && res.out.length > 0 ? res.out : null;
+    },
+    async defaultBranch() {
+      // A configured remote HEAD is the only answer the remote itself asserts; the
+      // rest are local conventions, narrowing to git's own default last.
+      const remoteHead = exec(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
+      if (remoteHead.status === 0 && remoteHead.out.length > 0) {
+        return remoteHead.out.replace(/^origin\//, "");
+      }
+      const configured = exec(["config", "--get", "init.defaultBranch"]);
+      if (configured.status === 0 && configured.out.length > 0) return configured.out;
+      return "main";
     },
     async changedPaths() {
       const out = exec(["status", "--porcelain"]).out;
       if (out.length === 0) return [];
       return out.split("\n").map(parsePorcelainPath);
+    },
+    async changedPathKinds() {
+      const out = exec(["status", "--porcelain"]).out;
+      if (out.length === 0) return {};
+      return Object.fromEntries(
+        out.split("\n").map((line) => [parsePorcelainPath(line), parsePorcelainKind(line)]),
+      );
     },
     async stagedPaths() {
       const out = exec(["diff", "--cached", "--name-only"]).out;
@@ -152,23 +180,6 @@ export function defaultGitOps(
       const pathspec = known.length > 0 ? ["--", ...known] : [];
       if (paths && paths.length > 0 && known.length === 0) return;
       execOrThrow(["commit", "-m", message, ...pathspec]);
-    },
-    async restorePaths(ref, paths) {
-      const tracked = paths.filter(
-        (filePath) => exec(["ls-files", "--cached", "--", filePath]).out.length > 0,
-      );
-      if (tracked.length > 0) {
-        execOrThrow(["restore", "--source", ref, "--staged", "--worktree", "--", ...tracked]);
-      }
-
-      // `git restore` does not remove newly-created untracked archive files.
-      const untracked = paths.filter(
-        (filePath) =>
-          exec(["ls-files", "--others", "--exclude-standard", "--", filePath]).out.length > 0,
-      );
-      if (untracked.length > 0) {
-        execOrThrow(["clean", "-fd", "--", ...untracked]);
-      }
     },
     async hasUpstream() {
       return exec(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).status === 0;

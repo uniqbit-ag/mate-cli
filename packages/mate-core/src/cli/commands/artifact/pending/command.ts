@@ -5,12 +5,13 @@ import type { CapabilityConfig } from "../../../../lib/orchestrator/types";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
 import { type BooleanFlagSet, parseFlags } from "../../../parse-flags";
 import { ensureUnambiguousCompanion } from "../../shared/companion-selection";
-import { defaultGitOps, type GitOps } from "../finish/git";
+import { defaultGitOps, type GitOps, type WorkingTreeChange } from "../finish/git";
 import {
   discoverArchives,
   pendingArchives,
   unattributedSpecs,
   type ArchiveEntry,
+  type UnattributedSpec,
 } from "./discovery";
 
 export interface PendingCommandDeps {
@@ -18,7 +19,11 @@ export interface PendingCommandDeps {
   resolveContext?: (cwd: string) => Promise<LaunchContext>;
   loadCapabilities?: (context: LaunchContext) => Promise<CapabilityConfig[]>;
   git?: (companionPath: string, workingRepoPath?: string) => GitOps;
-  discover?: (companionPath: string, uncommittedPaths: string[]) => Promise<ArchiveEntry[]>;
+  discover?: (
+    companionPath: string,
+    uncommittedPaths: string[],
+    changeKinds?: Readonly<Record<string, WorkingTreeChange>>,
+  ) => Promise<ArchiveEntry[]>;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
@@ -32,8 +37,8 @@ export interface PendingResult {
   companionPath: string;
   count: number;
   pending: ArchiveEntry[];
-  /** Uncommitted canonical specs no pending change accounts for. */
-  unattributedSpecs: string[];
+  /** Uncommitted canonical specs no pending change accounts for, each with its attribution. */
+  unattributedSpecs: UnattributedSpec[];
 }
 
 async function defaultLoadCapabilities(context: LaunchContext): Promise<CapabilityConfig[]> {
@@ -41,12 +46,20 @@ async function defaultLoadCapabilities(context: LaunchContext): Promise<Capabili
   return config.capabilities ?? [];
 }
 
-function renderUnattributed(specs: string[]): string[] {
+/** Attribution is printed as candidate archives, never as a claim about which one is responsible. */
+function renderUnattributed(specs: UnattributedSpec[]): string[] {
   if (specs.length === 0) return [];
   return [
     "",
     `${specs.length} uncommitted spec${specs.length === 1 ? "" : "s"} not accounted for by a pending change:`,
-    ...specs.map((spec) => `  ${spec}`),
+    ...specs.flatMap((spec) => [
+      `  ${spec.path}  [${spec.kind}]`,
+      ...(spec.touchedByArchives.length === 0
+        ? ["       no archive names this spec"]
+        : spec.touchedByArchives.map(
+            (archive) => `       publishes via ${archive.anchor}  (archive ${archive.state})`,
+          )),
+    ]),
   ];
 }
 
@@ -71,7 +84,8 @@ function renderHuman(result: PendingResult): string[] {
  * the active directory archiving deleted — are still uncommitted in the companion working
  * tree, each with the uncommitted canonical specs it applied to, so the publication
  * workflow can offer exact selectable entries instead of parsing OpenSpec prose.
- * Uncommitted specs no pending change accounts for are reported separately. Read-only:
+ * Uncommitted specs no pending change accounts for are reported separately, each with the
+ * archives whose delta specs name it. Read-only:
  * nothing is validated, produced, committed, tagged, or pushed.
  * @flags
  * - `--json` — emit a machine-readable {@link PendingResult} instead of human-readable text.
@@ -125,13 +139,20 @@ export async function runArtifactPendingCommand(
 
   const discover = deps.discover ?? discoverArchives;
   const changed = await git.changedPaths();
-  const pending = pendingArchives(await discover(context.companionPath, changed));
+  const changeKinds = (await git.changedPathKinds?.()) ?? {};
+  const archives = await discover(context.companionPath, changed, changeKinds);
+  const pending = pendingArchives(archives);
   const result: PendingResult = {
     type: "openspec",
     companionPath: context.companionPath,
     count: pending.length,
     pending,
-    unattributedSpecs: unattributedSpecs(changed, pending),
+    unattributedSpecs: await unattributedSpecs(
+      context.companionPath,
+      changed,
+      archives,
+      changeKinds,
+    ),
   };
 
   if (json) emitOut(JSON.stringify(result));

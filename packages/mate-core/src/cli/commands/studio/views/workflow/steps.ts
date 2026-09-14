@@ -299,15 +299,15 @@ export function workflowPlan(
   const archive = skillStep(
     "archive",
     "openspec archive change",
-    "Archives the verified change and its approved artifacts.",
-    "Archiving preserves the completed change before it is published and its specs are finalized.",
+    "Archives the verified change and its approved artifacts, applying its delta specs to the canonical specs.",
+    "Archiving validates the change, requires it to be complete, and is the precondition publishing refuses without.",
   );
   const finishStep = {
     kind: "completion" as const,
     id: "finish",
     title: "mate artifact publish",
-    what: "Selects archived changes, confirms that each will be committed, tagged, and pushed to the companion Git repository, then runs `mate artifact finish` for each to apply its delta specs to the canonical specs.",
-    why: "It is the only sanctioned completion; a hand-committed finish leaves the canonical specs stale.",
+    what: "Selects already-archived changes, confirms that each will be committed, tagged, and pushed to the companion Git repository, then runs `mate artifact publish` for each to publish the archive under its dated anchor.",
+    why: "It is the only sanctioned completion; a hand-committed publication leaves the anchor untagged and unrevertable.",
     badges: ["skill"] as WorkflowStepBadge[],
   };
 

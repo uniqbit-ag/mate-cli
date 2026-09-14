@@ -3,10 +3,8 @@ import type { GitOps } from "./git";
 
 /** Pipeline step a {@link FinishResult} refers to (generic across artifact kinds). */
 export type FinishStep =
-  | "validate"
-  | "complete-guard"
-  | "dirty-guard"
-  | "produce"
+  | "resolve"
+  | "branch-guard"
   | "cap-sync"
   | "commit"
   | "sync-remote"
@@ -17,7 +15,7 @@ export type FinishStep =
 export type FinishStatus = "ok" | "conflict" | "error" | "skipped";
 
 /**
- * Machine-readable result emitted with `--json`. The finish skill parses this to
+ * Machine-readable result emitted with `--json`. The publish skill parses this to
  * decide whether to hand a rebase conflict to a human, or to drive the remaining
  * tag + push after resolving one.
  */
@@ -26,7 +24,7 @@ export interface FinishResult {
   name: string;
   anchorName: string | null;
   tag: string | null;
-  /** True when the artifact was already produced and the engine skipped that step. */
+  /** True when a prior publication already committed or tagged this anchor. */
   resumed: boolean;
   step: FinishStep;
   status: FinishStatus;
@@ -37,7 +35,6 @@ export interface FinishResult {
 
 export interface EngineOptions {
   name: string;
-  force: boolean;
   noPush: boolean;
 }
 
@@ -49,11 +46,13 @@ export interface EngineDeps {
 }
 
 /**
- * Runs the fixed finish pipeline for a resolved {@link ArtifactFinisher}:
- * (validate → guards) → produce* → cap sync → scoped commit → sync-remote → tag → push,
- * where produce is skipped when the artifact is already produced (resume). The git,
- * remote-sync, conflict-handoff, and rollback machinery is identical for every
- * artifact kind — only the finisher's steps vary.
+ * Runs the fixed publication pipeline for a resolved {@link ArtifactFinisher}:
+ * resolve → branch guard → cap sync → scoped commit → sync-remote → tag → push. The
+ * git, remote-sync, and conflict-handoff machinery is identical for every artifact
+ * kind — only the finisher's resolution and cap sync vary.
+ *
+ * Isolation is a clean abort, not a rollback: the resolved artifact is durable input
+ * the pipeline never produced, so no step resets, restores, or deletes a path.
  */
 export async function runFinishEngine(
   finisher: ArtifactFinisher,
@@ -68,7 +67,7 @@ export async function runFinishEngine(
     anchorName: null,
     tag: null,
     resumed: false,
-    step: "validate",
+    step: "resolve",
     status: "ok",
     conflictedPaths: [],
     local: { committed: false, tagged: false, pushed: false },
@@ -93,101 +92,70 @@ export async function runFinishEngine(
     process.exitCode = 1;
   };
 
-  // Resumable detection drives which guards apply and whether we produce.
-  const existing = await finisher.detectProduced(options.name);
-  const resuming = existing !== null;
-  result.resumed = resuming;
-
-  // Produce-time guards apply only to a fresh finish. An already-produced artifact
-  // was validated at produce time and is no longer "active" to validate against.
-  if (!resuming) {
-    const validation = await finisher.validate(options.name);
-    if (!validation.valid) {
-      fail("validate", `mate: ${options.name} failed validation:\n${validation.errors.join("\n")}`);
-      return result;
-    }
-    if (!options.force) {
-      const completeness = await finisher.isComplete(options.name);
-      if (!completeness.complete) {
-        fail(
-          "complete-guard",
-          `mate: ${options.name} is not complete (${completeness.remaining} of ${completeness.total} tasks remaining). Use --force to override.`,
-        );
-        return result;
-      }
-    }
+  // Resolve the already-produced artifact. Nothing is mutated, so a refusal here — an
+  // unarchived target, or a name matching two archives — leaves the companion untouched.
+  result.step = "resolve";
+  const resolution = await finisher.resolve(options.name);
+  if (!resolution.ok) {
+    fail("resolve", resolution.message);
+    return result;
   }
-
-  const preFinishHead = await git.headRef();
-
-  // Never reset the whole companion: unrelated staged, unstaged, and untracked work
-  // belongs to the developer. Restore only paths returned by the finisher, and only for
-  // a FAILED produce with partial output. A successful produce may have MOVED data that
-  // exists nowhere else (an active change dir that was never committed), so post-produce
-  // failures must retain the produced paths — they are the resume state, not garbage.
-  const rollback = async (paths: string[] | undefined): Promise<void> => {
-    if (resuming || !paths || paths.length === 0) return;
-    try {
-      await git.restorePaths(preFinishHead, paths);
-    } catch {
-      // Best-effort; the failing-step message already surfaced the root cause.
-    }
-  };
-
-  // Produce (skipped when resuming).
-  let produced: Produced;
-  if (resuming) {
-    produced = existing!;
-  } else {
-    result.step = "produce";
-    const outcome = await finisher.produce(options.name);
-    if (!outcome.ok || !outcome.produced) {
-      await rollback(outcome.produced?.commitPaths);
-      fail(
-        "produce",
-        `mate: ${finisher.type} produce failed: ${outcome.message}${
-          outcome.produced
-            ? " Produced paths were restored."
-            : " Any partial output was retained for inspection."
-        }`,
-      );
-      return result;
-    }
-    produced = outcome.produced;
-  }
-  result.anchorName = produced.anchorName;
-  const tagName = `${finisher.type}/${produced.anchorName}`;
+  const resolved: Produced = resolution.resolved;
+  result.anchorName = resolved.anchorName;
+  const tagName = `${finisher.type}/${resolved.anchorName}`;
   result.tag = tagName;
+
+  // Branch guard — before cap sync, so a refusal mutates nothing at all. It applies to
+  // --no-push too: the local tag it creates is the anchor a later push would publish.
+  result.step = "branch-guard";
+  const [expectedBranch, currentBranch] = await Promise.all([
+    git.defaultBranch(),
+    git.currentBranch(),
+  ]);
+  if (currentBranch === null) {
+    fail(
+      "branch-guard",
+      `mate: publication requires the companion's default branch (${expectedBranch}); HEAD is detached.`,
+    );
+    return result;
+  }
+  if (currentBranch !== expectedBranch) {
+    fail(
+      "branch-guard",
+      `mate: refusing to publish from ${currentBranch}; the companion's default branch is ${expectedBranch}.`,
+    );
+    return result;
+  }
 
   // Capability sync (only openspec-derived outputs are refreshed; commit stays scoped).
   if (finisher.capSync) {
     result.step = "cap-sync";
     if (!(await finisher.capSync())) {
-      // Post-produce failure: retain the produced artifact — it is the resume state.
       fail(
         "cap-sync",
-        "mate: cap sync failed; the produced artifact was retained — re-run `mate artifact publish` to resume.",
+        "mate: cap sync failed; the resolved archive was left in place — re-run `mate artifact publish` to retry.",
       );
       return result;
     }
   }
 
-  // Commit — stage only the finisher's scoped paths. When resuming a prior finish that
-  // already committed, there is nothing to stage; treat that as the commit existing.
+  // Commit — stage only the finisher's scoped paths. Nothing to stage means a prior
+  // publication already committed this anchor, which is a resume rather than an error.
   result.step = "commit";
   try {
-    await git.add(produced.commitPaths);
-    if (await git.hasStagedChanges(produced.commitPaths)) {
+    await git.add(resolved.commitPaths);
+    if (await git.hasStagedChanges(resolved.commitPaths)) {
       await git.commit(
-        `chore(${finisher.type}): finish ${produced.anchorName}`,
-        produced.commitPaths,
+        `chore(${finisher.type}): finish ${resolved.anchorName}`,
+        resolved.commitPaths,
       );
+    } else {
+      result.resumed = true;
     }
   } catch (err) {
-    // Post-produce failure: retain the produced artifact — it is the resume state.
     fail(
       "commit",
-      `mate: commit failed: ${String(err)}; the produced artifact was retained — re-run \`mate artifact publish\` to resume.`,
+      `mate: commit failed: ${String(err)}; the resolved archive was left in place — re-run \`mate artifact publish\` to retry.`,
     );
     return result;
   }
@@ -219,11 +187,13 @@ export async function runFinishEngine(
     }
   }
 
-  // Tag the (rebased) finish commit — idempotent if a prior finish already tagged it.
+  // Tag the (rebased) publication commit — idempotent if a prior run already tagged it.
   result.step = "tag";
   try {
-    if (!(await git.tagExists(tagName))) {
-      await git.tag(tagName, `Publish ${produced.anchorName}`);
+    if (await git.tagExists(tagName)) {
+      result.resumed = true;
+    } else {
+      await git.tag(tagName, `Publish ${resolved.anchorName}`);
     }
   } catch (err) {
     // Post-commit failure: retain the commit, do not roll back.
@@ -235,7 +205,7 @@ export async function runFinishEngine(
   if (options.noPush) {
     result.step = "done";
     result.status = "skipped";
-    result.message = `Finished ${produced.anchorName} locally (commit + tag ${tagName}); not pushed (--no-push).`;
+    result.message = `Published ${resolved.anchorName} locally (commit + tag ${tagName}); not pushed (--no-push).`;
     emit();
     return result;
   }
@@ -255,7 +225,7 @@ export async function runFinishEngine(
 
   result.step = "done";
   result.status = "ok";
-  result.message = `Finished ${produced.anchorName}: ${resuming ? "resumed, " : ""}committed, tagged ${tagName}, and pushed.`;
+  result.message = `Published ${resolved.anchorName}: ${result.resumed ? "resumed, " : ""}committed, tagged ${tagName}, and pushed.`;
   emit();
   return result;
 }

@@ -10,7 +10,10 @@ export { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "./tokensave-shared";
 
 export const TOKENSAVE_SUPPORTED_AGENTS = new Set(["claude", "opencode"]);
 export const TOKENSAVE_STORE_DIR = ".tokensave";
+export const TOKENSAVE_STORE_CONFIG_FILE = "config.json";
 export const TOKENSAVE_MIN_RUST_VERSION = "1.91.0";
+/** Single-graph posture Mate owns in the per-project store config; every other key is left as found. */
+const TOKENSAVE_OWNED_POSTURE = { auto_track: false, suppress_scope_warning: true } as const;
 const TOKENSAVE_STORE_EXCLUDE_ENTRY = `${TOKENSAVE_STORE_DIR}/`;
 const TOKENSAVE_BREW_INSTALL_CMD = "brew install aovestdipaperino/tap/tokensave";
 const TOKENSAVE_CARGO_INSTALL_CMD = "cargo install --locked tokensave";
@@ -230,6 +233,49 @@ export async function ensureTokensaveStoreExcluded(repoPath: string): Promise<vo
   await fs.writeFile(excludePath, lines.join("\n") + "\n", "utf8");
 }
 
+/**
+ * Reconciles Mate's single-graph branching posture into the working repo's
+ * git-excluded `.tokensave/config.json`. Best-effort by design: the file is
+ * created by `tokensave init`, so an absent, unreadable, or unparseable config
+ * is left untouched rather than treated as an error.
+ */
+export async function ensureTokensaveBranchingPosture(repoPath: string): Promise<void> {
+  const configPath = path.join(repoPath, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE);
+
+  let raw: string;
+  try {
+    raw = await fs.readFile(configPath, "utf8");
+  } catch {
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return;
+  }
+
+  const next = JSON.stringify(
+    { ...(parsed as Record<string, unknown>), ...TOKENSAVE_OWNED_POSTURE },
+    null,
+    2,
+  );
+  const serialized = `${next}\n`;
+  if (serialized === raw) {
+    return;
+  }
+
+  try {
+    await fs.writeFile(configPath, serialized, "utf8");
+  } catch {
+    /** Best-effort: the store config is not Mate's to guarantee. */
+  }
+}
+
 async function teardownDriver(repoPath: string, providers: string[]) {
   const agents = providers.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p));
   if (agents.length === 0) return;
@@ -328,6 +374,7 @@ export function createTokensavePlugin(): CapabilityPlugin {
       if (!(await ensureTokensaveInstalled(targetPath))) {
         return;
       }
+      await ensureTokensaveBranchingPosture(targetPath);
       if (ctx.mode === "setup") {
         installTokensaveAgentIntegrations(ctx.activeProviders, targetPath);
       }

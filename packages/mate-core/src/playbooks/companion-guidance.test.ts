@@ -91,8 +91,10 @@ describe("buildCompanionGuidance", () => {
     expect(withOpenspec).toContain('<rule id="openspec-publish" severity="critical">');
     expect(withOpenspec).toContain('mate artifact publish "<name>" --json');
     expect(withOpenspec).toContain("never hand-commit or hand-tag one");
-    expect(withOpenspec).toContain("do not pre-apply them to openspec/specs");
-    expect(withOpenspec).toContain("resumes without re-applying delta specs");
+    expect(withOpenspec).toContain("archiving is a precondition");
+    expect(withOpenspec).toContain("still-active change is an error");
+    expect(withOpenspec).toContain("never applies delta specs itself");
+    expect(withOpenspec).toContain("refuses to run anywhere but the companion's default branch");
 
     const withoutOpenspec = buildCompanionGuidance({
       companionPath: "/tmp/companion",

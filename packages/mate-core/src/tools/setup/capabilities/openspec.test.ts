@@ -419,7 +419,7 @@ describe("createOpenspecPlugin", () => {
         "utf8",
       );
       expect(publishSkill).toContain("commit, tag, and push");
-      expect(publishSkill).toContain("numbered list");
+      expect(publishSkill).toContain("plain-text table");
       expect(publishSkill).toContain('artifact publish "<change-name>" --json');
       await expect(
         fs.readFile(

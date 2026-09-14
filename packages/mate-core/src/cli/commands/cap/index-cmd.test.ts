@@ -16,8 +16,10 @@ function makeDeps(options: {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
   tokensaveInitialized?: boolean;
   onEnsureTokensaveStoreExcluded?: () => Promise<void> | void;
+  onEnsureTokensaveBranchingPosture?: () => Promise<void> | void;
   failGraphify?: (args: string[]) => boolean;
   failTokensave?: (args: string[]) => boolean;
+  onTokensave?: (args: string[]) => void;
 }): { deps: SyncCapDeps; invocations: Invocation[] } {
   const invocations: Invocation[] = [];
   const deps: SyncCapDeps = {
@@ -27,12 +29,16 @@ function makeDeps(options: {
     ensureTokensaveStoreExcluded: async () => {
       await options.onEnsureTokensaveStoreExcluded?.();
     },
+    ensureTokensaveBranchingPosture: async () => {
+      await options.onEnsureTokensaveBranchingPosture?.();
+    },
     runGraphify: async (args) => {
       invocations.push({ runner: "graphify", args });
       if (options.failGraphify?.(args)) process.exitCode = 1;
     },
     runTokensave: async (args) => {
       invocations.push({ runner: "tokensave", args });
+      options.onTokensave?.(args);
       if (options.failTokensave?.(args)) process.exitCode = 1;
     },
   };
@@ -185,6 +191,64 @@ describe("runIndexCapCommand", () => {
       { runner: "tokensave", args: ["init"] },
       { runner: "tokensave", args: ["sync"] },
     ]);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("reconciles the branching posture after init and before sync on a fresh store", async () => {
+    const calls: string[] = [];
+    const { deps } = makeDeps({
+      capabilities: [cap("tokensave")],
+      tokensaveInitialized: false,
+      onEnsureTokensaveStoreExcluded: () => {
+        calls.push("exclude");
+      },
+      onEnsureTokensaveBranchingPosture: () => {
+        calls.push("posture");
+      },
+      onTokensave: (args) => {
+        calls.push(`tokensave ${args.join(" ")}`);
+      },
+    });
+
+    await runIndexCapCommand([], deps);
+
+    expect(calls).toEqual(["exclude", "tokensave init", "posture", "tokensave sync"]);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("skips posture reconciliation when init fails", async () => {
+    const calls: string[] = [];
+    const { deps } = makeDeps({
+      capabilities: [cap("tokensave")],
+      tokensaveInitialized: false,
+      failTokensave: (args) => args[0] === "init",
+      onEnsureTokensaveBranchingPosture: () => {
+        calls.push("posture");
+      },
+    });
+
+    await runIndexCapCommand([], deps);
+
+    expect(calls).toEqual([]);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("reconciles the branching posture before sync on an initialized store", async () => {
+    const calls: string[] = [];
+    const { deps } = makeDeps({
+      capabilities: [cap("tokensave")],
+      tokensaveInitialized: true,
+      onEnsureTokensaveBranchingPosture: () => {
+        calls.push("posture");
+      },
+      onTokensave: (args) => {
+        calls.push(`tokensave ${args.join(" ")}`);
+      },
+    });
+
+    await runIndexCapCommand([], deps);
+
+    expect(calls).toEqual(["posture", "tokensave sync"]);
     expect(process.exitCode).toBe(0);
   });
 

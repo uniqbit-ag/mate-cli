@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -6,34 +5,36 @@ import { parse } from "yaml";
 
 import { hasOpenspecCapability } from "../../../../lib/orchestrator/capabilities";
 import { runIndexCapCommand } from "../../cap/index-cmd";
-import type { ArtifactFinisher, FinishContext } from "./finisher";
-
-function run(
-  companionPath: string,
-  args: string[],
-): { status: number; stdout: string; stderr: string } {
-  const result = spawnSync(args[0], args.slice(1), {
-    cwd: companionPath,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return {
-    status: result.status ?? 1,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-  };
-}
+import type { ArtifactFinisher, FinishContext, ResolveResult } from "./finisher";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+async function pathExists(candidate: string): Promise<boolean> {
+  try {
+    await fs.stat(candidate);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A dated archive anchor; group 1 is the change name the archive was created from. */
+const ANCHOR_PATTERN = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
+
+/**
+ * The publication commit's exact scope. The active-change path is included only when it
+ * is gone from disk — that absence IS the deletion archiving produced. A path that still
+ * exists belongs to a same-name change started after archiving, which is unrelated work.
+ */
 async function commitPathsForArchive(
   companionPath: string,
   name: string,
   anchorName: string,
 ): Promise<string[]> {
   const archiveRelative = path.posix.join("openspec", "changes", "archive", anchorName);
+  const activeRelative = path.posix.join("openspec", "changes", name);
   const deltaSpecsDir = path.join(companionPath, archiveRelative, "specs");
   const canonicalSpecs: string[] = [];
   const collectDeltaSpecFiles = async (directory: string, relative = ""): Promise<void> => {
@@ -53,7 +54,7 @@ async function commitPathsForArchive(
     // Changes without delta specs still commit their active deletion and archive.
   }
   return [
-    path.posix.join("openspec", "changes", name),
+    ...((await pathExists(path.join(companionPath, activeRelative))) ? [] : [activeRelative]),
     archiveRelative,
     ...canonicalSpecs.toSorted(),
   ];
@@ -148,12 +149,14 @@ function renderCanonicalFrontmatter(
 }
 
 /**
- * Prepends canonical frontmatter to main specs born during this archive.
+ * Repairs `openspec archive` output: prepends canonical frontmatter to main specs the
+ * archive run created bare. Publish does not archive, so this runs the first time publish
+ * resolves that archive, however the archive was made.
  *
  * `openspec archive` rebuilds a brand-new main spec from a skeleton with no frontmatter slot,
  * so scope metadata dies exactly once, at spec birth; existing specs keep theirs because only
- * requirement blocks are spliced. Best-effort by design — the archive already succeeded, so a
- * failure here warns rather than stranding the change archived-but-unfinished.
+ * requirement blocks are spliced. Idempotent, and best-effort by design — the archive is
+ * durable input, so a failure here warns rather than refusing the publication.
  */
 async function reconcileMainSpecFrontmatter(
   companionPath: string,
@@ -253,16 +256,26 @@ async function capSync(context: FinishContext): Promise<boolean> {
   }
 }
 
+async function resolved(
+  companionPath: string,
+  name: string,
+  anchorName: string,
+): Promise<ResolveResult> {
+  const commitPaths = await commitPathsForArchive(companionPath, name, anchorName);
+  await reconcileMainSpecFrontmatter(companionPath, anchorName);
+  return { ok: true, resolved: { anchorName, commitPaths } };
+}
+
 /**
- * The openspec artifact finisher: validate/complete guards over the change, `openspec
- * archive` as the terminal transform, an openspec-scoped cap sync, and a commit scoped
- * to `openspec/`. Resumable detection reads the dated `openspec/changes/archive/` folder
- * openspec actually created so the tag is never a computed date.
+ * The openspec artifact finisher: resolution of an already-archived change, an
+ * openspec-scoped cap sync, and a commit scoped to `openspec/`. Validation and
+ * completeness belong to `openspec archive`, which performs both and is the only step
+ * that can — an archived change is neither validatable nor listed as active.
+ *
+ * Resolution reads the dated `openspec/changes/archive/` directory names openspec
+ * actually created, so the tag is never a computed date and archived prose is never read.
  */
-export function openspecFinisher(
-  contextOrPath: FinishContext | string,
-  runCommand: typeof run = run,
-): ArtifactFinisher {
+export function openspecFinisher(contextOrPath: FinishContext | string): ArtifactFinisher {
   const context: FinishContext =
     typeof contextOrPath === "string"
       ? { companionPath: contextOrPath, repositoryId: "" }
@@ -275,97 +288,51 @@ export function openspecFinisher(
     isEnabled(capabilities) {
       return hasOpenspecCapability(capabilities);
     },
-    async validate(name) {
-      const res = runCommand(companionPath, ["openspec", "validate", name, "--json"]);
-      try {
-        const parsed = JSON.parse(res.stdout) as {
-          items?: Array<{ id: string; valid: boolean; issues?: Array<{ message: string }> }>;
-        };
-        const item = parsed.items?.find((entry) => entry.id === name) ?? parsed.items?.[0];
-        if (!item) {
-          return { valid: false, errors: [res.stderr.trim() || "no validation result"] };
+    async resolve(target) {
+      const archiveRoot = path.join(companionPath, "openspec", "changes", "archive");
+      const anchor = ANCHOR_PATTERN.exec(target);
+
+      /** A dated anchor names exactly one directory; no name matching can widen it. */
+      if (anchor) {
+        if (!(await pathExists(path.join(archiveRoot, target)))) {
+          return {
+            ok: false,
+            message: `mate: no archive at openspec/changes/archive/${target}. Archive the change first with \`openspec archive ${anchor[2]}\`.`,
+          };
         }
-        return { valid: item.valid, errors: (item.issues ?? []).map((issue) => issue.message) };
-      } catch {
-        return {
-          valid: res.status === 0,
-          errors: res.status === 0 ? [] : [res.stderr.trim() || "validation failed"],
-        };
-      }
-    },
-    async isComplete(name) {
-      const res = runCommand(companionPath, ["openspec", "list", "--json"]);
-      try {
-        const parsed = JSON.parse(res.stdout) as {
-          changes?: Array<{ name: string; completedTasks: number; totalTasks: number }>;
-        };
-        const change = parsed.changes?.find((entry) => entry.name === name);
-        if (!change) {
-          return { complete: false, total: 0, remaining: 0 };
-        }
-        const remaining = change.totalTasks - change.completedTasks;
-        return { complete: remaining <= 0, total: change.totalTasks, remaining };
-      } catch {
-        return { complete: false, total: 0, remaining: 0 };
-      }
-    },
-    async detectProduced(name) {
-      /**
-       * An active change directory means a fresh finish, not a resume: a genuinely
-       * half-completed finish already moved it into the archive. Without this, a stale
-       * same-name archive reads as produced output, so both guards are skipped and the
-       * un-archived change is committed under the previous run's anchor.
-       */
-      try {
-        if ((await fs.stat(path.join(companionPath, "openspec", "changes", name))).isDirectory()) {
-          return null;
-        }
-      } catch {
-        /** No active directory: a resume is possible. */
+        return resolved(companionPath, anchor[2], target);
       }
 
-      const archiveDir = path.join(companionPath, "openspec", "changes", "archive");
-      let entries;
+      const pattern = new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${escapeRegExp(target)}$`);
+      let matches: string[] = [];
       try {
-        entries = await fs.readdir(archiveDir, { withFileTypes: true });
+        const entries = await fs.readdir(archiveRoot, { withFileTypes: true });
+        matches = [];
+        for (const entry of entries) {
+          if (entry.isDirectory() && pattern.test(entry.name)) matches.push(entry.name);
+        }
+        matches = matches.toSorted();
       } catch {
-        return null;
+        /** No archive directory at all: nothing can match. */
       }
-      const pattern = new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${escapeRegExp(name)}$`);
-      const matches = entries
-        .filter((entry) => entry.isDirectory() && pattern.test(entry.name))
-        .map((entry) => entry.name)
-        .toSorted();
+
       if (matches.length === 0) {
-        return null;
-      }
-      // Latest dated folder wins if the same change name was ever archived twice.
-      const anchorName = matches[matches.length - 1];
-      const commitPaths = await commitPathsForArchive(companionPath, name, anchorName);
-      await reconcileMainSpecFrontmatter(companionPath, anchorName);
-      return { anchorName, commitPaths };
-    },
-    async produce(name) {
-      const res = runCommand(companionPath, ["openspec", "archive", name, "--yes"]);
-      if (res.status !== 0) {
+        const active = await pathExists(path.join(companionPath, "openspec", "changes", target));
         return {
           ok: false,
-          produced: null,
-          message: res.stderr.trim() || res.stdout.trim() || "archive failed",
+          message: active
+            ? `mate: ${target} is still active and cannot be published. Run \`openspec archive ${target}\` first; publish only publishes archived changes.`
+            : `mate: no archived change matches "${target}". Archive it first with \`openspec archive ${target}\`, or pass a dated archive anchor.`,
         };
       }
-      // openspec prints: Change '<name>' archived as '<date>-<name>'.
-      const match = res.stdout.match(/archived as '([^']+)'/);
-      if (!match) {
-        return { ok: false, produced: null, message: "could not detect archived folder name" };
+      /** Two archives, no tiebreaker: picking one would publish an anchor nobody chose. */
+      if (matches.length > 1) {
+        return {
+          ok: false,
+          message: `mate: "${target}" matches ${matches.length} archives (${matches.join(", ")}). Pass one anchor explicitly.`,
+        };
       }
-      const commitPaths = await commitPathsForArchive(companionPath, name, match[1]);
-      await reconcileMainSpecFrontmatter(companionPath, match[1]);
-      return {
-        ok: true,
-        produced: { anchorName: match[1], commitPaths },
-        message: res.stdout.trim(),
-      };
+      return resolved(companionPath, target, matches[0]);
     },
     capSync() {
       return capSync(context);

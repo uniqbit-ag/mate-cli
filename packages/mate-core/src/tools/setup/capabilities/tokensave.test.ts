@@ -9,8 +9,10 @@ import { reconcileOpenCodeContributions } from "../providers/opencode";
 import {
   TOKENSAVE_SUPPORTED_AGENTS,
   TOKENSAVE_MIN_RUST_VERSION,
+  TOKENSAVE_STORE_CONFIG_FILE,
   TOKENSAVE_STORE_DIR,
   TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
+  ensureTokensaveBranchingPosture,
   tokensaveDeps,
   createTokensavePlugin,
 } from "./tokensave";
@@ -188,12 +190,32 @@ describe("tokensavePlugin.apply", () => {
     const originalHome = process.env.HOME;
     process.env.HOME = homeDir;
 
+    /** A per-project store exists, so apply's posture reconciliation actually writes. */
+    await fs.mkdir(path.join(repoDir, TOKENSAVE_STORE_DIR), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE),
+      JSON.stringify({ exclude: ["dist"] }, null, 2) + "\n",
+      "utf8",
+    );
+
     try {
       // Absent config stays absent.
       await tokensavePlugin.apply(
         makeCtx(homeDir, { repoPath: repoDir, providers: ["claude", "opencode"] }),
       );
       await expect(fs.access(configFile)).rejects.toThrow();
+
+      const repoConfig = JSON.parse(
+        await fs.readFile(
+          path.join(repoDir, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE),
+          "utf8",
+        ),
+      );
+      expect(repoConfig).toEqual({
+        exclude: ["dist"],
+        auto_track: false,
+        suppress_scope_warning: true,
+      });
 
       // Pre-existing config stays byte-identical.
       const original = `upload_enabled = true\ninstalled_agents = ["claude"]\n`;
@@ -397,6 +419,51 @@ describe("tokensavePlugin.apply", () => {
     expect(byRuntime.claude?.permissionEntries).toEqual(["mcp__tokensave__*"]);
   });
 
+  test("contributes no branch-tracking hook group, plugin, or MCP entry", async () => {
+    const ctx = makeCtx("/companion", { providers: ["claude", "opencode"] });
+    const byRuntime = tokensavePlugin.getRuntimeContributions!(ctx);
+
+    for (const contributions of Object.values(byRuntime)) {
+      expect(JSON.stringify(contributions)).not.toContain("branch");
+      expect((contributions as { plugins?: unknown[] }).plugins ?? []).toEqual([]);
+    }
+  });
+
+  test("keeps passing --git-hook no to the native installer", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+
+    await tokensavePlugin.apply(
+      makeCtx(companionDir, { repoPath: repoDir, providers: ["claude", "opencode"] }),
+    );
+
+    const installCalls = runMock.mock.calls.filter((c) => c[0][0] === "install");
+    expect(installCalls.length).toBe(2);
+    for (const call of installCalls) {
+      const args = call[0] as string[];
+      expect(args[args.indexOf("--git-hook") + 1]).toBe("no");
+    }
+  });
+
+  test("invokes no tokensave branch subcommand", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+    await fs.mkdir(path.join(repoDir, TOKENSAVE_STORE_DIR), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE),
+      "{}\n",
+      "utf8",
+    );
+
+    const ctx = makeCtx(companionDir, { repoPath: repoDir, providers: ["claude", "opencode"] });
+    await tokensavePlugin.apply(ctx);
+    await tokensavePlugin.teardown!(ctx);
+
+    expect(runMock.mock.calls.some((c) => (c[0] as string[]).includes("branch"))).toBe(false);
+  });
+
   test("apply does not write companion runtime config directly", async () => {
     const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
     tempRoots.push(companionDir);
@@ -495,5 +562,116 @@ describe("tokensavePlugin.isEnabled", () => {
         capabilities: [{ name: "graphify" }],
       }),
     ).toBe(false);
+  });
+});
+
+describe("ensureTokensaveBranchingPosture", () => {
+  async function makeStore(config?: unknown): Promise<string> {
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(repoDir);
+    if (config !== undefined) {
+      await fs.mkdir(path.join(repoDir, TOKENSAVE_STORE_DIR), { recursive: true });
+      await fs.writeFile(
+        path.join(repoDir, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE),
+        typeof config === "string" ? config : JSON.stringify(config, null, 2) + "\n",
+        "utf8",
+      );
+    }
+    return repoDir;
+  }
+
+  function configPath(repoDir: string): string {
+    return path.join(repoDir, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE);
+  }
+
+  test("writes the single-graph posture once a store exists", async () => {
+    const repoDir = await makeStore({ exclude: ["dist"] });
+
+    await ensureTokensaveBranchingPosture(repoDir);
+
+    const config = JSON.parse(await fs.readFile(configPath(repoDir), "utf8"));
+    expect(config.auto_track).toBe(false);
+    expect(config.suppress_scope_warning).toBe(true);
+  });
+
+  test("preserves keys Mate does not own", async () => {
+    const unowned = {
+      exclude: ["dist", "node_modules"],
+      max_file_size: 1048576,
+      artifact_extensions: [".md"],
+    };
+    const repoDir = await makeStore({ ...unowned, auto_track: true });
+
+    await ensureTokensaveBranchingPosture(repoDir);
+
+    const config = JSON.parse(await fs.readFile(configPath(repoDir), "utf8"));
+    expect(config.exclude).toEqual(unowned.exclude);
+    expect(config.max_file_size).toBe(unowned.max_file_size);
+    expect(config.artifact_extensions).toEqual(unowned.artifact_extensions);
+    expect(Object.keys(config).sort()).toEqual(
+      [...Object.keys(unowned), "auto_track", "suppress_scope_warning"].sort(),
+    );
+  });
+
+  test("is idempotent across repeated runs", async () => {
+    const repoDir = await makeStore({ exclude: ["dist"] });
+
+    await ensureTokensaveBranchingPosture(repoDir);
+    const first = await fs.readFile(configPath(repoDir), "utf8");
+    await ensureTokensaveBranchingPosture(repoDir);
+
+    expect(await fs.readFile(configPath(repoDir), "utf8")).toBe(first);
+  });
+
+  test("leaves an absent store alone", async () => {
+    const repoDir = await makeStore();
+
+    await ensureTokensaveBranchingPosture(repoDir);
+
+    await expect(fs.access(configPath(repoDir))).rejects.toThrow();
+  });
+
+  test("leaves an unparseable config untouched", async () => {
+    const broken = "{ not json";
+    const repoDir = await makeStore(broken);
+
+    await ensureTokensaveBranchingPosture(repoDir);
+
+    expect(await fs.readFile(configPath(repoDir), "utf8")).toBe(broken);
+  });
+
+  test("leaves a non-object config untouched", async () => {
+    const list = "[1, 2]";
+    const repoDir = await makeStore(list);
+
+    await ensureTokensaveBranchingPosture(repoDir);
+
+    expect(await fs.readFile(configPath(repoDir), "utf8")).toBe(list);
+  });
+});
+
+describe("tokensave branch databases", () => {
+  test("no Mate source path invokes tokensave branch removal or gc", async () => {
+    const srcRoot = path.resolve(import.meta.dir, "../../..");
+    const entries = await fs.readdir(srcRoot, { recursive: true, withFileTypes: true });
+    const sources = entries.filter(
+      (entry) =>
+        entry.isFile() &&
+        /\.tsx?$/.test(entry.name) &&
+        !/\.test\.tsx?$/.test(entry.name) &&
+        !entry.name.endsWith(".d.ts"),
+    );
+    expect(sources.length).toBeGreaterThan(0);
+
+    const offenders: string[] = [];
+    for (const entry of sources) {
+      const file = path.join(entry.parentPath ?? entry.path, entry.name);
+      const content = await fs.readFile(file, "utf8");
+      if (/\bbranch\s+(remove|removeall|gc)\b/.test(content) || /\[\s*"branch"/.test(content)) {
+        offenders.push(path.relative(srcRoot, file));
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });

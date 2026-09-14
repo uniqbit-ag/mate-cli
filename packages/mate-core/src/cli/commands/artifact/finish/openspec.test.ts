@@ -35,46 +35,115 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-describe("openspecFinisher.detectProduced", () => {
-  test("returns null when nothing is archived", async () => {
-    const root = await makeCompanion();
+async function resolve(companionPath: string, target: string) {
+  return openspecFinisher(companionPath).resolve(target);
+}
 
-    await expect(openspecFinisher(root).detectProduced("my-change")).resolves.toBeNull();
-  });
+async function seedActive(companionPath: string, name: string): Promise<void> {
+  const dir = path.join(companionPath, "openspec", "changes", name);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "tasks.md"), "- [ ] open\n", "utf8");
+}
 
-  test("returns null when the change is still active, so a stale same-name archive is not resumed", async () => {
-    const root = await makeCompanion();
-    await seedArchive(root, "2026-01-01-my-change");
-    const activeDir = path.join(root, "openspec", "changes", "my-change");
-    await fs.mkdir(activeDir, { recursive: true });
-    await fs.writeFile(path.join(activeDir, "tasks.md"), "- [ ] open\n", "utf8");
-
-    await expect(openspecFinisher(root).detectProduced("my-change")).resolves.toBeNull();
-  });
-
-  test("resumes the newest archive once the active change directory is gone", async () => {
+describe("openspecFinisher.resolve", () => {
+  test("a dated anchor resolves that exact archive without name matching", async () => {
     const root = await makeCompanion();
     await seedArchive(root, "2026-01-01-my-change");
     await seedArchive(root, "2026-07-14-my-change");
 
-    const produced = await openspecFinisher(root).detectProduced("my-change");
+    const result = await resolve(root, "2026-01-01-my-change");
 
-    expect(produced?.anchorName).toBe("2026-07-14-my-change");
+    expect(result).toEqual({
+      ok: true,
+      resolved: {
+        anchorName: "2026-01-01-my-change",
+        commitPaths: [
+          "openspec/changes/my-change",
+          "openspec/changes/archive/2026-01-01-my-change",
+        ],
+      },
+    });
   });
 
-  test("finds the dated archive folder with exact active, archive, and canonical spec file paths", async () => {
+  test("a dated anchor with no archive directory names openspec archive", async () => {
+    const root = await makeCompanion();
+
+    const result = await resolve(root, "2026-07-14-my-change");
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.message).toContain(
+      "openspec/changes/archive/2026-07-14-my-change",
+    );
+    expect(result.ok ? "" : result.message).toContain("openspec archive my-change");
+  });
+
+  test("a bare name matching exactly one archive resolves it", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-07-14-my-change");
+
+    const result = await resolve(root, "my-change");
+
+    expect(result.ok && result.resolved.anchorName).toBe("2026-07-14-my-change");
+  });
+
+  test("a bare name matching two archives is refused with both anchors", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-08-26-my-change");
+    await seedArchive(root, "2026-09-02-my-change");
+
+    const result = await resolve(root, "my-change");
+
+    expect(result.ok).toBe(false);
+    const message = result.ok ? "" : result.message;
+    expect(message).toContain("2026-08-26-my-change");
+    expect(message).toContain("2026-09-02-my-change");
+    expect(message).toContain("explicitly");
+  });
+
+  test("an unmatched target names openspec archive as the missing precondition", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-07-14-other-change");
+
+    const result = await resolve(root, "my-change");
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.message).toContain("openspec archive my-change");
+  });
+
+  test("an active-but-unarchived change is refused, not published", async () => {
+    const root = await makeCompanion();
+    await seedActive(root, "my-change");
+
+    const result = await resolve(root, "my-change");
+
+    expect(result.ok).toBe(false);
+    const message = result.ok ? "" : result.message;
+    expect(message).toContain("still active");
+    expect(message).toContain("openspec archive my-change");
+  });
+
+  test("a stale same-name archive resolves even while a new active change exists", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-01-01-my-change");
+    await seedActive(root, "my-change");
+
+    const result = await resolve(root, "my-change");
+
+    expect(result.ok && result.resolved.anchorName).toBe("2026-01-01-my-change");
+  });
+
+  test("stages the archive and every canonical spec its delta specs represent", async () => {
     const root = await makeCompanion();
     await seedArchive(root, "2026-07-14-my-change", ["z-capability", "a-capability"]);
 
-    await expect(openspecFinisher(root).detectProduced("my-change")).resolves.toEqual({
-      anchorName: "2026-07-14-my-change",
-      commitPaths: [
-        "openspec/changes/my-change",
-        "openspec/changes/archive/2026-07-14-my-change",
-        "openspec/specs/a-capability/spec.md",
-        "openspec/specs/z-capability/spec.md",
-      ],
-    });
+    const result = await resolve(root, "my-change");
+
+    expect(result.ok && result.resolved.commitPaths).toEqual([
+      "openspec/changes/my-change",
+      "openspec/changes/archive/2026-07-14-my-change",
+      "openspec/specs/a-capability/spec.md",
+      "openspec/specs/z-capability/spec.md",
+    ]);
   });
 
   test("includes nested delta spec files without staging their entire canonical capability", async () => {
@@ -95,33 +164,14 @@ describe("openspecFinisher.detectProduced", () => {
     await fs.mkdir(path.dirname(nested), { recursive: true });
     await fs.writeFile(nested, "example\n", "utf8");
 
-    await expect(openspecFinisher(root).detectProduced("my-change")).resolves.toEqual({
-      anchorName: folder,
-      commitPaths: [
-        "openspec/changes/my-change",
-        `openspec/changes/archive/${folder}`,
-        "openspec/specs/my-capability/examples/example.md",
-        "openspec/specs/my-capability/spec.md",
-      ],
-    });
-  });
+    const result = await resolve(root, "my-change");
 
-  test("does not match a different change name", async () => {
-    const root = await makeCompanion();
-    await seedArchive(root, "2026-07-14-other-change");
-
-    await expect(openspecFinisher(root).detectProduced("my-change")).resolves.toBeNull();
-  });
-
-  test("picks the latest dated folder when a name was archived twice", async () => {
-    const root = await makeCompanion();
-    await seedArchive(root, "2025-01-01-my-change");
-    await seedArchive(root, "2026-07-14-my-change");
-
-    await expect(openspecFinisher(root).detectProduced("my-change")).resolves.toEqual({
-      anchorName: "2026-07-14-my-change",
-      commitPaths: ["openspec/changes/my-change", "openspec/changes/archive/2026-07-14-my-change"],
-    });
+    expect(result.ok && result.resolved.commitPaths).toEqual([
+      "openspec/changes/my-change",
+      `openspec/changes/archive/${folder}`,
+      "openspec/specs/my-capability/examples/example.md",
+      "openspec/specs/my-capability/spec.md",
+    ]);
   });
 
   test("is enabled only when the openspec capability is present", async () => {
@@ -129,6 +179,29 @@ describe("openspecFinisher.detectProduced", () => {
 
     expect(finisher.isEnabled([{ name: "openspec" }])).toBe(true);
     expect(finisher.isEnabled([{ name: "graphify" }])).toBe(false);
+  });
+});
+
+describe("openspecFinisher scoped commit guard", () => {
+  test("a genuine post-archive deletion is staged", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-07-14-my-change");
+
+    const result = await resolve(root, "my-change");
+
+    expect(result.ok && result.resolved.commitPaths).toContain("openspec/changes/my-change");
+  });
+
+  test("an unrelated same-name active change is excluded from the staged paths", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-08-26-my-change");
+    await seedActive(root, "my-change");
+
+    const result = await resolve(root, "2026-08-26-my-change");
+
+    expect(result.ok && result.resolved.commitPaths).toEqual([
+      "openspec/changes/archive/2026-08-26-my-change",
+    ]);
   });
 });
 
@@ -192,17 +265,13 @@ scopes:
 ---`;
 
 describe("openspecFinisher frontmatter reconciliation", () => {
-  test("reconciles a canonical spec after a fresh archive", async () => {
+  test("repairs a canonical spec born bare by an out-of-band archive", async () => {
     const root = await makeCompanion();
     const folder = "2026-08-06-probe";
     await seedArchivedDelta(root, folder, "cap", SINGLE_SCOPE);
     await seedCanonical(root, "cap", BARE_CANONICAL);
 
-    const result = await openspecFinisher(root, () => ({
-      status: 0,
-      stdout: `Change 'probe' archived as '${folder}'.`,
-      stderr: "",
-    })).produce("probe");
+    const result = await openspecFinisher(root).resolve(folder);
 
     expect(result.ok).toBe(true);
     expect(await readCanonical(root, "cap")).toContain("repository: acme/product");
@@ -214,7 +283,7 @@ describe("openspecFinisher frontmatter reconciliation", () => {
     await seedArchivedDelta(root, folder, "cap", SINGLE_SCOPE);
     await seedCanonical(root, "cap", BARE_CANONICAL);
 
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
 
     const canonical = await readCanonical(root, "cap");
     expect(canonical.startsWith("---\n")).toBe(true);
@@ -249,7 +318,7 @@ scopes:
     );
     await seedCanonical(root, "cap", BARE_CANONICAL);
 
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
 
     const canonical = await readCanonical(root, "cap");
     expect(canonical).toContain("repository: acme/product");
@@ -265,7 +334,7 @@ scopes:
     await seedArchivedDelta(root, folder, "cap", SINGLE_SCOPE);
     await seedCanonical(root, "cap", BARE_CANONICAL);
 
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
 
     expect(await readCanonical(root, "cap")).toContain("repository: acme/product");
   });
@@ -276,7 +345,7 @@ scopes:
     await seedArchivedDelta(root, folder, "cap", SINGLE_SCOPE, "schema: mate-minimal\n");
     await seedCanonical(root, "cap", BARE_CANONICAL);
 
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
 
     expect(await readCanonical(root, "cap")).toContain("repository: acme/product");
   });
@@ -290,7 +359,7 @@ scopes:
       await seedArchivedDelta(root, folder, "cap", SINGLE_SCOPE, `schema: ${schema}\n`);
       await seedCanonical(root, "cap", BARE_CANONICAL);
 
-      await openspecFinisher(root).detectProduced("probe");
+      await openspecFinisher(root).resolve("probe");
 
       expect(await readCanonical(root, "cap")).toBe(BARE_CANONICAL);
     }
@@ -303,7 +372,7 @@ scopes:
       await seedArchivedDelta(root, folder, "cap", SINGLE_SCOPE, metadata);
       await seedCanonical(root, "cap", BARE_CANONICAL);
 
-      await openspecFinisher(root).detectProduced("probe");
+      await openspecFinisher(root).resolve("probe");
 
       expect(await readCanonical(root, "cap")).toBe(BARE_CANONICAL);
     }
@@ -316,7 +385,7 @@ scopes:
     const existing = `---\ntype: spec\ncapability: cap\nrepository: acme/other\nareas: [.]\ntags: [openspec/spec]\n---\n\n${BARE_CANONICAL}`;
     await seedCanonical(root, "cap", existing);
 
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
 
     expect(await readCanonical(root, "cap")).toBe(existing);
   });
@@ -340,7 +409,7 @@ scopes:
     );
     await seedCanonical(root, "cap", BARE_CANONICAL);
 
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
 
     expect(await readCanonical(root, "cap")).toBe(BARE_CANONICAL);
   });
@@ -351,7 +420,7 @@ scopes:
     await seedArchivedDelta(root, folder, "cap", "---\ntype: delta-spec\ncapability: cap\n---");
     await seedCanonical(root, "cap", BARE_CANONICAL);
 
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
 
     const canonical = await readCanonical(root, "cap");
     expect(canonical).toContain("type: spec");
@@ -367,9 +436,9 @@ scopes:
     await seedArchivedDelta(root, folder, "cap", SINGLE_SCOPE);
     await seedCanonical(root, "cap", BARE_CANONICAL);
 
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
     const once = await readCanonical(root, "cap");
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
 
     expect(await readCanonical(root, "cap")).toBe(once);
   });
@@ -378,9 +447,12 @@ scopes:
     const root = await makeCompanion();
     await seedArchive(root, "2026-08-06-probe");
 
-    await expect(openspecFinisher(root).detectProduced("probe")).resolves.toEqual({
-      anchorName: "2026-08-06-probe",
-      commitPaths: ["openspec/changes/probe", "openspec/changes/archive/2026-08-06-probe"],
+    await expect(openspecFinisher(root).resolve("probe")).resolves.toEqual({
+      ok: true,
+      resolved: {
+        anchorName: "2026-08-06-probe",
+        commitPaths: ["openspec/changes/probe", "openspec/changes/archive/2026-08-06-probe"],
+      },
     });
   });
 
@@ -388,7 +460,7 @@ scopes:
     const root = await makeCompanion();
     await seedArchivedDelta(root, "2026-08-06-probe", "cap", SINGLE_SCOPE);
 
-    await openspecFinisher(root).detectProduced("probe");
+    await openspecFinisher(root).resolve("probe");
 
     await expect(readCanonical(root, "cap")).rejects.toThrow();
   });
@@ -398,8 +470,8 @@ scopes:
     await seedArchivedDelta(root, "2026-08-06-probe", "cap", SINGLE_SCOPE);
     await seedCanonical(root, "cap", BARE_CANONICAL);
 
-    const produced = await openspecFinisher(root).detectProduced("probe");
+    const result = await openspecFinisher(root).resolve("probe");
 
-    expect(produced?.commitPaths).toContain("openspec/specs/cap/spec.md");
+    expect(result.ok && result.resolved.commitPaths).toContain("openspec/specs/cap/spec.md");
   });
 });

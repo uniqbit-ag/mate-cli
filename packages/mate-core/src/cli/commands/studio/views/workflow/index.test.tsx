@@ -194,7 +194,9 @@ describe("workflowPlan", () => {
     }
     const finish = workflowPlan().finish;
     expect(finish.what).toContain("committed, tagged, and pushed");
-    expect(finish.what).toContain("delta specs");
+    /** Publishing is terminal over an archive it did not create. */
+    expect(finish.what).toContain("already-archived");
+    expect(finish.what).not.toContain("delta specs");
     expect(finish.why).toContain("only sanctioned completion");
   });
 

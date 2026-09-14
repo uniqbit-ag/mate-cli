@@ -17,6 +17,7 @@ Simplify code by reducing complexity while preserving exact behavior. The goal i
 - Inspect the requested scope and its callers, callees, and tests before editing. Use the available code-graph tools before broad source scans.
 - Keep the refactor limited to the requested scope; do not make unrelated cleanup changes.
 - Run the relevant tests after each simplification. Do not modify tests merely to make a refactor pass.
+- Format touched files with the project's own formatter — detect it first (see Principle 2); never run a formatter the project has not adopted.
 - Run `mate cap index --tokensave` after code changes.
 - Never commit, push, or create a pull request unless the user explicitly asks.
 
@@ -66,6 +67,30 @@ Simplification means making code more consistent with the codebase, not imposing
 ```
 
 Simplification that breaks project consistency is not simplification — it's churn.
+
+**Formatting is a project convention, not yours.** Never reach for a formatter by habit. Reformatting with a tool the project has not adopted rewrites lines you never touched and buries the refactor in noise.
+
+Detect the formatter before formatting anything — first match wins:
+
+| Signal in the repo                                                                | Formatter to run                                                                 |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `format` / `fmt` script in `package.json`, `Makefile`, `justfile`, `Taskfile.yml` | Run that script — it encodes the project's intent and needs no further detection |
+| `biome.json` / `biome.jsonc`                                                      | `biome format --write`                                                           |
+| `.oxfmtrc.json`, or `oxfmt` in devDependencies                                    | `oxfmt`                                                                          |
+| `dprint.json` / `.dprint.jsonc`                                                   | `dprint fmt`                                                                     |
+| `.prettierrc*`, `prettier.config.*`, or a `prettier` key in `package.json`        | `prettier --write`                                                               |
+| `rustfmt.toml`, or any Cargo crate                                                | `cargo fmt`                                                                      |
+| `[tool.ruff]` in `pyproject.toml`                                                 | `ruff format`                                                                    |
+| `[tool.black]` in `pyproject.toml`                                                | `black`                                                                          |
+| Go module                                                                         | `gofmt -w` (or `goimports -w` if already used)                                   |
+| Only `.editorconfig`, or no signal at all                                         | Do not format — match the surrounding style by hand                              |
+
+Rules:
+
+- Invoke the project's pinned local binary through its package manager or runner, inferred from the lockfile (`bun`, `pnpm`, `yarn`, `npm`) — never a global install and never an `npx`-downloaded version, which may differ from the one that formatted the committed code.
+- If several formatters are configured, the `format` script decides. If there is no script and the signals conflict, ask which is canonical instead of picking one.
+- Format only the files you changed. A repo-wide format pass is a separate change with its own diff.
+- If the formatter rewrites far more than the lines you touched, its config disagrees with the committed code. Stop, revert the formatting, and report it — do not fold that drift into a simplification change.
 
 ### 3. Prefer Clarity Over Cleverness
 
@@ -134,7 +159,34 @@ If you can't answer these, you're not ready to simplify. Read more context first
 
 ### Step 2: Identify Simplification Opportunities
 
-Scan for these patterns — each one is a concrete signal, not a vague smell:
+#### Step 2a: Mechanical pre-scan (required)
+
+Run the scan before reading source. Its output **is** the candidate list — a pattern
+nobody looked for is a pattern nobody finds, and prose tables alone are read with a
+bias toward "this file looks fine".
+
+```
+PRE-SCAN THE REQUESTED SCOPE:
+1. Code graph, if available — tokensave_module_api (export surface vs. real
+   consumers), tokensave_dead_code, tokensave_similar (near-duplicate bodies),
+   tokensave_complexity / tokensave_largest (nesting, long functions)
+2. Unused-export detector, if the project already has one configured
+   (knip, ts-prune, eslint import-x/no-unused-modules, Python vulture)
+3. Grep for consumers when neither is available — including test files,
+   and including the bare symbol name, not just import statements
+```
+
+Do not skip the pre-scan because the file "looks clean". Judgment applies to the
+candidates it produces, not to whether to produce them. Report candidates you
+deliberately leave alone, with the reason.
+
+**A pre-scan hit is a question, not a verdict.** These tools find symbols nothing
+_imports_; they cannot see symbols resolved by name — framework exports, reflective
+lookups, config-referenced files. Every "unused export" candidate must clear the
+**Behavior-preservation rules for the module surface** below before you touch it.
+Read that section before acting on this list, not after.
+
+Then scan for these patterns — each one is a concrete signal, not a vague smell:
 
 **Structural complexity:**
 
@@ -166,6 +218,93 @@ Scan for these patterns — each one is a concrete signal, not a vague smell:
 | Over-engineered patterns  | Factory-for-a-factory, strategy-with-one-strategy            | Replace with the simple direct approach                   |
 | Redundant type assertions | Casting to a type that's already inferred                    | Remove the assertion                                      |
 
+**Module surface:**
+
+A module's public API should match what is actually consumed. Surface bloat is
+invisible inside a single file — it only shows up when you compare exports against
+callers, which is what the Step 2a pre-scan does.
+
+| Pattern                       | Signal                                                           | Simplification                                                      |
+| ----------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Over-exported module          | Export has no consumer outside its own file                      | Drop `export` — keep the symbol, narrow its visibility              |
+| Leaked intermediate types     | Type exported only to annotate a private helper or internal step | Unexport — but only if it appears in no exported signature          |
+| Speculative public API        | Export added "for later" with no caller                          | Unexport first; delete only per the dead-code rule above            |
+| Single-consumer bag-of-things | Many exports, exactly one importer                               | **Propose only** — API reshape, not a visibility change (see below) |
+| Re-export passthrough         | Barrel file that only forwards a single symbol                   | **Propose only** — changes module resolution repo-wide (see below)  |
+
+Narrowing visibility is not inlining — the named helper survives, so this does not
+conflict with the over-simplification traps in Principle 4. Only inline a helper when
+the name itself carries no meaning at the call site.
+
+#### Behavior-preservation rules for the module surface
+
+Principle 1 governs this table without exception. Visibility is not behavior — until
+something resolves the symbol by name rather than by import. Then it is.
+
+**Unexport, don't delete.** In a type-checked project, removing `export` is verified by
+the compiler: any importer becomes a compile error, so a mistake fails loudly and
+immediately. Deleting the symbol has no such net. Narrow visibility as its own step;
+treat deletion as a separate decision under the dead-code rule, not as part of the
+same edit.
+
+**That safety net requires a type checker that actually runs over the file.** Plain
+JavaScript, TypeScript with `checkJs` off, or a project with no `tsc --noEmit` gate
+gets no compile error — a broken import fails at runtime instead, possibly only on one
+code path. In an unchecked project, do not unexport on pre-scan evidence alone: confirm
+each consumer by grep first, or leave the export and report it.
+
+**A test is a consumer.** If the only importer is a test file, the export is load-
+bearing — unexporting it breaks the test, and Principle 1 forbids editing tests to make
+a refactor pass. Leave it exported. "No production consumer" is not "no consumer";
+report it as a possible test-only seam instead of acting on it.
+
+**A type used in an exported signature stays exported.** If an exported function takes
+or returns the type, consumers need to name it — unexporting breaks call sites and
+declaration emit even though nothing imports the type directly today. Only unexport a
+type that appears exclusively in module-private positions.
+
+**Never touch an export the framework resolves by name.** These have no importer
+anywhere by design, so "no consumer found" is meaningless for them — the pre-scan and
+every unused-export detector will report them as dead, and they are not:
+
+```
+FRAMEWORK-RESOLVED — OUT OF SCOPE, DO NOT UNEXPORT OR RENAME:
+- Next.js app router: default, metadata, generateMetadata, generateStaticParams,
+  revalidate, dynamic, runtime, viewport, route handlers (GET/POST/...),
+  middleware, error/loading/not-found boundaries
+- Next.js pages router: default, getServerSideProps, getStaticProps, getStaticPaths
+- Test and story files: Storybook CSF (default + named story exports), fixtures,
+  setup files referenced by config rather than imported
+- Package entry points: anything reachable from package.json exports/main/types,
+  or from a documented public API
+- Config-referenced modules: paths named in tsconfig, bundler, or tool config
+- Reflective resolution: dynamic import() with a computed specifier, glob imports
+  (import.meta.glob, require.context), DI containers, decorators, plugin registries
+```
+
+**Propose-only rows are not yours to apply.** Collapsing a multi-export module to one
+entry point, or deleting a barrel, is an API reshape: it rewrites call sites in files
+outside the requested scope, changes module resolution for deep importers, and is a
+design decision rather than a behavior-preserving edit. Both collide with Principle 5.
+Describe the change and the affected files, then stop and let the user decide — the
+same treatment the prop-drilling case gets under React guidance.
+
+**When the pre-scan flags a symbol you cannot prove is unreferenced, leave it and say
+so.** An export you were unsure about and kept costs a line of explanation. An export
+you removed on a guess costs a production incident. Unverifiable candidates are
+reported, not acted on.
+
+```
+BEFORE REMOVING ANY export, ALL MUST HOLD:
+[ ] Not framework-resolved (checked against the list above)
+[ ] Not reachable from a package entry point or documented API
+[ ] No importer anywhere — including tests, stories, and config
+[ ] If a type: appears in no exported signature
+[ ] A type checker covers this file and will run before the change is accepted
+[ ] The symbol name greps clean outside its own file
+Any box unchecked → report the candidate, do not touch it.
+```
+
 ### Step 3: Apply Changes Incrementally
 
 Make one simplification at a time. Run tests after each change. **Submit refactoring changes separately from feature or bug fix changes.** A PR that refactors and adds a feature is two PRs — split them.
@@ -173,9 +312,11 @@ Make one simplification at a time. Run tests after each change. **Submit refacto
 ```
 FOR EACH SIMPLIFICATION:
 1. Make the change
-2. Run the test suite
-3. If tests pass → continue to the next simplification; commit only if the user explicitly asks
-4. If tests fail → revert and reconsider
+2. Run the type checker / compiler, then the test suite
+   (visibility changes surface as compile errors, not test failures — a green
+    test run alone does not prove an unexport was safe)
+3. If both pass → continue to the next simplification; commit only if the user explicitly asks
+4. If either fails → revert and reconsider
 ```
 
 Avoid batching multiple simplifications into a single untested change. If something breaks, you need to know which simplification caused it.
@@ -184,7 +325,9 @@ Avoid batching multiple simplifications into a single untested change. If someth
 
 ### Step 4: Verify the Result
 
-After all simplifications, step back and evaluate the whole:
+Run the project's formatter (detected in Principle 2) over the files you touched, then re-run the type checker and test suite — formatting must never be the last unverified step.
+
+Then step back and evaluate the whole:
 
 ```
 COMPARE BEFORE AND AFTER:
@@ -327,6 +470,13 @@ function UserBadge({ user }: Props) {
 - Simplifying code you don't fully understand
 - Batching many simplifications into one large, hard-to-review commit
 - Refactoring code outside the scope of the current task without being asked
+- Deleting an export because a tool reported it unused, without checking whether the
+  framework resolves it by name (`page.tsx`, `route.ts`, stories, config-referenced files)
+- Acting on a pre-scan candidate you could not verify — report it instead
+- Treating a green test run as proof a visibility change was safe without a type check
+- Unexporting a symbol whose only importer is a test, then editing the test to match
+- Applying a propose-only row (module collapse, barrel deletion) without user sign-off
+- Trusting "the compiler would catch it" in a project the type checker does not cover
 
 ## Verification
 
@@ -334,10 +484,20 @@ After completing a simplification pass:
 
 - [ ] All existing tests pass without modification
 - [ ] Build succeeds with no new warnings
-- [ ] Linter/formatter passes (no style regressions)
+- [ ] The project's own formatter was detected and run on the touched files — no formatter the project has not adopted was used
+- [ ] Formatting touched only the changed files (no repo-wide reformat mixed in)
+- [ ] Linter passes (no style regressions)
 - [ ] Each simplification is a reviewable, incremental change
 - [ ] The diff is clean — no unrelated changes mixed in
 - [ ] Simplified code follows project conventions (checked against CLAUDE.md or equivalent)
 - [ ] No error handling was removed or weakened
 - [ ] No dead code was left behind (unused imports, unreachable branches)
+- [ ] The Step 2a pre-scan was run, and every candidate is either fixed or explained
+- [ ] Export surface matches actual consumers — nothing exported without a caller outside its file
+- [ ] Type checker passes — no unexport broke an importer
+- [ ] No framework-resolved export was unexported, renamed, or deleted
+- [ ] Every removed `export` cleared all boxes of the pre-removal checklist
+- [ ] No test was edited to accommodate a visibility change
+- [ ] Propose-only findings were reported, not applied
+- [ ] Behavior is bit-for-bit identical: same inputs, outputs, side effects, error paths
 - [ ] A teammate or review agent would approve the change as a net improvement

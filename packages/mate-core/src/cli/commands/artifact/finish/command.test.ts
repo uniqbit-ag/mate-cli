@@ -18,42 +18,38 @@ function makeContext(): LaunchContext {
   };
 }
 
-// A finisher that records what the command asked of it. detectProduced returns null and
-// produce/commit are wired so the happy path runs end to end through a stub git.
-function recordingFinisher(record: string[], enabled = true): ArtifactFinisher {
+// A finisher that records what the command asked of it. `resolve` succeeds so the happy
+// path runs end to end through a stub git; `resolveError` drives the refusal cases.
+function recordingFinisher(
+  record: string[],
+  options: { enabled?: boolean; resolveError?: string } = {},
+): ArtifactFinisher {
+  const enabled = options.enabled ?? true;
   return {
     type: "openspec",
     disabledReason: "mate: the openspec capability must be enabled to run artifact publish.",
     isEnabled: (caps) => enabled && caps.some((c) => c.name === "openspec"),
-    async validate() {
-      record.push("validate");
-      return { valid: true, errors: [] };
-    },
-    async isComplete() {
-      record.push("isComplete");
-      return { complete: true, total: 1, remaining: 0 };
-    },
-    async detectProduced() {
-      record.push("detectProduced");
-      return null;
-    },
-    async produce() {
-      record.push("produce");
-      return {
-        ok: true,
-        produced: { anchorName: "2026-07-14-x", commitPaths: ["openspec"] },
-        message: "",
-      };
+    async resolve(target) {
+      record.push(`resolve:${target}`);
+      return options.resolveError
+        ? { ok: false, message: options.resolveError }
+        : { ok: true, resolved: { anchorName: "2026-07-14-x", commitPaths: ["openspec"] } };
     },
   };
 }
 
-function stubGit(record: string[] = []): GitOps {
+function stubGit(record: string[] = [], branch = "main"): GitOps {
   return {
-    async headRef() {
-      return "HEAD";
+    async currentBranch() {
+      return branch;
+    },
+    async defaultBranch() {
+      return "main";
     },
     async changedPaths() {
+      return [];
+    },
+    async stagedPaths() {
       return [];
     },
     async add() {},
@@ -61,7 +57,6 @@ function stubGit(record: string[] = []): GitOps {
       return true;
     },
     async commit() {},
-    async restorePaths() {},
     async hasUpstream() {
       return false;
     },
@@ -83,6 +78,8 @@ function stubGit(record: string[] = []): GitOps {
 interface HarnessOptions {
   capabilities?: CapabilityConfig[];
   resolveError?: unknown;
+  resolveFailure?: string;
+  branch?: string;
   finisherFor?: (type: string) => FinisherFactory | undefined;
   gitError?: string;
   gitRecord?: string[];
@@ -104,10 +101,12 @@ function makeDeps(
       return makeContext();
     },
     loadCapabilities: async () => options.capabilities ?? [{ name: "openspec" }],
-    selectFinisher: options.finisherFor ?? (() => () => recordingFinisher(record)),
+    selectFinisher:
+      options.finisherFor ??
+      (() => () => recordingFinisher(record, { resolveError: options.resolveFailure })),
     git: () => {
       if (options.gitError) throw new Error(options.gitError);
-      return stubGit(options.gitRecord);
+      return stubGit(options.gitRecord, options.branch);
     },
     stdout: (l) => stdout.push(l),
     stderr: (l) => stderr.push(l),
@@ -130,7 +129,7 @@ describe("runArtifactPublishCommand", () => {
     await runArtifactPublishCommand(["--json"], deps);
 
     expect(record).toEqual([]);
-    expect(stderr.join("\n")).toContain("requires a change name");
+    expect(stderr.join("\n")).toContain("requires an archive anchor or change name");
     expect(process.exitCode).toBe(1);
   });
 
@@ -147,7 +146,7 @@ describe("runArtifactPublishCommand", () => {
     await runArtifactPublishCommand(["--type", "openspec", "my-change", "--json"], deps);
 
     expect(selectedType).toBe("openspec");
-    expect(record).toContain("produce");
+    expect(record).toContain("resolve:my-change");
   });
 
   test("unknown artifact type fails clearly", async () => {
@@ -197,23 +196,83 @@ describe("runArtifactPublishCommand", () => {
     expect(gitRecord).not.toContain("push");
   });
 
-  test("--force preceding the name still bypasses the completeness guard", async () => {
+  test("--force is no longer a flag, so it is read as the positional target", async () => {
     const record: string[] = [];
-    const { deps } = makeDeps(record);
+    const { deps, stdout } = makeDeps(record);
 
     await runArtifactPublishCommand(["--force", "my-change", "--json"], deps);
 
-    expect(record).toContain("produce");
-    expect(record).not.toContain("isComplete");
+    /** `--force` consumes `my-change` as its value, leaving no positional at all. */
+    const result = JSON.parse(stdout[0] ?? "{}") as { name?: string };
+    expect(result.name).toBeUndefined();
+    expect(record).toEqual([]);
+    expect(process.exitCode).toBe(1);
   });
 
-  test("serializes a Git-root guard failure as JSON before any finish mutation", async () => {
+  test("an unresolvable target is reported without any mutation", async () => {
+    const record: string[] = [];
+    const { deps, stdout } = makeDeps(record, {
+      resolveFailure: "mate: my-change is still active. Run `openspec archive my-change` first.",
+    });
+
+    await runArtifactPublishCommand(["my-change", "--json"], deps);
+
+    const result = JSON.parse(stdout[0] ?? "{}") as {
+      step: string;
+      status: string;
+      message: string;
+    };
+    expect(result.step).toBe("resolve");
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("openspec archive my-change");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("an ambiguous target is refused with every matching anchor", async () => {
+    const record: string[] = [];
+    const { deps, stdout } = makeDeps(record, {
+      resolveFailure: 'mate: "x" matches 2 archives (2026-08-26-x, 2026-09-02-x).',
+    });
+
+    await runArtifactPublishCommand(["x", "--json"], deps);
+
+    const result = JSON.parse(stdout[0] ?? "{}") as { step: string; message: string };
+    expect(result.step).toBe("resolve");
+    expect(result.message).toContain("2026-08-26-x");
+    expect(result.message).toContain("2026-09-02-x");
+  });
+
+  test("an off-default branch is refused after resolve and before any mutation", async () => {
+    const record: string[] = [];
+    const gitRecord: string[] = [];
+    const { deps, stdout } = makeDeps(record, { branch: "feature/x", gitRecord });
+
+    await runArtifactPublishCommand(["my-change", "--json"], deps);
+
+    const result = JSON.parse(stdout[0] ?? "{}") as {
+      step: string;
+      status: string;
+      message: string;
+    };
+    expect(result.step).toBe("branch-guard");
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("feature/x");
+    expect(gitRecord).not.toContain("push");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("serializes a Git-root guard failure as JSON before any publish mutation", async () => {
     const record: string[] = [];
     const { deps, stdout } = makeDeps(record, { gitError: "working repo target" });
 
     await runArtifactPublishCommand(["my-change", "--json"], deps);
 
-    const result = JSON.parse(stdout[0] ?? "{}") as { status: string; message: string };
+    const result = JSON.parse(stdout[0] ?? "{}") as {
+      status: string;
+      step: string;
+      message: string;
+    };
+    expect(result.step).toBe("resolve");
     expect(result.status).toBe("error");
     expect(result.message).toContain("publish Git guard rejected");
     expect(result.message).toContain("working repo target");

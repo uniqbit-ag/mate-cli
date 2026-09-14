@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig } from "../../../../lib/orchestrator/types";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
-import type { GitOps } from "../finish/git";
+import type { GitOps, WorkingTreeChange } from "../finish/git";
 import { runArtifactPendingCommand, type PendingCommandDeps } from "./command";
 import type { ArchiveEntry } from "./discovery";
 
@@ -22,10 +22,16 @@ function makeContext(): LaunchContext {
   };
 }
 
-function stubGit(uncommitted: string[] = []): GitOps {
+function stubGit(
+  uncommitted: string[] = [],
+  kinds: Record<string, WorkingTreeChange> = {},
+): GitOps {
   return {
     async changedPaths() {
       return uncommitted;
+    },
+    async changedPathKinds() {
+      return kinds;
     },
   } as unknown as GitOps;
 }
@@ -45,6 +51,7 @@ function entry(
     tag: `openspec/${anchor}`,
     uncommittedPaths,
     uncommittedSpecs,
+    uncommittedSpecChanges: uncommittedSpecs.map((path) => ({ path, kind: "modified" })),
     state,
   };
 }
@@ -147,7 +154,7 @@ describe("mate artifact pending", () => {
     ]);
   });
 
-  test("reports uncommitted specs no pending change accounts for", async () => {
+  test("reports an unattributed spec no archive names as such", async () => {
     await runArtifactPendingCommand([], {
       ...baseDeps({
         git: () => stubGit(["openspec/specs/orphan/spec.md"]),
@@ -160,7 +167,37 @@ describe("mate artifact pending", () => {
       "No archived changes have uncommitted content.",
       "",
       "1 uncommitted spec not accounted for by a pending change:",
-      "  openspec/specs/orphan/spec.md",
+      "  openspec/specs/orphan/spec.md  [modified]",
+      "       no archive names this spec",
+    ]);
+  });
+
+  test("emits an unattributed spec as an attributed object in JSON", async () => {
+    await runArtifactPendingCommand(["--json"], {
+      ...baseDeps({
+        git: () => stubGit(["openspec/specs/orphan/spec.md"]),
+        discover: async () => [],
+      }),
+      ...sink(),
+    });
+
+    expect(JSON.parse(out[0]).unattributedSpecs).toEqual([
+      { path: "openspec/specs/orphan/spec.md", kind: "modified", touchedByArchives: [] },
+    ]);
+  });
+
+  test("reports an unattributed spec added by untracked work as new", async () => {
+    await runArtifactPendingCommand(["--json"], {
+      ...baseDeps({
+        git: () =>
+          stubGit(["openspec/specs/orphan/spec.md"], { "openspec/specs/orphan/spec.md": "new" }),
+        discover: async () => [],
+      }),
+      ...sink(),
+    });
+
+    expect(JSON.parse(out[0]).unattributedSpecs).toEqual([
+      { path: "openspec/specs/orphan/spec.md", kind: "new", touchedByArchives: [] },
     ]);
   });
 
@@ -267,6 +304,64 @@ describe("mate artifact pending over a real archive", () => {
     );
     return root;
   }
+
+  async function companionWithCommittedArchive(): Promise<string> {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-pending-cmd-"));
+    roots.push(root);
+    const specs = path.join(
+      root,
+      "openspec",
+      "changes",
+      "archive",
+      "2026-09-07-acme",
+      "specs",
+      "widget-api",
+    );
+    await fs.mkdir(specs, { recursive: true });
+    await fs.writeFile(path.join(specs, "spec.md"), "## ADDED Requirements\n", "utf8");
+    return root;
+  }
+
+  /** The orphan case the flat path list could not express: recoverable by explicit publish. */
+  test("prints each unattributed spec with the archives that name it", async () => {
+    const companion = await companionWithCommittedArchive();
+
+    await runArtifactPendingCommand([], {
+      ensureUnambiguousCompanion: async () => true,
+      resolveContext: async () => ({ ...makeContext(), companionPath: companion }),
+      loadCapabilities: async () => [{ name: "openspec" } as CapabilityConfig],
+      git: () => stubGit(["openspec/specs/widget-api/spec.md"]),
+      ...sink(),
+    });
+
+    expect(out).toEqual([
+      "No archived changes have uncommitted content.",
+      "",
+      "1 uncommitted spec not accounted for by a pending change:",
+      "  openspec/specs/widget-api/spec.md  [modified]",
+      "       publishes via 2026-09-07-acme  (archive committed)",
+    ]);
+  });
+
+  test("carries the same attribution in JSON as the human-readable output", async () => {
+    const companion = await companionWithCommittedArchive();
+
+    await runArtifactPendingCommand(["--json"], {
+      ensureUnambiguousCompanion: async () => true,
+      resolveContext: async () => ({ ...makeContext(), companionPath: companion }),
+      loadCapabilities: async () => [{ name: "openspec" } as CapabilityConfig],
+      git: () => stubGit(["openspec/specs/widget-api/spec.md"]),
+      ...sink(),
+    });
+
+    expect(JSON.parse(out[0]).unattributedSpecs).toEqual([
+      {
+        path: "openspec/specs/widget-api/spec.md",
+        kind: "modified",
+        touchedByArchives: [{ anchor: "2026-09-07-acme", state: "committed" }],
+      },
+    ]);
+  });
 
   test("reports archive prose as data and never as arguments or extra entries", async () => {
     const companion = await companionWithInjectedArchive();

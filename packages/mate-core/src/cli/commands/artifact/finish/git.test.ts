@@ -67,6 +67,24 @@ describe("defaultGitOps", () => {
     ]);
   });
 
+  test("classifies new and modified working-tree paths", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-git-"));
+    tempRoots.push(root);
+    const modifiedPath = path.join(root, "modified.txt");
+    await fs.writeFile(modifiedPath, "before\n", "utf8");
+    git(root, ["init", "-q"]);
+    configureGit(root);
+    git(root, ["add", "."]);
+    git(root, ["commit", "-qm", "initial"]);
+    await fs.writeFile(modifiedPath, "after\n", "utf8");
+    await fs.writeFile(path.join(root, "new.txt"), "new\n", "utf8");
+
+    await expect(defaultGitOps(root).changedPathKinds?.()).resolves.toEqual({
+      "modified.txt": "modified",
+      "new.txt": "new",
+    });
+  });
+
   test("reports only paths already staged in the index", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-git-"));
     tempRoots.push(root);
@@ -182,25 +200,54 @@ describe("defaultGitOps", () => {
     );
   });
 
-  test("restorePaths cleans produced tracked and untracked paths only", async () => {
+  test("reports the checked-out branch and null in a detached HEAD", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-git-"));
     tempRoots.push(root);
-    await fs.writeFile(path.join(root, "produced.txt"), "before\n", "utf8");
-    await fs.writeFile(path.join(root, "unrelated.txt"), "before\n", "utf8");
-    git(root, ["init", "-q"]);
+    git(root, ["init", "-q", "-b", "trunk"]);
     configureGit(root);
+    await fs.writeFile(path.join(root, "seed.txt"), "seed\n", "utf8");
     git(root, ["add", "."]);
     git(root, ["commit", "-qm", "initial"]);
 
-    await fs.writeFile(path.join(root, "produced.txt"), "changed\n", "utf8");
-    await fs.mkdir(path.join(root, "archive", "nested"), { recursive: true });
-    await fs.writeFile(path.join(root, "archive", "nested", "proposal.md"), "archive\n", "utf8");
-    await fs.writeFile(path.join(root, "unrelated.txt"), "preserved\n", "utf8");
+    const ops = defaultGitOps(root);
+    await expect(ops.currentBranch()).resolves.toBe("trunk");
 
-    await defaultGitOps(root).restorePaths("HEAD", ["produced.txt", "archive"]);
+    git(root, ["checkout", "-q", "--detach", "HEAD"]);
 
-    expect(await fs.readFile(path.join(root, "produced.txt"), "utf8")).toBe("before\n");
-    await expect(fs.access(path.join(root, "archive"))).rejects.toThrow();
-    expect(await fs.readFile(path.join(root, "unrelated.txt"), "utf8")).toBe("preserved\n");
+    await expect(defaultGitOps(root).currentBranch()).resolves.toBeNull();
+  });
+
+  test("default branch prefers the configured remote HEAD", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-git-"));
+    tempRoots.push(root);
+    const remote = path.join(root, "remote.git");
+    const seed = path.join(root, "seed");
+    const local = path.join(root, "local");
+    git(root, ["init", "--bare", "-q", "-b", "release", remote]);
+    git(root, ["clone", "-q", remote, seed]);
+    configureGit(seed);
+    await fs.writeFile(path.join(seed, "seed.txt"), "seed\n", "utf8");
+    git(seed, ["add", "."]);
+    git(seed, ["commit", "-qm", "initial"]);
+    git(seed, ["push", "-qu", "origin", "HEAD:release"]);
+    git(root, ["clone", "-q", remote, local]);
+    configureGit(local);
+    git(local, ["config", "init.defaultBranch", "ignored"]);
+    git(local, ["remote", "set-head", "origin", "release"]);
+
+    await expect(defaultGitOps(local).defaultBranch()).resolves.toBe("release");
+  });
+
+  test("default branch falls back to init.defaultBranch, then main", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-git-"));
+    tempRoots.push(root);
+    git(root, ["init", "-q"]);
+    configureGit(root);
+
+    await expect(defaultGitOps(root).defaultBranch()).resolves.toBe("main");
+
+    git(root, ["config", "init.defaultBranch", "trunk"]);
+
+    await expect(defaultGitOps(root).defaultBranch()).resolves.toBe("trunk");
   });
 });

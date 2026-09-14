@@ -8,6 +8,7 @@ import {
 import { resolveForCapability } from "../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import {
+  ensureTokensaveBranchingPosture,
   ensureTokensaveStoreExcluded,
   TOKENSAVE_STORE_DIR,
 } from "../../../tools/setup/capabilities/tokensave";
@@ -24,6 +25,7 @@ export interface SyncCapDeps {
   loadCapabilities?: () => Promise<CapabilityConfig[]>;
   isTokensaveInitialized?: () => Promise<boolean>;
   ensureTokensaveStoreExcluded?: (repoPath: string) => Promise<void>;
+  ensureTokensaveBranchingPosture?: (repoPath: string) => Promise<void>;
   runGraphify?: CapRunner;
   runTokensave?: CapRunner;
   onStepStart?: (step: SyncCapStep) => void;
@@ -122,6 +124,8 @@ export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {})
   const ensureCompanion = deps.ensureUnambiguousCompanion ?? ensureUnambiguousCompanion;
   const isTokensaveInitialized = deps.isTokensaveInitialized ?? defaultIsTokensaveInitialized;
   const ensureStoreExcluded = deps.ensureTokensaveStoreExcluded ?? ensureTokensaveStoreExcluded;
+  const ensureBranchingPosture =
+    deps.ensureTokensaveBranchingPosture ?? ensureTokensaveBranchingPosture;
   const runGraphify = deps.runGraphify ?? runGraphifyCapCommand;
   const runTokensave = deps.runTokensave ?? runTokensaveCapCommand;
 
@@ -152,18 +156,22 @@ export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {})
 
   if (!options.includeGraphify && hasTokensaveCapability(capabilities)) {
     onStepStart("tokensave");
+    const repoPath = process.env.MATE_REPO_PATH ?? process.cwd();
     if (!(await isTokensaveInitialized())) {
-      await ensureStoreExcluded(process.env.MATE_REPO_PATH ?? process.cwd());
+      await ensureStoreExcluded(repoPath);
       const initOk = await runCapStep(() => runTokensave(["init"]));
       if (!initOk) {
         failed = true;
         onStepDone("tokensave", false);
       } else {
+        /** The store config only exists once `tokensave init` has created it. */
+        await ensureBranchingPosture(repoPath);
         const syncOk = await runCapStep(() => runTokensave(["sync"]));
         if (!syncOk) failed = true;
         onStepDone("tokensave", syncOk);
       }
     } else {
+      await ensureBranchingPosture(repoPath);
       const syncOk = await runCapStep(() => runTokensave(["sync"]));
       if (!syncOk) failed = true;
       onStepDone("tokensave", syncOk);

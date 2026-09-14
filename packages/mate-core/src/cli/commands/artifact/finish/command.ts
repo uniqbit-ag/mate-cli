@@ -20,7 +20,7 @@ export interface PublishCommandDeps {
 }
 
 /** Presence-only flags; every other `--flag` consumes the following token as its value. */
-const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["force", "no-push", "json"]);
+const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["no-push", "json"]);
 
 /**
  * First non-flag token. Consumes the value of a value-taking flag exactly as
@@ -44,22 +44,22 @@ async function defaultLoadCapabilities(context: LaunchContext): Promise<Capabili
 }
 
 /**
- * @command mate artifact publish <name>
- * @description Finishes and archives a completed artifact/change named `<name>`.
- * Resolves the launch context for the current working repo, loads the enabled
- * capabilities, selects a {@link FinisherFactory} for `--type` (defaulting to
- * `DEFAULT_FINISHER_TYPE`, e.g. an OpenSpec change), and — if that finisher is
- * enabled for this repo's capabilities — runs {@link runFinishEngine} to
- * validate, produce, and commit/push the finish artifacts via {@link GitOps}.
+ * @command mate artifact publish <target>
+ * @description Publishes an already-archived artifact/change. Resolves the launch
+ * context for the current working repo, loads the enabled capabilities, selects a
+ * {@link FinisherFactory} for `--type` (defaulting to `DEFAULT_FINISHER_TYPE`, e.g. an
+ * OpenSpec change), and — if that finisher is enabled for this repo's capabilities —
+ * runs {@link runFinishEngine} to resolve the archive and commit/tag/push it via
+ * {@link GitOps}. Archiving is a precondition performed by the archive workflow.
  * @flags
- * - `<name>` — required positional: the change/artifact name to finish.
+ * - `<target>` — required positional: a dated archive anchor (`YYYY-MM-DD-<name>`), or a
+ *   change name that matches exactly one archive.
  * - `--type <type>` — finisher type to use; see `knownFinisherTypes()`.
- * - `--force` — bypass the completion guard; unrelated companion work is always preserved.
- * - `--no-push` — commit locally but skip pushing.
+ * - `--no-push` — commit and tag locally but skip the remote sync and push.
  * - `--json` — emit machine-readable JSON result instead of human-readable text.
  * @remarks No-ops (with a message on stderr) when the selected finisher is
- * disabled for the repo's configured capabilities — nothing is validated,
- * produced, or mutated in that case.
+ * disabled for the repo's configured capabilities — nothing is resolved or mutated
+ * in that case.
  */
 export async function runArtifactPublishCommand(
   argv: string[],
@@ -69,14 +69,13 @@ export async function runArtifactPublishCommand(
   const emitErr = deps.stderr ?? ((line: string) => process.stderr.write(`${line}\n`));
 
   const flags = parseFlags(argv, BOOLEAN_FLAGS);
-  const force = flags.force === true;
   const noPush = flags["no-push"] === true;
   const json = flags.json === true;
   const type = typeof flags.type === "string" ? flags.type : DEFAULT_FINISHER_TYPE;
   const name = positionalName(argv);
 
   if (!name) {
-    emitErr("mate: artifact publish requires a change name.");
+    emitErr("mate: artifact publish requires an archive anchor or change name.");
     process.exitCode = 1;
     return;
   }
@@ -141,7 +140,7 @@ export async function runArtifactPublishCommand(
           anchorName: null,
           tag: null,
           resumed: false,
-          step: "commit",
+          step: "resolve",
           status: "error",
           conflictedPaths: [],
           local: { committed: false, tagged: false, pushed: false },
@@ -157,7 +156,7 @@ export async function runArtifactPublishCommand(
 
   await runFinishEngine(
     finisher,
-    { name, force, noPush },
+    { name, noPush },
     { git, json, stdout: emitOut, stderr: emitErr },
   );
 }

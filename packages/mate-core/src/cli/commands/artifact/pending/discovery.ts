@@ -1,8 +1,34 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import type { WorkingTreeChange } from "../finish/git";
+
 /** Whether an archived change still has uncommitted content in the companion working tree. */
 export type CommitState = "committed" | "uncommitted";
+
+/** An archive whose delta specs name a canonical spec. Evidence, never proof of authorship. */
+export interface SpecAttribution {
+  /** Dated archive directory name, e.g. `2026-09-07-acme`. */
+  anchor: string;
+  state: CommitState;
+}
+
+/** An uncommitted canonical spec no pending change accounts for, with its attribution. */
+export interface UnattributedSpec {
+  /** Companion-relative POSIX path of the canonical spec. */
+  path: string;
+  /** Whether the spec is new or already tracked and modified. */
+  kind: WorkingTreeChange;
+  /** Every archive naming this spec, oldest anchor first; empty when none does. */
+  touchedByArchives: SpecAttribution[];
+}
+
+export interface UncommittedSpecChange {
+  /** Companion-relative POSIX path of the canonical spec. */
+  path: string;
+  /** Whether the spec is new or already tracked and modified. */
+  kind: WorkingTreeChange;
+}
 
 export interface ArchiveEntry {
   /** Change name with the archive date prefix stripped. */
@@ -13,10 +39,12 @@ export interface ArchiveEntry {
   path: string;
   /** Tag `mate artifact publish` creates for this anchor. */
   tag: string;
-  /** Uncommitted paths this change owns outright: its archive and active directories. */
+  /** Uncommitted owned directories that make this change pending. */
   uncommittedPaths: string[];
   /** Uncommitted canonical specs this change's delta specs applied to. */
   uncommittedSpecs: string[];
+  /** Uncommitted canonical specs with their working-tree change kind. */
+  uncommittedSpecChanges: UncommittedSpecChange[];
   state: CommitState;
 }
 
@@ -55,6 +83,30 @@ function matching(uncommittedPaths: string[], owned: string[]): string[] {
       ),
     ),
   ].toSorted();
+}
+
+function matchingDirectories(uncommittedPaths: string[], owned: string[]): string[] {
+  return owned
+    .flatMap((ownedPath) =>
+      uncommittedPaths.some((worktreePath) => touches(worktreePath, ownedPath))
+        ? [ownedPath.endsWith("/") ? ownedPath : `${ownedPath}/`]
+        : [],
+    )
+    .toSorted();
+}
+
+function changeKindFor(
+  worktreePath: string,
+  kinds: Readonly<Record<string, WorkingTreeChange>>,
+): WorkingTreeChange {
+  const direct = kinds[worktreePath] ?? kinds[withoutTrailingSlash(worktreePath)];
+  if (direct) return direct;
+
+  return (
+    Object.entries(kinds).find(([candidate]) =>
+      touches(worktreePath, withoutTrailingSlash(candidate)),
+    )?.[1] ?? "modified"
+  );
 }
 
 /**
@@ -98,6 +150,7 @@ async function canonicalSpecsFor(companionPath: string, anchor: string): Promise
 export async function discoverArchives(
   companionPath: string,
   uncommittedPaths: string[],
+  changeKinds: Readonly<Record<string, WorkingTreeChange>> = {},
 ): Promise<ArchiveEntry[]> {
   let entries;
   try {
@@ -116,21 +169,25 @@ export async function discoverArchives(
   return Promise.all(
     anchors.map(async (anchor) => {
       const name = anchor.replace(ARCHIVE_DATE_PREFIX, "");
-      const owned = matching(uncommittedPaths, [
-        `${ARCHIVE_RELATIVE_DIR}/${anchor}`,
-        `openspec/changes/${name}`,
-      ]);
+      const ownedPaths = [`${ARCHIVE_RELATIVE_DIR}/${anchor}`, `openspec/changes/${name}`];
+      const owned = matching(uncommittedPaths, ownedPaths);
+      const ownedDirectories = matchingDirectories(uncommittedPaths, ownedPaths);
       const specs =
         owned.length > 0
           ? matching(uncommittedPaths, await canonicalSpecsFor(companionPath, anchor))
           : [];
+      const specChanges = specs.map((specPath) => ({
+        path: specPath,
+        kind: changeKindFor(specPath, changeKinds),
+      }));
       return {
         name,
         anchor,
         path: `${ARCHIVE_RELATIVE_DIR}/${anchor}`,
         tag: finishMarker(anchor),
-        uncommittedPaths: owned,
+        uncommittedPaths: ownedDirectories,
         uncommittedSpecs: specs,
+        uncommittedSpecChanges: specChanges,
         state: (owned.length > 0 ? "uncommitted" : "committed") as CommitState,
       };
     }),
@@ -142,15 +199,51 @@ export function pendingArchives(archives: ArchiveEntry[]): ArchiveEntry[] {
 }
 
 /**
- * Uncommitted canonical specs that no pending change accounts for. They belong to work
- * that is not yet archived, or to a change whose archive is already committed, so they
- * are surfaced separately rather than silently dropped.
+ * Every archive with the canonical specs its delta specs name, in the caller's archive
+ * order. Built once per call and only when something is unattributed, so the common
+ * `pending` invocation keeps its current I/O.
  */
-export function unattributedSpecs(uncommittedPaths: string[], pending: ArchiveEntry[]): string[] {
-  const claimed = new Set(pending.flatMap((entry) => entry.uncommittedSpecs));
-  return uncommittedPaths
+async function attributionIndex(
+  companionPath: string,
+  archives: ArchiveEntry[],
+): Promise<Array<SpecAttribution & { specs: string[] }>> {
+  return Promise.all(
+    archives.map(async (archive) => ({
+      anchor: archive.anchor,
+      state: archive.state,
+      specs: await canonicalSpecsFor(companionPath, archive.anchor),
+    })),
+  );
+}
+
+/**
+ * Uncommitted canonical specs that no pending change accounts for, each attributed to
+ * every archive whose delta specs name it. An attributed spec belongs to a change whose
+ * archive is already committed and can be resumed by publishing that change by name; an
+ * unattributed one belongs to work that is not archived yet. `archives` is the full
+ * archive list, not just the pending ones, because attribution's whole point is naming
+ * the committed archives pending discovery excludes.
+ */
+export async function unattributedSpecs(
+  companionPath: string,
+  uncommittedPaths: string[],
+  archives: ArchiveEntry[],
+  changeKinds: Readonly<Record<string, WorkingTreeChange>> = {},
+): Promise<UnattributedSpec[]> {
+  const claimed = new Set(pendingArchives(archives).flatMap((entry) => entry.uncommittedSpecs));
+  const specPaths = uncommittedPaths
     .filter(
       (worktreePath) => touches(worktreePath, SPECS_RELATIVE_DIR) && !claimed.has(worktreePath),
     )
     .toSorted();
+  if (specPaths.length === 0) return [];
+
+  const index = await attributionIndex(companionPath, archives);
+  return specPaths.map((specPath) => ({
+    path: specPath,
+    kind: changeKindFor(specPath, changeKinds),
+    touchedByArchives: index.flatMap(({ anchor, state, specs }) =>
+      specs.some((spec) => touches(specPath, spec)) ? [{ anchor, state }] : [],
+    ),
+  }));
 }

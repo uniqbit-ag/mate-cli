@@ -8,4 +8,10 @@ export {
   pendingArchives,
   unattributedSpecs,
 } from "./discovery";
-export type { ArchiveEntry, CommitState } from "./discovery";
+export type {
+  ArchiveEntry,
+  CommitState,
+  SpecAttribution,
+  UnattributedSpec,
+  UncommittedSpecChange,
+} from "./discovery";
