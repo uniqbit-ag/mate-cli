@@ -208,6 +208,7 @@ function buildEntries(): readonly ProjectionEntry[] {
       kind: "merged",
       path: path.join(".claude", "skills"),
       scopes: ["wrap"],
+      removeOnUnwrap: true,
       write: async (input) => {
         if (!input.config) return "skipped";
         const registeredCompanionPaths = input.globalConfigStore

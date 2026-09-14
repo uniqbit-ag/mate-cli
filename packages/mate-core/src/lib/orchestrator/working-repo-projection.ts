@@ -109,6 +109,26 @@ export async function unproject(input: ProjectionRemovalInput): Promise<Projecti
   return { root: repoLocalDirPath(input.repoPath), outcomes };
 }
 
+/** Removes entries that wrap owns but an unwrap must withdraw independently. */
+export async function removeWorkingRepositoryUnwrapEntries(
+  repoPath: string,
+): Promise<ProjectionEntryOutcome[]> {
+  const entries = projectionEntries().filter(
+    (entry) => entry.removeOnUnwrap && entry.removal.by === "self",
+  );
+  return Promise.all(
+    entries.map(async (entry) => {
+      const removal = entry.removal;
+      if (removal.by !== "self") return outcome(entry, "failed", new Error("invalid removal"));
+      try {
+        return outcome(entry, await removal.remove({ repoPath }));
+      } catch (error) {
+        return outcome(entry, "failed", toError(error));
+      }
+    }),
+  );
+}
+
 /** Reads and reports; writes nothing. Freshness is a verdict above this module. */
 export async function describe(repoPath: string): Promise<ProjectionDescription> {
   const entries: ProjectionEntryPresence[] = [];
@@ -275,21 +295,36 @@ export type UnwrapResult =
   | { kind: "failed"; document: string; error: Error };
 
 /**
- * The inverse of {@link projectWorkingRuntimeDocuments}, and only of that: the
- * runtime documents are withdrawn and the Projection Root, the Repository Link
- * and the companion link are left exactly as they were. That asymmetry with
- * `mate working cleanup` is the point — cleanup removes Mate's whole local
- * integration including the Repository Link, while unwrapping takes back only
- * what wrapping added, leaving a linked repository that was never wrapped. That
- * is what makes unwrapping the way back to a Managed Session rather than a
- * teardown.
+ * The inverse of {@link projectWorkingRuntimeDocuments}: runtime documents and
+ * projected Claude skill links are withdrawn while the Projection Root, the
+ * Repository Link and the companion link are left exactly as they were. That
+ * asymmetry with `mate working cleanup` is the point — cleanup removes Mate's
+ * whole local integration including the Repository Link, while unwrapping takes
+ * back only what wrapping added, leaving a linked repository that was never
+ * wrapped. That is what makes unwrapping the way back to a Managed Session
+ * rather than a teardown.
  *
  * Driven by the manifest, so it withdraws whatever the wrap that ran recorded,
  * including a destination this release no longer renders.
  */
 export async function unwrapWorkingRuntimeDocuments(repoPath: string): Promise<UnwrapResult> {
   const documents = await recordedRuntimeDocuments(repoPath);
-  if (documents.length === 0) return { kind: "absent", documents: [] };
+  const removeWrapEntries = async (): Promise<ProjectionEntryOutcome[]> =>
+    removeWorkingRepositoryUnwrapEntries(repoPath);
+  if (documents.length === 0) {
+    const outcomes = await removeWrapEntries();
+    const failure = firstFailure(outcomes);
+    if (failure) {
+      return {
+        kind: "failed",
+        document: failure.path,
+        error: failure.error ?? new Error("wrap entry removal failed"),
+      };
+    }
+    return outcomes.some((entry) => entry.state === "removed")
+      ? { kind: "unwrapped", documents: [] }
+      : { kind: "absent", documents: [] };
+  }
 
   /**
    * One manifest read and one manifest write for the whole withdrawal. A
@@ -301,6 +336,15 @@ export async function unwrapWorkingRuntimeDocuments(repoPath: string): Promise<U
   const { removed, error } = await removeRuntimeDocuments(repoPath, documents);
   /** Reported after the successful withdrawals are already durable. */
   if (error) return { kind: "failed", document: error.document, error: error.error };
+  const outcomes = await removeWrapEntries();
+  const failure = firstFailure(outcomes);
+  if (failure) {
+    return {
+      kind: "failed",
+      document: failure.path,
+      error: failure.error ?? new Error("wrap entry removal failed"),
+    };
+  }
   return { kind: "unwrapped", documents: removed };
 }
 

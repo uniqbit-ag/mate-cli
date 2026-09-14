@@ -10,6 +10,7 @@ import {
 } from "./projection-claude-skills";
 
 const tempRoots: string[] = [];
+const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
 
 afterEach(async () => {
   await Promise.all(
@@ -68,8 +69,8 @@ describe("Claude working-repository skill links", () => {
     await fs.writeFile(path.join(userTarget, "SKILL.md"), "user skill\n", "utf8");
     const skillsRoot = path.join(repoPath, ".claude", "skills");
     await fs.mkdir(skillsRoot, { recursive: true });
-    await fs.symlink(otherSkill, path.join(skillsRoot, "acme"), "dir");
-    await fs.symlink(userTarget, path.join(skillsRoot, "user"), "dir");
+    await fs.symlink(otherSkill, path.join(skillsRoot, "acme"), directoryLinkType);
+    await fs.symlink(userTarget, path.join(skillsRoot, "user"), directoryLinkType);
 
     await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true, [
       companionPath,
@@ -80,6 +81,37 @@ describe("Claude working-repository skill links", () => {
       await fs.realpath(path.join(companionPath, ".claude", "skills", "acme")),
     );
     expect(await fs.realpath(path.join(skillsRoot, "user"))).toBe(await fs.realpath(userTarget));
+  });
+
+  test("keeps current skill links unchanged on repeated reconciliation", async () => {
+    const { repoPath, companionPath } = await makeFixture("claude-skill-current-");
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true, [companionPath]);
+    const link = path.join(repoPath, ".claude", "skills", "acme");
+    const before = await fs.readlink(link);
+
+    await expect(
+      reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true, [companionPath]),
+    ).resolves.toBe("current");
+
+    expect(await fs.readlink(link)).toBe(before);
+  });
+
+  test("removes stale Mate links when Claude is disabled", async () => {
+    const { repoPath, companionPath } = await makeFixture("claude-skill-disabled-");
+    const custom = path.join(repoPath, ".claude", "skills", "custom", "SKILL.md");
+    await fs.mkdir(path.dirname(custom), { recursive: true });
+    await fs.writeFile(custom, "user skill\n", "utf8");
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true, [companionPath]);
+
+    await expect(
+      reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, false, [companionPath]),
+    ).resolves.toBe("written");
+
+    await expect(fs.access(path.join(repoPath, ".claude", "skills", "acme"))).rejects.toThrow();
+    await expect(fs.readFile(custom, "utf8")).resolves.toBe("user skill\n");
+    await expect(
+      fs.readFile(path.join(companionPath, ".claude", "skills", "acme", "SKILL.md"), "utf8"),
+    ).resolves.toBe("acme skill\n");
   });
 
   test("removes only Mate links", async () => {

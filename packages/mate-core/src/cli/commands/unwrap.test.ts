@@ -87,7 +87,13 @@ describe("runUnwrapCommand", () => {
    * it is not, with the Repository Link intact so the launch resolves again.
    */
   test("withdraws what a wrap placed and leaves the link standing", async () => {
-    const { repoPath } = await makeLinkedRepo("mate-unwrap-roundtrip-");
+    const { repoPath, companionPath } = await makeLinkedRepo("mate-unwrap-roundtrip-");
+    const skill = path.join(companionPath, ".claude", "skills", "acme");
+    await fs.mkdir(skill, { recursive: true });
+    await fs.writeFile(path.join(skill, "SKILL.md"), "acme skill\n", "utf8");
+    const custom = path.join(repoPath, ".claude", "skills", "custom", "SKILL.md");
+    await fs.mkdir(path.dirname(custom), { recursive: true });
+    await fs.writeFile(custom, "user skill\n", "utf8");
 
     const wrapped = capture();
     try {
@@ -96,6 +102,9 @@ describe("runUnwrapCommand", () => {
       wrapped.restore();
     }
     expect(await isWorkingRepositoryWrapped(repoPath)).toBe(true);
+    expect(await fs.realpath(path.join(repoPath, ".claude", "skills", "acme"))).toBe(
+      await fs.realpath(skill),
+    );
 
     const unwrapped = capture();
     try {
@@ -108,6 +117,9 @@ describe("runUnwrapCommand", () => {
     expect(unwrapped.out.join("\n")).toContain("Unwrapped app");
     expect(unwrapped.out.join("\n")).toContain(`${FRAMEWORK_NAME} claude`);
     expect(await isWorkingRepositoryWrapped(repoPath)).toBe(false);
+    await expect(fs.access(path.join(repoPath, ".claude", "skills", "acme"))).rejects.toThrow();
+    await expect(fs.readFile(path.join(skill, "SKILL.md"), "utf8")).resolves.toBe("acme skill\n");
+    await expect(fs.readFile(custom, "utf8")).resolves.toBe("user skill\n");
 
     /** Everything a Managed Session resolves through survived the unwrap. */
     const projectionDir = path.join(repoPath, `.${FRAMEWORK_NAME}`);

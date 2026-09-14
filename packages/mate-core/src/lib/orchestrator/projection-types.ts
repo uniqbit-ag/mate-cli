@@ -115,6 +115,8 @@ export interface ProjectionEntry {
    */
   readonly degradable?: boolean;
   readonly removal: ProjectionEntryRemoval;
+  /** Whether `unwrap` withdraws this entry in addition to recorded documents. */
+  readonly removeOnUnwrap?: boolean;
   /**
    * Whether the entry is on disk. Defaults to `path` existing, which is only
    * the truth for an `owned` entry: a `merged` entry shares its host path with
