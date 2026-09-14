@@ -6,7 +6,7 @@ import { ensureTokensaveInstalled } from "../../../tools/setup/capabilities/toke
 
 interface TokensaveCapDeps {
   resolveForLaunch?: typeof resolveForLaunch;
-  ensureInstalled?: (repoPath: string) => Promise<boolean>;
+  ensureInstalled?: (repoPath: string, options?: { upgrade?: boolean }) => Promise<boolean>;
   spawn?: typeof spawnSync;
 }
 
@@ -15,8 +15,8 @@ interface TokensaveCapDeps {
  * @description Forwards `[...args]` to the `tokensave` CLI, run from the
  * active working repository. Requires the `tokensave` capability to be enabled
  * in `.mate/config/framework.yaml` and a registered working repo for the
- * current `MATE_REPO_ID`. Ensures the `tokensave` binary is installed in that
- * repo (via {@link ensureTokensaveInstalled}) before forwarding.
+ * current `MATE_REPO_ID`. Ensures the `tokensave` binary is installed and
+ * upgraded in that repo (via {@link ensureTokensaveInstalled}) before forwarding.
  * @remarks The child process's exit code is propagated via `process.exitCode`.
  */
 export async function runTokensaveCapCommand(
@@ -49,7 +49,7 @@ export async function runTokensaveCapCommand(
     return;
   }
 
-  if (!(await ensureInstalled(repo.path))) {
+  if (!(await ensureInstalled(repo.path, { upgrade: true }))) {
     process.exitCode = 1;
     return;
   }

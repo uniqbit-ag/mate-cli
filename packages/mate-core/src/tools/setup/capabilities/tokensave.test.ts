@@ -107,8 +107,46 @@ describe("tokensavePlugin.apply", () => {
     expect(runShellCommandMock).not.toHaveBeenCalled();
 
     // The graph build (init/sync) is the job of `mate cap index`, never plugin apply.
-    expect(calls.map((c) => c[0][0])).toEqual(["--version", "install", "install"]);
+    expect(calls.map((c) => c[0][0])).toEqual(["--version", "upgrade", "install", "install"]);
     expect(calls[0][1]).toBe(repoDir);
+  });
+
+  test("continues setup when the automatic upgrade fails", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(companionDir, repoDir);
+
+    runMock = mock((args: string[]) => {
+      if (args[0] === "upgrade") {
+        return { ok: false, stderr: "network unavailable", stdout: "" };
+      }
+      return { ok: true, stderr: "", stdout: "" };
+    });
+    tokensaveDeps.run = runMock;
+
+    const stderrWrites: string[] = [];
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderrWrites.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await tokensavePlugin.apply(
+        makeCtx(companionDir, { repoPath: repoDir, providers: ["claude"] }),
+      );
+    } finally {
+      process.stderr.write = originalStderrWrite;
+    }
+
+    expect(runMock.mock.calls.map((call) => call[0][0])).toEqual([
+      "--version",
+      "upgrade",
+      "install",
+    ]);
+    expect(runMock.mock.calls[1][0]).toEqual(["upgrade", "--kill"]);
+    expect(stderrWrites.join("")).toContain("automatic upgrade failed");
+    expect(stderrWrites.join("")).toContain("network unavailable");
   });
 
   test("runs the native agent installer per active provider in sorted order during setup", async () => {
@@ -584,6 +622,14 @@ describe("ensureTokensaveBranchingPosture", () => {
     return path.join(repoDir, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE);
   }
 
+  function branchMetaPath(repoDir: string): string {
+    return path.join(repoDir, TOKENSAVE_STORE_DIR, "branch-meta.json");
+  }
+
+  function disabledBranchMetaPath(repoDir: string): string {
+    return path.join(repoDir, TOKENSAVE_STORE_DIR, "branch-meta.json.mate-disabled");
+  }
+
   test("writes the single-graph posture once a store exists", async () => {
     const repoDir = await makeStore({ exclude: ["dist"] });
 
@@ -621,6 +667,33 @@ describe("ensureTokensaveBranchingPosture", () => {
     await ensureTokensaveBranchingPosture(repoDir);
 
     expect(await fs.readFile(configPath(repoDir), "utf8")).toBe(first);
+  });
+
+  test("deactivates branch metadata without deleting branch databases", async () => {
+    const repoDir = await makeStore({ exclude: ["dist"] });
+    const branchMeta =
+      JSON.stringify(
+        {
+          default_branch: "main",
+          branches: {
+            main: { db_file: "tokensave.db" },
+            "feature/acme": { db_file: "branches/feature_acme.db" },
+          },
+        },
+        null,
+        2,
+      ) + "\n";
+    const branchDbPath = path.join(repoDir, TOKENSAVE_STORE_DIR, "branches", "feature_acme.db");
+    await fs.writeFile(branchMetaPath(repoDir), branchMeta, "utf8");
+    await fs.mkdir(path.dirname(branchDbPath), { recursive: true });
+    await fs.writeFile(branchDbPath, "branch database", "utf8");
+
+    await ensureTokensaveBranchingPosture(repoDir);
+    await ensureTokensaveBranchingPosture(repoDir);
+
+    await expect(fs.access(branchMetaPath(repoDir))).rejects.toThrow();
+    expect(await fs.readFile(disabledBranchMetaPath(repoDir), "utf8")).toBe(branchMeta);
+    expect(await fs.readFile(branchDbPath, "utf8")).toBe("branch database");
   });
 
   test("leaves an absent store alone", async () => {

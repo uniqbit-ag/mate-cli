@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -14,6 +15,8 @@ export const TOKENSAVE_STORE_CONFIG_FILE = "config.json";
 export const TOKENSAVE_MIN_RUST_VERSION = "1.91.0";
 /** Single-graph posture Mate owns in the per-project store config; every other key is left as found. */
 const TOKENSAVE_OWNED_POSTURE = { auto_track: false, suppress_scope_warning: true } as const;
+const TOKENSAVE_BRANCH_META_FILE = "branch-meta.json";
+const TOKENSAVE_DISABLED_BRANCH_META_FILE = "branch-meta.json.mate-disabled";
 const TOKENSAVE_STORE_EXCLUDE_ENTRY = `${TOKENSAVE_STORE_DIR}/`;
 const TOKENSAVE_BREW_INSTALL_CMD = "brew install aovestdipaperino/tap/tokensave";
 const TOKENSAVE_CARGO_INSTALL_CMD = "cargo install --locked tokensave";
@@ -104,6 +107,21 @@ async function tokensaveInstalled(repoPath: string): Promise<boolean> {
   return result.ok;
 }
 
+/**
+ * Upgrades the installed binary without making setup depend on network
+ * availability. `--kill` keeps the non-interactive setup path from hanging on
+ * a running Tokensave MCP process.
+ */
+async function upgradeTokensave(repoPath: string): Promise<void> {
+  const result = tokensaveDeps.run(["upgrade", "--kill"], repoPath);
+  if (result.ok) return;
+
+  const detail = result.stderr.trim();
+  process.stderr.write(
+    `tokensave: automatic upgrade failed${detail ? `: ${detail}` : ""} - continuing with the installed version\n`,
+  );
+}
+
 // Global agent integration (MCP entry, session hooks, wildcard permission grant, and
 // tokensave's own config bookkeeping) is owned by tokensave's installer — Mate never
 // hand-edits ~/.tokensave/config.toml. Runs in setup mode only; the installer is
@@ -172,8 +190,12 @@ function getTokensaveInstallPlan(): { command: string; run: () => Promise<void> 
   return undefined;
 }
 
-export async function ensureTokensaveInstalled(repoPath: string): Promise<boolean> {
+export async function ensureTokensaveInstalled(
+  repoPath: string,
+  options: { upgrade?: boolean } = {},
+): Promise<boolean> {
   if (await tokensaveInstalled(repoPath)) {
+    if (options.upgrade) await upgradeTokensave(repoPath);
     return true;
   }
 
@@ -234,10 +256,48 @@ export async function ensureTokensaveStoreExcluded(repoPath: string): Promise<vo
 }
 
 /**
+ * Deactivates Tokensave's multi-branch mode without deleting branch databases.
+ * The metadata is preserved in a Mate-owned backup so the migration is reversible.
+ */
+async function deactivateTokensaveBranchMetadata(repoPath: string): Promise<void> {
+  const storePath = path.join(repoPath, TOKENSAVE_STORE_DIR);
+  const branchMetaPath = path.join(storePath, TOKENSAVE_BRANCH_META_FILE);
+  const disabledBranchMetaPath = path.join(storePath, TOKENSAVE_DISABLED_BRANCH_META_FILE);
+
+  let branchMeta: string;
+  try {
+    branchMeta = await fs.readFile(branchMetaPath, "utf8");
+  } catch {
+    return;
+  }
+
+  let removeActiveMetadata = false;
+  try {
+    await fs.copyFile(branchMetaPath, disabledBranchMetaPath, fsConstants.COPYFILE_EXCL);
+    removeActiveMetadata = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      return;
+    }
+
+    try {
+      removeActiveMetadata = (await fs.readFile(disabledBranchMetaPath, "utf8")) === branchMeta;
+    } catch {
+      return;
+    }
+  }
+
+  if (removeActiveMetadata) {
+    await fs.unlink(branchMetaPath).catch(() => {});
+  }
+}
+
+/**
  * Reconciles Mate's single-graph branching posture into the working repo's
- * git-excluded `.tokensave/config.json`. Best-effort by design: the file is
- * created by `tokensave init`, so an absent, unreadable, or unparseable config
- * is left untouched rather than treated as an error.
+ * git-excluded `.tokensave/config.json` and deactivates existing branch
+ * metadata. Best-effort by design: the file is created by `tokensave init`,
+ * so an absent, unreadable, or unparseable config is left untouched rather
+ * than treated as an error. Existing branch databases are never removed.
  */
 export async function ensureTokensaveBranchingPosture(repoPath: string): Promise<void> {
   const configPath = path.join(repoPath, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE);
@@ -266,6 +326,7 @@ export async function ensureTokensaveBranchingPosture(repoPath: string): Promise
   );
   const serialized = `${next}\n`;
   if (serialized === raw) {
+    await deactivateTokensaveBranchMetadata(repoPath);
     return;
   }
 
@@ -274,6 +335,8 @@ export async function ensureTokensaveBranchingPosture(repoPath: string): Promise
   } catch {
     /** Best-effort: the store config is not Mate's to guarantee. */
   }
+
+  await deactivateTokensaveBranchMetadata(repoPath);
 }
 
 async function teardownDriver(repoPath: string, providers: string[]) {
@@ -371,7 +434,11 @@ export function createTokensavePlugin(): CapabilityPlugin {
       if (ctx.activeProviders.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).length === 0) return;
 
       const targetPath = ctx.repoPath ?? ctx.companionPath;
-      if (!(await ensureTokensaveInstalled(targetPath))) {
+      if (
+        !(await ensureTokensaveInstalled(targetPath, {
+          upgrade: ctx.mode === "setup",
+        }))
+      ) {
         return;
       }
       await ensureTokensaveBranchingPosture(targetPath);

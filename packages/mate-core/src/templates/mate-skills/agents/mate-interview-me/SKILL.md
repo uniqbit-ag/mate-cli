@@ -69,12 +69,19 @@ Ask exactly one focused question that would most reduce uncertainty. Attach your
 best guess about the answer and the reasoning behind it:
 
 ```text
+CONFIDENCE: <0-100%> (<change since the previous answer>)
+RESOLVED: <what is now clear>
+REMAINING: <what is still uncertain>
 Q: <one focused question> GUESS: <your hypothesis for the answer and why>
 ```
 
 Wait for the answer before asking the next question. Never batch questions or
 advance silently. The guess exposes assumptions and lets the user correct them
 quickly.
+
+After every answer, update the confidence, resolved points, and remaining
+uncertainty before asking the next question. Keep this progress state visible;
+do not report confidence only at the beginning or end.
 
 ### Step 3: Listen for "want versus should want"
 
@@ -138,6 +145,8 @@ Before stopping, check that:
 
 - An initial hypothesis and confidence number were stated.
 - Every confidence number below 70 percent included its reason.
+- Confidence, resolved points, and remaining uncertainty were shown before each
+  question.
 - Every question was asked one at a time with an attached guess.
 - The want-versus-should-want probe ran when the user gave a convention or
   sophistication-signaling answer.
