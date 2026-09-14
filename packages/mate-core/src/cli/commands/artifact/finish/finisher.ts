@@ -15,6 +15,17 @@ export interface Produced {
   anchorName: string;
   /** Pathspecs the publication commit stages — and nothing outside them. */
   commitPaths: string[];
+  /** Tag namespace preceding the anchor; defaults to the finisher's type. */
+  tagNamespace?: string;
+  /** Whole commit subject; defaults to `chore(<type>): finish <anchorName>`. */
+  commitSubject?: string;
+  /**
+   * Tag behaviour when the name is taken and this run produced a fresh commit.
+   * `reuse` (default) leaves the existing tag and pushes; `suffix` takes the
+   * lowest free `.N` so the fresh commit gets an anchor of its own. A resumed
+   * run reuses under either value: its commit is the tagged one already.
+   */
+  tagCollision?: "reuse" | "suffix";
 }
 
 /** Outcome of {@link ArtifactFinisher.resolve}; the failure carries the user-facing refusal. */

@@ -56,7 +56,7 @@ function stepPrompt(
   includeChange = true,
 ): string {
   const changeNote = includeChange ? ` for ${CHANGE_PLACEHOLDER}` : " for";
-  const schemaNote = profile ? ` (use schema: ${profile})` : "";
+  const schemaNote = profile && profile !== "mate-v1" ? ` (use schema: ${profile})` : "";
 
   switch (step.id) {
     case "pre-explore":
@@ -67,11 +67,9 @@ function stepPrompt(
     case "propose":
       return `/openspec-propose${schemaNote}${changeNote}`;
     case "specs":
-      return `Review specs/${schemaNote}${changeNote}`;
     case "design":
-      return `Review design.md${schemaNote}${changeNote}`;
     case "tasks":
-      return `Review tasks.md${schemaNote}${changeNote}`;
+      return `Review ${includeChange ? CHANGE_PLACEHOLDER : ""}/`;
     case "apply":
       return `/openspec-apply-change${schemaNote}${changeNote}`;
     case "show-me":
@@ -306,8 +304,8 @@ export function workflowPlan(
     kind: "completion" as const,
     id: "finish",
     title: "mate artifact publish",
-    what: "Selects already-archived changes, confirms that each will be committed, tagged, and pushed to the companion Git repository, then runs `mate artifact publish` for each to publish the archive under its dated anchor.",
-    why: "It is the only sanctioned completion; a hand-committed publication leaves the anchor untagged and unrevertable.",
+    what: "Presents the already-archived changes and the drifted canonical specs as two selectable tables, then runs `mate artifact publish` for exactly what the developer picks — announcing that each selection is committed, tagged, and pushed to the companion Git repository before the first one runs.",
+    why: "It is the only sanctioned completion; a hand-committed publication leaves the anchor untagged and unrevertable, and a drifted spec shipped under an old archive's tag misfiles today's edit under a change that did not produce it.",
     badges: ["skill"] as WorkflowStepBadge[],
   };
 

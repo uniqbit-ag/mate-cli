@@ -23,6 +23,8 @@ interface FakeGitOptions {
   hasUpstream?: boolean;
   rebase?: RebaseResult;
   tagExists?: boolean;
+  /** Per-name tag existence; takes precedence over the blanket `tagExists`. */
+  existingTags?: string[];
   pushOk?: boolean;
   pushError?: string;
   failOn?: Partial<Record<keyof GitOps, boolean>>;
@@ -71,7 +73,10 @@ function makeGit(options: FakeGitOptions = {}): { git: GitOps; calls: GitCall[] 
       return record("rebaseOntoUpstream", [], options.rebase ?? { ok: true, conflictedPaths: [] });
     },
     async tagExists(name) {
-      return record("tagExists", [name], options.tagExists ?? false);
+      const exists = options.existingTags
+        ? options.existingTags.includes(name)
+        : (options.tagExists ?? false);
+      return record("tagExists", [name], exists);
     },
     async tag(name, message) {
       return record("tag", [name, message], undefined);
@@ -401,5 +406,133 @@ describe("runFinishEngine — default-branch guard", () => {
 
     expect(result.status).toBe("ok");
     expect(result.step).toBe("done");
+  });
+});
+
+describe("runFinishEngine — tag namespace and commit subject", () => {
+  const tagged = (h: Harness): GitCall | undefined => h.gitCalls.find((c) => c.op === "tag");
+  const committed = (h: Harness): GitCall | undefined => h.gitCalls.find((c) => c.op === "commit");
+
+  test("a finisher supplying neither field keeps the pre-change tag and subject", async () => {
+    const h = harness();
+
+    const result = await runEngine(h);
+
+    expect(result.tag).toBe(`openspec/${ANCHOR}`);
+    expect(tagged(h)?.args[0]).toBe(`openspec/${ANCHOR}`);
+    expect(committed(h)?.args[0]).toBe(`chore(openspec): finish ${ANCHOR}`);
+  });
+
+  test("a finisher supplying both fields drives the tag and the subject", async () => {
+    const resolved: Produced = {
+      anchorName: "2026-09-14",
+      commitPaths: ["openspec/specs/widget-api/spec.md"],
+      tagNamespace: "openspec/specs",
+      commitSubject: "chore(openspec): sync canonical specs",
+    };
+    const h = harness({}, { resolved });
+
+    const result = await runEngine(h);
+
+    expect(result.status).toBe("ok");
+    expect(result.tag).toBe("openspec/specs/2026-09-14");
+    expect(tagged(h)?.args[0]).toBe("openspec/specs/2026-09-14");
+    expect(committed(h)?.args[0]).toBe("chore(openspec): sync canonical specs");
+    expect(committed(h)?.args[1]).toEqual(["openspec/specs/widget-api/spec.md"]);
+  });
+
+  test("the pipeline order is identical whichever fields the finisher supplies", async () => {
+    const bare = harness();
+    const custom = harness(
+      {},
+      {
+        resolved: {
+          anchorName: "2026-09-14",
+          commitPaths: ["openspec/specs/widget-api/spec.md"],
+          tagNamespace: "openspec/specs",
+          commitSubject: "chore(openspec): sync canonical specs",
+        },
+      },
+    );
+
+    await runEngine(bare);
+    await runEngine(custom);
+
+    expect(ops(custom)).toEqual(ops(bare));
+  });
+});
+
+describe("runFinishEngine — tag collision policy", () => {
+  const specs = (overrides: Partial<Produced> = {}): Produced => ({
+    anchorName: "2026-09-14",
+    commitPaths: ["openspec/specs/widget-api/spec.md"],
+    tagNamespace: "openspec/specs",
+    commitSubject: "chore(openspec): sync canonical specs",
+    tagCollision: "suffix",
+    ...overrides,
+  });
+  const tagNames = (h: Harness): unknown[] =>
+    h.gitCalls.filter((c) => c.op === "tag").map((c) => c.args[0]);
+
+  test("a free name is taken as-is", async () => {
+    const h = harness({ existingTags: [] }, { resolved: specs() });
+
+    const result = await runEngine(h);
+
+    expect(result.tag).toBe("openspec/specs/2026-09-14");
+    expect(tagNames(h)).toEqual(["openspec/specs/2026-09-14"]);
+  });
+
+  test("a taken name yields the next free suffix and never moves the existing tag", async () => {
+    const h = harness({ existingTags: ["openspec/specs/2026-09-14"] }, { resolved: specs() });
+
+    const result = await runEngine(h);
+
+    expect(result.tag).toBe("openspec/specs/2026-09-14.2");
+    expect(tagNames(h)).toEqual(["openspec/specs/2026-09-14.2"]);
+  });
+
+  test("suffix selection skips every taken name", async () => {
+    const h = harness(
+      { existingTags: ["openspec/specs/2026-09-14", "openspec/specs/2026-09-14.2"] },
+      { resolved: specs() },
+    );
+
+    const result = await runEngine(h);
+
+    expect(result.tag).toBe("openspec/specs/2026-09-14.3");
+  });
+
+  test("a resumed run reuses its existing tag rather than taking a suffix", async () => {
+    const h = harness(
+      { hasStaged: false, existingTags: ["openspec/specs/2026-09-14"] },
+      { resolved: specs() },
+    );
+
+    const result = await runEngine(h);
+
+    expect(result.resumed).toBe(true);
+    expect(result.tag).toBe("openspec/specs/2026-09-14");
+    expect(tagNames(h)).toEqual([]);
+  });
+
+  test("the default policy still reuses a taken tag", async () => {
+    const h = harness({ tagExists: true }, { resolved: specs({ tagCollision: undefined }) });
+
+    const result = await runEngine(h);
+
+    expect(result.resumed).toBe(true);
+    expect(result.tag).toBe("openspec/specs/2026-09-14");
+    expect(tagNames(h)).toEqual([]);
+  });
+
+  test("suffix probing happens after the remote sync so fetched tags are seen", async () => {
+    const h = harness({ existingTags: ["openspec/specs/2026-09-14"] }, { resolved: specs() });
+
+    await runEngine(h);
+
+    const order = ops(h);
+    expect(order.indexOf("fetch")).toBeLessThan(order.indexOf("tag"));
+    expect(order.indexOf("rebaseOntoUpstream")).toBeLessThan(order.indexOf("tag"));
   });
 });

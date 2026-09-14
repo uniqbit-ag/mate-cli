@@ -59,4 +59,13 @@ describe("studio styles", () => {
   it("loads no external resource", () => {
     expect(STUDIO_STYLES).not.toMatch(/@import|url\(/);
   });
+
+  it("keeps pre-explore skill choices free of the accent border", () => {
+    expect(STUDIO_STYLES).toContain(
+      ".workflow-option { display: grid; gap: 1px; padding-left: 8px; }",
+    );
+    expect(STUDIO_STYLES).not.toContain(
+      ".workflow-option { display: grid; gap: 1px; padding-left: 8px; border-left:",
+    );
+  });
 });

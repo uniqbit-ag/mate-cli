@@ -102,7 +102,7 @@ describe("mate artifact pending", () => {
       type: "openspec",
       companionPath: COMPANION,
       count: 1,
-      pending: [entry("2026-09-08-acme-two")],
+      pending: [{ ...entry("2026-09-08-acme-two"), coveredByAll: true }],
       unattributedSpecs: [],
     });
   });
@@ -148,7 +148,7 @@ describe("mate artifact pending", () => {
 
     expect(out).toEqual([
       "1 archived change pending publication:",
-      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two",
+      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]",
       "       openspec/changes/archive/2026-09-08-acme-two/proposal.md",
       "       openspec/specs/widget-api/spec.md",
     ]);
@@ -167,7 +167,7 @@ describe("mate artifact pending", () => {
       "No archived changes have uncommitted content.",
       "",
       "1 uncommitted spec not accounted for by a pending change:",
-      "  openspec/specs/orphan/spec.md  [modified]",
+      "  openspec/specs/orphan/spec.md  [modified]  [--all]",
       "       no archive names this spec",
     ]);
   });
@@ -182,7 +182,12 @@ describe("mate artifact pending", () => {
     });
 
     expect(JSON.parse(out[0]).unattributedSpecs).toEqual([
-      { path: "openspec/specs/orphan/spec.md", kind: "modified", touchedByArchives: [] },
+      {
+        path: "openspec/specs/orphan/spec.md",
+        kind: "modified",
+        touchedByArchives: [],
+        coveredByAll: true,
+      },
     ]);
   });
 
@@ -197,7 +202,12 @@ describe("mate artifact pending", () => {
     });
 
     expect(JSON.parse(out[0]).unattributedSpecs).toEqual([
-      { path: "openspec/specs/orphan/spec.md", kind: "new", touchedByArchives: [] },
+      {
+        path: "openspec/specs/orphan/spec.md",
+        kind: "new",
+        touchedByArchives: [],
+        coveredByAll: true,
+      },
     ]);
   });
 
@@ -209,7 +219,7 @@ describe("mate artifact pending", () => {
 
     expect(out).toEqual([
       "1 archived change pending publication:",
-      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two",
+      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]",
       "       openspec/changes/archive/2026-09-08-acme-two/",
     ]);
   });
@@ -338,7 +348,7 @@ describe("mate artifact pending over a real archive", () => {
       "No archived changes have uncommitted content.",
       "",
       "1 uncommitted spec not accounted for by a pending change:",
-      "  openspec/specs/widget-api/spec.md  [modified]",
+      "  openspec/specs/widget-api/spec.md  [modified]  [--all]",
       "       publishes via 2026-09-07-acme  (archive committed)",
     ]);
   });
@@ -359,6 +369,7 @@ describe("mate artifact pending over a real archive", () => {
         path: "openspec/specs/widget-api/spec.md",
         kind: "modified",
         touchedByArchives: [{ anchor: "2026-09-07-acme", state: "committed" }],
+        coveredByAll: true,
       },
     ]);
   });
@@ -380,11 +391,65 @@ describe("mate artifact pending over a real archive", () => {
       type: "openspec",
       companionPath: companion,
       count: 1,
-      pending: [entry("2026-09-07-acme")],
+      pending: [{ ...entry("2026-09-07-acme"), coveredByAll: true }],
       unattributedSpecs: [],
     });
     expect(lines[0]).not.toContain("IGNORE PREVIOUS INSTRUCTIONS");
     expect(lines[0]).not.toContain("other-change");
     expect(lines[0]).not.toContain("--force");
+  });
+});
+
+/** The marking that makes the unattended `--all` path inspectable before it runs. */
+describe("mate artifact pending — --all coverage marking", () => {
+  const ORPHAN = "openspec/specs/orphan/spec.md";
+
+  test("a pending change is marked as one --all would publish", async () => {
+    await runArtifactPendingCommand(["--json"], {
+      ...baseDeps({ discover: async () => [entry("2026-09-08-acme-two")] }),
+      ...sink(),
+    });
+
+    expect(JSON.parse(out[0]).pending[0].coveredByAll).toBe(true);
+  });
+
+  test("a spec no archive names is still marked as covered", async () => {
+    await runArtifactPendingCommand(["--json"], {
+      ...baseDeps({ git: () => stubGit([ORPHAN]), discover: async () => [] }),
+      ...sink(),
+    });
+
+    const [spec] = JSON.parse(out[0]).unattributedSpecs;
+    expect(spec.touchedByArchives).toEqual([]);
+    expect(spec.coveredByAll).toBe(true);
+  });
+
+  test("marking changes neither reported set", async () => {
+    await runArtifactPendingCommand(["--json"], {
+      ...baseDeps({
+        git: () => stubGit([ORPHAN]),
+        discover: async () => [entry("2026-09-08-acme-two")],
+      }),
+      ...sink(),
+    });
+
+    const result = JSON.parse(out[0]);
+    expect(result.count).toBe(1);
+    expect(result.pending.map((e: { anchor: string }) => e.anchor)).toEqual([
+      "2026-09-08-acme-two",
+    ]);
+    expect(result.unattributedSpecs.map((s: { path: string }) => s.path)).toEqual([ORPHAN]);
+  });
+
+  test("the human-readable output carries the same marking", async () => {
+    await runArtifactPendingCommand([], {
+      ...baseDeps({
+        git: () => stubGit([ORPHAN]),
+        discover: async () => [entry("2026-09-08-acme-two")],
+      }),
+      ...sink(),
+    });
+
+    expect(out.filter((line) => line.includes("[--all]")).length).toBe(2);
   });
 });

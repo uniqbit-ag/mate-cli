@@ -5,7 +5,9 @@ import { parse } from "yaml";
 
 import { hasOpenspecCapability } from "../../../../lib/orchestrator/capabilities";
 import { runIndexCapCommand } from "../../cap/index-cmd";
-import type { ArtifactFinisher, FinishContext, ResolveResult } from "./finisher";
+import { discoverArchives, SPECS_RELATIVE_DIR, unattributedSpecs } from "../pending/discovery";
+import type { ArtifactFinisher, FinishContext, Produced, ResolveResult } from "./finisher";
+import type { GitOps } from "./git";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -266,6 +268,148 @@ async function resolved(
   return { ok: true, resolved: { anchorName, commitPaths } };
 }
 
+/** Tag namespace segregating spec publications from dated change anchors. */
+export const SPEC_TAG_NAMESPACE = "openspec/specs";
+/** Spec ids named individually before the remainder collapses into a count. */
+const SPEC_LABEL_LIMIT = 3;
+
+/** `openspec/specs/<id>/...` -> `<id>`: the capability directory is the spec's identity. */
+function specId(candidate: string): string {
+  return candidate.slice(`${SPECS_RELATIVE_DIR}/`.length).split("/")[0];
+}
+
+/** Unique ids in path order, so anchor and subject always name the same specs. */
+function specIds(paths: string[]): string[] {
+  return [...new Set(paths.map(specId))];
+}
+
+/**
+ * The spec ids a publication ships, as `<a>+<b>+<c>+<n>-more`. A dated anchor alone
+ * says when a publication ran but never what it shipped; naming the specs makes the tag
+ * readable without checking out its commit, and the cap keeps a wide sync from growing
+ * an unbounded ref name. Empty for an empty publication, which then anchors on its date.
+ */
+function specLabel(paths: string[]): string {
+  const ids = specIds(paths);
+  const named = ids.slice(0, SPEC_LABEL_LIMIT);
+  const remaining = ids.length - named.length;
+  return [...named, ...(remaining > 0 ? [`${remaining}-more`] : [])].join("+");
+}
+
+/** Commit subject for a spec publication; it belongs to no change, so it names specs, never an anchor. */
+export function specCommitSubject(paths: string[]): string {
+  const ids = specIds(paths);
+  const named = ids.slice(0, SPEC_LABEL_LIMIT);
+  const remaining = ids.length - named.length;
+  if (named.length === 0) return "chore(openspec): sync canonical specs";
+  const listed = remaining > 0 ? `${named.join(", ")} and ${remaining} more` : named.join(", ");
+  return `chore(openspec): sync canonical specs (${listed})`;
+}
+
+/** Working-tree reads a spec publication needs; nothing here mutates the repository. */
+export type SpecDriftGit = Pick<GitOps, "changedPaths" | "changedPathKinds">;
+
+export type DriftResolution = { ok: true; paths: string[] } | { ok: false; message: string };
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/** Local calendar date as `YYYY-MM-DD`. */
+function calendarDate(now: Date): string {
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+}
+
+function withoutTrailingSlash(candidate: string): string {
+  return candidate.endsWith("/") ? candidate.slice(0, -1) : candidate;
+}
+
+/**
+ * Canonical specs that drifted: uncommitted under `openspec/specs/` and claimed by no
+ * pending change. Delegates to the same discovery `mate artifact pending` reports from,
+ * so the two commands can never disagree about what is drifted. Only paths and
+ * working-tree status are read — never spec or archived file content.
+ *
+ * `requested` narrows the set rather than being trusted: a path that is not drifted, or
+ * sits outside the canonical spec tree, refuses the whole invocation instead of
+ * publishing a surprising subset.
+ */
+export async function resolveDriftedSpecs(
+  companionPath: string,
+  git: SpecDriftGit,
+  requested: string[] = [],
+): Promise<DriftResolution> {
+  const changed = await git.changedPaths();
+  const changeKinds = (await git.changedPathKinds?.()) ?? {};
+  const archives = await discoverArchives(companionPath, changed, changeKinds);
+  const drifted = (await unattributedSpecs(companionPath, changed, archives, changeKinds)).map(
+    (spec) => spec.path,
+  );
+
+  if (requested.length === 0) return { ok: true, paths: drifted };
+
+  const normalized = requested.map(withoutTrailingSlash);
+  const outside = normalized.filter((candidate) => !candidate.startsWith(`${SPECS_RELATIVE_DIR}/`));
+  if (outside.length > 0) {
+    return {
+      ok: false,
+      message: `mate: not a canonical spec: ${outside.join(", ")}. Only specs under ${SPECS_RELATIVE_DIR}/ are spec publication targets.`,
+    };
+  }
+  const driftedPaths = new Set(drifted);
+  const notDrifted = normalized.filter((candidate) => !driftedPaths.has(candidate));
+  if (notDrifted.length > 0) {
+    return {
+      ok: false,
+      message: `mate: not drifted: ${notDrifted.join(", ")}. Run \`mate artifact pending\` to see which canonical specs are uncommitted and unaccounted for.`,
+    };
+  }
+  return { ok: true, paths: normalized.toSorted() };
+}
+
+/**
+ * The spec publication finisher. Its target is already resolved by
+ * {@link resolveDriftedSpecs}, because an empty drift set is a clean no-op rather than a
+ * refusal and the engine's resolve step can only succeed or fail.
+ *
+ * This is the one publication unit that computes its own anchor: it has no archive
+ * directory to read one from. The anchor is the calendar date plus the {@link specLabel}
+ * of the specs it ships. The segregated {@link SPEC_TAG_NAMESPACE} keeps that computed
+ * anchor out of the dated change anchors, which still never compute one.
+ */
+export function openspecSpecsFinisher(
+  contextOrPath: FinishContext | string,
+  paths: string[],
+  now: () => Date = () => new Date(),
+): ArtifactFinisher {
+  const context: FinishContext =
+    typeof contextOrPath === "string"
+      ? { companionPath: contextOrPath, repositoryId: "" }
+      : contextOrPath;
+
+  return {
+    type: "openspec",
+    disabledReason: "mate: the openspec capability must be enabled to run artifact publish.",
+    isEnabled(capabilities) {
+      return hasOpenspecCapability(capabilities);
+    },
+    async resolve() {
+      const label = specLabel(paths);
+      const publication: Produced = {
+        anchorName: `${calendarDate(now())}${label === "" ? "" : `-${label}`}`,
+        commitPaths: paths,
+        tagNamespace: SPEC_TAG_NAMESPACE,
+        commitSubject: specCommitSubject(paths),
+        tagCollision: "suffix",
+      };
+      return { ok: true, resolved: publication };
+    },
+    capSync() {
+      return capSync(context);
+    },
+  };
+}
+
 /**
  * The openspec artifact finisher: resolution of an already-archived change, an
  * openspec-scoped cap sync, and a commit scoped to `openspec/`. Validation and
@@ -273,7 +417,10 @@ async function resolved(
  * that can — an archived change is neither validatable nor listed as active.
  *
  * Resolution reads the dated `openspec/changes/archive/` directory names openspec
- * actually created, so the tag is never a computed date and archived prose is never read.
+ * actually created, so a change publication's tag is never a computed date and archived
+ * prose is never read. Spec publications are the documented exception: having no archive
+ * directory to read a date from, {@link openspecSpecsFinisher} computes one, in its own
+ * segregated tag namespace.
  */
 export function openspecFinisher(contextOrPath: FinishContext | string): ArtifactFinisher {
   const context: FinishContext =

@@ -289,31 +289,38 @@ describe("bundled Mate artifact publish skill", () => {
     }
   });
 
-  test("reports owned specs in a plain-text table and unattributed specs separately", async () => {
+  test("reports owned specs in a Markdown table and unattributed specs separately", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
       expect(source).toContain("uncommittedSpecs");
       expect(source).toContain("uncommittedSpecChanges");
       expect(source).toContain("unattributedSpecs");
+      expect(source).toContain("coveredByAll");
       expect(source).toContain(
-        "Present the entries as a terminal-friendly plain-text table inside a fenced `text` block",
+        "Present both sections as Markdown tables, each under its own headline",
       );
-      expect(source).toContain("Put each multiple value on its own continuation line");
+      /** Each unit is headed, so the two are never read as one list. */
+      expect(source).toContain("head the tables **Pending changes** and **Drifted specs**");
+      /** A Markdown cell is one line, so several values join rather than wrap. */
+      expect(source).toContain("`+` is the multi-value separator, never a line break");
       expect(source).toContain("Open with a one-line **To push** summary");
-      expect(source).toContain("leading `#` column numbering the entries `1..n` in JSON order");
       expect(source).toContain("`Ships` is the entry's exact push payload");
-      expect(source).toContain("do not use Markdown table syntax or HTML line-break tags");
+      expect(source).toContain("Do not use HTML line-break tags or a fenced block");
+      /** Backticks are the only colour control a rendered table has. */
       expect(source).toContain(
-        "Then report `unattributedSpecs` as a second **Unattributed specs** section after the table, rendered as its own plain-text table in a fenced `text` block",
+        "Wrap every identifier the user might act on — anchors, tags, paths — in backticks",
+      );
+      /** Both units share one numbering sequence, so any number is a valid selection. */
+      expect(source).toContain(
+        "Number both sections in **one continuous sequence**, so every number in the turn is unique and any number is a valid selection",
       );
       expect(source).toContain(
-        "Continue the same `#` sequence the pending table used, so every number in the turn is unique",
+        "A spec with no provenance is numbered and selectable exactly like any other",
       );
-      expect(source).toContain("**Number the spec, never the archive**");
-      expect(source).toContain("a carrier line never gets its own number");
       const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
-      expect(reference).toContain("work that is not archived yet");
-      expect(reference).toContain("Publishing an unattributed spec directly is impossible");
+      expect(reference).toContain(
+        "Every drifted spec is publishable on its own, through `--specs`",
+      );
     }
   });
 
@@ -321,17 +328,12 @@ describe("bundled Mate artifact publish skill", () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
       expect(source).toContain("touchedByArchives");
-      expect(source).toContain('"touchedByArchives": [{ "anchor": "2026-09-06-acme-earlier"');
+      expect(source).toContain('"anchor": "2026-09-06-acme-earlier"');
       expect(source).toContain(
-        "every archive whose delta specs name that spec, with its `anchor` and commit `state`, oldest anchor first",
+        "names every archive whose delta specs mention that spec, oldest first",
       );
-      expect(source).toContain(
-        "That `state` is the **archive's** commit state and never the spec's",
-      );
-      expect(source).toContain(
-        "The spec's own working-tree status is its `kind` \u2014 `new` or `modified`",
-      );
-      expect(source).toContain('"kind": "new", "touchedByArchives": []');
+      expect(source).toContain('"touchedByArchives": []');
+      expect(source).toContain('"kind": "new"');
       const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
       expect(reference).toContain("ordered oldest anchor first");
       expect(reference).toContain(
@@ -344,22 +346,20 @@ describe("bundled Mate artifact publish skill", () => {
   test("keeps attribution a hint and never a publication target", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
+      expect(source).toContain("It is **provenance only**");
+      expect(source).toContain("it is not needed to publish the spec");
+      expect(source).toContain("an empty list does not make a spec unpublishable");
+      /** The inverted rule: never reach for an archive to carry a spec. */
       expect(source).toContain(
-        "the publication target is always the **archive anchor** that carries it",
+        "Do **not** present an archived change as a way to publish a drifted spec",
       );
-      expect(source).toContain("Never pass a spec `path` to the publish command");
-      expect(source).toContain("a canonical spec is not a publishable change");
-      expect(source).toContain(
-        "`touchedByArchives` tells you which archive's scope can carry a spec; it is never a claim that a named archive produced the uncommitted diff",
-      );
-      expect(source).toContain(
-        "the spec's number is selectable and each listed `anchor` is its **resume target**",
-      );
-      expect(source).toContain("The work has to be archived first before it can ship");
-      expect(source).toContain("Never carry a number or a spec `path` past this step");
+      expect(source).toContain("do not warn about drifting attribution or a stale tag");
+      expect(source).toContain("Never carry a number past this step");
       const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
-      expect(reference).toContain("an unattributed spec is never a publication target");
-      expect(reference).toContain("Attribution is a hint, not proof");
+      expect(reference).toContain("Attribution is a hint, never proof");
+      expect(reference).toContain(
+        "Never publish an archive as a way of carrying a drifted spec \u2014 publish the spec",
+      );
     }
   });
 
@@ -369,18 +369,24 @@ describe("bundled Mate artifact publish skill", () => {
       const source = await readSkillFrom(root, "mate-artifact-publish");
       expect(source).toContain("## Example output");
       expect(source).toContain("Rendering of the step 1 payload above");
+      expect(source).toContain("**To push: 1 pending change, 2 drifted specs.**");
+      expect(source).toContain("**Pending changes**\n\n| # | Anchor (Change) | Ships | Tag |");
+      /** The anchor already ends with the change name, so no separate name column. */
+      expect(source).not.toContain("| Change |");
+      /** Multiple ships share one cell, joined rather than wrapped. */
       expect(source).toContain(
-        "**To push: 1 pending change, 2 unattributed specs (1 publishable by resume).**",
+        "`openspec/changes/archive/2026-09-07-acme/` + [modified] `openspec/specs/widget-api/spec.md`",
       );
-      expect(source).toContain("#  Change  Anchor           Ships");
-      expect(source).toContain("#  Spec                              Needs commit  Publishes via");
-      expect(source).toContain("2  openspec/specs/other-api/spec.md  [modified]");
+      expect(source).toContain("**Drifted specs**\n\n| # | Spec | Kind | Provenance |");
       expect(source).toContain(
-        "   openspec/specs/third-api/spec.md  [new]         — (not archived)",
+        "| 2 | `openspec/specs/other-api/spec.md` | modified | `2026-09-06-acme-earlier` (committed) |",
       );
-      expect(source).toContain("so it gets no number and cannot be published until it is archived");
-      expect(source).toContain("A spec with several carriers stays one number and lists them all");
-      expect(source).toContain("both are valid, neither is more correct");
+      expect(source).toContain("| 3 | `openspec/specs/third-api/spec.md` | new | — |");
+      /** Every row is selectable, provenance or not. */
+      expect(source).toContain("**3** has no provenance and is selectable anyway");
+      expect(source).toContain(
+        "both together publish as `openspec/specs/<date>-other-api+third-api`",
+      );
       /** Sanitized names only: no real organization, repository, or spec names. */
       expect(source).not.toContain("tokensave-branching");
       expect(source).not.toContain("openspec-skill-deploy");
@@ -392,36 +398,71 @@ describe("bundled Mate artifact publish skill", () => {
   test("numbers rows for selection without letting a number become a target", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
-      expect(source).toContain("The number is a selection shorthand only");
+      expect(source).toContain("Numbers are selection shorthand only");
       expect(source).toContain(
         "never carry a bare number into step 3, a command argument, or a report",
       );
-      expect(source).toContain("Never carry a number or a spec `path` past this step");
+      expect(source).toContain("Never carry a number past this step");
       expect(source).toContain("a number that matches no row is a refusal, not a guess");
-      expect(source).toContain("**exactly one carrier** → the number resolves unambiguously");
-      expect(source).toContain("**more than one carrier** → the number is ambiguous");
-      expect(source).toContain("the spec gets no number, because nothing here is selectable");
-      expect(source).toContain("— (not archived)");
+      expect(source).toContain("always echo the resolved `name` or spec path");
+      expect(source).toContain(
+        "Carry a change selection as the exact `anchor` (or `name`) value from the JSON, and a spec selection as the exact `path` values",
+      );
     }
   });
 
-  /** A resume ships more than the selected spec, under an older anchor, behind a tag that stays put. */
-  test("discloses scope, attribution, and tag drift before accepting a resume", async () => {
+  /** A drifted spec publishes as itself, so the whole resume-to-carry-it framing is retired. */
+  test("never frames a drifted spec as something an archive carries", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
-      expect(source).toContain("A resume row is selectable but never free");
-      expect(source).toContain("**Scope is the archive, not the spec.**");
-      expect(source).toContain("**Attribution drifts.**");
-      expect(source).toContain("**The tag does not move.**");
-      expect(source).toContain("never pick the newest, the oldest, or the closest match");
-      expect(source).toContain(
-        "Name a resume selection as a resume: give its anchor, the specs its scope carries, and the stale-tag consequence",
-      );
+      for (const retired of [
+        "A resume row is selectable but never free",
+        "**Scope is the archive, not the spec.**",
+        "**Attribution drifts.**",
+        "**The tag does not move.**",
+        "resume target",
+        "carrier",
+      ]) {
+        expect(source).not.toContain(retired);
+      }
+      expect(source).toContain("A drifted spec is published in its own right");
+      expect(source).toContain("never reuses another change's anchor");
       const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
-      expect(reference).toContain("Resuming an archive to carry a drifted spec");
-      expect(reference).toContain("A resume is not always a no-op commit");
-      expect(reference).toContain("The tag stays where it is");
-      expect(reference).toContain("None of this is a reason to hand-commit the spec instead");
+      expect(reference).not.toContain("Resuming an archive to carry a drifted spec");
+      expect(reference).toContain("## Spec Publications");
+      expect(reference).toContain("It never means content was borrowed from another change");
+    }
+  });
+
+  /** The second publication unit: its own flag, tag namespace, subject, and no-op case. */
+  test("documents the spec publication unit end to end", async () => {
+    for (const root of bothRoots) {
+      const source = await readSkillFrom(root, "mate-artifact-publish");
+      expect(source).toContain("mate artifact publish --specs");
+      /** The tag names what it ships, so a bare date is never the whole anchor. */
+      expect(source).toContain("openspec/specs/<date>-<specs>");
+      const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
+      expect(reference).toContain("chore(openspec): sync canonical specs (<spec>, <spec>)");
+      expect(reference).toContain("the spec names it ships joined with `+`");
+      expect(reference).toContain("capped at three before the remainder becomes `+<n>-more`");
+      expect(reference).toContain("the lowest free suffix");
+      expect(reference).toContain("This is the one publication unit that computes its own anchor");
+      expect(reference).toContain("Nothing drifted is a clean no-op");
+    }
+  });
+
+  /** The unattended path an agent uses, still bounded by what the user selected. */
+  test("documents the unattended --all path without widening the selection", async () => {
+    for (const root of bothRoots) {
+      const source = await readSkillFrom(root, "mate-artifact-publish");
+      expect(source).toContain("mate artifact publish --all --json");
+      expect(source).toContain("Use it only when the user asked for all of it");
+      expect(source).toContain("never widen a selection into `--all`");
+      const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
+      expect(reference).toContain("## Unattended Publication");
+      expect(reference).toContain("single array");
+      expect(reference).toContain("halts at the first `conflict` or `error`");
+      expect(reference).toContain("it never substitutes for the user's selection");
     }
   });
 
@@ -429,9 +470,9 @@ describe("bundled Mate artifact publish skill", () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
       expect(source).toContain(
-        "Report this section whether or not anything is pending — including when `count` is `0`",
+        "Report the **Drifted specs** section under its headline whether or not anything is pending — including when `count` is `0`",
       );
-      expect(source).toContain("a resume selection is the only publishable option left");
+      expect(source).toContain("a spec selection is the only publishable option left");
       expect(source).toContain("the workflow then stops with no repository mutation");
     }
   });
@@ -446,10 +487,10 @@ describe("bundled Mate artifact publish skill", () => {
     }
   });
 
-  test("requires plain-text table selection of one or more entries", async () => {
+  test("requires table selection of one or more entries", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
-      expect(source).toContain("Present the entries as a terminal-friendly plain-text table");
+      expect(source).toContain("Present both sections as Markdown tables");
       expect(source).toContain("Accept one or more entries");
       expect(source).toContain("Never pick an entry for the user");
       expect(source).toContain('never default to "the newest" or "all of them"');
@@ -464,22 +505,30 @@ describe("bundled Mate artifact publish skill", () => {
     }
   });
 
-  test("gates commit, tag, and push behind one in-turn confirmation", async () => {
+  /** The selection IS the answer: re-asking after it would just repeat the same question. */
+  test("treats the selection as the go-ahead and announces all three side effects", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
-      expect(source).toContain("Before any publishing command runs");
+      expect(source).toContain("the selection is the go-ahead");
+      expect(source).toContain("Before the first publishing command runs");
       expect(source).toContain("**commit, tag, and push**");
+      expect(source).toContain("do **not** ask them to confirm it a second time");
       expect(source).toContain("Nothing is committed, tagged, or pushed");
-      expect(source).toContain("Do not infer consent");
-      expect(source).toContain("confirmation happens in this turn");
+      /** Asking is still how an unresolvable reply is handled — about what, never whether. */
+      expect(source).toContain("ask only about *what* to publish");
+      expect(source).toContain(
+        "Never turn that question into a re-confirmation of a selection already made",
+      );
+      /** A publish request that selected nothing is not a selection. */
+      expect(source).toContain("present step 2 first and let the user pick from it");
     }
   });
 
   test("keeps the deterministic publish CLI as the publication primitive", async () => {
     for (const root of bothRoots) {
       const source = await readSkillFrom(root, "mate-artifact-publish");
-      expect(source).toContain('mate artifact publish "<change-name>" --json');
-      expect(source).toContain("once per selected change, sequentially");
+      expect(source).toContain('mate artifact publish "<anchor-or-name>" --json');
+      expect(source).toContain("sequentially, never in parallel and never batched");
       expect(source).toContain("never hand-commit or hand-tag instead of the publish CLI");
       /** Publication logic stays in the CLI: no hand-rolled Git in the workflow body. */
       expect(source).not.toMatch(/```bash\n(?:[^`]*\n)?git (?:commit|tag|push)/);
@@ -576,7 +625,7 @@ describe("bundled Mate artifact publish skill", () => {
       expect(reference).toContain("Resumable Behavior");
       expect(reference).toContain("`resumed: true`");
       expect(reference).toContain(
-        "`resumed` is true when a prior publication already committed or tagged this anchor",
+        "`resumed` is true when this same publication already committed or tagged and is being retried",
       );
       expect(reference).toContain("A `push` failure after tag creation retains the commit and tag");
     }
@@ -589,7 +638,7 @@ describe("bundled Mate artifact publish skill", () => {
       expect(source).toContain("Report completed, failed, and remaining");
       expect(source).toContain("never report the selected set as published while one remains");
       const reference = await readReference(root, "mate-artifact-publish", "openspec.md");
-      expect(reference).toContain("Sequencing A Multi-Change Selection");
+      expect(reference).toContain("Sequencing A Multi-Part Selection");
       expect(reference).toContain("Stop at the first `conflict` or `error`");
       expect(reference).toContain("**completed**");
       expect(reference).toContain("**failed**");

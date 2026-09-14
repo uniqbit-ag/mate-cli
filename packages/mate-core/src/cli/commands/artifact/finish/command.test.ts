@@ -1,3 +1,7 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
@@ -278,5 +282,336 @@ describe("runArtifactPublishCommand", () => {
     expect(result.message).toContain("working repo target");
     expect(record).toEqual([]);
     expect(process.exitCode).toBe(1);
+  });
+});
+
+/** Publication-unit selection: `--specs` and `--all` alongside the positional change target. */
+describe("runArtifactPublishCommand — publication units", () => {
+  const SPEC = "openspec/specs/widget-api/spec.md";
+
+  interface UnitOptions {
+    changed?: string[];
+    companionPath?: string;
+    specStatus?: "ok" | "conflict" | "error";
+    changeStatus?: "ok" | "conflict" | "error";
+  }
+
+  function unitDeps(
+    record: string[],
+    options: UnitOptions = {},
+  ): { deps: PublishCommandDeps; stdout: string[]; stderr: string[] } {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const companionPath = options.companionPath ?? COMPANION;
+
+    /** Stands in for a real publication: records the call and forces the wanted status. */
+    const staged = (label: string, status: "ok" | "conflict" | "error"): ArtifactFinisher => ({
+      type: "openspec",
+      disabledReason: "disabled",
+      isEnabled: () => true,
+      async resolve(target) {
+        record.push(`${label}:${target}`);
+        return status === "error"
+          ? { ok: false, message: `${label} refused` }
+          : {
+              ok: true,
+              resolved: { anchorName: "2026-09-14", commitPaths: [SPEC] },
+            };
+      },
+    });
+
+    const deps: PublishCommandDeps = {
+      resolveContext: async () => ({ ...makeContext(), companionPath }),
+      loadCapabilities: async () => [{ name: "openspec" }],
+      selectFinisher: () => () => staged("change", options.changeStatus ?? "ok"),
+      specsFinisher: (_context, paths) => {
+        record.push(`specs:${paths.join(",")}`);
+        return staged("specsRun", options.specStatus ?? "ok");
+      },
+      git: () => ({
+        ...stubGit([], "main"),
+        async changedPaths() {
+          return options.changed ?? [];
+        },
+        async hasUpstream() {
+          return options.specStatus === "conflict";
+        },
+        async rebaseOntoUpstream() {
+          return options.specStatus === "conflict"
+            ? { ok: false, conflictedPaths: [SPEC] }
+            : { ok: true, conflictedPaths: [] };
+        },
+      }),
+      now: () => new Date(2026, 8, 14),
+      stdout: (l) => stdout.push(l),
+      stderr: (l) => stderr.push(l),
+    };
+    return { deps, stdout, stderr };
+  }
+
+  test("a bare name alongside --specs is refused as a different publication unit", async () => {
+    const record: string[] = [];
+    const { deps, stderr } = unitDeps(record);
+
+    await runArtifactPublishCommand(["my-change", "--specs"], deps);
+
+    expect(record).toEqual([]);
+    expect(stderr.join("\n")).toContain("different publication units");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("--all combined with any other target is refused", async () => {
+    const record: string[] = [];
+    const { deps, stderr } = unitDeps(record);
+
+    await runArtifactPublishCommand(["my-change", "--all"], deps);
+
+    expect(record).toEqual([]);
+    expect(stderr.join("\n")).toContain("--all already publishes");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("no target at all names the three forms", async () => {
+    const record: string[] = [];
+    const { deps, stderr } = unitDeps(record);
+
+    await runArtifactPublishCommand([], deps);
+
+    expect(record).toEqual([]);
+    expect(stderr.join("\n")).toContain("--specs");
+    expect(stderr.join("\n")).toContain("--all");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("a change literally named specs still resolves as a change", async () => {
+    const record: string[] = [];
+    const { deps } = unitDeps(record);
+
+    await runArtifactPublishCommand(["specs"], deps);
+
+    expect(record).toEqual(["change:specs"]);
+  });
+
+  test("--specs publishes every drifted spec", async () => {
+    const record: string[] = [];
+    const { deps } = unitDeps(record, { changed: [SPEC] });
+
+    await runArtifactPublishCommand(["--specs"], deps);
+
+    expect(record).toEqual([`specs:${SPEC}`, "specsRun:--specs"]);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("--specs narrows to the supplied paths", async () => {
+    const record: string[] = [];
+    const other = "openspec/specs/other-api/spec.md";
+    const { deps } = unitDeps(record, { changed: [SPEC, other] });
+
+    await runArtifactPublishCommand(["--specs", other], deps);
+
+    expect(record[0]).toBe(`specs:${other}`);
+  });
+
+  test("--specs refuses a supplied path that is not drifted", async () => {
+    const record: string[] = [];
+    const { deps, stderr } = unitDeps(record, { changed: [] });
+
+    await runArtifactPublishCommand(["--specs", SPEC], deps);
+
+    expect(record).toEqual([]);
+    expect(stderr.join("\n")).toContain("not drifted");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("--specs refuses a supplied path outside the canonical spec tree", async () => {
+    const record: string[] = [];
+    const { deps, stderr } = unitDeps(record, { changed: [SPEC] });
+
+    await runArtifactPublishCommand(["--specs", "openspec/changes/my-change/proposal.md"], deps);
+
+    expect(record).toEqual([]);
+    expect(stderr.join("\n")).toContain("not a canonical spec");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("--specs with no drift is a clean no-op", async () => {
+    const record: string[] = [];
+    const { deps, stdout } = unitDeps(record, { changed: [] });
+
+    await runArtifactPublishCommand(["--specs"], deps);
+
+    expect(record).toEqual([]);
+    expect(stdout.join("\n")).toContain("nothing to publish");
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("--specs --json reports the no-op as skipped with a null tag", async () => {
+    const record: string[] = [];
+    const { deps, stdout } = unitDeps(record, { changed: [] });
+
+    await runArtifactPublishCommand(["--specs", "--json"], deps);
+
+    const result = JSON.parse(stdout[0] ?? "{}") as Record<string, unknown>;
+    expect(result.status).toBe("skipped");
+    expect(result.tag).toBeNull();
+    expect(result.local).toEqual({ committed: false, tagged: false, pushed: false });
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("--all with an empty queue succeeds and emits an empty array", async () => {
+    const record: string[] = [];
+    const { deps, stdout } = unitDeps(record, { changed: [] });
+
+    await runArtifactPublishCommand(["--all", "--json"], deps);
+
+    expect(record).toEqual([]);
+    expect(JSON.parse(stdout[0] ?? "null")).toEqual([]);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("--all publishes remaining drift after the changes", async () => {
+    const record: string[] = [];
+    const { deps, stdout } = unitDeps(record, { changed: [SPEC] });
+
+    await runArtifactPublishCommand(["--all", "--json"], deps);
+
+    expect(record).toEqual([`specs:${SPEC}`, "specsRun:--specs"]);
+    expect((JSON.parse(stdout[0] ?? "[]") as unknown[]).length).toBe(1);
+  });
+
+  test("--all emits one array, not one JSON document per publication", async () => {
+    const record: string[] = [];
+    const { deps, stdout } = unitDeps(record, { changed: [SPEC] });
+
+    await runArtifactPublishCommand(["--all", "--json"], deps);
+
+    expect(stdout.length).toBe(1);
+    expect(Array.isArray(JSON.parse(stdout[0]))).toBe(true);
+  });
+
+  test("--all halts at a conflict and still reports what ran", async () => {
+    const record: string[] = [];
+    const { deps, stdout } = unitDeps(record, { changed: [SPEC], specStatus: "conflict" });
+
+    await runArtifactPublishCommand(["--all", "--json"], deps);
+
+    const results = JSON.parse(stdout[0] ?? "[]") as Array<{ status: string }>;
+    expect(results.at(-1)?.status).toBe("conflict");
+  });
+});
+
+/** `--all` sequencing against real archive directories on disk. */
+describe("runArtifactPublishCommand — --all sequencing", () => {
+  const SPEC = "openspec/specs/widget-api/spec.md";
+  const roots: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  });
+
+  async function companionWithArchives(anchors: string[]): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-publish-all-"));
+    roots.push(dir);
+    for (const anchor of anchors) {
+      const archive = path.join(dir, "openspec", "changes", "archive", anchor);
+      await fs.mkdir(archive, { recursive: true });
+      await fs.writeFile(path.join(archive, "proposal.md"), "archived\n", "utf8");
+    }
+    return dir;
+  }
+
+  function deps(
+    record: string[],
+    companionPath: string,
+    changed: string[],
+    changeStatus: "ok" | "error" = "ok",
+  ): { deps: PublishCommandDeps; stdout: string[] } {
+    const stdout: string[] = [];
+    return {
+      stdout,
+      deps: {
+        resolveContext: async () => ({ ...makeContext(), companionPath }),
+        loadCapabilities: async () => [{ name: "openspec" }],
+        selectFinisher: () => () => ({
+          type: "openspec",
+          disabledReason: "disabled",
+          isEnabled: () => true,
+          async resolve(target) {
+            record.push(`change:${target}`);
+            return changeStatus === "error"
+              ? { ok: false, message: "refused" }
+              : { ok: true, resolved: { anchorName: target, commitPaths: ["openspec"] } };
+          },
+        }),
+        specsFinisher: (_c, paths) => {
+          record.push(`specs:${paths.join(",")}`);
+          return {
+            type: "openspec",
+            disabledReason: "disabled",
+            isEnabled: () => true,
+            async resolve() {
+              return { ok: true, resolved: { anchorName: "2026-09-14", commitPaths: paths } };
+            },
+          };
+        },
+        git: () => ({
+          ...stubGit([], "main"),
+          async changedPaths() {
+            return changed;
+          },
+        }),
+        stdout: (l) => stdout.push(l),
+      },
+    };
+  }
+
+  test("publishes every pending change in discovery order, then the remaining drift", async () => {
+    const companion = await companionWithArchives(["2026-09-10-alpha", "2026-09-14-beta"]);
+    const record: string[] = [];
+    const changed = [
+      "openspec/changes/archive/2026-09-14-beta/",
+      "openspec/changes/archive/2026-09-10-alpha/",
+      SPEC,
+    ];
+    const { deps: d } = deps(record, companion, changed);
+
+    await runArtifactPublishCommand(["--all", "--json"], d);
+
+    expect(record).toEqual(["change:2026-09-10-alpha", "change:2026-09-14-beta", `specs:${SPEC}`]);
+  });
+
+  test("a change failure halts the queue before any later publication", async () => {
+    const companion = await companionWithArchives(["2026-09-10-alpha", "2026-09-14-beta"]);
+    const record: string[] = [];
+    const changed = [
+      "openspec/changes/archive/2026-09-10-alpha/",
+      "openspec/changes/archive/2026-09-14-beta/",
+      SPEC,
+    ];
+    const { deps: d, stdout } = deps(record, companion, changed, "error");
+
+    await runArtifactPublishCommand(["--all", "--json"], d);
+
+    expect(record).toEqual(["change:2026-09-10-alpha"]);
+    const results = JSON.parse(stdout[0] ?? "[]") as Array<{ status: string }>;
+    expect(results.length).toBe(1);
+    expect(results[0].status).toBe("error");
+  });
+
+  test("a change that already committed its spec leaves no drift to publish", async () => {
+    const companion = await companionWithArchives(["2026-09-14-widget"]);
+    const archive = path.join(
+      companion,
+      "openspec/changes/archive/2026-09-14-widget/specs/widget-api",
+    );
+    await fs.mkdir(archive, { recursive: true });
+    await fs.writeFile(path.join(archive, "spec.md"), "delta\n", "utf8");
+    const record: string[] = [];
+    const changed = ["openspec/changes/archive/2026-09-14-widget/", SPEC];
+    const { deps: d } = deps(record, companion, changed);
+
+    await runArtifactPublishCommand(["--all", "--json"], d);
+
+    expect(record).toEqual(["change:2026-09-14-widget"]);
   });
 });

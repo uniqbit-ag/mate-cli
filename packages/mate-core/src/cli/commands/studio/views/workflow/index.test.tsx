@@ -134,22 +134,33 @@ describe("workflowPlan", () => {
     const full = workflowSteps("mate-v1");
     const minimal = workflowSteps("mate-minimal");
     expect(full.find((step) => step.id === "explore")?.prompt).toBe(
-      "/openspec-explore (use schema: mate-v1) for <change-name>",
+      "/openspec-explore for <change-name>",
     );
     expect(full.find((step) => step.id === "proposal")?.prompt).toBe(
-      "/openspec-propose (use schema: mate-v1) for <change-name>",
+      "/openspec-propose for <change-name>",
     );
     expect(minimal.find((step) => step.id === "propose")?.prompt).toBe(
       "/openspec-propose (use schema: mate-minimal) for <change-name>",
     );
-    expect(minimal.find((step) => step.id === "specs")?.prompt).toBe(
-      "Review specs/ (use schema: mate-minimal) for <change-name>",
-    );
+    const reviewSteps = full.filter((step) => step.kind === "review");
+    expect(reviewSteps.map((step) => step.prompt)).toEqual([
+      "Review <change-name>/",
+      "Review <change-name>/",
+      "Review <change-name>/",
+    ]);
+    expect(reviewSteps.map((step) => step.copyPrompt)).toEqual([
+      "Review /",
+      "Review /",
+      "Review /",
+    ]);
+    expect(reviewSteps.every((step) => !step.prompt.includes("use schema"))).toBe(true);
+    expect(minimal.find((step) => step.id === "specs")?.prompt).toBe("Review <change-name>/");
     expect(full.find((step) => step.id === "apply")?.prompt).toBe(
-      "/openspec-apply-change (use schema: mate-v1) for <change-name>",
+      "/openspec-apply-change for <change-name>",
     );
-    expect(full.find((step) => step.id === "apply")?.copyPrompt).toBe(
-      "/openspec-apply-change (use schema: mate-v1) for",
+    expect(full.find((step) => step.id === "apply")?.copyPrompt).toBe("/openspec-apply-change for");
+    expect(minimal.find((step) => step.id === "apply")?.prompt).toBe(
+      "/openspec-apply-change (use schema: mate-minimal) for <change-name>",
     );
     expect(full.find((step) => step.id === "apply")?.sessionBreakBefore).toBe(true);
     expect(full.find((step) => step.id === "show-me")?.sessionBreakBefore).toBe(true);
@@ -197,6 +208,11 @@ describe("workflowPlan", () => {
     /** Publishing is terminal over an archive it did not create. */
     expect(finish.what).toContain("already-archived");
     expect(finish.what).not.toContain("delta specs");
+    /** Both publication units are named: a change, and a drifted canonical spec. */
+    expect(finish.what).toContain("drifted canonical specs");
+    /** The selection is the go-ahead, so the step announces rather than re-asks. */
+    expect(finish.what).toContain("announcing");
+    expect(finish.what).not.toContain("confirms");
     expect(finish.why).toContain("only sanctioned completion");
   });
 
@@ -261,12 +277,12 @@ describe("Workflow", () => {
     expect(markup).toContain('data-copy="/openspec-archive-change for"');
     expect(markup.match(/class="workflow-console-divider"/g)).toHaveLength(2);
     expect(markup).toContain("feature is on production");
-    expect(markup).toContain("Review specs/");
+    expect(markup).toContain("Review &lt;change-name&gt;/");
     expect(markup).not.toContain('data-copy-label="specs prompt"');
     expect(markup).not.toContain('data-copy-label="design prompt"');
     expect(markup).not.toContain('data-copy-label="tasks prompt"');
     expect(markup).toContain("for &lt;change-name&gt;");
-    expect(markup).toContain('data-copy="/openspec-apply-change (use schema: mate-v1) for"');
+    expect(markup).toContain('data-copy="/openspec-apply-change for"');
     expect(markup).not.toMatch(/data-copy="[^"]*change-name/);
     expect(markup).not.toContain("Skip pre-explore");
   });

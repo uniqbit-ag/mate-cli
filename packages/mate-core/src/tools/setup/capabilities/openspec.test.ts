@@ -419,8 +419,10 @@ describe("createOpenspecPlugin", () => {
         "utf8",
       );
       expect(publishSkill).toContain("commit, tag, and push");
-      expect(publishSkill).toContain("plain-text table");
-      expect(publishSkill).toContain('artifact publish "<change-name>" --json');
+      expect(publishSkill).toContain("Present both sections as Markdown tables");
+      expect(publishSkill).toContain('artifact publish "<anchor-or-name>" --json');
+      expect(publishSkill).toContain("artifact publish --specs");
+      expect(publishSkill).toContain("artifact publish --all --json");
       await expect(
         fs.readFile(
           path.join(
@@ -433,7 +435,7 @@ describe("createOpenspecPlugin", () => {
           ),
           "utf8",
         ),
-      ).resolves.toContain("Sequencing A Multi-Change Selection");
+      ).resolves.toContain("Sequencing A Multi-Part Selection");
     }
   });
 

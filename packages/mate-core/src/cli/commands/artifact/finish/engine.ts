@@ -54,6 +54,15 @@ export interface EngineDeps {
  * Isolation is a clean abort, not a rollback: the resolved artifact is durable input
  * the pipeline never produced, so no step resets, restores, or deletes a path.
  */
+/** Lowest free `<base>.N` (N from 2), probed against the tags that exist now. */
+async function nextFreeTag(git: GitOps, base: string): Promise<string> {
+  for (let suffix = 2; suffix <= 1000; suffix += 1) {
+    const candidate = `${base}.${suffix}`;
+    if (!(await git.tagExists(candidate))) return candidate;
+  }
+  throw new Error(`exhausted ${base}.2 through ${base}.1000 without a free tag name`);
+}
+
 export async function runFinishEngine(
   finisher: ArtifactFinisher,
   options: EngineOptions,
@@ -102,8 +111,11 @@ export async function runFinishEngine(
   }
   const resolved: Produced = resolution.resolved;
   result.anchorName = resolved.anchorName;
-  const tagName = `${finisher.type}/${resolved.anchorName}`;
-  result.tag = tagName;
+  const baseTag = `${resolved.tagNamespace ?? finisher.type}/${resolved.anchorName}`;
+  // Provisional: a `suffix` publication only learns its final name at the tag
+  // step, once the remote sync has revealed tags created elsewhere. Early exits
+  // therefore report the tag this run would have created, not one that exists.
+  result.tag = baseTag;
 
   // Branch guard — before cap sync, so a refusal mutates nothing at all. It applies to
   // --no-push too: the local tag it creates is the anchor a later push would publish.
@@ -146,7 +158,7 @@ export async function runFinishEngine(
     await git.add(resolved.commitPaths);
     if (await git.hasStagedChanges(resolved.commitPaths)) {
       await git.commit(
-        `chore(${finisher.type}): finish ${resolved.anchorName}`,
+        resolved.commitSubject ?? `chore(${finisher.type}): finish ${resolved.anchorName}`,
         resolved.commitPaths,
       );
     } else {
@@ -187,14 +199,21 @@ export async function runFinishEngine(
     }
   }
 
-  // Tag the (rebased) publication commit — idempotent if a prior run already tagged it.
+  // Tag the (rebased) publication commit — idempotent if a prior run already tagged
+  // it. A `suffix` publication that produced a fresh commit takes the next free name
+  // instead, so its commit gets an anchor rather than trailing someone else's tag.
   result.step = "tag";
+  let tagName = baseTag;
   try {
-    if (await git.tagExists(tagName)) {
-      result.resumed = true;
-    } else {
+    if (!(await git.tagExists(baseTag))) {
       await git.tag(tagName, `Publish ${resolved.anchorName}`);
+    } else if (resolved.tagCollision === "suffix" && !result.resumed) {
+      tagName = await nextFreeTag(git, baseTag);
+      await git.tag(tagName, `Publish ${resolved.anchorName}`);
+    } else {
+      result.resumed = true;
     }
+    result.tag = tagName;
   } catch (err) {
     // Post-commit failure: retain the commit, do not roll back.
     fail("tag", `mate: tag failed: ${String(err)}`);

@@ -4,9 +4,11 @@ import type { CapabilityConfig } from "../../../../lib/orchestrator/types";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
 import { type BooleanFlagSet, parseFlags } from "../../../parse-flags";
 import { ensureUnambiguousCompanion } from "../../shared/companion-selection";
-import { runFinishEngine } from "./engine";
-import type { FinishContext, FinisherFactory } from "./finisher";
+import { discoverArchives, pendingArchives } from "../pending/discovery";
+import { type FinishResult, runFinishEngine } from "./engine";
+import type { ArtifactFinisher, FinishContext, FinisherFactory } from "./finisher";
 import { defaultGitOps, type GitOps } from "./git";
+import { openspecSpecsFinisher, resolveDriftedSpecs } from "./openspec";
 import { DEFAULT_FINISHER_TYPE, knownFinisherTypes, selectFinisher } from "./registry";
 
 export interface PublishCommandDeps {
@@ -15,27 +17,35 @@ export interface PublishCommandDeps {
   loadCapabilities?: (context: LaunchContext) => Promise<CapabilityConfig[]>;
   selectFinisher?: (type: string) => FinisherFactory | undefined;
   git?: (companionPath: string, workingRepoPath?: string) => GitOps;
+  /** Injectable clock; a spec publication's anchor is the calendar date it runs on. */
+  now?: () => Date;
+  /** Injectable spec-publication finisher; mirrors `selectFinisher` for the other unit. */
+  specsFinisher?: (context: FinishContext, paths: string[], now: () => Date) => ArtifactFinisher;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
 
 /** Presence-only flags; every other `--flag` consumes the following token as its value. */
-const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["no-push", "json"]);
+const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["no-push", "json", "specs", "all"]);
 
 /**
- * First non-flag token. Consumes the value of a value-taking flag exactly as
- * {@link parseFlags} does, so the name and the flags can never disagree about which
- * token belongs to whom.
+ * Every non-flag token, in order. Consumes the value of a value-taking flag exactly as
+ * {@link parseFlags} does, so the positionals and the flags can never disagree about
+ * which token belongs to whom.
  */
-function positionalName(argv: string[]): string | undefined {
+function positionalNames(argv: string[]): string[] {
+  const names: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
-    if (!token.startsWith("--")) return token;
+    if (!token.startsWith("--")) {
+      names.push(token);
+      continue;
+    }
     const key = token.slice(2);
     if (key.includes("=") || BOOLEAN_FLAGS.has(key)) continue;
     index += 1;
   }
-  return undefined;
+  return names;
 }
 
 async function defaultLoadCapabilities(context: LaunchContext): Promise<CapabilityConfig[]> {
@@ -43,23 +53,60 @@ async function defaultLoadCapabilities(context: LaunchContext): Promise<Capabili
   return config.capabilities ?? [];
 }
 
+/** A publication the pipeline never ran: nothing was resolved, committed, tagged, or pushed. */
+function nothingToPublish(name: string, message: string): FinishResult {
+  return {
+    type: DEFAULT_FINISHER_TYPE,
+    name,
+    anchorName: null,
+    tag: null,
+    resumed: false,
+    step: "done",
+    status: "skipped",
+    conflictedPaths: [],
+    local: { committed: false, tagged: false, pushed: false },
+    message,
+  };
+}
+
+function refusalResult(type: string, name: string, message: string): FinishResult {
+  return {
+    type,
+    name,
+    anchorName: null,
+    tag: null,
+    resumed: false,
+    step: "resolve",
+    status: "error",
+    conflictedPaths: [],
+    local: { committed: false, tagged: false, pushed: false },
+    message,
+  };
+}
+
 /**
  * @command mate artifact publish <target>
- * @description Publishes an already-archived artifact/change. Resolves the launch
- * context for the current working repo, loads the enabled capabilities, selects a
- * {@link FinisherFactory} for `--type` (defaulting to `DEFAULT_FINISHER_TYPE`, e.g. an
- * OpenSpec change), and — if that finisher is enabled for this repo's capabilities —
- * runs {@link runFinishEngine} to resolve the archive and commit/tag/push it via
- * {@link GitOps}. Archiving is a precondition performed by the archive workflow.
+ * @description Publishes an already-produced artifact. Resolves the launch context for the
+ * current working repo, loads the enabled capabilities, and runs {@link runFinishEngine} to
+ * commit/tag/push via {@link GitOps}. Two publication units exist: an archived change,
+ * named positionally, and a spec publication of drifted canonical specs, selected with
+ * `--specs`. Archiving is a precondition performed by the archive workflow; this command
+ * never archives.
  * @flags
- * - `<target>` — required positional: a dated archive anchor (`YYYY-MM-DD-<name>`), or a
- *   change name that matches exactly one archive.
- * - `--type <type>` — finisher type to use; see `knownFinisherTypes()`.
+ * - `<target>` — a dated archive anchor (`YYYY-MM-DD-<name>`), or a change name matching
+ *   exactly one archive. Mutually exclusive with `--specs` and `--all`.
+ * - `--specs [<path>...]` — publish drifted canonical specs as their own publication under a
+ *   new `openspec/specs/<date>-<specs>` tag. Bare, it publishes every drifted spec; with paths, only
+ *   those. A bare name alongside it is a change target and is refused.
+ * - `--all` — publish every pending change in discovery order, then one spec publication for
+ *   the drift that remains. Halts at the first conflict or error; with `--json` it emits a
+ *   single array of results in execution order.
+ * - `--type <type>` — finisher type to use; see `knownFinisherTypes()`. `--specs` and
+ *   `--all` are openspec-only.
  * - `--no-push` — commit and tag locally but skip the remote sync and push.
- * - `--json` — emit machine-readable JSON result instead of human-readable text.
- * @remarks No-ops (with a message on stderr) when the selected finisher is
- * disabled for the repo's configured capabilities — nothing is resolved or mutated
- * in that case.
+ * - `--json` — emit machine-readable JSON instead of human-readable text.
+ * @remarks No-ops (with a message on stderr) when the selected finisher is disabled for the
+ * repo's configured capabilities — nothing is resolved or mutated in that case.
  */
 export async function runArtifactPublishCommand(
   argv: string[],
@@ -72,11 +119,40 @@ export async function runArtifactPublishCommand(
   const noPush = flags["no-push"] === true;
   const json = flags.json === true;
   const type = typeof flags.type === "string" ? flags.type : DEFAULT_FINISHER_TYPE;
-  const name = positionalName(argv);
+  const specsMode = flags.specs === true;
+  const allMode = flags.all === true;
+  const positionals = positionalNames(argv);
 
-  if (!name) {
-    emitErr("mate: artifact publish requires an archive anchor or change name.");
+  /** With `--specs`, a path narrows the publication; a bare name is a change target. */
+  const specPaths = specsMode ? positionals.filter((token) => token.includes("/")) : [];
+  const changeTargets = specsMode
+    ? positionals.filter((token) => !token.includes("/"))
+    : positionals;
+
+  /** Argument refusals go to stderr in every mode: nothing was resolved to report on. */
+  const refuse = (message: string): void => {
+    emitErr(message);
     process.exitCode = 1;
+  };
+
+  if (allMode && (specsMode || positionals.length > 0)) {
+    refuse(
+      "mate: --all already publishes both pending changes and drifted specs; drop the extra target.",
+    );
+    return;
+  }
+  if (specsMode && changeTargets.length > 0) {
+    refuse(
+      `mate: "${changeTargets[0]}" is a change target and --specs publishes canonical specs; they are different publication units. Pass one or the other.`,
+    );
+    return;
+  }
+  if (!allMode && !specsMode && positionals.length === 0) {
+    refuse("mate: artifact publish requires an archive anchor or change name, --specs, or --all.");
+    return;
+  }
+  if ((allMode || specsMode) && type !== DEFAULT_FINISHER_TYPE) {
+    refuse(`mate: --specs and --all are only available for the ${DEFAULT_FINISHER_TYPE} type.`);
     return;
   }
 
@@ -132,31 +208,79 @@ export async function runArtifactPublishCommand(
     );
   } catch (err) {
     const message = `mate: publish Git guard rejected the target: ${String(err)}`;
-    if (json) {
-      emitOut(
-        JSON.stringify({
-          type,
-          name,
-          anchorName: null,
-          tag: null,
-          resumed: false,
-          step: "resolve",
-          status: "error",
-          conflictedPaths: [],
-          local: { committed: false, tagged: false, pushed: false },
-          message,
-        }),
-      );
-    } else {
-      emitErr(message);
-    }
+    if (json) emitOut(JSON.stringify(refusalResult(type, positionals[0] ?? "", message)));
+    else emitErr(message);
     process.exitCode = 1;
     return;
   }
 
-  await runFinishEngine(
-    finisher,
-    { name, noPush },
-    { git, json, stdout: emitOut, stderr: emitErr },
-  );
+  const now = deps.now ?? (() => new Date());
+  /**
+   * Under `--all --json` the array is the whole output, so the per-publication emission is
+   * suppressed; every other mode lets the engine report each publication as it finishes.
+   */
+  const quiet = allMode && json;
+  const engineDeps = {
+    git,
+    json: !allMode && json,
+    stdout: quiet ? (): void => {} : emitOut,
+    stderr: quiet ? (): void => {} : emitErr,
+  };
+
+  const runChange = (target: string): Promise<FinishResult> =>
+    runFinishEngine(finisher, { name: target, noPush }, engineDeps);
+
+  const runSpecs = async (requested: string[]): Promise<FinishResult | null> => {
+    const drift = await resolveDriftedSpecs(context.companionPath, git, requested);
+    if (!drift.ok) {
+      if (!quiet && !json) emitErr(drift.message);
+      process.exitCode = 1;
+      return refusalResult(type, "--specs", drift.message);
+    }
+    if (drift.paths.length === 0) return null;
+    const makeSpecsFinisher = deps.specsFinisher ?? openspecSpecsFinisher;
+    const specsFinisher = makeSpecsFinisher(finishContext, drift.paths, now);
+    return runFinishEngine(specsFinisher, { name: "--specs", noPush }, engineDeps);
+  };
+
+  const halted = (result: FinishResult): boolean =>
+    result.status === "conflict" || result.status === "error";
+
+  if (allMode) {
+    const results: FinishResult[] = [];
+    const changed = await git.changedPaths();
+    const changeKinds = (await git.changedPathKinds?.()) ?? {};
+    const archives = await discoverArchives(context.companionPath, changed, changeKinds);
+
+    for (const entry of pendingArchives(archives)) {
+      const result = await runChange(entry.anchor);
+      results.push(result);
+      if (halted(result)) {
+        if (json) emitOut(JSON.stringify(results));
+        return;
+      }
+    }
+
+    /** Drift is recomputed: a spec a change just committed is no longer drifted. */
+    const specResult = await runSpecs([]);
+    if (specResult) results.push(specResult);
+
+    if (json) emitOut(JSON.stringify(results));
+    else if (results.length === 0) emitOut("Nothing to publish.");
+    return;
+  }
+
+  if (specsMode) {
+    const result = await runSpecs(specPaths);
+    const emitted =
+      result ?? nothingToPublish("--specs", "No drifted canonical specs; nothing to publish.");
+    if (json) {
+      if (result === null) emitOut(JSON.stringify(emitted));
+    } else if (result === null) {
+      emitOut(emitted.message);
+    }
+    return;
+  }
+
+  await runChange(positionals[0]);
 }

@@ -356,7 +356,7 @@ ul.plain li:last-child { border-bottom: 0; }
 .workflow-console-divider { display: flex; align-items: center; gap: 12px; padding: 16px 0 4px 55px; color: var(--accent); font-family: var(--mono); font-size: .63rem; text-transform: uppercase; }
 .workflow-console-divider::after { flex: 1; height: 1px; background: var(--border); content: ""; }
 .workflow-option-list { display: grid; gap: 3px; margin: 8px 0 0 18px; }
-.workflow-option { display: grid; gap: 1px; padding-left: 8px; border-left: 2px solid var(--why); }
+.workflow-option { display: grid; gap: 1px; padding-left: 8px; }
 .workflow-option small { color: var(--muted); font-size: .65rem; line-height: 1.35; }
 .workflow-option .runway-step-copy { justify-self: start; }
 

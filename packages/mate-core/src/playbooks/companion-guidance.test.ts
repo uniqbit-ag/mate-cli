@@ -108,6 +108,43 @@ describe("buildCompanionGuidance", () => {
     expect(withoutOpenspec).not.toContain('id="openspec-publish"');
   });
 
+  test("explains companion, domain, and repository Area scope", () => {
+    const guidance = buildCompanionGuidance({
+      companionPath: "/tmp/companion",
+      repository: {
+        id: "app",
+        path: "/tmp/working",
+      },
+    } as never);
+
+    expect(guidance).toContain('id="companion-multi-repository"');
+    expect(guidance).toContain("may serve multiple Working Repositories");
+    expect(guidance).toContain("session's single primary Working Repository");
+    expect(guidance).toContain('id="repository-area-scope"');
+    expect(guidance).toContain("repository-relative Area");
+    expect(guidance).toContain("Area alone is not a repository identity");
+  });
+
+  test("explains OpenSpec repository and Area scope when enabled", () => {
+    const guidance = buildCompanionGuidance({
+      capabilities: [{ name: "openspec" }],
+      companionPath: "/tmp/companion",
+      repository: {
+        id: "app",
+        path: "/tmp/working",
+      },
+    } as never);
+
+    expect(guidance).toContain('id="openspec-scope"');
+    expect(guidance).toContain("frontmatter repository identifies the Working Repository");
+    expect(guidance).toContain("repository-relative paths within that repository");
+    expect(guidance).toContain("Canonical specs use repository plus flat areas");
+    expect(guidance).toContain("change artifacts use paired scopes entries");
+    expect(guidance).toContain("Area normally stops at the package root");
+    expect(guidance).toContain("each resulting spec remains owned by one repository");
+    expect(guidance).toContain("each requirement must bind its Area explicitly");
+  });
+
   test("omits allowed-agent policy echo from prompt guidance", () => {
     const guidance = buildCompanionGuidance({
       companionPath: "/tmp/companion",
