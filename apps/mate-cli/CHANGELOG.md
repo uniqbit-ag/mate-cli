@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.16.0](https://github.com/uniqbit-ag/mate-cli/compare/0.15.5...0.16.0) (2026-09-15)
+
+## [0.16.0-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.15.5...0.16.0) (2026-09-15)
+
+### Bug Fixes
+
+- make update checks channel-aware ([7c5af5a](https://github.com/uniqbit-ag/mate-cli/commit/7c5af5a216162d79b684170a7a2a64ea875b10ee))
+- update Tokensave setup posture ([dfa0065](https://github.com/uniqbit-ag/mate-cli/commit/dfa0065fef97308ede2857ac9325283436ff3757))
+
+## [0.16.0-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.15.5...0.16.0) (2026-09-14)
+
+### ⚠ BREAKING CHANGES
+
+- remove the Headroom capability and proxied launches
+
+### Features
+
+- add artifact publish workflow ([c409b70](https://github.com/uniqbit-ag/mate-cli/commit/c409b70cdab80d3eed048516579cae955bd6e0ef))
+- add companion git synchronization ([dce3366](https://github.com/uniqbit-ag/mate-cli/commit/dce33669f437a0ce621b826273eac639ec94a2f8))
+- add companion skills and workflow transcript ([17d098c](https://github.com/uniqbit-ag/mate-cli/commit/17d098cb9c177cef5696237a41a57b0fd4ba8f37))
+- add shared mate-skills library and mate-minimal schema ([63ec798](https://github.com/uniqbit-ag/mate-cli/commit/63ec798fb15ab346572f0a990f8f4d59b40622a0))
+- add Studio skills inventory view ([0f80623](https://github.com/uniqbit-ag/mate-cli/commit/0f806236aca7866b84a86e704af6ab3b5887d2ab))
+- add the mate studio local page ([719c5ae](https://github.com/uniqbit-ag/mate-cli/commit/719c5ae0541577394c04a40458cce25f4d374326))
+- auto-repair recoverable install state ([6fe572e](https://github.com/uniqbit-ag/mate-cli/commit/6fe572e2dedc70e875d70e6043bbfe4958917f40))
+- deliver companion guidance to unmanaged sessions ([77c580d](https://github.com/uniqbit-ag/mate-cli/commit/77c580dfb5b25069749f6c9a7b6d6090e4e605af))
+- expand artifact workflows and companion guidance ([cfac2a3](https://github.com/uniqbit-ag/mate-cli/commit/cfac2a3755a4b049d9eae2d2cd58706bf999bca5))
+- expand companion workflows and reports ([245b760](https://github.com/uniqbit-ag/mate-cli/commit/245b76039d2eb1b952be8b051f3f07bb0ccd06e5))
+- keep wrap and the managed launches apart ([7ef4cfc](https://github.com/uniqbit-ag/mate-cli/commit/7ef4cfc9b418cb4790aed067988797f8db5b8e8e))
+- mate wrap ([21776d4](https://github.com/uniqbit-ag/mate-cli/commit/21776d4f2cf136cbc5ef446401b1fcf628baafea))
+- publish archived artifacts by anchor ([24aad02](https://github.com/uniqbit-ag/mate-cli/commit/24aad027fad9a684d33e498e8c9786d6a8d76ab0))
+- publish archived artifacts by anchor ([2277767](https://github.com/uniqbit-ag/mate-cli/commit/2277767996e439c73180e3ce2af2ce2a95376dc5))
+- remove the Headroom capability and proxied launches ([2410af0](https://github.com/uniqbit-ag/mate-cli/commit/2410af05c96ff216d0e791cec759686319d42af0))
+
+### Bug Fixes
+
+- auto-upgrade outdated OpenSpec installations ([d08fd8c](https://github.com/uniqbit-ag/mate-cli/commit/d08fd8c2d3d6f345a154865d8b4722210ec65b0d))
+- remove projected Claude skills on unwrap ([6447e39](https://github.com/uniqbit-ag/mate-cli/commit/6447e3928d37f903403af07032d8a04b53d73a17))
+- state the launch refusal's ordering precisely ([12e9a6d](https://github.com/uniqbit-ag/mate-cli/commit/12e9a6d02d7b37630159cbe5212aa7426995b4cd))
+- support interactive Git during launch ([094ec47](https://github.com/uniqbit-ag/mate-cli/commit/094ec4782b032928189769dfb99e34efed330516))
+
 ## Unreleased
 
 ### Removed
