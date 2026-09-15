@@ -25,19 +25,18 @@ async function scenario(): Promise<{ root: string; companion: string; working: s
   const working = path.join(root, "working");
   await fs.mkdir(companion, { recursive: true });
   await fs.mkdir(working, { recursive: true });
-  await fs.mkdir(path.join(root, "home"), { recursive: true });
-  await fs
-    .writeFile(
-      path.join(root, "home", ".mate", "update-state-uniqbit-mate.yaml"),
+  const updateDir = path.join(root, "home", ".mate");
+  await fs.mkdir(updateDir, { recursive: true });
+  await Promise.all([
+    fs.writeFile(
+      path.join(updateDir, "update-state-uniqbit-mate.yaml"),
+      "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: 99.0.0\n",
+    ),
+    fs.writeFile(
+      path.join(updateDir, "update-state-uniqbit-mate-canary.yaml"),
       "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: null\n",
-    )
-    .catch(async () => {
-      await fs.mkdir(path.join(root, "home", ".mate"), { recursive: true });
-      await fs.writeFile(
-        path.join(root, "home", ".mate", "update-state-uniqbit-mate.yaml"),
-        "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: null\n",
-      );
-    });
+    ),
+  ]);
   return { root, companion, working };
 }
 

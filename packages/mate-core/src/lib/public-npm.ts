@@ -92,9 +92,10 @@ function withPublicNpmConfigSync<T>(
 export async function fetchPublicPackageVersion(
   packageName: string,
   registry = PUBLIC_NPM_REGISTRY,
+  distTag = "latest",
 ): Promise<string> {
   const { stdout } = await withPublicNpmConfig(packageName, registry, (env) =>
-    publicNpmDeps.execFile("npm", ["view", packageName, "version"], {
+    publicNpmDeps.execFile("npm", ["view", `${packageName}@${distTag}`, "version"], {
       timeout: 10_000,
       env,
     }),

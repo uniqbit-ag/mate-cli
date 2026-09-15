@@ -1,12 +1,12 @@
 import os from "node:os";
 import path from "node:path";
 
+import semver from "semver";
+
 import { getActiveDistribution, type DistributionUpdateConfig } from "../distribution";
 import { FRAMEWORK_NAME } from "../framework";
 import { fetchPublicPackageVersion, PUBLIC_NPM_REGISTRY } from "./public-npm";
 import { YamlFileStore } from "./orchestrator/yaml-file-store";
-
-const parse = (v: string): number[] => v.split(".").slice(0, 3).map(Number);
 
 interface UpdateState {
   lastChecked: string;
@@ -31,11 +31,12 @@ const updateStateFileSlug = (packageName: string): string =>
  */
 export class UpdateStateStore extends YamlFileStore<UpdateState> {
   constructor(packageName: string = getUpdateConfig().packageName) {
+    const channelSuffix = getUpdateChannel() === "canary" ? "-canary" : "";
     super(
       path.join(
         os.homedir(),
         `.${FRAMEWORK_NAME}`,
-        `update-state-${updateStateFileSlug(packageName)}.yaml`,
+        `update-state-${updateStateFileSlug(packageName)}${channelSuffix}.yaml`,
       ),
     );
   }
@@ -62,12 +63,15 @@ export function isCanaryVersion(version: string = getCurrentVersion()): boolean 
   return version.includes("-canary");
 }
 
+export type UpdateChannel = "latest" | "canary";
+
+export function getUpdateChannel(version: string = getCurrentVersion()): UpdateChannel {
+  return isCanaryVersion(version) ? "canary" : "latest";
+}
+
 export function isNewer(latest: string, current: string): boolean {
-  const [la, lb, lc] = parse(latest);
-  const [ca, cb, cc] = parse(current);
-  if (la !== ca) return la > ca;
-  if (lb !== cb) return lb > cb;
-  return lc > cc;
+  if (!semver.valid(latest) || !semver.valid(current)) return false;
+  return semver.gt(latest, current);
 }
 
 export async function showUpdateBannerIfAvailable(store: UpdateStateStore): Promise<void> {
@@ -109,7 +113,9 @@ export async function enforceUpdateIfRequired(store: UpdateStateStore): Promise<
 
 export async function fetchLatestVersion(): Promise<string> {
   const { packageName, registry } = getUpdateConfig();
-  return fetchPublicPackageVersion(packageName, registry);
+  const latestVersion = await fetchPublicPackageVersion(packageName, registry, getUpdateChannel());
+  if (!semver.valid(latestVersion)) throw new Error("npm returned an invalid version");
+  return latestVersion;
 }
 
 export function scheduleBackgroundCheck(store: UpdateStateStore): Promise<void> {

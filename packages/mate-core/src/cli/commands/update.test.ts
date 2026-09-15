@@ -67,6 +67,24 @@ describe("runUpdateCommand", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  test("reports a canary update with --check without installing", async () => {
+    updateCommandDeps.fetchLatestVersion = mock(async () => "0.16.0-canary.1");
+    updateCommandDeps.getCurrentVersion = mock(() => "0.16.0-canary.0");
+    const logs = captureLogs();
+
+    try {
+      await runUpdateCommand(["--check"]);
+    } finally {
+      logs.restore();
+    }
+
+    expect(logs.chunks.join("\n")).toContain(
+      "mate: update available (0.16.0-canary.0 → 0.16.0-canary.1)",
+    );
+    expect(updateCommandDeps.installLatest).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
   test("prints Up to date. for --check when no update is available", async () => {
     updateCommandDeps.isNewer = mock(() => false);
     const logs = captureLogs();
@@ -99,6 +117,17 @@ describe("runUpdateCommand", () => {
     expect(output).toContain("Current version: 1.0.0");
     expect(output).toContain("Latest version: 9.9.9");
     expect(output).toContain("Upgraded to 9.9.9.");
+  });
+
+  test("installs the exact resolved canary version", async () => {
+    updateCommandDeps.fetchLatestVersion = mock(async () => "0.16.0-canary.1");
+    updateCommandDeps.getCurrentVersion = mock(() => "0.16.0-canary.0");
+
+    await runUpdateCommand(["--yes"]);
+
+    expect(updateCommandDeps.installLatest).toHaveBeenCalledWith("0.16.0-canary.1");
+    expect(updateCommandDeps.saveUpdateState).toHaveBeenCalledWith("0.16.0-canary.1");
+    expect(updateCommandDeps.warmOpenCodePluginCache).toHaveBeenCalledWith("0.16.0-canary.1");
   });
 
   test("rejects self-update when the running Mate is not npm-managed", async () => {

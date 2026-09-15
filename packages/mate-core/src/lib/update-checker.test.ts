@@ -7,6 +7,7 @@ import {
   enforceUpdateIfRequired,
   fetchLatestVersion,
   getCurrentVersion,
+  getUpdateChannel,
   isCanaryVersion,
   isNewer,
   scheduleBackgroundCheck,
@@ -46,6 +47,18 @@ describe("isNewer", () => {
     expect(isNewer("1.0.2", "1.0.1")).toBe(true);
   });
 
+  test("newer canary sequence is newer", () => {
+    expect(isNewer("0.16.0-canary.1", "0.16.0-canary.0")).toBe(true);
+  });
+
+  test("stable release is newer than a same-base prerelease", () => {
+    expect(isNewer("0.16.0", "0.16.0-canary.1")).toBe(true);
+  });
+
+  test("canary prerelease is not newer than its stable release", () => {
+    expect(isNewer("0.16.0-canary.1", "0.16.0")).toBe(false);
+  });
+
   test("same version is not newer", () => {
     expect(isNewer("1.0.0", "1.0.0")).toBe(false);
   });
@@ -73,6 +86,16 @@ describe("isCanaryVersion", () => {
   });
 });
 
+describe("getUpdateChannel", () => {
+  test("selects canary for a canary version", () => {
+    expect(getUpdateChannel("0.16.0-canary.1")).toBe("canary");
+  });
+
+  test("selects latest for a stable version", () => {
+    expect(getUpdateChannel("0.16.0")).toBe("latest");
+  });
+});
+
 describe("update helpers", () => {
   test("returns the packaged current version", () => {
     expect(getCurrentVersion()).toMatch(/^\d+\.\d+\.\d+/);
@@ -88,7 +111,25 @@ describe("update helpers", () => {
   });
 
   test("UpdateStateStore scopes its state file to the update package", () => {
-    expect(new UpdateStateStore("@acme/mate").configPath).toContain("update-state-acme-mate.yaml");
+    expect(new UpdateStateStore("@acme/mate").configPath).toContain(
+      "update-state-acme-mate-canary.yaml",
+    );
+  });
+
+  test("UpdateStateStore retains the stable cache filename", () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, version: "0.16.0" },
+    });
+
+    try {
+      expect(new UpdateStateStore("@acme/mate").configPath).toContain(
+        "update-state-acme-mate.yaml",
+      );
+    } finally {
+      setActiveDistribution(previous);
+    }
   });
 
   test("distributions with different update packages use separate state files", () => {
@@ -165,9 +206,14 @@ describe("update helpers", () => {
   });
 
   test("fetches and trims the latest npm version", async () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, version: "0.16.0" },
+    });
     publicNpmDeps.execFile = mock(async (command, args, options) => {
       expect(command).toBe("npm");
-      expect(args).toEqual(["view", "@uniqbit/mate", "version"]);
+      expect(args).toEqual(["view", "@uniqbit/mate@latest", "version"]);
       expect(options).toMatchObject({ timeout: 10_000 });
 
       const userConfigPath = options?.env?.NPM_CONFIG_USERCONFIG;
@@ -179,7 +225,30 @@ describe("update helpers", () => {
       return { stdout: "1.2.3\n", stderr: "" };
     });
 
-    await expect(fetchLatestVersion()).resolves.toBe("1.2.3");
+    try {
+      await expect(fetchLatestVersion()).resolves.toBe("1.2.3");
+    } finally {
+      setActiveDistribution(previous);
+    }
+  });
+
+  test("queries the canary npm dist-tag for a canary version", async () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, version: "0.16.0-canary.0" },
+    });
+    publicNpmDeps.execFile = mock(async (command, args) => {
+      expect(command).toBe("npm");
+      expect(args).toEqual(["view", "@uniqbit/mate@canary", "version"]);
+      return { stdout: "0.16.0-canary.1\n", stderr: "" };
+    });
+
+    try {
+      await expect(fetchLatestVersion()).resolves.toBe("0.16.0-canary.1");
+    } finally {
+      setActiveDistribution(previous);
+    }
   });
 
   test("uses the distribution update package and registry", async () => {
@@ -197,7 +266,7 @@ describe("update helpers", () => {
 
     publicNpmDeps.execFile = mock(async (command, args, options) => {
       expect(command).toBe("npm");
-      expect(args).toEqual(["view", "@acme/mate", "version"]);
+      expect(args).toEqual(["view", "@acme/mate@canary", "version"]);
       const userConfigPath = options?.env?.NPM_CONFIG_USERCONFIG;
       expect(userConfigPath).toBeTruthy();
       await expect(fs.readFile(userConfigPath!, "utf8")).resolves.toBe(
@@ -344,6 +413,15 @@ describe("update helpers", () => {
     await scheduleBackgroundCheck(store as never);
 
     expect(store.load).toHaveBeenCalledTimes(1);
+    expect(store.save).not.toHaveBeenCalled();
+  });
+
+  test("does not cache an invalid registry version", async () => {
+    publicNpmDeps.execFile = mock(async () => ({ stdout: "not-a-version\n", stderr: "" }));
+    const store = createStore({ lastChecked: "", latestVersion: "0.16.0-canary.0" });
+
+    await scheduleBackgroundCheck(store as never);
+
     expect(store.save).not.toHaveBeenCalled();
   });
 });

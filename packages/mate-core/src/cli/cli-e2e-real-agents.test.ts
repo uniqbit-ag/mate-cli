@@ -83,11 +83,18 @@ async function makeTempDir(prefix: string): Promise<string> {
 async function seedUpdateState(home: string): Promise<void> {
   const updateDir = path.join(home, ".mate");
   await fs.mkdir(updateDir, { recursive: true });
-  await fs.writeFile(
-    path.join(updateDir, "update-state-uniqbit-mate.yaml"),
-    ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: null", ""].join("\n"),
-    "utf8",
-  );
+  await Promise.all([
+    fs.writeFile(
+      path.join(updateDir, "update-state-uniqbit-mate.yaml"),
+      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: 99.0.0", ""].join("\n"),
+      "utf8",
+    ),
+    fs.writeFile(
+      path.join(updateDir, "update-state-uniqbit-mate-canary.yaml"),
+      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: null", ""].join("\n"),
+      "utf8",
+    ),
+  ]);
 }
 
 async function createScenario(prefix: string): Promise<E2EScenario> {
