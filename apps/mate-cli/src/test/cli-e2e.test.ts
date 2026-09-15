@@ -149,6 +149,7 @@ async function runMate(
         // Setup would otherwise pre-fetch the pinned OpenCode plugin package
         // into the developer's real OpenCode cache via npm.
         MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
+        BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
         ...env,
       },
       stdio: "pipe",
@@ -2332,6 +2333,7 @@ async function startStudio(scenario: E2EScenario, cwd: string): Promise<StudioPr
       MATE_REPO_PATH: "",
       MATE_POLICY_JSON: "",
       MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
     },
     stdio: "pipe",
   });
