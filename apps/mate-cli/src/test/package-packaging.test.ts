@@ -98,7 +98,10 @@ describe("published package", () => {
       encoding: "utf8",
     });
     expect(version.status).toBe(0);
-    expect(version.stdout.trim()).toBe("0.15.5");
+    const manifest = JSON.parse(await fs.readFile(path.join(cliRoot, "package.json"), "utf8")) as {
+      version: string;
+    };
+    expect(version.stdout.trim()).toBe(manifest.version);
 
     const help = spawnSync(mate, ["--help"], {
       cwd: project,
