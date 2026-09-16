@@ -111,9 +111,19 @@ describe("update helpers", () => {
   });
 
   test("UpdateStateStore scopes its state file to the update package", () => {
-    expect(new UpdateStateStore("@acme/mate").configPath).toContain(
-      "update-state-acme-mate-canary.yaml",
-    );
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, version: "0.16.0-canary.0" },
+    });
+
+    try {
+      expect(new UpdateStateStore("@acme/mate").configPath).toContain(
+        "update-state-acme-mate-canary.yaml",
+      );
+    } finally {
+      setActiveDistribution(previous);
+    }
   });
 
   test("UpdateStateStore retains the stable cache filename", () => {
@@ -257,6 +267,7 @@ describe("update helpers", () => {
       ...previous,
       config: {
         ...previous.config,
+        version: "0.16.0-canary.0",
         update: {
           packageName: "@acme/mate",
           registry: "https://npm.acme.test/",

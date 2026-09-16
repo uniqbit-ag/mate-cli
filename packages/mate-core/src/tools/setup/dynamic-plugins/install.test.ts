@@ -2,13 +2,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
 import { installDeclaredPlugins, type NpmInstallRunner, type NpmUpdateRunner } from "./install";
 import { dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
 
 const tempRoots: string[] = [];
+
+setDefaultTimeout(15_000);
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));

@@ -54,4 +54,5 @@ export type {
   HubMemberSource,
   PluginDeclaration,
   PluginDeclarationPolicy,
+  LaunchScope,
 } from "./lib/orchestrator/types";

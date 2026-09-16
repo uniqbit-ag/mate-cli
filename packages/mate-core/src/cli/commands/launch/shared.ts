@@ -4,6 +4,7 @@ import {
   LaunchPreflightError,
   RepositoryNotSelectedError,
   ToolNotAllowedError,
+  type LaunchScope,
 } from "../../../lib/orchestrator/types";
 import { createStartupProgress } from "../../../lib/components/startup-progress";
 import { ensureUnambiguousCompanion, launchAmbiguityDeps } from "../shared/companion-selection";
@@ -20,6 +21,8 @@ const STEP_LABELS = {
 export interface ParsedLaunchArgs {
   agentArgs: string[];
   skipGit?: boolean;
+  scope?: LaunchScope;
+  skipConfirmation?: boolean;
 }
 
 export { ensureUnambiguousCompanion, launchAmbiguityDeps };
@@ -45,9 +48,14 @@ export function parseDirectLaunchArgs(argv: string[]): ParsedLaunchArgs {
   const beforeSeparator = argv.slice(0, separatorIndex);
   const afterSeparator = argv.slice(separatorIndex + 1);
   const skipGit = afterSeparator.includes("--no-git");
+  const companion = afterSeparator.includes("--companion");
+  const skipConfirmation = afterSeparator.includes("--yes");
+  const reserved = new Set(["--no-git", "--companion", "--yes"]);
   return {
-    agentArgs: [...beforeSeparator, ...afterSeparator.filter((arg) => arg !== "--no-git")],
+    agentArgs: [...beforeSeparator, ...afterSeparator.filter((arg) => !reserved.has(arg))],
     ...(skipGit ? { skipGit: true } : {}),
+    ...(companion ? { scope: "companion" as const } : {}),
+    ...(skipConfirmation ? { skipConfirmation: true } : {}),
   };
 }
 
@@ -63,16 +71,21 @@ export function parseLaunchArgs(argv: string[]): ParsedLaunchArgs | null {
   }
 
   const skipGit = agentArgs.includes("--no-git");
+  const companion = agentArgs.includes("--companion");
+  const skipConfirmation = agentArgs.includes("--yes");
+  const reserved = new Set(["--no-git", "--companion", "--yes"]);
   return {
-    agentArgs: agentArgs.filter((arg) => arg !== "--no-git"),
+    agentArgs: agentArgs.filter((arg) => !reserved.has(arg)),
     ...(skipGit ? { skipGit: true } : {}),
+    ...(companion ? { scope: "companion" as const } : {}),
+    ...(skipConfirmation ? { skipConfirmation: true } : {}),
   };
 }
 
 /**
  * @description Shared launch execution used by `mate claude`, `mate opencode`,
  * and the direct `mate claude` / `mate opencode` commands: resolves the launch via {@link FrameworkLauncher.prepare},
- * optionally confirms with the user, re-syncs capability indexes via
+ * confirms with the user in a TTY unless `--yes` was supplied, re-syncs capability indexes via
  * `runIndexCapCommand`, then executes and prints the JSON result.
  * @remarks Exits non-zero with a targeted message for `ToolNotAllowedError`
  * (repo policy disallows this tool) and `RepositoryNotSelectedError` (no
@@ -84,6 +97,7 @@ export async function runLaunchToolCommand(
   options: {
     skipConfirmation?: boolean;
     skipGit?: boolean;
+    scope?: LaunchScope;
   } = {},
 ): Promise<void> {
   const interactiveGit = !!(process.stdin.isTTY && process.stdout.isTTY);
@@ -98,6 +112,7 @@ export async function runLaunchToolCommand(
       tool,
       args,
       skipGit: options.skipGit,
+      scope: options.scope,
       interactiveGit,
     });
     progress?.succeed("sync");
@@ -106,7 +121,7 @@ export async function runLaunchToolCommand(
     // Ink's line tracking, corrupting later re-renders (e.g. duplicated title).
     progress?.stop();
 
-    if (!options.skipConfirmation) {
+    if (!options.skipConfirmation && process.stdin.isTTY) {
       const ok = await launchCommandDeps.confirm("Continue? [y/N] ");
       if (!ok) {
         process.stderr.write("Aborted.\n");
@@ -114,10 +129,12 @@ export async function runLaunchToolCommand(
       }
     }
 
-    await launchCommandDeps.runIndexCapCommand([], {
-      onStepStart: (step) => process.stdout.write(`${STEP_LABELS[step]}...\n`),
-      onStepDone: (step, ok) => process.stdout.write(`${ok ? "✓" : "✗"} ${STEP_LABELS[step]}\n`),
-    });
+    if (options.scope !== "companion") {
+      await launchCommandDeps.runIndexCapCommand([], {
+        onStepStart: (step) => process.stdout.write(`${STEP_LABELS[step]}...\n`),
+        onStepDone: (step, ok) => process.stdout.write(`${ok ? "✓" : "✗"} ${STEP_LABELS[step]}\n`),
+      });
+    }
 
     const result = await prepared.execute();
     console.log(JSON.stringify(result, null, 2));
@@ -153,7 +170,7 @@ export async function runLaunchToolCommand(
 /**
  * Builds the `mate <tool>` command handler: parses launch args (direct
  * passthrough or flagged), guards against ambiguous companions, then launches
- * via {@link runLaunchToolCommand} with confirmation skipped in a TTY.
+ * via {@link runLaunchToolCommand}; non-interactive launches skip confirmation.
  */
 export function makeLaunchCommand(tool: LaunchTarget) {
   return async function runLaunchCommand(
@@ -163,14 +180,20 @@ export function makeLaunchCommand(tool: LaunchTarget) {
     const parsed = options.directPassthrough ? parseDirectLaunchArgs(args) : parseLaunchArgs(args);
     if (!parsed) return;
 
-    if (!(await ensureUnambiguousCompanion())) {
+    if (
+      !(await ensureUnambiguousCompanion(
+        process.cwd(),
+        parsed.scope === "companion" ? { persistSelection: false } : {},
+      ))
+    ) {
       process.exitCode = 1;
       return;
     }
 
     await runLaunchToolCommand(tool, parsed.agentArgs, {
-      skipConfirmation: !!process.stdin.isTTY,
+      skipConfirmation: !process.stdin.isTTY || parsed.skipConfirmation,
       skipGit: parsed.skipGit,
+      scope: parsed.scope,
     });
   };
 }

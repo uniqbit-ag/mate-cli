@@ -105,12 +105,12 @@ async function seedUpdateState(home: string): Promise<void> {
   await Promise.all([
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate.yaml"),
-      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: 99.0.0", ""].join("\n"),
+      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: null", ""].join("\n"),
       "utf8",
     ),
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate-canary.yaml"),
-      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: null", ""].join("\n"),
+      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: 99.0.0", ""].join("\n"),
       "utf8",
     ),
   ]);
@@ -766,7 +766,7 @@ afterEach(async () => {
 });
 
 describe("mate CLI e2e", () => {
-  test("canary commands ignore newer stable cache state", async () => {
+  test("stable commands ignore newer canary cache state", async () => {
     const scenario = await createScenario("mate-cli-e2e-canary-cache-");
 
     const result = await runMate(scenario, {
@@ -1917,12 +1917,11 @@ describe("mate CLI e2e", () => {
       const result = await runMate(scenario, {
         cwd: scenario.working,
         args: testCase.launchArgs,
-        input: "y\n",
         env: { MATE_E2E_CAPTURE_PATH: capturePath },
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.stderr).toContain("Continue? [y/N]");
+      expect(result.stderr).not.toContain("Continue? [y/N]");
 
       const launchResult = JSON.parse(result.stdout) as { exitCode: number };
       expect(launchResult.exitCode).toBe(0);
@@ -2243,7 +2242,7 @@ describe("mate CLI e2e", () => {
   });
 
   test(
-    "interactive launch skips the redundant review confirmation",
+    "interactive launch can explicitly skip review confirmation",
     { timeout: 30_000 },
     async () => {
       const scenario = await createScenario("mate-cli-e2e-launch-direct-");
@@ -2262,24 +2261,56 @@ describe("mate CLI e2e", () => {
 
       const result = await runMateInTty(scenario, {
         cwd: scenario.working,
-        args: ["claude"],
+        args: ["claude", "--", "--yes"],
         inputChunks: [],
         env: { MATE_E2E_CAPTURE_PATH: capturePath },
         timeoutSeconds: 15,
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toContain("Review launch");
-      expect(result.stdout).not.toContain("Continue? [y/N]");
-
-      const launchResult = JSON.parse(result.stdout.slice(result.stdout.lastIndexOf("{")));
-      expect(launchResult.exitCode).toBe(0);
+      expect(`${result.stdout}${result.stderr}`).not.toContain("Aborted.");
 
       const invocation = await readJson<{ cwd: string; argv: string[] }>(capturePath);
       expect(invocation.cwd).toBe(scenario.working);
       expect(invocation.argv).toContain("--add-dir");
     },
   );
+
+  test("launches companion-scoped OpenCode unattended without repository indexing", async () => {
+    const scenario = await createScenario("mate-cli-e2e-launch-companion-only-");
+    const capturePath = await writeAdapterStub(scenario, "opencode");
+
+    expect(
+      (
+        await setupCompanion(scenario, [], {
+          allowedAgents: ["opencode"],
+          capabilities: ["openspec"],
+        })
+      ).exitCode,
+    ).toBe(0);
+
+    const result = await runMate(scenario, {
+      cwd: scenario.companion,
+      args: ["opencode", "--", "--companion"],
+      env: { MATE_E2E_CAPTURE_PATH: capturePath },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).not.toContain("Indexing graphify");
+    expect(result.stdout).not.toContain("Indexing tokensave");
+
+    const invocation = await readJson<{
+      cwd: string;
+      env: Record<string, string | null>;
+    }>(capturePath);
+    expect(invocation.cwd).toBe(scenario.companion);
+    expect(invocation.env.MATE_ARTIFACT_PATH).toBe(scenario.companion);
+    expect(invocation.env.MATE_REPO_PATH).toBeNull();
+    expect(invocation.env.MATE_REPO_ID).toBeNull();
+    expect(invocation.env.GRAPHIFY_OUT).toBe(
+      path.join(scenario.companion, ".graphify", "__companion__", "graphify-out"),
+    );
+  });
 
   test("claude setup writes companion guidance artifacts", async () => {
     const scenario = await createScenario("mate-cli-e2e-claude-guidance-");

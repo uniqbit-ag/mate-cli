@@ -30,11 +30,11 @@ async function scenario(): Promise<{ root: string; companion: string; working: s
   await Promise.all([
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate.yaml"),
-      "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: 99.0.0\n",
+      "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: null\n",
     ),
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate-canary.yaml"),
-      "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: null\n",
+      "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: 99.0.0\n",
     ),
   ]);
   return { root, companion, working };

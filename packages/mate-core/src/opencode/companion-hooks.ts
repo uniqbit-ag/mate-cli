@@ -9,6 +9,7 @@ import {
   unattendedSyncStalenessLines,
 } from "../runtime/companion-sync";
 import { hasLaunchEnvironment } from "../runtime/env";
+import { MATE_ENV } from "../runtime/env-names";
 import {
   buildArtifactError,
   extractPatchPaths,
@@ -122,7 +123,12 @@ export async function repairCompanionGitOnce(
   client: PluginInput["client"] | undefined,
   env: Record<string, string | undefined> = process.env,
 ): Promise<string[]> {
-  if (!context.companionPath || hasLaunchEnvironment(env)) return [];
+  if (
+    !context.companionPath ||
+    (hasLaunchEnvironment(env) &&
+      (env[MATE_ENV.repositoryPath] !== undefined || env[MATE_ENV.gitAutoMode] !== "1"))
+  )
+    return [];
   if (repairedCompanions.has(context.companionPath)) return [];
   repairedCompanions.add(context.companionPath);
 
@@ -182,7 +188,7 @@ type ToolAfterInput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[0];
 export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInput) => {
   const { client, $ } = pluginInput;
   const context = readContext();
-  if (!context.companionPath || !context.repositoryPath) return {};
+  if (!context.companionPath) return {};
 
   /**
    * The repair sits above the returned hooks, so anything escaping it would
@@ -195,29 +201,33 @@ export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInp
   const reactDoctorScansInFlight = new Set<string>();
 
   return {
-    event: async ({ event }: PluginEventInput) => {
-      if (event.type !== "session.idle") return;
-      const sessionID = event.properties.sessionID;
-      if (
-        !context.reactDoctorEnabled ||
-        reactDoctorScansInFlight.has(sessionID) ||
-        !dirtyReactDoctorSessions.delete(sessionID)
-      ) {
-        return;
-      }
-      await runReactDoctorScan(context, client, $, sessionID, reactDoctorScansInFlight);
-    },
+    ...(context.repositoryPath
+      ? {
+          event: async ({ event }: PluginEventInput) => {
+            if (event.type !== "session.idle") return;
+            const sessionID = event.properties.sessionID;
+            if (
+              !context.reactDoctorEnabled ||
+              reactDoctorScansInFlight.has(sessionID) ||
+              !dirtyReactDoctorSessions.delete(sessionID)
+            ) {
+              return;
+            }
+            await runReactDoctorScan(context, client, $, sessionID, reactDoctorScansInFlight);
+          },
+        }
+      : {}),
     "tool.execute.before": async (input: ToolBeforeInput, output: ToolBeforeOutput) => {
       const toolName = String(input.tool ?? "");
       const args = output.args ?? {};
-      if (["write", "edit"].includes(toolName)) {
+      if (context.repositoryPath && ["write", "edit"].includes(toolName)) {
         const filePath = String(args.filePath ?? "");
         if (filePath && shouldBlockArtifactWrite(context, filePath)) {
           throw new Error(buildArtifactError(context, filePath));
         }
         refuseForkedCompanionWrite(context, filePath);
       }
-      if (toolName === "apply_patch") {
+      if (context.repositoryPath && toolName === "apply_patch") {
         for (const filePath of extractPatchPaths(String(args.patchText ?? ""))) {
           if (shouldBlockArtifactWrite(context, filePath)) {
             throw new Error(buildArtifactError(context, filePath));
@@ -225,12 +235,27 @@ export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInp
           refuseForkedCompanionWrite(context, filePath);
         }
       }
-    },
-    "tool.execute.after": async (input: ToolAfterInput) => {
-      if (context.reactDoctorEnabled && REACT_DOCTOR_EDIT_TOOLS.has(input.tool)) {
-        dirtyReactDoctorSessions.add(input.sessionID);
+      if (!context.repositoryPath && toolName === "write") {
+        refuseForkedCompanionWrite(context, String(args.filePath ?? ""));
+      }
+      if (!context.repositoryPath && toolName === "edit") {
+        refuseForkedCompanionWrite(context, String(args.filePath ?? ""));
+      }
+      if (!context.repositoryPath && toolName === "apply_patch") {
+        for (const filePath of extractPatchPaths(String(args.patchText ?? ""))) {
+          refuseForkedCompanionWrite(context, filePath);
+        }
       }
     },
+    ...(context.repositoryPath
+      ? {
+          "tool.execute.after": async (input: ToolAfterInput) => {
+            if (context.reactDoctorEnabled && REACT_DOCTOR_EDIT_TOOLS.has(input.tool)) {
+              dirtyReactDoctorSessions.add(input.sessionID);
+            }
+          },
+        }
+      : {}),
   };
 };
 

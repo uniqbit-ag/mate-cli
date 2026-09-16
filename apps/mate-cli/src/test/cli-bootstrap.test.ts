@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -79,5 +79,61 @@ describe("Node package bootstrap", () => {
     const result = run(entry, ["--yes", "--version"]);
     expect(result.status).toBe(0);
     expect(await fs.readFile(entry.capture, "utf8")).toContain("--version");
+  });
+
+  test("reports an ordinary Bun exit status unchanged", async () => {
+    const entry = await fixture();
+    await fs.writeFile(
+      entry.bun,
+      '#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\nexit 7\n',
+    );
+    await fs.chmod(entry.bun, 0o755);
+    await fs.copyFile(entry.bun, path.join(entry.bin, "bun"));
+    await fs.chmod(path.join(entry.bin, "bun"), 0o755);
+
+    expect(run(entry)).toMatchObject({ status: 7 });
+  });
+
+  test.each(["SIGINT", "SIGTERM"] as const)("forwards %s to the Bun child", async (signal) => {
+    const entry = await fixture();
+    const signalCapture = path.join(entry.root, "signal");
+    const startedCapture = path.join(entry.root, "started");
+    const script = [
+      "#!/bin/sh",
+      'if [ "$1" = "--version" ]; then exit 0; fi',
+      `printf "started\\n" > ${JSON.stringify(startedCapture)}`,
+      `trap 'printf "%s\\n" "$0" > ${JSON.stringify(signalCapture)}; exit 0' INT TERM`,
+      "while :; do sleep 1; done",
+      "",
+    ].join("\n");
+    await fs.writeFile(entry.bun, script);
+    await fs.chmod(entry.bun, 0o755);
+    await fs.copyFile(entry.bun, path.join(entry.bin, "bun"));
+    await fs.chmod(path.join(entry.bin, "bun"), 0o755);
+
+    const child = spawn(process.execPath, [bootstrap], {
+      env: {
+        ...process.env,
+        HOME: entry.root,
+        PATH: `${entry.bin}${path.delimiter}/usr/bin:/bin`,
+      },
+      stdio: "ignore",
+    });
+    const closed = new Promise<number>((resolve) =>
+      child.on("close", (status) => resolve(status ?? 1)),
+    );
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      try {
+        await fs.access(startedCapture);
+        break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+
+    child.kill(signal);
+    expect(await closed).toBe(0);
+    expect(await fs.readFile(signalCapture, "utf8")).toContain("bun");
   });
 });

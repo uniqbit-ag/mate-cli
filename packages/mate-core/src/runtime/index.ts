@@ -1,5 +1,6 @@
 export {
   GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
+  GRAPHIFY_COMPANION_PATH_CONTRACT,
   buildCodebaseExplorationGuidanceSection,
   buildCompanionGuidance,
   buildCompanionPolicyXml,

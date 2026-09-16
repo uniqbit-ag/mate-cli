@@ -52,6 +52,7 @@ function makeContext(capabilities: AdapterContext["capabilities"] = []): Adapter
       id: "app",
       path: "/tmp/app",
     },
+    launchWorkingDirectory: "/tmp/app",
     allowedAgents: ["claude", "opencode"],
     companionPath: "/tmp/companion",
     capabilities,
@@ -200,6 +201,41 @@ describe("LaunchAdapter.prepareLaunch", () => {
     expect(graphifyGuidance.codebaseExplorationGuidance).toContain("graphify");
   });
 
+  test("materializes a companion-scoped environment without repository values", async () => {
+    const previousRepoPath = process.env.MATE_REPO_PATH;
+    const previousRepoId = process.env.MATE_REPO_ID;
+    process.env.MATE_REPO_PATH = "/inherited/repository";
+    process.env.MATE_REPO_ID = "inherited";
+
+    try {
+      const context = {
+        ...makeContext([{ name: "graphify" }, { name: "openspec" }]),
+        repository: undefined,
+        launchWorkingDirectory: "/tmp/companion",
+      };
+      const launch = await new OpenCodeAdapter().prepareLaunch(context, []);
+
+      expect(launch.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion");
+      expect(launch.env.MATE_VERSION).toEqual(expect.any(String));
+      expect(launch.env.MATE_WRAPPER_BIN_PATH).toContain("wrappers/bin");
+      expect(launch.env.MATE_POLICY_JSON).toBe(
+        JSON.stringify({ allowedAgents: ["claude", "opencode"] }),
+      );
+      expect(launch.env.MATE_GRAPHIFY_ENABLED).toBe("1");
+      expect(launch.env.MATE_OPENSPEC_ENABLED).toBe("1");
+      expect(launch.env.GRAPHIFY_OUT).toBe(
+        path.join("/tmp/companion", ".graphify", "__companion__", "graphify-out"),
+      );
+      expect(launch.env.MATE_REPO_PATH).toBeUndefined();
+      expect(launch.env.MATE_REPO_ID).toBeUndefined();
+    } finally {
+      if (previousRepoPath === undefined) delete process.env.MATE_REPO_PATH;
+      else process.env.MATE_REPO_PATH = previousRepoPath;
+      if (previousRepoId === undefined) delete process.env.MATE_REPO_ID;
+      else process.env.MATE_REPO_ID = previousRepoId;
+    }
+  });
+
   test("propagates real capabilities into companionGuidance, matching the Claude provider", async () => {
     const adapter = new OpenCodeAdapter();
 
@@ -267,6 +303,13 @@ describe("openspec capability env injection", () => {
 
     expect(launch.env.MATE_OPENSPEC_ENABLED).toBe("1");
     expect(launch.env.MATE_GIT_AUTO_MODE).toBe("1");
+  });
+
+  test("clears git auto mode when the launch bypasses synchronization", async () => {
+    const context = { ...makeContext(), git: "auto" as const, skipGit: true };
+    const launch = await new ClaudeAdapter().prepareLaunch(context, []);
+
+    expect(launch.env.MATE_GIT_AUTO_MODE).toBe("0");
   });
 });
 

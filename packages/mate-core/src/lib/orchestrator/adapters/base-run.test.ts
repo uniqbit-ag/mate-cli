@@ -33,6 +33,7 @@ function makeContext(): AdapterContext {
       id: "repo",
       path: "/tmp/repo",
     },
+    launchWorkingDirectory: "/tmp/repo",
     allowedAgents: ["claude"],
     companionPath: "/tmp/companion",
     capabilities: [],
@@ -168,6 +169,23 @@ describe("LaunchAdapter runtime", () => {
 
     expect(result).toEqual({ exitCode: 1, stdout: "", stderr: "" });
     expect(spawnCalls[0]?.stdio).toBe("inherit");
+  });
+
+  test("uses the companion as cwd for a companion-scoped launch", async () => {
+    const spawnCalls: Array<Record<string, unknown>> = [];
+    spawnImpl = (_command, _args, options) => {
+      spawnCalls.push(options);
+      const child = new EventEmitter() as SpawnResult["child"];
+      queueMicrotask(() => child.emit("close", 0));
+      return child;
+    };
+
+    await new TestAdapter().run(
+      { ...makeContext(), repository: undefined, launchWorkingDirectory: "/tmp/companion" },
+      [],
+    );
+
+    expect(spawnCalls[0]?.cwd).toBe("/tmp/companion");
   });
 
   test("rejects when the spawned process emits an error", async () => {

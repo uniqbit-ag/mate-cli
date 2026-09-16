@@ -30,7 +30,7 @@ mate opencode
 | `mate doctor`                                       | Show context, policy, selected capabilities, and tool status.                      |
 | `mate config [--vscode]`                            | Open the global `~/.mate` configuration directory.                                 |
 | `mate report [--days N] [--input FILE\|-] [--json]` | Generate a built-in or structured report.                                          |
-| `mate studio`                                       | Serve a local, read-only page over the workflow and every registered companion.    |
+| `mate studio [--writable]`                          | Serve Studio; the Vault is read-only unless explicitly writable.                   |
 
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
@@ -55,11 +55,14 @@ required.
 
 `mate studio` serves one local page showing the Mate and workflow with
 the selected companion's real state on it: a Dashboard over its changes and
-specs, and a Workflow view presenting the prompts a change is driven by — one
-card per prompt, copied by clicking it.
+specs, a Workflow view presenting the prompts a change is driven by — one card
+per prompt, copied by clicking it — and a Vault view over the companion's
+markdown files.
 It runs from any directory, binds a port the operating system assigns on the
 loopback interface, opens the platform browser, and serves in the foreground
-until interrupted. Every endpoint is read-only.
+until interrupted. Pass `--writable` to `mate studio` or
+`mate studio serve --port <port>` to enable Vault saves; all other endpoints
+remain read-only, and the default remains read-only.
 See [mate studio](/mate-cli/reference/studio).
 
 ## Agent Launch
@@ -69,8 +72,20 @@ mate claude [-- agent-args...]
 mate opencode [-- agent-args...]
 ```
 
-Launch commands must run from a linked working repository. The companion's
-allowed agents list must include the requested agent.
+Launch commands use a linked Working Repository by default. The companion's
+allowed agents list must include the requested agent. To launch from the
+Companion Repository without a Working Repository, use the reserved token after
+the separator:
+
+```sh
+mate opencode -- --companion
+```
+
+Companion-scoped launches run the adapter from the Companion Repository, keep
+companion Git and runtime synchronization, policy enforcement, and capability
+preflight, but skip Working-Repository projection, automatic indexing, and
+Working-Repository-only hooks. The agent environment carries no
+`MATE_REPO_PATH` or `MATE_REPO_ID`.
 
 Mate synchronizes managed companion files before launch. If the companion's
 configuration uses Git auto mode, it also fetches and merges the configured
@@ -82,7 +97,12 @@ mate opencode -- --no-git
 ```
 
 The `--no-git` switch is Mate's option only when it appears after the `--`
-separator. All other arguments after the separator are forwarded to the agent.
+separator. `--companion` selects the companion scope and `--yes` suppresses the
+interactive confirmation; these are also Mate options only after the separator.
+All other arguments after the separator are forwarded to the agent.
+
+Confirmation is shown only when standard input is a TTY. Non-interactive
+launches proceed without a prompt.
 
 ## Capabilities
 

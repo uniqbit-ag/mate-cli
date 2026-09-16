@@ -35,7 +35,7 @@ export interface SetupContext {
 export interface LaunchPreflightContext {
   companionPath: string;
   config: FrameworkConfig;
-  repository: LinkedRepository;
+  repository?: LinkedRepository;
   providerId: string;
 }
 

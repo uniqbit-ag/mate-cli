@@ -285,6 +285,7 @@ async function collectLaunchSurface(
 ): Promise<unknown> {
   const context: AdapterContext = {
     repository: { id: "app", path: path.join(fixture.root, "working") },
+    launchWorkingDirectory: path.join(fixture.root, "working"),
     allowedAgents: agents,
     companionPath: fixture.companionPath,
     capabilities: capabilities.map((name) => ({ name })),

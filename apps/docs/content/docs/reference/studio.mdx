@@ -1,6 +1,6 @@
 ---
 title: mate studio
-description: A local, read-only page over the Mate and workflow and the state of every registered companion.
+description: A local page over the Mate workflow and the markdown files of every registered companion.
 ---
 
 `mate studio` serves one local page that shows the Mate and workflow
@@ -8,11 +8,12 @@ with real state on it: the skills and prompts a change is driven by, alongside
 that companion's changes and specs.
 
 ```sh
-mate studio
+mate studio [--writable]
 ```
 
-The command takes no arguments. An unrecognized argument is reported and the
-command exits non-zero without starting a server.
+The command accepts only `--writable`. Without it, the vault is read-only. An
+unrecognized argument is reported and the command exits non-zero without
+starting a server.
 
 ## Invocation Context
 
@@ -32,6 +33,33 @@ If a browser cannot be opened, Studio says so on stderr, keeps serving, and
 keeps reporting the URL so it can be opened by hand. If no port can be bound,
 Studio reports the failure on stderr and exits non-zero without opening a
 browser.
+
+## Headless Serving
+
+`mate studio serve` runs the same server without opening a browser.
+It requires an explicit port and prints the bound URL when the server is ready:
+
+```sh
+mate studio serve --port <port> [--host <host>] [--writable]
+```
+
+`--port` must be an available port from 1 through 65535. A bind failure is
+terminal; Studio never silently chooses another port. `--host` defaults to
+`127.0.0.1`. Name a non-loopback host explicitly when another machine must
+reach Studio, for example:
+
+```sh
+mate studio serve --port 4180 --host 0.0.0.0
+```
+
+The server stays in the foreground until it receives `SIGINT` or `SIGTERM`,
+then stops cleanly. The serve path does not print the interactive
+`Press Ctrl+C to stop.` hint or attempt a browser launch.
+
+A non-loopback deployment exposes companion paths, change names, and inventory,
+and Studio provides no access control. Front it with a service that terminates
+TLS: plain HTTP has no access control and browsers withhold interfaces such as
+clipboard access outside a secure context.
 
 ## The Selections
 
@@ -53,11 +81,11 @@ Studio reports health; it does not repair it. Use `mate doctor` for that.
 
 ## URL State
 
-Both selections and the active view live in the request URL, so requesting a URL
-renders exactly the state it names:
+Both selections, the active view, and an open vault file live in the request URL,
+so requesting a URL renders exactly the state it names:
 
 ```text
-http://localhost:53219/?companion=9f2c14ab07&change=add-acme-checkout&view=workflow
+http://localhost:53219/?companion=9f2c14ab07&change=add-acme-checkout&view=vault&path=docs%2Fnotes.md
 ```
 
 Changing a selection or switching a view is a navigation. The served page is
@@ -71,7 +99,7 @@ the URL never has to be read. A URL naming no companion, or a digest that
 resolves to no registered companion, renders the selector with nothing selected
 rather than failing the request.
 
-## The Two Views
+## The Views
 
 **Dashboard** shows the selected companion's changes — completed and total task
 counts, status, and per-artifact state — and its specs grouped by the areas they
@@ -81,6 +109,13 @@ bind. A section with nothing to show says so explicitly.
 prompt. Each card carries two colored boxes — **What** states the action the
 stage performs, **Why** states the reason it sits at that position in the
 sequence — plus the prompt itself and a control that copies it.
+
+**Vault** lists every non-ignored markdown file under the selected Companion
+Repository and opens one file in a plain textarea. Add `--writable` to either
+invocation to show the save control. Saves carry a content version token; a
+stale save is refused with both versions available for reconciliation. The
+vault watches the selected companion and offers external changes to the open
+editor without replacing unsaved content.
 
 The workflow is a built-in sequence, not a scan of skill directories on disk:
 
@@ -113,10 +148,10 @@ a companion for the first time takes about a second; switching between the
 Overview and the Workflow view after that is immediate, and both views show the
 same reading. The rail names the time that reading was taken.
 
-`Refresh` reads the selected companion again and replaces what Studio holds. It
-is the only thing that does: Studio does not watch the file system and holds no
-streaming connection, so state that changes while the page is open is shown
-after the next refresh.
+`Refresh` reads the selected companion again and replaces what Studio holds.
+Dashboard and Workflow still do not watch the file system. The Vault watches
+markdown files; if watching is unavailable, it reports that the tree may be out
+of date and offers an explicit tree refresh.
 
 ## Appearance
 
@@ -144,16 +179,27 @@ A companion's own state is still reachable:
 
 ## Lifecycle
 
-Studio is a foreground, read-only server:
+Studio is a foreground server, read-only by default:
 
 - it binds a port the operating system assigns, on the loopback interface only,
   so two invocations never collide and nothing off this machine is served
-- no request writes to a companion repository, a working repository, or any Mate
-  state
+- without `--writable`, no request writes to a companion repository, a working
+  repository, or any Mate state
 - the document is rendered on the server and carries its styles and its behavior
   inline, so it loads nothing from any external host and needs no build step
 - `Ctrl+C` ends it; nothing outlives the invocation, so there is no stop
   subcommand, no process-identifier file, and no state written anywhere
 
-Because the page is read-only, there is nothing to confirm and nothing to undo.
-Work still happens through the CLI and agent sessions.
+The lifecycle above describes plain `mate studio`. `mate studio serve` uses its
+required port and selected host, does not open a browser, and also exits cleanly
+when interrupted or terminated.
+
+`--writable` opts the Vault into writing only markdown inside the selected
+companion; no Working Repository or Mate state is written. Unsaved editor
+content is confirmed before file, view, companion, refresh, browser-leave, or
+reload navigation.
+
+The save check is optimistic, not a filesystem compare-and-swap. A write that
+lands inside the vault's comparison-to-write window can be overwritten. When
+the watcher observes that version, Studio reports the overwrite and keeps its
+content available for recovery; an unobserved overwrite is not invented.

@@ -22,6 +22,7 @@ import { runUnwrapCommand } from "./commands/unwrap";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
 import { runInstallCommand } from "./commands/install";
+import { parseDirectLaunchArgs } from "./commands/launch/shared";
 import {
   inspectInstallPreflight,
   isRepairableInstallPreflight,
@@ -215,11 +216,31 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runHubCommand(subcommand ? [subcommand, ...rest] : []);
       return;
     case "claude":
-      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
+      if (
+        !(await gate({
+          updateGuard: true,
+          companion:
+            parseDirectLaunchArgs(argv.slice(3)).scope === "companion"
+              ? { persistSelection: false }
+              : true,
+          install: true,
+        }))
+      )
+        return;
       await runLaunchClaudeCommand(argv.slice(3), { directPassthrough: true });
       return;
     case "opencode":
-      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
+      if (
+        !(await gate({
+          updateGuard: true,
+          companion:
+            parseDirectLaunchArgs(argv.slice(3)).scope === "companion"
+              ? { persistSelection: false }
+              : true,
+          install: true,
+        }))
+      )
+        return;
       await runLaunchOpenCodeCommand(argv.slice(3), { directPassthrough: true });
       return;
     case "report":
@@ -228,8 +249,8 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       return;
     case "studio":
       /**
-       * Serves the machine-wide inventory read-only, so it resolves no
-       * companion context and stays runnable from any directory.
+       * Serves the machine-wide inventory without companion context, so it
+       * stays runnable from any directory. Writes remain opt-in.
        */
       if (!(await gate({ updateGuard: true }))) return;
       await runStudioCommand(argv.slice(3));

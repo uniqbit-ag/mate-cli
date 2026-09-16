@@ -25,7 +25,7 @@ export interface GuidanceCapability {
 
 export interface GuidanceContext {
   companionPath: string;
-  repository: { id: string; path: string };
+  repository?: { id: string; path: string };
   capabilities?: GuidanceCapability[];
 }
 
@@ -43,14 +43,21 @@ export function hasTokensaveCapability(capabilities: GuidanceCapability[] = []):
 
 export const GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT =
   "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/";
+export const GRAPHIFY_COMPANION_PATH_CONTRACT =
+  "$MATE_ARTIFACT_PATH/.graphify/__companion__/graphify-out/";
 
 export function buildCodebaseExplorationGuidanceSection(
   options: {
     useGraphify?: boolean;
     useTokensave?: boolean;
+    graphifyOutContract?: string;
   } = {},
 ): string {
-  const { useGraphify = false, useTokensave = false } = options;
+  const {
+    useGraphify = false,
+    useTokensave = false,
+    graphifyOutContract = GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
+  } = options;
 
   if (!useGraphify && !useTokensave) {
     return "";
@@ -58,7 +65,7 @@ export function buildCodebaseExplorationGuidanceSection(
 
   if (useGraphify && useTokensave) {
     return `<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">${GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT}</path>
+<path role="graphify-out">${graphifyOutContract}</path>
 <trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
 <order>tokensave -> graphify -> grep/glob/read. MUST NOT skip steps.
 1. tokensave_context first.
@@ -71,7 +78,7 @@ export function buildCodebaseExplorationGuidanceSection(
 
   if (useGraphify) {
     return `<codebase-exploration-rules priority="mandatory">
-<path role="graphify-out">${GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT}</path>
+<path role="graphify-out">${graphifyOutContract}</path>
 <trigger>Codebase-understanding: architecture, tracing, integrations, impact, "how does X work?"</trigger>
 <order>graphify -> grep/glob/read. MUST try graphify before raw source.
 1. graphify query "<question>" first.
@@ -111,7 +118,6 @@ export function buildCompanionPolicyXml(
     `  <overview>You are operating inside the ${FRAMEWORK_NAME} companion repository.</overview>`,
     "  <context>",
     "    <paths>",
-    `      <path role="working-repository" env="MATE_REPO_PATH">${context.repository.path}</path>`,
     `      <path role="companion-repository" env="MATE_ARTIFACT_PATH">${context.companionPath}</path>`,
     `      <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">${wrapperBinPath}</path>`,
     "    </paths>",
@@ -120,18 +126,46 @@ export function buildCompanionPolicyXml(
     `      <cli name="graphify" type="wrapper" invokeAs="${path.join(wrapperBinPath, "graphify")}" />`,
     `      <cli name="${FRAMEWORK_NAME}" type="global" invokeAs="${FRAMEWORK_NAME}" />`,
     "    </cli-tools>",
-    `    <linked-repository id="${context.repository.id}" />`,
     "  </context>",
     "  <mandatory-rules>",
-    `    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to ${context.companionPath}, NEVER ${context.repository.path}. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>`,
-    `    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>`,
-    `    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in ${context.repository.path}. Agent-artifacts belong in ${context.companionPath}.</rule>`,
-    `    <rule id="local-artifact-exception" severity="critical">Only write artifacts in ${context.repository.path} when the exact path is gitignored AND intentionally local-only; otherwise use ${context.companionPath}.</rule>`,
-    `    <rule id="guardrail" severity="critical">Bad artifact writes to ${context.repository.path} are rejected. Classify correctly first.</rule>`,
-    `    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>`,
-    `    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>`,
     `    <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: ${path.join(wrapperBinPath, "openspec")} status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>`,
   ];
+
+  if (context.repository) {
+    lines.splice(
+      8,
+      0,
+      `      <path role="working-repository" env="MATE_REPO_PATH">${context.repository.path}</path>`,
+    );
+    lines.splice(
+      lines.indexOf("  </context>"),
+      0,
+      `    <linked-repository id="${context.repository.id}" />`,
+    );
+    lines.splice(
+      lines.indexOf("  </mandatory-rules>"),
+      0,
+      `    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to ${context.companionPath}, NEVER ${context.repository.path}. Artifacts include plans, specs, ADRs, todos, notes, handoffs, reasoning docs, and scratch files.</rule>`,
+      `    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>`,
+      `    <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in ${context.repository.path}. Agent-artifacts belong in ${context.companionPath}.</rule>`,
+      `    <rule id="local-artifact-exception" severity="critical">Only write artifacts in ${context.repository.path} when the exact path is gitignored AND intentionally local-only; otherwise use ${context.companionPath}.</rule>`,
+      `    <rule id="guardrail" severity="critical">Bad artifact writes to ${context.repository.path} are rejected. Classify correctly first.</rule>`,
+      `    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>`,
+      `    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>`,
+    );
+  } else {
+    lines.splice(
+      lines.indexOf("  </mandatory-rules>"),
+      0,
+      "    <session>Companion-scoped launch with no Working Repository.</session>",
+    );
+    lines.splice(
+      lines.indexOf("  </mandatory-rules>"),
+      0,
+      `    <rule id="artifact-location" severity="critical">Agent artifacts MUST go to ${context.companionPath}. The Companion Repository is the artifact and context plane for this session.</rule>`,
+      `    <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>`,
+    );
+  }
 
   if (hasOpenspecCapability(context.capabilities)) {
     lines.push(
@@ -168,6 +202,9 @@ export function buildCompanionGuidance(
       buildCodebaseExplorationGuidanceSection({
         useGraphify: graphifyEnabled,
         useTokensave: tokensaveEnabled,
+        graphifyOutContract: context.repository
+          ? GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT
+          : GRAPHIFY_COMPANION_PATH_CONTRACT,
       }),
     );
   }
@@ -186,11 +223,17 @@ export function buildCompanionGuidance(
  * so capability-gated companion-policy rules — e.g. openspec-publish — render
  * exactly as they do for the Claude provider.
  */
-export function buildOpenCodeGuidance(capabilities: GuidanceCapability[]): MateGuidanceFile {
+export function buildOpenCodeGuidance(
+  capabilities: GuidanceCapability[],
+  options: { companionScoped?: boolean } = {},
+): MateGuidanceFile {
+  const repository = options.companionScoped
+    ? undefined
+    : { id: "$MATE_REPO_ID", path: "$MATE_REPO_PATH" };
   const companionGuidance = buildCompanionPolicyXml(
     {
       companionPath: "$MATE_ARTIFACT_PATH",
-      repository: { id: "$MATE_REPO_ID", path: "$MATE_REPO_PATH" },
+      repository,
       capabilities,
     },
     { wrapperBinPath: "$MATE_WRAPPER_BIN_PATH" },
@@ -200,6 +243,9 @@ export function buildOpenCodeGuidance(capabilities: GuidanceCapability[]): MateG
   const codebaseExplorationGuidance = buildCodebaseExplorationGuidanceSection({
     useGraphify: graphifyEnabled,
     useTokensave: tokensaveEnabled,
+    graphifyOutContract: options.companionScoped
+      ? GRAPHIFY_COMPANION_PATH_CONTRACT
+      : GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
   });
   const errors: string[] = [];
 

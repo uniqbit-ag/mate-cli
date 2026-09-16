@@ -35,6 +35,12 @@ export class WorkingRepoRequiredError extends MateError {
         "    mate companion link",
         "",
         "  To see linked repositories: mate companion list",
+        ...(command === "launch"
+          ? [
+              "",
+              "  To launch from the companion itself: `mate claude -- --companion` or `mate opencode -- --companion`",
+            ]
+          : []),
       ].join("\n"),
     );
   }
@@ -131,9 +137,12 @@ export interface CompanionRegistryConfig {
   repos: LinkedRepository[];
 }
 
+export type LaunchScope = "working-repo" | "companion";
+
 export interface LaunchRequest {
   tool: string;
   args: string[];
+  scope?: LaunchScope;
   skipGit?: boolean;
   interactiveGit?: boolean;
 }

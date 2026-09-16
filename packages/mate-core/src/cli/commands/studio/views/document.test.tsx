@@ -164,6 +164,76 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain('name="view" value="skills" aria-pressed="true"');
   });
 
+  it("presents the Vault view and an opened file", () => {
+    const markup = renderStudioDocument({
+      ...selected,
+      selection: { ...selected.selection, view: "vault", openPath: "docs/note.md" },
+      payload: null,
+      vault: {
+        tree: [
+          {
+            name: "docs",
+            path: "docs",
+            kind: "directory",
+            children: [{ name: "note.md", path: "docs/note.md", kind: "file" }],
+          },
+        ],
+        open: { path: "docs/note.md", content: "# note", token: "token" },
+        refusal: null,
+        incoming: null,
+        overwritten: null,
+        watching: true,
+        warning: null,
+      },
+      writable: true,
+    });
+    expect(markup).toContain("<h1>Vault</h1>");
+    expect(markup).toContain('name="view" value="vault" aria-pressed="true"');
+    expect(markup).toContain('id="vault-editor"');
+    expect(markup).toContain("# note");
+    expect(markup).toContain("Save");
+  });
+
+  it("renders refused vault paths without an editor", () => {
+    const markup = renderStudioDocument({
+      ...selected,
+      selection: { ...selected.selection, view: "vault", openPath: "../outside.md" },
+      payload: null,
+      vault: {
+        tree: [],
+        open: null,
+        refusal: "the requested path leaves the companion root",
+        incoming: null,
+        overwritten: null,
+        watching: true,
+        warning: null,
+      },
+    });
+    expect(markup).toContain("File refused");
+    expect(markup).toContain("the requested path leaves the companion root");
+    expect(markup).not.toContain('id="vault-editor"');
+  });
+
+  it("omits saving controls in read-only mode", () => {
+    const markup = renderStudioDocument({
+      ...selected,
+      selection: { ...selected.selection, view: "vault", openPath: "note.md" },
+      payload: null,
+      vault: {
+        tree: [{ name: "note.md", path: "note.md", kind: "file" }],
+        open: { path: "note.md", content: "one", token: "one" },
+        refusal: null,
+        incoming: null,
+        overwritten: null,
+        watching: true,
+        warning: null,
+      },
+      writable: false,
+    });
+    expect(markup).not.toContain('id="vault-save"');
+    expect(markup).toContain("Start Studio with --writable");
+  });
+
   it("renders the two pre-explore choices without offering documentation mode or skip copy", () => {
     const markup = renderStudioDocument({
       ...selected,

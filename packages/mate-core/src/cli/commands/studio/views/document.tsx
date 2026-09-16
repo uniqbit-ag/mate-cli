@@ -1,12 +1,13 @@
 /** @jsxImportSource hono/jsx */
 
-import { companionDigest, REFRESH_PARAM, type StudioSelection } from "../selection";
+import { companionDigest, FILE_PARAM, REFRESH_PARAM, type StudioSelection } from "../selection";
 import { STUDIO_CLIENT_SCRIPT, STUDIO_PREPAINT_SCRIPT } from "./client";
 import { CompanionPicker } from "./companion-picker";
 import { CompanionSelector } from "./companion-selector";
 import { Dashboard } from "./dashboard/index";
 import { CompanionError } from "./error";
-import { formatCollectedAt, type StudioPage } from "./model";
+import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
+import type { VaultTreeNode } from "../vault";
 import { Specs } from "./specs/index";
 import { STUDIO_STYLES } from "./styles";
 import { Skills } from "./skills/index";
@@ -30,6 +31,10 @@ const VIEW_DETAILS = {
   skills: {
     eyebrow: "Agent guidance",
     title: "Skills",
+  },
+  vault: {
+    eyebrow: "Companion files",
+    title: "Vault",
   },
 } as const;
 
@@ -86,6 +91,7 @@ function Content({ page }: { page: StudioPage }) {
   if (page.error) {
     return <CompanionError companionPath={page.error.companionPath} reason={page.error.reason} />;
   }
+  if (page.selection.view === "vault") return <Vault page={page} />;
   if (!page.payload) {
     return (
       <section className="panel">
@@ -153,7 +159,7 @@ function ViewNav({ selection }: { selection: StudioSelection }) {
     <nav className="sidebar-nav" aria-label="Studio views">
       <span className="sidebar-label">Views</span>
       <form method="get" action="/">
-        <SelectionFields selection={selection} omit="view" />
+        <SelectionFields selection={selection} omit="view" dropOpenPath />
         <div className="sidebar-nav-list">
           <button
             type="submit"
@@ -162,6 +168,9 @@ function ViewNav({ selection }: { selection: StudioSelection }) {
             aria-pressed={selection.view === "dashboard"}
           >
             <span>Overview</span>
+          </button>
+          <button type="submit" name="view" value="vault" aria-pressed={selection.view === "vault"}>
+            <span>Vault</span>
           </button>
           <button type="submit" name="view" value="specs" aria-pressed={selection.view === "specs"}>
             <span>Specs</span>
@@ -239,9 +248,11 @@ function Footer({ page }: { page: StudioPage }) {
 function SelectionFields({
   selection,
   omit,
+  dropOpenPath = false,
 }: {
   selection: StudioSelection;
   omit?: keyof StudioSelection;
+  dropOpenPath?: boolean;
 }) {
   return (
     <>
@@ -251,6 +262,128 @@ function SelectionFields({
       {selection.view !== "dashboard" && omit !== "view" ? (
         <input type="hidden" name="view" value={selection.view} />
       ) : null}
+      {selection.view === "vault" && selection.openPath && !dropOpenPath ? (
+        <input type="hidden" name={FILE_PARAM} value={selection.openPath} />
+      ) : null}
     </>
+  );
+}
+
+function Vault({ page }: { page: StudioPage }) {
+  const vault = page.vault;
+  if (!vault)
+    return (
+      <section className="panel">
+        <p className="empty">No vault state collected.</p>
+      </section>
+    );
+  return (
+    <section className="vault-layout">
+      <div className="panel vault-tree-panel">
+        <div className="section-header">
+          <div>
+            <h3>Markdown files</h3>
+            <p className="section-note">
+              {vault.tree.length === 0
+                ? "This companion has no markdown files."
+                : "Every non-ignored markdown file in this companion."}
+            </p>
+          </div>
+          {!vault.watching ? (
+            <form method="get" action="/" data-studio-navigation>
+              <SelectionFields selection={page.selection} />
+              <input type="hidden" name={REFRESH_PARAM} value="1" />
+              <button type="submit">Refresh tree</button>
+            </form>
+          ) : null}
+        </div>
+        {vault.warning ? (
+          <p className="note vault-warning">{vault.warning}. The tree may be out of date.</p>
+        ) : null}
+        <nav aria-label="Markdown files">
+          {vault.tree.map((node) => (
+            <VaultNode key={node.path} node={node} selection={page.selection} />
+          ))}
+        </nav>
+      </div>
+      <VaultEditor page={page} vault={vault} />
+    </section>
+  );
+}
+
+function VaultNode({ node, selection }: { node: VaultTreeNode; selection: StudioSelection }) {
+  if (node.kind === "directory") {
+    return (
+      <details open className="vault-directory">
+        <summary>{node.name}</summary>
+        <div className="vault-children">
+          {node.children?.map((child) => (
+            <VaultNode key={child.path} node={child} selection={selection} />
+          ))}
+        </div>
+      </details>
+    );
+  }
+  return (
+    <form method="get" action="/" className="vault-file" data-studio-navigation>
+      <SelectionFields selection={selection} dropOpenPath />
+      <input type="hidden" name={FILE_PARAM} value={node.path} />
+      <button type="submit" aria-current={selection.openPath === node.path ? "page" : undefined}>
+        {node.name}
+      </button>
+    </form>
+  );
+}
+
+function VaultEditor({ page, vault }: { page: StudioPage; vault: StudioVaultPage }) {
+  if (!vault.open) {
+    return (
+      <div className="panel vault-editor-panel">
+        <h3>{vault.refusal ? "File refused" : "Open a markdown file"}</h3>
+        <p className={vault.refusal ? "note vault-warning" : "empty"}>
+          {vault.refusal ?? "Choose a file from the tree to begin."}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="panel vault-editor-panel"
+      data-vault-root
+      data-vault-writable={page.writable ? "true" : "false"}
+    >
+      <div className="section-header">
+        <div>
+          <h3>{vault.open.path}</h3>
+          <p className="section-note">
+            {page.writable
+              ? "Changes stay in the editor until you save."
+              : "Read-only mode. Start Studio with --writable to save."}
+          </p>
+        </div>
+        {page.writable ? (
+          <button type="button" id="vault-save">
+            Save
+          </button>
+        ) : null}
+      </div>
+      <textarea
+        id="vault-editor"
+        data-vault-editor
+        data-vault-path={vault.open.path}
+        data-vault-token={vault.open.token}
+        spellCheck={false}
+      >
+        {vault.open.content}
+      </textarea>
+      <p id="vault-status" className="note" aria-live="polite" />
+      <div id="vault-incoming" className="vault-incoming" hidden>
+        <strong id="vault-incoming-title">Incoming version</strong>
+        <pre id="vault-incoming-content" />
+        <button type="button" id="vault-recover">
+          Put incoming content back
+        </button>
+      </div>
+    </div>
   );
 }

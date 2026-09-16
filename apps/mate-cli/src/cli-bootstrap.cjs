@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { execFileSync, spawnSync } = require("node:child_process");
+const { execFileSync, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -48,6 +48,31 @@ async function confirm(preview) {
   });
 }
 
+function runProcess(command, args, options) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, options);
+    const forward = (signal) => {
+      if (child.exitCode === null) child.kill(signal);
+    };
+    const cleanup = () => {
+      process.off("SIGINT", onInterrupt);
+      process.off("SIGTERM", onTerminate);
+    };
+    const onInterrupt = () => forward("SIGINT");
+    const onTerminate = () => forward("SIGTERM");
+    process.on("SIGINT", onInterrupt);
+    process.on("SIGTERM", onTerminate);
+    child.once("error", (error) => {
+      cleanup();
+      resolve({ error, status: null, signal: null });
+    });
+    child.once("exit", (status, signal) => {
+      cleanup();
+      resolve({ status, signal, error: null });
+    });
+  });
+}
+
 async function main() {
   if (!hasBun()) {
     const plan = installBun();
@@ -57,8 +82,8 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    const result = spawnSync(plan.command, plan.args, { stdio: "inherit", shell: false });
-    if (result.status !== 0) {
+    const result = await runProcess(plan.command, plan.args, { stdio: "inherit", shell: false });
+    if (result.error || result.signal || result.status !== 0) {
       process.stderr.write(`Bun installation failed. Run manually:\n  ${plan.preview}\n`);
       process.exitCode = result.status || 1;
       return;
@@ -78,7 +103,7 @@ async function main() {
   // pty-bridge resize channel) and announce it via MATE_PTY_CONTROL_FD;
   // string "inherit" only covers fds 0-2 and would sever it. Forwarding is
   // env-gated because shells often have an unrelated fd 3 open, and passing
-  // an unpassable descriptor makes spawnSync fail outright.
+  // an unpassable descriptor makes spawn fail outright.
   const stdio = ["inherit", "inherit", "inherit"];
   if (env.MATE_PTY_CONTROL_FD === "3") {
     // Consume the marker: nested mate invocations (the bridge re-spawns
@@ -90,15 +115,20 @@ async function main() {
       stdio.push(3);
     } catch {}
   }
-  const result = spawnSync(
+  const result = await runProcess(
     "bun",
     [path.join(__dirname, "..", "dist", "cli.mjs"), ...process.argv.slice(2)],
-    {
-      stdio,
-      env,
-    },
+    { stdio, env },
   );
-  if (result.error) process.stderr.write(`mate: failed to launch bun: ${result.error.message}\n`);
+  if (result.error) {
+    process.stderr.write(`mate: failed to launch bun: ${result.error.message}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  if (result.signal) {
+    process.exitCode = 128 + (os.constants.signals[result.signal] || 1);
+    return;
+  }
   process.exitCode = result.status ?? 1;
 }
 

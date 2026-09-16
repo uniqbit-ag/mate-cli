@@ -3,15 +3,17 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { MATE_ENV } from "../../../runtime/env-names";
-import { buildProjection, projectionEnvironment } from "../projection-record";
+import { buildProjection, companionEnvironment, projectionEnvironment } from "../projection-record";
 import type { CapabilityConfig, GitModeProfile, LinkedRepository } from "../types";
 
 export interface AdapterContext {
-  repository: LinkedRepository;
+  repository?: LinkedRepository;
+  launchWorkingDirectory: string;
   allowedAgents: string[];
   companionPath: string;
   capabilities: CapabilityConfig[];
   git?: GitModeProfile;
+  skipGit?: boolean;
 }
 
 export interface AdapterResult {
@@ -50,18 +52,25 @@ export abstract class LaunchAdapter {
    */
   environment(context: AdapterContext): NodeJS.ProcessEnv {
     const reactDoctorEnabled = context.capabilities.some((c) => c.name === "react-doctor");
-    const projection = buildProjection(context.companionPath, context.repository);
+    const projection = context.repository
+      ? projectionEnvironment(buildProjection(context.companionPath, context.repository))
+      : companionEnvironment(context.companionPath);
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      ...projectionEnvironment(projection),
+      ...projection,
       MATE_NAME: FRAMEWORK_NAME,
-      PATH: prependPathEntry(process.env.PATH, projection.wrapperBinPath),
+      PATH: prependPathEntry(process.env.PATH, projection[MATE_ENV.wrapperBinPath] ?? ""),
       MATE_GRAPHIFY_ENABLED: context.capabilities.some((c) => c.name === "graphify") ? "1" : "0",
       MATE_OPENSPEC_ENABLED: context.capabilities.some((c) => c.name === "openspec") ? "1" : "0",
       MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
-      MATE_GIT_AUTO_MODE: context.git === "auto" ? "1" : "0",
+      MATE_GIT_AUTO_MODE: context.git === "auto" && !context.skipGit ? "1" : "0",
       MATE_POLICY_JSON: JSON.stringify({ allowedAgents: context.allowedAgents }),
     };
+
+    if (!context.repository) {
+      delete env[MATE_ENV.repositoryPath];
+      delete env[MATE_ENV.repositoryId];
+    }
 
     /** The one field where a launch still narrows the projection rather than materializing it. */
     if (!reactDoctorEnabled) delete env[MATE_ENV.reactDoctorBinPath];
@@ -92,7 +101,7 @@ export abstract class LaunchAdapter {
 
     return new Promise((resolve, reject) => {
       const child = spawn(launch.command, launch.args, {
-        cwd: context.repository.path,
+        cwd: context.launchWorkingDirectory,
         env: launch.env,
         stdio: this.interactive ? "inherit" : "pipe",
       });

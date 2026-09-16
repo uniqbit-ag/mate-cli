@@ -29,7 +29,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
   ] as const;
 
   buildArgs(context: AdapterContext, args: string[]): string[] {
-    const codeDir = context.repository.path;
+    const codeDir = context.launchWorkingDirectory;
     return args.length === 0 || args[0]?.startsWith("-") ? [codeDir, ...args] : args;
   }
 
@@ -55,7 +55,9 @@ export class OpenCodeAdapter extends LaunchAdapter {
   }
 
   private buildGuidance(context: AdapterContext): MateGuidanceFile {
-    return buildOpenCodeGuidance(context.capabilities);
+    return buildOpenCodeGuidance(context.capabilities, {
+      companionScoped: !context.repository,
+    });
   }
 
   async validateLaunch(context: AdapterContext): Promise<void> {

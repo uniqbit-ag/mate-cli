@@ -54,6 +54,18 @@ describe("parseStudioSelection", () => {
       companionDigest: "abc123",
       view: "workflow",
       refresh: false,
+      openPath: null,
+    });
+  });
+
+  it("reads an open vault path", () => {
+    expect(
+      parseStudioSelection(new URL("http://localhost:1/?view=vault&path=docs%2Fnote.md")),
+    ).toEqual({
+      companionDigest: null,
+      view: "vault",
+      refresh: false,
+      openPath: "docs/note.md",
     });
   });
 
@@ -69,6 +81,7 @@ describe("parseStudioSelection", () => {
       companionDigest: null,
       view: "dashboard",
       refresh: false,
+      openPath: null,
     });
   });
 
