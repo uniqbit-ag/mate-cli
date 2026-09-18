@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
@@ -20,6 +21,19 @@ export interface AdapterResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  /** Set when the agent process ended on a signal rather than its own exit. */
+  signal?: NodeJS.Signals | null;
+}
+
+/** Forwarded from the launch to the agent so a supervisor above it can stop a session. */
+const FORWARDED_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+
+/**
+ * The shell convention: a signalled stop reads as 128 + the signal number, so a
+ * caller can tell it from an ordinary non-zero exit.
+ */
+export function signalExitCode(signal: NodeJS.Signals): number {
+  return 128 + (os.constants.signals[signal] ?? 0);
 }
 
 export interface PreparedLaunch {
@@ -96,6 +110,16 @@ export abstract class LaunchAdapter {
     return { command: this.toolName, args: builtArgs, env };
   }
 
+  /**
+   * A terminal delivers `SIGINT` to the whole foreground process group, so an
+   * interactive launch at a TTY must not forward it as well — the agent would
+   * be stopped twice. Where the signal reaches the launch alone (a supervisor,
+   * a container entrypoint), forwarding is the only way it reaches the agent.
+   */
+  protected forwardsSignals(): boolean {
+    return !(this.interactive && process.stdin.isTTY);
+  }
+
   async run(context: AdapterContext, args: string[]): Promise<AdapterResult> {
     const launch = await this.prepareLaunch(context, args);
 
@@ -118,12 +142,34 @@ export abstract class LaunchAdapter {
         });
       }
 
-      child.on("error", reject);
-      child.on("close", (exitCode) => {
+      const forward = this.forwardsSignals();
+      const handlers = new Map<NodeJS.Signals, () => void>();
+      for (const signal of FORWARDED_SIGNALS) {
+        const handler = () => {
+          /** Installing a handler at all is what keeps the launch alive to wait for the agent. */
+          if (forward && child.exitCode === null && child.signalCode === null) {
+            child.kill(signal);
+          }
+        };
+        handlers.set(signal, handler);
+        process.on(signal, handler);
+      }
+      const removeHandlers = () => {
+        for (const [signal, handler] of handlers) process.off(signal, handler);
+        handlers.clear();
+      };
+
+      child.on("error", (error) => {
+        removeHandlers();
+        reject(error);
+      });
+      child.on("close", (exitCode, signal) => {
+        removeHandlers();
         resolve({
-          exitCode: exitCode ?? 1,
+          exitCode: exitCode ?? (signal ? signalExitCode(signal) : 1),
           stdout,
           stderr,
+          signal: signal ?? null,
         });
       });
     });

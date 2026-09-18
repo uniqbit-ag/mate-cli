@@ -151,4 +151,6 @@ export interface LaunchResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  /** Set when the agent process ended on a signal rather than its own exit. */
+  signal?: NodeJS.Signals | null;
 }

@@ -1,0 +1,124 @@
+---
+title: Unattended Deployments
+description: Registering, preparing, and running Mate where no one is at a terminal.
+---
+
+Mate's defaults assume a developer at a terminal. A CI job, a devcontainer, or
+a container image has no terminal, often no network, and frequently a version
+that is a property of the artifact it was built into rather than something it
+can change. The paths on this page exist for those deployments. Every one of
+them is opt-in: a workstation that declares no policy and supplies no prebuilt
+bundle behaves exactly as it did before.
+
+## Registering a companion a script did not create
+
+`mate companion setup` decides a companion's selections, and `mate companion
+link` requires a TTY. Neither is usable unattended against a Companion
+Repository that already carries its own configuration.
+
+```sh
+mate companion register /srv/acme
+```
+
+Registration adds the companion's absolute path to the global registry at
+`~/.mate/config.yaml` and does nothing else: it presents no selection, reads no
+input, and leaves the companion's recorded selections byte-identical. It is
+idempotent — registering an already-registered companion leaves exactly one
+entry. Pointed at a directory that carries no companion configuration, it
+reports that there is nothing to register and creates nothing.
+
+The path defaults to the current directory when none is given.
+
+## The pinned update policy
+
+The published distribution enforces updates: once a background check records a
+newer version, Mate refuses to run and advises an upgrade. An installation
+whose version is fixed by its image cannot act on that advice, so it would
+simply stop working.
+
+Declare the policy in the environment:
+
+```sh
+MATE_UPDATE_POLICY=pinned
+```
+
+Under the policy, automatic update handling does nothing at all:
+
+- no command is blocked by the update gate, whatever version is cached;
+- no upgrade banner is shown;
+- no background registry check is started, so nothing waits on a registry and
+  an air-gapped deployment starts normally;
+- the update-state cache is neither read nor written, so a read-only home
+  directory is never touched.
+
+Every other gate is unaffected. Companion resolution, installation preflight,
+and the rest still refuse with their usual guidance when unsatisfied.
+
+The policy is a declaration about the installation, not a flag on a command:
+read once from the environment and inherited by every descendant process, so
+registration, preparation, and the serving processes all see it without each
+caller having to remember it.
+
+**Do not set `MATE_UPDATE_POLICY` on a workstation.** A pinned workstation stops
+being told about releases and keeps running an old version indefinitely. An
+immutable deployment changes versions by replacing its image; a workstation
+changes them with `mate update`.
+
+The setting is explicit and validated. Absent it, update checking, the banner,
+and enforcement behave exactly as before. A value the framework does not
+recognize is reported on stderr — naming both the setting and the value — and
+is **not** treated as pinned.
+
+## Preparing machine-local dependencies without an installer
+
+A Capability's distribution-pinned dependencies live in a machine-local
+workspace at `.mate/plugins/.local/`, which is gitignored and normally created
+by `mate companion setup`. A freshly cloned Companion Repository does not have
+one, and a launch will not build it — it validates it and refuses.
+
+Where a build host has already produced a fully installed workspace, hand it
+over directly:
+
+```sh
+mate companion prepare --from /opt/mate-prebuilt /srv/acme
+```
+
+Preparation validates the bundle before anything is copied — distribution-owned
+versions, a complete dependency graph, integrity, target architecture, and
+runtime compatibility — and reports a bundle that fails any of those by the
+name of the dependency at fault. It then copies the validated workspace into
+`.mate/plugins/.local/`. It runs no package manager, no dependency resolution,
+no download, no native build, and no installation script; everything it needs
+comes off the filesystem.
+
+It also presents no selection and changes none, reuses a workspace already
+prepared from the same bundle rather than recopying it, and stages a changed
+bundle before it replaces the existing one — so a failed or interrupted copy
+leaves the existing workspace intact and never presents a partial one as ready.
+Tracked files and the committed plugins workspace are untouched.
+
+The companion path defaults to the current directory.
+
+### Preinstalled runtime plugins
+
+A Capability declares its Agent Runtime plugin as a package reference, which
+the runtime resolves at session start — a resolution that may invoke a package
+manager or reach a registry even when the package is already on disk. Where a
+prepared workspace contains an installed copy of exactly that package, the
+owning Runtime Surface binds the contribution to those installed files, so the
+runtime loads them directly.
+
+The binding is validated before it is written: identity, version, and runtime
+compatibility must match what the Capability declares, and a mismatch is
+reported naming the package and both versions rather than bound. Where no
+installed copy is supplied — an ordinary workstation — the published package
+reference is written exactly as it always was. Warming a package-manager
+download cache is not a binding; only an installed copy in the local workspace
+is.
+
+## Supervising a launch
+
+A launch exits with a status reflecting how the agent process ended, and
+forwards `SIGINT` and `SIGTERM` to that process, waiting for it before exiting.
+See [Agent Launch](/mate-cli/reference/commands) for the details, including
+what changed for existing callers.

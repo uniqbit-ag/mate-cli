@@ -1,5 +1,7 @@
 import { usage } from "../../usage";
 import { runCompanionLinkCommand } from "./link";
+import { runCompanionRegisterCommand } from "./register";
+import { runCompanionPrepareCommand } from "./prepare";
 import { runSetupCommand } from "../setup";
 import { runCompanionListCommand } from "./list";
 import { runCompanionSyncCommand } from "./sync";
@@ -13,6 +15,12 @@ export async function runCompanionCommand(
   switch (subcommand) {
     case "link":
       await runCompanionLinkCommand(argv);
+      return;
+    case "register":
+      await runCompanionRegisterCommand(argv);
+      return;
+    case "prepare":
+      await runCompanionPrepareCommand(argv);
       return;
     case "setup":
       await runSetupCommand(argv);

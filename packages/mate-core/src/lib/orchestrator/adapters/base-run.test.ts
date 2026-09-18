@@ -140,7 +140,7 @@ describe("LaunchAdapter runtime", () => {
 
     const result = await new TestAdapter().run(makeContext(), ["--flag"]);
 
-    expect(result).toEqual({ exitCode: 0, stdout: "hello world", stderr: "warn " });
+    expect(result).toEqual({ exitCode: 0, stdout: "hello world", stderr: "warn ", signal: null });
     expect(spawnCalls[0]).toMatchObject({
       command: "test-tool",
       args: ["wrapped", "--flag"],
@@ -167,7 +167,7 @@ describe("LaunchAdapter runtime", () => {
 
     const result = await new InteractiveAdapter().run(makeContext(), ["--chat"]);
 
-    expect(result).toEqual({ exitCode: 1, stdout: "", stderr: "" });
+    expect(result).toEqual({ exitCode: 1, stdout: "", stderr: "", signal: null });
     expect(spawnCalls[0]?.stdio).toBe("inherit");
   });
 

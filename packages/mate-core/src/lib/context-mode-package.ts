@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { isPreinstalledPluginPath } from "./preinstalled-plugins";
 import { PUBLIC_NPM_REGISTRY } from "./public-npm";
 
 export const CONTEXT_MODE_PACKAGE_NAME = "context-mode";
@@ -12,11 +13,13 @@ export function getContextModePackageReference(): string {
   return `${CONTEXT_MODE_PACKAGE_NAME}@${CONTEXT_MODE_VERSION}`;
 }
 
+/** Matches the published reference and a reference bound to an installed copy alike. */
 export function isContextModePackageReference(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    (value === CONTEXT_MODE_PACKAGE_NAME || value.startsWith(`${CONTEXT_MODE_PACKAGE_NAME}@`))
-  );
+  if (typeof value !== "string") return false;
+  if (value === CONTEXT_MODE_PACKAGE_NAME || value.startsWith(`${CONTEXT_MODE_PACKAGE_NAME}@`)) {
+    return true;
+  }
+  return isPreinstalledPluginPath(value, CONTEXT_MODE_PACKAGE_NAME);
 }
 
 export function getContextModeInstallDir(companionPath: string): string {

@@ -192,6 +192,14 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
         case "link":
           if (!(await gate({ notHubRoot: true }))) return;
           break;
+        // Registration names its target explicitly, so it needs no companion
+        // context and no root classification of the current directory.
+        case "register":
+        // Preparation names its bundle and its target explicitly, and runs
+        // before a companion is usable at all.
+        case "prepare":
+          if (!(await gate({ updateGuard: true }))) return;
+          break;
         // Hub commands establish and operate on a local hub root directly;
         // they must not require a linked working repository or installation —
         // but companions are never hubs.

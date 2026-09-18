@@ -5,13 +5,15 @@ description: Current Mate CLI commands and their execution contexts.
 
 ## Setup And Linking
 
-| Command                        | Context                 | Purpose                                                                    |
-| ------------------------------ | ----------------------- | -------------------------------------------------------------------------- |
-| `mate companion setup`         | Companion root          | Create or reconfigure a companion explicitly.                              |
-| `mate companion link`          | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
-| `mate companion list [--json]` | Linked context          | List linked repositories.                                                  |
-| `mate companion open`          | Linked context          | Add the working repository and companion to the preferred editor.          |
-| `mate companion tui`           | Linked context, TTY     | Open a shell in the resolved companion.                                    |
+| Command                                         | Context                 | Purpose                                                                    |
+| ----------------------------------------------- | ----------------------- | -------------------------------------------------------------------------- |
+| `mate companion setup`                          | Companion root          | Create or reconfigure a companion explicitly.                              |
+| `mate companion link`                           | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
+| `mate companion list [--json]`                  | Linked context          | List linked repositories.                                                  |
+| `mate companion open`                           | Linked context          | Add the working repository and companion to the preferred editor.          |
+| `mate companion tui`                            | Linked context, TTY     | Open a shell in the resolved companion.                                    |
+| `mate companion register [path]`                | Any                     | Register an already-configured companion without reconfiguring it.         |
+| `mate companion prepare --from <bundle> [path]` | Any                     | Prepare machine-local dependencies from a fully installed prebuilt bundle. |
 
 `mate companion link` does not accept flags. Its selection and any required
 installation confirmation are interactive. The default workflow is:
@@ -103,6 +105,28 @@ All other arguments after the separator are forwarded to the agent.
 
 Confirmation is shown only when standard input is a TTY. Non-interactive
 launches proceed without a prompt.
+
+### Exit Status And Signals
+
+A launch exits with a status reflecting how the agent process ended: zero when
+the agent exited zero, non-zero when it did not. The JSON result is still
+printed, but it no longer stands in for the status.
+
+A launch also forwards `SIGINT` and `SIGTERM` to the agent process it spawned
+and waits for that process to exit before exiting itself, so nothing is left
+running behind it. An agent that ends on a forwarded signal is reported as the
+signalled stop it was — `128 + signal`, the usual shell convention — so a
+caller can tell a clean shutdown from a crash. At a terminal this is unchanged
+in practice: Ctrl-C reaches the whole foreground process group, so the agent is
+stopped once and the shell is returned.
+
+This is the one part of the unattended work that changes what an existing
+workstation launch does, and it has no opt-out. A caller that read success from
+a zero exit will now see agent failures.
+
+`mate companion register` and `mate companion prepare` cover starting a launch
+where no one is at a terminal; see
+[Unattended Deployments](/mate-cli/reference/unattended).
 
 ## Capabilities
 

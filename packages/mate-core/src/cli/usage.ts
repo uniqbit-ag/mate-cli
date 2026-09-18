@@ -13,6 +13,8 @@ export function usage(): string {
     ` ${n} install [--yes]`,
     ` ${n} companion link`,
     ` ${n} companion setup`,
+    ` ${n} companion register [path]`,
+    ` ${n} companion prepare --from <bundle> [path]`,
     ` ${n} companion list`,
     ` ${n} companion sync`,
     ` ${n} companion open`,

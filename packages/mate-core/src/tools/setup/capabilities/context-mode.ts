@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   CONTEXT_MODE_PACKAGE_NAME,
+  CONTEXT_MODE_VERSION,
   getContextModeInstallDir,
   getContextModePackageReference,
   installContextModePackage,
@@ -117,6 +118,10 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
               reference: getContextModePackageReference(),
               isManagedReference: isContextModePackageReference,
               configFiles: ["opencode.json", "tui.json"],
+              preinstalled: {
+                packageName: CONTEXT_MODE_PACKAGE_NAME,
+                version: CONTEXT_MODE_VERSION,
+              },
             },
           ],
         },

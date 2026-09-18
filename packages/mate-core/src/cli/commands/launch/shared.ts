@@ -86,7 +86,8 @@ export function parseLaunchArgs(argv: string[]): ParsedLaunchArgs | null {
  * @description Shared launch execution used by `mate claude`, `mate opencode`,
  * and the direct `mate claude` / `mate opencode` commands: resolves the launch via {@link FrameworkLauncher.prepare},
  * confirms with the user in a TTY unless `--yes` was supplied, re-syncs capability indexes via
- * `runIndexCapCommand`, then executes and prints the JSON result.
+ * `runIndexCapCommand`, then executes, prints the JSON result, and adopts the
+ * agent's outcome as the command's exit status (128 + signal for a signalled stop).
  * @remarks Exits non-zero with a targeted message for `ToolNotAllowedError`
  * (repo policy disallows this tool) and `RepositoryNotSelectedError` (no
  * active repo — points the user at `mate companion link`); other errors propagate.
@@ -137,7 +138,12 @@ export async function runLaunchToolCommand(
     }
 
     const result = await prepared.execute();
+    /**
+     * The printed result stays useful, but the status is what a supervisor
+     * reads: a failed agent must fail the launch.
+     */
     console.log(JSON.stringify(result, null, 2));
+    if (result.exitCode !== 0) process.exitCode = result.exitCode;
   } catch (error) {
     progress?.failCurrent();
     progress?.stop();
