@@ -48,10 +48,10 @@ mate cap openspec <subcommand> [args...]
 ```
 
 Mate ships two schema profiles and installs both into the companion. Schema choice
-selects the artifact set; it does not make stages inside a profile optional:
+selects the artifact set; both profiles still explore before proposing:
 
-- `mate-v1`: the complete `proposal → specs → design → tasks` workflow
-- `mate-minimal`: the short `specs → tasks` workflow, with parser-compatible
+- `mate-v1`: the complete `proposal → specs → design → tasks` artifact set
+- `mate-minimal`: the short `specs → tasks` artifact set, with parser-compatible
   requirements written as user stories and Given/When/Then acceptance criteria
 
 Choose `mate-minimal` only when every gate is true:
@@ -61,8 +61,8 @@ Choose `mate-minimal` only when every gate is true:
 - no public API change or breaking behavior
 - no cross-cutting architecture or unresolved technical decision
 
-If any gate is false or unclear, use `mate-v1`. Its explore and design artifacts
-are required, but they can stay concise for simple changes. Installing a schema
+If any gate is false or unclear, use `mate-v1`. Its proposal, specs, design, and tasks
+artifacts are required, but they can stay concise for simple changes. Installing a schema
 does not activate it. Setup keeps OpenSpec's own default unless `mate-v1` is
 explicitly selected as the companion default during `mate companion setup`, which
 is the only flow that writes `openspec/config.yaml`. `mate-minimal` is never the

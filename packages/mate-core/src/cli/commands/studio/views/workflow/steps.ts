@@ -240,13 +240,20 @@ export function workflowPlan(
       profile: "mate-minimal",
       label: "mate-minimal",
       description:
-        "Short path that creates only specs and tasks for one-Area, low-risk changes; switch to mate-v1 when uncertain.",
+        "Short path that explores first, then creates only specs and tasks for one-Area, low-risk changes; switch to mate-v1 when uncertain.",
       steps: [
+        skillStep(
+          "explore",
+          "explore",
+          "Resolves repository evidence, unknowns, options, and direction without adding a planning artifact.",
+          "It gives the minimal proposal step an agreed direction while keeping the output to specs and tasks.",
+          "mate-minimal",
+        ),
         skillStep(
           "propose",
           "propose",
-          "Creates the concise, parser-compatible behavior change.",
-          "OpenSpec generates the minimal specs and tasks artifacts from the agreed direction.",
+          "Creates the concise, parser-compatible specs and tasks from the explored direction.",
+          "OpenSpec turns the agreed direction into only the minimal profile's specs and tasks; proposal and design artifacts are intentionally omitted.",
           "mate-minimal",
         ),
         reviewStep(

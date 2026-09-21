@@ -39,7 +39,8 @@ artifacts:
     template: tasks.md
     instruction: |
       Create a flat implementation checklist that satisfies the delta specs. Keep it short: this
-      workflow intentionally has no explore, proposal, or design artifact.
+      profile uses the shared `/openspec-explore` and `/openspec-propose` planning steps but
+      intentionally writes no explore, proposal, or design artifact.
 
       Number tasks `N.M` and group them under `## N. <group>` headers so apply tracking can address them individually.
       Read `openspec/mate-conventions.yaml` before writing the artifact and preserve its scope rules.

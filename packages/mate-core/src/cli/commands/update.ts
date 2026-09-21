@@ -1,4 +1,3 @@
-import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { FRAMEWORK_NAME } from "../../framework";
@@ -14,6 +13,7 @@ import {
   isNewer,
 } from "../../lib/update-checker";
 import { confirmPrompt } from "../../lib/components/confirm-prompt";
+import { resolvePackageRoot } from "../../lib/package-root";
 
 type InstallResult = ReturnType<typeof installPublicPackageSync>;
 
@@ -38,11 +38,11 @@ export const updateCommandDeps = {
   getCurrentVersion,
   isNewer,
   confirmPrompt,
-  isNpmManagedInstall: () =>
-    isPackageInstalledAtNpmGlobalRoot(
-      path.resolve(import.meta.dirname, "../../.."),
-      getUpdateConfig().packageName,
-    ),
+  isNpmManagedInstall: () => {
+    const packageName = getUpdateConfig().packageName;
+    const packageRoot = resolvePackageRoot(process.argv[1], packageName);
+    return packageRoot !== undefined && isPackageInstalledAtNpmGlobalRoot(packageRoot, packageName);
+  },
   installLatest: (latest: string): InstallResult => {
     const { packageName, registry } = getUpdateConfig();
     return installPublicPackageSync(`${packageName}@${latest}`, registry);

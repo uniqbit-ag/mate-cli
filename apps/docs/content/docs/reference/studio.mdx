@@ -87,8 +87,9 @@ The workflow is a built-in sequence, not a scan of skill directories on disk:
 - an optional grilling/questionnaire step appears before `explore`, asking 3-5
   high-leverage questions through the `/grill-me` or `/interview-me` skills
 - `openspec explore` uses `/openspec-explore` to frame the change
-- `openspec propose` uses `/openspec-propose` to create the proposal, specs,
-  design, and tasks as one planning step
+- `openspec propose` uses `/openspec-propose` to create the selected profile's
+  artifacts: proposal, specs, design, and tasks for `mate-v1`; only specs and
+  tasks for `mate-minimal`
 - `openspec apply` uses `/openspec-apply-change` to implement those tasks
 - an optional `mate simplify code` step uses `/mate-simplify-code` after
   implementation, with a reminder to preserve behavior and rerun tests

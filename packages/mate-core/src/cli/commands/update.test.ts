@@ -1,6 +1,11 @@
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { publicNpmDeps } from "../../lib/public-npm";
 import { runUpdateCommand, updateCommandDeps } from "./update";
+
+const realIsNpmManagedInstall = updateCommandDeps.isNpmManagedInstall;
 
 function captureStderr(): { chunks: string[]; restore: () => void } {
   const chunks: string[] = [];
@@ -117,6 +122,42 @@ describe("runUpdateCommand", () => {
     expect(output).toContain("Current version: 1.0.0");
     expect(output).toContain("Latest version: 9.9.9");
     expect(output).toContain("Upgraded to 9.9.9.");
+  });
+
+  test("keeps a source entrypoint on the manual recovery path", async () => {
+    const originalEntrypoint = process.argv[1];
+    const originalManagedInstall = updateCommandDeps.isNpmManagedInstall;
+    const originalExecFileSync = publicNpmDeps.execFileSync;
+    const originalExistsSync = publicNpmDeps.existsSync;
+    const originalRealpathSync = publicNpmDeps.realpathSync;
+    const sourceEntrypoint = path.resolve(
+      import.meta.dirname,
+      "../../../../apps/mate-cli/src/cli.ts",
+    );
+    const stderr = captureStderr();
+
+    process.argv[1] = sourceEntrypoint;
+    updateCommandDeps.isNpmManagedInstall = realIsNpmManagedInstall;
+    publicNpmDeps.execFileSync = mock(() => "/tmp/global/node_modules\n");
+    publicNpmDeps.existsSync = mock(() => true);
+    publicNpmDeps.realpathSync = mock((value: string) => value);
+
+    try {
+      await runUpdateCommand(["--yes"]);
+    } finally {
+      stderr.restore();
+      process.argv[1] = originalEntrypoint;
+      updateCommandDeps.isNpmManagedInstall = originalManagedInstall;
+      publicNpmDeps.execFileSync = originalExecFileSync;
+      publicNpmDeps.existsSync = originalExistsSync;
+      publicNpmDeps.realpathSync = originalRealpathSync;
+    }
+
+    expect(updateCommandDeps.installLatest).not.toHaveBeenCalled();
+    expect(stderr.chunks.join("")).toContain(
+      "self-update is only supported for npm-installed Mate",
+    );
+    expect(process.exitCode).toBe(1);
   });
 
   test("installs the exact resolved canary version", async () => {
