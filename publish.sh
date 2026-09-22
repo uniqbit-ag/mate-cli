@@ -91,3 +91,45 @@ for NAME in "${PACKAGE_NAMES[@]}"; do
   NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm publish --workspace "$NAME" --access public --tag "$TAG"
   echo "Published $NAME@$VERSION with tag: $TAG"
 done
+
+# ---------------------------------------------------------------------------
+# Ask for an appliance image, now that every package it installs exists.
+#
+# Publication is complete at this point and stays complete: this request is
+# best-effort and bounded, and nothing below changes this script's exit status.
+# A release without an image is a release missing an image, not a failed one —
+# and the same dispatch, run by hand with the inputs printed here, is the retry.
+# ---------------------------------------------------------------------------
+IMAGE_WORKFLOW="publish-image.yml"
+REPOSITORY="uniqbit-ag/mate-cli"
+# release-it tags the release commit with the bare version, and pushes it
+# before this script runs, so the tag to build from is the version itself.
+RELEASE_TAG="$VERSION"
+
+retry_instruction() {
+  echo "  Retry it with:" >&2
+  echo "    gh workflow run $IMAGE_WORKFLOW --repo $REPOSITORY \\" >&2
+  echo "      --field version=$VERSION --field channel=$TAG --field ref=$RELEASE_TAG" >&2
+}
+
+echo
+if ! command -v gh >/dev/null 2>&1; then
+  echo "Note: npm publication succeeded; the image was not requested because gh is not installed." >&2
+  retry_instruction
+elif ! gh auth status >/dev/null 2>&1; then
+  echo "Note: npm publication succeeded; the image was not requested because gh is not authenticated." >&2
+  retry_instruction
+elif ! gh workflow view "$IMAGE_WORKFLOW" --repo "$REPOSITORY" >/dev/null 2>&1; then
+  echo "Note: npm publication succeeded; the image was not requested because $IMAGE_WORKFLOW is not available on the default branch." >&2
+  retry_instruction
+elif ! gh workflow run "$IMAGE_WORKFLOW" \
+        --repo "$REPOSITORY" \
+        --field version="$VERSION" \
+        --field channel="$TAG" \
+        --field ref="$RELEASE_TAG" >/dev/null 2>&1; then
+  echo "Note: npm publication succeeded; the image request was rejected." >&2
+  retry_instruction
+else
+  echo "Requested an appliance image for $VERSION ($TAG) from $RELEASE_TAG."
+  echo "The build runs on its own; this release is complete either way."
+fi

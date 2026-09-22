@@ -17,7 +17,8 @@
       "bun run typecheck"
     ],
     "after:bump": [
-      "bun scripts/sync-release-versions.ts"
+      "bun scripts/sync-release-versions.ts",
+      "bun ../mate-container/scripts/sync-image-inputs.ts ${version}"
     ]
   }
 }

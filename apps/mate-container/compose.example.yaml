@@ -1,0 +1,63 @@
+# The Mate appliance, as one container.
+#
+# For reading and for starting: `docker compose -f compose.example.yaml up`
+# brings up an agent session and Studio against the companions you mount.
+#
+# Both published ports are unauthenticated. What fronts them is yours — put a
+# reverse proxy with authentication and TLS in front of both, or publish them
+# only on a loopback address as they are below.
+
+services:
+  mate:
+    # Follow a channel, or pin the exact version you want to stay on:
+    #   ghcr.io/uniqbit-ag/mate-cli/mate-appliance:0.17.0
+    image: ghcr.io/uniqbit-ag/mate-cli/mate-appliance:latest
+
+    # The image runs as uid/gid 10001. The companions volume has to be
+    # writable by that identity, which is the one thing most worth getting
+    # right before the first start: the alternative is discovering it through
+    # a failed save an hour later.
+    #
+    # Either chown the directory on the host:
+    #     sudo chown -R 10001:10001 ./companions
+    # or map the container's user to your own, as below.
+    user: "10001:10001"
+
+    volumes:
+      # The Companion Repositories this container serves. Mount either one
+      # companion directly, or a directory holding several.
+      - ./companions:/companions
+
+      # Everything an operator supplies arrives at run time; nothing is baked
+      # into the image. This file is where credentials belong, so they stay out
+      # of the process listing.
+      - ./appliance.yaml:/etc/mate/appliance.yaml:ro
+
+    ports:
+      # The agent session, and Studio beside it. Bound to loopback here so
+      # nothing is reachable off-host until you have put something in front.
+      - "127.0.0.1:4096:4096"
+      - "127.0.0.1:4097:4097"
+
+    environment:
+      # Which companion the session runs against. Required only when more than
+      # one is found — otherwise the single one is used.
+      MATE_COMPANION: acme
+
+      # Check a companion out on first start. An existing checkout is used as
+      # it is: never re-cloned, never reset.
+      # MATE_COMPANION_REPOS: https://github.com/example/acme-companion.git
+
+      # Whether Studio's save path is reachable. Studio is the editor for the
+      # human using this container, so it is on by default.
+      MATE_STUDIO_WRITABLE: "true"
+
+      # The agent's credentials. Put them in the configuration file rather than
+      # here if you would rather they were not in a process listing.
+      # ANTHROPIC_API_KEY: ...
+
+    # The container serves both processes or neither: if either stops, the
+    # other is stopped and the container exits with the first one's status.
+    restart: unless-stopped
+
+    stop_grace_period: 30s

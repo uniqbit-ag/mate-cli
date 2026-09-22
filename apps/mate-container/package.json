@@ -1,0 +1,19 @@
+{
+  "name": "@uniqbit/mate-container",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Mate appliance container image: recipe, entrypoint, and release-owned dependency locks.",
+  "scripts": {
+    "test": "CI=1 bun test",
+    "build": "bun scripts/build.ts",
+    "verify": "bun scripts/verify-image.ts",
+    "lint": "oxlint src/ scripts/",
+    "lint:fix": "oxlint src/ scripts/ --fix",
+    "format": "oxfmt src/ scripts/",
+    "format:check": "oxfmt src/ scripts/ --check"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "yaml": "^2.9.0"
+  }
+}

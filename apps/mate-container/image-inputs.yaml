@@ -1,0 +1,221 @@
+# Release-owned image inputs for the Mate appliance container.
+#
+# Every version here is exact and every download is checked against a digest
+# recorded next to it, so a rebuild of the same release tag resolves the same
+# graph rather than whatever is current. Nothing in this file is a range, a
+# channel, or a "latest" reference — the build fails on a mismatch instead of
+# quietly installing something else.
+#
+# Release preparation updates `mate.version` alongside the package versions and
+# regenerates `locks/*.package-lock.json`; publication verifies that the Mate
+# version here matches the release being built.
+
+schema: 1
+
+# The target set the image is built and verified for. An architecture absent
+# here is not supported by the image, not merely untested.
+targets:
+  - platform: linux
+    arch: amd64
+    node_arch: x64
+  - platform: linux
+    arch: arm64
+    node_arch: arm64
+
+# ---------------------------------------------------------------------------
+# Base images, by immutable digest. The tag is recorded for readability only;
+# the build references the digest.
+# ---------------------------------------------------------------------------
+base_images:
+  node:
+    tag: node:24-trixie-slim
+    digest: sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe
+    # What that digest actually contains, asserted at build time.
+    node_version: 24.21.0
+    npm_version: 11.19.0
+    debian_version: "13.7"
+  bun:
+    tag: oven/bun:1.3.14-debian
+    digest: sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f
+    bun_version: 1.3.14
+
+# ---------------------------------------------------------------------------
+# OS packages, at the exact versions the pinned base image resolves. Installed
+# with `=<version>`, so a moved suite fails the build rather than drifting.
+# ---------------------------------------------------------------------------
+os_packages:
+  suite: trixie
+  packages:
+    git: 1:2.47.3-0+deb13u1
+    ca-certificates: "20250419"
+    tar: 1.35+dfsg-3.1
+    gzip: 1.13-1+deb13u1
+    xz-utils: 5.8.1-1+deb13u1
+
+# ---------------------------------------------------------------------------
+# Mate itself. The image installs the published package at this exact version;
+# it never compiles Mate from the checkout it was built from.
+#
+# `minimum_compatible` is the release that first carries unattended
+# registration, the pinned update policy, launch exit-status propagation and
+# signal forwarding, prebuilt workspace preparation, and preinstalled plugin
+# binding. A published image installs its own release version, which is at or
+# above that minimum rather than equal to it.
+# ---------------------------------------------------------------------------
+mate:
+  version: 0.17.0-canary.3
+  minimum_compatible: 0.17.0-canary.3
+  registry: https://registry.npmjs.org/
+
+# ---------------------------------------------------------------------------
+# The agent runtime. OpenCode's version is independent of Mate's.
+#
+# The installer is fetched, checked against `installer_sha256`, and only then
+# run with `--version`, which installs that exact version rather than the
+# current one. The release artifact it downloads is checked against the digest
+# for the target architecture, which also pins away the installer's own
+# CPU-feature "baseline" variant selection: a baseline artifact fails the
+# digest check rather than silently producing a different image per builder.
+# ---------------------------------------------------------------------------
+opencode:
+  version: 1.18.31
+  installer_url: https://opencode.ai/install
+  installer_sha256: fc3c1b2123f49b6df545a7622e5127d21cd794b15134fc3b66e1ca49f7fb297e
+  version_argument: "--version <version>"
+  release_base_url: https://github.com/anomalyco/opencode/releases/download
+  artifacts:
+    amd64:
+      file: opencode-linux-x64.tar.gz
+      sha256: e9312be75ed803b7415fc2aeabda1f4fe938912a39673762dc0c38c0e11ebde4
+    arm64:
+      file: opencode-linux-arm64.tar.gz
+      sha256: d4e332f46b227448582c0d9fc75f6f826dfe95c9f751bc2011fc4d937a042be6
+
+# ---------------------------------------------------------------------------
+# The capability toolchain. The installation gate is evaluated against the
+# mounted companion's selections, which the image cannot know at build time, so
+# it carries all of it: every supported package manager and every supported
+# capability's tool.
+#
+# Each entry records how the image obtains the tool and how it proves it got
+# the right one. `detect` is the command name the installation gate looks for
+# on PATH.
+# ---------------------------------------------------------------------------
+tools:
+  # Package managers.
+  bun:
+    detect: bun
+    version: 1.3.14
+    source: base_image
+    from: bun
+
+  uv:
+    detect: uv
+    version: 0.12.17
+    source: github_release
+    base_url: https://github.com/astral-sh/uv/releases/download
+    artifacts:
+      amd64:
+        file: uv-x86_64-unknown-linux-gnu.tar.gz
+        sha256: fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63
+      arm64:
+        file: uv-aarch64-unknown-linux-gnu.tar.gz
+        sha256: d636d1b678e9e7f367ecb22b46bd1cabbed234d6bc3b4d96365d2b507f72f86c
+
+  # Capability tools.
+  openspec:
+    detect: openspec
+    package: "@fission-ai/openspec"
+    version: 1.13.1
+    source: npm_global
+    # Resolved through locks/global-tools.package-lock.json, not `@latest`.
+
+  graphify:
+    detect: graphify
+    package: graphifyy
+    version: 0.9.65
+    source: uv_tool
+    # Installed from locks/graphify.requirements.txt, which pins the whole
+    # transitive graph with per-artifact hashes. The interpreter is pinned too:
+    # uv would otherwise fetch whatever CPython is current, which is a moving
+    # reference no different from an unpinned package.
+    python_version: 3.14.7
+    index: https://pypi.org/simple
+
+  rtk:
+    detect: rtk
+    version: 0.49.0
+    source: github_release
+    base_url: https://github.com/rtk-ai/rtk/releases/download
+    artifacts:
+      # The project publishes a musl build for x86_64 and a gnu build for
+      # aarch64; the musl binary is static and runs on the glibc base image.
+      amd64:
+        file: rtk-x86_64-unknown-linux-musl.tar.gz
+        sha256: 7278231dfd7e6a730a4ab7f847b195bcf02289c2d57622b0dab75a6411100c8f
+      arm64:
+        file: rtk-aarch64-unknown-linux-gnu.tar.gz
+        sha256: c8ea4b6560841e73157c134fd4a3293914c6ede42e786ee985cf491fde691ba7
+
+  tokensave:
+    detect: tokensave
+    version: 7.12.1
+    source: github_release
+    base_url: https://github.com/aovestdipaperino/tokensave/releases/download
+    # Prebuilt release binaries, so the image needs no Rust toolchain.
+    artifacts:
+      amd64:
+        file: tokensave-v7.12.1-x86_64-linux.tar.gz
+        sha256: 184612db16800e384a1bcdc7fadcc53fa73bda70240f9c0416ac4b88c7e924fb
+      arm64:
+        file: tokensave-v7.12.1-aarch64-linux.tar.gz
+        sha256: 7de5c95b51d508f39a83d9420ad0700502de107a61dbb38dad3d008d4f6f4261
+
+# ---------------------------------------------------------------------------
+# npm dependency graphs, direct and transitive, with per-package integrity.
+# These are the files the build installs from; neither is regenerated during a
+# build, so a rebuild cannot resolve a newer graph.
+# ---------------------------------------------------------------------------
+locks:
+  # Installed globally: the Mate CLI and the OpenSpec CLI.
+  global_tools:
+    manifest: locks/global-tools.package.json
+    lockfile: locks/global-tools.package-lock.json
+  # Installed into the prebuilt companion-local workspace the entrypoint
+  # copies into each companion's `.mate/plugins/.local/`.
+  local_workspace:
+    manifest: locks/local-workspace.package.json
+    lockfile: locks/local-workspace.package-lock.json
+
+# ---------------------------------------------------------------------------
+# The prebuilt companion-local workspace the image carries, and the manifest
+# written beside it so preparation can report a bundle that does not match the
+# target by the name of the dependency at fault.
+#
+# The bundle lives outside the companions mount, owned by the image and
+# readable by the unprivileged user. Its declared dependency versions are the
+# distribution-owned pins exactly; preparation rejects anything else.
+# ---------------------------------------------------------------------------
+prebuilt_workspace:
+  path: /opt/mate/prebuilt
+  # Written beside the bundle, not inside it, so what preparation copies into
+  # a companion is exactly the installed workspace and nothing else.
+  manifest_file: /opt/mate/prebuilt-manifest.json
+  packages:
+    context-mode: 1.0.169
+    "@uniqbit/mate-opencode-plugin": 0.17.0-canary.3
+  # Recorded in the bundle manifest at build time and checked before any copy.
+  compatibility:
+    platform: linux
+    node_version: 24.21.0
+
+# ---------------------------------------------------------------------------
+# The identity the container runs as, and the paths it owns.
+# ---------------------------------------------------------------------------
+runtime:
+  user: mate
+  uid: 10001
+  group: mate
+  gid: 10001
+  home: /home/mate
+  companions_dir: /companions

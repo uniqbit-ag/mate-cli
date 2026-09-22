@@ -1,0 +1,203 @@
+---
+title: The Appliance Container
+description: "Running Mate as a container: what to mount, what to configure, and what to put in front of it."
+---
+
+The appliance image is Mate as a single-tenant deployment: one container, one
+human, one or more Companion Repositories mounted into it. Inside, an OpenCode
+session is served over the web, and [Studio](/mate-cli/reference/studio) runs
+beside it so the same browser can read and edit the companion's markdown — a
+served appliance cannot run Obsidian.
+
+```sh
+docker run \
+  --user 10001:10001 \
+  --volume ./companions:/companions \
+  --publish 127.0.0.1:4096:4096 \
+  --publish 127.0.0.1:4097:4097 \
+  ghcr.io/uniqbit-ag/mate-cli/mate-appliance:latest
+```
+
+A worked example with volumes, ports and the identity mapping is in
+[`apps/mate-container/compose.example.yaml`](https://github.com/uniqbit-ag/mate-cli/blob/main/apps/mate-container/compose.example.yaml).
+
+## Put something in front of it
+
+Both published ports are **unauthenticated**. The container does not
+authenticate, authorize, or terminate TLS, and it is not going to: what fronts
+those ports is yours. Publish them on a loopback address, as the example does,
+and put a reverse proxy with authentication and TLS in front of both — or keep
+the container on a private network and reach it through one.
+
+This is the same position Studio takes on its own served port, for the same
+reason.
+
+## What to mount
+
+| Path                       | What it is                                                                                                                                    |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/companions`              | The Companion Repositories this container serves. Mount one companion directly, or a directory holding several.                               |
+| `/etc/mate/appliance.yaml` | The configuration file, for anything you would rather not put in a process listing. Optional; every setting also has an environment variable. |
+
+### The identity, and the volume
+
+The container runs as **uid 10001, gid 10001** (`mate`). It never runs as root.
+That identity has to be able to write the companions directory — chown it on
+the host, or map the container's user to one that already can:
+
+```sh
+sudo chown -R 10001:10001 ./companions
+```
+
+A companions directory the running user cannot read or write is reported at
+startup, naming the directory and the identity, rather than failing later
+inside a session.
+
+## Configuration
+
+Every setting is readable from an environment variable and from the
+configuration file. **The environment wins** where both supply one. A value
+that is present but unusable — a port that is not a port — stops startup naming
+the setting and the value; it is never quietly replaced by a default.
+
+| Setting                  | Meaning                                                                                                                                                                | Default                    | Required                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | -------------------------------- |
+| `MATE_COMPANIONS_DIR`    | The directory holding the Companion Repositories the container serves.                                                                                                 | `/companions`              | no                               |
+| `MATE_COMPANION_REPOS`   | Git locations to check out into the companions directory when nothing is present at their destination. One per line or comma-separated, each `url` or `url=directory`. | —                          | no                               |
+| `MATE_COMPANION`         | Which discovered companion the session runs against, by directory name or absolute path.                                                                               | —                          | only when more than one is found |
+| `MATE_AGENT_PORT`        | The port the agent session is served on.                                                                                                                               | `4096`                     | no                               |
+| `MATE_AGENT_HOST`        | The interface the agent session binds.                                                                                                                                 | `0.0.0.0`                  | no                               |
+| `MATE_STUDIO_PORT`       | The port Studio is served on.                                                                                                                                          | `4097`                     | no                               |
+| `MATE_STUDIO_HOST`       | The interface Studio binds.                                                                                                                                            | `0.0.0.0`                  | no                               |
+| `MATE_STUDIO_WRITABLE`   | Whether Studio's save path is reachable.                                                                                                                               | `true`                     | no                               |
+| `MATE_GIT_SYNC`          | Whether the companion's own Git synchronization runs.                                                                                                                  | `false`                    | no                               |
+| `MATE_GIT_USER_NAME`     | The Git author name used for any commit the container makes.                                                                                                           | —                          | no                               |
+| `MATE_GIT_USER_EMAIL`    | The Git author email used for any commit the container makes.                                                                                                          | —                          | no                               |
+| `MATE_AGENT_CREDENTIALS` | The agent's own credentials, passed into the session's environment untouched. `NAME=value` pairs, one per line.                                                        | —                          | no                               |
+| `MATE_APPLIANCE_CONFIG`  | Where the configuration file is read from.                                                                                                                             | `/etc/mate/appliance.yaml` | no                               |
+
+In the file, each setting appears under its own key:
+
+```yaml
+companionsDir: /companions
+companion: acme
+agentPort: 4096
+studioPort: 4097
+studioWritable: true
+credentials:
+  ANTHROPIC_API_KEY: ...
+```
+
+Credentials supplied this way reach the session's environment and nothing else.
+They are never written into a Companion Repository, and they do not survive the
+container.
+
+## What startup does, and what it deliberately does not
+
+Startup finds the companions, registers them so Studio lists them, prepares the
+selected one's machine-local dependencies, and starts the two processes.
+
+It **registers**; it does not set up. A companion that already carries its own
+configuration keeps it byte for byte: no selection is presented, none is
+changed, and `mate companion setup` is never run on a companion someone else
+configured. Registration exists so Studio's inventory lists the companion —
+the session resolves its own companion directly.
+
+A configured Git location is cloned **only when nothing is present at its
+destination**. An existing checkout is used as it is: never re-cloned, never
+reset. A checkout that came from a different remote than the configuration
+names is reported, naming both, and left intact.
+
+### Dependency preparation is filesystem work
+
+A freshly cloned Companion Repository has no machine-local dependency
+workspace — it is gitignored, and a launch validates it rather than building
+it. The image carries a complete, fully installed one, and startup copies it
+into place.
+
+Nothing is installed at run time. No package manager runs, no dependency
+version is resolved, no package is downloaded, no native build happens, and no
+installation script executes anywhere in the container's process tree. A
+container with no outbound network access starts normally.
+
+A missing, corrupt, or incompatible dependency is reported **by name**, and
+startup stops: no serving process is started, no installation fallback is
+attempted, and an existing workspace is left exactly as it was.
+
+### An unsupported selection is refused by name
+
+The image carries the tools behind every package manager and capability the
+release supports — `bun`, `uv`, and the commands behind OpenSpec, Graphify,
+RTK and TokenSave — so a companion is not refused for a selection the image
+simply lacks.
+
+Where a mounted companion declares something this image does not carry, startup
+says which requirement that is and exits non-zero, rather than letting the
+session be refused behind its installation gate with repair advice written for
+a developer at a terminal.
+
+## Two versions, which are not the same thing
+
+The image installs **the exact published release it was built from**, and that
+version is readable from inside a running container:
+
+```sh
+docker run --rm ghcr.io/uniqbit-ag/mate-cli/mate-appliance:latest \
+  --entrypoint mate … --version
+```
+
+It is also on the image as the `ai.mate.version` label, alongside
+`ai.mate.opencode.version` for the agent command.
+
+That contained version is a different thing from the **minimum compatible
+version** recorded in [Unattended
+Deployments](/mate-cli/reference/unattended): `0.17.0-canary.3`, the release
+that first carries unattended registration, the pinned update policy, prebuilt
+workspace preparation, preinstalled plugin binding, and the launch's exit
+status and signal forwarding. Every published image installs its own release,
+which is at or above that minimum rather than equal to it.
+
+Everything the image holds — runtimes, OS packages, tools, npm graphs, the
+prebuilt workspace — is fixed by release-owned inputs and recorded with it.
+Changing any of those versions means a new image.
+
+## Upgrades are a new image
+
+The container's version is a property of the image. It declares the **pinned
+update policy** before its first Mate invocation, and every process it starts
+inherits it — registration, preparation, inspection, the session and Studio
+alike. Under that policy, update handling does nothing at all: no command is
+blocked however new a version is cached, no banner is shown, no registry is
+contacted, and the update-state cache is neither read nor written.
+
+The reasoning and the full list are in [the pinned update
+policy](/mate-cli/reference/unattended); this page does not restate it. The
+short version is that a deployment whose version is fixed by its image cannot
+act on advice to upgrade, so being refused for not having taken it would simply
+turn the appliance off. Every other gate still applies.
+
+To change versions, run a different image.
+
+## Saving, and the conflict you will meet
+
+The agent and the human write the same files, in the same companion, at the
+same time. That is not an edge case in this deployment — it is its shape.
+
+Studio's vault refuses a save that would overwrite a change it did not see: a
+save carries the token from when the file was opened, and a save whose token is
+stale comes back as a conflict rather than winning. When that happens, reload
+the file, reapply the edit, and save again.
+
+## Stopping
+
+The container serves both processes or neither.
+
+A termination signal stops the agent session and Studio, and the container
+exits **zero** once both have stopped. If either process exits on its own, the
+other is stopped and the container exits with the **first one's** status —
+whichever it was. A Studio that dies of its own fault is as much a failure of
+the appliance as a session that does, and is reported as one.
+
+A stop the container itself caused is a clean stop. Any other status is
+reported as it was: an ordinary non-zero exit stays non-zero, and a `SIGKILL`
+from the out-of-memory killer is not a clean shutdown.
