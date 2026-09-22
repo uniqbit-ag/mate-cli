@@ -10,6 +10,7 @@ import {
   CONTEXT_MODE_PACKAGE_NAME,
   CONTEXT_MODE_VERSION,
 } from "./context-mode-package";
+import { enforceableNodeVersion } from "./node-engine-version";
 import { getLocalWorkspaceDir } from "./preinstalled-plugins";
 
 /**
@@ -41,7 +42,8 @@ const DECLARED_NODE_REQUIREMENTS: Record<string, string> = {
 export interface PrebuiltWorkspaceTarget {
   platform: string;
   arch: string;
-  nodeVersion: string;
+  /** Null where no installed Node release backs the runtime, which leaves `engines.node` unenforced. */
+  nodeVersion: string | null;
 }
 
 export interface PrebuiltWorkspaceValidation {
@@ -53,7 +55,7 @@ export interface PrebuiltWorkspaceValidation {
 }
 
 export function currentTarget(): PrebuiltWorkspaceTarget {
-  return { platform: process.platform, arch: process.arch, nodeVersion: process.versions.node };
+  return { platform: process.platform, arch: process.arch, nodeVersion: enforceableNodeVersion() };
 }
 
 interface InstalledManifest {
@@ -182,7 +184,11 @@ export async function validatePrebuiltWorkspace(
     }
 
     const declaredRequirement = DECLARED_NODE_REQUIREMENTS[name];
-    if (declaredRequirement && !semver.satisfies(target.nodeVersion, declaredRequirement)) {
+    if (
+      declaredRequirement &&
+      target.nodeVersion !== null &&
+      !semver.satisfies(target.nodeVersion, declaredRequirement)
+    ) {
       failures.push(
         `${name}: requires Node.js ${declaredRequirement}; the target runs ${target.nodeVersion}.`,
       );
@@ -215,7 +221,11 @@ export async function validatePrebuiltWorkspace(
         `${name}: built for ${installed.cpu.join(", ")}; the target architecture is ${target.arch}.`,
       );
     }
-    if (installed.engines?.node && !semver.satisfies(target.nodeVersion, installed.engines.node)) {
+    if (
+      installed.engines?.node &&
+      target.nodeVersion !== null &&
+      !semver.satisfies(target.nodeVersion, installed.engines.node)
+    ) {
       failures.push(
         `${name}: requires Node.js ${installed.engines.node}; the target runs ${target.nodeVersion}.`,
       );

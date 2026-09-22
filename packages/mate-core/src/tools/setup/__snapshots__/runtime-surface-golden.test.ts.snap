@@ -241,7 +241,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -277,7 +277,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -367,7 +367,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -460,7 +460,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -496,7 +496,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -717,7 +717,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -1019,7 +1019,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -1034,7 +1034,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -1121,7 +1121,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -1257,7 +1257,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -1272,7 +1272,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -1505,7 +1505,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -1747,7 +1747,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1763,7 +1763,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
       "context-mode@1.0.169",
     ],
   },
@@ -1843,7 +1843,7 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -1913,7 +1913,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1929,7 +1929,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
       "context-mode@1.0.169",
     ],
   },
@@ -2129,7 +2129,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -2377,7 +2377,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -2395,7 +2395,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -2474,7 +2474,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -2567,7 +2567,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -2585,7 +2585,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -2783,7 +2783,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -3047,7 +3047,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -3080,7 +3080,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -3161,7 +3161,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -3255,7 +3255,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -3288,7 +3288,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -3503,7 +3503,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -3723,7 +3723,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -3779,7 +3779,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
       "context-mode@1.0.169",
     ],
   },
@@ -4050,7 +4050,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.16.0",
+          "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
         ],
       },
       {
@@ -4126,7 +4126,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -4141,7 +4141,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -4188,7 +4188,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -4203,7 +4203,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -4251,7 +4251,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -4266,7 +4266,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -4313,7 +4313,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -4328,7 +4328,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }
@@ -4375,7 +4375,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
     "references": {
       "mate": "..",
@@ -4390,7 +4390,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.16.0",
+      "@uniqbit/mate-opencode-plugin@0.17.0-canary.2",
     ],
   },
 }

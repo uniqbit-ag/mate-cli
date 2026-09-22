@@ -198,4 +198,24 @@ describe("validatePrebuiltWorkspace", () => {
     expect(result.failures.join("\n")).toContain("tiny-dep: requires Node.js >=99.0.0");
     expect(result.failures.join("\n")).toContain("24.0.0");
   });
+
+  test("an unenforceable runtime leaves `engines.node` unchecked", async () => {
+    const bundle = await makeValidBundle();
+    await installPackage(bundle, "tiny-dep", { version: "1.2.3", engines: { node: ">=99.0.0" } });
+
+    const result = await validatePrebuiltWorkspace(bundle, { ...TARGET, nodeVersion: null });
+
+    expect(result.failures).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  test("an unenforceable runtime still checks platform, architecture, and completeness", async () => {
+    const bundle = await makeValidBundle();
+    await installPackage(bundle, "tiny-dep", { version: "1.2.3", cpu: ["s390x"] });
+
+    const result = await validatePrebuiltWorkspace(bundle, { ...TARGET, nodeVersion: null });
+
+    expect(result.ok).toBe(false);
+    expect(result.failures.join("\n")).toContain("tiny-dep: built for s390x");
+  });
 });

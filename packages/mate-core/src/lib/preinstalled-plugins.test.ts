@@ -133,6 +133,37 @@ describe("resolvePreinstalledPluginReference", () => {
     await expect(attempt).rejects.toThrow(">=99.0.0");
     await expect(attempt).rejects.toThrow("24.0.0");
   });
+
+  test("with no enforceable runtime, `engines.node` does not block binding", async () => {
+    const companionPath = await makeCompanion();
+    const dir = await installCopy(companionPath, CONTEXT_MODE_PACKAGE_NAME, {
+      version: CONTEXT_MODE_VERSION,
+      engines: { node: ">=99.0.0" },
+    });
+
+    expect(
+      await resolvePreinstalledPluginReference(
+        companionPath,
+        CONTEXT_MODE_PACKAGE_NAME,
+        CONTEXT_MODE_VERSION,
+        null,
+      ),
+    ).toBe(dir);
+  });
+
+  test("a version mismatch is still refused with no enforceable runtime", async () => {
+    const companionPath = await makeCompanion();
+    await installCopy(companionPath, CONTEXT_MODE_PACKAGE_NAME, { version: "0.0.1" });
+
+    const attempt = resolvePreinstalledPluginReference(
+      companionPath,
+      CONTEXT_MODE_PACKAGE_NAME,
+      CONTEXT_MODE_VERSION,
+      null,
+    );
+
+    await expect(attempt).rejects.toThrow(CONTEXT_MODE_VERSION);
+  });
 });
 
 describe("a bound reference stays recognisable as Mate-managed", () => {

@@ -4,6 +4,7 @@ import path from "node:path";
 import semver from "semver";
 
 import { FRAMEWORK_NAME } from "../framework";
+import { enforceableNodeVersion } from "./node-engine-version";
 
 /**
  * A plugin reference bound to installed files is an absolute path to the
@@ -49,7 +50,7 @@ export async function resolvePreinstalledPluginReference(
   companionPath: string,
   packageName: string,
   expectedVersion: string,
-  nodeVersion: string = process.versions.node,
+  nodeVersion: string | null = enforceableNodeVersion(),
 ): Promise<string | null> {
   const workspace = getLocalWorkspaceDir(companionPath);
   const supplied = await fs.access(path.join(workspace, PREBUILT_BUNDLE_MARKER)).then(
@@ -73,7 +74,11 @@ export async function resolvePreinstalledPluginReference(
       `${packageName}: the installed copy at ${dir} is ${manifest.version ?? "an unknown version"}; the capability declares ${expectedVersion}.`,
     );
   }
-  if (manifest.engines?.node && !semver.satisfies(nodeVersion, manifest.engines.node)) {
+  if (
+    manifest.engines?.node &&
+    nodeVersion !== null &&
+    !semver.satisfies(nodeVersion, manifest.engines.node)
+  ) {
     throw new PreinstalledPluginMismatchError(
       `${packageName}: the installed copy at ${dir} requires Node.js ${manifest.engines.node}; this runtime is ${nodeVersion}.`,
     );
