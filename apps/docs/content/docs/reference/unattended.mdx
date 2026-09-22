@@ -49,7 +49,10 @@ Under the policy, automatic update handling does nothing at all:
 - no background registry check is started, so nothing waits on a registry and
   an air-gapped deployment starts normally;
 - the update-state cache is neither read nor written, so a read-only home
-  directory is never touched.
+  directory is never touched;
+- a Capability's own tool is not version-checked against a registry and not
+  upgraded, so a launch neither reaches the network for one nor replaces a
+  version the artifact pinned.
 
 Every other gate is unaffected. Companion resolution, installation preflight,
 and the rest still refuse with their usual guidance when unsatisfied.
@@ -122,3 +125,18 @@ A launch exits with a status reflecting how the agent process ended, and
 forwards `SIGINT` and `SIGTERM` to that process, waiting for it before exiting.
 See [Agent Launch](/mate-cli/reference/commands) for the details, including
 what changed for existing callers.
+
+## Minimum compatible version
+
+Unattended registration, the pinned update policy, prebuilt workspace
+preparation, preinstalled plugin binding, and the launch's exit status and
+signal forwarding first ship in `0.17.0-canary.3`. That release is the minimum
+for those CLI features, but it contains two pinned-deployment defects: the
+context-mode launch preflight rejects bindings to preinstalled copies, and the
+OpenSpec capability still checks and upgrades its tool from the registry.
+Deployments using either path need a later release that carries the launch
+fixes described here.
+
+A deployment's own contained version is a separate thing: an image installs
+the exact release it was built from, which must be at or above the applicable
+minimum.
