@@ -151,11 +151,11 @@ It is also on the image as the `ai.mate.version` label, alongside
 
 That contained version is a different thing from the **minimum compatible
 version** recorded in [Unattended
-Deployments](/mate-cli/reference/unattended): `0.17.0-canary.3`, the release
-that first carries unattended registration, the pinned update policy, prebuilt
-workspace preparation, preinstalled plugin binding, and the launch's exit
-status and signal forwarding. Every published image installs its own release,
-which is at or above that minimum rather than equal to it.
+Deployments](/mate-cli/reference/unattended): `0.17.0-canary.5`, the first
+release whose unattended registration, pinned update policy, prebuilt workspace
+preparation, preinstalled plugin binding, and launch exit status and signal
+forwarding all work in a deployment whose version is fixed by its image. Every
+published image installs its own release, which is at or above that minimum.
 
 Everything the image holds — runtimes, OS packages, tools, npm graphs, the
 prebuilt workspace — is fixed by release-owned inputs and recorded with it.

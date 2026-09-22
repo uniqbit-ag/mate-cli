@@ -134,8 +134,10 @@ signal forwarding first ship in `0.17.0-canary.3`. That release is the minimum
 for those CLI features, but it contains two pinned-deployment defects: the
 context-mode launch preflight rejects bindings to preinstalled copies, and the
 OpenSpec capability still checks and upgrades its tool from the registry.
-Deployments using either path need a later release that carries the launch
-fixes described here.
+
+A deployment that takes either path — which every pinned deployment with a
+preinstalled plugin does — needs `0.17.0-canary.5` or newer, the release that
+carries both launch fixes described here.
 
 A deployment's own contained version is a separate thing: an image installs
 the exact release it was built from, which must be at or above the applicable

@@ -59,12 +59,15 @@ os_packages:
 # `minimum_compatible` is the release that first carries unattended
 # registration, the pinned update policy, launch exit-status propagation and
 # signal forwarding, prebuilt workspace preparation, and preinstalled plugin
-# binding. A published image installs its own release version, which is at or
-# above that minimum rather than equal to it.
+# binding *in a form a pinned deployment can actually launch against*. Those
+# features first appear in 0.17.0-canary.3, but that release refuses the launch
+# on two of its own paths, so the minimum is the release that fixes them.
+# A published image installs its own release version, which is at or above that
+# minimum rather than equal to it.
 # ---------------------------------------------------------------------------
 mate:
   version: 0.17.0-canary.5
-  minimum_compatible: 0.17.0-canary.3
+  minimum_compatible: 0.17.0-canary.5
   registry: https://registry.npmjs.org/
 
 # ---------------------------------------------------------------------------
