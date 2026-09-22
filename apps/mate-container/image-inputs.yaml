@@ -63,7 +63,7 @@ os_packages:
 # above that minimum rather than equal to it.
 # ---------------------------------------------------------------------------
 mate:
-  version: 0.17.0-canary.4
+  version: 0.17.0-canary.5
   minimum_compatible: 0.17.0-canary.3
   registry: https://registry.npmjs.org/
 
@@ -203,7 +203,7 @@ prebuilt_workspace:
   manifest_file: /opt/mate/prebuilt-manifest.json
   packages:
     context-mode: 1.0.169
-    "@uniqbit/mate-opencode-plugin": 0.17.0-canary.4
+    "@uniqbit/mate-opencode-plugin": 0.17.0-canary.5
   # Recorded in the bundle manifest at build time and checked before any copy.
   compatibility:
     platform: linux

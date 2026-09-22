@@ -4,7 +4,7 @@
   "private": true,
   "dependencies": {
     "context-mode": "1.0.169",
-    "@uniqbit/mate-opencode-plugin": "0.17.0-canary.4"
+    "@uniqbit/mate-opencode-plugin": "0.17.0-canary.5"
   },
   "allowScripts": {
     "better-sqlite3@12.11.1": true,
