@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 
-import { LOCK_MANIFESTS, withMateVersion, withReleaseVersions } from "../scripts/sync-image-inputs";
+import {
+  LOCK_MANIFESTS,
+  withMateVersion,
+  withPublishedPackageVersions,
+  withPrebuiltPluginVersion,
+  withReleaseVersions,
+} from "../scripts/sync-image-inputs";
 import { CONTAINER_ROOT, readImageInputs } from "./image-inputs";
 
 const WORKSPACE_ROOT = path.resolve(CONTAINER_ROOT, "..", "..");
@@ -28,6 +34,13 @@ describe("the release tag's inputs pin its own published version", () => {
     expect(rewritten).toContain(`version: ${readImageInputs().opencode.version}`);
   });
 
+  test("keeps the prebuilt plugin bundle on the Mate release", () => {
+    const source = fs.readFileSync(path.join(CONTAINER_ROOT, "image-inputs.yaml"), "utf8");
+    const rewritten = withPrebuiltPluginVersion(source, "9.9.9");
+
+    expect(rewritten).toContain('"@uniqbit/mate-opencode-plugin": 9.9.9');
+  });
+
   test("every Mate package in a lock manifest follows the release", () => {
     const rewritten = withReleaseVersions(
       JSON.stringify({
@@ -44,6 +57,43 @@ describe("the release tag's inputs pin its own published version", () => {
     expect(parsed.dependencies["@uniqbit/mate-opencode-plugin"]).toBe("9.9.9");
     // A third-party tool has its own version and is not dragged along.
     expect(parsed.dependencies["@fission-ai/openspec"]).toBe("1.13.1");
+  });
+
+  test("updates unpublished package entries from local tarball metadata", () => {
+    const rewritten = withPublishedPackageVersions(
+      JSON.stringify(
+        {
+          packages: {
+            "": { dependencies: { "@uniqbit/mate": "0.1.0" } },
+            "node_modules/@uniqbit/mate": {
+              version: "0.1.0",
+              resolved: "https://registry.npmjs.org/@uniqbit/mate/-/mate-0.1.0.tgz",
+              integrity: "sha512-old",
+              dependencies: {
+                "@uniqbit/mate-core": "0.1.0",
+                yaml: "^2.9.0",
+              },
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "9.9.9",
+      [
+        {
+          name: "@uniqbit/mate",
+          version: "9.9.9",
+          dependencies: { "@uniqbit/mate-core": "9.9.9", yaml: "^2.9.0" },
+        },
+      ],
+      new Map([["@uniqbit/mate", "sha512-new"]]),
+    );
+
+    expect(rewritten).toContain('"@uniqbit/mate": "9.9.9"');
+    expect(rewritten).toContain('"integrity": "sha512-new"');
+    expect(rewritten).toContain('"@uniqbit/mate-core": "9.9.9"');
+    expect(rewritten).toContain("mate-9.9.9.tgz");
   });
 
   test("both lock manifests are kept in step with the release", () => {
