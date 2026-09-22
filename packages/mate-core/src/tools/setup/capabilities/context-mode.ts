@@ -11,7 +11,7 @@ import {
   validateContextModePackage,
 } from "../../../lib/context-mode-package";
 import { warmOpenCodePackageCache } from "../../../lib/opencode-plugin-package";
-import { isPreinstalledPluginPath } from "../../../lib/preinstalled-plugins";
+import { installedVersionAt, isPreinstalledPluginPath } from "../../../lib/preinstalled-plugins";
 import type {
   CapabilityPlugin,
   LaunchPreflightContext,
@@ -68,23 +68,6 @@ async function assertNoMcpConflict(ctx: SetupContext, provider: "claude" | "open
     throw new Error(
       `Cannot enable context-mode for ${provider}: ${configPath} already contains a context-mode MCP registration. Remove the duplicate registration or deselect the context-mode capability; Mate did not modify it.`,
     );
-  }
-}
-
-/**
- * The version behind a reference bound to an installed copy.
- *
- * A published reference carries its version in the string; a bound one carries
- * it in the package it points at, so staleness has to be read off disk.
- */
-async function installedVersionAt(packageRoot: string): Promise<string | undefined> {
-  try {
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(packageRoot, "package.json"), "utf8"),
-    ) as { version?: string };
-    return manifest.version;
-  } catch {
-    return undefined;
   }
 }
 

@@ -36,6 +36,25 @@ export function isPreinstalledPluginPath(entry: unknown, packageName: string): b
   return normalized.endsWith(`/${packageName}`);
 }
 
+/**
+ * The version behind a reference bound to an installed copy.
+ *
+ * A published reference carries its version in the string; a bound one carries
+ * it in the package it points at, so staleness has to be read off disk. Shared
+ * by every site that validates a bound reference, so they cannot disagree about
+ * what "stale" means.
+ */
+export async function installedVersionAt(packageRoot: string): Promise<string | undefined> {
+  try {
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(packageRoot, "package.json"), "utf8"),
+    ) as { version?: string };
+    return manifest.version;
+  } catch {
+    return undefined;
+  }
+}
+
 export class PreinstalledPluginMismatchError extends Error {}
 
 /**

@@ -8,7 +8,9 @@ import { validateGuidanceData, type MateGuidanceFile } from "../../../runtime/gu
 import {
   getOpenCodePluginPackageReference,
   isMateOpenCodePluginReference,
+  OPENCODE_PLUGIN_PACKAGE_NAME,
 } from "../../opencode-plugin-package";
+import { installedVersionAt, isPreinstalledPluginPath } from "../../preinstalled-plugins";
 import {
   getOpenCodePluginReferences,
   mergeOpenCodeConfigContent,
@@ -127,6 +129,27 @@ export class OpenCodeAdapter extends LaunchAdapter {
 
     if (mateReferences.includes(expectedPluginReference)) {
       return [];
+    }
+
+    // Setup writes one of two spellings, and both are current: the published
+    // spec on an ordinary workstation, and an absolute path into the
+    // machine-local workspace where the distribution supplied an installed
+    // copy. Comparing only against the spec would refuse the launch on exactly
+    // the deployments preinstalled binding exists for.
+    //
+    // A bound reference carries its version in the package it points at rather
+    // than in the string, so staleness is read off disk. It is still caught,
+    // and now names the version actually installed.
+    const expectedVersion = expectedPluginReference.slice(OPENCODE_PLUGIN_PACKAGE_NAME.length + 1);
+    const bound = mateReferences.find((reference) =>
+      isPreinstalledPluginPath(reference, OPENCODE_PLUGIN_PACKAGE_NAME),
+    );
+    if (bound !== undefined) {
+      const version = await installedVersionAt(bound);
+      if (version === expectedVersion) return [];
+      return [
+        `Stale Mate plugin package reference in ${configFile}: it points at ${bound}, which is ${version ?? "not installed"} rather than ${expectedVersion}.`,
+      ];
     }
 
     if (mateReferences.length > 0) {

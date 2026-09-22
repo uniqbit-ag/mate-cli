@@ -16,7 +16,11 @@ import { readCompanionRuntimeContext } from "../../../runtime/env";
 import { repoLocalRegistryPath } from "../../../runtime/repo-local";
 import { renderCompanionExternalDirectoryPermissions } from "../../../tools/setup/providers/opencode";
 import { getContextModePackageRoot } from "../../context-mode-package";
-import { getOpenCodePluginPackageReference } from "../../opencode-plugin-package";
+import {
+  getOpenCodePluginPackageReference,
+  OPENCODE_PLUGIN_PACKAGE_NAME,
+} from "../../opencode-plugin-package";
+import { getPreinstalledPluginDir } from "../../preinstalled-plugins";
 import {
   getClaudePluginRoot,
   getReactDoctorBinPath,
@@ -163,6 +167,57 @@ describe("LaunchAdapter.prepareLaunch", () => {
     await expect(
       new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath: stalePath }),
     ).rejects.toThrow(/Expected Mate plugin package: @uniqbit\/mate-opencode-plugin@/);
+  });
+
+  // A distribution that supplies an installed workspace binds the plugin by
+  // path, and setup writes that binding itself. A launch that accepted only the
+  // published spec would refuse exactly those deployments.
+  describe("a plugin reference bound to a preinstalled copy", () => {
+    const expectedVersion = getOpenCodePluginPackageReference().slice(
+      OPENCODE_PLUGIN_PACKAGE_NAME.length + 1,
+    );
+
+    async function withBoundPlugin(
+      prefix: string,
+      installedVersion: string | null,
+    ): Promise<string> {
+      const companionPath = await makeTempDir(prefix);
+      const packageRoot = getPreinstalledPluginDir(companionPath, OPENCODE_PLUGIN_PACKAGE_NAME);
+      await fs.mkdir(packageRoot, { recursive: true });
+      if (installedVersion !== null) {
+        await fs.writeFile(
+          path.join(packageRoot, "package.json"),
+          JSON.stringify({ name: OPENCODE_PLUGIN_PACKAGE_NAME, version: installedVersion }),
+          "utf8",
+        );
+      }
+      await writeOpenCodeRuntime(companionPath, packageRoot);
+      return companionPath;
+    }
+
+    test("passes when the copy it points at is the expected version", async () => {
+      const companionPath = await withBoundPlugin("mate-opencode-bound-ok-", expectedVersion);
+
+      await expect(
+        new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+      ).resolves.toBeUndefined();
+    });
+
+    test("is still caught when stale, and names the version actually installed", async () => {
+      const companionPath = await withBoundPlugin("mate-opencode-bound-stale-", "0.0.1");
+
+      await expect(
+        new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+      ).rejects.toThrow(/which is 0\.0\.1 rather than /);
+    });
+
+    test("reports a binding to a copy that is not installed at all", async () => {
+      const companionPath = await withBoundPlugin("mate-opencode-bound-absent-", null);
+
+      await expect(
+        new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+      ).rejects.toThrow(/which is not installed rather than /);
+    });
   });
 
   test("leaves context-mode package validation to the capability plugin", async () => {
