@@ -7,6 +7,8 @@ import path from "node:path";
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { parse } from "yaml";
 
+import { version } from "../../package.json";
+
 const APP_ROOT = path.resolve(import.meta.dirname, "../..");
 const E2E_TMP_ROOT = path.join(os.tmpdir(), "mate-cli-e2e");
 const tempRoots: string[] = [];
@@ -99,18 +101,26 @@ async function createScenario(prefix: string): Promise<E2EScenario> {
   return { root, home, companion, working, bin };
 }
 
+/**
+ * The running version's own channel is fresh with nothing newer; only the other
+ * channel caches a newer release, which no command may act on. Keyed to the
+ * package version so the seed holds through canary and stable cycles alike.
+ */
 async function seedUpdateState(home: string): Promise<void> {
   const updateDir = path.join(home, ".mate");
   await fs.mkdir(updateDir, { recursive: true });
+  const onCanary = version.includes("-canary.");
+  const state = (latest: string) =>
+    ["lastChecked: 2099-01-01T00:00:00.000Z", `latestVersion: ${latest}`, ""].join("\n");
   await Promise.all([
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate.yaml"),
-      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: null", ""].join("\n"),
+      state(onCanary ? "99.0.0" : "null"),
       "utf8",
     ),
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate-canary.yaml"),
-      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: 99.0.0", ""].join("\n"),
+      state(onCanary ? "null" : "99.0.0"),
       "utf8",
     ),
   ]);
@@ -766,7 +776,7 @@ afterEach(async () => {
 });
 
 describe("mate CLI e2e", () => {
-  test("stable commands ignore newer canary cache state", async () => {
+  test("commands ignore a newer release cached for the other channel", async () => {
     const scenario = await createScenario("mate-cli-e2e-canary-cache-");
 
     const result = await runMate(scenario, {

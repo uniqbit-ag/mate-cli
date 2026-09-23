@@ -5,6 +5,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { version } from "../../package.json";
+
 interface RunResult {
   status: number;
   stdout: string;
@@ -27,14 +29,18 @@ async function scenario(): Promise<{ root: string; companion: string; working: s
   await fs.mkdir(working, { recursive: true });
   const updateDir = path.join(root, "home", ".mate");
   await fs.mkdir(updateDir, { recursive: true });
+  /** Only the other channel caches a newer release, so no update gate fires. */
+  const onCanary = version.includes("-canary.");
+  const state = (latest: string) =>
+    `lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: ${latest}\n`;
   await Promise.all([
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate.yaml"),
-      "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: null\n",
+      state(onCanary ? "99.0.0" : "null"),
     ),
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate-canary.yaml"),
-      "lastChecked: 2099-01-01T00:00:00.000Z\nlatestVersion: 99.0.0\n",
+      state(onCanary ? "null" : "99.0.0"),
     ),
   ]);
   return { root, companion, working };
