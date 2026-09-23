@@ -58,9 +58,21 @@ describe("aggregate Mate OpenCode plugin", () => {
         MATE_GUIDANCE_JSON: undefined,
       },
       async () => {
-        const hooks = await MateOpenCodePlugin({} as never);
+        /**
+         * Outside any wrapped repository too: the plugin also resolves a
+         * companion from a Projection Root above the working directory.
+         */
+        const outside = await fs.mkdtemp(path.join(os.tmpdir(), "mate-inert-"));
+        const previous = process.cwd();
+        process.chdir(outside);
+        try {
+          const hooks = await MateOpenCodePlugin({} as never);
 
-        expect(hooks).toEqual({});
+          expect(hooks).toEqual({});
+        } finally {
+          process.chdir(previous);
+          await fs.rm(outside, { recursive: true, force: true });
+        }
       },
     );
   });
