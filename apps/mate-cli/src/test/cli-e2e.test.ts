@@ -937,6 +937,9 @@ describe("mate CLI e2e", () => {
 
   test("context7 registers MCP entries for both active providers and reconciles deselection", async () => {
     const scenario = await createScenario("mate-cli-e2e-context7-");
+    const stub = path.join(scenario.bin, "context7-mcp");
+    await fs.writeFile(stub, "#!/bin/sh\nexit 0\n", "utf8");
+    await fs.chmod(stub, 0o755);
 
     expect(
       (
@@ -950,16 +953,17 @@ describe("mate CLI e2e", () => {
     const claudeMcp = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".mcp.json"), "utf8"),
     ) as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
-    expect(claudeMcp.mcpServers?.context7).toEqual({
-      command: "npx",
-      args: ["-y", "@upstash/context7-mcp"],
-    });
+    // A bare command, so the committed entry resolves on whichever machine spawns it.
+    expect(claudeMcp.mcpServers?.context7?.command).toBe("context7-mcp");
+    expect(claudeMcp.mcpServers?.context7?.args ?? []).toEqual([]);
 
     const opencodeConfig = await fs.readFile(
       path.join(scenario.companion, ".opencode", "opencode.json"),
       "utf8",
     );
     expect(opencodeConfig).toContain('"context7"');
+    expect(opencodeConfig).toContain('"context7-mcp"');
+    expect(opencodeConfig).not.toContain("npx");
 
     expect(
       (
