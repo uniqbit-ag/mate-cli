@@ -65,11 +65,13 @@ STUDIO_ARGS=(studio serve --port "$MATE_PLAN_STUDIO_PORT" --host "$MATE_PLAN_STU
 # `--yes` is belt and braces — the confirmation predicate already skips the
 # prompt without a TTY, and a container that acquires one should still not stop
 # for a question.
-AGENT_ARGS=(
-  opencode --
-  --companion --yes
-  web --port "$MATE_PLAN_AGENT_PORT" --hostname "$MATE_PLAN_AGENT_HOST"
-)
+#
+# `--no-git` unless synchronization was asked for: the session's own Git sync
+# is on by default, and a container with no remote credentials would otherwise
+# fail its first launch on a fetch nobody wanted.
+AGENT_ARGS=(opencode -- --companion --yes)
+[[ -z "${MATE_PLAN_GIT_SYNC:-}" ]] && AGENT_ARGS+=(--no-git)
+AGENT_ARGS+=(web --port "$MATE_PLAN_AGENT_PORT" --hostname "$MATE_PLAN_AGENT_HOST")
 
 # ---------------------------------------------------------------------------
 # The two processes.

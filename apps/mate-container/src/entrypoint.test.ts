@@ -52,7 +52,7 @@ function writeExecutable(name: string, body: string): void {
  * Stands in for the startup program: prints the plan the supervisor evaluates,
  * so these cases are about the supervisor rather than about discovery.
  */
-function stubStartup(writable = true): void {
+function stubStartup(writable = true, gitSync = false): void {
   writeExecutable(
     "bun",
     `#!/usr/bin/env bash
@@ -67,7 +67,7 @@ MATE_PLAN_AGENT_HOST='0.0.0.0'
 MATE_PLAN_STUDIO_PORT='4097'
 MATE_PLAN_STUDIO_HOST='0.0.0.0'
 MATE_PLAN_STUDIO_WRITABLE='${writable ? "1" : ""}'
-MATE_PLAN_GIT_SYNC=''
+MATE_PLAN_GIT_SYNC='${gitSync ? "1" : ""}'
 EOF
 `,
   );
@@ -357,7 +357,7 @@ exit 0
 
       expect(recorded).toContain("studio argv: studio serve --port 4097 --host 0.0.0.0 --writable");
       expect(recorded).toContain(
-        "opencode argv: opencode -- --companion --yes web --port 4096 --hostname 0.0.0.0",
+        "opencode argv: opencode -- --companion --yes --no-git web --port 4096 --hostname 0.0.0.0",
       );
       // The companion is named to the session explicitly rather than inferred
       // from the directory the container happened to start in.
@@ -385,6 +385,26 @@ exit 0
 
       expect(fs.readFileSync(path.join(root, "argv.log"), "utf8")).toContain(
         "studio argv: studio serve --port 4097 --host 0.0.0.0\n",
+      );
+    },
+    CASE_TIMEOUT,
+  );
+});
+
+withContainer("whether the session synchronizes Git", () => {
+  test(
+    "a session configured to synchronize is started without --no-git",
+    async () => {
+      stubStartup(true, true);
+      writeExecutable(
+        "mate",
+        `#!/usr/bin/env bash\necho "$1 argv: $*" >> "${CASE}/argv.log"\nsleep 0.3\nexit 0\n`,
+      );
+
+      await runSupervisor();
+
+      expect(fs.readFileSync(path.join(root, "argv.log"), "utf8")).toContain(
+        "opencode argv: opencode -- --companion --yes web --port 4096 --hostname 0.0.0.0\n",
       );
     },
     CASE_TIMEOUT,
