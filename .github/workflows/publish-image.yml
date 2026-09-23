@@ -190,6 +190,9 @@ jobs:
           provenance: false
 
       - name: Verify the built image offline
+        env:
+          # Buildx loads into Docker; the runner's preinstalled Podman would be found first.
+          MATE_CONTAINER_RUNTIME: docker
         run: |
           set -euo pipefail
           bun apps/mate-container/scripts/verify-image.ts \
