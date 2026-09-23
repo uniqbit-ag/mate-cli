@@ -20,6 +20,10 @@ let originalPolicy: string | undefined;
 let originalStderrWrite: typeof process.stderr.write;
 let stderrChunks: string[];
 let registryLookups: number;
+/** Assigned, not spied, so `mock.restore()` would leave the fake registry in place for later files. */
+const originalExecFile = publicNpmDeps.execFile;
+const originalNow = updateCheckerDeps.now;
+const originalToIsoString = updateCheckerDeps.toIsoString;
 
 /** Absent, stale, and newer-version caches — the three states the policy must ignore. */
 const CACHES = {
@@ -61,6 +65,9 @@ beforeEach(() => {
 
 afterEach(() => {
   process.stderr.write = originalStderrWrite;
+  publicNpmDeps.execFile = originalExecFile;
+  updateCheckerDeps.now = originalNow;
+  updateCheckerDeps.toIsoString = originalToIsoString;
   if (originalPolicy === undefined) delete process.env[UPDATE_POLICY_ENV];
   else process.env[UPDATE_POLICY_ENV] = originalPolicy;
   mock.restore();

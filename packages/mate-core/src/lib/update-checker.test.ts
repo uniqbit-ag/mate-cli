@@ -17,6 +17,13 @@ import {
 import { installPublicPackageSync, publicNpmDeps, PUBLIC_NPM_REGISTRY } from "./public-npm";
 import { getActiveDistribution, setActiveDistribution } from "../distribution";
 
+/** Assigned, not spied, so `mock.restore()` alone would leak the fakes into later files. */
+const originalDeps = {
+  execFile: publicNpmDeps.execFile,
+  now: updateCheckerDeps.now,
+  toIsoString: updateCheckerDeps.toIsoString,
+};
+
 beforeEach(() => {
   publicNpmDeps.execFile = mock(async () => ({ stdout: "9.9.9\n", stderr: "" }));
   updateCheckerDeps.now = () => Date.now();
@@ -25,6 +32,9 @@ beforeEach(() => {
 
 afterEach(() => {
   mock.restore();
+  publicNpmDeps.execFile = originalDeps.execFile;
+  updateCheckerDeps.now = originalDeps.now;
+  updateCheckerDeps.toIsoString = originalDeps.toIsoString;
 });
 
 function createStore(state: { lastChecked: string; latestVersion: string | null }) {
