@@ -497,6 +497,23 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       });
     }
 
+    // Startup registers and prepares; it never reconfigures. The companion's
+    // own configuration is the seeded file, byte for byte.
+    const seededConfig = fs.readFileSync(
+      path.join(companionsDir, "acme", ".mate", "config", "framework.yaml"),
+      "utf8",
+    );
+    const servedConfig = spawnSync(
+      runtime,
+      ["exec", name, "cat", "/companions/acme/.mate/config/framework.yaml"],
+      { encoding: "utf8" },
+    ).stdout;
+    checks.push({
+      name: "the companion's configuration is byte-identical after startup",
+      ok: servedConfig === seededConfig,
+      detail: servedConfig === seededConfig ? "unchanged" : servedConfig.slice(0, 500),
+    });
+
     // The companion's committed MCP entry has to resolve to an installed server:
     // spawned the way the session spawns it, offline, it must answer.
     const mcp = spawnSync(
