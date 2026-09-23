@@ -372,6 +372,7 @@ function VaultEditor({ page, vault }: { page: StudioPage; vault: StudioVaultPage
         data-vault-editor
         data-vault-path={vault.open.path}
         data-vault-token={vault.open.token}
+        {...(page.writable ? {} : { readOnly: true })}
         spellCheck={false}
       >
         {vault.open.content}

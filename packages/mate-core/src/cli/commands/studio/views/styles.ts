@@ -372,6 +372,7 @@ ul.plain li:last-child { border-bottom: 0; }
 .vault-warning { color: var(--warn); }
 #vault-editor { display: block; width: 100%; min-height: 62vh; resize: vertical; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--prompt-bg); color: var(--prompt-text); font-family: var(--mono); font-size: .86rem; line-height: 1.6; }
 #vault-editor:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+#vault-editor[readonly] { cursor: default; opacity: .85; }
 .vault-incoming { display: grid; gap: 8px; margin-top: 16px; padding: 12px; border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-soft); }
 .vault-incoming pre { max-height: 220px; overflow: auto; margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: .78rem; }
 @media (max-width: 800px) { .vault-layout { grid-template-columns: 1fr; } }

@@ -192,6 +192,7 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain('id="vault-editor"');
     expect(markup).toContain("# note");
     expect(markup).toContain("Save");
+    expect(markup).not.toMatch(/<textarea[^>]*readonly/i);
   });
 
   it("renders refused vault paths without an editor", () => {
@@ -232,6 +233,7 @@ describe("renderStudioDocument", () => {
     });
     expect(markup).not.toContain('id="vault-save"');
     expect(markup).toContain("Start Studio with --writable");
+    expect(markup).toMatch(/<textarea[^>]*id="vault-editor"[^>]*readonly/i);
   });
 
   it("renders the two pre-explore choices without offering documentation mode or skip copy", () => {
