@@ -159,6 +159,16 @@ describe("dependency locks", () => {
     ) as { dependencies: Record<string, string> };
     expect(manifest.dependencies["@uniqbit/mate"]).toBe(inputs.mate.version);
     expect(manifest.dependencies["@fission-ai/openspec"]).toBe(inputs.tools.openspec!.version);
+    expect(manifest.dependencies["@upstash/context7-mcp"]).toBe(inputs.tools.context7!.version);
+  });
+
+  test("the image carries the Context7 server version the CLI pins", () => {
+    const plugin = fs.readFileSync(
+      path.join(CONTAINER_ROOT, "..", "mate-cli", "src", "plugins", "context7.ts"),
+      "utf8",
+    );
+    const pinned = /CONTEXT7_MCP_VERSION = "([^"]+)"/.exec(plugin)?.[1];
+    expect(pinned).toBe(inputs.tools.context7!.version);
   });
 
   test("the local workspace lock declares exactly the distribution-owned packages", () => {

@@ -22,6 +22,8 @@ services:
     #     sudo chown -R 10001:10001 ./companions
     # or map the container's user to your own, as below.
     user: "10001:10001"
+    # With rootless Podman, map your own user to that identity instead:
+    # userns_mode: "keep-id:uid=10001,gid=10001"
 
     volumes:
       # The Companion Repositories this container serves. Mount either one
@@ -32,6 +34,11 @@ services:
       # into the image. This file is where credentials belong, so they stay out
       # of the process listing.
       - ./appliance.yaml:/etc/mate/appliance.yaml:ro
+
+      # Only for Git remotes over SSH: a key and the hosts it may talk to,
+      # readable by uid 10001. HTTPS remotes need neither.
+      # - ./ssh/id_ed25519:/home/mate/.ssh/id_ed25519:ro
+      # - ./ssh/known_hosts:/home/mate/.ssh/known_hosts:ro
 
     ports:
       # The agent session, and Studio beside it. Bound to loopback here so
@@ -47,6 +54,10 @@ services:
       # Check a companion out on first start. An existing checkout is used as
       # it is: never re-cloned, never reset.
       # MATE_COMPANION_REPOS: https://github.com/example/acme-companion.git
+
+      # Whether the session synchronizes the companion with its remote. Off,
+      # it is started with --no-git and never contacts the remote.
+      # MATE_GIT_SYNC: "true"
 
       # Whether Studio's save path is reachable. Studio is the editor for the
       # human using this container, so it is on by default.

@@ -49,9 +49,34 @@ the host, or map the container's user to one that already can:
 sudo chown -R 10001:10001 ./companions
 ```
 
+With rootless Podman, map your own user to that identity instead:
+
+```yaml
+userns_mode: "keep-id:uid=10001,gid=10001"
+```
+
 A companions directory the running user cannot read or write is reported at
 startup, naming the directory and the identity, rather than failing later
 inside a session.
+
+### Git remotes over SSH
+
+The image carries an SSH client; it carries no key and no known hosts. To clone
+or synchronize over SSH, mount both into the running user's home, read-only:
+
+```yaml
+volumes:
+  - ./ssh/id_ed25519:/home/mate/.ssh/id_ed25519:ro
+  - ./ssh/known_hosts:/home/mate/.ssh/known_hosts:ro
+```
+
+The key file must be readable by uid 10001 and by nobody else, or `ssh` refuses
+it. A host missing from `known_hosts` fails the connection rather than being
+trusted on first use, because nothing is there to answer the prompt. HTTPS
+remotes need neither.
+
+The session synchronizes Git only when `MATE_GIT_SYNC` is on. Otherwise it is
+started with `--no-git`, and nothing contacts a remote after the first clone.
 
 ## Configuration
 
@@ -120,6 +145,12 @@ version is resolved, no package is downloaded, no native build happens, and no
 installation script executes anywhere in the container's process tree. A
 container with no outbound network access starts normally.
 
+The first start of a fresh clone copies the whole workspace — several hundred
+megabytes in tens of thousands of files — onto the companions volume, and says
+nothing until it is done. Through the file sharing of Docker Desktop or a
+Podman machine on macOS or Windows, that can take minutes, and neither port
+answers until it finishes. Later starts reuse the workspace.
+
 A missing, corrupt, or incompatible dependency is reported **by name**, and
 startup stops: no serving process is started, no installation fallback is
 attempted, and an existing workspace is left exactly as it was.
@@ -128,8 +159,13 @@ attempted, and an existing workspace is left exactly as it was.
 
 The image carries the tools behind every package manager and capability the
 release supports — `bun`, `uv`, and the commands behind OpenSpec, Graphify,
-RTK and TokenSave — so a companion is not refused for a selection the image
-simply lacks.
+RTK, TokenSave and Context7 — so a companion is not refused for a selection the
+image simply lacks. Context7's server is installed, not fetched; its lookups
+still reach Context7 over the network.
+
+The session's launch registers the agents' MCP servers from the Mate the image
+contains, so a companion set up with an older Mate — one that fetched Context7
+through `npx` — is served the installed server without being set up again.
 
 Where a mounted companion declares something this image does not carry, startup
 says which requirement that is and exits non-zero, rather than letting the
@@ -176,7 +212,9 @@ short version is that a deployment whose version is fixed by its image cannot
 act on advice to upgrade, so being refused for not having taken it would simply
 turn the appliance off. Every other gate still applies.
 
-To change versions, run a different image.
+To change versions, run a different image. Recreate the container too: an
+existing one keeps the image it was created from, even after the tag has moved
+(`docker compose up --force-recreate`).
 
 ## Saving, and the conflict you will meet
 

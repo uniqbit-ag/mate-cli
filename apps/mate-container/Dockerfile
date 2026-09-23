@@ -204,6 +204,7 @@ ARG CA_CERTIFICATES_VERSION
 ARG TAR_VERSION
 ARG GZIP_VERSION
 ARG XZ_UTILS_VERSION
+ARG OPENSSH_CLIENT_VERSION
 ARG MATE_UID=10001
 ARG MATE_GID=10001
 
@@ -211,7 +212,8 @@ SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 
 # --- OS packages, at the exact versions the pinned base image resolves -----
 # Git is what the entrypoint clones and what the companion synchronizes with;
-# the certificate authorities are what either needs to reach a remote.
+# the certificate authorities and the SSH client are what either needs to reach
+# an HTTPS or an SSH remote.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       "git=${GIT_VERSION}" \
@@ -219,6 +221,7 @@ RUN apt-get update \
       "tar=${TAR_VERSION}" \
       "gzip=${GZIP_VERSION}" \
       "xz-utils=${XZ_UTILS_VERSION}" \
+      "openssh-client=${OPENSSH_CLIENT_VERSION}" \
  && rm -rf /var/lib/apt/lists/*
 
 # --- runtimes and tools ---------------------------------------------------
@@ -229,9 +232,11 @@ COPY --from=fetch /out/bin/ /usr/local/bin/
 COPY --from=packages /opt/mate/tools /opt/mate/tools
 COPY --from=packages /opt/mate/prebuilt /opt/mate/prebuilt
 
-# The CLI entrypoints the appliance calls, and the OpenSpec capability tool.
+# The CLI entrypoints the appliance calls, and the OpenSpec and Context7
+# capability tools.
 RUN ln -sf /opt/mate/tools/node_modules/.bin/mate /usr/local/bin/mate \
- && ln -sf /opt/mate/tools/node_modules/.bin/openspec /usr/local/bin/openspec
+ && ln -sf /opt/mate/tools/node_modules/.bin/openspec /usr/local/bin/openspec \
+ && ln -sf /opt/mate/tools/node_modules/.bin/context7-mcp /usr/local/bin/context7-mcp
 
 # --- what the prebuilt workspace actually is -------------------------------
 # Recorded beside the bundle so its installed versions, its target, and a
@@ -292,11 +297,13 @@ RUN set -e \
  && command -v bun \
  && command -v node \
  && command -v git \
+ && command -v ssh \
  && command -v uv \
  && command -v openspec \
  && command -v graphify \
  && command -v rtk \
  && command -v tokensave \
+ && command -v context7-mcp \
  && command -v opencode \
  && command -v xdg-open \
  && test "$(opencode --version)" = "${OPENCODE_VERSION}" \

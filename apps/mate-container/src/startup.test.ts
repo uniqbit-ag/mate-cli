@@ -250,6 +250,7 @@ describe("requirements the image carries", () => {
             "tokensave",
             "context-mode",
             "react-doctor",
+            "context7",
           ],
         },
         () => true,

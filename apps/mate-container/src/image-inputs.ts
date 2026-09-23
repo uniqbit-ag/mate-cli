@@ -84,6 +84,7 @@ export const REQUIRED_TOOL_COMMANDS = [
   "graphify",
   "rtk",
   "tokensave",
+  "context7-mcp",
 ] as const;
 
 /** A version that could resolve to something other than itself on a rebuild. */

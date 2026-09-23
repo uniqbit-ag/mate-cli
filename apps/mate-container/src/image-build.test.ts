@@ -127,6 +127,12 @@ describe("the recipe itself", () => {
       if (name === "curl") continue;
       const argName = `${name.replace(/-/g, "_").toUpperCase()}_VERSION`;
       expect(dockerfile, `${name} is not pinned`).toContain(`${argName}}`);
+      // The published image is the runtime stage; a pin installed only in a
+      // build stage never reaches it.
+      const runtimeStage = dockerfile.slice(dockerfile.indexOf(" AS runtime"));
+      expect(runtimeStage, `${name} is not installed in the runtime stage`).toContain(
+        `"${name}=\${${argName}}"`,
+      );
       expect(version.length).toBeGreaterThan(0);
     }
   });
@@ -136,6 +142,7 @@ describe("the recipe itself", () => {
       "bun",
       "node",
       "git",
+      "ssh",
       "uv",
       "openspec",
       "graphify",

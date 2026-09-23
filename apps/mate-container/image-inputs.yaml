@@ -51,6 +51,7 @@ os_packages:
     tar: 1.35+dfsg-3.1
     gzip: 1.13-1+deb13u1
     xz-utils: 5.8.1-1+deb13u1
+    openssh-client: 1:10.0p1-7+deb13u4
 
 # ---------------------------------------------------------------------------
 # Mate itself. The image installs the published package at this exact version;
@@ -132,6 +133,13 @@ tools:
     version: 1.13.1
     source: npm_global
     # Resolved through locks/global-tools.package-lock.json, not `@latest`.
+
+  context7:
+    detect: context7-mcp
+    package: "@upstash/context7-mcp"
+    # Matches CONTEXT7_MCP_VERSION in apps/mate-cli/src/plugins/context7.ts.
+    version: 4.1.1
+    source: npm_global
 
   graphify:
     detect: graphify

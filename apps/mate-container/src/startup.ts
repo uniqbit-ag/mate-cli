@@ -46,6 +46,7 @@ export const SUPPORTED_CAPABILITIES: Record<string, string | null> = {
   graphify: "graphify",
   rtk: "rtk",
   tokensave: "tokensave",
+  context7: "context7-mcp",
   // Carried as installed packages in the prebuilt workspace rather than as a
   // command on PATH.
   "context-mode": null,

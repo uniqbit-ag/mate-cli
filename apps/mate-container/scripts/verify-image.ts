@@ -72,6 +72,7 @@ function probeFor(runtime: string, image: string): ImageProbe {
 
 /** A fresh companion with every supported capability and package manager enabled. */
 export const FULLY_LOADED_COMPANION = `type: companion
+git: auto
 allowedAgents:
   - claude
   - opencode
@@ -85,6 +86,27 @@ capabilities:
   - name: tokensave
   - name: react-doctor
   - name: context-mode
+  - name: context7
+`;
+
+/**
+ * Spawns the `context7` entry of an OpenCode config as OpenCode would and sends
+ * MCP `initialize`; prints the reply and exits zero only if one arrives.
+ */
+export const MCP_ANSWERS = `
+const { spawn } = require("node:child_process");
+const config = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+const [command, ...args] = config.mcp.context7.command;
+const child = spawn(command, args, { stdio: ["pipe", "pipe", "inherit"] });
+const timer = setTimeout(() => { child.kill(); process.exit(1); }, 30000);
+let out = "";
+child.stdout.on("data", (chunk) => {
+  out += chunk;
+  if (out.includes("\\n")) { clearTimeout(timer); process.stdout.write(out); child.kill(); process.exit(0); }
+});
+child.on("error", (error) => { console.error(String(error)); process.exit(1); });
+child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize",
+  params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "verify", version: "0" } } }) + "\\n");
 `;
 
 export function makeFreshCompanion(root: string): string {
@@ -96,6 +118,17 @@ export function makeFreshCompanion(root: string): string {
   );
   fs.mkdirSync(path.join(companion, "docs"), { recursive: true });
   fs.writeFileSync(path.join(companion, "docs", "README.md"), "# Acme\n");
+  // The entries `mate companion setup` commits for Context7, so the offline run
+  // spawns the server exactly as a session would.
+  fs.mkdirSync(path.join(companion, ".opencode"), { recursive: true });
+  fs.writeFileSync(
+    path.join(companion, ".opencode", "opencode.json"),
+    `${JSON.stringify({ mcp: { context7: { type: "local", command: ["context7-mcp"], enabled: true } } }, null, 2)}\n`,
+  );
+  fs.writeFileSync(
+    path.join(companion, ".mcp.json"),
+    `${JSON.stringify({ mcpServers: { context7: { command: "context7-mcp", args: [] } } }, null, 2)}\n`,
+  );
   // A freshly cloned companion has no machine-local workspace; that absence is
   // the point of the preparation the container performs.
   spawnSync("git", ["init", "-q", companion], { stdio: "ignore" });
@@ -103,6 +136,14 @@ export function makeFreshCompanion(root: string): string {
   spawnSync(
     "git",
     ["-C", companion, "-c", "user.email=a@b.c", "-c", "user.name=T", "commit", "-qm", "init"],
+    { stdio: "ignore" },
+  );
+  // A clone has a remote. Offline, a session that synchronizes it anyway fails
+  // its first launch, so this is what proves synchronization stays off unless
+  // it was asked for.
+  spawnSync(
+    "git",
+    ["-C", companion, "remote", "add", "origin", "https://git.example.invalid/acme.git"],
     { stdio: "ignore" },
   );
   return companion;
@@ -133,7 +174,7 @@ export function runChecks(
 
   // Every runtime and tool a managed session needs, present without the
   // bootstrap having to obtain any of them.
-  for (const command of ["node", "bun", "git", ...REQUIRED_TOOL_COMMANDS]) {
+  for (const command of ["node", "bun", "git", "ssh", ...REQUIRED_TOOL_COMMANDS]) {
     const found = probe([`command -v ${command}`], { network: false });
     add(
       `${command} resolves on PATH`,
@@ -289,8 +330,8 @@ export function runLayerScan(runtime: string, image: string, workDir: string): C
 export function runOfflineStartup(runtime: string, image: string, companionsDir: string): Check[] {
   const name = `mate-verify-${Math.random().toString(36).slice(2, 10)}`;
   const volume = `${name}-companions`;
-  const agentPort = 14096;
-  const studioPort = 14097;
+  const agentPort = 4096;
+  const studioPort = 4097;
   const checks: Check[] = [];
 
   // The companion is served from a volume rather than a host bind mount.
@@ -343,10 +384,6 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       "none",
       "--volume",
       `${volume}:/companions`,
-      "--publish",
-      `${agentPort}:4096`,
-      "--publish",
-      `${studioPort}:4097`,
       image,
     ],
     { encoding: "utf8" },
@@ -386,6 +423,20 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       ],
       { encoding: "utf8" },
     ).stdout ?? "";
+  // Asked from inside the container: with no network there is nothing to
+  // publish a port on, but the container's own loopback still answers.
+  const httpStatus = (port: number): string =>
+    spawnSync(
+      runtime,
+      [
+        "exec",
+        name,
+        "node",
+        "-e",
+        `fetch("http://127.0.0.1:${port}/").then((r) => console.log(r.status), () => console.log(""))`,
+      ],
+      { encoding: "utf8", timeout: 20_000 },
+    ).stdout?.trim() ?? "";
   const installers =
     /\b(npm|pnpm|yarn|bun (add|install|pm)|uv (pip|tool|add)|pip|cargo|node-gyp|prebuild-install|curl \S*install)\b/;
 
@@ -409,11 +460,7 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
 
       const answered = ["", ""].map((_, index) => {
         const port = index === 0 ? agentPort : studioPort;
-        return spawnSync(
-          "curl",
-          ["-sf", "-o", "/dev/null", "-w", "%{http_code}", `http://127.0.0.1:${port}/`],
-          { encoding: "utf8" },
-        ).stdout.trim();
+        return httpStatus(port);
       });
       if (answered.every((code) => code.startsWith("2"))) {
         ready = true;
@@ -442,17 +489,32 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       ["the agent session", agentPort],
       ["Studio", studioPort],
     ] as const) {
-      const code = spawnSync(
-        "curl",
-        ["-sf", "-o", "/dev/null", "-w", "%{http_code}", `http://127.0.0.1:${port}/`],
-        { encoding: "utf8" },
-      ).stdout.trim();
+      const code = httpStatus(port);
       checks.push({
         name: `${what} answers over HTTP`,
         ok: code.startsWith("2"),
         detail: `port ${port} returned ${code || "nothing"}`,
       });
     }
+
+    // The companion's committed MCP entry has to resolve to an installed server:
+    // spawned the way the session spawns it, offline, it must answer.
+    const mcp = spawnSync(
+      runtime,
+      ["exec", name, "node", "-e", MCP_ANSWERS, "/companions/acme/.opencode/opencode.json"],
+      { encoding: "utf8", timeout: 60_000 },
+    );
+    checks.push({
+      name: "the committed Context7 MCP entry starts offline and answers",
+      ok: mcp.status === 0 && mcp.stdout.includes('"serverInfo"'),
+      detail: [
+        `status ${mcp.status ?? "none"}${mcp.error ? `, ${mcp.error.message}` : ""}`,
+        (mcp.stdout || mcp.stderr || "no output").trim().slice(0, 500),
+        spawnSync(runtime, ["exec", name, "cat", "/companions/acme/.opencode/opencode.json"], {
+          encoding: "utf8",
+        }).stdout?.slice(0, 500) ?? "",
+      ].join("\n"),
+    });
 
     // Stopping the container must stop both processes and exit zero.
     spawnSync(runtime, ["stop", "--time", "30", name], { encoding: "utf8" });

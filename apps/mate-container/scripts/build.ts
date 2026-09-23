@@ -57,6 +57,7 @@ export function buildArgs(
     TAR_VERSION: inputs.os_packages.packages.tar!,
     GZIP_VERSION: inputs.os_packages.packages.gzip!,
     XZ_UTILS_VERSION: inputs.os_packages.packages["xz-utils"]!,
+    OPENSSH_CLIENT_VERSION: inputs.os_packages.packages["openssh-client"]!,
 
     MATE_UID: String(inputs.runtime.uid),
     MATE_GID: String(inputs.runtime.gid),
