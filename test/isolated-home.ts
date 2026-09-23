@@ -70,26 +70,28 @@ function containerRuntimeEnv(base: NodeJS.ProcessEnv, realHome: string): NodeJS.
     env.DOCKER_CONFIG = dockerConfig;
   }
   if (base.CONTAINER_HOST === undefined) {
-    const listed = spawnSync("podman", ["system", "connection", "list", "--format", "json"], {
-      encoding: "utf8",
-      env: base,
-    });
-    if (listed.status === 0) {
-      try {
-        const connections = JSON.parse(listed.stdout) as Array<{
-          Default?: boolean;
-          URI?: string;
-          Identity?: string;
-        }>;
-        const chosen = connections.find((connection) => connection.Default);
-        if (chosen?.URI) {
-          env.CONTAINER_HOST = chosen.URI;
-          if (chosen.Identity) env.CONTAINER_SSHKEY = chosen.Identity;
-        }
-      } catch {
-        /** No connection list means a local runtime, which needs nothing from HOME. */
-      }
+    const connection = defaultPodmanConnection(base);
+    if (connection?.URI) {
+      env.CONTAINER_HOST = connection.URI;
+      if (connection.Identity) env.CONTAINER_SSHKEY = connection.Identity;
     }
   }
   return env;
+}
+
+type PodmanConnection = { Default?: boolean; URI?: string; Identity?: string };
+
+function defaultPodmanConnection(base: NodeJS.ProcessEnv): PodmanConnection | undefined {
+  const listed = spawnSync("podman", ["system", "connection", "list", "--format", "json"], {
+    encoding: "utf8",
+    env: base,
+  });
+  if (listed.status !== 0) return undefined;
+  try {
+    const connections = JSON.parse(listed.stdout) as PodmanConnection[];
+    return connections.find((connection) => connection.Default);
+  } catch {
+    /** No connection list means a local runtime, which needs nothing from HOME. */
+    return undefined;
+  }
 }

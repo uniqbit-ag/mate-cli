@@ -508,10 +508,11 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       ["exec", name, "cat", "/companions/acme/.mate/config/framework.yaml"],
       { encoding: "utf8" },
     ).stdout;
+    const configUnchanged = servedConfig === seededConfig;
     checks.push({
       name: "the companion's configuration is byte-identical after startup",
-      ok: servedConfig === seededConfig,
-      detail: servedConfig === seededConfig ? "unchanged" : servedConfig.slice(0, 500),
+      ok: configUnchanged,
+      detail: configUnchanged ? "unchanged" : servedConfig.slice(0, 500),
     });
 
     // The companion's committed MCP entry has to resolve to an installed server:
