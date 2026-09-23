@@ -23,7 +23,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "test": "CI=1 bun test",
+    "test": "CI=1 bun ../../test/run-isolated.ts",
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
     "lint": "oxlint src/",
     "lint:fix": "oxlint src/ --fix",

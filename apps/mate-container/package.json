@@ -4,7 +4,7 @@
   "private": true,
   "description": "The Mate appliance container image: recipe, entrypoint, and release-owned dependency locks.",
   "scripts": {
-    "test": "CI=1 bun test",
+    "test": "CI=1 bun ../../test/run-isolated.ts",
     "build": "bun scripts/build.ts",
     "verify": "bun scripts/verify-image.ts",
     "lint": "oxlint src/ scripts/",

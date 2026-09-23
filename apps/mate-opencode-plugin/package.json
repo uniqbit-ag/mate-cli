@@ -17,7 +17,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "test": "CI=1 bun test",
+    "test": "CI=1 bun ../../test/run-isolated.ts",
     "lint": "oxlint src/",
     "lint:fix": "oxlint src/ --fix",
     "format": "oxfmt src/",

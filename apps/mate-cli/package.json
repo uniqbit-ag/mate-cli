@@ -21,7 +21,7 @@
     "release": "release-it --config ../../.release-it.json && ../../publish.sh latest",
     "release:canary": "release-it --config ../../.release-it.canary.json --preRelease=canary && ../../publish.sh canary",
     "release:dry-run": "release-it --config ../../.release-it.json --dry-run --no-git.push",
-    "test": "CI=1 bun test",
+    "test": "CI=1 bun ../../test/run-isolated.ts",
     "test:ci": "bun scripts/generate-test-reports.ts --junit",
     "test:coverage": "bun scripts/generate-test-reports.ts",
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
