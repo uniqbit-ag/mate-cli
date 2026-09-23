@@ -96,6 +96,7 @@ esac
 const RUNS_UNTIL_SIGNALLED = `
 trap 'note "$1" stopped; exit 143' TERM
 trap 'note "$1" stopped; exit 130' INT
+note "$1" ready
 while :; do sleep 0.05 & wait $!; done
 `;
 
@@ -148,8 +149,14 @@ async function runSupervisor(signal?: { name: string }): Promise<Outcome> {
       // rest of the suite and a container start is not instant under that
       // contention. Signalling early would test the shell's default signal
       // disposition rather than this script's traps.
+      // Both children must also have installed their own traps; before that a
+      // forwarded signal kills them by default and they never record stopping.
+      const logFile = path.join(root, "processes.log");
+      const bothReady = () =>
+        fs.existsSync(logFile) &&
+        (fs.readFileSync(logFile, "utf8").match(/ ready/g) ?? []).length === 2;
       const deadline = Date.now() + 120_000;
-      while (!stderr.includes("studio on") && Date.now() < deadline) {
+      while (!(stderr.includes("studio on") && bothReady()) && Date.now() < deadline) {
         await Bun.sleep(50);
       }
       spawnSync(runtime, ["kill", "--signal", signal.name, containerName], { stdio: "ignore" });
