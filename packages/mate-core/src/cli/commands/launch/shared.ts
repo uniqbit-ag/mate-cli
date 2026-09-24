@@ -9,7 +9,6 @@ import {
 import { createStartupProgress } from "../../../lib/components/startup-progress";
 import { ensureUnambiguousCompanion, launchAmbiguityDeps } from "../shared/companion-selection";
 import { runIndexCapCommand } from "../cap/index-cmd";
-import { confirm } from "../../confirm";
 import type { LaunchTarget } from "../../launch-selector";
 
 const STEP_LABELS = {
@@ -22,7 +21,19 @@ export interface ParsedLaunchArgs {
   agentArgs: string[];
   skipGit?: boolean;
   scope?: LaunchScope;
-  skipConfirmation?: boolean;
+}
+
+const MATE_LAUNCH_OPTIONS = new Set(["--no-git", "--companion", "--yes"]);
+
+function parseMateLaunchArgs(agentArgs: string[]): ParsedLaunchArgs {
+  const skipGit = agentArgs.includes("--no-git");
+  const companion = agentArgs.includes("--companion");
+
+  return {
+    agentArgs: agentArgs.filter((arg) => !MATE_LAUNCH_OPTIONS.has(arg)),
+    ...(skipGit ? { skipGit: true } : {}),
+    ...(companion ? { scope: "companion" as const } : {}),
+  };
 }
 
 export { ensureUnambiguousCompanion, launchAmbiguityDeps };
@@ -31,14 +42,12 @@ export interface LaunchCommandDeps {
   createLauncher: () => Pick<FrameworkLauncher, "prepare">;
   createProgress: typeof createStartupProgress;
   runIndexCapCommand: typeof runIndexCapCommand;
-  confirm: typeof confirm;
 }
 
 export const launchCommandDeps: LaunchCommandDeps = {
   createLauncher: () => new FrameworkLauncher(),
   createProgress: createStartupProgress,
   runIndexCapCommand,
-  confirm,
 };
 
 export function parseDirectLaunchArgs(argv: string[]): ParsedLaunchArgs {
@@ -47,15 +56,10 @@ export function parseDirectLaunchArgs(argv: string[]): ParsedLaunchArgs {
 
   const beforeSeparator = argv.slice(0, separatorIndex);
   const afterSeparator = argv.slice(separatorIndex + 1);
-  const skipGit = afterSeparator.includes("--no-git");
-  const companion = afterSeparator.includes("--companion");
-  const skipConfirmation = afterSeparator.includes("--yes");
-  const reserved = new Set(["--no-git", "--companion", "--yes"]);
+  const parsed = parseMateLaunchArgs(afterSeparator);
   return {
-    agentArgs: [...beforeSeparator, ...afterSeparator.filter((arg) => !reserved.has(arg))],
-    ...(skipGit ? { skipGit: true } : {}),
-    ...(companion ? { scope: "companion" as const } : {}),
-    ...(skipConfirmation ? { skipConfirmation: true } : {}),
+    ...parsed,
+    agentArgs: [...beforeSeparator, ...parsed.agentArgs],
   };
 }
 
@@ -70,23 +74,13 @@ export function parseLaunchArgs(argv: string[]): ParsedLaunchArgs | null {
     return null;
   }
 
-  const skipGit = agentArgs.includes("--no-git");
-  const companion = agentArgs.includes("--companion");
-  const skipConfirmation = agentArgs.includes("--yes");
-  const reserved = new Set(["--no-git", "--companion", "--yes"]);
-  return {
-    agentArgs: agentArgs.filter((arg) => !reserved.has(arg)),
-    ...(skipGit ? { skipGit: true } : {}),
-    ...(companion ? { scope: "companion" as const } : {}),
-    ...(skipConfirmation ? { skipConfirmation: true } : {}),
-  };
+  return parseMateLaunchArgs(agentArgs);
 }
 
 /**
  * @description Shared launch execution used by `mate claude`, `mate opencode`,
  * and the direct `mate claude` / `mate opencode` commands: resolves the launch via {@link FrameworkLauncher.prepare},
- * confirms with the user in a TTY unless `--yes` was supplied, re-syncs capability indexes via
- * `runIndexCapCommand`, then executes, prints the JSON result, and adopts the
+ * re-syncs capability indexes via `runIndexCapCommand`, then executes, prints the JSON result, and adopts the
  * agent's outcome as the command's exit status (128 + signal for a signalled stop).
  * @remarks Exits non-zero with a targeted message for `ToolNotAllowedError`
  * (repo policy disallows this tool) and `RepositoryNotSelectedError` (no
@@ -96,7 +90,6 @@ export async function runLaunchToolCommand(
   tool: LaunchTarget,
   args: string[],
   options: {
-    skipConfirmation?: boolean;
     skipGit?: boolean;
     scope?: LaunchScope;
   } = {},
@@ -121,14 +114,6 @@ export async function runLaunchToolCommand(
     // with stdio "inherit", which writes straight to the terminal and desyncs
     // Ink's line tracking, corrupting later re-renders (e.g. duplicated title).
     progress?.stop();
-
-    if (!options.skipConfirmation && process.stdin.isTTY) {
-      const ok = await launchCommandDeps.confirm("Continue? [y/N] ");
-      if (!ok) {
-        process.stderr.write("Aborted.\n");
-        process.exit(1);
-      }
-    }
 
     if (options.scope !== "companion") {
       await launchCommandDeps.runIndexCapCommand([], {
@@ -176,7 +161,7 @@ export async function runLaunchToolCommand(
 /**
  * Builds the `mate <tool>` command handler: parses launch args (direct
  * passthrough or flagged), guards against ambiguous companions, then launches
- * via {@link runLaunchToolCommand}; non-interactive launches skip confirmation.
+ * via {@link runLaunchToolCommand} without an interactive confirmation.
  */
 export function makeLaunchCommand(tool: LaunchTarget) {
   return async function runLaunchCommand(
@@ -197,7 +182,6 @@ export function makeLaunchCommand(tool: LaunchTarget) {
     }
 
     await runLaunchToolCommand(tool, parsed.agentArgs, {
-      skipConfirmation: !process.stdin.isTTY || parsed.skipConfirmation,
       skipGit: parsed.skipGit,
       scope: parsed.scope,
     });

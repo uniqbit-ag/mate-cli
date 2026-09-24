@@ -54,11 +54,10 @@ describe("parseLaunchArgs", () => {
     });
   });
 
-  test("consumes companion and confirmation tokens after the separator", () => {
+  test("consumes companion and --yes after the separator", () => {
     expect(parseLaunchArgs(["--", "--companion", "--yes"])).toEqual({
       agentArgs: [],
       scope: "companion",
-      skipConfirmation: true,
     });
   });
 
@@ -68,7 +67,6 @@ describe("parseLaunchArgs", () => {
     ).toEqual({
       agentArgs: ["web", "--port", "4096"],
       scope: "companion",
-      skipConfirmation: true,
       skipGit: true,
     });
   });
@@ -106,13 +104,12 @@ describe("parseDirectLaunchArgs", () => {
     expect(parseDirectLaunchArgs(["--companion"])).toEqual({ agentArgs: ["--companion"] });
   });
 
-  test("consumes all reserved tokens after a direct-launch separator", () => {
+  test("consumes Mate controls after a direct-launch separator", () => {
     expect(
       parseDirectLaunchArgs(["--model", "test", "--", "--companion", "--yes", "--no-git", "web"]),
     ).toEqual({
       agentArgs: ["--model", "test", "web"],
       scope: "companion",
-      skipConfirmation: true,
       skipGit: true,
     });
   });
@@ -152,7 +149,7 @@ describe("runLaunchToolCommand", () => {
     };
 
     try {
-      await runLaunchToolCommand("claude", [], { skipConfirmation: true });
+      await runLaunchToolCommand("claude", []);
     } finally {
       launchCommandDeps.createLauncher = originalCreateLauncher;
       launchCommandDeps.createProgress = originalCreateProgress;
@@ -186,7 +183,7 @@ describe("runLaunchToolCommand", () => {
     };
 
     try {
-      await runLaunchToolCommand("claude", [], { skipConfirmation: true });
+      await runLaunchToolCommand("claude", []);
     } finally {
       launchCommandDeps.createLauncher = originalCreateLauncher;
       launchCommandDeps.createProgress = originalCreateProgress;
@@ -201,8 +198,6 @@ describe("runLaunchToolCommand", () => {
     process.stdin.isTTY = false;
     const originalCreateLauncher = launchCommandDeps.createLauncher;
     const originalRunIndexCapCommand = launchCommandDeps.runIndexCapCommand;
-    const confirm = mock(async () => false);
-    const originalConfirm = launchCommandDeps.confirm;
     let executed = false;
     launchCommandDeps.createLauncher = () => ({
       prepare: async () => ({
@@ -213,64 +208,40 @@ describe("runLaunchToolCommand", () => {
       }),
     });
     launchCommandDeps.runIndexCapCommand = async () => {};
-    launchCommandDeps.confirm = confirm;
 
     try {
       await runLaunchToolCommand("opencode", [], {});
     } finally {
       launchCommandDeps.createLauncher = originalCreateLauncher;
       launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;
-      launchCommandDeps.confirm = originalConfirm;
     }
 
     expect(executed).toBe(true);
-    expect(confirm).not.toHaveBeenCalled();
   });
 
-  test("confirms before a TTY launch by default", async () => {
+  test("runs a TTY launch without requesting confirmation", async () => {
     process.stdin.isTTY = true;
     const originalCreateLauncher = launchCommandDeps.createLauncher;
     const originalRunIndexCapCommand = launchCommandDeps.runIndexCapCommand;
-    const originalConfirm = launchCommandDeps.confirm;
-    const confirm = mock(async () => true);
+    let executed = false;
     launchCommandDeps.createLauncher = () => ({
-      prepare: async () => ({ execute: async () => ({ exitCode: 0, stdout: "", stderr: "" }) }),
+      prepare: async () => ({
+        execute: async () => {
+          executed = true;
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      }),
     });
     launchCommandDeps.runIndexCapCommand = async () => {};
-    launchCommandDeps.confirm = confirm;
 
     try {
       await runLaunchToolCommand("opencode", [], {});
     } finally {
       launchCommandDeps.createLauncher = originalCreateLauncher;
       launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;
-      launchCommandDeps.confirm = originalConfirm;
     }
 
-    expect(confirm).toHaveBeenCalledWith("Continue? [y/N] ");
-  });
-
-  test("--yes suppresses confirmation in a TTY", async () => {
-    process.stdin.isTTY = true;
-    const originalCreateLauncher = launchCommandDeps.createLauncher;
-    const originalRunIndexCapCommand = launchCommandDeps.runIndexCapCommand;
-    const originalConfirm = launchCommandDeps.confirm;
-    const confirm = mock(async () => true);
-    launchCommandDeps.createLauncher = () => ({
-      prepare: async () => ({ execute: async () => ({ exitCode: 0, stdout: "", stderr: "" }) }),
-    });
-    launchCommandDeps.runIndexCapCommand = async () => {};
-    launchCommandDeps.confirm = confirm;
-
-    try {
-      await runLaunchToolCommand("opencode", [], { skipConfirmation: true });
-    } finally {
-      launchCommandDeps.createLauncher = originalCreateLauncher;
-      launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;
-      launchCommandDeps.confirm = originalConfirm;
-    }
-
-    expect(confirm).not.toHaveBeenCalled();
+    expect(executed).toBe(true);
   });
 
   test("skips automatic indexing for companion-scoped launches", async () => {
@@ -287,10 +258,7 @@ describe("runLaunchToolCommand", () => {
     launchCommandDeps.runIndexCapCommand = index;
 
     try {
-      await runLaunchToolCommand("opencode", [], {
-        skipConfirmation: true,
-        scope: "companion",
-      });
+      await runLaunchToolCommand("opencode", [], { scope: "companion" });
     } finally {
       launchCommandDeps.createLauncher = originalCreateLauncher;
       launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;
@@ -302,7 +270,6 @@ describe("runLaunchToolCommand", () => {
 
   test("passes companion scope from the command parser into the request", async () => {
     const originalCreateLauncher = launchCommandDeps.createLauncher;
-    const originalConfirm = launchCommandDeps.confirm;
     const requests: LaunchRequest[] = [];
     launchCommandDeps.createLauncher = () => ({
       prepare: async (request) => {
@@ -310,13 +277,10 @@ describe("runLaunchToolCommand", () => {
         return { execute: async () => ({ exitCode: 0, stdout: "", stderr: "" }) };
       },
     });
-    launchCommandDeps.confirm = async () => true;
-
     try {
       await makeLaunchCommand("opencode")(["--", "--companion"]);
     } finally {
       launchCommandDeps.createLauncher = originalCreateLauncher;
-      launchCommandDeps.confirm = originalConfirm;
     }
 
     expect(requests[0]?.scope).toBe("companion");

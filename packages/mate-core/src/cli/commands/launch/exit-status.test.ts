@@ -55,7 +55,7 @@ describe("a launch reports the agent's outcome as its own exit status", () => {
   test("a non-zero agent exit produces a non-zero launch exit", async () => {
     launcherReturning({ exitCode: 7, stdout: "", stderr: "boom", signal: null });
 
-    await runLaunchToolCommand("claude", [], { skipConfirmation: true });
+    await runLaunchToolCommand("claude", []);
 
     expect(process.exitCode).toBe(7);
   });
@@ -63,7 +63,7 @@ describe("a launch reports the agent's outcome as its own exit status", () => {
   test("a zero agent exit still produces zero", async () => {
     launcherReturning({ exitCode: 0, stdout: "done", stderr: "", signal: null });
 
-    await runLaunchToolCommand("claude", [], { skipConfirmation: true });
+    await runLaunchToolCommand("claude", []);
 
     expect(process.exitCode).toBe(0);
   });
@@ -71,7 +71,7 @@ describe("a launch reports the agent's outcome as its own exit status", () => {
   test("the printed result does not stand in for the status", async () => {
     launcherReturning({ exitCode: 3, stdout: "partial", stderr: "", signal: null });
 
-    await runLaunchToolCommand("claude", [], { skipConfirmation: true });
+    await runLaunchToolCommand("claude", []);
 
     expect(printed.join("\n")).toContain('"exitCode": 3');
     expect(process.exitCode).toBe(3);
@@ -80,7 +80,7 @@ describe("a launch reports the agent's outcome as its own exit status", () => {
   test("a signalled stop is distinguishable from an ordinary non-zero exit", async () => {
     launcherReturning({ exitCode: 143, stdout: "", stderr: "", signal: "SIGTERM" });
 
-    await runLaunchToolCommand("claude", [], { skipConfirmation: true });
+    await runLaunchToolCommand("claude", []);
 
     expect(process.exitCode).toBe(143);
     expect(printed.join("\n")).toContain('"signal": "SIGTERM"');
@@ -93,7 +93,7 @@ describe("a launch reports the agent's outcome as its own exit status", () => {
       },
     });
 
-    await runLaunchToolCommand("claude", [], { skipConfirmation: true });
+    await runLaunchToolCommand("claude", []);
 
     expect(stderr).toContain("authentication failed");
     expect(process.exitCode).toBe(1);

@@ -58,9 +58,27 @@ describe("Node package bootstrap", () => {
       process.platform === "darwin" ? "brew" : process.platform === "win32" ? "powershell" : "sh";
     await fs.writeFile(path.join(entry.bin, installer), "#!/bin/sh\nexit 0\n");
     await fs.chmod(path.join(entry.bin, installer), 0o755);
-    const result = run(entry, ["--yes"]);
+    const result = run(entry, ["install", "--yes"]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("still unavailable");
+  });
+
+  test("a launch-agent --yes does not authorize Bun installation", async () => {
+    const entry = await fixture();
+    const installer =
+      process.platform === "darwin" ? "brew" : process.platform === "win32" ? "powershell" : "sh";
+    const marker = path.join(entry.root, "installer-ran");
+    await fs.writeFile(
+      path.join(entry.bin, installer),
+      `#!/bin/sh\nprintf installed > ${JSON.stringify(marker)}\nexit 0\n`,
+    );
+    await fs.chmod(path.join(entry.bin, installer), 0o755);
+
+    const result = run(entry, ["opencode", "--", "--yes"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Bun installation declined");
+    await expect(fs.access(marker)).rejects.toThrow();
   });
 
   test("delegates after a successful platform installer", async () => {
@@ -76,9 +94,11 @@ describe("Node package bootstrap", () => {
     ].join("\n");
     await fs.writeFile(path.join(entry.bin, installer), installerScript);
     await fs.chmod(path.join(entry.bin, installer), 0o755);
-    const result = run(entry, ["--yes", "--version"]);
+    const result = run(entry, ["install", "--yes"]);
     expect(result.status).toBe(0);
-    expect(await fs.readFile(entry.capture, "utf8")).toContain("--version");
+    const forwarded = await fs.readFile(entry.capture, "utf8");
+    expect(forwarded).toContain("install");
+    expect(forwarded).toContain("--yes");
   });
 
   test("reports an ordinary Bun exit status unchanged", async () => {

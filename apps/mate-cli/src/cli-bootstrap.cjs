@@ -76,7 +76,7 @@ function runProcess(command, args, options) {
 async function main() {
   if (!hasBun()) {
     const plan = installBun();
-    const yes = process.argv.includes("--yes");
+    const yes = process.argv[2] === "install" && process.argv.slice(3).includes("--yes");
     if (!yes && !(await confirm(plan.preview))) {
       process.stderr.write("Bun installation declined. Re-run with `mate install --yes`.\n");
       process.exitCode = 1;

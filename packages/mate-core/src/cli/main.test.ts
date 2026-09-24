@@ -344,6 +344,17 @@ describe("command gating", () => {
     expect(dispatched).toEqual(["claude"]);
   });
 
+  test("deprecated launch aliases use the selected agent launch path", async () => {
+    const claude = recordingDeps();
+    await main(["node", "mate", "launch", "claude", "--", "--yes"], claude.deps);
+    expect(claude.gateCalls).toEqual(["companion", "install"]);
+
+    const opencode = recordingDeps();
+    await main(["node", "mate", "launch", "opencode", "--", "--yes"], opencode.deps);
+    expect(opencode.gateCalls).toEqual(["companion", "install"]);
+    expect(dispatched).toEqual(["claude", "opencode"]);
+  });
+
   test("an ambiguous companion still blocks launch commands", async () => {
     const originalExitCode = process.exitCode;
     try {

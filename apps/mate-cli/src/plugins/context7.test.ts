@@ -2,38 +2,51 @@ import { describe, expect, test } from "bun:test";
 
 import { CONTEXT7_MCP_COMMAND, CONTEXT7_MCP_VERSION, createContext7Plugin } from "./context7";
 
-function requirementFor(onPath: boolean, installs: string[] = []) {
-  const plugin = createContext7Plugin({
-    isCommandOnPath: (command) => onPath && command === CONTEXT7_MCP_COMMAND,
-    install: async () => {
-      installs.push("installed");
+async function registrationFor(plugin: ReturnType<typeof createContext7Plugin>) {
+  const registrations: Array<{ name: string; command?: string; args?: string[] }> = [];
+  await plugin.apply?.({
+    mcp: {
+      register: async (server: { name: string; command?: string; args?: string[] }) => {
+        registrations.push(server);
+      },
     },
-  });
-  const [requirement] = plugin.getInstallRequirements!({ config: {} as never });
-  return requirement!;
+  } as never);
+  return registrations;
 }
 
-describe("the context7 install requirement", () => {
-  test("is satisfied by the binary on PATH, without an install", async () => {
-    const installs: string[] = [];
-    const requirement = requirementFor(true, installs);
-    expect(await requirement.detect()).toBe(true);
-    expect(installs).toEqual([]);
+describe("the context7 capability", () => {
+  test("registers the latest package through npx on a workstation", async () => {
+    const plugin = createContext7Plugin({ mode: "workstation", platform: "darwin" });
+
+    expect(plugin.getInstallRequirements?.({ config: {} as never })).toEqual([]);
+    expect(await registrationFor(plugin)).toEqual([
+      {
+        name: "context7",
+        command: "npx",
+        args: ["-y", "@upstash/context7-mcp"],
+      },
+    ]);
   });
 
-  test("is unsatisfied without the binary, and installs the pinned version", async () => {
-    const installs: string[] = [];
-    const requirement = requirementFor(false, installs);
-    expect(await requirement.detect()).toBe(false);
-    expect(requirement.command).toBe(
-      `npm install -g @upstash/context7-mcp@${CONTEXT7_MCP_VERSION}`,
-    );
-    await requirement.install();
-    expect(installs).toEqual(["installed"]);
+  test("uses the preinstalled command without package-manager arguments", async () => {
+    expect(await registrationFor(createContext7Plugin({ mode: "preinstalled" }))).toEqual([
+      { name: "context7", command: CONTEXT7_MCP_COMMAND, args: [] },
+    ]);
   });
 
-  test("never names a moving version", () => {
-    expect(CONTEXT7_MCP_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(requirementFor(false).command).not.toContain("@latest");
+  test("uses npm's Windows npx command shim", async () => {
+    expect(
+      await registrationFor(createContext7Plugin({ mode: "workstation", platform: "win32" })),
+    ).toEqual([
+      {
+        name: "context7",
+        command: "npx.cmd",
+        args: ["-y", "@upstash/context7-mcp"],
+      },
+    ]);
+  });
+
+  test("keeps the appliance image version exact", () => {
+    expect(CONTEXT7_MCP_VERSION).toBe("4.1.1");
   });
 });
