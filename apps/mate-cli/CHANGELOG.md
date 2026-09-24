@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+### ⚠ BREAKING CHANGES
+
+- **A managed launch now reports the agent's outcome as its own exit status.**
+  `mate claude` and `mate opencode` previously printed the agent's result and
+  exited zero regardless of how the agent ended. They now exit zero only when
+  the agent exited zero. The JSON result is still printed, but it no longer
+  stands in for the status. A caller that read success from a zero exit will
+  now see agent failures.
+- **A managed launch now forwards `SIGINT` and `SIGTERM` to the agent** and
+  waits for that process to exit before exiting itself, so no agent is left
+  running behind it. An agent that ends on a forwarded signal is reported as
+  the signalled stop it was (`128 + signal`), which a caller can tell apart
+  from an ordinary non-zero exit. At a terminal this is unchanged in practice:
+  Ctrl-C reaches the whole foreground process group, so the agent is stopped
+  once and the shell is returned.
+
+Both apply to every launch on a default workstation; neither has an opt-out.
+They are separate from the opt-in `MATE_UPDATE_POLICY=pinned` policy, which
+changes only automatic update handling and which a workstation should not set.
+
+### Features
+
+- `mate companion register [path]` registers an already-configured Companion
+  Repository without presenting a selection and without changing its
+  configuration.
+- `mate companion prepare --from <bundle> [path]` prepares a companion's
+  machine-local dependency workspace by validating and copying a fully
+  installed prebuilt bundle — no package manager, dependency resolution,
+  download, or installation script.
+- `MATE_UPDATE_POLICY=pinned` declares that an installation's version is fixed
+  by the artifact it was built into: no update enforcement, banner, background
+  registry check, or update-state read or write. Opt-in; absent the setting
+  nothing changes.
+- A declared Agent Runtime plugin reference is bound to a preinstalled package
+  where the distribution supplies one, so the runtime loads installed files
+  instead of resolving or downloading the published reference.
+
 ## [0.16.0](https://github.com/uniqbit-ag/mate-cli/compare/0.15.5...0.16.0) (2026-09-15)
 
 ## [0.16.0-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.15.5...0.16.0) (2026-09-15)

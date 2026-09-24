@@ -17,6 +17,13 @@ import {
 import { installPublicPackageSync, publicNpmDeps, PUBLIC_NPM_REGISTRY } from "./public-npm";
 import { getActiveDistribution, setActiveDistribution } from "../distribution";
 
+/** Assigned, not spied, so `mock.restore()` alone would leak the fakes into later files. */
+const originalDeps = {
+  execFile: publicNpmDeps.execFile,
+  now: updateCheckerDeps.now,
+  toIsoString: updateCheckerDeps.toIsoString,
+};
+
 beforeEach(() => {
   publicNpmDeps.execFile = mock(async () => ({ stdout: "9.9.9\n", stderr: "" }));
   updateCheckerDeps.now = () => Date.now();
@@ -25,6 +32,9 @@ beforeEach(() => {
 
 afterEach(() => {
   mock.restore();
+  publicNpmDeps.execFile = originalDeps.execFile;
+  updateCheckerDeps.now = originalDeps.now;
+  updateCheckerDeps.toIsoString = originalDeps.toIsoString;
 });
 
 function createStore(state: { lastChecked: string; latestVersion: string | null }) {
@@ -111,9 +121,19 @@ describe("update helpers", () => {
   });
 
   test("UpdateStateStore scopes its state file to the update package", () => {
-    expect(new UpdateStateStore("@acme/mate").configPath).toContain(
-      "update-state-acme-mate-canary.yaml",
-    );
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, version: "0.16.0-canary.0" },
+    });
+
+    try {
+      expect(new UpdateStateStore("@acme/mate").configPath).toContain(
+        "update-state-acme-mate-canary.yaml",
+      );
+    } finally {
+      setActiveDistribution(previous);
+    }
   });
 
   test("UpdateStateStore retains the stable cache filename", () => {
@@ -257,6 +277,7 @@ describe("update helpers", () => {
       ...previous,
       config: {
         ...previous.config,
+        version: "0.16.0-canary.0",
         update: {
           packageName: "@acme/mate",
           registry: "https://npm.acme.test/",

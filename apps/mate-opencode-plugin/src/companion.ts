@@ -65,7 +65,7 @@ function buildSystemPrompt(context: CompanionContext, guidance: MateGuidanceFile
 
 export const CompanionPlugin: Plugin = async () => {
   const context = readContext();
-  if (!context.companionPath || !context.repositoryPath) {
+  if (!context.companionPath) {
     return {};
   }
 
@@ -77,7 +77,7 @@ export const CompanionPlugin: Plugin = async () => {
   return {
     tool: {
       companion_paths: tool({
-        description: `Return active ${context.frameworkName} working repository and companion framework paths.`,
+        description: `Return active ${context.frameworkName} companion framework and working repository paths.`,
         args: {},
         async execute() {
           return {
@@ -85,8 +85,9 @@ export const CompanionPlugin: Plugin = async () => {
               {
                 companionFrameworkPath: context.companionPath,
                 wrapperBinPath,
-                repositoryPath: context.repositoryPath,
-                repositoryId: context.repositoryId,
+                ...(context.repositoryPath
+                  ? { repositoryPath: context.repositoryPath, repositoryId: context.repositoryId }
+                  : {}),
                 policy: JSON.parse(context.policyJson || "{}"),
               },
               null,
@@ -95,7 +96,7 @@ export const CompanionPlugin: Plugin = async () => {
             metadata: {
               companionPath: context.companionPath,
               wrapperBinPath,
-              repositoryPath: context.repositoryPath,
+              ...(context.repositoryPath ? { repositoryPath: context.repositoryPath } : {}),
             },
           };
         },
@@ -133,8 +134,13 @@ export const CompanionPlugin: Plugin = async () => {
       output.env.MATE_VERSION = process.env.MATE_VERSION ?? "unknown";
       output.env.MATE_ARTIFACT_PATH = context.companionPath;
       output.env.MATE_WRAPPER_BIN_PATH = wrapperBinPath;
-      output.env.MATE_REPO_PATH = context.repositoryPath;
-      output.env.MATE_REPO_ID = context.repositoryId;
+      if (context.repositoryPath) {
+        output.env.MATE_REPO_PATH = context.repositoryPath;
+        output.env.MATE_REPO_ID = context.repositoryId;
+      } else {
+        delete output.env.MATE_REPO_PATH;
+        delete output.env.MATE_REPO_ID;
+      }
       output.env.MATE_POLICY_JSON = context.policyJson;
       output.env.MATE_GRAPHIFY_ENABLED = context.graphifyEnabled ? "1" : "0";
       output.env.MATE_GIT_AUTO_MODE = context.gitAutoModeEnabled ? "1" : "0";

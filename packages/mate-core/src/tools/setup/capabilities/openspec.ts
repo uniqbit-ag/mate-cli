@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { getOpenSpecSchemaSelection } from "../../../lib/orchestrator/setup-compatibilities";
 import { getWrapperBinPath } from "../../../lib/package-paths";
 import { fetchPublicPackageVersion } from "../../../lib/public-npm";
-import { isNewer } from "../../../lib/update-checker";
+import { isNewer, isPinnedDeployment } from "../../../lib/update-checker";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { confirm } from "../../../cli/confirm";
 import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
@@ -63,6 +63,7 @@ export interface OpenSpecPluginDeps {
   wrapperBinPath?: () => string;
   getInstalledVersion?: (pathValue: string) => Promise<string | undefined>;
   fetchLatestVersion?: () => Promise<string | undefined>;
+  isPinnedDeployment?: () => boolean;
 }
 
 const OPEN_SPEC_SUPPORTED_TOOLS = Object.keys(OPENSPEC_TOOL_DIRS) as OpenSpecTool[];
@@ -170,10 +171,17 @@ async function updateOpenSpecIfOutdated(
   deps: Required<
     Pick<
       OpenSpecPluginDeps,
-      "installCommand" | "pathValue" | "getInstalledVersion" | "fetchLatestVersion"
+      | "installCommand"
+      | "pathValue"
+      | "getInstalledVersion"
+      | "fetchLatestVersion"
+      | "isPinnedDeployment"
     >
   >,
 ): Promise<void> {
+  /** Pinned artifacts change tool versions by replacement, never reconciliation. */
+  if (deps.isPinnedDeployment()) return;
+
   const installed = await deps.getInstalledVersion(deps.pathValue());
   if (!installed) return;
 
@@ -204,6 +212,7 @@ async function ensureOpenSpecInstalled(
       | "pathValue"
       | "getInstalledVersion"
       | "fetchLatestVersion"
+      | "isPinnedDeployment"
     >
   >,
 ): Promise<boolean> {
@@ -326,6 +335,7 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
     wrapperBinPath: deps.wrapperBinPath ?? getWrapperBinPath,
     getInstalledVersion: deps.getInstalledVersion ?? defaultGetInstalledVersion,
     fetchLatestVersion: deps.fetchLatestVersion ?? defaultFetchLatestVersion,
+    isPinnedDeployment: deps.isPinnedDeployment ?? (() => isPinnedDeployment()),
   };
 
   return {

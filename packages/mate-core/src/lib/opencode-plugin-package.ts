@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { isPreinstalledPluginPath } from "./preinstalled-plugins";
 import { PUBLIC_NPM_REGISTRY } from "./public-npm";
 import { getCurrentVersion } from "./update-checker";
 
@@ -18,11 +19,16 @@ export function getOpenCodePluginPackageReference(version: string = getCurrentVe
   return `${OPENCODE_PLUGIN_PACKAGE_NAME}@${version}`;
 }
 
+/** Matches the published reference and a reference bound to an installed copy alike. */
 export function isMateOpenCodePluginReference(value: unknown): boolean {
-  return (
-    typeof value === "string" &&
-    (value === OPENCODE_PLUGIN_PACKAGE_NAME || value.startsWith(`${OPENCODE_PLUGIN_PACKAGE_NAME}@`))
-  );
+  if (typeof value !== "string") return false;
+  if (
+    value === OPENCODE_PLUGIN_PACKAGE_NAME ||
+    value.startsWith(`${OPENCODE_PLUGIN_PACKAGE_NAME}@`)
+  ) {
+    return true;
+  }
+  return isPreinstalledPluginPath(value, OPENCODE_PLUGIN_PACKAGE_NAME);
 }
 
 export function getOpenCodeCacheDir(env: NodeJS.ProcessEnv = process.env): string {

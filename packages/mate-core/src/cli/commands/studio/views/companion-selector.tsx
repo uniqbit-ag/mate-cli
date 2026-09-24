@@ -25,7 +25,7 @@ export function CompanionSelector({ inventory, selection }: CompanionSelectorPro
         <input type="hidden" name="view" value={selection.view} />
       )}
       {/* eslint-disable-next-line react/no-unknown-property -- raw HTML attribute: hono/jsx server-renders this inline handler */}
-      <select name="companion" aria-label="Companion Repository" onchange="this.form.submit()">
+      <select name="companion" aria-label="Companion Repository">
         <PlaceholderOption companionCount={companions.length} selected={selected} />
         {companions.map((companion) => {
           const digest = companionDigest(companion.path);

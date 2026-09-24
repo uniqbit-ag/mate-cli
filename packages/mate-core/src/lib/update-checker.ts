@@ -20,6 +20,42 @@ export const updateCheckerDeps = {
   toIsoString: () => new Date().toISOString(),
 };
 
+/** Declares that the installation's version is fixed by the artifact it was built into. */
+export const UPDATE_POLICY_ENV = "MATE_UPDATE_POLICY";
+
+export type UpdatePolicy = "default" | "pinned";
+
+/**
+ * Reported at most once per process: the three automatic-update entry points
+ * each consult the policy, and an unrecognized value must not be repeated.
+ */
+let unrecognizedPolicyReported = false;
+
+/** Test seam — the policy is process-wide, so its report latch must be resettable. */
+export function resetUpdatePolicyReport(): void {
+  unrecognizedPolicyReported = false;
+}
+
+export function getUpdatePolicy(env: NodeJS.ProcessEnv = process.env): UpdatePolicy {
+  const raw = env[UPDATE_POLICY_ENV];
+  if (raw === undefined || raw.trim() === "") return "default";
+
+  const value = raw.trim();
+  if (value === "pinned") return "pinned";
+
+  if (!unrecognizedPolicyReported) {
+    unrecognizedPolicyReported = true;
+    process.stderr.write(
+      `${FRAMEWORK_NAME}: unrecognized ${UPDATE_POLICY_ENV} value \`${value}\`; automatic update handling is unchanged.\n`,
+    );
+  }
+  return "default";
+}
+
+export function isPinnedDeployment(env: NodeJS.ProcessEnv = process.env): boolean {
+  return getUpdatePolicy(env) === "pinned";
+}
+
 const updateStateFileSlug = (packageName: string): string =>
   packageName.replace(/^@/, "").replace(/[^a-zA-Z0-9._-]+/g, "-");
 
@@ -75,6 +111,7 @@ export function isNewer(latest: string, current: string): boolean {
 }
 
 export async function showUpdateBannerIfAvailable(store: UpdateStateStore): Promise<void> {
+  if (isPinnedDeployment()) return;
   try {
     const state = await store.load();
     if (!state.latestVersion) return;
@@ -95,6 +132,7 @@ export async function showUpdateBannerIfAvailable(store: UpdateStateStore): Prom
  * must stop; state-load failures never block.
  */
 export async function enforceUpdateIfRequired(store: UpdateStateStore): Promise<boolean> {
+  if (isPinnedDeployment()) return false;
   if (!getUpdateConfig().enforce) return false;
   try {
     const state = await store.load();
@@ -119,6 +157,7 @@ export async function fetchLatestVersion(): Promise<string> {
 }
 
 export function scheduleBackgroundCheck(store: UpdateStateStore): Promise<void> {
+  if (isPinnedDeployment()) return Promise.resolve();
   return (async () => {
     try {
       const state = await store.load();

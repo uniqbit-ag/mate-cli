@@ -7,6 +7,8 @@ import path from "node:path";
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { parse } from "yaml";
 
+import { version } from "../../package.json";
+
 const APP_ROOT = path.resolve(import.meta.dirname, "../..");
 const E2E_TMP_ROOT = path.join(os.tmpdir(), "mate-cli-e2e");
 const tempRoots: string[] = [];
@@ -99,18 +101,26 @@ async function createScenario(prefix: string): Promise<E2EScenario> {
   return { root, home, companion, working, bin };
 }
 
+/**
+ * The running version's own channel is fresh with nothing newer; only the other
+ * channel caches a newer release, which no command may act on. Keyed to the
+ * package version so the seed holds through canary and stable cycles alike.
+ */
 async function seedUpdateState(home: string): Promise<void> {
   const updateDir = path.join(home, ".mate");
   await fs.mkdir(updateDir, { recursive: true });
+  const onCanary = version.includes("-canary.");
+  const state = (latest: string) =>
+    ["lastChecked: 2099-01-01T00:00:00.000Z", `latestVersion: ${latest}`, ""].join("\n");
   await Promise.all([
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate.yaml"),
-      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: 99.0.0", ""].join("\n"),
+      state(onCanary ? "99.0.0" : "null"),
       "utf8",
     ),
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate-canary.yaml"),
-      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: null", ""].join("\n"),
+      state(onCanary ? "null" : "99.0.0"),
       "utf8",
     ),
   ]);
@@ -766,7 +776,7 @@ afterEach(async () => {
 });
 
 describe("mate CLI e2e", () => {
-  test("canary commands ignore newer stable cache state", async () => {
+  test("commands ignore a newer release cached for the other channel", async () => {
     const scenario = await createScenario("mate-cli-e2e-canary-cache-");
 
     const result = await runMate(scenario, {
@@ -937,6 +947,14 @@ describe("mate CLI e2e", () => {
 
   test("context7 registers MCP entries for both active providers and reconciles deselection", async () => {
     const scenario = await createScenario("mate-cli-e2e-context7-");
+    const npmCalls = path.join(scenario.root, "npm-calls");
+    const npmStub = path.join(scenario.bin, "npm");
+    await fs.writeFile(
+      npmStub,
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(npmCalls)}\nexit 97\n`,
+      "utf8",
+    );
+    await fs.chmod(npmStub, 0o755);
 
     expect(
       (
@@ -946,20 +964,42 @@ describe("mate CLI e2e", () => {
         })
       ).exitCode,
     ).toBe(0);
+    expect((await installCompanion(scenario)).exitCode).toBe(0);
+    await expect(fs.access(npmCalls)).rejects.toThrow();
 
     const claudeMcp = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".mcp.json"), "utf8"),
     ) as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
-    expect(claudeMcp.mcpServers?.context7).toEqual({
-      command: "npx",
-      args: ["-y", "@upstash/context7-mcp"],
-    });
+    expect(claudeMcp.mcpServers?.context7?.command).toBe("npx");
+    expect(claudeMcp.mcpServers?.context7?.args ?? []).toEqual(["-y", "@upstash/context7-mcp"]);
 
-    const opencodeConfig = await fs.readFile(
-      path.join(scenario.companion, ".opencode", "opencode.json"),
-      "utf8",
-    );
-    expect(opencodeConfig).toContain('"context7"');
+    const opencodeConfig = JSON.parse(
+      await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
+    ) as { mcp?: Record<string, { command?: string[] }> };
+    expect(opencodeConfig.mcp?.context7?.command).toEqual(["npx", "-y", "@upstash/context7-mcp"]);
+
+    expect(
+      (
+        await setupCompanion(
+          scenario,
+          [],
+          { allowedAgents: ["claude", "opencode"], capabilities: ["openspec", "context7"] },
+          { MATE_CONTEXT7_MODE: "preinstalled" },
+        )
+      ).exitCode,
+    ).toBe(0);
+
+    const preinstalledClaudeMcp = JSON.parse(
+      await fs.readFile(path.join(scenario.companion, ".mcp.json"), "utf8"),
+    ) as { mcpServers?: Record<string, { command?: string; args?: string[] }> };
+    expect(preinstalledClaudeMcp.mcpServers?.context7).toEqual({
+      command: "context7-mcp",
+      args: [],
+    });
+    const preinstalledOpenCode = JSON.parse(
+      await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
+    ) as { mcp?: Record<string, { command?: string[] }> };
+    expect(preinstalledOpenCode.mcp?.context7?.command).toEqual(["context7-mcp"]);
 
     expect(
       (
@@ -975,10 +1015,12 @@ describe("mate CLI e2e", () => {
     ) as { mcpServers?: Record<string, unknown> };
     expect(claudeMcpAfter.mcpServers?.context7).toBeUndefined();
 
-    const opencodeConfigAfter = await fs
-      .readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8")
-      .catch(() => "");
-    expect(opencodeConfigAfter).not.toContain('"context7"');
+    const opencodeConfigAfter = JSON.parse(
+      await fs
+        .readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8")
+        .catch(() => "{}"),
+    ) as { mcp?: Record<string, unknown> };
+    expect(opencodeConfigAfter.mcp?.context7).toBeUndefined();
   });
 
   test("setup reconciles openspec skills as allowed agents are added and removed", async () => {
@@ -1870,7 +1912,7 @@ describe("mate CLI e2e", () => {
       tool: "claude" as const,
       allowedAgents: undefined,
       setupSelections: undefined,
-      launchArgs: ["claude", "--print", "hello"],
+      launchArgs: ["claude", "--print", "hello", "--", "--yes"],
       assertInvocation(
         invocation: {
           cwd: string;
@@ -1884,13 +1926,14 @@ describe("mate CLI e2e", () => {
         expect(invocation.argv).toContain("--append-system-prompt");
         expect(invocation.argv).toContain("--print");
         expect(invocation.argv).toContain("hello");
+        expect(invocation.argv).not.toContain("--yes");
       },
     },
     {
       tool: "opencode" as const,
       allowedAgents: ["opencode"],
       setupSelections: { allowedAgents: ["opencode"], capabilities: ["openspec"] },
-      launchArgs: ["opencode", "--mode", "chat"],
+      launchArgs: ["opencode", "--mode", "chat", "--", "--yes"],
       assertInvocation(
         invocation: {
           cwd: string;
@@ -1902,6 +1945,7 @@ describe("mate CLI e2e", () => {
         expect(invocation.argv[0]).toBe(scenario.working);
         expect(invocation.argv).toContain("--mode");
         expect(invocation.argv).toContain("chat");
+        expect(invocation.argv).not.toContain("--yes");
         expect(invocation.env.OPENCODE_CONFIG_DIR).toBe(path.join(scenario.companion, ".opencode"));
       },
     },
@@ -1917,12 +1961,11 @@ describe("mate CLI e2e", () => {
       const result = await runMate(scenario, {
         cwd: scenario.working,
         args: testCase.launchArgs,
-        input: "y\n",
         env: { MATE_E2E_CAPTURE_PATH: capturePath },
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.stderr).toContain("Continue? [y/N]");
+      expect(result.stderr).not.toContain("Continue? [y/N]");
 
       const launchResult = JSON.parse(result.stdout) as { exitCode: number };
       expect(launchResult.exitCode).toBe(0);
@@ -2084,6 +2127,35 @@ describe("mate CLI e2e", () => {
     );
   }
 
+  test("the deprecated launch alias starts in a TTY and consumes --yes", async () => {
+    const scenario = await createScenario("mate-cli-e2e-launch-alias-tty-");
+    const capturePath = await writeAdapterStub(scenario, "claude");
+    initWorkingRepoGit(scenario);
+
+    expect(
+      (
+        await setupCompanion(scenario, [], {
+          allowedAgents: ["claude"],
+          capabilities: ["openspec"],
+        })
+      ).exitCode,
+    ).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+    const result = await runMateInTty(scenario, {
+      cwd: scenario.working,
+      args: ["launch", "claude", "--", "--yes", "--print", "hello"],
+      inputChunks: [],
+      env: { MATE_E2E_CAPTURE_PATH: capturePath },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(`${result.stdout}\n${result.stderr}`).not.toContain("Continue? [y/N]");
+    const invocation = await readJson<{ argv: string[] }>(capturePath);
+    expect(invocation.argv).not.toContain("--yes");
+    expect(invocation.argv).toContain("hello");
+  });
+
   test("launch repairs missing OpenCode companion runtime assets before spawn", async () => {
     const scenario = await createScenario("mate-cli-e2e-opencode-repair-");
     const capturePath = await writeAdapterStub(scenario, "opencode");
@@ -2243,7 +2315,7 @@ describe("mate CLI e2e", () => {
   });
 
   test(
-    "interactive launch skips the redundant review confirmation",
+    "interactive launch can explicitly skip review confirmation",
     { timeout: 30_000 },
     async () => {
       const scenario = await createScenario("mate-cli-e2e-launch-direct-");
@@ -2262,24 +2334,56 @@ describe("mate CLI e2e", () => {
 
       const result = await runMateInTty(scenario, {
         cwd: scenario.working,
-        args: ["claude"],
+        args: ["claude", "--", "--yes"],
         inputChunks: [],
         env: { MATE_E2E_CAPTURE_PATH: capturePath },
         timeoutSeconds: 15,
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).not.toContain("Review launch");
-      expect(result.stdout).not.toContain("Continue? [y/N]");
-
-      const launchResult = JSON.parse(result.stdout.slice(result.stdout.lastIndexOf("{")));
-      expect(launchResult.exitCode).toBe(0);
+      expect(`${result.stdout}${result.stderr}`).not.toContain("Aborted.");
 
       const invocation = await readJson<{ cwd: string; argv: string[] }>(capturePath);
       expect(invocation.cwd).toBe(scenario.working);
       expect(invocation.argv).toContain("--add-dir");
     },
   );
+
+  test("launches companion-scoped OpenCode unattended without repository indexing", async () => {
+    const scenario = await createScenario("mate-cli-e2e-launch-companion-only-");
+    const capturePath = await writeAdapterStub(scenario, "opencode");
+
+    expect(
+      (
+        await setupCompanion(scenario, [], {
+          allowedAgents: ["opencode"],
+          capabilities: ["openspec"],
+        })
+      ).exitCode,
+    ).toBe(0);
+
+    const result = await runMate(scenario, {
+      cwd: scenario.companion,
+      args: ["opencode", "--", "--companion"],
+      env: { MATE_E2E_CAPTURE_PATH: capturePath },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).not.toContain("Indexing graphify");
+    expect(result.stdout).not.toContain("Indexing tokensave");
+
+    const invocation = await readJson<{
+      cwd: string;
+      env: Record<string, string | null>;
+    }>(capturePath);
+    expect(invocation.cwd).toBe(scenario.companion);
+    expect(invocation.env.MATE_ARTIFACT_PATH).toBe(scenario.companion);
+    expect(invocation.env.MATE_REPO_PATH).toBeNull();
+    expect(invocation.env.MATE_REPO_ID).toBeNull();
+    expect(invocation.env.GRAPHIFY_OUT).toBe(
+      path.join(scenario.companion, ".graphify", "__companion__", "graphify-out"),
+    );
+  });
 
   test("claude setup writes companion guidance artifacts", async () => {
     const scenario = await createScenario("mate-cli-e2e-claude-guidance-");

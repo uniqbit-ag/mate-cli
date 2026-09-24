@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { companionDigest } from "./selection";
 import {
@@ -8,6 +11,7 @@ import {
   type StudioServerDeps,
 } from "./server";
 import type { StudioPage } from "./views/model";
+import { createVaultManager } from "./vault";
 
 const ACME = "/companions/acme";
 const BROKEN = "/companions/broken";
@@ -83,6 +87,7 @@ describe("createStudioFetch", () => {
       companionDigest: digest,
       view: "workflow",
       refresh: false,
+      openPath: null,
     });
     expect(pages[0]?.companion?.path).toBe(ACME);
     expect(pages[0]?.payload?.companionPath).toBe(ACME);
@@ -271,6 +276,130 @@ describe("createStudioFetch", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("");
   });
+
+  test("serves a vault tree and file, while read-only saves are refused", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-server-"));
+    try {
+      await fs.writeFile(path.join(root, "note.md"), "one");
+      const digest = companionDigest(root);
+      const manager = createVaultManager({ watch: () => ({ close() {} }) });
+      const handler = createStudioFetch({
+        collectStudioInventory: async () => ({
+          companions: [{ path: root, health: "ready", pairings: [] }],
+        }),
+        assembleCompanionPayload: async (companionPath) => ({
+          companionPath,
+          changes: [],
+          specs: [],
+          topology: null,
+          warnings: [],
+        }),
+        renderDocument: () => "vault",
+        vault: manager,
+      });
+      const tree = await handler(
+        new Request(`http://localhost/api/vault/tree?companion=${digest}`),
+      );
+      expect((await tree.json()).tree).toHaveLength(1);
+      const opened = await handler(
+        new Request(`http://localhost/api/vault/file?companion=${digest}&path=note.md`),
+      );
+      expect(await opened.json()).toMatchObject({ path: "note.md", content: "one" });
+      const refused = await handler(
+        new Request("http://localhost/api/vault/save", { method: "POST", body: "{}" }),
+      );
+      expect(refused.status).toBe(403);
+      expect(await refused.text()).toContain("--writable");
+      handler.close();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("writes only through the writable vault save endpoint", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-server-"));
+    try {
+      await fs.writeFile(path.join(root, "note.md"), "one");
+      const digest = companionDigest(root);
+      const handler = createStudioFetch(
+        {
+          collectStudioInventory: async () => ({
+            companions: [{ path: root, health: "ready", pairings: [] }],
+          }),
+          assembleCompanionPayload: async (companionPath) => ({
+            companionPath,
+            changes: [],
+            specs: [],
+            topology: null,
+            warnings: [],
+          }),
+          renderDocument: () => "vault",
+          vault: createVaultManager({ watch: () => ({ close() {} }) }),
+        },
+        { writable: true },
+      );
+      const opened = await (
+        await handler(
+          new Request(`http://localhost/api/vault/file?companion=${digest}&path=note.md`),
+        )
+      ).json();
+      const saved = await handler(
+        new Request("http://localhost/api/vault/save", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            companion: digest,
+            path: "note.md",
+            content: "two",
+            token: opened.token,
+          }),
+        }),
+      );
+      expect(saved.status).toBe(200);
+      expect(await fs.readFile(path.join(root, "note.md"), "utf8")).toBe("two");
+      handler.close();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("pushes changed and removed open files through the event stream", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-server-"));
+    try {
+      await fs.writeFile(path.join(root, "note.md"), "one");
+      let listener: ((event: string, filename: string | Buffer | null) => void) | undefined;
+      const manager = createVaultManager({
+        watch: (_root, next) => {
+          listener = next;
+          return { close() {} };
+        },
+      });
+      const digest = companionDigest(root);
+      const handler = createStudioFetch({
+        collectStudioInventory: async () => ({
+          companions: [{ path: root, health: "ready", pairings: [] }],
+        }),
+        vault: manager,
+      });
+      const response = await handler(
+        new Request(`http://localhost/api/vault/events?companion=${digest}&path=note.md`),
+      );
+      const reader = response.body!.getReader();
+      await reader.read();
+      await fs.writeFile(path.join(root, "note.md"), "two");
+      listener?.("change", "note.md");
+      const changed = await reader.read();
+      expect(new TextDecoder().decode(changed.value)).toContain('"content":"two"');
+      await fs.unlink(path.join(root, "note.md"));
+      listener?.("rename", "note.md");
+      const removed = await reader.read();
+      expect(new TextDecoder().decode(removed.value)).toContain('"kind":"removed"');
+      await reader.cancel();
+      handler.close();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("startStudioServer", () => {
@@ -320,6 +449,59 @@ describe("startStudioServer", () => {
       }),
     ).toThrow("EADDRINUSE");
   });
+
+  test("binds an explicit port and host and reports a named host", () => {
+    const calls: Array<{ port: number; hostname: string }> = [];
+    const server = startStudioServer(
+      deps({
+        serve: (options) => {
+          calls.push({ port: options.port, hostname: options.hostname });
+          return { port: options.port, stop: () => {} };
+        },
+      }),
+      { port: 4180, hostname: "0.0.0.0" },
+    );
+
+    expect(calls).toEqual([{ port: 4180, hostname: "0.0.0.0" }]);
+    expect(server.port).toBe(4180);
+    expect(server.hostname).toBe("0.0.0.0");
+    expect(server.url).toBe("http://0.0.0.0:4180");
+  });
+
+  test("formats IPv6 hosts as valid URLs", () => {
+    const server = startStudioServer(
+      deps({ serve: (options) => ({ port: options.port, stop: () => {} }) }),
+      { port: 4180, hostname: "2001:db8::1" },
+    );
+
+    expect(server.url).toBe("http://[2001:db8::1]:4180");
+  });
+
+  test("renders the same document for interactive and serve bindings", async () => {
+    const fetches: Array<(request: Request) => Promise<Response>> = [];
+    const serve = (options: Parameters<NonNullable<StudioServerDeps["serve"]>>[0]) => {
+      fetches.push(options.fetch);
+      return { port: options.port || 4180, stop: () => {} };
+    };
+    const sharedDeps: StudioServerDeps = {
+      collectStudioInventory: async () => ({ companions: [] }),
+      assembleCompanionPayload: async (companionPath) => ({
+        companionPath,
+        changes: [],
+        specs: [],
+        topology: null,
+        warnings: [],
+      }),
+      serve,
+    };
+    startStudioServer(sharedDeps, {});
+    startStudioServer(sharedDeps, { port: 4180, hostname: "0.0.0.0" });
+
+    const request = new Request("http://localhost/?view=workflow");
+    expect(await (await fetches[0]!(request)).text()).toBe(
+      await (await fetches[1]!(request)).text(),
+    );
+  });
 });
 
 describe("serveUntilInterrupted", () => {
@@ -354,5 +536,35 @@ describe("serveUntilInterrupted", () => {
     expect(stopped).toBe(true);
     expect(Object.keys(listeners)).toEqual([]);
     expect(process.listenerCount("SIGINT")).toBe(before);
+  });
+
+  test("stops the server on termination as well as interrupt", async () => {
+    for (const signal of ["SIGINT", "SIGTERM"] as const) {
+      const initialExitCode = process.exitCode;
+      let stopped = false;
+      const listeners: Record<string, () => void> = {};
+      const pending = serveUntilInterrupted(
+        {
+          url: "http://localhost:1234",
+          port: 1234,
+          hostname: "127.0.0.1",
+          stop: () => {
+            stopped = true;
+          },
+        },
+        {
+          onSignal: (name, handler) => {
+            listeners[name] = handler;
+            return () => delete listeners[name];
+          },
+        },
+      );
+
+      listeners[signal]?.();
+      await pending;
+      expect(stopped).toBe(true);
+      expect(Object.keys(listeners)).toEqual([]);
+      expect(process.exitCode).toBe(initialExitCode);
+    }
   });
 });

@@ -28,12 +28,13 @@ import {
   type LaunchRequest,
   type LaunchResult,
   type LinkedRepository,
+  type LaunchScope,
 } from "./types";
 
 export interface LaunchPreview {
   tool: string;
-  repositoryId: string;
-  repositoryPath: string;
+  repositoryId?: string;
+  repositoryPath?: string;
   companionPath: string;
 }
 
@@ -45,7 +46,10 @@ interface ResolvedLaunchState {
   adapter: LaunchAdapter;
   companionPath: string;
   config: FrameworkConfig;
-  repository: LinkedRepository;
+  repository?: LinkedRepository;
+  scope: LaunchScope;
+  launchWorkingDirectory: string;
+  skipGit: boolean;
 }
 
 export const launcherDeps = {
@@ -108,9 +112,10 @@ export class FrameworkLauncher {
     const state = await this.resolveLaunchState(request);
     return {
       tool: request.tool,
-      repositoryId: state.repository.id,
-      repositoryPath: state.repository.path,
       companionPath: state.companionPath,
+      ...(state.repository
+        ? { repositoryId: state.repository.id, repositoryPath: state.repository.path }
+        : {}),
     };
   }
 
@@ -118,27 +123,37 @@ export class FrameworkLauncher {
     const state = await this.resolveLaunchState(request);
     const adapterContext = this.makeAdapterContext(state);
 
-    if (await launcherDeps.isWrapped(state.repository.path)) {
+    if (state.repository && (await launcherDeps.isWrapped(state.repository.path))) {
       throw new LaunchPreflightError(wrappedRepositoryRefusal(state.repository));
     }
 
     if (!request.skipGit && state.config.git === "auto") {
       await launcherDeps.syncCompanionGit(
         state.companionPath,
-        state.repository.path,
+        state.repository?.path,
         request.interactiveGit ?? false,
       );
     }
-    await launcherDeps.syncCompanionFiles(state.companionPath, state.config, state.repository.path);
-    this.answerForProjection(
-      await launcherDeps.projectWorkingRepo({
-        repoPath: state.repository.path,
-        companionPath: state.companionPath,
-        config: state.config,
-      }),
-      state.repository,
-    );
-    await launcherDeps.refreshProjectionRoot(state.companionPath, state.repository);
+    if (state.repository) {
+      await launcherDeps.syncCompanionFiles(
+        state.companionPath,
+        state.config,
+        state.repository.path,
+      );
+    } else {
+      await launcherDeps.syncCompanionFiles(state.companionPath, state.config);
+    }
+    if (state.repository) {
+      this.answerForProjection(
+        await launcherDeps.projectWorkingRepo({
+          repoPath: state.repository.path,
+          companionPath: state.companionPath,
+          config: state.config,
+        }),
+        state.repository,
+      );
+      await launcherDeps.refreshProjectionRoot(state.companionPath, state.repository);
+    }
     await this.runCapabilityPreflight(state, request.tool);
     await state.adapter.validateLaunch(adapterContext);
 
@@ -158,10 +173,14 @@ export class FrameworkLauncher {
       companionPath,
       repositoryId,
       repository: localRepository,
-    } = await this.resolveConfig();
+    } = await this.resolveConfig(request.scope);
     const store = new CompanionStore(configStore, workingRepoStore);
-    const repository = localRepository ?? (await store.getRepository(repositoryId));
-    if (!repository) {
+    const scope = request.scope ?? "working-repo";
+    const repository =
+      scope === "companion"
+        ? undefined
+        : (localRepository ?? (await store.getRepository(repositoryId)));
+    if (scope === "working-repo" && !repository) {
       throw new RepositoryNotSelectedError(`Linked repository not found: ${repositoryId}`);
     }
 
@@ -180,6 +199,9 @@ export class FrameworkLauncher {
       companionPath,
       config,
       repository,
+      scope,
+      launchWorkingDirectory: scope === "companion" ? companionPath : repository!.path,
+      skipGit: request.skipGit ?? false,
     };
   }
 
@@ -210,8 +232,10 @@ export class FrameworkLauncher {
       repository: state.repository,
       allowedAgents: state.config.allowedAgents,
       companionPath: state.companionPath,
+      launchWorkingDirectory: state.launchWorkingDirectory,
       capabilities: state.config.capabilities ?? [],
       git: state.config.git,
+      skipGit: state.skipGit,
     };
   }
 
@@ -263,7 +287,7 @@ export class FrameworkLauncher {
     }
   }
 
-  private async resolveConfig(): Promise<LaunchContext> {
-    return resolveForLaunch(process.cwd());
+  private async resolveConfig(scope: LaunchScope = "working-repo"): Promise<LaunchContext> {
+    return resolveForLaunch(process.cwd(), undefined, scope);
   }
 }

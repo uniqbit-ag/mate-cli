@@ -86,9 +86,9 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -103,6 +103,8 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>
@@ -239,7 +241,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -275,7 +277,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -307,9 +309,9 @@ exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -324,6 +326,8 @@ exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -363,7 +367,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -456,7 +460,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -492,7 +496,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -511,9 +515,9 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -528,6 +532,8 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>
@@ -579,9 +585,9 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -596,6 +602,8 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -709,7 +717,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -831,9 +839,9 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -848,6 +856,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>
@@ -1009,7 +1019,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -1024,7 +1034,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -1053,9 +1063,9 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -1070,6 +1080,8 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -1109,7 +1121,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -1245,7 +1257,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -1260,7 +1272,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -1279,9 +1291,9 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -1296,6 +1308,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>
@@ -1341,9 +1355,9 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -1358,6 +1372,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -1489,7 +1505,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -1579,9 +1595,9 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -1596,6 +1612,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -1729,7 +1747,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1745,7 +1763,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
   },
@@ -1767,9 +1785,9 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -1784,6 +1802,8 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -1823,7 +1843,7 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -1893,7 +1913,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1909,7 +1929,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
   },
@@ -1929,9 +1949,9 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -1946,6 +1966,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -1977,9 +1999,9 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -1994,6 +2016,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -2105,7 +2129,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -2210,9 +2234,9 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -2227,6 +2251,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -2351,7 +2377,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -2369,7 +2395,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -2390,9 +2416,9 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -2407,6 +2433,8 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -2446,7 +2474,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -2539,7 +2567,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -2557,7 +2585,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -2576,9 +2604,9 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -2593,6 +2621,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -2622,9 +2652,9 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -2639,6 +2669,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -2751,7 +2783,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -2819,7 +2851,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-artifact-publish/SKILL.md": "6090c6a27d67",
+    "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
     "mate-create-report/SKILL.md": "4dda64fab7b7",
     "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
@@ -2828,7 +2860,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
-    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-interview-me/SKILL.md": "ad5d76230917",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-show-me/SKILL.md": "3ecf5d44eb45",
     "mate-simplify-code/SKILL.md": "5dd2abc9571b",
@@ -2857,9 +2889,9 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -2874,7 +2906,10 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
+    <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository. areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
     <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing only publishes an already-archived change: archiving is a precondition, and running publish on a still-active change is an error that names openspec archive as the missing step. Publish never archives and never applies delta specs itself, so archive first — by the archive workflow or an already-synced flow such as openspec-sync-specs — and then publish. Publish also refuses to run anywhere but the companion's default branch.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -3012,7 +3047,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -3024,7 +3059,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   },
   "opencodePlugins": {},
   "opencodeSkills": {
-    "mate-artifact-publish/SKILL.md": "6090c6a27d67",
+    "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
     "mate-create-report/SKILL.md": "4dda64fab7b7",
     "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
@@ -3033,7 +3068,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
-    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-interview-me/SKILL.md": "ad5d76230917",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-show-me/SKILL.md": "3ecf5d44eb45",
     "mate-simplify-code/SKILL.md": "5dd2abc9571b",
@@ -3045,7 +3080,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -3066,9 +3101,9 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -3083,7 +3118,10 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
+    <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository. areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
     <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing only publishes an already-archived change: archiving is a precondition, and running publish on a still-active change is an error that names openspec archive as the missing step. Publish never archives and never applies delta specs itself, so archive first — by the archive workflow or an already-synced flow such as openspec-sync-specs — and then publish. Publish also refuses to run anywhere but the companion's default branch.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -3123,7 +3161,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -3191,7 +3229,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "claudeSkills": {
-    "mate-artifact-publish/SKILL.md": "6090c6a27d67",
+    "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
     "mate-create-report/SKILL.md": "4dda64fab7b7",
     "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
@@ -3200,7 +3238,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
-    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-interview-me/SKILL.md": "ad5d76230917",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-show-me/SKILL.md": "3ecf5d44eb45",
     "mate-simplify-code/SKILL.md": "5dd2abc9571b",
@@ -3217,7 +3255,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -3229,7 +3267,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   },
   "opencodePlugins": {},
   "opencodeSkills": {
-    "mate-artifact-publish/SKILL.md": "6090c6a27d67",
+    "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
     "mate-create-report/SKILL.md": "4dda64fab7b7",
     "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
@@ -3238,7 +3276,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
-    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-interview-me/SKILL.md": "ad5d76230917",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-show-me/SKILL.md": "3ecf5d44eb45",
     "mate-simplify-code/SKILL.md": "5dd2abc9571b",
@@ -3250,7 +3288,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -3269,9 +3307,9 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -3286,7 +3324,10 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
+    <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository. areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
     <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing only publishes an already-archived change: archiving is a precondition, and running publish on a still-active change is an error that names openspec archive as the missing step. Publish never archives and never applies delta specs itself, so archive first — by the archive workflow or an already-synced flow such as openspec-sync-specs — and then publish. Publish also refuses to run anywhere but the companion's default branch.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -3316,9 +3357,9 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -3333,7 +3374,10 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
+    <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository. areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
     <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing only publishes an already-archived change: archiving is a precondition, and running publish on a still-active change is an error that names openspec archive as the missing step. Publish never archives and never applies delta specs itself, so archive first — by the archive workflow or an already-synced flow such as openspec-sync-specs — and then publish. Publish also refuses to run anywhere but the companion's default branch.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -3459,7 +3503,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -3641,7 +3685,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-artifact-publish/SKILL.md": "6090c6a27d67",
+    "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
     "mate-create-report/SKILL.md": "4dda64fab7b7",
     "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
@@ -3650,7 +3694,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
-    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-interview-me/SKILL.md": "ad5d76230917",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-show-me/SKILL.md": "3ecf5d44eb45",
     "mate-simplify-code/SKILL.md": "5dd2abc9571b",
@@ -3679,7 +3723,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       },
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -3712,7 +3756,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-artifact-publish/SKILL.md": "6090c6a27d67",
+    "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
     "mate-create-report/SKILL.md": "4dda64fab7b7",
     "mate-domain-modeling/SKILL.md": "22f1d92b65ce",
@@ -3721,7 +3765,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-grill-me/SKILL.md": "bbccd2654f71",
     "mate-grill-with-docs/SKILL.md": "d79278237d49",
     "mate-grilling/SKILL.md": "9fa3fb50cc73",
-    "mate-interview-me/SKILL.md": "a922defdf427",
+    "mate-interview-me/SKILL.md": "ad5d76230917",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-show-me/SKILL.md": "3ecf5d44eb45",
     "mate-simplify-code/SKILL.md": "5dd2abc9571b",
@@ -3735,7 +3779,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
   },
@@ -3755,9 +3799,9 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH"><root>/companion</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH"><wrapper-bin></path>
+      <path role="working-repository" env="MATE_REPO_PATH"><root>/working</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="<wrapper-bin>/openspec" />
@@ -3772,7 +3816,10 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
+    <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository. areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
     <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing only publishes an already-archived change: archiving is a precondition, and running publish on a still-active change is an error that names openspec archive as the missing step. Publish never archives and never applies delta specs itself, so archive first — by the archive workflow or an already-synced flow such as openspec-sync-specs — and then publish. Publish also refuses to run anywhere but the companion's default branch.</rule>
   </mandatory-rules>
 </companion-policy>
@@ -3826,9 +3873,9 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
   <overview>You are operating inside the mate companion repository.</overview>
   <context>
     <paths>
-      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
       <path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path>
       <path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path>
+      <path role="working-repository" env="MATE_REPO_PATH">$MATE_REPO_PATH</path>
     </paths>
     <cli-tools>
       <cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" />
@@ -3843,7 +3890,10 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
     <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
+    <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
+    <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository. areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
     <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing only publishes an already-archived change: archiving is a precondition, and running publish on a still-active change is an error that names openspec archive as the missing step. Publish never archives and never applies delta specs itself, so archive first — by the archive workflow or an already-synced flow such as openspec-sync-specs — and then publish. Publish also refuses to run anywhere but the companion's default branch.</rule>
   </mandatory-rules>
 </companion-policy>"
@@ -4000,7 +4050,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@0.15.5",
+          "@uniqbit/mate-opencode-plugin@<version>",
         ],
       },
       {
@@ -4076,7 +4126,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -4091,7 +4141,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -4138,7 +4188,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -4153,7 +4203,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -4201,7 +4251,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -4216,7 +4266,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -4263,7 +4313,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -4278,7 +4328,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }
@@ -4325,7 +4375,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
       "reserved": 15000,
     },
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
       "mate": "..",
@@ -4340,7 +4390,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
   "opencodeTui": {
     "$schema": "https://opencode.ai/tui.json",
     "plugin": [
-      "@uniqbit/mate-opencode-plugin@0.15.5",
+      "@uniqbit/mate-opencode-plugin@<version>",
     ],
   },
 }

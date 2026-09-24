@@ -19,6 +19,8 @@ import {
 } from "../context-services";
 import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "../plugin";
 import { surfaceRoot } from "../surface-target";
+import { resolvePreinstalledPluginReference } from "../../../lib/preinstalled-plugins";
+import { getCurrentVersion } from "../../../lib/update-checker";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
 import {
   getOpenCodePluginReferences,
@@ -268,7 +270,14 @@ async function syncOpenCodeRuntimeFiles(
   const dest = path.join(companionPath, ".opencode");
   await fs.mkdir(dest, { recursive: true });
 
-  const pluginReference = getOpenCodePluginPackageReference();
+  // Mate's own plugin binds to an installed copy the same way a Capability's
+  // does: the Runtime Surface writes the reference, so it is what changes it.
+  const pluginReference =
+    (await resolvePreinstalledPluginReference(
+      companionPath,
+      OPENCODE_PLUGIN_PACKAGE_NAME,
+      getCurrentVersion(),
+    )) ?? getOpenCodePluginPackageReference();
 
   await syncOpenCodeConfigFile(
     path.join(src, "opencode.json"),
@@ -439,6 +448,19 @@ export async function reconcileOpenCodeContributions(
 
   for (const input of inputs) {
     for (const pluginReference of input.contributions.pluginReferences ?? []) {
+      // The Runtime Surface owns the reference it writes, so it is also what
+      // binds one to an installed copy. Absent a copy, the published reference
+      // is written exactly as before.
+      const preinstalled = pluginReference.preinstalled;
+      const installedPath =
+        input.enabled && preinstalled
+          ? await resolvePreinstalledPluginReference(
+              ctx.companionPath,
+              preinstalled.packageName,
+              preinstalled.version,
+            )
+          : null;
+      const reference = installedPath ?? pluginReference.reference;
       const configFiles = pluginReference.configFiles ?? OPENCODE_CONTRIBUTION_CONFIG_FILES;
       for (const name of configFiles) {
         const configPath = path.join(root, ".opencode", name);
@@ -447,10 +469,7 @@ export async function reconcileOpenCodeContributions(
         const preserved = getOpenCodePluginReferences(config).filter(
           (entry) => !pluginReference.isManagedReference(entry),
         );
-        setOpenCodePluginReferences(
-          config,
-          input.enabled ? [...preserved, pluginReference.reference] : preserved,
-        );
+        setOpenCodePluginReferences(config, input.enabled ? [...preserved, reference] : preserved);
         await writeOpenCodeConfig(configPath, config);
       }
     }

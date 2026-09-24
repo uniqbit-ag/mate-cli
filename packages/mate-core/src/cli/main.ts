@@ -22,6 +22,7 @@ import { runUnwrapCommand } from "./commands/unwrap";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
 import { runInstallCommand } from "./commands/install";
+import { parseDirectLaunchArgs } from "./commands/launch/shared";
 import {
   inspectInstallPreflight,
   isRepairableInstallPreflight,
@@ -191,6 +192,14 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
         case "link":
           if (!(await gate({ notHubRoot: true }))) return;
           break;
+        // Registration names its target explicitly, so it needs no companion
+        // context and no root classification of the current directory.
+        case "register":
+        // Preparation names its bundle and its target explicitly, and runs
+        // before a companion is usable at all.
+        case "prepare":
+          if (!(await gate({ updateGuard: true }))) return;
+          break;
         // Hub commands establish and operate on a local hub root directly;
         // they must not require a linked working repository or installation —
         // but companions are never hubs.
@@ -215,21 +224,64 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runHubCommand(subcommand ? [subcommand, ...rest] : []);
       return;
     case "claude":
-      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
+      if (
+        !(await gate({
+          updateGuard: true,
+          companion:
+            parseDirectLaunchArgs(argv.slice(3)).scope === "companion"
+              ? { persistSelection: false }
+              : true,
+          install: true,
+        }))
+      )
+        return;
       await runLaunchClaudeCommand(argv.slice(3), { directPassthrough: true });
       return;
     case "opencode":
-      if (!(await gate({ updateGuard: true, companion: true, install: true }))) return;
+      if (
+        !(await gate({
+          updateGuard: true,
+          companion:
+            parseDirectLaunchArgs(argv.slice(3)).scope === "companion"
+              ? { persistSelection: false }
+              : true,
+          install: true,
+        }))
+      )
+        return;
       await runLaunchOpenCodeCommand(argv.slice(3), { directPassthrough: true });
       return;
+    case "launch": {
+      const launchArgs = argv.slice(4);
+      const companion = parseDirectLaunchArgs(launchArgs).scope === "companion";
+      if (subcommand !== "claude" && subcommand !== "opencode") {
+        console.error(`${FRAMEWORK_NAME}: expected launch claude or launch opencode.`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const launchCommand =
+        subcommand === "claude" ? runLaunchClaudeCommand : runLaunchOpenCodeCommand;
+      if (
+        !(await gate({
+          updateGuard: true,
+          companion: companion ? { persistSelection: false } : true,
+          install: true,
+        }))
+      )
+        return;
+
+      await launchCommand(launchArgs, { directPassthrough: true });
+      return;
+    }
     case "report":
       if (!(await gate({ updateGuard: true, install: true }))) return;
       await runReportCommand(argv.slice(3));
       return;
     case "studio":
       /**
-       * Serves the machine-wide inventory read-only, so it resolves no
-       * companion context and stays runnable from any directory.
+       * Serves the machine-wide inventory without companion context, so it
+       * stays runnable from any directory. Writes remain opt-in.
        */
       if (!(await gate({ updateGuard: true }))) return;
       await runStudioCommand(argv.slice(3));

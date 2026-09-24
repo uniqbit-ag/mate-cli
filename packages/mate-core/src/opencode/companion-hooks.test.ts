@@ -100,6 +100,25 @@ describe("OpenCode companion hooks plugin without a launch", () => {
 
     expect(plugin).toEqual({});
   });
+
+  test("keeps companion hooks active without a working repository", async () => {
+    const companion = await makeTempDir("mate-hooks-companion-only-");
+
+    const plugin = await withEnv(
+      {
+        MATE_ARTIFACT_PATH: companion,
+        MATE_REPO_PATH: undefined,
+        MATE_REPO_ID: undefined,
+        MATE_POLICY_JSON: "{}",
+        MATE_GIT_AUTO_MODE: "0",
+      },
+      () => CompanionHooksPlugin(),
+    );
+
+    expect(plugin["tool.execute.before"]).toBeFunction();
+    expect(plugin.event).toBeUndefined();
+    expect(plugin["tool.execute.after"]).toBeUndefined();
+  });
 });
 
 describe("OpenCode companion hooks plugin", () => {

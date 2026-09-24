@@ -4,7 +4,10 @@ import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-import { getContextModePackageReference } from "../../../lib/context-mode-package";
+import {
+  CONTEXT_MODE_VERSION,
+  getContextModePackageReference,
+} from "../../../lib/context-mode-package";
 import { applySetupCompatibilities } from "../../setup";
 import type { LaunchPreflightContext, SetupContext } from "../plugin";
 import { createClaudePlugin } from "../providers/claude";
@@ -12,6 +15,24 @@ import { createOpenCodePlugin, reconcileOpenCodeContributions } from "../provide
 import { CONTEXT_MODE_OPENCODE_GUIDANCE, createContextModePlugin } from "./context-mode";
 
 const tempRoots: string[] = [];
+
+/** The installed copy a prepared machine-local workspace holds, at a given version. */
+async function writePreinstalledCopy(companionPath: string, version: string): Promise<string> {
+  const root = path.join(
+    companionPath,
+    ".mate",
+    "plugins",
+    ".local",
+    "node_modules",
+    "context-mode",
+  );
+  await fs.mkdir(root, { recursive: true });
+  await fs.writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({ name: "context-mode", version }),
+  );
+  return root;
+}
 
 async function makeContext(): Promise<SetupContext> {
   const companionPath = await fs.mkdtemp(path.join(os.tmpdir(), "mate-context-mode-"));
@@ -153,6 +174,80 @@ describe("createContextModePlugin", () => {
     expect(
       diagnostics?.every((diagnostic) => diagnostic.includes(getContextModePackageReference())),
     ).toBe(true);
+  });
+
+  test("preflight accepts a reference bound to a matching preinstalled copy", async () => {
+    /** The bound form that caused the launch preflight regression. */
+    const ctx = await makeContext();
+    const installed = await writePreinstalledCopy(ctx.companionPath, CONTEXT_MODE_VERSION);
+    for (const name of ["opencode.json", "tui.json"]) {
+      await fs.writeFile(
+        path.join(ctx.companionPath, ".opencode", name),
+        JSON.stringify({ plugin: [installed] }),
+      );
+    }
+    const preflight = createContextModePlugin().forProvider?.opencode?.preflight;
+
+    await expect(
+      preflight?.({
+        companionPath: ctx.companionPath,
+        config: ctx.config,
+        repository: { id: "acme", path: "/tmp/acme" },
+        providerId: "opencode",
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  test("preflight reports a bound reference whose installed copy is the wrong version", async () => {
+    const ctx = await makeContext();
+    const installed = await writePreinstalledCopy(ctx.companionPath, "0.0.1");
+    for (const name of ["opencode.json", "tui.json"]) {
+      await fs.writeFile(
+        path.join(ctx.companionPath, ".opencode", name),
+        JSON.stringify({ plugin: [installed] }),
+      );
+    }
+    const preflight = createContextModePlugin().forProvider?.opencode?.preflight;
+
+    const diagnostics = await preflight?.({
+      companionPath: ctx.companionPath,
+      config: ctx.config,
+      repository: { id: "acme", path: "/tmp/acme" },
+      providerId: "opencode",
+    });
+
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics?.[0]).toContain("0.0.1");
+    expect(diagnostics?.[0]).toContain(CONTEXT_MODE_VERSION);
+  });
+
+  test("preflight reports a bound reference pointing at nothing installed", async () => {
+    const ctx = await makeContext();
+    const missing = path.join(
+      ctx.companionPath,
+      ".mate",
+      "plugins",
+      ".local",
+      "node_modules",
+      "context-mode",
+    );
+    for (const name of ["opencode.json", "tui.json"]) {
+      await fs.writeFile(
+        path.join(ctx.companionPath, ".opencode", name),
+        JSON.stringify({ plugin: [missing] }),
+      );
+    }
+    const preflight = createContextModePlugin().forProvider?.opencode?.preflight;
+
+    const diagnostics = await preflight?.({
+      companionPath: ctx.companionPath,
+      config: ctx.config,
+      repository: { id: "acme", path: "/tmp/acme" },
+      providerId: "opencode",
+    });
+
+    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics?.[0]).toContain("not installed");
   });
 
   test("teardown removes only references that Mate added", async () => {

@@ -91,7 +91,11 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
   }
 
   function copy(text, label) {
-    return navigator.clipboard.writeText(text).then(
+    if (typeof navigator === "undefined" || !navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+      announce("copying is blocked in this browser");
+      return Promise.resolve();
+    }
+    return Promise.resolve().then(function () { return navigator.clipboard.writeText(text); }).then(
       function () {
         announce("copied " + label);
       },
@@ -194,4 +198,140 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
       if (text) copy(text, node.getAttribute("data-copy-label") || "prompt");
     });
   });
+
+  var savePromise = null;
+  function editor() { return document.getElementById("vault-editor"); }
+  function status(message) {
+    var node = document.getElementById("vault-status");
+    if (node) node.textContent = message;
+  }
+  function dirty() {
+    var node = editor();
+    return !!node && node.value !== (node.getAttribute("data-vault-original") || "");
+  }
+  function setIncoming(event) {
+    var box = document.getElementById("vault-incoming");
+    var content = document.getElementById("vault-incoming-content");
+    var recover = document.getElementById("vault-recover");
+    if (!box || !content || !recover) return;
+    box.hidden = false;
+    content.textContent = event.content || "";
+    recover.setAttribute("data-vault-content", event.content || "");
+    recover.setAttribute("data-vault-token", event.token || "");
+  }
+  function acceptIncoming(event) {
+    var node = editor();
+    if (!node) return;
+    node.value = event.content || "";
+    node.setAttribute("data-vault-original", node.value);
+    if (event.token) node.setAttribute("data-vault-token", event.token);
+    var box = document.getElementById("vault-incoming");
+    if (box) box.hidden = true;
+    status("incoming version loaded into the editor");
+  }
+  function askBeforeNavigation() {
+    return !dirty() || window.confirm("Discard unsaved changes?");
+  }
+  function waitForSave() {
+    return savePromise ? savePromise.then(function (result) { return result; }) : Promise.resolve(true);
+  }
+  function navigate(url) {
+    waitForSave().then(function (allowed) {
+      if (allowed && askBeforeNavigation()) location.assign(url);
+    });
+  }
+  function navigationUrl(form, submitter) {
+    var target = new URL(form.action || location.href, location.href);
+    new FormData(form).forEach(function (value, key) {
+      if (typeof value === "string") target.searchParams.append(key, value);
+    });
+    if (submitter && submitter.name && submitter.value) target.searchParams.set(submitter.name, submitter.value);
+    return target.toString();
+  }
+  function wireNavigation() {
+    document.querySelectorAll('form[method="get"]').forEach(function (form) {
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        navigate(navigationUrl(form, event.submitter));
+      });
+      form.querySelectorAll("select").forEach(function (select) {
+        select.addEventListener("change", function () { navigate(navigationUrl(form)); });
+      });
+    });
+  }
+  function wireVault() {
+    var node = editor();
+    var root = document.querySelector("[data-vault-root]");
+    if (!node || !root) return;
+    node.setAttribute("data-vault-original", node.value);
+    var save = document.getElementById("vault-save");
+    if (save) save.addEventListener("click", function () {
+      if (savePromise) return;
+      var companion = document.querySelector("[data-companion]");
+      var body = {
+        companion: companion ? companion.getAttribute("data-companion") : "",
+        path: node.getAttribute("data-vault-path"),
+        content: node.value,
+        token: node.getAttribute("data-vault-token"),
+      };
+      savePromise = fetch("/api/vault/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }).then(function (response) {
+        return response.json().then(function (result) {
+          if (!response.ok) {
+            if (response.status === 409) setIncoming(result);
+            status(result.reason || "save refused");
+            return false;
+          }
+          node.setAttribute("data-vault-token", result.token || "");
+          node.setAttribute("data-vault-original", node.value);
+          status("saved");
+          return true;
+        });
+      }).catch(function () {
+        status("save failed");
+        return false;
+      }).finally(function () { savePromise = null; });
+    });
+    var recover = document.getElementById("vault-recover");
+    if (recover) recover.addEventListener("click", function () {
+      acceptIncoming({ content: recover.getAttribute("data-vault-content") || "", token: recover.getAttribute("data-vault-token") || "" });
+    });
+    var companion = document.querySelector("[data-companion]");
+    var path = node.getAttribute("data-vault-path");
+    if (companion && path && typeof EventSource !== "undefined") {
+      var events = new EventSource("/api/vault/events?companion=" + encodeURIComponent(companion.getAttribute("data-companion") || "") + "&path=" + encodeURIComponent(path));
+      events.onmessage = function (message) {
+        var event;
+        try { event = JSON.parse(message.data); } catch (error) { return; }
+        if (event.kind === "overwritten") {
+          setIncoming(event);
+          status("a version was overwritten; its content is available below");
+          return;
+        }
+        if (event.kind === "removed") {
+          status("this file no longer exists on disk");
+          return;
+        }
+        if (dirty()) {
+          setIncoming(event);
+          status("the file changed on disk; unsaved content is still in the editor");
+          return;
+        }
+        node.value = event.content || "";
+        node.setAttribute("data-vault-original", node.value);
+        if (event.token) node.setAttribute("data-vault-token", event.token);
+        status("updated from disk");
+      };
+    }
+  }
+  if (typeof window !== "undefined") window.addEventListener("beforeunload", function (event) {
+      if (!dirty()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
+  wireNavigation();
+  wireVault();
 })();`;

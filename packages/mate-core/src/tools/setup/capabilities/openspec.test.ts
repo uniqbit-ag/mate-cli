@@ -25,6 +25,16 @@ interface MinimalSchema {
 
 const tempRoots: string[] = [];
 
+function setUpdatePolicy(value: string | undefined): () => void {
+  const previous = process.env.MATE_UPDATE_POLICY;
+  if (value === undefined) delete process.env.MATE_UPDATE_POLICY;
+  else process.env.MATE_UPDATE_POLICY = value;
+  return () => {
+    if (previous === undefined) delete process.env.MATE_UPDATE_POLICY;
+    else process.env.MATE_UPDATE_POLICY = previous;
+  };
+}
+
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   tempRoots.push(dir);
@@ -134,6 +144,67 @@ describe("createOpenspecPlugin", () => {
     expect(runCommand).toHaveBeenCalledWith(
       "openspec",
       ["init", "--tools", "claude", "--force", "/tmp/companion"],
+      { cwd: "/tmp/companion" },
+    );
+  });
+
+  test("a pinned deployment neither checks a registry nor upgrades the tool", async () => {
+    /** Pinned image tools must not trigger a registry lookup or replacement. */
+    const restorePolicy = setUpdatePolicy("pinned");
+    const runCommand = mock(async () => {});
+    const installCommand = mock(async () => {});
+    const fetchLatestVersion = mock(async () => "1.6.0");
+    const getInstalledVersion = mock(async () => "1.2.0");
+    const plugin = createOpenspecPlugin({
+      runCommand,
+      installCommand,
+      confirm: mock(async () => true),
+      isCommandOnPath: (command) => command === "openspec",
+      getInstalledVersion,
+      fetchLatestVersion,
+    });
+
+    try {
+      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
+
+      expect(fetchLatestVersion).not.toHaveBeenCalled();
+      expect(installCommand).not.toHaveBeenCalled();
+      /** The capability still reconciles; only the upgrade is declined. */
+      expect(runCommand).toHaveBeenCalledWith(
+        "openspec",
+        ["init", "--tools", "claude", "--force", "/tmp/companion"],
+        { cwd: "/tmp/companion" },
+      );
+    } finally {
+      restorePolicy();
+    }
+  });
+
+  test("an unpinned deployment still checks and upgrades", async () => {
+    const restorePolicy = setUpdatePolicy(undefined);
+    const fetchLatestVersion = mock(async () => "1.6.0");
+    const installCommand = mock(async () => {});
+    const plugin = createOpenspecPlugin({
+      runCommand: mock(async () => {}),
+      installCommand,
+      confirm: mock(async () => true),
+      isCommandOnPath: (command) => command === "openspec",
+      getInstalledVersion: async () => "1.2.0",
+      fetchLatestVersion,
+    });
+
+    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
+    } finally {
+      stdoutSpy.mockRestore();
+      restorePolicy();
+    }
+
+    expect(fetchLatestVersion).toHaveBeenCalled();
+    expect(installCommand).toHaveBeenCalledWith(
+      "npm",
+      ["install", "-g", "@fission-ai/openspec@latest"],
       { cwd: "/tmp/companion" },
     );
   });

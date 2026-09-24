@@ -1,6 +1,7 @@
 import type { StudioInventory, StudioInventoryCompanion } from "../inventory";
 import type { StudioCompanionPayload } from "../payload";
 import type { StudioSelection } from "../selection";
+import type { VaultFile, VaultTreeNode } from "../vault";
 
 /**
  * Everything one rendered document is derived from. `payload` and `error` are
@@ -15,6 +16,18 @@ export interface StudioPage {
   payload: StudioCompanionPayload | null;
   error: { companionPath: string; reason: string } | null;
   collectedAt: number | null;
+  writable: boolean;
+  vault: StudioVaultPage | null;
+}
+
+export interface StudioVaultPage {
+  tree: VaultTreeNode[];
+  open: VaultFile | null;
+  refusal: string | null;
+  incoming: VaultFile | null;
+  overwritten: VaultFile | null;
+  watching: boolean;
+  warning: string | null;
 }
 
 /**

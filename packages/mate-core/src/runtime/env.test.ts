@@ -223,7 +223,7 @@ describe("readCompanionRuntimeContext file-backed composition", () => {
 });
 
 describe("isManagedCompanionContext", () => {
-  test("requires both companion and repository paths", () => {
+  test("requires a companion path but allows companion-scoped contexts", () => {
     const managed = readCompanionRuntimeContext({
       MATE_ARTIFACT_PATH: "/companions/acme",
       MATE_REPO_PATH: "/repos/acme",
@@ -236,7 +236,7 @@ describe("isManagedCompanionContext", () => {
     });
 
     expect(isManagedCompanionContext(managed)).toBe(true);
-    expect(isManagedCompanionContext(missingRepo)).toBe(false);
+    expect(isManagedCompanionContext(missingRepo)).toBe(true);
     expect(isManagedCompanionContext(missingCompanion)).toBe(false);
   });
 });

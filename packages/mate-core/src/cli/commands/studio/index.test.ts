@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { runStudioCommand, type StudioCommandDeps } from "./index";
+import { parseStudioServeArgs, runStudioCommand, type StudioCommandDeps } from "./index";
 import type { StudioServerHandle } from "./server";
 
 beforeEach(() => {
@@ -136,5 +136,108 @@ describe("runStudioCommand", () => {
 
     expect(recorded.err).toEqual([]);
     expect(recorded.served).toHaveLength(1);
+  });
+
+  test("accepts writable on the interactive invocation", async () => {
+    let options: unknown;
+    const recorded = recording({
+      startStudioServer: (_deps, next) => {
+        options = next;
+        return handle();
+      },
+    });
+    await runStudioCommand(["--writable"], recorded.deps);
+    expect(options).toEqual({ writable: true });
+    expect(recorded.err).toEqual([]);
+  });
+
+  test("parses and dispatches the headless serve path without opening a browser", async () => {
+    const recorded = recording({
+      startStudioServer: (_deps, options) => {
+        expect(options).toEqual({ port: 4180, hostname: "0.0.0.0", writable: false });
+        return { ...handle(), url: "http://0.0.0.0:4180", hostname: "0.0.0.0", port: 4180 };
+      },
+      openInBrowser: async () => {
+        throw new Error("browser must not open");
+      },
+    });
+
+    await runStudioCommand(["serve", "--port", "4180", "--host", "0.0.0.0"], recorded.deps);
+
+    expect(recorded.out).toEqual(["http://0.0.0.0:4180"]);
+    expect(recorded.out.join("\n")).not.toContain("Press Ctrl+C to stop.");
+    expect(recorded.opened).toEqual([]);
+    expect(recorded.served).toHaveLength(1);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("accepts writable on the headless invocation", async () => {
+    let options: unknown;
+    const recorded = recording({
+      startStudioServer: (_deps, next) => {
+        options = next;
+        return handle();
+      },
+    });
+    await runStudioCommand(["serve", "--port", "4180", "--writable"], recorded.deps);
+    expect(options).toEqual({ port: 4180, hostname: "127.0.0.1", writable: true });
+    expect(recorded.err).toEqual([]);
+  });
+
+  test.each([
+    { argv: ["--host", "0.0.0.0"], text: "port" },
+    { argv: ["--bogus", "x"], text: "--bogus" },
+    { argv: ["--port"], text: "--port" },
+    { argv: ["--port", "nope"], text: "nope" },
+    { argv: ["--port", "65536"], text: "65536" },
+  ])("rejects invalid serve arguments before binding: $argv", async ({ argv, text }) => {
+    let started = false;
+    const recorded = recording({
+      startStudioServer: () => {
+        started = true;
+        return handle();
+      },
+    });
+
+    await runStudioCommand(["serve", ...argv], recorded.deps);
+
+    expect(started).toBe(false);
+    expect(recorded.err.join("\n")).toContain(text);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("reports a serve bind failure without retrying another port", async () => {
+    let starts = 0;
+    const recorded = recording({
+      startStudioServer: () => {
+        starts += 1;
+        throw new Error("EADDRINUSE");
+      },
+    });
+
+    await runStudioCommand(["serve", "--port", "4180"], recorded.deps);
+
+    expect(starts).toBe(1);
+    expect(recorded.err.join("\n")).toContain("EADDRINUSE");
+    expect(recorded.served).toEqual([]);
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("parseStudioServeArgs", () => {
+  test("parses a port and optional host", () => {
+    expect(parseStudioServeArgs(["--port", "4180", "--host", "0.0.0.0"])).toEqual({
+      port: 4180,
+      hostname: "0.0.0.0",
+      writable: false,
+    });
+  });
+
+  test("defaults a host-only bind to loopback when a port is supplied", () => {
+    expect(parseStudioServeArgs(["--port", "4180"])).toEqual({
+      port: 4180,
+      hostname: "127.0.0.1",
+      writable: false,
+    });
   });
 });

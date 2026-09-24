@@ -35,7 +35,7 @@ export interface SetupContext {
 export interface LaunchPreflightContext {
   companionPath: string;
   config: FrameworkConfig;
-  repository: LinkedRepository;
+  repository?: LinkedRepository;
   providerId: string;
 }
 
@@ -164,6 +164,12 @@ export interface PluginReferenceContribution {
   isManagedReference(entry: unknown): boolean;
   /** Config files to reconcile, relative to the runtime dir. Defaults to both OpenCode configs. */
   configFiles?: string[];
+  /**
+   * The published package behind `reference`. Where the distribution supplies
+   * an installed copy of exactly this package, the owning Runtime Surface binds
+   * the contribution to those files instead of the published reference.
+   */
+  preinstalled?: { packageName: string; version: string };
 }
 
 /**

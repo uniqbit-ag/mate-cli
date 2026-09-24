@@ -22,7 +22,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 const GUIDANCE_JSON = JSON.stringify({
   version: 1,
   companionGuidance:
-    '<companion-policy framework="mate" priority="mandatory"><context><paths><path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path></paths><cli-tools><cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" /><cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" /><cli name="mate" type="global" invokeAs="mate" /></cli-tools></context><mandatory-rules><rule id="artifact-location" severity="critical">test</rule></mandatory-rules></companion-policy>',
+    '<companion-policy framework="mate" priority="mandatory"><context><paths><path role="companion-repository" env="MATE_ARTIFACT_PATH">$MATE_ARTIFACT_PATH</path><path role="package-wrapper-bin" env="MATE_WRAPPER_BIN_PATH">$MATE_WRAPPER_BIN_PATH</path></paths><cli-tools><cli name="openspec" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/openspec" /><cli name="graphify" type="wrapper" invokeAs="$MATE_WRAPPER_BIN_PATH/graphify" /><cli name="mate" type="global" invokeAs="mate" /></cli-tools></context><mandatory-rules><rule id="artifact-location" severity="critical">test</rule></mandatory-rules></companion-policy>',
   codebaseExplorationGuidance: "",
   errors: [],
 });
@@ -106,6 +106,52 @@ describe("OpenCode companion plugin", () => {
         expect(prompt.system[0]).toContain("/package/wrappers/bin/openspec");
         expect(prompt.system[0]).toContain("<cli-tools>");
         expect(prompt.system[0]).toContain('name="mate" type="global"');
+      },
+    );
+  });
+
+  test("activates for a companion-scoped context without a working repository", async () => {
+    const root = await makeTempDir("mate-opencode-companion-only-");
+    const companion = path.join(root, "companion");
+    await fs.mkdir(companion, { recursive: true });
+
+    await withEnv(
+      {
+        MATE_ARTIFACT_PATH: companion,
+        MATE_REPO_PATH: undefined,
+        MATE_REPO_ID: undefined,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+        MATE_POLICY_JSON: "{}",
+        MATE_GIT_AUTO_MODE: "0",
+        MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
+      },
+      async () => {
+        const plugin = await CompanionPlugin();
+        const toolDef = plugin.tool?.companion_paths as
+          | { execute?: () => Promise<{ output: string; metadata?: Record<string, string> }> }
+          | undefined;
+        const result = await toolDef?.execute?.();
+        const payload = JSON.parse(result?.output ?? "{}");
+        expect(payload.companionFrameworkPath).toBe(companion);
+        expect(payload.repositoryPath).toBeUndefined();
+        expect(payload.repositoryId).toBeUndefined();
+
+        const output = { env: {} as Record<string, string> };
+        await (plugin["shell.env"] as (input: unknown, output: typeof output) => Promise<void>)(
+          {},
+          output,
+        );
+        expect(output.env.MATE_ARTIFACT_PATH).toBe(companion);
+        expect(output.env.MATE_REPO_PATH).toBeUndefined();
+        expect(output.env.MATE_REPO_ID).toBeUndefined();
+
+        const transform = plugin["experimental.chat.system.transform"] as
+          | ((input: unknown, output: { system: string[] }) => Promise<void>)
+          | undefined;
+        const prompt = { system: ["base"] };
+        await transform?.({}, prompt);
+        expect(prompt.system[0]).toContain(companion);
+        expect(prompt.system[0]).not.toContain("MATE_REPO_PATH");
       },
     );
   });

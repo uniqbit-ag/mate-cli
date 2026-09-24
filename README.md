@@ -172,6 +172,18 @@ Launch from a linked working repository. Mate resolves the companion, applies
 the selected provider and capability configuration, refreshes enabled indexes,
 and then starts the agent. The active profile must allow the selected agent.
 
+To launch against the Companion Repository without a Working Repository, opt in
+after the separator:
+
+```sh
+mate opencode -- --companion
+```
+
+Companion-scoped launches run from the companion, synchronize its own runtime
+configuration and Git state, and skip Working-Repository projection, automatic
+indexing, and repository-only hooks. They carry no `MATE_REPO_PATH` or
+`MATE_REPO_ID` in the agent environment.
+
 Forward agent arguments after `--`:
 
 ```sh
@@ -188,6 +200,10 @@ mate opencode -- --no-git
 ```
 
 `--no-git` must appear after the argument separator.
+
+Mate asks for confirmation only when standard input is a TTY. Non-interactive
+launches proceed unattended. Use `-- --yes` to suppress the prompt in a TTY;
+both `--companion` and `--yes` are Mate control tokens only after the separator.
 
 ### Capabilities
 

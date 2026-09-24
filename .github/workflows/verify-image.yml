@@ -1,0 +1,97 @@
+name: Verify appliance image
+
+# The build and offline verification half of publish-image.yml, run against a
+# pull request's own head so an image change is proven on both architectures
+# before it reaches the default branch. Nothing is logged in to and nothing is
+# pushed: publishing stays with the dispatched workflow.
+#
+# It builds the Mate version image-inputs.yaml pins, which a release has
+# already published to npm, so the image under test installs exactly what the
+# next dispatch would.
+on:
+  pull_request:
+    paths:
+      - "apps/mate-container/**"
+      - ".github/workflows/verify-image.yml"
+      - ".github/workflows/publish-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-image-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and verify (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install the container app's own dependencies
+        working-directory: apps/mate-container
+        run: bun install --frozen-lockfile
+
+      - name: Read the pinned Mate version and assemble the build arguments
+        id: args
+        working-directory: apps/mate-container
+        run: |
+          set -euo pipefail
+          version="$(bun --eval '
+            import { readImageInputs } from "./src/image-inputs.ts";
+            console.log(readImageInputs().mate.version);
+          ')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          bun --eval '
+            import { buildArgs } from "./scripts/build.ts";
+            import { readImageInputs } from "./src/image-inputs.ts";
+            const args = buildArgs(readImageInputs(), process.argv[1]);
+            console.log(args.filter((_, index) => index % 2 === 1).join("\n"));
+          ' "$version" > /tmp/build-args.txt
+          {
+            echo "args<<EOF"
+            cat /tmp/build-args.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build for ${{ matrix.platform }}
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/mate-container
+          file: apps/mate-container/Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: ${{ steps.args.outputs.args }}
+          load: true
+          push: false
+          tags: mate-appliance:verify-${{ matrix.arch }}
+          provenance: false
+
+      - name: Verify the built image offline
+        env:
+          # Buildx loads into Docker; the runner's preinstalled Podman would be found first.
+          MATE_CONTAINER_RUNTIME: docker
+        run: |
+          set -euo pipefail
+          bun apps/mate-container/scripts/verify-image.ts \
+            --image mate-appliance:verify-${{ matrix.arch }} \
+            --mate-version ${{ steps.args.outputs.version }}

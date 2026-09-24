@@ -33,6 +33,7 @@ function makeContext(): AdapterContext {
       id: "repo",
       path: "/tmp/repo",
     },
+    launchWorkingDirectory: "/tmp/repo",
     allowedAgents: ["claude"],
     companionPath: "/tmp/companion",
     capabilities: [],
@@ -139,7 +140,7 @@ describe("LaunchAdapter runtime", () => {
 
     const result = await new TestAdapter().run(makeContext(), ["--flag"]);
 
-    expect(result).toEqual({ exitCode: 0, stdout: "hello world", stderr: "warn " });
+    expect(result).toEqual({ exitCode: 0, stdout: "hello world", stderr: "warn ", signal: null });
     expect(spawnCalls[0]).toMatchObject({
       command: "test-tool",
       args: ["wrapped", "--flag"],
@@ -166,8 +167,25 @@ describe("LaunchAdapter runtime", () => {
 
     const result = await new InteractiveAdapter().run(makeContext(), ["--chat"]);
 
-    expect(result).toEqual({ exitCode: 1, stdout: "", stderr: "" });
+    expect(result).toEqual({ exitCode: 1, stdout: "", stderr: "", signal: null });
     expect(spawnCalls[0]?.stdio).toBe("inherit");
+  });
+
+  test("uses the companion as cwd for a companion-scoped launch", async () => {
+    const spawnCalls: Array<Record<string, unknown>> = [];
+    spawnImpl = (_command, _args, options) => {
+      spawnCalls.push(options);
+      const child = new EventEmitter() as SpawnResult["child"];
+      queueMicrotask(() => child.emit("close", 0));
+      return child;
+    };
+
+    await new TestAdapter().run(
+      { ...makeContext(), repository: undefined, launchWorkingDirectory: "/tmp/companion" },
+      [],
+    );
+
+    expect(spawnCalls[0]?.cwd).toBe("/tmp/companion");
   });
 
   test("rejects when the spawned process emits an error", async () => {

@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate",
-  "version": "0.16.0",
+  "version": "0.17.0-canary.8",
   "license": "MIT",
   "bin": {
     "mate": "src/cli-bootstrap.cjs"
@@ -21,7 +21,7 @@
     "release": "release-it --config ../../.release-it.json && ../../publish.sh latest",
     "release:canary": "release-it --config ../../.release-it.canary.json --preRelease=canary && ../../publish.sh canary",
     "release:dry-run": "release-it --config ../../.release-it.json --dry-run --no-git.push",
-    "test": "CI=1 bun test",
+    "test": "CI=1 bun ../../test/run-isolated.ts",
     "test:ci": "bun scripts/generate-test-reports.ts --junit",
     "test:coverage": "bun scripts/generate-test-reports.ts",
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
@@ -32,8 +32,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@uniqbit/mate-core": "0.16.0",
-    "@uniqbit/mate-opencode-plugin": "0.16.0",
+    "@uniqbit/mate-core": "0.17.0-canary.8",
+    "@uniqbit/mate-opencode-plugin": "0.17.0-canary.8",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },

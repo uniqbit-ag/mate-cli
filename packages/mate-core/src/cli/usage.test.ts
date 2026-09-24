@@ -21,4 +21,5 @@ test("lists working cleanup", () => {
 
 test("lists studio", () => {
   expect(usage()).toContain("mate studio");
+  expect(usage()).toContain("mate studio serve --port <port> [--host <host>]");
 });

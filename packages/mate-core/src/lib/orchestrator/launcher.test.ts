@@ -46,6 +46,7 @@ function createLauncher(
   launcher.resolveConfig = async () =>
     ({
       companionPath: "/tmp/companion",
+      launchWorkingDirectory: "/tmp/repo",
       repositoryId: "repo",
       configStore: {
         load: async () => ({
@@ -233,6 +234,45 @@ describe("FrameworkLauncher", () => {
     }
 
     expect(adapter.run).toHaveBeenCalledTimes(1);
+  });
+
+  test("companion scope skips repository work but keeps companion preflight", async () => {
+    const adapter = new TestAdapter();
+    const capabilityPreflight = mock(async () => []);
+    const { launcher } = createLauncher(adapter, [], "auto", [
+      makeCapability("companion-capability", { preflight: capabilityPreflight }),
+    ]);
+    const syncCompanionGit = mock(async () => {});
+    const syncCompanionFiles = mock(async () => {});
+    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
+    launcherDeps.syncCompanionGit = syncCompanionGit;
+    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+
+    try {
+      await launcher.prepare(makeRequest({ scope: "companion" }));
+    } finally {
+      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
+      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+    }
+
+    expect(isWrapped).not.toHaveBeenCalled();
+    expect(syncCompanionGit).toHaveBeenCalledWith("/tmp/companion", undefined, false);
+    expect(syncCompanionFiles).toHaveBeenCalledWith(
+      "/tmp/companion",
+      expect.objectContaining({ allowedAgents: ["claude"] }),
+    );
+    expect(refreshProjectionRoot).not.toHaveBeenCalled();
+    expect(capabilityPreflight).toHaveBeenCalledWith(
+      expect.objectContaining({ companionPath: "/tmp/companion", repository: undefined }),
+    );
+    expect(adapter.validateLaunch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companionPath: "/tmp/companion",
+        launchWorkingDirectory: "/tmp/companion",
+        repository: undefined,
+      }),
+    );
   });
 
   /**
