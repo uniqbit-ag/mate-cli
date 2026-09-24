@@ -164,8 +164,9 @@ image simply lacks. Context7's server is installed, not fetched; its lookups
 still reach Context7 over the network.
 
 The session's launch registers the agents' MCP servers from the Mate the image
-contains, so a companion set up with an older Mate — one that fetched Context7
-through `npx` — is served the installed server without being set up again.
+contains, and the image sets `MATE_CONTEXT7_MODE=preinstalled`, so a companion
+whose committed entry fetches Context7 through `npx` — as workstation setup
+writes it — is served the installed server without being set up again.
 
 Where a mounted companion declares something this image does not carry, startup
 says which requirement that is and exits non-zero, rather than letting the

@@ -159,6 +159,10 @@ describe("the recipe itself", () => {
     expect(dockerfile).toContain("MATE_UPDATE_POLICY=pinned mate --version");
   });
 
+  test("registers the installed Context7 server rather than npx", () => {
+    expect(dockerfile).toMatch(/^\s+MATE_CONTEXT7_MODE=preinstalled \\$/m);
+  });
+
   test("runs as the unprivileged identity the inputs name", () => {
     expect(dockerfile).toContain("USER mate");
     expect(dockerfile).toContain(`ARG MATE_UID=${inputs.runtime.uid}`);

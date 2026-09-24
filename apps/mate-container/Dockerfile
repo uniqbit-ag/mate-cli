@@ -324,6 +324,7 @@ ENV MATE_VERSION=${MATE_VERSION} \
     MATE_PREBUILT_WORKSPACE=/opt/mate/prebuilt \
     MATE_COMPANIONS_DIR=/companions \
     MATE_UPDATE_POLICY=pinned \
+    MATE_CONTEXT7_MODE=preinstalled \
     HOME=/home/mate
 
 USER mate

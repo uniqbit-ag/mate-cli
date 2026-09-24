@@ -118,16 +118,16 @@ export function makeFreshCompanion(root: string): string {
   );
   fs.mkdirSync(path.join(companion, "docs"), { recursive: true });
   fs.writeFileSync(path.join(companion, "docs", "README.md"), "# Acme\n");
-  // The entries `mate companion setup` commits for Context7, so the offline run
-  // spawns the server exactly as a session would.
+  // The npx entries workstation setup commits for Context7; the session's launch
+  // must re-register them as the installed server for the offline run to answer.
   fs.mkdirSync(path.join(companion, ".opencode"), { recursive: true });
   fs.writeFileSync(
     path.join(companion, ".opencode", "opencode.json"),
-    `${JSON.stringify({ mcp: { context7: { type: "local", command: ["context7-mcp"], enabled: true } } }, null, 2)}\n`,
+    `${JSON.stringify({ mcp: { context7: { type: "local", command: ["npx", "-y", "@upstash/context7-mcp"], enabled: true } } }, null, 2)}\n`,
   );
   fs.writeFileSync(
     path.join(companion, ".mcp.json"),
-    `${JSON.stringify({ mcpServers: { context7: { command: "context7-mcp", args: [] } } }, null, 2)}\n`,
+    `${JSON.stringify({ mcpServers: { context7: { command: "npx", args: ["-y", "@upstash/context7-mcp"] } } }, null, 2)}\n`,
   );
   // A freshly cloned companion has no machine-local workspace; that absence is
   // the point of the preparation the container performs.
@@ -515,15 +515,16 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       detail: configUnchanged ? "unchanged" : servedConfig.slice(0, 500),
     });
 
-    // The companion's committed MCP entry has to resolve to an installed server:
-    // spawned the way the session spawns it, offline, it must answer.
+    // The launch re-registers the companion's MCP entry from the image's Mate; that
+    // entry has to resolve to the installed server: spawned the way the session
+    // spawns it, offline, it must answer.
     const mcp = spawnSync(
       runtime,
       ["exec", name, "node", "-e", MCP_ANSWERS, "/companions/acme/.opencode/opencode.json"],
       { encoding: "utf8", timeout: 60_000 },
     );
     checks.push({
-      name: "the committed Context7 MCP entry starts offline and answers",
+      name: "the launch-registered Context7 MCP entry starts offline and answers",
       ok: mcp.status === 0 && mcp.stdout.includes('"serverInfo"'),
       detail: [
         `status ${mcp.status ?? "none"}${mcp.error ? `, ${mcp.error.message}` : ""}`,
