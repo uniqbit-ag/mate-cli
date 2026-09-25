@@ -12,7 +12,13 @@ import { Specs } from "./specs/index";
 import { STUDIO_STYLES } from "./styles";
 import { Skills } from "./skills/index";
 import { Workflow } from "./workflow/index";
-import { STUDIO_TERMINAL_SCRIPT, TerminalPanel } from "./terminal";
+import {
+  STUDIO_TERMINAL_PREPAINT_SCRIPT,
+  STUDIO_TERMINAL_SCRIPT,
+  STUDIO_TERMINAL_SIDEBAR_SCRIPT,
+  TerminalDrawerButton,
+  TerminalSidebar,
+} from "./terminal";
 import { TERMINAL_SCRIPTS, TERMINAL_STYLESHEET } from "../terminal-assets";
 
 const STUDIO_TITLE = "Mate Studio";
@@ -50,10 +56,10 @@ const VIEW_DETAILS = {
 export function renderStudioDocument(page: StudioPage): string {
   /** The terminal client is Studio's only library, served by Studio itself and only with the terminal. */
   const terminalHead = page.terminal
-    ? `\n<link rel="stylesheet" href="${TERMINAL_STYLESHEET}">`
+    ? `\n<link rel="stylesheet" href="${TERMINAL_STYLESHEET}">\n<script>${STUDIO_TERMINAL_PREPAINT_SCRIPT}</script>`
     : "";
   const terminalBody = page.terminal
-    ? `${TERMINAL_SCRIPTS.map((src) => `\n<script src="${src}"></script>`).join("")}\n<script>${STUDIO_TERMINAL_SCRIPT}</script>`
+    ? `${TERMINAL_SCRIPTS.map((src) => `\n<script src="${src}"></script>`).join("")}\n<script>${STUDIO_TERMINAL_SIDEBAR_SCRIPT}</script>\n<script>${STUDIO_TERMINAL_SCRIPT}</script>`
     : "";
   return `<!doctype html>
 <html lang="en">
@@ -81,14 +87,16 @@ function StudioShell({ page }: { page: StudioPage }) {
       <div
         className="shell"
         data-companion={page.companion ? companionDigest(page.companion.path) : undefined}
+        data-terminal={page.terminal ? "" : undefined}
       >
         <Sidebar page={page} />
         <main className="main">
           {page.companion ? <PageHeader page={page} /> : null}
           <Content page={page} />
-          {page.terminal ? <TerminalPanel terminal={page.terminal} /> : null}
         </main>
+        {page.terminal ? <TerminalSidebar terminal={page.terminal} /> : null}
       </div>
+      {page.terminal ? <TerminalDrawerButton /> : null}
       <div className="toast" id="studio-toast" data-shown="false" />
     </>
   );

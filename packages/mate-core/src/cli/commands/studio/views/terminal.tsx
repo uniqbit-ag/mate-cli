@@ -11,18 +11,74 @@ const AGENT_LABELS: Record<TerminalAgent, string> = {
   opencode: "OpenCode",
 };
 
-export function TerminalPanel({ terminal }: { terminal: StudioTerminalPage }) {
+export const TERMINAL_WIDTH_KEY = "mate-studio-terminal-width";
+export const TERMINAL_COLLAPSED_KEY = "mate-studio-terminal-collapsed";
+const TERMINAL_MIN_WIDTH = 360;
+const TERMINAL_MAX_WIDTH_RATIO = 0.7;
+
+/** Shared by the prepaint and sidebar scripts so both clamp alike. */
+const CLAMP_WIDTH_SOURCE = `function clampWidth(px) {
+    return Math.round(Math.max(${TERMINAL_MIN_WIDTH}, Math.min(px, window.innerWidth * ${TERMINAL_MAX_WIDTH_RATIO})));
+  }`;
+
+/**
+ * A direct grid child of `.shell`: sticky positioning breaks under an ancestor
+ * that sets `overflow`, and `.main` is not guaranteed to stay free of one.
+ */
+export function TerminalSidebar({ terminal }: { terminal: StudioTerminalPage }) {
   const target = terminal.target;
   return (
-    <section
-      className="panel terminal-panel"
+    <aside
+      className="terminal-sidebar"
       id="studio-terminal-panel"
       aria-label="Agent terminal"
       data-terminal-companion={target?.digest}
+      data-terminal-state="reconnecting"
     >
-      <header className="terminal-head">
-        <div>
-          <h2>Agent terminal</h2>
+      <div
+        className="terminal-resize"
+        id="terminal-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize the terminal"
+      />
+      <div className="terminal-strip">
+        <button
+          type="button"
+          className="terminal-icon-button"
+          id="terminal-expand"
+          aria-controls="terminal-body"
+          aria-expanded="false"
+          aria-label="Expand the terminal"
+        >
+          ‹
+        </button>
+        <span className="terminal-dot" aria-hidden="true" />
+      </div>
+      <div className="terminal-body" id="terminal-body">
+        <header className="terminal-head">
+          <div className="terminal-title">
+            <span className="terminal-dot" aria-hidden="true" />
+            <h2>Agent terminal</h2>
+            <button
+              type="button"
+              className="terminal-icon-button"
+              id="terminal-collapse"
+              aria-controls="terminal-body"
+              aria-expanded="true"
+              aria-label="Collapse the terminal"
+            >
+              ›
+            </button>
+            <button
+              type="button"
+              className="terminal-icon-button"
+              id="terminal-drawer-close"
+              aria-label="Close the terminal"
+            >
+              ×
+            </button>
+          </div>
           <p className="terminal-target">
             {target ? (
               <>
@@ -33,31 +89,141 @@ export function TerminalPanel({ terminal }: { terminal: StudioTerminalPage }) {
               "Select a registered companion to launch an agent."
             )}
           </p>
-        </div>
-        <div className="terminal-actions">
-          {target && terminal.agents.length > 0 ? (
-            terminal.agents.map((agent) => (
-              <button type="button" className="button" data-terminal-start={agent}>
-                Start {AGENT_LABELS[agent]}
-              </button>
-            ))
-          ) : target ? (
-            <span className="empty">No agent this companion allows is installed.</span>
-          ) : null}
-          <button type="button" className="button" id="terminal-reconnect" hidden>
-            Reconnect
-          </button>
-        </div>
-      </header>
-      <p className="terminal-status" id="terminal-status" role="status">
-        Connecting…
-      </p>
-      <div className="terminal-view" id="studio-terminal" />
-      <h3 className="terminal-sessions-title">Sessions</h3>
-      <ul className="terminal-sessions" id="terminal-sessions" />
-    </section>
+          <div className="terminal-actions">
+            {target && terminal.agents.length > 0 ? (
+              terminal.agents.map((agent) => (
+                <button key={agent} type="button" className="button" data-terminal-start={agent}>
+                  Start {AGENT_LABELS[agent]}
+                </button>
+              ))
+            ) : target ? (
+              <span className="empty">No agent this companion allows is installed.</span>
+            ) : null}
+            <button type="button" className="button" id="terminal-reconnect" hidden>
+              Reconnect
+            </button>
+          </div>
+          <p className="terminal-status" id="terminal-status" role="status">
+            Connecting…
+          </p>
+        </header>
+        <div className="terminal-view" id="studio-terminal" />
+        <footer className="terminal-sessions-footer">
+          <h3 className="terminal-sessions-title">Sessions</h3>
+          <ul className="terminal-sessions" id="terminal-sessions" />
+        </footer>
+      </div>
+    </aside>
   );
 }
+
+/** Outside `.shell`, so it never takes a grid cell; shown only below the side-by-side breakpoint. */
+export function TerminalDrawerButton() {
+  return (
+    <button
+      type="button"
+      className="terminal-drawer-open"
+      id="terminal-drawer-open"
+      aria-controls="studio-terminal-panel"
+      aria-expanded="false"
+    >
+      Terminal
+    </button>
+  );
+}
+
+/**
+ * Runs in `<head>` with the terminal only, so a navigation paints the
+ * remembered width and collapsed state instead of the defaults first.
+ */
+export const STUDIO_TERMINAL_PREPAINT_SCRIPT = `(function () {
+  ${CLAMP_WIDTH_SOURCE}
+  try {
+    var width = parseInt(localStorage.getItem(${JSON.stringify(TERMINAL_WIDTH_KEY)}) || "", 10);
+    if (width > 0) document.documentElement.style.setProperty("--terminal-width", clampWidth(width) + "px");
+    if (localStorage.getItem(${JSON.stringify(TERMINAL_COLLAPSED_KEY)}) === "true") {
+      document.documentElement.setAttribute("data-terminal-collapsed", "");
+    }
+  } catch (error) {
+    /* a blocked web store only costs the preference, never the page */
+  }
+})();`;
+
+/**
+ * The sidebar chrome: collapse, drag-to-resize, and the narrow-window drawer.
+ * It never touches xterm.js or the socket; the terminal script refits from
+ * its own observer whenever this changes the terminal's size.
+ */
+export const STUDIO_TERMINAL_SIDEBAR_SCRIPT = `(function () {
+  var root = document.documentElement;
+  var panel = document.getElementById("studio-terminal-panel");
+  if (!panel) return;
+  var collapseButton = document.getElementById("terminal-collapse");
+  var expandButton = document.getElementById("terminal-expand");
+  var handle = document.getElementById("terminal-resize");
+  var opener = document.getElementById("terminal-drawer-open");
+  var closer = document.getElementById("terminal-drawer-close");
+  ${CLAMP_WIDTH_SOURCE}
+  function save(key, value) {
+    try { localStorage.setItem(key, value); } catch (error) { /* only the preference is lost */ }
+  }
+
+  function updateCollapseControls(collapsed) {
+    if (collapseButton) collapseButton.setAttribute("aria-expanded", String(!collapsed));
+    if (expandButton) expandButton.setAttribute("aria-expanded", String(!collapsed));
+  }
+  function setCollapsed(collapsed) {
+    if (collapsed) root.setAttribute("data-terminal-collapsed", "");
+    else root.removeAttribute("data-terminal-collapsed");
+    updateCollapseControls(collapsed);
+    save(${JSON.stringify(TERMINAL_COLLAPSED_KEY)}, String(collapsed));
+  }
+  updateCollapseControls(root.hasAttribute("data-terminal-collapsed"));
+  if (collapseButton) collapseButton.addEventListener("click", function () { setCollapsed(true); });
+  if (expandButton) expandButton.addEventListener("click", function () { setCollapsed(false); });
+
+  if (handle) {
+    var dragging = false;
+    var width = 0;
+    handle.addEventListener("pointerdown", function (event) {
+      dragging = true;
+      handle.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    handle.addEventListener("pointermove", function (event) {
+      if (!dragging) return;
+      width = clampWidth(window.innerWidth - event.clientX);
+      root.style.setProperty("--terminal-width", width + "px");
+    });
+    var stop = function (event) {
+      if (!dragging) return;
+      dragging = false;
+      if (handle.hasPointerCapture && handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      if (width > 0) save(${JSON.stringify(TERMINAL_WIDTH_KEY)}, String(width));
+    };
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+  }
+
+  function setDrawer(open) {
+    if (open) panel.setAttribute("data-drawer-open", "");
+    else panel.removeAttribute("data-drawer-open");
+    if (opener) opener.setAttribute("aria-expanded", String(open));
+  }
+  if (opener) opener.addEventListener("click", function () {
+    setDrawer(true);
+    if (closer) closer.focus();
+  });
+  if (closer) closer.addEventListener("click", function () {
+    setDrawer(false);
+    if (opener) opener.focus();
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape" || !panel.hasAttribute("data-drawer-open")) return;
+    setDrawer(false);
+    if (opener) opener.focus();
+  });
+})();`;
 
 /**
  * Drives the xterm.js view over the terminal WebSocket. The tab id lives in
@@ -97,8 +263,22 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
   term.unicode.activeVersion = "11";
   term.loadAddon(new WebLinksAddon.WebLinksAddon());
   term.loadAddon(new ClipboardAddon.ClipboardAddon());
-  term.open(mount);
-  fit.fit();
+  var opened = false;
+  var frame = 0;
+  /**
+   * xterm.js measures its cells on open, so a sidebar collapsed at load opens
+   * it only once the area is visible. A zero size never fits: it would send a
+   * resize the server rejects.
+   */
+  function fitNow() {
+    frame = 0;
+    if (!mount.clientWidth || !mount.clientHeight) return;
+    if (!opened) { term.open(mount); opened = true; }
+    fit.fit();
+  }
+  function scheduleFit() { if (!frame) frame = requestAnimationFrame(fitNow); }
+  new ResizeObserver(scheduleFit).observe(mount);
+  fitNow();
 
   var ws = null;
   var attempts = 0;
@@ -106,6 +286,7 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
   var pending = null;
 
   function status(text) { if (statusNode) statusNode.textContent = text; }
+  function state(name) { panel.setAttribute("data-terminal-state", name); }
   function currentSession() { return load(${JSON.stringify(TERMINAL_SESSION_KEY)}); }
   function size() { return { cols: term.cols, rows: term.rows }; }
   function send(message) {
@@ -125,6 +306,7 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
     ws.binaryType = "arraybuffer";
     ws.onopen = function () {
       attempts = 0;
+      state("connected");
       status("Connected.");
       if (pending) { ws.send(JSON.stringify(pending)); pending = null; }
       else if (currentSession()) attach(currentSession());
@@ -136,22 +318,28 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
       if (message.type === "ready") {
         store(${JSON.stringify(TERMINAL_SESSION_KEY)}, message.sessionId);
         term.reset();
+        state("connected");
         status("Connected to " + message.agent + " in " + message.companionPath + ".");
         term.focus();
       } else if (message.type === "exit") {
         store(${JSON.stringify(TERMINAL_SESSION_KEY)}, null);
+        state("detached");
         status("The agent exited with status " + message.status + ".");
       } else if (message.type === "ended") {
         store(${JSON.stringify(TERMINAL_SESSION_KEY)}, null);
+        state("detached");
         status("The session ended" + (message.reason ? ": " + message.reason : "") + ".");
       } else if (message.type === "detached") {
+        state("detached");
         status("Detached (" + message.reason + "); the agent keeps running.");
       } else if (message.type === "takenOver") {
         takenOver = true;
+        state("detached");
         status("Another tab took over this session.");
         if (reconnectButton) reconnectButton.hidden = false;
       } else if (message.type === "gone") {
         store(${JSON.stringify(TERMINAL_SESSION_KEY)}, null);
+        state("detached");
         status("That session no longer exists.");
       } else if (message.type === "error") {
         status(message.reason);
@@ -162,20 +350,26 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
       ws = null;
       if (takenOver) return;
       if (attempts >= MAX_ATTEMPTS) {
+        state("detached");
         status("Disconnected.");
         if (reconnectButton) reconnectButton.hidden = false;
         return;
       }
       var delay = FIRST_DELAY * Math.pow(2, attempts);
       attempts += 1;
+      state("reconnecting");
       status("Reconnecting (attempt " + attempts + " of " + MAX_ATTEMPTS + ")…");
       setTimeout(connect, delay);
     };
   }
 
   term.onData(function (data) { send({ type: "input", data: data }); });
-  term.onResize(function (next) { send({ type: "resize", cols: next.cols, rows: next.rows }); });
-  window.addEventListener("resize", function () { fit.fit(); });
+  var sent = { cols: term.cols, rows: term.rows };
+  term.onResize(function (next) {
+    if (next.cols === sent.cols && next.rows === sent.rows) return;
+    sent = { cols: next.cols, rows: next.rows };
+    send({ type: "resize", cols: next.cols, rows: next.rows });
+  });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-terminal-start]"), function (button) {
     button.addEventListener("click", function () {

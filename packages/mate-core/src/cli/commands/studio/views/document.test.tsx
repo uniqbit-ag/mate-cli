@@ -313,6 +313,47 @@ describe("terminal view", () => {
     const markup = renderStudioDocument(selected);
     expect(markup).not.toContain("/studio/terminal/");
     expect(markup).not.toContain("studio-terminal-panel");
+    const body = markup.slice(markup.indexOf("<body>"));
+    expect(body).not.toContain("data-terminal");
+    expect(body).not.toContain("terminal-sidebar");
+    expect(body).not.toContain("terminal-drawer-open");
+    expect(markup).not.toContain("mate-studio-terminal-width");
+  });
+
+  it("docks the sidebar as the shell's child after the main view", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    expect(markup).toMatch(/<div class="shell"[^>]* data-terminal=""/);
+    const mainEnd = markup.indexOf("</main>");
+    const sidebar = markup.indexOf('<aside class="terminal-sidebar"');
+    const shellEnd = markup.indexOf('<div class="toast"');
+    expect(mainEnd).toBeGreaterThan(0);
+    expect(sidebar).toBeGreaterThan(mainEnd);
+    expect(sidebar).toBeLessThan(shellEnd);
+    expect(markup.indexOf('id="terminal-drawer-open"')).toBeGreaterThan(
+      markup.indexOf("</aside>", sidebar),
+    );
+  });
+
+  it("offers collapse, expand, resize, and drawer controls", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    for (const id of [
+      "terminal-collapse",
+      "terminal-expand",
+      "terminal-resize",
+      "terminal-drawer-open",
+      "terminal-drawer-close",
+    ]) {
+      expect(markup).toContain(`id="${id}"`);
+    }
+    expect(markup).toContain('aria-label="Collapse the terminal"');
+    expect(markup).toContain('class="terminal-dot"');
+  });
+
+  it("restores the sidebar preference in the head, before first paint", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    const head = markup.slice(0, markup.indexOf("</head>"));
+    expect(head).toContain("mate-studio-terminal-width");
+    expect(head).toContain("mate-studio-terminal-collapsed");
   });
 
   it("loads only Studio-served client files with the terminal", () => {

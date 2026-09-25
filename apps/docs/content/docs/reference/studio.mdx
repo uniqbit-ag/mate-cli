@@ -126,6 +126,18 @@ Linux, and Bun 1.3.5 or later (which provides a native pseudo-terminal); on
 anything else Studio refuses to start with `--terminal` and names what is
 missing.
 
+- **Where it sits.** The terminal is a sidebar docked on the right edge of the
+  window, as tall as the window, and stays in view while the main view scrolls.
+  Collapse it to a narrow strip, which keeps a connection-status dot, and
+  expand it again; drag its left edge to change the width, between 360 pixels
+  and 70% of the window. Neither ends, detaches, or restarts the session, and
+  the terminal refits to its visible area. The browser remembers the width and
+  the collapsed state (a blocked browser store falls back to the defaults);
+  nothing is written to a companion or to Mate state. Below 1200 pixels wide,
+  the sidebar becomes a drawer that the **Terminal** button opens over the
+  page from the right, and the close control or `Escape` dismisses; a new page
+  always starts with the drawer closed. Without `--terminal` the layout is
+  unchanged.
 - **What it launches.** The control offers only agents the companion allows and
   that are installed, and names the companion a new session targets. The
   launch is companion-scoped (`-- --companion --yes`), runs in the companion's
@@ -145,7 +157,7 @@ missing.
   after the detach window: `--detach-timeout <minutes>`, 30 minutes under
   `serve` and 2 minutes interactively. Output produced meanwhile — the newest
   1 MiB — is replayed on attach, and the agent is nudged to redraw.
-- **Sessions.** The panel lists live sessions with agent, companion, state, and
+- **Sessions.** The sidebar lists live sessions with agent, companion, state, and
   age, and can attach to or end any of them.
 - **Bounds.** At most four sessions per server, detached ones included; a new
   start at the cap ends the longest-detached one, or is refused if all are
