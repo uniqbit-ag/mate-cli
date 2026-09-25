@@ -249,6 +249,41 @@ To change versions, run a different image. Recreate the container too: an
 existing one keeps the image it was created from, even after the tag has moved
 (`docker compose up --force-recreate`).
 
+## Where an image comes from
+
+Every stable and canary release requests its own image. Once all of its npm
+packages are published, the release script dispatches the `publish-image.yml`
+workflow with three inputs, and the image is built on its own; a release is
+complete whether or not that build succeeds.
+
+The same dispatch, run by hand, is the retry. It republishes nothing to npm and
+does not rerun the release:
+
+```sh
+gh workflow run publish-image.yml --repo uniqbit-ag/mate-cli \
+  --field version=0.17.0-canary.9 --field channel=canary --field ref=0.17.0-canary.9
+```
+
+- **`version`** is the exact published version the image installs.
+- **`channel`** is `latest` for a stable release and `canary` for a canary; it
+  names the moving tag the image is added to.
+- **`ref`** is the release tag, which is the bare version, without a `v`.
+
+The workflow builds from that tag's checkout — its recipe, its locks, and its
+verification — not from the default branch. An image therefore contains what
+its release contained: a fix merged after a release reaches an image only with
+the next release.
+
+Before building, the workflow checks that every package the image installs is
+on the registry. npm makes each package of a release visible on its own, so a
+package may not appear as soon as publication finishes. The workflow waits up
+to ten minutes, checking only packages still missing, and continues by itself
+when they appear. A manual re-run is only needed if a package is still missing
+after that wait.
+
+Each architecture is verified offline before anything is pushed. If either one
+fails, no exact-version image is published and the channel tag does not move.
+
 ## Saving, and the conflict you will meet
 
 The agent and the human write the same files, in the same companion, at the
