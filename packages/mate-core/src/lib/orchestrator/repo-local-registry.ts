@@ -24,7 +24,6 @@ export { pathIsDirectory } from "../fs-utils";
 export {
   RepoLocalRegistryStore,
   upsertRepoLocalCompanionPointer,
-  upsertRepoLocalLinkedRepository,
   writeRepoLocalFrameworkConfig,
   type RepoLocalCompanionPointer,
   type RepoLocalRegistry,

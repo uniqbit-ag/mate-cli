@@ -110,7 +110,7 @@ export async function unproject(input: ProjectionRemovalInput): Promise<Projecti
 }
 
 /** Removes entries that wrap owns but an unwrap must withdraw independently. */
-export async function removeWorkingRepositoryUnwrapEntries(
+async function removeWorkingRepositoryUnwrapEntries(
   repoPath: string,
 ): Promise<ProjectionEntryOutcome[]> {
   const entries = projectionEntries().filter(

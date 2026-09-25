@@ -5,7 +5,7 @@ import { migrateRegistryData } from "./migration";
 import { YamlFileStore } from "./yaml-file-store";
 import { ConfigError, type CompanionRegistryConfig } from "./types";
 
-export function getDefaultCompanionRegistryPath(): string {
+function getDefaultCompanionRegistryPath(): string {
   return `.${FRAMEWORK_NAME}/config/registry.yaml`;
 }
 

@@ -101,7 +101,7 @@ export async function resolveRootContext(
 }
 
 /** Nearest ancestor of `cwd` (inclusive) holding `.<framework>/config/framework.yaml`. */
-export async function findConfiguredRoot(cwd: string): Promise<string | null> {
+async function findConfiguredRoot(cwd: string): Promise<string | null> {
   let dir = path.resolve(cwd);
   for (;;) {
     try {

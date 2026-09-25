@@ -29,7 +29,7 @@ const GRAPHIFY_PATH_COMMANDS = new Set([
 
 const GRAPHIFY_GRAPH_COMMANDS = new Set(["query", "path", "explain", "affected", "tree"]);
 
-export function deriveGraphifyPaths(companionPath: string, repositoryId: string): GraphifyPaths {
+function deriveGraphifyPaths(companionPath: string, repositoryId: string): GraphifyPaths {
   const graphifyOut = path.join(
     companionPath,
     GRAPHIFY_STORE_SEGMENT,

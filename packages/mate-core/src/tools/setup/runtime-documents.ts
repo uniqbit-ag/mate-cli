@@ -1,6 +1,5 @@
 import {
   CLAUDE_LOCAL_CONFIG_DOCUMENT,
-  CLAUDE_MCP_DOCUMENT,
   CLAUDE_SETTINGS_DOCUMENT,
   OPENCODE_CONFIG_DOCUMENT,
 } from "../../lib/orchestrator/projection-runtime-documents";
@@ -32,12 +31,7 @@ import { projectionRepoRoot } from "./surface-target";
  * differs from the companion target.
  */
 
-export {
-  CLAUDE_LOCAL_CONFIG_DOCUMENT,
-  CLAUDE_MCP_DOCUMENT,
-  CLAUDE_SETTINGS_DOCUMENT,
-  OPENCODE_CONFIG_DOCUMENT,
-};
+export { CLAUDE_LOCAL_CONFIG_DOCUMENT };
 
 function nonEmpty(region: ManagedRegion): boolean {
   if (region.kind === "list") return region.values.length > 0;

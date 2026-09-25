@@ -456,5 +456,3 @@ const VISUAL_SECTION_CSS = `
     }`;
 
 type ReportMetricsSection = Extract<ReportSection, { type: "metrics" }>;
-
-export { escapeHTML };

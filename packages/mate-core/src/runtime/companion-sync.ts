@@ -12,7 +12,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
-  companionGitStatePath,
   COMPANION_SYNC_TTL_MS,
   FORK_VERDICT_TTL_MS,
   isCompanionSyncDue,
@@ -294,5 +293,3 @@ export function forkRefusalMessage(companionPath: string, fork: CompanionForkSta
     `Writing artifacts now risks losing work in the reconciliation. Run \`${COMPANION_SYNC_COMMAND}\` first.`,
   ].join("\n");
 }
-
-export { companionGitStatePath };

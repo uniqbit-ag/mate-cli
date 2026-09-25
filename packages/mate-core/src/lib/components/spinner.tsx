@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
-export const SPINNER_FRAMES = ["·", "✦", "✧", "✦"];
-export const SPINNER_INTERVAL_MS = 120;
+const SPINNER_FRAMES = ["·", "✦", "✧", "✦"];
+const SPINNER_INTERVAL_MS = 120;
 
 export function useSpinnerFrame(active: boolean, intervalMs: number = SPINNER_INTERVAL_MS): string {
   const [frame, setFrame] = useState(0);

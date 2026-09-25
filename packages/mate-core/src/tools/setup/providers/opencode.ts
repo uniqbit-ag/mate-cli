@@ -610,5 +610,3 @@ export function createOpenCodePlugin(): ProviderPlugin {
     },
   };
 }
-
-export { OPENCODE_PLUGIN_PACKAGE_NAME };

@@ -11,7 +11,7 @@ export interface CompanionSelectorOptions {
   stderr?: NodeJS.WriteStream;
 }
 
-export const companionSelectorDeps = {
+const companionSelectorDeps = {
   render: inkRender,
 };
 

@@ -30,7 +30,7 @@ interface LegacyProfilesShape {
  * list (`profiles.default.allowedAgents` wins; other profiles are dropped).
  * The new shape persists on the next save.
  */
-export function migrateProfilesToAllowedAgents(config: FrameworkConfig): FrameworkConfig {
+function migrateProfilesToAllowedAgents(config: FrameworkConfig): FrameworkConfig {
   const legacy = config as FrameworkConfig & LegacyProfilesShape;
   if (!legacy.profiles) return config;
   const { profiles, ...rest } = legacy;
@@ -130,7 +130,7 @@ export const PLUGIN_DECLARATION_POLICIES = ["default", "optional"] as const;
  * Validates the `plugins` list of a loaded config. Declared plugins may not
  * claim `required` — required-ness is a distribution prerogative.
  */
-export function validatePluginDeclarations(config: FrameworkConfig): void {
+function validatePluginDeclarations(config: FrameworkConfig): void {
   for (const declaration of config.plugins ?? []) {
     const policy = declaration.policy as string | undefined;
     if (policy !== undefined && !PLUGIN_DECLARATION_POLICIES.includes(policy as never)) {

@@ -10,6 +10,7 @@ import { createStartupProgress } from "../../../lib/components/startup-progress"
 import { ensureUnambiguousCompanion, launchAmbiguityDeps } from "../shared/companion-selection";
 import { runIndexCapCommand } from "../cap/index-cmd";
 import type { LaunchTarget } from "../../launch-selector";
+import { writeJsonStdout } from "../../write-json-stdout";
 
 const STEP_LABELS = {
   sync: "Syncing mate",
@@ -127,7 +128,7 @@ export async function runLaunchToolCommand(
      * The printed result stays useful, but the status is what a supervisor
      * reads: a failed agent must fail the launch.
      */
-    console.log(JSON.stringify(result, null, 2));
+    await writeJsonStdout(result);
     if (result.exitCode !== 0) process.exitCode = result.exitCode;
   } catch (error) {
     progress?.failCurrent();

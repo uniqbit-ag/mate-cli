@@ -4,7 +4,7 @@ import path from "node:path";
 import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
 import { pruneEmptyAncestors } from "../utils";
 
-export const SKILL_SRC = path.join(
+const SKILL_SRC = path.join(
   import.meta.dirname,
   "../../../templates/capabilities/react-doctor/skill",
 );

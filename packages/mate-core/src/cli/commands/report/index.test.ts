@@ -66,18 +66,33 @@ describe("runReportCommand", () => {
 
   test("rejects invalid structured input without opening a report", async () => {
     const errorSpy = spyOn(console, "error").mockImplementation(() => {});
-    const writeTemporaryReport = spyOn(console, "log");
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    /**
+     * Recorded rather than thrown: a throwing delivery dep is swallowed by the
+     * command's own fallback, so it cannot distinguish "never reached" from
+     * "reached and recovered".
+     */
+    let wroteReport = false;
+    let openedBrowser = false;
+
     await runReportCommand(["--input", "-"], {
       ensureUnambiguousCompanion: async () => true,
       readInput: async () => JSON.stringify({ version: REPORT_DOCUMENT_VERSION }),
       writeTemporaryReport: async () => {
-        throw new Error("must not write");
+        wroteReport = true;
+        return "/tmp/mate-report/report.html";
+      },
+      openReportInBrowser: async () => {
+        openedBrowser = true;
       },
     });
+
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("title"));
-    expect(writeTemporaryReport).not.toHaveBeenCalled();
+    expect(wroteReport).toBe(false);
+    expect(openedBrowser).toBe(false);
+    expect(logSpy).not.toHaveBeenCalled();
     errorSpy.mockRestore();
-    writeTemporaryReport.mockRestore();
+    logSpy.mockRestore();
   });
 
   test("rejects days and structured input mode conflicts", async () => {

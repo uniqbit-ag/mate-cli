@@ -3,7 +3,7 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { preparePrebuiltWorkspace } from "../../../lib/prebuilt-workspace-prepare";
 
-export const companionPrepareCommandDeps = {
+const companionPrepareCommandDeps = {
   preparePrebuiltWorkspace,
 };
 
@@ -13,7 +13,7 @@ interface ParsedPrepareArgs {
   error?: string;
 }
 
-export function parsePrepareArgs(argv: string[]): ParsedPrepareArgs {
+function parsePrepareArgs(argv: string[]): ParsedPrepareArgs {
   let bundle: string | undefined;
   const positional: string[] = [];
 

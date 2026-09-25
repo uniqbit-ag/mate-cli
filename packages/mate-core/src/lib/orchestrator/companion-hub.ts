@@ -63,7 +63,7 @@ function isInsideDir(parent: string, candidate: string): boolean {
   return relative !== "" && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-export function normalizeHubMemberId(value: string): string {
+function normalizeHubMemberId(value: string): string {
   const normalized = value
     .replace(/\.git$/i, "")
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -72,7 +72,7 @@ export function normalizeHubMemberId(value: string): string {
   return normalized;
 }
 
-export function validateHubMemberPath(hubPath: string, memberPath: string): string {
+function validateHubMemberPath(hubPath: string, memberPath: string): string {
   if (!memberPath || path.isAbsolute(memberPath)) {
     throw new Error("Hub member path must be relative to the hub root.");
   }
@@ -266,7 +266,7 @@ function syncTarget(memberPath: string, git: GitCommand): string | null {
   return upstream.stdout;
 }
 
-export async function syncHubMember(
+async function syncHubMember(
   hubPath: string,
   member: HubMember,
   git: GitCommand = defaultGitCommand,

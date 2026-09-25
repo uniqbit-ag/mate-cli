@@ -1,6 +1,7 @@
 import { CompanionStore } from "../../../lib/orchestrator/companion-store";
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
 import { renderRepoListTable } from "../../repo-list-table";
+import { writeJsonStdout } from "../../write-json-stdout";
 
 /**
  * @command mate companion list
@@ -23,7 +24,7 @@ export async function runCompanionListCommand(argv: string[] = []): Promise<void
   const forceJson = argv.includes("--json");
 
   if (forceJson || !process.stdout.isTTY) {
-    console.log(JSON.stringify({ repositories }, null, 2));
+    await writeJsonStdout({ repositories });
     return;
   }
 

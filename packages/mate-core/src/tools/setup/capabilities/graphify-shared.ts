@@ -9,10 +9,10 @@ import {
 // guidance plugin can consume it without an import cycle.
 
 // Marker names derive from the framework identity, never the invocation name.
-export const GRAPHIFY_START = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:START -->`;
-export const GRAPHIFY_END = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:END -->`;
+const GRAPHIFY_START = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:START -->`;
+const GRAPHIFY_END = () => `<!-- ${FRAMEWORK_NAME.toUpperCase()}:GRAPHIFY:END -->`;
 
-export function isGraphifyHeading(line: string): boolean {
+function isGraphifyHeading(line: string): boolean {
   return /^#{1,6}\s+graphify\s*$/i.test(line);
 }
 

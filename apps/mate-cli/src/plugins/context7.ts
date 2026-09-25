@@ -3,7 +3,7 @@ import type { CapabilityPlugin } from "@uniqbit/mate-core";
 /** Version pinned by the appliance image. */
 export const CONTEXT7_MCP_VERSION = "4.1.1";
 export const CONTEXT7_MCP_COMMAND = "context7-mcp";
-export const CONTEXT7_MODE_ENV = "MATE_CONTEXT7_MODE";
+const CONTEXT7_MODE_ENV = "MATE_CONTEXT7_MODE";
 
 const CONTEXT7_MCP_PACKAGE = "@upstash/context7-mcp";
 

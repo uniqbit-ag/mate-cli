@@ -229,12 +229,7 @@ export function versionToken(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-export const createVersionToken = versionToken;
-
-export async function readVaultFile(
-  companionRoot: string,
-  requestedPath: string,
-): Promise<VaultFile> {
+async function readVaultFile(companionRoot: string, requestedPath: string): Promise<VaultFile> {
   const resolved = await resolveVaultPath(companionRoot, requestedPath);
   const content = await fsp.readFile(resolved.absolute, "utf8");
   return { path: resolved.relative, content, token: versionToken(content) };

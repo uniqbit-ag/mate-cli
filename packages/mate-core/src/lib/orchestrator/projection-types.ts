@@ -159,10 +159,6 @@ export interface ProjectionDescription {
   projection: ProjectionFile | null;
 }
 
-export function anyChanged(outcomes: ProjectionEntryOutcome[]): boolean {
-  return outcomes.some((outcome) => outcome.state === "written" || outcome.state === "removed");
-}
-
 /** A degradable entry's failure is reported in the outcomes and nowhere else. */
 export function firstFailure(outcomes: ProjectionEntryOutcome[]): ProjectionEntryOutcome | null {
   return outcomes.find((outcome) => outcome.state === "failed" && !outcome.degradable) ?? null;

@@ -52,7 +52,7 @@ export interface ArchiveEntry {
 const ARCHIVE_ANCHOR_PATTERN = /^\d{4}-\d{2}-\d{2}-.+$/;
 const ARCHIVE_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}-/;
 
-export const ARCHIVE_RELATIVE_DIR = "openspec/changes/archive";
+const ARCHIVE_RELATIVE_DIR = "openspec/changes/archive";
 export const SPECS_RELATIVE_DIR = "openspec/specs";
 
 /** The tag `mate artifact publish` creates, never a recomputed date. */

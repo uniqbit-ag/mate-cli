@@ -13,7 +13,7 @@ const CURSOR_FALLBACK_PATHS = [
   "/opt/homebrew/bin/cursor",
 ];
 
-export function isCursorSession(env: NodeJS.ProcessEnv = process.env): boolean {
+function isCursorSession(env: NodeJS.ProcessEnv = process.env): boolean {
   const termProgram = env.TERM_PROGRAM?.toLowerCase() ?? "";
   const bundleId = env.__CFBundleIdentifier ?? "";
   return (
@@ -21,7 +21,7 @@ export function isCursorSession(env: NodeJS.ProcessEnv = process.env): boolean {
   );
 }
 
-export function isVsCodeSession(env: NodeJS.ProcessEnv = process.env): boolean {
+function isVsCodeSession(env: NodeJS.ProcessEnv = process.env): boolean {
   const termProgram = env.TERM_PROGRAM?.toLowerCase() ?? "";
   const bundleId = env.__CFBundleIdentifier ?? "";
   return (
@@ -69,18 +69,10 @@ function resolveEditorCli(cli: string): { cli: string; binary: string } | null {
   return null;
 }
 
-export function writeMissingEditorCliGuidance(
-  cli: string,
-  write: (chunk: string) => boolean = process.stderr.write.bind(process.stderr),
-): void {
-  write(`mate: warning: ${cli} CLI not found on PATH.\n`);
-  write(`mate: run "Install '${cli}' command in PATH" from the Command Palette to enable this.\n`);
-}
-
 /** The Projection Root owns the path; this is the editor's name for it. */
 export const editorWorkspacePath = workspaceDocumentPath;
 
-export interface WorkspaceDocument {
+interface WorkspaceDocument {
   workspacePath: string;
   folders: [string, string];
 }
@@ -91,7 +83,7 @@ export interface WorkspaceDocument {
  * order. Called by editor-launching `injectEditorFolder`, which backs
  * `mate companion open`.
  */
-export async function writeWorkspaceDocument(
+async function writeWorkspaceDocument(
   companionPath: string,
   repoPath: string,
 ): Promise<WorkspaceDocument> {

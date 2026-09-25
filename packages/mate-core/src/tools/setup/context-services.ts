@@ -31,10 +31,7 @@ interface ContextServicesManifest {
   plugins: Record<string, PluginServiceRecord>;
 }
 
-export function getContextServicesManifestPath(
-  companionPath: string,
-  frameworkName: string,
-): string {
+function getContextServicesManifestPath(companionPath: string, frameworkName: string): string {
   return path.join(companionPath, `.${frameworkName}`, "state", "context-services.json");
 }
 
@@ -129,7 +126,7 @@ export async function removeManagedBlocksForPlugin(
 }
 
 /** Remove a marker-delimited block if present. No-op when file or block is absent. */
-export async function removeManagedBlock(
+async function removeManagedBlock(
   filePath: string,
   frameworkName: string,
   blockKey: string,
@@ -164,7 +161,7 @@ export async function removeManagedBlock(
  * `playbooks/**`, and `wrappers/bin/*` below the root. Core's own templates
  * live at `src/templates`.
  */
-export async function resolveTemplateAsset(
+async function resolveTemplateAsset(
   templatePath: string,
   overrideRoots: string[] = [],
 ): Promise<string> {

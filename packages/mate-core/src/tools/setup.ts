@@ -5,7 +5,6 @@ import { FRAMEWORK_NAME } from "../framework";
 import { ConfigStore, mergeWithDefaults } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import {
-  BUILTIN_SETUP_COMPATIBILITIES,
   dedupeCapabilities,
   getSetupSelectionsFromConfig,
 } from "../lib/orchestrator/setup-compatibilities";
@@ -194,6 +193,3 @@ export function createUvPluginForTest(deps: PackageManagerSetupDeps) {
 }
 
 export default setup;
-
-// Re-export BUILTIN_SETUP_COMPATIBILITIES passthrough for setup-selector UI compatibility.
-export { BUILTIN_SETUP_COMPATIBILITIES };
