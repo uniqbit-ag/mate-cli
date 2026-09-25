@@ -17,6 +17,7 @@ import {
   type FrameworkConfig,
   type HubConfig,
   type LinkedRepository,
+  type LaunchScope,
   RepositoryNotFoundError,
   WorkingRepoRequiredError,
 } from "./types";
@@ -187,14 +188,18 @@ export async function resolveFrameworkContext(
 // Resolution order:
 // 1. MATE_ARTIFACT_PATH + MATE_REPO_ID env vars (agent-launched sessions)
 // 2. CompanionResolver — cwd inside a linked working repo
-// Does NOT fall back to local config — launching from the companion root is invalid.
-// Use resolveForCapability if the caller may run from the companion directory.
+// A companion-scoped launch may also resolve the local companion config from cwd.
 export async function resolveForLaunch(
   cwd: string,
   globalConfigStore = new GlobalConfigStore(),
+  scope: LaunchScope = "working-repo",
 ): Promise<LaunchContext> {
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
   if (envCompanionPath) {
+    if (scope === "companion") {
+      const context = await withResolvedHub(makeContext(path.resolve(envCompanionPath), "env"));
+      return { ...context, repositoryId: "" };
+    }
     const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
     const repositoryId = process.env.MATE_REPO_ID ?? repository?.id ?? "";
     const context = await withResolvedHub(
@@ -215,6 +220,12 @@ export async function resolveForLaunch(
 
   if (resolution.match) {
     const repository = (await findRepoLocalLinkedRepository(cwd)) ?? undefined;
+    if (scope === "companion") {
+      const context = await withResolvedHub(
+        makeContext(resolution.match.companionPath, "working-repo"),
+      );
+      return { ...context, repositoryId: "" };
+    }
     if (repository) {
       await backfillCompanionRegistration(resolution.match.companionPath, repository);
       await projectWorkingRepositoryBestEffort(resolution.match.companionPath, repository);
@@ -226,6 +237,21 @@ export async function resolveForLaunch(
       ...context,
       repositoryId: resolution.match.repositoryId,
     };
+  }
+
+  if (scope === "companion") {
+    const localConfigPath = path.join(cwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    let localConfig: Partial<FrameworkConfig> | null;
+    try {
+      localConfig = parse(await fs.readFile(localConfigPath, "utf8")) as Partial<FrameworkConfig>;
+    } catch {
+      localConfig = null;
+    }
+    if (localConfig?.type !== "companion") {
+      throw new RepositoryNotFoundError(`No companion found for current directory: ${cwd}`);
+    }
+    const context = await withResolvedHub(makeContext(cwd, "companion-root"));
+    return { ...context, repositoryId: "" };
   }
 
   throw new WorkingRepoRequiredError();
@@ -259,7 +285,7 @@ async function backfillCompanionRegistration(
 // Resolves context for `mate cap` commands. Unlike resolveForLaunch, this allows
 // running from the companion directory itself — cap commands manage companion state
 // and don't need a working-repo cwd. resolveForLaunch intentionally lacks this
-// fallback because launching an agent from the companion root is not a valid scenario.
+// fallback because its implicit launch scope still requires a Working Repository.
 export async function resolveForCapability(
   cwd: string,
   globalConfigStore = new GlobalConfigStore(),

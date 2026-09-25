@@ -1,0 +1,11 @@
+{
+  "name": "mate-container-global-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Global CLI tools the image installs. Locked so a rebuild cannot resolve a newer graph.",
+  "dependencies": {
+    "@uniqbit/mate": "0.17.0-canary.9",
+    "@fission-ai/openspec": "1.13.1",
+    "@upstash/context7-mcp": "4.1.1"
+  }
+}

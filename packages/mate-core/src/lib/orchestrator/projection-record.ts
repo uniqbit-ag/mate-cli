@@ -13,6 +13,8 @@ import {
 import { getReactDoctorBinPath, getWrapperBinPath } from "../package-paths";
 import type { LinkedRepository } from "./types";
 
+export const COMPANION_GRAPHIFY_REPOSITORY_ID = "__companion__";
+
 /**
  * The one derivation of the projected paths. Both the Projection Root and a
  * managed launch materialize this record, so neither can hold its own copy of a
@@ -52,5 +54,27 @@ export function buildProjection(
 export function projectionEnvironment(projection: MateProjection): NodeJS.ProcessEnv {
   return Object.fromEntries(
     PROJECTION_FIELDS.map((field) => [PROJECTION_ENV_NAMES[field], projection[field]]),
+  );
+}
+
+/** Materializes the path-only subset used by a launch without a repository. */
+export function companionEnvironment(companionPath: string): NodeJS.ProcessEnv {
+  const values: Record<keyof MateProjection, string> = {
+    version,
+    companionPath,
+    repositoryPath: "",
+    repositoryId: "",
+    wrapperBinPath: getWrapperBinPath(),
+    reactDoctorBinPath: getReactDoctorBinPath(),
+    graphifyOut: path.join(
+      companionPath,
+      GRAPHIFY_STORE_SEGMENT,
+      COMPANION_GRAPHIFY_REPOSITORY_ID,
+      GRAPHIFY_OUTPUT_SUBDIR,
+    ),
+  };
+
+  return Object.fromEntries(
+    PROJECTION_FIELDS.map((field) => [PROJECTION_ENV_NAMES[field], values[field]]),
   );
 }

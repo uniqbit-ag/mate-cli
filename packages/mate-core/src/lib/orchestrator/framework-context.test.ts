@@ -68,7 +68,7 @@ describe("resolveFrameworkContext", () => {
     const root = await makeTempDir("ctx-local-");
     const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
-    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
+    await fs.writeFile(localConfigPath, "type: companion\nallowedAgents:\n  - claude\n", "utf8");
 
     const store = new GlobalConfigStore(path.join(root, "config.yaml"));
     const ctx = await resolveFrameworkContext(root, store);
@@ -287,12 +287,46 @@ describe("resolveForLaunch", () => {
     const root = await makeTempDir("launch-companion-cwd-");
     const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
-    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
+    await fs.writeFile(localConfigPath, "type: companion\nallowedAgents:\n  - claude\n", "utf8");
 
     const store = new GlobalConfigStore(path.join(root, "config.yaml"));
 
     await expect(resolveForLaunch(root, store)).rejects.toThrow(WorkingRepoRequiredError);
   });
+
+  test("resolves a companion-scoped launch from a companion directory without a repository", async () => {
+    const root = await makeTempDir("launch-companion-scoped-");
+    await writeFrameworkConfig(root, "type: companion\nallowedAgents:\n  - opencode\n");
+    const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+
+    const context = await resolveForLaunch(root, store, "companion");
+
+    expect(context.companionPath).toBe(root);
+    expect(context.repository).toBeUndefined();
+    expect(context.repositoryId).toBe("");
+  });
+
+  test("keeps companion-root launch refusal in the default scope", async () => {
+    const root = await makeTempDir("launch-companion-default-");
+    await writeFrameworkConfig(root, "type: companion\n");
+    const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+
+    await expect(resolveForLaunch(root, store, "working-repo")).rejects.toBeInstanceOf(
+      WorkingRepoRequiredError,
+    );
+  });
+
+  for (const type of ["working", "hub"] as const) {
+    test(`rejects an explicitly companion-scoped ${type} root`, async () => {
+      const root = await makeTempDir(`launch-${type}-scoped-`);
+      await writeFrameworkConfig(root, `type: ${type}\n`);
+      const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+
+      await expect(resolveForLaunch(root, store, "companion")).rejects.toBeInstanceOf(
+        RepositoryNotFoundError,
+      );
+    });
+  }
 
   test("throws WorkingRepoRequiredError with mate companion link hint when no companion covers cwd", async () => {
     const root = await makeTempDir("launch-unregistered-");
@@ -303,6 +337,7 @@ describe("resolveForLaunch", () => {
     expect(error).toBeInstanceOf(WorkingRepoRequiredError);
     expect(error.message).toContain("mate companion link");
     expect(error.message).toContain("mate companion list");
+    expect(error.message).toContain("mate claude -- --companion");
   });
 
   test("throws AmbiguousCompanionError when multiple companions link the same repo", async () => {

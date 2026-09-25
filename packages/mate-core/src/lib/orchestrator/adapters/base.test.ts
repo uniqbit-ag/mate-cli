@@ -16,7 +16,11 @@ import { readCompanionRuntimeContext } from "../../../runtime/env";
 import { repoLocalRegistryPath } from "../../../runtime/repo-local";
 import { renderCompanionExternalDirectoryPermissions } from "../../../tools/setup/providers/opencode";
 import { getContextModePackageRoot } from "../../context-mode-package";
-import { getOpenCodePluginPackageReference } from "../../opencode-plugin-package";
+import {
+  getOpenCodePluginPackageReference,
+  OPENCODE_PLUGIN_PACKAGE_NAME,
+} from "../../opencode-plugin-package";
+import { getPreinstalledPluginDir } from "../../preinstalled-plugins";
 import {
   getClaudePluginRoot,
   getReactDoctorBinPath,
@@ -52,6 +56,7 @@ function makeContext(capabilities: AdapterContext["capabilities"] = []): Adapter
       id: "app",
       path: "/tmp/app",
     },
+    launchWorkingDirectory: "/tmp/app",
     allowedAgents: ["claude", "opencode"],
     companionPath: "/tmp/companion",
     capabilities,
@@ -164,6 +169,57 @@ describe("LaunchAdapter.prepareLaunch", () => {
     ).rejects.toThrow(/Expected Mate plugin package: @uniqbit\/mate-opencode-plugin@/);
   });
 
+  // A distribution that supplies an installed workspace binds the plugin by
+  // path, and setup writes that binding itself. A launch that accepted only the
+  // published spec would refuse exactly those deployments.
+  describe("a plugin reference bound to a preinstalled copy", () => {
+    const expectedVersion = getOpenCodePluginPackageReference().slice(
+      OPENCODE_PLUGIN_PACKAGE_NAME.length + 1,
+    );
+
+    async function withBoundPlugin(
+      prefix: string,
+      installedVersion: string | null,
+    ): Promise<string> {
+      const companionPath = await makeTempDir(prefix);
+      const packageRoot = getPreinstalledPluginDir(companionPath, OPENCODE_PLUGIN_PACKAGE_NAME);
+      await fs.mkdir(packageRoot, { recursive: true });
+      if (installedVersion !== null) {
+        await fs.writeFile(
+          path.join(packageRoot, "package.json"),
+          JSON.stringify({ name: OPENCODE_PLUGIN_PACKAGE_NAME, version: installedVersion }),
+          "utf8",
+        );
+      }
+      await writeOpenCodeRuntime(companionPath, packageRoot);
+      return companionPath;
+    }
+
+    test("passes when the copy it points at is the expected version", async () => {
+      const companionPath = await withBoundPlugin("mate-opencode-bound-ok-", expectedVersion);
+
+      await expect(
+        new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+      ).resolves.toBeUndefined();
+    });
+
+    test("is still caught when stale, and names the version actually installed", async () => {
+      const companionPath = await withBoundPlugin("mate-opencode-bound-stale-", "0.0.1");
+
+      await expect(
+        new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+      ).rejects.toThrow(/which is 0\.0\.1 rather than /);
+    });
+
+    test("reports a binding to a copy that is not installed at all", async () => {
+      const companionPath = await withBoundPlugin("mate-opencode-bound-absent-", null);
+
+      await expect(
+        new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+      ).rejects.toThrow(/which is not installed rather than /);
+    });
+  });
+
   test("leaves context-mode package validation to the capability plugin", async () => {
     const companionPath = await makeTempDir("mate-opencode-context-mode-");
     await writeOpenCodeRuntime(companionPath);
@@ -198,6 +254,41 @@ describe("LaunchAdapter.prepareLaunch", () => {
     const graphifyGuidance = JSON.parse(graphifyEnv.MATE_GUIDANCE_JSON ?? "{}");
     expect(graphifyGuidance.codebaseExplorationGuidance).toContain("<codebase-exploration-rules ");
     expect(graphifyGuidance.codebaseExplorationGuidance).toContain("graphify");
+  });
+
+  test("materializes a companion-scoped environment without repository values", async () => {
+    const previousRepoPath = process.env.MATE_REPO_PATH;
+    const previousRepoId = process.env.MATE_REPO_ID;
+    process.env.MATE_REPO_PATH = "/inherited/repository";
+    process.env.MATE_REPO_ID = "inherited";
+
+    try {
+      const context = {
+        ...makeContext([{ name: "graphify" }, { name: "openspec" }]),
+        repository: undefined,
+        launchWorkingDirectory: "/tmp/companion",
+      };
+      const launch = await new OpenCodeAdapter().prepareLaunch(context, []);
+
+      expect(launch.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion");
+      expect(launch.env.MATE_VERSION).toEqual(expect.any(String));
+      expect(launch.env.MATE_WRAPPER_BIN_PATH).toContain("wrappers/bin");
+      expect(launch.env.MATE_POLICY_JSON).toBe(
+        JSON.stringify({ allowedAgents: ["claude", "opencode"] }),
+      );
+      expect(launch.env.MATE_GRAPHIFY_ENABLED).toBe("1");
+      expect(launch.env.MATE_OPENSPEC_ENABLED).toBe("1");
+      expect(launch.env.GRAPHIFY_OUT).toBe(
+        path.join("/tmp/companion", ".graphify", "__companion__", "graphify-out"),
+      );
+      expect(launch.env.MATE_REPO_PATH).toBeUndefined();
+      expect(launch.env.MATE_REPO_ID).toBeUndefined();
+    } finally {
+      if (previousRepoPath === undefined) delete process.env.MATE_REPO_PATH;
+      else process.env.MATE_REPO_PATH = previousRepoPath;
+      if (previousRepoId === undefined) delete process.env.MATE_REPO_ID;
+      else process.env.MATE_REPO_ID = previousRepoId;
+    }
   });
 
   test("propagates real capabilities into companionGuidance, matching the Claude provider", async () => {
@@ -267,6 +358,13 @@ describe("openspec capability env injection", () => {
 
     expect(launch.env.MATE_OPENSPEC_ENABLED).toBe("1");
     expect(launch.env.MATE_GIT_AUTO_MODE).toBe("1");
+  });
+
+  test("clears git auto mode when the launch bypasses synchronization", async () => {
+    const context = { ...makeContext(), git: "auto" as const, skipGit: true };
+    const launch = await new ClaudeAdapter().prepareLaunch(context, []);
+
+    expect(launch.env.MATE_GIT_AUTO_MODE).toBe("0");
   });
 });
 

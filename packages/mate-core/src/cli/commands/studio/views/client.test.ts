@@ -25,6 +25,57 @@ const acmeDigest = "4cb87fd83f";
 
 const scripts = { prepaint: STUDIO_PREPAINT_SCRIPT, client: STUDIO_CLIENT_SCRIPT };
 
+function runClient(clipboard: unknown): {
+  copy: () => void;
+  theme: () => void;
+  toast: () => string;
+} {
+  let copyHandler: (() => void) | undefined;
+  let themeHandler: (() => void) | undefined;
+  const toast = { textContent: "", setAttribute: () => {} };
+  const theme = {
+    textContent: "",
+    setAttribute: () => {},
+    removeAttribute: () => {},
+    addEventListener: (_event: string, handler: () => void) => {
+      themeHandler = handler;
+    },
+  };
+  const copy = {
+    getAttribute: (name: string) => (name === "data-copy" ? "prompt" : "copy"),
+    addEventListener: (_event: string, handler: () => void) => {
+      copyHandler = handler;
+    },
+  };
+  const documentStub = {
+    documentElement: { setAttribute: () => {}, removeAttribute: () => {} },
+    getElementById: (id: string) =>
+      id === "studio-theme" ? theme : id === "studio-toast" ? toast : null,
+    querySelector: () => null,
+    querySelectorAll: (selector: string) => (selector === "[data-copy]" ? [copy] : []),
+  };
+  const store = { getItem: () => null, setItem: () => {} };
+  new Function(
+    "document",
+    "localStorage",
+    "navigator",
+    "setTimeout",
+    "clearTimeout",
+    STUDIO_CLIENT_SCRIPT,
+  )(
+    documentStub,
+    store,
+    clipboard === null ? {} : { clipboard },
+    () => 0,
+    () => {},
+  );
+  return {
+    copy: () => copyHandler?.(),
+    theme: () => themeHandler?.(),
+    toast: () => toast.textContent,
+  };
+}
+
 describe("studio browser code", () => {
   it("is valid JavaScript", () => {
     for (const source of Object.values(scripts)) {
@@ -38,11 +89,12 @@ describe("studio browser code", () => {
     }
   });
 
-  it("reaches no host and holds no connection", () => {
+  it("reaches no external host while allowing the vault event stream", () => {
     for (const source of Object.values(scripts)) {
       expect(source).not.toMatch(/https?:\/\//);
-      expect(source).not.toMatch(/\bfetch\b|EventSource|WebSocket|setInterval/);
     }
+    expect(STUDIO_CLIENT_SCRIPT).toContain('fetch("/api/vault/save"');
+    expect(STUDIO_CLIENT_SCRIPT).toContain('new EventSource("/api/vault/events?');
   });
 
   it("applies a remembered appearance before the page paints", () => {
@@ -121,6 +173,18 @@ describe("studio browser code", () => {
 
   it("survives a blocked clipboard without costing the page", () => {
     expect(STUDIO_CLIENT_SCRIPT).toContain("copying is blocked in this browser");
+  });
+
+  it("handles an absent or rejected clipboard without breaking other controls", async () => {
+    const unavailable = runClient(null);
+    expect(() => unavailable.copy()).not.toThrow();
+    expect(unavailable.toast()).toBe("copying is blocked in this browser");
+    expect(() => unavailable.theme()).not.toThrow();
+
+    const rejected = runClient({ writeText: async () => Promise.reject(new Error("blocked")) });
+    expect(() => rejected.copy()).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(rejected.toast()).toBe("copying is blocked in this browser");
   });
 
   it("renders nothing and assembles no markup", () => {

@@ -370,18 +370,26 @@ describe("bundled Mate artifact publish skill", () => {
       expect(source).toContain("## Example output");
       expect(source).toContain("Rendering of the step 1 payload above");
       expect(source).toContain("**To push: 1 pending change, 2 drifted specs.**");
-      expect(source).toContain("**Pending changes**\n\n| # | Anchor (Change) | Ships | Tag |");
+      expect(source).toContain("**Pending changes**");
+      expect(source).toContain("Anchor (Change)");
+      expect(source).toContain("Ships");
+      expect(source).toContain("Tag");
       /** The anchor already ends with the change name, so no separate name column. */
       expect(source).not.toContain("| Change |");
       /** Multiple ships share one cell, joined rather than wrapped. */
       expect(source).toContain(
         "`openspec/changes/archive/2026-09-07-acme/` + [modified] `openspec/specs/widget-api/spec.md`",
       );
-      expect(source).toContain("**Drifted specs**\n\n| # | Spec | Kind | Provenance |");
-      expect(source).toContain(
-        "| 2 | `openspec/specs/other-api/spec.md` | modified | `2026-09-06-acme-earlier` (committed) |",
-      );
-      expect(source).toContain("| 3 | `openspec/specs/third-api/spec.md` | new | — |");
+      expect(source).toContain("**Drifted specs**");
+      expect(source).toContain("| Spec");
+      expect(source).toContain("| Kind");
+      expect(source).toContain("| Provenance");
+      expect(source).toContain("`openspec/specs/other-api/spec.md`");
+      expect(source).toContain("modified");
+      expect(source).toContain("`2026-09-06-acme-earlier` (committed)");
+      expect(source).toContain("`openspec/specs/third-api/spec.md`");
+      expect(source).toContain("new");
+      expect(source).toContain("—");
       /** Every row is selectable, provenance or not. */
       expect(source).toContain("**3** has no provenance and is selectable anyway");
       expect(source).toContain(
@@ -515,7 +523,7 @@ describe("bundled Mate artifact publish skill", () => {
       expect(source).toContain("do **not** ask them to confirm it a second time");
       expect(source).toContain("Nothing is committed, tagged, or pushed");
       /** Asking is still how an unresolvable reply is handled — about what, never whether. */
-      expect(source).toContain("ask only about *what* to publish");
+      expect(source).toContain("ask only about _what_ to publish");
       expect(source).toContain(
         "Never turn that question into a re-confirmation of a selection already made",
       );

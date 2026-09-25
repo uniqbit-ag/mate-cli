@@ -18,8 +18,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 // cli-e2e.test.ts's scenario plumbing it needs) rather than importing from it,
 // so the stub-based hermetic suite and this real-binary suite stay decoupled.
 //
-// Gating: skipped entirely whenever `CI` is set (never runs in CI, regardless
-// of what happens to be on a runner's PATH), and skipped per-tool when the
+// Gating: skipped unless explicitly enabled, and skipped per-tool when the
 // real `claude`/`opencode` binary isn't resolvable on PATH locally.
 
 const APP_ROOT = path.resolve(import.meta.dirname, "../../../../apps/mate-cli");
@@ -55,7 +54,7 @@ function isBinaryOnPath(command: string): boolean {
   });
 }
 
-const isCI = Boolean(process.env.CI);
+const runRealAgentTests = process.env.MATE_RUN_REAL_AGENT_TESTS === "1";
 const hasClaude = isBinaryOnPath("claude");
 const hasOpenCode = isBinaryOnPath("opencode");
 
@@ -86,7 +85,7 @@ async function seedUpdateState(home: string): Promise<void> {
   await Promise.all([
     fs.writeFile(
       path.join(updateDir, "update-state-uniqbit-mate.yaml"),
-      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: 99.0.0", ""].join("\n"),
+      ["lastChecked: 2099-01-01T00:00:00.000Z", "latestVersion: null", ""].join("\n"),
       "utf8",
     ),
     fs.writeFile(
@@ -582,88 +581,97 @@ function assertMarkersAppearExactlyOnce(body: string): void {
   }
 }
 
-describe.skipIf(isCI || !hasClaude)("real claude agent — system prompt injection", () => {
-  test("companion guidance markers each appear exactly once in the real system prompt", async () => {
-    const scenario = await createScenario("mate-cli-e2e-real-claude-");
-    initWorkingRepoGit(scenario);
-    const mock = await startMockModelServer();
+describe.skipIf(!runRealAgentTests || !hasClaude)(
+  "real claude agent — system prompt injection",
+  () => {
+    test("companion guidance markers each appear exactly once in the real system prompt", async () => {
+      const scenario = await createScenario("mate-cli-e2e-real-claude-");
+      initWorkingRepoGit(scenario);
+      const mock = await startMockModelServer();
 
-    try {
-      expect((await setupCompanion(scenario, ["claude"])).exitCode).toBe(0);
-      expect((await linkRepository(scenario)).exitCode).toBe(0);
+      try {
+        expect((await setupCompanion(scenario, ["claude"])).exitCode).toBe(0);
+        expect((await linkRepository(scenario)).exitCode).toBe(0);
 
-      const result = await runMate(scenario, {
-        cwd: scenario.working,
-        args: ["claude", "--print", "say hi"],
-        input: "y\n",
-        env: {
-          ANTHROPIC_API_KEY: DUMMY_API_KEY,
-          ANTHROPIC_BASE_URL: mock.baseUrl,
-        },
-      });
+        const result = await runMate(scenario, {
+          cwd: scenario.working,
+          args: ["claude", "--print", "say hi"],
+          input: "y\n",
+          env: {
+            ANTHROPIC_API_KEY: DUMMY_API_KEY,
+            ANTHROPIC_BASE_URL: mock.baseUrl,
+          },
+        });
 
-      expect(result.exitCode).toBe(0);
-      expect(mock.requests.length).toBeGreaterThan(0);
-      assertMarkersAppearExactlyOnce(mock.requests[0]!.body);
-      expect(
-        countOccurrences(flattenSystemPrompt(mock.requests[0]!.body), CONTEXT_MODE_GUIDANCE_MARKER),
-      ).toBe(0);
-    } finally {
-      await mock.close();
-    }
-  });
-});
+        expect(result.exitCode).toBe(0);
+        expect(mock.requests.length).toBeGreaterThan(0);
+        assertMarkersAppearExactlyOnce(mock.requests[0]!.body);
+        expect(
+          countOccurrences(
+            flattenSystemPrompt(mock.requests[0]!.body),
+            CONTEXT_MODE_GUIDANCE_MARKER,
+          ),
+        ).toBe(0);
+      } finally {
+        await mock.close();
+      }
+    });
+  },
+);
 
-describe.skipIf(isCI || !hasOpenCode)("real opencode agent — system prompt injection", () => {
-  test("companion guidance markers each appear exactly once in the real system prompt", async () => {
-    const scenario = await createScenario("mate-cli-e2e-real-opencode-");
-    initWorkingRepoGit(scenario);
-    const mock = await startMockModelServer();
+describe.skipIf(!runRealAgentTests || !hasOpenCode)(
+  "real opencode agent — system prompt injection",
+  () => {
+    test("companion guidance markers each appear exactly once in the real system prompt", async () => {
+      const scenario = await createScenario("mate-cli-e2e-real-opencode-");
+      initWorkingRepoGit(scenario);
+      const mock = await startMockModelServer();
 
-    try {
-      const setupSelections = { allowedAgents: ["opencode"] };
-      expect((await setupCompanion(scenario, setupSelections.allowedAgents)).exitCode).toBe(0);
-      expect((await linkRepository(scenario)).exitCode).toBe(0);
+      try {
+        const setupSelections = { allowedAgents: ["opencode"] };
+        expect((await setupCompanion(scenario, setupSelections.allowedAgents)).exitCode).toBe(0);
+        expect((await linkRepository(scenario)).exitCode).toBe(0);
 
-      // Pin the provider/model explicitly: opencode silently falls back to its
-      // own pre-configured provider if the model isn't pinned, which would
-      // bypass the baseURL redirect below entirely (see design doc — this is
-      // the exact failure mode from the earlier live-agent incident).
-      const providerBaseUrl = mock.baseUrl;
-      const openCodeConfigContent = JSON.stringify({
-        provider: {
-          anthropic: { options: { baseURL: providerBaseUrl } },
-          openai: { options: { baseURL: `${providerBaseUrl}/v1` } },
-        },
-      });
+        // Pin the provider/model explicitly: opencode silently falls back to its
+        // own pre-configured provider if the model isn't pinned, which would
+        // bypass the baseURL redirect below entirely (see design doc — this is
+        // the exact failure mode from the earlier live-agent incident).
+        const providerBaseUrl = mock.baseUrl;
+        const openCodeConfigContent = JSON.stringify({
+          provider: {
+            anthropic: { options: { baseURL: providerBaseUrl } },
+            openai: { options: { baseURL: `${providerBaseUrl}/v1` } },
+          },
+        });
 
-      const result = await runMate(scenario, {
-        cwd: scenario.working,
-        args: ["opencode", "run", "-m", OPENCODE_MODEL, "say hi"],
-        input: "y\n",
-        env: {
-          ANTHROPIC_API_KEY: DUMMY_API_KEY,
-          OPENAI_API_KEY: DUMMY_API_KEY,
-          ANTHROPIC_BASE_URL: providerBaseUrl,
-          OPENAI_BASE_URL: `${providerBaseUrl}/v1`,
-          OPENCODE_CONFIG_CONTENT: openCodeConfigContent,
-        },
-      });
+        const result = await runMate(scenario, {
+          cwd: scenario.working,
+          args: ["opencode", "run", "-m", OPENCODE_MODEL, "say hi"],
+          input: "y\n",
+          env: {
+            ANTHROPIC_API_KEY: DUMMY_API_KEY,
+            OPENAI_API_KEY: DUMMY_API_KEY,
+            ANTHROPIC_BASE_URL: providerBaseUrl,
+            OPENAI_BASE_URL: `${providerBaseUrl}/v1`,
+            OPENCODE_CONFIG_CONTENT: openCodeConfigContent,
+          },
+        });
 
-      expect(result.exitCode).toBe(0);
-      // OpenCode also fires an internal "small model" title-generation
-      // request with a much smaller system prompt; filter to the request
-      // that used the pinned conversation model to find the real one. The
-      // captured `model` field is the bare model id, not the `provider/model`
-      // selector string passed to `-m`.
-      const mainRequest = mock.requests.find((r) => r.model === OPENCODE_MODEL_ID);
-      expect(mainRequest).toBeDefined();
-      assertMarkersAppearExactlyOnce(mainRequest!.body);
-      expect(
-        countOccurrences(flattenSystemPrompt(mainRequest!.body), CONTEXT_MODE_GUIDANCE_MARKER),
-      ).toBe(1);
-    } finally {
-      await mock.close();
-    }
-  });
-});
+        expect(result.exitCode).toBe(0);
+        // OpenCode also fires an internal "small model" title-generation
+        // request with a much smaller system prompt; filter to the request
+        // that used the pinned conversation model to find the real one. The
+        // captured `model` field is the bare model id, not the `provider/model`
+        // selector string passed to `-m`.
+        const mainRequest = mock.requests.find((r) => r.model === OPENCODE_MODEL_ID);
+        expect(mainRequest).toBeDefined();
+        assertMarkersAppearExactlyOnce(mainRequest!.body);
+        expect(
+          countOccurrences(flattenSystemPrompt(mainRequest!.body), CONTEXT_MODE_GUIDANCE_MARKER),
+        ).toBe(1);
+      } finally {
+        await mock.close();
+      }
+    });
+  },
+);

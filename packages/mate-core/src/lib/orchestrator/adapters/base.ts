@@ -1,23 +1,39 @@
 import { spawn } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { MATE_ENV } from "../../../runtime/env-names";
-import { buildProjection, projectionEnvironment } from "../projection-record";
+import { buildProjection, companionEnvironment, projectionEnvironment } from "../projection-record";
 import type { CapabilityConfig, GitModeProfile, LinkedRepository } from "../types";
 
 export interface AdapterContext {
-  repository: LinkedRepository;
+  repository?: LinkedRepository;
+  launchWorkingDirectory: string;
   allowedAgents: string[];
   companionPath: string;
   capabilities: CapabilityConfig[];
   git?: GitModeProfile;
+  skipGit?: boolean;
 }
 
 export interface AdapterResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  /** Set when the agent process ended on a signal rather than its own exit. */
+  signal?: NodeJS.Signals | null;
+}
+
+/** Forwarded from the launch to the agent so a supervisor above it can stop a session. */
+const FORWARDED_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+
+/**
+ * The shell convention: a signalled stop reads as 128 + the signal number, so a
+ * caller can tell it from an ordinary non-zero exit.
+ */
+export function signalExitCode(signal: NodeJS.Signals): number {
+  return 128 + (os.constants.signals[signal] ?? 0);
 }
 
 export interface PreparedLaunch {
@@ -50,18 +66,25 @@ export abstract class LaunchAdapter {
    */
   environment(context: AdapterContext): NodeJS.ProcessEnv {
     const reactDoctorEnabled = context.capabilities.some((c) => c.name === "react-doctor");
-    const projection = buildProjection(context.companionPath, context.repository);
+    const projection = context.repository
+      ? projectionEnvironment(buildProjection(context.companionPath, context.repository))
+      : companionEnvironment(context.companionPath);
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      ...projectionEnvironment(projection),
+      ...projection,
       MATE_NAME: FRAMEWORK_NAME,
-      PATH: prependPathEntry(process.env.PATH, projection.wrapperBinPath),
+      PATH: prependPathEntry(process.env.PATH, projection[MATE_ENV.wrapperBinPath] ?? ""),
       MATE_GRAPHIFY_ENABLED: context.capabilities.some((c) => c.name === "graphify") ? "1" : "0",
       MATE_OPENSPEC_ENABLED: context.capabilities.some((c) => c.name === "openspec") ? "1" : "0",
       MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
-      MATE_GIT_AUTO_MODE: context.git === "auto" ? "1" : "0",
+      MATE_GIT_AUTO_MODE: context.git === "auto" && !context.skipGit ? "1" : "0",
       MATE_POLICY_JSON: JSON.stringify({ allowedAgents: context.allowedAgents }),
     };
+
+    if (!context.repository) {
+      delete env[MATE_ENV.repositoryPath];
+      delete env[MATE_ENV.repositoryId];
+    }
 
     /** The one field where a launch still narrows the projection rather than materializing it. */
     if (!reactDoctorEnabled) delete env[MATE_ENV.reactDoctorBinPath];
@@ -87,12 +110,22 @@ export abstract class LaunchAdapter {
     return { command: this.toolName, args: builtArgs, env };
   }
 
+  /**
+   * A terminal delivers `SIGINT` to the whole foreground process group, so an
+   * interactive launch at a TTY must not forward it as well — the agent would
+   * be stopped twice. Where the signal reaches the launch alone (a supervisor,
+   * a container entrypoint), forwarding is the only way it reaches the agent.
+   */
+  protected forwardsSignals(): boolean {
+    return !(this.interactive && process.stdin.isTTY);
+  }
+
   async run(context: AdapterContext, args: string[]): Promise<AdapterResult> {
     const launch = await this.prepareLaunch(context, args);
 
     return new Promise((resolve, reject) => {
       const child = spawn(launch.command, launch.args, {
-        cwd: context.repository.path,
+        cwd: context.launchWorkingDirectory,
         env: launch.env,
         stdio: this.interactive ? "inherit" : "pipe",
       });
@@ -109,12 +142,34 @@ export abstract class LaunchAdapter {
         });
       }
 
-      child.on("error", reject);
-      child.on("close", (exitCode) => {
+      const forward = this.forwardsSignals();
+      const handlers = new Map<NodeJS.Signals, () => void>();
+      for (const signal of FORWARDED_SIGNALS) {
+        const handler = () => {
+          /** Installing a handler at all is what keeps the launch alive to wait for the agent. */
+          if (forward && child.exitCode === null && child.signalCode === null) {
+            child.kill(signal);
+          }
+        };
+        handlers.set(signal, handler);
+        process.on(signal, handler);
+      }
+      const removeHandlers = () => {
+        for (const [signal, handler] of handlers) process.off(signal, handler);
+        handlers.clear();
+      };
+
+      child.on("error", (error) => {
+        removeHandlers();
+        reject(error);
+      });
+      child.on("close", (exitCode, signal) => {
+        removeHandlers();
         resolve({
-          exitCode: exitCode ?? 1,
+          exitCode: exitCode ?? (signal ? signalExitCode(signal) : 1),
           stdout,
           stderr,
+          signal: signal ?? null,
         });
       });
     });

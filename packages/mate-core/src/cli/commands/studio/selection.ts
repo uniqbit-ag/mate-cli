@@ -2,13 +2,20 @@ import { createHash } from "node:crypto";
 
 import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 
-export type StudioView = "dashboard" | "workflow" | "specs" | "skills";
+export type StudioView = "dashboard" | "workflow" | "specs" | "skills" | "vault";
 
-export const STUDIO_VIEWS: readonly StudioView[] = ["dashboard", "workflow", "specs", "skills"];
+export const STUDIO_VIEWS: readonly StudioView[] = [
+  "dashboard",
+  "workflow",
+  "specs",
+  "skills",
+  "vault",
+];
 
 export const COMPANION_PARAM = "companion";
 export const VIEW_PARAM = "view";
 export const REFRESH_PARAM = "refresh";
+export const FILE_PARAM = "path";
 
 /** Filled into a prompt when no change is named, so a prompt is never half-written. */
 export const CHANGE_PLACEHOLDER = "<change-name>";
@@ -23,6 +30,7 @@ export interface StudioSelection {
    * into the URL another control builds. Switching a view is not a refresh.
    */
   refresh: boolean;
+  openPath: string | null;
 }
 
 /**
@@ -57,5 +65,6 @@ export function parseStudioSelection(url: URL): StudioSelection {
     companionDigest: url.searchParams.get(COMPANION_PARAM)?.trim() || null,
     view: readView(url.searchParams.get(VIEW_PARAM)),
     refresh: url.searchParams.get(REFRESH_PARAM) === "1",
+    openPath: url.searchParams.get(FILE_PARAM)?.trim() || null,
   };
 }

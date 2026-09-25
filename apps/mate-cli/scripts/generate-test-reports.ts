@@ -7,6 +7,8 @@ const coverageDir = path.join(process.cwd(), "coverage");
 const coverageLcovPath = path.join(coverageDir, "lcov.info");
 const coberturaPath = path.join(coverageDir, "cobertura-coverage.xml");
 const shouldGenerateJunit = process.argv.includes("--junit");
+/** Every run goes through the isolated-HOME runner; see test/run-isolated.ts. */
+const isolatedTest = path.join(import.meta.dirname, "..", "..", "..", "test", "run-isolated.ts");
 
 async function run(command: string[]) {
   const processResult = Bun.spawnSync({
@@ -28,7 +30,7 @@ await mkdir(coverageDir, { recursive: true });
 if (shouldGenerateJunit) {
   await run([
     process.execPath,
-    "test",
+    isolatedTest,
     "--reporter=junit",
     "--reporter-outfile=coverage/junit.xml",
   ]);
@@ -36,7 +38,7 @@ if (shouldGenerateJunit) {
 
 await run([
   process.execPath,
-  "test",
+  isolatedTest,
   "--coverage",
   "--coverage-reporter=text",
   "--coverage-reporter=lcov",

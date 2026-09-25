@@ -147,6 +147,21 @@ describe("command gating", () => {
     }
   });
 
+  test("forwards studio subcommand arguments", async () => {
+    const received: string[][] = [];
+    const studio = spyOn(studioCmd, "runStudioCommand").mockImplementation(async (argv) => {
+      received.push(argv);
+    });
+    spies.push(studio);
+
+    await main(
+      ["node", "mate", "studio", "serve", "--port", "4180", "--host", "0.0.0.0"],
+      recordingDeps().deps,
+    );
+
+    expect(received).toEqual([["serve", "--port", "4180", "--host", "0.0.0.0"]]);
+  });
+
   test("update and doctor dispatch without companion selection or install preflight", async () => {
     for (const command of ["update", "doctor"]) {
       const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
@@ -327,6 +342,17 @@ describe("command gating", () => {
     await main(["node", "mate", "claude"], deps);
     expect(gateCalls).toEqual(["companion", "install"]);
     expect(dispatched).toEqual(["claude"]);
+  });
+
+  test("deprecated launch aliases use the selected agent launch path", async () => {
+    const claude = recordingDeps();
+    await main(["node", "mate", "launch", "claude", "--", "--yes"], claude.deps);
+    expect(claude.gateCalls).toEqual(["companion", "install"]);
+
+    const opencode = recordingDeps();
+    await main(["node", "mate", "launch", "opencode", "--", "--yes"], opencode.deps);
+    expect(opencode.gateCalls).toEqual(["companion", "install"]);
+    expect(dispatched).toEqual(["claude", "opencode"]);
   });
 
   test("an ambiguous companion still blocks launch commands", async () => {

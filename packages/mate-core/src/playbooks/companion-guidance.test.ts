@@ -21,6 +21,19 @@ describe("buildCompanionGuidance", () => {
     expect(guidance).toContain("local-only");
   });
 
+  test("renders companion-only guidance without working-repository fields", () => {
+    const guidance = buildCompanionGuidance({
+      companionPath: "/tmp/companion",
+      capabilities: [{ name: "graphify" }],
+    });
+
+    expect(guidance).toContain("Companion-scoped launch with no Working Repository");
+    expect(guidance).toContain("Agent artifacts MUST go to /tmp/companion");
+    expect(guidance).toContain("__companion__");
+    expect(guidance).not.toContain("MATE_REPO_PATH");
+    expect(guidance).not.toContain("linked-repository");
+  });
+
   test("includes shared Graphify guidance when capability is enabled", () => {
     const guidance = buildCompanionGuidance({
       capabilities: [{ name: "graphify" }],

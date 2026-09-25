@@ -97,7 +97,7 @@ describe("CompanionSelector", () => {
       { ...dashboard, view: "workflow" },
     );
     expect(markup).toContain('method="get" action="/"');
-    expect(markup).toContain('onchange="this.form.submit()"');
+    expect(markup).not.toContain('onchange="this.form.submit()"');
     expect(markup).toContain('<input type="hidden" name="view" value="workflow"/>');
     expect(markup).not.toContain("Open companion");
   });

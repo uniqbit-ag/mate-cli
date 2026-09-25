@@ -33,14 +33,14 @@
     },
     "apps/mate-cli": {
       "name": "@uniqbit/mate",
-      "version": "0.16.0",
+      "version": "0.17.0-canary.9",
       "bin": {
         "mate": "src/cli-bootstrap.cjs",
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.29.0",
-        "@uniqbit/mate-core": "0.16.0",
-        "@uniqbit/mate-opencode-plugin": "0.16.0",
+        "@uniqbit/mate-core": "0.17.0-canary.9",
+        "@uniqbit/mate-opencode-plugin": "0.17.0-canary.9",
         "yaml": "^2.9.0",
         "zod": "^4.4.3",
       },
@@ -58,15 +58,23 @@
         "typescript": "latest",
       },
     },
+    "apps/mate-container": {
+      "name": "@uniqbit/mate-container",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "^1.3.14",
+        "yaml": "^2.9.0",
+      },
+    },
     "apps/mate-opencode-plugin": {
       "name": "@uniqbit/mate-opencode-plugin",
-      "version": "0.16.0",
+      "version": "0.17.0-canary.9",
       "dependencies": {
         "@opencode-ai/plugin": "^1.18.3",
         "@opentui/core": "^0.4.5",
         "@opentui/keymap": "^0.4.5",
         "@opentui/solid": "^0.4.5",
-        "@uniqbit/mate-core": "0.16.0",
+        "@uniqbit/mate-core": "0.17.0-canary.9",
       },
       "devDependencies": {
         "@types/bun": "^1.3.14",
@@ -75,7 +83,7 @@
     },
     "packages/mate-core": {
       "name": "@uniqbit/mate-core",
-      "version": "0.16.0",
+      "version": "0.17.0-canary.9",
       "dependencies": {
         "@opencode-ai/plugin": "^1.18.3",
         "@opentui/core": "^0.4.5",
@@ -919,6 +927,8 @@
     "@ungap/structured-clone": ["@ungap/structured-clone@1.3.3", "", {}, "sha512-60YRaenCQcVjYEKOcG824+DRGGIQ3VKErcBoAEDJZz5bKIs2ZG+X/H9Nk+Q6EVkwJk5QNApxbrc5QtBSwtrXAg=="],
 
     "@uniqbit/mate": ["@uniqbit/mate@workspace:apps/mate-cli"],
+
+    "@uniqbit/mate-container": ["@uniqbit/mate-container@workspace:apps/mate-container"],
 
     "@uniqbit/mate-core": ["@uniqbit/mate-core@workspace:packages/mate-core"],
 

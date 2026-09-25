@@ -360,6 +360,23 @@ ul.plain li:last-child { border-bottom: 0; }
 .workflow-option small { color: var(--muted); font-size: .65rem; line-height: 1.35; }
 .workflow-option .runway-step-copy { justify-self: start; }
 
+.vault-layout { display: grid; grid-template-columns: minmax(190px, .34fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.vault-tree-panel, .vault-editor-panel { min-width: 0; }
+.vault-tree-panel nav { display: grid; gap: 2px; }
+.vault-directory { color: var(--muted); font-family: var(--mono); font-size: .75rem; }
+.vault-directory summary { cursor: pointer; padding: 5px 4px; }
+.vault-children { display: grid; gap: 2px; padding-left: 12px; }
+.vault-file { display: contents; }
+.vault-file button { width: 100%; overflow: hidden; padding: 6px 8px; border-color: transparent; background: transparent; color: var(--text); font-family: var(--mono); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.vault-file button:hover, .vault-file button[aria-current="page"] { border-color: var(--border); background: var(--accent-soft); color: var(--accent); }
+.vault-warning { color: var(--warn); }
+#vault-editor { display: block; width: 100%; min-height: 62vh; resize: vertical; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--prompt-bg); color: var(--prompt-text); font-family: var(--mono); font-size: .86rem; line-height: 1.6; }
+#vault-editor:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+#vault-editor[readonly] { cursor: default; opacity: .85; }
+.vault-incoming { display: grid; gap: 8px; margin-top: 16px; padding: 12px; border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-soft); }
+.vault-incoming pre { max-height: 220px; overflow: auto; margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: .78rem; }
+@media (max-width: 800px) { .vault-layout { grid-template-columns: 1fr; } }
+
 @media (max-width: 650px) {
   .workflow-console-header { grid-template-columns: 1fr auto; }
   .workflow-console-context, .workflow-console-tabs { margin-left: 0; }

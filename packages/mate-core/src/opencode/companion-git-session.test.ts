@@ -183,10 +183,40 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
 
     await repairCompanionGitOnce(context(fixture), undefined, {
       MATE_ARTIFACT_PATH: fixture.companion,
+      MATE_REPO_PATH: fixture.repo,
     });
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
+  });
+
+  test("repairs Git for a companion-scoped managed session without a repository", async () => {
+    const fixture = makeFixture();
+    process.env.HOME = fixture.home;
+    commitUpstream(fixture, "remote");
+
+    const notes = await repairCompanionGitOnce(
+      { ...context(fixture), repositoryPath: "" },
+      undefined,
+      { MATE_ARTIFACT_PATH: fixture.companion, MATE_GIT_AUTO_MODE: "1" },
+    );
+
+    expect(notes).toEqual([]);
+    expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
+  });
+
+  test("does not repair Git for a companion-scoped launch that bypasses sync", async () => {
+    const fixture = makeFixture();
+    process.env.HOME = fixture.home;
+    commitUpstream(fixture, "remote");
+    const before = git(fixture.companion, "rev-parse", "HEAD");
+
+    await repairCompanionGitOnce({ ...context(fixture), repositoryPath: "" }, undefined, {
+      MATE_ARTIFACT_PATH: fixture.companion,
+      MATE_GIT_AUTO_MODE: "0",
+    });
+
+    expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
   });
 
   test("stays inert when no companion resolves", async () => {

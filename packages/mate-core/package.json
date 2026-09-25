@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate-core",
-  "version": "0.16.0",
+  "version": "0.17.0-canary.9",
   "description": "Core framework and plugin APIs for Mate.",
   "license": "MIT",
   "files": [
@@ -23,7 +23,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "test": "CI=1 bun test",
+    "test": "CI=1 bun ../../test/run-isolated.ts",
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
     "lint": "oxlint src/",
     "lint:fix": "oxlint src/ --fix",

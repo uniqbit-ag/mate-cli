@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   CONTEXT_MODE_PACKAGE_NAME,
+  CONTEXT_MODE_VERSION,
   getContextModeInstallDir,
   getContextModePackageReference,
   installContextModePackage,
@@ -10,6 +11,7 @@ import {
   validateContextModePackage,
 } from "../../../lib/context-mode-package";
 import { warmOpenCodePackageCache } from "../../../lib/opencode-plugin-package";
+import { installedVersionAt, isPreinstalledPluginPath } from "../../../lib/preinstalled-plugins";
 import type {
   CapabilityPlugin,
   LaunchPreflightContext,
@@ -69,17 +71,43 @@ async function assertNoMcpConflict(ctx: SetupContext, provider: "claude" | "open
   }
 }
 
+/**
+ * Both spellings of a current reference are accepted, because the Runtime
+ * Surface writes either one: the published spec on an ordinary workstation, and
+ * an absolute path into the machine-local workspace where the distribution
+ * supplied an installed copy. Accepting only the first would refuse the launch
+ * on exactly the deployments preinstalled binding exists for.
+ *
+ * Staleness is still caught in both cases — a published reference by its
+ * version, a bound one by the version of the copy it points at — so this is not
+ * the looser check it might look like.
+ */
 async function validateOpenCodeReferences(ctx: LaunchPreflightContext): Promise<string[]> {
   const expected = getContextModePackageReference();
   const diagnostics: string[] = [];
   for (const name of ["opencode.json", "tui.json"]) {
     const configPath = path.join(ctx.companionPath, ".opencode", name);
     const { config } = await readOpenCodeConfig(configPath);
-    if (!getOpenCodePluginReferences(config).includes(expected)) {
+    const references = getOpenCodePluginReferences(config);
+    if (references.includes(expected)) continue;
+
+    const bound = references.find(
+      (reference): reference is string =>
+        typeof reference === "string" &&
+        isPreinstalledPluginPath(reference, CONTEXT_MODE_PACKAGE_NAME),
+    );
+    if (bound !== undefined) {
+      const version = await installedVersionAt(bound);
+      if (version === CONTEXT_MODE_VERSION) continue;
       diagnostics.push(
-        `Missing or stale context-mode package reference in ${configPath}; expected ${expected}.`,
+        `Stale context-mode package reference in ${configPath}; it points at ${bound}, which is ${version ?? "not installed"} rather than ${CONTEXT_MODE_VERSION}.`,
       );
+      continue;
     }
+
+    diagnostics.push(
+      `Missing or stale context-mode package reference in ${configPath}; expected ${expected}.`,
+    );
   }
   return diagnostics;
 }
@@ -117,6 +145,10 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
               reference: getContextModePackageReference(),
               isManagedReference: isContextModePackageReference,
               configFiles: ["opencode.json", "tui.json"],
+              preinstalled: {
+                packageName: CONTEXT_MODE_PACKAGE_NAME,
+                version: CONTEXT_MODE_VERSION,
+              },
             },
           ],
         },

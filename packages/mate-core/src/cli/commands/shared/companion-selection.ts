@@ -40,6 +40,8 @@ export interface CompanionSelectionOptions {
   ignoreProjection?: boolean;
   /** Outranks the environment, the projection, and the picker. */
   companion?: string;
+  /** Pin an interactive answer for this process without writing a projection. */
+  persistSelection?: boolean;
 }
 
 function pin(match: Pick<CompanionMatch, "companionPath" | "repositoryId">): void {
@@ -137,6 +139,6 @@ export async function ensureUnambiguousCompanion(
   }
 
   pin(chosen);
-  await recordCompanion(cwd, chosen);
+  if (options.persistSelection !== false) await recordCompanion(cwd, chosen);
   return true;
 }

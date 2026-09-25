@@ -90,9 +90,9 @@ export function readCompanionRuntimeContext(
 }
 
 /**
- * A session is Mate-managed only when both the companion path and the working
- * repository path resolved. Plugins must stay inert otherwise.
+ * A session is Mate-managed when a companion path resolved. A companion-scoped
+ * launch intentionally has no working repository.
  */
 export function isManagedCompanionContext(context: CompanionRuntimeContext): boolean {
-  return Boolean(context.companionPath && context.repositoryPath);
+  return Boolean(context.companionPath);
 }
