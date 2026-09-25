@@ -13,7 +13,7 @@ import {
 import { getReactDoctorBinPath, getWrapperBinPath } from "../package-paths";
 import type { LinkedRepository } from "./types";
 
-export const COMPANION_GRAPHIFY_REPOSITORY_ID = "__companion__";
+const COMPANION_GRAPHIFY_REPOSITORY_ID = "__companion__";
 
 /**
  * The one derivation of the projected paths. Both the Projection Root and a

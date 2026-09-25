@@ -21,7 +21,7 @@ import {
 } from "../utils";
 import { applyMateSkills, teardownMateSkills } from "../mate";
 
-export { MATE_ARTIFACT_SKILLS, MATE_SKILLS, deployMateSkillDir } from "../mate";
+export { MATE_ARTIFACT_SKILLS, MATE_SKILLS } from "../mate";
 
 const execFileAsync = promisify(execFileCb);
 
@@ -108,10 +108,7 @@ function getMateConventionsPath(companionPath: string): string {
   return path.join(companionPath, "openspec", "mate-conventions.yaml");
 }
 
-export async function teardownOpenspecSkills(
-  skillsDir: string,
-  companionPath: string,
-): Promise<void> {
+async function teardownOpenspecSkills(skillsDir: string, companionPath: string): Promise<void> {
   for (const skill of OPENSPEC_SKILLS) {
     try {
       await fs.rm(path.join(skillsDir, skill), { recursive: true, force: true });
@@ -422,5 +419,3 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
     },
   };
 }
-
-export const openspecPlugin = createOpenspecPlugin();

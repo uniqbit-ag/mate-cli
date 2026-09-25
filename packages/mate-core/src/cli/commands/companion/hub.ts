@@ -8,6 +8,7 @@ import {
   updateHubPlugins,
 } from "../../../lib/orchestrator/companion-hub";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
+import { writeJsonStdout } from "../../write-json-stdout";
 
 function positionalArgs(argv: string[]): string[] {
   const values: string[] = [];
@@ -71,7 +72,7 @@ async function runHubSync(argv: string[]): Promise<void> {
   const results = await syncHub(process.cwd());
   const plugins = await updateHubPlugins(process.cwd());
   if (argv.includes("--json")) {
-    console.log(JSON.stringify({ companions: results, plugins }));
+    await writeJsonStdout({ companions: results, plugins }, { space: 0 });
     return;
   }
   for (const result of results) console.log(`${result.id}: ${result.status} (${result.message})`);

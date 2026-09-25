@@ -16,7 +16,7 @@ import type { GitLocation } from "./config";
  */
 
 /** What marks a directory as a Companion Repository. */
-export const COMPANION_CONFIG = path.join(".mate", "config", "framework.yaml");
+const COMPANION_CONFIG = path.join(".mate", "config", "framework.yaml");
 
 export class StartupError extends Error {
   constructor(message: string) {
@@ -42,7 +42,7 @@ export const runCommand: Runner = (command, args, cwd) => {
   };
 };
 
-export function isCompanion(directory: string): boolean {
+function isCompanion(directory: string): boolean {
   return fs.existsSync(path.join(directory, COMPANION_CONFIG));
 }
 
@@ -81,7 +81,7 @@ function isEmptyDirectory(directory: string): boolean {
   return fs.readdirSync(directory).length === 0;
 }
 
-export function remoteOf(directory: string, run: Runner = runCommand): string | null {
+function remoteOf(directory: string, run: Runner = runCommand): string | null {
   const result = run("git", ["-C", directory, "remote", "get-url", "origin"]);
   if (result.status !== 0) return null;
   const url = result.stdout.trim();

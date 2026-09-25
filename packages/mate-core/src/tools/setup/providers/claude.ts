@@ -151,7 +151,7 @@ export function renderManagedClaudeMcpServers(
 // servers) on top of whatever already exists in the settings document. Managed
 // groups/entries always lead their arrays so the emitted shape stays stable
 // across syncs; unmanaged content is preserved untouched.
-export function renderManagedClaudeSettings(
+function renderManagedClaudeSettings(
   existing: ClaudeSettings,
   companionPath: string,
   config: FrameworkConfig,

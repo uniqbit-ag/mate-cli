@@ -22,15 +22,24 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
+/** `--json` goes through `writeJsonStdout`, the rendered report through `console.log`. */
 async function captureStdout(fn: () => Promise<void>): Promise<string> {
   const chunks: string[] = [];
   const logSpy = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
     chunks.push(args.length > 0 ? args.join(" ") : "");
   });
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
+    chunks.push(String(chunk).replace(/\n$/, ""));
+    const callback = rest.find((argument) => typeof argument === "function");
+    if (callback) (callback as (error?: Error | null) => void)(null);
+    return true;
+  }) as typeof process.stdout.write;
 
   try {
     await fn();
   } finally {
+    process.stdout.write = originalWrite;
     logSpy.mockRestore();
   }
 

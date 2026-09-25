@@ -5,7 +5,7 @@ import { openspecFinisher } from "./openspec";
  * Artifact-kind → finisher factory. openspec is the only kind for now; a future ADR
  * finisher registers here and is selected via `--type`, with no engine changes.
  */
-export const FINISHERS: Record<string, FinisherFactory> = {
+const FINISHERS: Record<string, FinisherFactory> = {
   openspec: openspecFinisher,
 };
 

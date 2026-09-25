@@ -1,6 +1,5 @@
 import {
   buildCompanionGuidance as buildCompanionGuidanceWith,
-  buildCompanionPolicyXml as buildCompanionPolicyXmlWith,
   type GuidanceContext,
 } from "../runtime/companion-guidance";
 import { getWrapperBinPath } from "../lib/package-paths";
@@ -16,33 +15,7 @@ import { getWrapperBinPath } from "../lib/package-paths";
  * passes the projected path instead, and so calls the runtime builders direct.
  */
 
-export {
-  GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
-  GRAPHIFY_COMPANION_PATH_CONTRACT,
-  buildCodebaseExplorationGuidanceSection,
-  hasGraphifyCapability,
-  hasOpenspecCapability,
-  hasTokensaveCapability,
-  type GuidanceCapability,
-  type GuidanceContext,
-} from "../runtime/companion-guidance";
-
-/**
- * Build just the `<companion-policy>` XML block: paths, CLI tools, and
- * mandatory rules (including the capability-gated `openspec-publish` rule).
- * Does not include codebase-exploration guidance — see
- * `buildCompanionGuidance` for the merged single-string form, or call
- * `buildCodebaseExplorationGuidanceSection` directly when that guidance is
- * delivered through its own channel (as OpenCode's guidance contract does).
- */
-export function buildCompanionPolicyXml(
-  context: GuidanceContext,
-  options: { wrapperBinPath?: string } = {},
-): string {
-  return buildCompanionPolicyXmlWith(context, {
-    wrapperBinPath: options.wrapperBinPath ?? getWrapperBinPath(),
-  });
-}
+export { GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT } from "../runtime/companion-guidance";
 
 /**
  * Build the merged single-string guidance: the companion-policy XML plus

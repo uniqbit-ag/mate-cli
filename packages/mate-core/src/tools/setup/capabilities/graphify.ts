@@ -33,7 +33,7 @@ import {
 export const GRAPHIFY_STORE_SEGMENT = ".graphify";
 
 /** Skill tree the external `graphify install` CLI writes into a runtime directory. */
-export const GRAPHIFY_SKILL_NAME = "graphify";
+const GRAPHIFY_SKILL_NAME = "graphify";
 export const GRAPHIFY_OUTPUT_SUBDIR = "graphify-out";
 
 const GRAPHIFY_INSTALL_CMD = `uv tool install graphifyy`;
@@ -62,7 +62,7 @@ const GRAPHIFY_PROVIDER_DIRS: Record<string, string> = {
 export const GRAPHIFY_COMPANION_OUT_PREFIX =
   "$MATE_ARTIFACT_PATH/.graphify/$MATE_REPO_ID/graphify-out/";
 
-export const GRAPHIFY_SUPPORTED_PROVIDERS = Object.keys(GRAPHIFY_PROVIDER_DIRS);
+const GRAPHIFY_SUPPORTED_PROVIDERS = Object.keys(GRAPHIFY_PROVIDER_DIRS);
 
 const CLAUDE_MANAGED_HOOK_COMMAND_SUFFIXES = new Set([
   "/.claude/hooks/validate-artifact-path",

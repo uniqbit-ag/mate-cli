@@ -45,7 +45,7 @@ export interface LaunchWizardOptions {
   resolvePreview(target: LaunchTarget): Promise<LaunchPreviewData>;
 }
 
-export const launchSelectorDeps = {
+const launchSelectorDeps = {
   render: inkRender,
 };
 

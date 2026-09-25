@@ -27,7 +27,7 @@ export const WORKFLOW_CAPABILITY_ID = "openspec";
 /** Upper bound on one collection call; a hung wrapper must not hold a request open. */
 const OPENSPEC_TIMEOUT_MS = 60_000;
 
-export function openSpecWrapperPath(): string {
+function openSpecWrapperPath(): string {
   return path.join(getWrapperBinPath(), "openspec");
 }
 

@@ -12,6 +12,7 @@ const originalLog = console.log;
 let printed: string[];
 let stderr: string;
 let originalStderrWrite: typeof process.stderr.write;
+let originalStdoutWrite: typeof process.stdout.write;
 
 function launcherReturning(result: {
   exitCode: number;
@@ -33,6 +34,14 @@ beforeEach(() => {
   console.log = (...args: unknown[]) => {
     printed.push(args.join(" "));
   };
+  /** The launch result is emitted through `writeJsonStdout`, not `console.log`. */
+  originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
+    printed.push(String(chunk).replace(/\n$/, ""));
+    const callback = rest.find((argument) => typeof argument === "function");
+    if (callback) (callback as (error?: Error | null) => void)(null);
+    return true;
+  }) as typeof process.stdout.write;
   originalStderrWrite = process.stderr.write.bind(process.stderr);
   process.stderr.write = ((chunk: string | Uint8Array) => {
     stderr += String(chunk);
@@ -43,6 +52,7 @@ beforeEach(() => {
 
 afterEach(() => {
   console.log = originalLog;
+  process.stdout.write = originalStdoutWrite;
   process.stderr.write = originalStderrWrite;
   launchCommandDeps.createLauncher = originalCreateLauncher;
   launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;

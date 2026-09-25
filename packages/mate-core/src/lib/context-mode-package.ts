@@ -39,7 +39,7 @@ export function isContextModeNodeVersionSupported(version: string): boolean {
   return major > 22 || (major === 22 && minor >= 5);
 }
 
-export function validateContextModeNodeRuntime(): void {
+function validateContextModeNodeRuntime(): void {
   // env passed explicitly: bun's spawnSync otherwise ignores in-process PATH
   // changes when resolving the executable.
   const result = spawnSync("node", ["--version"], { encoding: "utf8", env: process.env });

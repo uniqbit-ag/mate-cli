@@ -10,6 +10,7 @@ import { resolveRootContext, type RootContext } from "../../lib/orchestrator/roo
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
 import { getRequiredPluginDrift } from "../../tools/setup/policy";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
+import { writeJsonStdout } from "../write-json-stdout";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
 
 interface DoctorDeps {
@@ -354,7 +355,7 @@ function renderHumanReport(report: DoctorReport): void {
 export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {}): Promise<void> {
   const report = await collectDoctorReport(deps);
   if (argv.includes("--json")) {
-    console.log(JSON.stringify(report, null, 2));
+    await writeJsonStdout(report);
     return;
   }
   renderHumanReport(report);

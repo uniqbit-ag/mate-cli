@@ -113,7 +113,7 @@ export function installPublicPackageSync(packageSpec: string, registry = PUBLIC_
   );
 }
 
-export function getNpmGlobalPackageRootSync(packageName: string): string {
+function getNpmGlobalPackageRootSync(packageName: string): string {
   const npmRoot = publicNpmDeps
     .execFileSync("npm", ["root", "-g"], {
       encoding: "utf8",

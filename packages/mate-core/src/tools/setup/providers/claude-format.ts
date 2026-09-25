@@ -87,7 +87,7 @@ export function filterClaudeHookGroups(
 // Claude plugin, and the retired mate-artifact-finish.sh archive hook is gone
 // entirely; their markers are retained migration-only so stale managed groups
 // written by earlier releases keep being stripped, and are never re-added.
-export const MANAGED_HOOK_MARKERS = [
+const MANAGED_HOOK_MARKERS = [
   "validate-artifact-path",
   "mate-session-banner",
   "react-doctor.sh",

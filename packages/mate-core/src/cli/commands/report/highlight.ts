@@ -4,10 +4,7 @@ import githubLight from "@tanstack/highlight/themes/github-light";
 
 /** Sole boundary against `@tanstack/highlight`, so an upstream API break stays a single-file fix. */
 
-/** Language every unknown or unsupported candidate resolves to. */
-export const PLAIN_LANGUAGE = "plaintext";
-
-export function resolveHighlightLanguage(candidate: string | undefined): string {
+function resolveHighlightLanguage(candidate: string | undefined): string {
   return normalizeLanguage(candidate);
 }
 

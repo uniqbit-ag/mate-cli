@@ -6,7 +6,7 @@ import { GlobalConfigStore } from "./global-config-store";
 import type { LinkedRepository } from "./types";
 
 /** Envelope version for the aggregate inventory shape; bump on any breaking shape change. */
-export const WORKSPACE_INVENTORY_SCHEMA_VERSION = 1;
+const WORKSPACE_INVENTORY_SCHEMA_VERSION = 1;
 
 export type CompanionInventoryHealth = "ready" | "missing" | "unreadable";
 export type PairingInventoryHealth =
@@ -41,7 +41,7 @@ export interface WorkspaceInventoryDeps {
   readCompanionRegistry: typeof readCompanionRegistry;
 }
 
-export function defaultWorkspaceInventoryDeps(
+function defaultWorkspaceInventoryDeps(
   globalConfigStore = new GlobalConfigStore(),
 ): WorkspaceInventoryDeps {
   return {

@@ -124,7 +124,7 @@ export async function looksLikeWorkingRepo(cwd: string): Promise<boolean> {
   return false;
 }
 
-export async function hasLocalCompanionConfig(cwd: string): Promise<boolean> {
+async function hasLocalCompanionConfig(cwd: string): Promise<boolean> {
   const resolvedCwd = path.resolve(cwd);
   return fileExists(path.join(resolvedCwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
 }

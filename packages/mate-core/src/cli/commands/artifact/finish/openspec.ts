@@ -269,7 +269,7 @@ async function resolved(
 }
 
 /** Tag namespace segregating spec publications from dated change anchors. */
-export const SPEC_TAG_NAMESPACE = "openspec/specs";
+const SPEC_TAG_NAMESPACE = "openspec/specs";
 /** Spec ids named individually before the remainder collapses into a count. */
 const SPEC_LABEL_LIMIT = 3;
 
@@ -297,7 +297,7 @@ function specLabel(paths: string[]): string {
 }
 
 /** Commit subject for a spec publication; it belongs to no change, so it names specs, never an anchor. */
-export function specCommitSubject(paths: string[]): string {
+function specCommitSubject(paths: string[]): string {
   const ids = specIds(paths);
   const named = ids.slice(0, SPEC_LABEL_LIMIT);
   const remaining = ids.length - named.length;

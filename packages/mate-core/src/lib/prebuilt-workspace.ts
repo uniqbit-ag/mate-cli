@@ -17,7 +17,7 @@ import { getLocalWorkspaceDir } from "./preinstalled-plugins";
  * Packages the distribution selects and pins for the machine-local workspace.
  * A bundle may carry any subset; it may carry nothing else.
  */
-export function getDistributionLocalDependencies(): Record<string, string> {
+function getDistributionLocalDependencies(): Record<string, string> {
   return {
     [CONTEXT_MODE_PACKAGE_NAME]: CONTEXT_MODE_VERSION,
     [OPENCODE_PLUGIN_PACKAGE_NAME]: getCurrentVersion(),

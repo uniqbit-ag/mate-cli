@@ -8,7 +8,7 @@ import { WizardHeader } from "../lib/components/wizard-header";
 import type { CompanionSource } from "../lib/orchestrator/types";
 import { parseRepoLinkInput } from "./wizard-key-input";
 
-export const companionLinkWizardDeps = {
+const companionLinkWizardDeps = {
   render: inkRender,
 };
 

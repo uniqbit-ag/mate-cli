@@ -8,7 +8,7 @@ import type {
 
 export type OpenSpecSchemaSelection = OpenSpecSchemaProfile | "default";
 export type GitModeSelection = GitModeProfile | "default";
-export const DEFAULT_OPENSPEC_SCHEMA_SELECTION: OpenSpecSchemaSelection = "default";
+const DEFAULT_OPENSPEC_SCHEMA_SELECTION: OpenSpecSchemaSelection = "default";
 export const DEFAULT_GIT_MODE_SELECTION: GitModeSelection = "default";
 
 export interface OpenSpecSchemaCompatibility {

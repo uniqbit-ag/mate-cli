@@ -52,7 +52,7 @@ import {
 } from "./repo-local-store";
 import type { ProjectionEntry, ProjectionInput } from "./projection-types";
 
-export const WORKSPACE_DOCUMENT_FILE = "workspace.code-workspace";
+const WORKSPACE_DOCUMENT_FILE = "workspace.code-workspace";
 
 /** The shared editor workspace document, inside the Projection Root. */
 export function workspaceDocumentPath(repoPath: string): string {

@@ -1,4 +1,4 @@
-export class MateError extends Error {}
+class MateError extends Error {}
 
 export class ConfigError extends MateError {}
 

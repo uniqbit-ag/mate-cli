@@ -3,8 +3,8 @@ import type { InstallRequirement } from "../install-contract";
 import { isCommandOnPath, runShellCommand, runShellCommandSilently } from "../utils";
 import { confirm } from "../../../cli/confirm";
 
-export const RTK_INSTALL_CMD_BREW = "brew install rtk-ai/tap/rtk";
-export const RTK_INSTALL_CMD_FALLBACK =
+const RTK_INSTALL_CMD_BREW = "brew install rtk-ai/tap/rtk";
+const RTK_INSTALL_CMD_FALLBACK =
   "curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh";
 
 const RTK_INIT_COMMANDS: Record<string, string> = {

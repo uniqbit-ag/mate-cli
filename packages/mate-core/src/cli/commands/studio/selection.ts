@@ -13,7 +13,7 @@ export const STUDIO_VIEWS: readonly StudioView[] = [
 ];
 
 export const COMPANION_PARAM = "companion";
-export const VIEW_PARAM = "view";
+const VIEW_PARAM = "view";
 export const REFRESH_PARAM = "refresh";
 export const FILE_PARAM = "path";
 

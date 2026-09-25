@@ -38,7 +38,7 @@ export interface StartupProgressAppProps {
   steps: StartupStep[];
 }
 
-export function StartupProgressApp({ title, steps }: StartupProgressAppProps) {
+function StartupProgressApp({ title, steps }: StartupProgressAppProps) {
   return (
     <Box flexDirection="column">
       <Text bold color={MIDNIGHT_PURPLE_BRIGHT}>

@@ -92,7 +92,7 @@ The default path writes self-contained HTML to a unique OS temporary directory a
 The built-in \`mate report\` path collects Mate usage data and adapts it to the same contract and renderer.
 `;
 
-export async function deployMateSkillDir(src: string, dest: string): Promise<void> {
+async function deployMateSkillDir(src: string, dest: string): Promise<void> {
   await fs.mkdir(dest, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
   for (const entry of entries) {
