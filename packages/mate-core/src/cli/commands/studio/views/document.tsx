@@ -12,6 +12,8 @@ import { Specs } from "./specs/index";
 import { STUDIO_STYLES } from "./styles";
 import { Skills } from "./skills/index";
 import { Workflow } from "./workflow/index";
+import { STUDIO_TERMINAL_SCRIPT, TerminalPanel } from "./terminal";
+import { TERMINAL_SCRIPTS, TERMINAL_STYLESHEET } from "../terminal-assets";
 
 const STUDIO_TITLE = "Mate Studio";
 
@@ -46,6 +48,13 @@ const VIEW_DETAILS = {
  * escape hatch around the renderer's escaping.
  */
 export function renderStudioDocument(page: StudioPage): string {
+  /** The terminal client is Studio's only library, served by Studio itself and only with the terminal. */
+  const terminalHead = page.terminal
+    ? `\n<link rel="stylesheet" href="${TERMINAL_STYLESHEET}">`
+    : "";
+  const terminalBody = page.terminal
+    ? `${TERMINAL_SCRIPTS.map((src) => `\n<script src="${src}"></script>`).join("")}\n<script>${STUDIO_TERMINAL_SCRIPT}</script>`
+    : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -53,10 +62,10 @@ export function renderStudioDocument(page: StudioPage): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${STUDIO_TITLE}</title>
 <style>${STUDIO_STYLES}</style>
-<script>${STUDIO_PREPAINT_SCRIPT}</script>
+<script>${STUDIO_PREPAINT_SCRIPT}</script>${terminalHead}
 </head>
 <body>${String(<StudioShell page={page} />)}
-<script>${STUDIO_CLIENT_SCRIPT}</script>
+<script>${STUDIO_CLIENT_SCRIPT}</script>${terminalBody}
 </body>
 </html>
 `;
@@ -77,6 +86,7 @@ function StudioShell({ page }: { page: StudioPage }) {
         <main className="main">
           {page.companion ? <PageHeader page={page} /> : null}
           <Content page={page} />
+          {page.terminal ? <TerminalPanel terminal={page.terminal} /> : null}
         </main>
       </div>
       <div className="toast" id="studio-toast" data-shown="false" />

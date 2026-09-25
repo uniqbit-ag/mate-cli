@@ -66,6 +66,7 @@ describe("no moving references", () => {
       ["mate.version", inputs.mate.version],
       ["mate.minimum_compatible", inputs.mate.minimum_compatible],
       ["opencode.version", inputs.opencode.version],
+      ["claude.version", inputs.claude.version],
       ...Object.entries(inputs.os_packages.packages).map(
         ([name, version]) => [`os_packages.${name}`, version] as [string, string],
       ),
@@ -85,6 +86,7 @@ describe("no moving references", () => {
     const archs = inputs.targets.map((target) => target.arch);
     const downloads: Array<[string, Record<string, { file: string; sha256: string }>]> = [
       ["opencode", inputs.opencode.artifacts],
+      ["claude", inputs.claude.artifacts],
       ...Object.entries(inputs.tools)
         .filter(([, tool]) => tool.artifacts !== undefined)
         .map(([name, tool]) => [name, tool.artifacts!] as [string, Record<string, never>]),
@@ -186,7 +188,13 @@ describe("the compose example matches the image", () => {
     fs.readFileSync(path.join(CONTAINER_ROOT, "compose.example.yaml"), "utf8"),
   ) as {
     services: {
-      mate: { image: string; user: string; ports: string[]; volumes: string[] };
+      mate: {
+        image: string;
+        user: string;
+        ports: string[];
+        volumes: string[];
+        environment: Record<string, string>;
+      };
     };
   };
   const service = compose.services.mate;
@@ -195,11 +203,25 @@ describe("the compose example matches the image", () => {
     expect(service.user).toBe(`${inputs.runtime.uid}:${inputs.runtime.gid}`);
   });
 
-  test("publishes both ports the container serves on", () => {
+  test("publishes Studio alone, on loopback", () => {
     const published = service.ports.map((entry) => entry.split(":").at(-1));
-    expect(published).toEqual(["4096", "4097"]);
-    // Bound to loopback, because neither port authenticates anything.
+    expect(published).toEqual(["4097"]);
     expect(service.ports.every((entry) => entry.startsWith("127.0.0.1:"))).toBe(true);
+  });
+
+  test("shows the terminal, detach, token, and proxy settings", () => {
+    const raw = fs.readFileSync(path.join(CONTAINER_ROOT, "compose.example.yaml"), "utf8");
+    expect(service.environment.MATE_STUDIO_TERMINAL).toBe("true");
+    expect(service.environment.MATE_STUDIO_DETACH_MINUTES).toBe("30");
+    for (const name of [
+      "MATE_STUDIO_TOKEN",
+      "MATE_STUDIO_PUBLIC_ORIGIN",
+      "MATE_STUDIO_ALLOWED_HOSTS",
+    ]) {
+      expect(raw).toContain(name);
+    }
+    expect(raw).toContain("https://studio.acme.test");
+    expect(raw).not.toContain("MATE_AGENT_PORT");
   });
 
   test("mounts the companions directory and the configuration file", () => {

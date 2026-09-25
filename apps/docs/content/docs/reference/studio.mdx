@@ -8,12 +8,12 @@ with real state on it: the skills and prompts a change is driven by, alongside
 that companion's changes and specs.
 
 ```sh
-mate studio [--writable]
+mate studio [--writable] [--terminal] [--detach-timeout <minutes>]
 ```
 
-The command accepts only `--writable`. Without it, the vault is read-only. An
-unrecognized argument is reported and the command exits non-zero without
-starting a server.
+Without `--writable`, the vault is read-only. `--terminal` adds the
+[agent terminal](#agent-terminal) and requires `--writable`. An unrecognized
+argument is reported and the command exits non-zero without starting a server.
 
 ## Invocation Context
 
@@ -40,7 +40,9 @@ browser.
 It requires an explicit port and prints the bound URL when the server is ready:
 
 ```sh
-mate studio serve --port <port> [--host <host>] [--writable]
+mate studio serve --port <port> [--host <host>] [--writable] [--terminal]
+  [--detach-timeout <minutes>] [--token <value>] [--allowed-host <host>]
+  [--public-origin <origin>] [--companion <path>] [--no-git]
 ```
 
 `--port` must be an available port from 1 through 65535. A bind failure is
@@ -56,10 +58,110 @@ The server stays in the foreground until it receives `SIGINT` or `SIGTERM`,
 then stops cleanly. The serve path does not print the interactive
 `Press Ctrl+C to stop.` hint or attempt a browser launch.
 
-A non-loopback deployment exposes companion paths, change names, and inventory,
-and Studio provides no access control. Front it with a service that terminates
-TLS: plain HTTP has no access control and browsers withhold interfaces such as
-clipboard access outside a secure context.
+A non-loopback deployment exposes companion paths, change names, and inventory.
+The [access token](#access-modes-and-the-token) keeps a stranger out, but Studio
+has no user accounts. Front it with a service that terminates TLS: plain HTTP
+exposes the token in transit, and browsers withhold interfaces such as clipboard
+access outside a secure context.
+
+## Access Modes and the Token
+
+Studio is _guarded_ under `mate studio serve`, and whenever `--terminal` is set.
+A guarded Studio generates a fresh access token each time it starts and prints
+an address that carries it; the interactive command opens the browser there:
+
+```text
+http://localhost:4180/?token=S6GdXknuAqJKsryTjSxQA4dFMjBg58enIGLb5rW1TvA
+```
+
+Opening that address exchanges the token for a cookie (`HttpOnly`,
+`SameSite=Strict`, root path, host-only, `Secure` for an HTTPS public origin)
+and redirects to the same address without the token. A wrong token is refused
+and changes no cookie. A wildcard bind such as `0.0.0.0` prints a loopback
+address, not the wildcard.
+
+| Invocation               | Reads and live updates | Save                  | Terminal and sessions |
+| ------------------------ | ---------------------- | --------------------- | --------------------- |
+| `mate studio`            | open                   | Host + Origin         | —                     |
+| `mate studio --terminal` | open                   | token + Host + Origin | token + Host + Origin |
+| `mate studio serve`      | token + Host           | token + Host + Origin | token + Host + Origin |
+
+Under `serve`, a browser without the cookie gets a page that holds no companion
+data and explains how to open the tokened address; any other request is refused.
+Plain `mate studio` issues no token and behaves as before.
+
+**Pinning the token.** `--token <value>` or `MATE_STUDIO_TOKEN` pins the token
+under `serve`, so it survives restarts and stays out of the log: Studio prints
+the address without it. A value shorter than 32 characters is refused at start.
+Open `http://<host>:<port>/?token=<value>` once per browser.
+
+**Host checks.** Every request, under every invocation, must name a Host Studio
+answers to, port included: the bound address, `localhost`, `127.0.0.1`, `[::1]`,
+or a host configured with `--allowed-host` (repeatable, comma-separated) or
+`MATE_STUDIO_ALLOWED_HOSTS`. Matching is exact — no wildcards or suffixes — so a
+rebinding hostname can neither read nor write. When a published port differs
+from the bound one (for example `8080:4180`), add `localhost:8080`.
+
+**Origin checks.** A save, a terminal connection, and ending a session also need
+a browser `Origin` matching the page's own. A missing, `null`, foreign, or
+same-site sibling origin is refused, with or without a valid token.
+
+**Behind a TLS-terminating proxy.** Set `--public-origin` or
+`MATE_STUDIO_PUBLIC_ORIGIN` to the exact `https://host[:port]` users open. Its
+host is accepted automatically. Requests on that Host use the public origin for
+Origin matching and get a `Secure` cookie; a request on any other Host does not.
+Studio never reads `Forwarded` or `X-Forwarded-*`. The proxy must enforce TLS
+and keep the backend port unreachable except through it.
+
+**Breaking change.** `mate studio serve` used to serve reads without any
+check. It now requires the token for every request: open the printed address
+once, or pin a token.
+
+## Agent Terminal
+
+`--terminal` adds a browser terminal that starts `mate claude` or
+`mate opencode` against a companion, and nothing else — no shell, no path, no
+extra arguments or environment from the page. It needs `--writable`, macOS or
+Linux, and Bun 1.3.5 or later (which provides a native pseudo-terminal); on
+anything else Studio refuses to start with `--terminal` and names what is
+missing.
+
+- **What it launches.** The control offers only agents the companion allows and
+  that are installed, and names the companion a new session targets. The
+  launch is companion-scoped (`-- --companion --yes`), runs in the companion's
+  directory with `MATE_ARTIFACT_PATH` set to it, and applies the same preflight
+  as a local launch; a refusal is shown in the terminal. The companion is the
+  one selected in the page, re-read from the registered inventory at launch.
+  `serve --companion <path>` pins every launch to that registered companion
+  instead, whatever the page shows. `serve --no-git` passes `--no-git` to each
+  launch.
+- **One viewer.** A session has one attached tab. Reloading the tab reattaches
+  it; any other tab holding the cookie can attach, taking it over, and the
+  previous tab is told so and does not reconnect by itself. After a lost
+  connection a tab retries 8 times, starting at 2 seconds and doubling, then
+  offers **Reconnect**.
+- **Detach.** Closing the tab, losing the network, or missing heartbeats for 30
+  seconds detaches the session; the agent keeps running. A detached session ends
+  after the detach window: `--detach-timeout <minutes>`, 30 minutes under
+  `serve` and 2 minutes interactively. Output produced meanwhile — the newest
+  1 MiB — is replayed on attach, and the agent is nudged to redraw.
+- **Sessions.** The panel lists live sessions with agent, companion, state, and
+  age, and can attach to or end any of them.
+- **Bounds.** At most four sessions per server, detached ones included; a new
+  start at the cap ends the longest-detached one, or is refused if all are
+  attached. One attached session per connection. Input over 64 KiB and sizes
+  outside 2–500 columns or 1–300 rows are rejected without ending the session. A
+  viewer that falls more than 1 MiB behind is detached.
+- **Ending.** Ending a session sends `TERM` to the agent's process group, `KILL`
+  after 5 seconds, and waits 5 seconds for the reap. Stopping Studio ends every
+  session, attached or detached; nothing survives a restart.
+
+The terminal client (xterm.js) is Studio's only browser library. Studio serves it
+itself, and only with `--terminal`.
+
+**Security model.** A terminal is shell-level access through the agent. It is
+opt-in, requires the write path, and sits behind the token, the Host check, and
+the Origin check. Taking over a session needs the same cookie as starting one.
 
 ## The Selections
 
@@ -187,7 +289,8 @@ Studio is a foreground server, read-only by default:
 - without `--writable`, no request writes to a companion repository, a working
   repository, or any Mate state
 - the document is rendered on the server and carries its styles and its behavior
-  inline, so it loads nothing from any external host and needs no build step
+  inline, so it loads nothing from any external host and needs no build step;
+  with `--terminal` it also loads the terminal client Studio serves itself
 - `Ctrl+C` ends it; nothing outlives the invocation, so there is no stop
   subcommand, no process-identifier file, and no state written anywhere
 

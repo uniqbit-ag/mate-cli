@@ -37,6 +37,11 @@ export function buildArgs(
     OPENCODE_SHA256_AMD64: opencode.artifacts.amd64!.sha256,
     OPENCODE_SHA256_ARM64: opencode.artifacts.arm64!.sha256,
 
+    CLAUDE_VERSION: inputs.claude.version,
+    CLAUDE_RELEASE_BASE_URL: inputs.claude.release_base_url,
+    CLAUDE_SHA256_AMD64: inputs.claude.artifacts.amd64!.sha256,
+    CLAUDE_SHA256_ARM64: inputs.claude.artifacts.arm64!.sha256,
+
     UV_VERSION: tools.uv!.version,
     UV_SHA256_AMD64: tools.uv!.artifacts!.amd64!.sha256,
     UV_SHA256_ARM64: tools.uv!.artifacts!.arm64!.sha256,

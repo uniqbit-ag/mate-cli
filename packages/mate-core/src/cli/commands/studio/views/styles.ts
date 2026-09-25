@@ -403,4 +403,15 @@ ul.plain li:last-child { border-bottom: 0; }
   .lookup-table tbody tr:hover td { background: transparent; }
   .lookup-table .bar { width: 100%; max-width: 180px; }
 }
+
+.terminal-panel { display: grid; gap: 12px; margin-top: 18px; }
+.terminal-head { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start; }
+.terminal-head h2 { margin: 0; font-size: 16px; }
+.terminal-target { margin: 4px 0 0; color: var(--muted); }
+.terminal-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.terminal-status { margin: 0; color: var(--muted); font-size: 13px; }
+.terminal-view { min-height: 420px; height: 55vh; background: #000; border-radius: 8px; padding: 6px; overflow: hidden; }
+.terminal-sessions-title { margin: 0; font-size: 13px; color: var(--muted); }
+.terminal-sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.terminal-sessions li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 `;

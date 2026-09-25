@@ -1,6 +1,7 @@
 import type { StudioInventory, StudioInventoryCompanion } from "../inventory";
 import type { StudioCompanionPayload } from "../payload";
 import type { StudioSelection } from "../selection";
+import type { TerminalAgent } from "../terminal";
 import type { VaultFile, VaultTreeNode } from "../vault";
 
 /**
@@ -18,6 +19,15 @@ export interface StudioPage {
   collectedAt: number | null;
   writable: boolean;
   vault: StudioVaultPage | null;
+  /** `null` unless the terminal is enabled. */
+  terminal: StudioTerminalPage | null;
+}
+
+export interface StudioTerminalPage {
+  /** The launch companion was pinned at start and ignores the page selection. */
+  pinned: boolean;
+  target: { path: string; digest: string } | null;
+  agents: TerminalAgent[];
 }
 
 export interface StudioVaultPage {

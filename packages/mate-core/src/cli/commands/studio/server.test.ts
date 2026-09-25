@@ -306,7 +306,11 @@ describe("createStudioFetch", () => {
       );
       expect(await opened.json()).toMatchObject({ path: "note.md", content: "one" });
       const refused = await handler(
-        new Request("http://localhost/api/vault/save", { method: "POST", body: "{}" }),
+        new Request("http://localhost/api/vault/save", {
+          method: "POST",
+          headers: { origin: "http://localhost" },
+          body: "{}",
+        }),
       );
       expect(refused.status).toBe(403);
       expect(await refused.text()).toContain("--writable");
@@ -346,7 +350,7 @@ describe("createStudioFetch", () => {
       const saved = await handler(
         new Request("http://localhost/api/vault/save", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "application/json", origin: "http://localhost" },
           body: JSON.stringify({
             companion: digest,
             path: "note.md",

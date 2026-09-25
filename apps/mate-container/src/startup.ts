@@ -139,11 +139,13 @@ export function assertRequirementsCarried(
 export interface StartupPlan {
   companion: string;
   companions: string[];
-  agentPort: number;
-  agentHost: string;
   studioPort: number;
   studioHost: string;
   studioWritable: boolean;
+  studioTerminal: boolean;
+  studioDetachMinutes: number;
+  studioAllowedHosts: string[];
+  studioPublicOrigin: string | null;
   gitSync: boolean;
 }
 
@@ -176,6 +178,11 @@ export function prepareStartup(
   config: ApplianceConfig,
   deps: StartupDeps = defaultDeps(),
 ): StartupPlan {
+  for (const name of config.removed) {
+    deps.log(
+      `warning: ${name} is no longer used; the container serves Studio alone and agents start from its terminal`,
+    );
+  }
   assertCompanionsDirUsable(config.companionsDir, deps.identity);
 
   for (const outcome of checkoutConfigured(config.companionsDir, config.companionRepos, deps.run)) {
@@ -188,8 +195,8 @@ export function prepareStartup(
 
   const companions = discoverCompanions(config.companionsDir);
 
-  // Registration is for Studio's inventory alone — the companion-scoped launch
-  // resolves its own companion and never reads the registry.
+  // Registration feeds Studio's inventory, which also validates the launch
+  // companion Studio is pinned to; the launch itself never reads the registry.
   for (const companion of companions) {
     const result = deps.run(deps.mate, ["companion", "register", companion]);
     if (result.status !== 0) {
@@ -224,11 +231,13 @@ export function prepareStartup(
   return {
     companion,
     companions,
-    agentPort: config.agentPort,
-    agentHost: config.agentHost,
     studioPort: config.studioPort,
     studioHost: config.studioHost,
     studioWritable: config.studioWritable,
+    studioTerminal: config.studioTerminal,
+    studioDetachMinutes: config.studioDetachMinutes,
+    studioAllowedHosts: config.studioAllowedHosts,
+    studioPublicOrigin: config.studioPublicOrigin,
     gitSync: config.gitSync,
   };
 }
@@ -241,25 +250,30 @@ export function shellQuote(value: string): string {
 export function renderPlan(plan: StartupPlan): string {
   return [
     `MATE_PLAN_COMPANION=${shellQuote(plan.companion)}`,
-    `MATE_PLAN_AGENT_PORT=${shellQuote(String(plan.agentPort))}`,
-    `MATE_PLAN_AGENT_HOST=${shellQuote(plan.agentHost)}`,
     `MATE_PLAN_STUDIO_PORT=${shellQuote(String(plan.studioPort))}`,
     `MATE_PLAN_STUDIO_HOST=${shellQuote(plan.studioHost)}`,
     `MATE_PLAN_STUDIO_WRITABLE=${shellQuote(plan.studioWritable ? "1" : "")}`,
+    `MATE_PLAN_STUDIO_TERMINAL=${shellQuote(plan.studioTerminal ? "1" : "")}`,
+    `MATE_PLAN_STUDIO_DETACH_MINUTES=${shellQuote(String(plan.studioDetachMinutes))}`,
+    `MATE_PLAN_STUDIO_ALLOWED_HOSTS=${shellQuote(plan.studioAllowedHosts.join(","))}`,
+    `MATE_PLAN_STUDIO_PUBLIC_ORIGIN=${shellQuote(plan.studioPublicOrigin ?? "")}`,
     `MATE_PLAN_GIT_SYNC=${shellQuote(plan.gitSync ? "1" : "")}`,
   ].join("\n");
 }
 
 /**
  * Credentials are printed separately and never written to disk: the supervisor
- * evaluates them straight into the session's environment, so they reach the
- * agent and nothing else. They are not part of the plan, and no Companion
- * Repository ever sees them.
+ * evaluates them straight into Studio's environment, which agent sessions
+ * inherit. Studio's pinned token travels the same way rather than as an
+ * argument a process listing would show; Studio strips it from each launch.
  */
 export function renderCredentials(config: ApplianceConfig): string {
   const lines = Object.entries(config.credentials).map(
     ([name, value]) => `export ${name}=${shellQuote(value)}`,
   );
+  if (config.studioToken !== null) {
+    lines.push(`export MATE_STUDIO_TOKEN=${shellQuote(config.studioToken)}`);
+  }
   if (config.gitUserName !== null) {
     lines.push(`export GIT_AUTHOR_NAME=${shellQuote(config.gitUserName)}`);
     lines.push(`export GIT_COMMITTER_NAME=${shellQuote(config.gitUserName)}`);

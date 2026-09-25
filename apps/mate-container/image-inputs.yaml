@@ -96,6 +96,25 @@ opencode:
       sha256: d4e332f46b227448582c0d9fc75f6f826dfe95c9f751bc2011fc4d937a042be6
 
 # ---------------------------------------------------------------------------
+# Claude Code, the second agent runtime Studio's terminal launches. Its
+# version is independent of Mate's and OpenCode's.
+#
+# The native release binary is fetched directly and checked against the
+# per-architecture digest the release manifest publishes; no installer runs,
+# so nothing resolves a channel such as "stable" at build time.
+# ---------------------------------------------------------------------------
+claude:
+  version: 2.1.274
+  release_base_url: https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
+  artifacts:
+    amd64:
+      file: linux-x64/claude
+      sha256: 15e2d05148f801b5774032faad87e624ecd172e9903288bda448b892eb58fa07
+    arm64:
+      file: linux-arm64/claude
+      sha256: 2db904daea17addff9de557ba26a725916888aa7b546e2c5dd989c20d9d49ab3
+
+# ---------------------------------------------------------------------------
 # The capability toolchain. The installation gate is evaluated against the
 # mounted companion's selections, which the image cannot know at build time, so
 # it carries all of it: every supported package manager and every supported

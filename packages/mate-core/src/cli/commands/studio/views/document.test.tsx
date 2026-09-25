@@ -301,3 +301,51 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   });
 });
+
+describe("terminal view", () => {
+  const terminal = {
+    pinned: false,
+    target: { path: acme, digest },
+    agents: ["claude" as const],
+  };
+
+  it("references no terminal client without the terminal", () => {
+    const markup = renderStudioDocument(selected);
+    expect(markup).not.toContain("/studio/terminal/");
+    expect(markup).not.toContain("studio-terminal-panel");
+  });
+
+  it("loads only Studio-served client files with the terminal", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    const sources = [...markup.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1]);
+    expect(sources.length).toBeGreaterThan(0);
+    for (const source of sources) expect(source!.startsWith("/studio/terminal/")).toBe(true);
+    expect(markup).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+
+  it("offers only launchable agents and names the target", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    expect(markup).toContain('data-terminal-start="claude"');
+    expect(markup).not.toContain('data-terminal-start="opencode"');
+    expect(markup).toContain(`Launches against <code>${acme}</code>`);
+    expect(markup).not.toContain("fixed when Studio started");
+  });
+
+  it("marks a pinned target and says when nothing can launch", () => {
+    const pinned = renderStudioDocument({
+      ...selected,
+      terminal: { ...terminal, pinned: true, agents: [] },
+    });
+    expect(pinned).toContain("fixed when Studio started");
+    expect(pinned).toContain("No agent this companion allows is installed.");
+    expect(pinned).not.toContain("data-terminal-start=");
+  });
+
+  it("reconnects a bounded number of times and never after a takeover", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    expect(markup).toContain("MAX_ATTEMPTS = 8");
+    expect(markup).toContain("FIRST_DELAY = 2000");
+    expect(markup).toContain("if (takenOver) return;");
+    expect(markup).toContain("sessionStorage");
+  });
+});
