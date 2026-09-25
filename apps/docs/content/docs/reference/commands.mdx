@@ -64,7 +64,10 @@ It runs from any directory, binds a port the operating system assigns on the
 loopback interface, opens the platform browser, and serves in the foreground
 until interrupted. Pass `--writable` to `mate studio` or
 `mate studio serve --port <port>` to enable Vault saves; all other endpoints
-remain read-only, and the default remains read-only.
+remain read-only, and the default remains read-only. Add `--terminal` (with
+`--writable`) for a browser terminal that starts Claude Code or OpenCode against
+the companion; it, and every `mate studio serve`, is guarded by a per-start
+access token.
 See [mate studio](/mate-cli/reference/studio).
 
 ## Agent Launch

@@ -403,4 +403,68 @@ ul.plain li:last-child { border-bottom: 0; }
   .lookup-table tbody tr:hover td { background: transparent; }
   .lookup-table .bar { width: 100%; max-width: 180px; }
 }
+
+/** Agent terminal sidebar: every rule is scoped so a page without the terminal is unchanged. */
+.terminal-sidebar {
+  --terminal-strip: 44px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  min-width: 0;
+  display: flex;
+  background: var(--bg-rail);
+  border-left: 1px solid var(--border);
+}
+.terminal-resize { position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; cursor: col-resize; touch-action: none; z-index: 2; }
+.terminal-resize:hover { background: var(--accent-soft); }
+.terminal-strip { display: none; flex-direction: column; align-items: center; gap: 12px; width: 100%; padding: 14px 0; }
+.terminal-body { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 0; min-height: 0; padding: 16px 14px 14px; }
+.terminal-head { display: grid; gap: 8px; }
+.terminal-title { display: flex; align-items: center; gap: 8px; }
+.terminal-title h2 { flex: 1; margin: 0; font-size: 15px; }
+.terminal-icon-button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; font-size: 16px; line-height: 1; text-align: center; }
+#terminal-drawer-close { display: none; }
+.terminal-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.terminal-sidebar[data-terminal-state="connected"] .terminal-dot { background: var(--done); }
+.terminal-sidebar[data-terminal-state="reconnecting"] .terminal-dot { background: var(--warn); }
+.terminal-sidebar[data-terminal-state="detached"] .terminal-dot { background: var(--bad); }
+.terminal-target { margin: 0; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+.terminal-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.terminal-actions .button { padding: 6px 9px; font-size: .78rem; }
+.terminal-status { margin: 0; color: var(--muted); font-size: 12px; }
+.terminal-view { flex: 1; min-height: 160px; background: #000; border-radius: 8px; padding: 6px; overflow: hidden; }
+.terminal-sessions-footer { flex: none; display: grid; gap: 6px; max-height: 28vh; overflow-y: auto; }
+.terminal-sessions-title { margin: 0; font-size: 12px; color: var(--muted); }
+.terminal-sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.terminal-sessions li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .75rem; }
+.terminal-sessions .button { padding: 4px 8px; font-size: .72rem; }
+.terminal-drawer-open { display: none; }
+
+@media (min-width: 1201px) {
+  .shell[data-terminal] { grid-template-columns: 260px minmax(0, 1fr) clamp(360px, var(--terminal-width, min(560px, 40vw)), 70vw); }
+  :root[data-terminal-collapsed] .shell[data-terminal] { grid-template-columns: 260px minmax(0, 1fr) var(--terminal-strip, 44px); }
+  :root[data-terminal-collapsed] .shell[data-terminal] .terminal-body,
+  :root[data-terminal-collapsed] .shell[data-terminal] .terminal-resize { display: none; }
+  :root[data-terminal-collapsed] .shell[data-terminal] .terminal-strip { display: flex; }
+}
+
+/** Below the side-by-side breakpoint the sidebar is an off-canvas drawer; collapse does not apply. */
+@media (max-width: 1200px) {
+  .shell[data-terminal] .terminal-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: min(92vw, clamp(360px, var(--terminal-width, min(560px, 40vw)), 70vw));
+    height: 100vh;
+    z-index: 30;
+    box-shadow: var(--shadow);
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform .2s, visibility .2s;
+  }
+  .shell[data-terminal] .terminal-sidebar[data-drawer-open] { transform: none; visibility: visible; }
+  .shell[data-terminal] #terminal-collapse { display: none; }
+  .shell[data-terminal] #terminal-drawer-close { display: grid; }
+  .terminal-drawer-open { display: block; position: fixed; right: 18px; bottom: 18px; z-index: 25; box-shadow: var(--shadow); }
+}
 `;

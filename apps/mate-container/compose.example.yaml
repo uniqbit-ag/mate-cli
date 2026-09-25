@@ -1,11 +1,13 @@
 # The Mate appliance, as one container.
 #
 # For reading and for starting: `docker compose -f compose.example.yaml up`
-# brings up an agent session and Studio against the companions you mount.
+# brings up Studio against the companions you mount. Agent sessions — Claude
+# Code or OpenCode — start on demand from Studio's terminal.
 #
-# Both published ports are unauthenticated. What fronts them is yours — put a
-# reverse proxy with authentication and TLS in front of both, or publish them
-# only on a loopback address as they are below.
+# Studio is guarded by an access token: open the address it prints in the log
+# (`docker compose logs mate`), or pin one below. It still has no user
+# accounts, so publish it on a loopback address as below, or put a reverse
+# proxy with TLS in front of it.
 
 services:
   mate:
@@ -31,8 +33,8 @@ services:
       - ./companions:/companions
 
       # Everything an operator supplies arrives at run time; nothing is baked
-      # into the image. This file is where credentials belong, so they stay out
-      # of the process listing.
+      # into the image. This file is where credentials and a pinned token
+      # belong, so they stay out of the process listing.
       - ./appliance.yaml:/etc/mate/appliance.yaml:ro
 
       # Only for Git remotes over SSH: a key and the hosts it may talk to,
@@ -41,34 +43,51 @@ services:
       # - ./ssh/known_hosts:/home/mate/.ssh/known_hosts:ro
 
     ports:
-      # The agent session, and Studio beside it. Bound to loopback here so
-      # nothing is reachable off-host until you have put something in front.
-      - "127.0.0.1:4096:4096"
+      # Studio, the only port. Bound to loopback here so nothing is reachable
+      # off-host until you have put something in front. Keep the host port
+      # equal to 4097, or add `localhost:<host port>` to
+      # MATE_STUDIO_ALLOWED_HOSTS: Studio refuses a Host it does not expect.
       - "127.0.0.1:4097:4097"
 
     environment:
-      # Which companion the session runs against. Required only when more than
-      # one is found — otherwise the single one is used.
+      # Which companion every agent session runs against. Required only when
+      # more than one is found — otherwise the single one is used.
       MATE_COMPANION: acme
 
       # Check a companion out on first start. An existing checkout is used as
       # it is: never re-cloned, never reset.
       # MATE_COMPANION_REPOS: https://github.com/example/acme-companion.git
 
-      # Whether the session synchronizes the companion with its remote. Off,
-      # it is started with --no-git and never contacts the remote.
+      # Whether agent sessions synchronize the companion with its remote. Off,
+      # each launch gets --no-git and never contacts the remote.
       # MATE_GIT_SYNC: "true"
 
-      # Whether Studio's save path is reachable. Studio is the editor for the
-      # human using this container, so it is on by default.
+      # Studio's save path and its agent terminal, both on by default. The
+      # terminal needs the save path: turning writability off turns it off.
       MATE_STUDIO_WRITABLE: "true"
+      MATE_STUDIO_TERMINAL: "true"
 
-      # The agent's credentials. Put them in the configuration file rather than
+      # How long a session keeps running after its browser tab goes away.
+      MATE_STUDIO_DETACH_MINUTES: "30"
+
+      # Pin the access token (32+ characters) so it survives restarts and stays
+      # out of the log. Better placed in appliance.yaml as `studioToken:`.
+      # MATE_STUDIO_TOKEN: ...
+
+      # Behind a TLS-terminating proxy: the exact address users open, and the
+      # host it sends. Studio trusts no forwarded headers; the proxy must
+      # enforce TLS and be the only way to reach this port.
+      # MATE_STUDIO_PUBLIC_ORIGIN: https://studio.acme.test
+      # MATE_STUDIO_ALLOWED_HOSTS: studio.acme.test
+
+      # The agents' credentials. Put them in the configuration file rather than
       # here if you would rather they were not in a process listing.
       # ANTHROPIC_API_KEY: ...
 
-    # The container serves both processes or neither: if either stops, the
-    # other is stopped and the container exits with the first one's status.
+    # The container is Studio: if Studio stops, every agent session it started
+    # is stopped and the container exits with Studio's status. An agent
+    # session ending does not stop the container.
     restart: unless-stopped
 
+    # Studio gives each session 5 seconds after TERM, then KILL.
     stop_grace_period: 30s

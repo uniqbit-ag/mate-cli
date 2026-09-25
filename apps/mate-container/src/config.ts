@@ -29,17 +29,34 @@ export interface ApplianceConfig {
   companionsDir: string;
   companionRepos: GitLocation[];
   companion: string | null;
-  agentPort: number;
-  agentHost: string;
   studioPort: number;
   studioHost: string;
   studioWritable: boolean;
+  /** Effective: off whenever the write path is off. */
+  studioTerminal: boolean;
+  studioDetachMinutes: number;
+  /** Never printed; reaches Studio through its environment only. */
+  studioToken: string | null;
+  studioAllowedHosts: string[];
+  studioPublicOrigin: string | null;
   gitSync: boolean;
   gitUserName: string | null;
   gitUserEmail: string | null;
-  /** Passed into the session's environment untouched, and never written into a companion. */
+  /** Passed into the agent sessions' environment untouched, and never written into a companion. */
   credentials: Record<string, string>;
+  /** Settings this container no longer has but the operator still sets; warned about, not refused. */
+  removed: string[];
 }
+
+/** Removed with the `opencode web` session; still recognised so a stale setting is named. */
+export const REMOVED_SETTINGS = ["MATE_AGENT_PORT", "MATE_AGENT_HOST"] as const;
+const REMOVED_KEYS: Record<(typeof REMOVED_SETTINGS)[number], string> = {
+  MATE_AGENT_PORT: "agentPort",
+  MATE_AGENT_HOST: "agentHost",
+};
+
+/** Mirrors Studio's own minimum for a pinned token. */
+const MIN_TOKEN_LENGTH = 32;
 
 export class ConfigError extends Error {
   constructor(
@@ -87,22 +104,8 @@ export const SETTINGS: Setting[] = [
     env: "MATE_COMPANION",
     key: "companion",
     meaning:
-      "Which discovered companion the session runs against, by directory name or absolute path. Required only where more than one is discovered.",
+      "Which discovered companion agent sessions run against, by directory name or absolute path. Required only where more than one is discovered.",
     default: null,
-    required: false,
-  },
-  {
-    env: "MATE_AGENT_PORT",
-    key: "agentPort",
-    meaning: "The port the agent session is served on.",
-    default: "4096",
-    required: false,
-  },
-  {
-    env: "MATE_AGENT_HOST",
-    key: "agentHost",
-    meaning: "The interface the agent session binds.",
-    default: "0.0.0.0",
     required: false,
   },
   {
@@ -124,6 +127,45 @@ export const SETTINGS: Setting[] = [
     key: "studioWritable",
     meaning: "Whether Studio's save path is reachable.",
     default: "true",
+    required: false,
+  },
+  {
+    env: "MATE_STUDIO_TERMINAL",
+    key: "studioTerminal",
+    meaning:
+      "Whether Studio offers the agent terminal. It needs the save path: with `MATE_STUDIO_WRITABLE` off, the terminal is off too.",
+    default: "true",
+    required: false,
+  },
+  {
+    env: "MATE_STUDIO_DETACH_MINUTES",
+    key: "studioDetachMinutes",
+    meaning: "How long a terminal session keeps running with no browser tab attached, in minutes.",
+    default: "30",
+    required: false,
+  },
+  {
+    env: "MATE_STUDIO_TOKEN",
+    key: "studioToken",
+    meaning:
+      "Pins Studio's access token (at least 32 characters) so it survives restarts and stays out of the log. Without it, Studio generates one per start and prints its address.",
+    default: null,
+    required: false,
+  },
+  {
+    env: "MATE_STUDIO_ALLOWED_HOSTS",
+    key: "studioAllowedHosts",
+    meaning:
+      "Additional exact `host[:port]` values Studio answers to, comma-separated — the proxy's public host, or `localhost:<port>` when the published port differs.",
+    default: null,
+    required: false,
+  },
+  {
+    env: "MATE_STUDIO_PUBLIC_ORIGIN",
+    key: "studioPublicOrigin",
+    meaning:
+      "The exact `https://host[:port]` users open when a proxy terminates TLS in front of Studio.",
+    default: null,
     required: false,
   },
   {
@@ -151,7 +193,7 @@ export const SETTINGS: Setting[] = [
     env: "MATE_AGENT_CREDENTIALS",
     key: "credentials",
     meaning:
-      "The agent's own credentials, passed into the session's environment untouched. A file is the sensible place for these; in the environment, `NAME=value` pairs one per line.",
+      "The agents' own credentials, passed into every agent session's environment untouched. A file is the sensible place for these; in the environment, `NAME=value` pairs one per line.",
     default: null,
     required: false,
   },
@@ -292,6 +334,68 @@ function gitLocations(setting: Setting, raw: unknown): GitLocation[] {
   });
 }
 
+function positiveInteger(setting: Setting, raw: unknown, fallback: number): number {
+  if (raw === null || raw === undefined || raw === "") return fallback;
+  const value = String(raw).trim();
+  if (!/^\d+$/.test(value) || Number(value) < 1) {
+    throw new ConfigError(setting.env, value, "must be a whole number of at least 1");
+  }
+  return Number(value);
+}
+
+function token(setting: Setting, raw: unknown): string | null {
+  const value = optionalText(raw);
+  if (value === null) return null;
+  if (value.length < MIN_TOKEN_LENGTH) {
+    /** The value itself is never echoed. */
+    throw new ConfigError(
+      setting.env,
+      "<hidden>",
+      `must be at least ${MIN_TOKEN_LENGTH} characters`,
+    );
+  }
+  return value;
+}
+
+function hostList(setting: Setting, raw: unknown): string[] {
+  if (raw === null || raw === undefined || raw === "") return [];
+  const entries = Array.isArray(raw) ? raw.map(String) : String(raw).split(",");
+  const hosts = entries.map((entry) => entry.trim()).filter(Boolean);
+  for (const host of hosts) {
+    if (/[\s/?#@\\]/.test(host)) {
+      throw new ConfigError(setting.env, host, "must list exact host[:port] values");
+    }
+  }
+  return hosts;
+}
+
+function publicOrigin(setting: Setting, raw: unknown): string | null {
+  const value = optionalText(raw);
+  if (value === null) return null;
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(value);
+  } catch {
+    /** Reported below. */
+  }
+  if (
+    !parsed ||
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    parsed.pathname !== "/" ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.username ||
+    value.endsWith("/")
+  ) {
+    throw new ConfigError(
+      setting.env,
+      value,
+      "must be an exact origin such as https://studio.acme.test",
+    );
+  }
+  return parsed.origin;
+}
+
 function credentials(setting: Setting, raw: unknown): Record<string, string> {
   if (raw === null || raw === undefined || raw === "") return {};
   const result: Record<string, string> = {};
@@ -331,19 +435,37 @@ export function resolveConfig(
   const file = readFile(configFile);
 
   const read = (name: string): unknown => rawValue(setting(name), env, file)?.value ?? null;
+  const writable = bool(setting("MATE_STUDIO_WRITABLE"), read("MATE_STUDIO_WRITABLE"), true);
 
   return {
     companionsDir: text(read("MATE_COMPANIONS_DIR"), "/companions"),
     companionRepos: gitLocations(setting("MATE_COMPANION_REPOS"), read("MATE_COMPANION_REPOS")),
     companion: optionalText(read("MATE_COMPANION")),
-    agentPort: port(setting("MATE_AGENT_PORT"), read("MATE_AGENT_PORT"), 4096),
-    agentHost: text(read("MATE_AGENT_HOST"), "0.0.0.0"),
     studioPort: port(setting("MATE_STUDIO_PORT"), read("MATE_STUDIO_PORT"), 4097),
     studioHost: text(read("MATE_STUDIO_HOST"), "0.0.0.0"),
-    studioWritable: bool(setting("MATE_STUDIO_WRITABLE"), read("MATE_STUDIO_WRITABLE"), true),
+    studioWritable: writable,
+    studioTerminal:
+      writable && bool(setting("MATE_STUDIO_TERMINAL"), read("MATE_STUDIO_TERMINAL"), true),
+    studioDetachMinutes: positiveInteger(
+      setting("MATE_STUDIO_DETACH_MINUTES"),
+      read("MATE_STUDIO_DETACH_MINUTES"),
+      30,
+    ),
+    studioToken: token(setting("MATE_STUDIO_TOKEN"), read("MATE_STUDIO_TOKEN")),
+    studioAllowedHosts: hostList(
+      setting("MATE_STUDIO_ALLOWED_HOSTS"),
+      read("MATE_STUDIO_ALLOWED_HOSTS"),
+    ),
+    studioPublicOrigin: publicOrigin(
+      setting("MATE_STUDIO_PUBLIC_ORIGIN"),
+      read("MATE_STUDIO_PUBLIC_ORIGIN"),
+    ),
     gitSync: bool(setting("MATE_GIT_SYNC"), read("MATE_GIT_SYNC"), false),
     gitUserName: optionalText(read("MATE_GIT_USER_NAME")),
     gitUserEmail: optionalText(read("MATE_GIT_USER_EMAIL")),
     credentials: credentials(setting("MATE_AGENT_CREDENTIALS"), read("MATE_AGENT_CREDENTIALS")),
+    removed: REMOVED_SETTINGS.filter(
+      (name) => env[name] !== undefined || file[REMOVED_KEYS[name]] !== undefined,
+    ),
   };
 }

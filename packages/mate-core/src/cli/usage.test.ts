@@ -22,4 +22,8 @@ test("lists working cleanup", () => {
 test("lists studio", () => {
   expect(usage()).toContain("mate studio");
   expect(usage()).toContain("mate studio serve --port <port> [--host <host>]");
+  expect(usage()).toContain("mate studio [--writable] [--terminal] [--detach-timeout <minutes>]");
+  for (const flag of ["--token", "--allowed-host", "--public-origin", "--companion <path>"]) {
+    expect(usage()).toContain(flag);
+  }
 });

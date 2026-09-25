@@ -9,8 +9,10 @@
  *
  * Package availability alone is not a passing check, so this also starts a
  * container against a fresh companion with *every* supported capability
- * enabled, with outbound networking disabled, and asserts both HTTP services
- * come up without a package manager running anywhere in the process tree.
+ * enabled, with outbound networking disabled, asserts Studio comes up, and
+ * launches both pinned agents from its terminal — all without a package
+ * manager running anywhere in the process tree, and with no agent left once
+ * each session ends.
  *
  *   bun scripts/verify-image.ts --image mate-appliance:local --mate-version 0.17.0-canary.3
  */
@@ -151,7 +153,13 @@ export function makeFreshCompanion(root: string): string {
 
 export function runChecks(
   probe: ImageProbe,
-  expected: { mateVersion: string; opencodeVersion: string; uid: number; user: string },
+  expected: {
+    mateVersion: string;
+    opencodeVersion: string;
+    claudeVersion: string;
+    uid: number;
+    user: string;
+  },
 ): Check[] {
   const checks: Check[] = [];
   const add = (name: string, ok: boolean, detail: string) => checks.push({ name, ok, detail });
@@ -170,6 +178,13 @@ export function runChecks(
     "the agent command is present at the pinned version",
     opencode.stdout.trim() === expected.opencodeVersion,
     `opencode --version reported "${opencode.stdout.trim()}", expected "${expected.opencodeVersion}"`,
+  );
+
+  const claude = probe(["claude", "--version"], { network: false });
+  add(
+    "Claude Code is present at the pinned version",
+    claude.stdout.trim().split(" ")[0] === expected.claudeVersion,
+    `claude --version reported "${claude.stdout.trim()}", expected "${expected.claudeVersion}"`,
   );
 
   // Every runtime and tool a managed session needs, present without the
@@ -327,10 +342,61 @@ export function runLayerScan(runtime: string, image: string, workDir: string): C
  * started against a fresh, fully loaded companion with no outbound network,
  * asserting both services answer and that no package manager ran.
  */
+/** Pinned for verification, so the probe can hold Studio's cookie without reading the log. */
+export const VERIFY_TOKEN = "verify-image-access-token-000000000000";
+
+/**
+ * Run inside the container with `bun`: opens Studio's terminal the way the
+ * page does, starts one agent, waits for its process to appear, ends the
+ * session, and reports whether any agent process is left.
+ */
+export const TERMINAL_PROBE = `
+const [agent, port, token] = process.argv.slice(1);
+const fs = require("node:fs");
+const agents = () =>
+  fs.readdirSync("/proc").filter((p) => /^\\d+$/.test(p)).flatMap((p) => {
+    try {
+      const cmd = fs.readFileSync("/proc/" + p + "/cmdline", "utf8").split("\\0");
+      const exe = (cmd[0] || "").split("/").pop();
+      return exe === "claude" || exe === "opencode" ? [exe] : [];
+    } catch { return []; }
+  });
+const origin = "http://127.0.0.1:" + port;
+const headers = { origin, cookie: "mate_studio_" + port + "=" + token };
+const result = { ready: false, sawAgent: false, left: [], output: "", reason: "" };
+const ws = new WebSocket("ws://127.0.0.1:" + port + "/api/terminal", { headers });
+ws.binaryType = "arraybuffer";
+let sessionId = null;
+ws.onopen = () => ws.send(JSON.stringify({ type: "start", agent, companion: "", cols: 120, rows: 40 }));
+ws.onmessage = (event) => {
+  if (typeof event.data !== "string") { result.output += new TextDecoder().decode(event.data); return; }
+  const message = JSON.parse(event.data);
+  if (message.type === "ready") { result.ready = true; sessionId = message.sessionId; }
+  else if (message.type === "error" || message.type === "exit") result.reason = JSON.stringify(message);
+};
+const deadline = Date.now() + 90000;
+while (Date.now() < deadline && !result.sawAgent && !result.reason) {
+  await Bun.sleep(500);
+  if (agents().includes(agent)) result.sawAgent = true;
+}
+if (sessionId) {
+  await fetch(origin + "/api/terminal/sessions/end", {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({ id: sessionId }),
+  });
+}
+for (let i = 0; i < 30 && agents().length > 0; i++) await Bun.sleep(500);
+result.left = agents();
+result.output = result.output.replace(/\\x1b\\[[0-9;?]*[A-Za-z]/g, "").slice(-400);
+ws.close();
+console.log(JSON.stringify(result));
+process.exit(0);
+`;
+
 export function runOfflineStartup(runtime: string, image: string, companionsDir: string): Check[] {
   const name = `mate-verify-${Math.random().toString(36).slice(2, 10)}`;
   const volume = `${name}-companions`;
-  const agentPort = 4096;
   const studioPort = 4097;
   const checks: Check[] = [];
 
@@ -382,6 +448,8 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       name,
       "--network",
       "none",
+      "--env",
+      `MATE_STUDIO_TOKEN=${VERIFY_TOKEN}`,
       "--volume",
       `${volume}:/companions`,
       image,
@@ -433,7 +501,7 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
         name,
         "node",
         "-e",
-        `fetch("http://127.0.0.1:${port}/").then((r) => console.log(r.status), () => console.log(""))`,
+        `fetch("http://127.0.0.1:${port}/", { headers: { cookie: "mate_studio_${port}=${VERIFY_TOKEN}" } }).then((r) => console.log(r.status), () => console.log(""))`,
       ],
       { encoding: "utf8", timeout: 20_000 },
     ).stdout?.trim() ?? "";
@@ -441,8 +509,8 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
     /\b(npm|pnpm|yarn|bun (add|install|pm)|uv (pip|tool|add)|pip|cargo|node-gyp|prebuild-install|curl \S*install)\b/;
 
   try {
-    // Readiness is both ports answering, which is the only signal that means
-    // the appliance is actually serving. Preparation is a filesystem copy of a
+    // Readiness is Studio answering, which is the only signal that means the
+    // appliance is actually serving. Preparation is a filesystem copy of a
     // few hundred packages and can take minutes on a slow volume, so the wait
     // is generous — and the container exiting ends it early rather than
     // burning the whole budget.
@@ -458,11 +526,7 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       const offending = tree.split("\n").filter((line) => installers.test(line));
       if (offending.length > 0) sawInstaller = offending.join("\n");
 
-      const answered = ["", ""].map((_, index) => {
-        const port = index === 0 ? agentPort : studioPort;
-        return httpStatus(port);
-      });
-      if (answered.every((code) => code.startsWith("2"))) {
+      if (httpStatus(studioPort).startsWith("2")) {
         ready = true;
         break;
       }
@@ -483,19 +547,66 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       detail: sawInstaller || "none",
     });
 
-    // Both answered together above, which is what readiness means here: the
-    // container never reports itself ready with only one process serving.
-    for (const [what, port] of [
-      ["the agent session", agentPort],
-      ["Studio", studioPort],
-    ] as const) {
-      const code = httpStatus(port);
+    const studio = httpStatus(studioPort);
+    checks.push({
+      name: "Studio answers over HTTP with its access token",
+      ok: studio.startsWith("2"),
+      detail: `port ${studioPort} returned ${studio || "nothing"}`,
+    });
+
+    /**
+     * No agent runs until one is started; then each pinned runtime launches
+     * from the terminal offline, and ending its session leaves no agent.
+     */
+    const idle = processTree()
+      .split("\n")
+      .filter((line) => /(^|\/)(claude|opencode)( |$)/.test(line.split(" ")[0] ?? ""));
+    checks.push({
+      name: "no agent runs before a terminal starts one",
+      ok: idle.length === 0,
+      detail: idle.join("\n") || "none",
+    });
+    for (const agent of ["claude", "opencode"] as const) {
+      const probe = spawnSync(
+        runtime,
+        ["exec", name, "bun", "-e", TERMINAL_PROBE, agent, String(studioPort), VERIFY_TOKEN],
+        { encoding: "utf8", timeout: 180_000 },
+      );
+      let outcome: {
+        ready?: boolean;
+        sawAgent?: boolean;
+        left?: string[];
+        output?: string;
+        reason?: string;
+      } = {};
+      try {
+        outcome = JSON.parse(probe.stdout.trim().split("\n").pop() ?? "{}");
+      } catch {
+        /** Reported through the detail below. */
+      }
+      const tree = processTree()
+        .split("\n")
+        .filter((line) => installers.test(line));
+      if (tree.length > 0) sawInstaller = tree.join("\n");
       checks.push({
-        name: `${what} answers over HTTP`,
-        ok: code.startsWith("2"),
-        detail: `port ${port} returned ${code || "nothing"}`,
+        name: `the terminal launches ${agent} offline and ending it leaves no agent`,
+        ok:
+          outcome.ready === true &&
+          outcome.sawAgent === true &&
+          (outcome.left ?? ["?"]).length === 0,
+        detail: [
+          `status ${probe.status ?? "none"}`,
+          JSON.stringify(outcome).slice(0, 800),
+          probe.stderr.trim().slice(0, 500),
+        ].join("\n"),
       });
     }
+
+    checks.push({
+      name: "no installer runs while the agents launch",
+      ok: sawInstaller === "",
+      detail: sawInstaller || "none",
+    });
 
     // Startup registers and prepares; it never reconfigures. The companion's
     // own configuration is the seeded file, byte for byte.
@@ -515,9 +626,9 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       detail: configUnchanged ? "unchanged" : servedConfig.slice(0, 500),
     });
 
-    // The launch re-registers the companion's MCP entry from the image's Mate; that
-    // entry has to resolve to the installed server: spawned the way the session
-    // spawns it, offline, it must answer.
+    // The OpenCode launch above registered the companion's MCP entry from the
+    // image's Mate; that entry has to resolve to the installed server: spawned
+    // the way the session spawns it, offline, it must answer.
     const mcp = spawnSync(
       runtime,
       ["exec", name, "node", "-e", MCP_ANSWERS, "/companions/acme/.opencode/opencode.json"],
@@ -535,7 +646,7 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
       ].join("\n"),
     });
 
-    // Stopping the container must stop both processes and exit zero.
+    // Stopping the container must stop Studio and exit zero.
     spawnSync(runtime, ["stop", "--time", "30", name], { encoding: "utf8" });
     const status = spawnSync(runtime, ["inspect", "-f", "{{.State.ExitCode}}", name], {
       encoding: "utf8",
@@ -578,6 +689,7 @@ function main(argv: string[]): number {
     runChecks(probeFor(runtime, image), {
       mateVersion,
       opencodeVersion: inputs.opencode.version,
+      claudeVersion: inputs.claude.version,
       uid: inputs.runtime.uid,
       user: inputs.runtime.user,
     }),

@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate",
-  "version": "0.17.0-canary.10",
+  "version": "0.17.0-canary.11",
   "license": "MIT",
   "bin": {
     "mate": "src/cli-bootstrap.cjs"
@@ -31,8 +31,8 @@
     "format:check": "oxfmt src/ --check"
   },
   "dependencies": {
-    "@uniqbit/mate-core": "0.17.0-canary.10",
-    "@uniqbit/mate-opencode-plugin": "0.17.0-canary.10",
+    "@uniqbit/mate-core": "0.17.0-canary.11",
+    "@uniqbit/mate-opencode-plugin": "0.17.0-canary.11",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

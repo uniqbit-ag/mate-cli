@@ -149,9 +149,22 @@ describe("the recipe itself", () => {
       "rtk",
       "tokensave",
       "opencode",
+      "claude",
     ]) {
       expect(dockerfile).toContain(`command -v ${command}`);
     }
+  });
+
+  test("checks the pinned Claude Code binary and the terminal-capable Bun", () => {
+    expect(dockerfile).toContain('"${CLAUDE_SHA256_AMD64}"');
+    expect(dockerfile).toContain('"${CLAUDE_SHA256_ARM64}"');
+    expect(dockerfile).toContain('fetch-verified "${CLAUDE_RELEASE_BASE_URL}/${CLAUDE_VERSION}/');
+    expect(dockerfile).toContain("typeof Bun.Terminal");
+  });
+
+  test("publishes Studio's port alone", () => {
+    expect(dockerfile).toMatch(/^EXPOSE 4097$/m);
+    expect(dockerfile).not.toContain("4096");
   });
 
   test("applies the pinned update policy to its own build-time Mate checks", () => {

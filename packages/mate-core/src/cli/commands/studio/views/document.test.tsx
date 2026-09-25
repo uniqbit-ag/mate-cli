@@ -301,3 +301,92 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
   });
 });
+
+describe("terminal view", () => {
+  const terminal = {
+    pinned: false,
+    target: { path: acme, digest },
+    agents: ["claude" as const],
+  };
+
+  it("references no terminal client without the terminal", () => {
+    const markup = renderStudioDocument(selected);
+    expect(markup).not.toContain("/studio/terminal/");
+    expect(markup).not.toContain("studio-terminal-panel");
+    const body = markup.slice(markup.indexOf("<body>"));
+    expect(body).not.toContain("data-terminal");
+    expect(body).not.toContain("terminal-sidebar");
+    expect(body).not.toContain("terminal-drawer-open");
+    expect(markup).not.toContain("mate-studio-terminal-width");
+  });
+
+  it("docks the sidebar as the shell's child after the main view", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    expect(markup).toMatch(/<div class="shell"[^>]* data-terminal=""/);
+    const mainEnd = markup.indexOf("</main>");
+    const sidebar = markup.indexOf('<aside class="terminal-sidebar"');
+    const shellEnd = markup.indexOf('<div class="toast"');
+    expect(mainEnd).toBeGreaterThan(0);
+    expect(sidebar).toBeGreaterThan(mainEnd);
+    expect(sidebar).toBeLessThan(shellEnd);
+    expect(markup.indexOf('id="terminal-drawer-open"')).toBeGreaterThan(
+      markup.indexOf("</aside>", sidebar),
+    );
+  });
+
+  it("offers collapse, expand, resize, and drawer controls", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    for (const id of [
+      "terminal-collapse",
+      "terminal-expand",
+      "terminal-resize",
+      "terminal-drawer-open",
+      "terminal-drawer-close",
+    ]) {
+      expect(markup).toContain(`id="${id}"`);
+    }
+    expect(markup).toContain('aria-label="Collapse the terminal"');
+    expect(markup).toContain('class="terminal-dot"');
+  });
+
+  it("restores the sidebar preference in the head, before first paint", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    const head = markup.slice(0, markup.indexOf("</head>"));
+    expect(head).toContain("mate-studio-terminal-width");
+    expect(head).toContain("mate-studio-terminal-collapsed");
+  });
+
+  it("loads only Studio-served client files with the terminal", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    const sources = [...markup.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1]);
+    expect(sources.length).toBeGreaterThan(0);
+    for (const source of sources) expect(source!.startsWith("/studio/terminal/")).toBe(true);
+    expect(markup).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+
+  it("offers only launchable agents and names the target", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    expect(markup).toContain('data-terminal-start="claude"');
+    expect(markup).not.toContain('data-terminal-start="opencode"');
+    expect(markup).toContain(`Launches against <code>${acme}</code>`);
+    expect(markup).not.toContain("fixed when Studio started");
+  });
+
+  it("marks a pinned target and says when nothing can launch", () => {
+    const pinned = renderStudioDocument({
+      ...selected,
+      terminal: { ...terminal, pinned: true, agents: [] },
+    });
+    expect(pinned).toContain("fixed when Studio started");
+    expect(pinned).toContain("No agent this companion allows is installed.");
+    expect(pinned).not.toContain("data-terminal-start=");
+  });
+
+  it("reconnects a bounded number of times and never after a takeover", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    expect(markup).toContain("MAX_ATTEMPTS = 8");
+    expect(markup).toContain("FIRST_DELAY = 2000");
+    expect(markup).toContain("if (takenOver) return;");
+    expect(markup).toContain("sessionStorage");
+  });
+});
