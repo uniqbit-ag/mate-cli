@@ -42,6 +42,7 @@ describe("workflowPlan", () => {
       "apply",
     ]);
     expect(plan.branches[1]?.steps.map((step) => step.id)).toEqual([
+      "explore",
       "propose",
       "specs",
       "tasks",
@@ -67,6 +68,7 @@ describe("workflowPlan", () => {
     ]);
     expect(workflowSteps("mate-minimal").map((step) => step.id)).toEqual([
       "pre-explore",
+      "explore",
       "propose",
       "specs",
       "tasks",
@@ -141,6 +143,9 @@ describe("workflowPlan", () => {
     );
     expect(minimal.find((step) => step.id === "propose")?.prompt).toBe(
       "/openspec-propose (use schema: mate-minimal) for <change-name>",
+    );
+    expect(minimal.find((step) => step.id === "explore")?.prompt).toBe(
+      "/openspec-explore (use schema: mate-minimal) for <change-name>",
     );
     const reviewSteps = full.filter((step) => step.kind === "review");
     expect(reviewSteps.map((step) => step.prompt)).toEqual([
@@ -251,7 +256,7 @@ describe("Workflow", () => {
 
   it("keeps workflow context and copy controls in the transcript", () => {
     const markup = render();
-    expect(markup.match(/class="runway-step-copy"/g)).toHaveLength(11);
+    expect(markup.match(/class="runway-step-copy"/g)).toHaveLength(12);
     expect(markup.match(/class="workflow-option-list"/g)).toHaveLength(1);
     expect(markup.match(/class="workflow-option"/g)).toHaveLength(2);
     expect(markup).toContain('class="workflow-console-command-label">Run</span>');

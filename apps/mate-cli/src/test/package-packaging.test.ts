@@ -92,6 +92,12 @@ describe("published package", () => {
     expect(install.status).toBe(0);
 
     const mate = path.join(project, "node_modules", ".bin", "mate");
+    const installedMateRoot = path.join(project, "node_modules", "@uniqbit", "mate");
+    const installedCoreRoot = path.join(project, "node_modules", "@uniqbit", "mate-core");
+    const nestedCoreRoot = path.join(installedMateRoot, "node_modules", "@uniqbit", "mate-core");
+    await fs.mkdir(path.dirname(nestedCoreRoot), { recursive: true });
+    await fs.rename(installedCoreRoot, nestedCoreRoot);
+
     const version = spawnSync(mate, ["--version"], {
       cwd: project,
       env: { ...process.env, CI: "1" },
@@ -110,5 +116,42 @@ describe("published package", () => {
     });
     expect(help.status).toBe(0);
     expect(help.stdout).toContain("mate studio");
+
+    const fakeBin = path.join(root, "fake-bin");
+    const npmCapture = path.join(root, "npm-install-args");
+    await fs.mkdir(fakeBin);
+    await fs.writeFile(
+      path.join(fakeBin, "npm"),
+      [
+        "#!/bin/sh",
+        'if [ "$1" = "view" ]; then printf "99.0.0\\n"; exit 0; fi',
+        'if [ "$1" = "root" ]; then printf "%s\\n" "$NPM_GLOBAL_ROOT"; exit 0; fi',
+        'if [ "$1" = "install" ]; then printf "%s\\n" "$@" > "$NPM_CAPTURE"; exit 0; fi',
+        "exit 1",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.chmod(path.join(fakeBin, "npm"), 0o755);
+
+    const update = spawnSync(mate, ["update", "--yes"], {
+      cwd: project,
+      env: {
+        ...process.env,
+        CI: "1",
+        HOME: path.join(root, "home"),
+        MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
+        NPM_CAPTURE: npmCapture,
+        NPM_GLOBAL_ROOT: path.join(project, "node_modules"),
+        PATH: [fakeBin, path.dirname(process.execPath), process.env.PATH ?? ""].join(
+          path.delimiter,
+        ),
+      },
+      encoding: "utf8",
+    });
+    expect(update.status).toBe(0);
+    expect(update.stderr).not.toContain("self-update is only supported");
+    expect(update.stdout).toContain("Upgraded to 99.0.0.");
+    expect(await fs.readFile(npmCapture, "utf8")).toContain("@uniqbit/mate@99.0.0");
   }, 240_000);
 });
