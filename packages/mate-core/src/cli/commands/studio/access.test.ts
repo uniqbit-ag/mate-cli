@@ -165,6 +165,7 @@ describe("accepted hosts", () => {
         "/",
         `/api/vault/tree?companion=${state.digest}`,
         `/api/vault/file?companion=${state.digest}&path=note.md`,
+        `/api/vault/view?companion=${state.digest}`,
         `/?token=${TOKEN}`,
       ]) {
         const response = (await handler(get(pathname, host)))!;
@@ -339,6 +340,7 @@ describe("per-invocation token requirements", () => {
         `/api/vault/tree?companion=${state.digest}`,
         `/api/vault/file?companion=${state.digest}&path=note.md`,
         `/api/vault/events?companion=${state.digest}&path=note.md`,
+        `/api/vault/view?companion=${state.digest}`,
       ]) {
         const refused = (await handler(get(pathname)))!;
         expect(refused.status).toBe(401);

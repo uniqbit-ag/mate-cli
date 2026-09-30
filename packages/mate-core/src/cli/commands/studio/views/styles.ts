@@ -360,22 +360,55 @@ ul.plain li:last-child { border-bottom: 0; }
 .workflow-option small { color: var(--muted); font-size: .65rem; line-height: 1.35; }
 .workflow-option .runway-step-copy { justify-self: start; }
 
-.vault-layout { display: grid; grid-template-columns: minmax(190px, .34fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.vault-tree-panel, .vault-editor-panel { min-width: 0; }
-.vault-tree-panel nav { display: grid; gap: 2px; }
-.vault-directory { color: var(--muted); font-family: var(--mono); font-size: .75rem; }
-.vault-directory summary { cursor: pointer; padding: 5px 4px; }
-.vault-children { display: grid; gap: 2px; padding-left: 12px; }
+.vault-layout { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
+:root[data-vault-tree="hidden"] .vault-layout { grid-template-columns: minmax(0, 1fr); }
+:root[data-vault-tree="hidden"] .vault-tree-panel { display: none; }
+.vault-tree-panel, .vault-main, .vault-editor-panel { min-width: 0; }
+.vault-tree-panel { position: sticky; top: 16px; display: grid; gap: 10px; max-height: calc(100vh - 32px); overflow: auto; padding: 12px; }
+.vault-tree-head { display: flex; align-items: center; justify-content: space-between; font-size: .86rem; }
+.vault-filter { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-soft); color: var(--text); font-size: .8rem; }
+.vault-filter:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.vault-tree { display: grid; gap: 1px; }
+.vault-icon { position: relative; flex: none; box-sizing: border-box; }
+.vault-icon-folder { width: 15px; height: 11px; margin-top: 2px; border-radius: 1px 2px 2px 2px; background: var(--accent); }
+.vault-icon-folder::before { content: ""; position: absolute; top: -2px; left: 0; width: 6px; height: 3px; border-radius: 1px 1px 0 0; background: var(--accent); }
+.vault-icon-file { width: 11px; height: 14px; margin: 0 2px; border: 1.5px solid var(--muted); border-radius: 1px 4px 1px 1px; }
+.vault-chevron { flex: none; box-sizing: border-box; width: 7px; height: 7px; margin: 0 3px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); transition: transform .12s ease; }
+.vault-directory[open] > summary .vault-chevron { transform: rotate(45deg); }
+.vault-directory > summary { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; list-style: none; color: var(--text); cursor: pointer; font-size: .8rem; }
+.vault-directory > summary::-webkit-details-marker { display: none; }
+.vault-directory > summary:hover, .vault-directory > summary[aria-current="page"] { background: var(--accent-soft); }
+.vault-children { display: grid; gap: 1px; margin-left: 11px; padding-left: 8px; border-left: 1px solid var(--border-soft); }
 .vault-file { display: contents; }
-.vault-file button { width: 100%; overflow: hidden; padding: 6px 8px; border-color: transparent; background: transparent; color: var(--text); font-family: var(--mono); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
-.vault-file button:hover, .vault-file button[aria-current="page"] { border-color: var(--border); background: var(--accent-soft); color: var(--accent); }
+.vault-file[hidden], .vault-directory[hidden] { display: none; }
+.vault-file button { display: flex; align-items: center; gap: 6px; width: 100%; overflow: hidden; padding: 4px 6px 4px 24px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font-size: .8rem; text-align: left; white-space: nowrap; }
+.vault-file button span, .vault-directory > summary span { overflow: hidden; text-overflow: ellipsis; }
+.vault-file button:hover { background: var(--accent-soft); }
+.vault-file button[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.vault-bar { display: flex; align-items: center; gap: 12px; min-height: 36px; margin-bottom: 12px; }
+.vault-tree-toggle { flex: none; padding: 5px 10px; font-size: .78rem; }
+.vault-breadcrumb ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; list-style: none; font-size: .95rem; }
+.vault-breadcrumb li { display: flex; align-items: center; }
+.vault-breadcrumb li + li::before { content: "/"; padding: 0 6px; color: var(--muted); }
+.vault-breadcrumb [aria-current="page"] { font-weight: 600; }
+.vault-crumb { display: contents; }
+.vault-crumb button { padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; cursor: pointer; }
+.vault-crumb button:hover { text-decoration: underline; }
+.vault-listing { padding: 0; overflow: hidden; }
+.vault-listing > p { margin: 0; padding: 12px 16px; }
+.vault-rows { margin: 0; padding: 0; list-style: none; }
+.vault-rows li + li { border-top: 1px solid var(--border-soft); }
+.vault-row { display: contents; }
+.vault-row button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 16px; border: 0; border-radius: 0; background: transparent; color: var(--text); font-size: .86rem; text-align: left; }
+.vault-row button:hover { background: var(--panel-soft); }
+.vault-row button:hover span { color: var(--accent); text-decoration: underline; }
 .vault-warning { color: var(--warn); }
 #vault-editor { display: block; width: 100%; min-height: 62vh; resize: vertical; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--prompt-bg); color: var(--prompt-text); font-family: var(--mono); font-size: .86rem; line-height: 1.6; }
 #vault-editor:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 #vault-editor[readonly] { cursor: default; opacity: .85; }
 .vault-incoming { display: grid; gap: 8px; margin-top: 16px; padding: 12px; border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-soft); }
 .vault-incoming pre { max-height: 220px; overflow: auto; margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: .78rem; }
-@media (max-width: 800px) { .vault-layout { grid-template-columns: 1fr; } }
+@media (max-width: 800px) { .vault-layout { grid-template-columns: 1fr; } .vault-tree-panel { position: static; max-height: 50vh; } }
 
 @media (max-width: 650px) {
   .workflow-console-header { grid-template-columns: 1fr auto; }

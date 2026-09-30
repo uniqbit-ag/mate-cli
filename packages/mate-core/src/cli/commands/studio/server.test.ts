@@ -3,11 +3,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { companionDigest } from "./selection";
+import { companionDigest, openFile, openFolder, parse, parseVaultSelection } from "./selection";
 import {
   createStudioFetch,
   serveUntilInterrupted,
   startStudioServer,
+  STUDIO_IDLE_TIMEOUT_SECONDS,
   type StudioServerDeps,
 } from "./server";
 import type { StudioPage } from "./views/model";
@@ -87,7 +88,6 @@ describe("createStudioFetch", () => {
       companionDigest: digest,
       view: "workflow",
       refresh: false,
-      openPath: null,
     });
     expect(pages[0]?.companion?.path).toBe(ACME);
     expect(pages[0]?.payload?.companionPath).toBe(ACME);
@@ -275,6 +275,149 @@ describe("createStudioFetch", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("");
+  });
+
+  test("serves the vault page before a pending listing and inlines a listed tree", async () => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-defer-")));
+    try {
+      await fs.mkdir(path.join(root, "docs"));
+      await fs.writeFile(path.join(root, "docs", "note.md"), "one");
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const vault = createVaultManager({
+        watch: () => ({ close() {} }),
+        git: async (args) => {
+          await gate;
+          return args.includes("ls-files")
+            ? { code: 0, stdout: "docs/note.md\0", stderr: "" }
+            : { code: 1, stdout: "", stderr: "" };
+        },
+      });
+      const pages: StudioPage[] = [];
+      const handler = createStudioFetch({
+        collectStudioInventory: async () => ({
+          companions: [{ path: root, health: "ready", pairings: [] }],
+        }),
+        renderDocument: (page) => {
+          pages.push(page);
+          return "page";
+        },
+        vault,
+      });
+      const digest = companionDigest(root);
+      const pageUrl = `http://localhost/?companion=${digest}&view=vault&path=docs%2Fnote.md`;
+
+      expect((await handler(new Request(pageUrl)))!.status).toBe(200);
+      expect(pages[0]?.vault?.tree).toBeNull();
+      expect(pages[0]?.vault?.open?.content).toBe("one");
+
+      const view = handler(
+        new Request(`http://localhost/api/vault/view?companion=${digest}&dir=docs`),
+      );
+      release();
+      const answered = (await view)!;
+      expect(answered.headers.get("content-type")).toContain("text/html");
+      const markup = await answered.text();
+      expect(markup).toContain('data-vault-slot="tree"');
+      expect(markup).toContain('data-vault-slot="listing"');
+      expect(markup).toContain("note.md");
+      const entry = markup.slice(markup.indexOf('data-vault-entry="docs/note.md"'));
+      const form = entry.slice(0, entry.indexOf("</form>"));
+      expect(form).toContain('name="view" value="vault"');
+      expect(form).toContain('name="path" value="docs/note.md"');
+
+      await handler(new Request(pageUrl));
+      expect(JSON.stringify(pages[1]?.vault?.tree)).toContain("note.md");
+      vault.stop();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("answers deferred forms that stay in the vault with their file and folder", async () => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-defer-")));
+    try {
+      await fs.mkdir(path.join(root, "docs", "a"), { recursive: true });
+      for (const file of ["README.md", "docs/b.md", "docs/a/x.md"]) {
+        await fs.writeFile(path.join(root, file), "# acme\n");
+      }
+      const vault = createVaultManager({
+        watch: () => ({ close() {} }),
+        git: async (args) =>
+          args.includes("ls-files")
+            ? { code: 0, stdout: "README.md\0docs/b.md\0docs/a/x.md\0", stderr: "" }
+            : { code: 1, stdout: "", stderr: "" },
+      });
+      const handler = createStudioFetch({
+        collectStudioInventory: async () => ({
+          companions: [{ path: root, health: "ready", pairings: [] }],
+        }),
+        vault,
+      });
+      const digest = companionDigest(root);
+      const markup = await (await handler(
+        new Request(`http://localhost/api/vault/view?companion=${digest}&dir=docs%2Fa`),
+      ))!.text();
+      const submitted = [...markup.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g)].map(
+        ([, attrs, body]) => {
+          const url = new URL("http://localhost/");
+          for (const [, name, value] of body!.matchAll(
+            /<input type="hidden" name="([^"]*)" value="([^"]*)"\/>/g,
+          )) {
+            url.searchParams.append(name!, value!);
+          }
+          return { entry: /data-vault-entry="([^"]*)"/.exec(attrs!)?.[1], selection: parse(url) };
+        },
+      );
+      expect(submitted.length).toBeGreaterThan(4);
+      for (const { entry, selection } of submitted) {
+        expect(selection.view).toBe("vault");
+        expect(selection.companionDigest).toBe(digest);
+        if (entry) expect(selection).toMatchObject({ openPath: entry, openDir: null });
+      }
+      const targets = submitted.map(({ selection }) => selection);
+      expect(targets).toContainEqual(
+        openFile(
+          parseVaultSelection(new URL(`http://localhost/?companion=${digest}`)),
+          "docs/a/x.md",
+        ),
+      );
+      expect(targets).toContainEqual(
+        openFolder(parseVaultSelection(new URL(`http://localhost/?companion=${digest}`)), "docs"),
+      );
+      vault.stop();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("answers a failed listing in place of the tree", async () => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-defer-")));
+    try {
+      const vault = createVaultManager({
+        watch: () => ({ close() {} }),
+        git: async () => ({ code: 128, stdout: "", stderr: "fatal: acme broke" }),
+      });
+      const handler = createStudioFetch({
+        collectStudioInventory: async () => ({
+          companions: [{ path: root, health: "ready", pairings: [] }],
+        }),
+        vault,
+      });
+      const response = (await handler(
+        new Request(`http://localhost/api/vault/view?companion=${companionDigest(root)}`),
+      ))!;
+      expect(response.status).toBe(200);
+      const markup = await response.text();
+      expect(markup).toContain('data-vault-slot="tree"');
+      expect(markup).toContain("could not be listed: git ls-files failed: fatal: acme broke");
+      expect(markup).toContain("Refresh tree");
+      vault.stop();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   test("serves a vault tree and file, while read-only saves are refused", async () => {
@@ -471,6 +614,53 @@ describe("startStudioServer", () => {
     expect(server.hostname).toBe("0.0.0.0");
     expect(server.url).toBe("http://0.0.0.0:4180");
   });
+
+  test("passes an explicit idle timeout instead of the runtime default", () => {
+    const timeouts: number[] = [];
+    startStudioServer(
+      deps({
+        serve: (options) => {
+          timeouts.push(options.idleTimeout);
+          return { port: 4180, stop: () => {} };
+        },
+      }),
+    );
+
+    expect(timeouts).toEqual([STUDIO_IDLE_TIMEOUT_SECONDS]);
+  });
+
+  test("keeps an idle vault event stream open past the idle timeout", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-idle-"));
+    await fs.writeFile(path.join(root, "note.md"), "one");
+    const server = startStudioServer(
+      {
+        collectStudioInventory: async () => ({
+          companions: [{ path: root, health: "ready", pairings: [] }],
+        }),
+        vault: createVaultManager({ watch: () => ({ close() {} }) }),
+      },
+      { idleTimeout: 1 },
+    );
+    try {
+      const response = await fetch(
+        `${server.url}/api/vault/events?companion=${companionDigest(root)}&path=note.md`,
+      );
+      const reader = response.body!.getReader();
+      await reader.read();
+      const outcome = await Promise.race([
+        reader.read().then(
+          () => "closed",
+          () => "closed",
+        ),
+        new Promise((resolve) => setTimeout(() => resolve("open"), 4_500)),
+      ]);
+      expect(outcome).toBe("open");
+      await reader.cancel();
+    } finally {
+      await server.stop();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 10_000);
 
   test("formats IPv6 hosts as valid URLs", () => {
     const server = startStudioServer(

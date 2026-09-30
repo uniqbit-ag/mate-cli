@@ -1,8 +1,15 @@
 /** @jsxImportSource hono/jsx */
 
 import type { StudioInventoryCompanion } from "../inventory";
-import { companionDigest, resolveCompanion, type StudioSelection } from "../selection";
+import {
+  COMPANION_PARAM,
+  companionDigest,
+  resolveCompanion,
+  type StudioSelection,
+  switchCompanion,
+} from "../selection";
 import { healthNote, type StudioPage } from "./model";
+import { SelectionFields } from "./selection-fields";
 
 interface CompanionSelectorProps {
   inventory: StudioPage["inventory"];
@@ -11,8 +18,7 @@ interface CompanionSelectorProps {
 
 /**
  * A GET form, so choosing a companion is a navigation to the URL naming it. The
- * change is deliberately not carried over: it belongs to the companion being
- * left behind.
+ * hidden fields are the switch with no companion; the `<select>` names it.
  */
 export function CompanionSelector({ inventory, selection }: CompanionSelectorProps) {
   const companions = inventory.companions;
@@ -21,11 +27,9 @@ export function CompanionSelector({ inventory, selection }: CompanionSelectorPro
   return (
     <form className="sidebar-scope" method="get" action="/">
       <span className="sidebar-label">Scope</span>
-      {selection.view === "dashboard" ? null : (
-        <input type="hidden" name="view" value={selection.view} />
-      )}
+      <SelectionFields selection={switchCompanion(selection, null)} />
       {/* eslint-disable-next-line react/no-unknown-property -- raw HTML attribute: hono/jsx server-renders this inline handler */}
-      <select name="companion" aria-label="Companion Repository">
+      <select name={COMPANION_PARAM} aria-label="Companion Repository">
         <PlaceholderOption companionCount={companions.length} selected={selected} />
         {companions.map((companion) => {
           const digest = companionDigest(companion.path);

@@ -1,6 +1,16 @@
 /** @jsxImportSource hono/jsx */
 
-import { companionDigest, FILE_PARAM, REFRESH_PARAM, type StudioSelection } from "../selection";
+import {
+  companionDigest,
+  openFile,
+  openFolder,
+  refresh,
+  type StudioSelection,
+  type StudioVaultSelection,
+  type StudioView,
+  switchView,
+  toHref,
+} from "../selection";
 import { STUDIO_CLIENT_SCRIPT, STUDIO_PREPAINT_SCRIPT } from "./client";
 import { CompanionPicker } from "./companion-picker";
 import { CompanionSelector } from "./companion-selector";
@@ -9,6 +19,7 @@ import { CompanionError } from "./error";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
 import type { VaultTreeNode } from "../vault";
 import { Specs } from "./specs/index";
+import { SelectionFields } from "./selection-fields";
 import { STUDIO_STYLES } from "./styles";
 import { Skills } from "./skills/index";
 import { Workflow } from "./workflow/index";
@@ -109,7 +120,7 @@ function Content({ page }: { page: StudioPage }) {
   if (page.error) {
     return <CompanionError companionPath={page.error.companionPath} reason={page.error.reason} />;
   }
-  if (page.selection.view === "vault") return <Vault page={page} />;
+  if (page.selection.view === "vault") return <Vault page={page} selection={page.selection} />;
   if (!page.payload) {
     return (
       <section className="panel">
@@ -168,49 +179,32 @@ function PageHeader({ page }: { page: StudioPage }) {
   );
 }
 
+const VIEW_NAV: readonly (readonly [StudioView, string])[] = [
+  ["dashboard", "Overview"],
+  ["vault", "Vault"],
+  ["specs", "Specs"],
+  ["workflow", "Workflow"],
+  ["skills", "Skills"],
+];
+
 /**
- * Submit buttons, so switching a view is a navigation to the URL naming it and
- * the browser's history moves between rendered states.
+ * One GET form per view, so switching a view is a navigation to the URL naming
+ * it and the browser's history moves between rendered states.
  */
 function ViewNav({ selection }: { selection: StudioSelection }) {
   return (
     <nav className="sidebar-nav" aria-label="Studio views">
       <span className="sidebar-label">Views</span>
-      <form method="get" action="/">
-        <SelectionFields selection={selection} omit="view" dropOpenPath />
-        <div className="sidebar-nav-list">
-          <button
-            type="submit"
-            name="view"
-            value="dashboard"
-            aria-pressed={selection.view === "dashboard"}
-          >
-            <span>Overview</span>
-          </button>
-          <button type="submit" name="view" value="vault" aria-pressed={selection.view === "vault"}>
-            <span>Vault</span>
-          </button>
-          <button type="submit" name="view" value="specs" aria-pressed={selection.view === "specs"}>
-            <span>Specs</span>
-          </button>
-          <button
-            type="submit"
-            name="view"
-            value="workflow"
-            aria-pressed={selection.view === "workflow"}
-          >
-            <span>Workflow</span>
-          </button>
-          <button
-            type="submit"
-            name="view"
-            value="skills"
-            aria-pressed={selection.view === "skills"}
-          >
-            <span>Skills</span>
-          </button>
-        </div>
-      </form>
+      <div className="sidebar-nav-list">
+        {VIEW_NAV.map(([view, label]) => (
+          <form key={view} method="get" action="/" data-studio-view={view}>
+            <SelectionFields selection={switchView(selection, view)} />
+            <button type="submit" aria-pressed={selection.view === view}>
+              <span>{label}</span>
+            </button>
+          </form>
+        ))}
+      </div>
     </nav>
   );
 }
@@ -236,10 +230,7 @@ function Metrics({ page }: { page: StudioPage }) {
   );
 }
 
-/**
- * The refresh control is the only thing that collects again, so it is the only
- * control that names the refresh parameter.
- */
+/** The refresh control is the only thing that collects again, so only it leads to a refresh. */
 function Footer({ page }: { page: StudioPage }) {
   return (
     <div className="sidebar-footer">
@@ -250,8 +241,7 @@ function Footer({ page }: { page: StudioPage }) {
             : `state as of ${formatCollectedAt(page.collectedAt)}`}
         </span>
         <form method="get" action="/">
-          <SelectionFields selection={page.selection} />
-          <input type="hidden" name={REFRESH_PARAM} value="1" />
+          <SelectionFields selection={refresh(page.selection)} />
           <button type="submit">Refresh</button>
         </form>
       </div>
@@ -262,32 +252,67 @@ function Footer({ page }: { page: StudioPage }) {
   );
 }
 
-/** Carries the parts of the selection a control is not itself changing. */
-function SelectionFields({
-  selection,
-  omit,
-  dropOpenPath = false,
-}: {
-  selection: StudioSelection;
-  omit?: keyof StudioSelection;
-  dropOpenPath?: boolean;
-}) {
-  return (
+/** The tree and folder listing, fetched by the page when it was served before the listing finished. */
+export function renderVaultView(page: StudioPage): string {
+  const { selection, vault } = page;
+  if (!vault || selection.view !== "vault") return "";
+  return String(
     <>
-      {selection.companionDigest && omit !== "companionDigest" ? (
-        <input type="hidden" name="companion" value={selection.companionDigest} />
-      ) : null}
-      {selection.view !== "dashboard" && omit !== "view" ? (
-        <input type="hidden" name="view" value={selection.view} />
-      ) : null}
-      {selection.view === "vault" && selection.openPath && !dropOpenPath ? (
-        <input type="hidden" name={FILE_PARAM} value={selection.openPath} />
-      ) : null}
-    </>
+      <VaultTreeSlot vault={vault} selection={selection} />
+      {vault.open || vault.refusal || selection.openPath ? null : (
+        <VaultListingSlot selection={selection} vault={vault} />
+      )}
+    </>,
   );
 }
 
-function Vault({ page }: { page: StudioPage }) {
+function segments(relative: string): string[] {
+  return relative.split(/[\\/]/).filter(Boolean);
+}
+
+/** Walks node names, so a requested folder is only ever one the listed tree holds. */
+function findDirectory(tree: VaultTreeNode[], relative: string): VaultTreeNode | null {
+  let level = tree;
+  let found: VaultTreeNode | null = null;
+  for (const name of segments(relative)) {
+    found = level.find((node) => node.kind === "directory" && node.name === name) ?? null;
+    if (!found) return null;
+    level = found.children ?? [];
+  }
+  return found;
+}
+
+function expandedPaths(selection: StudioVaultSelection): Set<string> {
+  const expanded = new Set<string>();
+  const add = (relative: string, includeLast: boolean) => {
+    const parts = segments(relative);
+    const count = includeLast ? parts.length : parts.length - 1;
+    for (let index = 1; index <= count; index += 1) expanded.add(parts.slice(0, index).join("/"));
+  };
+  if (selection.openPath) add(selection.openPath, false);
+  if (selection.openDir) add(selection.openDir, true);
+  return expanded;
+}
+
+function byKindThenName(a: VaultTreeNode, b: VaultTreeNode): number {
+  if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1;
+  return a.name.localeCompare(b.name);
+}
+
+/** Drawn in CSS: one empty element per entry keeps a large tree's markup small. */
+function FolderIcon() {
+  return <span className="vault-icon vault-icon-folder" aria-hidden="true" />;
+}
+
+function FileIcon() {
+  return <span className="vault-icon vault-icon-file" aria-hidden="true" />;
+}
+
+function Chevron() {
+  return <span className="vault-chevron" aria-hidden="true" />;
+}
+
+function Vault({ page, selection }: { page: StudioPage; selection: StudioVaultSelection }) {
   const vault = page.vault;
   if (!vault)
     return (
@@ -295,65 +320,325 @@ function Vault({ page }: { page: StudioPage }) {
         <p className="empty">No vault state collected.</p>
       </section>
     );
+  const showListing = !vault.open && !vault.refusal;
   return (
-    <section className="vault-layout">
-      <div className="panel vault-tree-panel">
-        <div className="section-header">
-          <div>
-            <h3>Markdown files</h3>
-            <p className="section-note">
-              {vault.tree.length === 0
-                ? "This companion has no markdown files."
-                : "Every non-ignored markdown file in this companion."}
-            </p>
-          </div>
-          {!vault.watching ? (
-            <form method="get" action="/" data-studio-navigation>
-              <SelectionFields selection={page.selection} />
-              <input type="hidden" name={REFRESH_PARAM} value="1" />
-              <button type="submit">Refresh tree</button>
-            </form>
-          ) : null}
+    <section
+      className="vault-layout"
+      data-vault-layout
+      data-vault-view={vault.tree === null ? toHref(selection, "/api/vault/view") : undefined}
+    >
+      <aside className="panel vault-tree-panel" id="vault-tree-panel" aria-label="Files">
+        <div className="vault-tree-head">
+          <strong>Files</strong>
         </div>
-        {vault.warning ? (
-          <p className="note vault-warning">{vault.warning}. The tree may be out of date.</p>
-        ) : null}
-        <nav aria-label="Markdown files">
-          {vault.tree.map((node) => (
-            <VaultNode key={node.path} node={node} selection={page.selection} />
-          ))}
-        </nav>
+        <input
+          type="search"
+          id="vault-filter"
+          className="vault-filter"
+          placeholder="Go to file"
+          aria-label="Go to file"
+          hidden
+        />
+        <VaultTreeSlot vault={vault} selection={selection} />
+      </aside>
+      <div className="vault-main">
+        <div className="vault-bar">
+          <button
+            type="button"
+            id="vault-tree-toggle"
+            className="vault-tree-toggle"
+            aria-controls="vault-tree-panel"
+            aria-expanded="true"
+            hidden
+          >
+            Hide files
+          </button>
+          <VaultBreadcrumb page={page} selection={selection} />
+        </div>
+        {showListing ? <VaultListingSlot selection={selection} vault={vault} /> : null}
+        {showListing ? null : <VaultEditor page={page} selection={selection} vault={vault} />}
       </div>
-      <VaultEditor page={page} vault={vault} />
     </section>
   );
 }
 
-function VaultNode({ node, selection }: { node: VaultTreeNode; selection: StudioSelection }) {
-  if (node.kind === "directory") {
+function RefreshTree({ selection }: { selection: StudioVaultSelection }) {
+  return (
+    <form method="get" action="/" data-studio-navigation>
+      <SelectionFields selection={refresh(selection)} />
+      <button type="submit">Refresh tree</button>
+    </form>
+  );
+}
+
+function VaultTreeSlot({
+  vault,
+  selection,
+}: {
+  vault: StudioVaultPage;
+  selection: StudioVaultSelection;
+}) {
+  if (vault.failure) {
     return (
-      <details open className="vault-directory">
-        <summary>{node.name}</summary>
+      <div data-vault-slot="tree">
+        <p className="note vault-warning">The files could not be listed: {vault.failure}</p>
+        <RefreshTree selection={selection} />
+      </div>
+    );
+  }
+  if (vault.tree === null) {
+    return (
+      <div data-vault-slot="tree" aria-busy="true">
+        <p className="empty">Listing files…</p>
+      </div>
+    );
+  }
+  const expanded = expandedPaths(selection);
+  return (
+    <div data-vault-slot="tree">
+      {vault.warning ? (
+        <p className="note vault-warning">{vault.warning}. The tree may be out of date.</p>
+      ) : null}
+      {!vault.watching ? <RefreshTree selection={selection} /> : null}
+      {vault.tree.length === 0 ? (
+        <p className="empty">This companion has no markdown files.</p>
+      ) : (
+        <nav className="vault-tree" aria-label="Markdown files">
+          {vault.tree.toSorted(byKindThenName).map((node) => (
+            <VaultNode key={node.path} node={node} selection={selection} expanded={expanded} />
+          ))}
+        </nav>
+      )}
+    </div>
+  );
+}
+
+function VaultNode({
+  node,
+  selection,
+  expanded,
+}: {
+  node: VaultTreeNode;
+  selection: StudioVaultSelection;
+  expanded: Set<string>;
+}) {
+  const key = segments(node.path).join("/");
+  if (node.kind === "directory") {
+    const open = expanded.has(key);
+    return (
+      <details
+        className="vault-directory"
+        open={open}
+        data-vault-dir={key}
+        data-vault-expanded={open ? "" : undefined}
+      >
+        <summary
+          aria-current={
+            selection.openDir && segments(selection.openDir).join("/") === key ? "page" : undefined
+          }
+        >
+          <Chevron />
+          <FolderIcon />
+          <span>{node.name}</span>
+        </summary>
         <div className="vault-children">
-          {node.children?.map((child) => (
-            <VaultNode key={child.path} node={child} selection={selection} />
+          {(node.children ?? []).toSorted(byKindThenName).map((child) => (
+            <VaultNode key={child.path} node={child} selection={selection} expanded={expanded} />
           ))}
         </div>
       </details>
     );
   }
   return (
-    <form method="get" action="/" className="vault-file" data-studio-navigation>
-      <SelectionFields selection={selection} dropOpenPath />
-      <input type="hidden" name={FILE_PARAM} value={node.path} />
+    <form
+      method="get"
+      action="/"
+      className="vault-file"
+      data-studio-navigation
+      data-vault-entry={key}
+    >
+      <SelectionFields selection={openFile(selection, node.path)} />
       <button type="submit" aria-current={selection.openPath === node.path ? "page" : undefined}>
-        {node.name}
+        <FileIcon />
+        <span>{node.name}</span>
       </button>
     </form>
   );
 }
 
-function VaultEditor({ page, vault }: { page: StudioPage; vault: StudioVaultPage }) {
+function OpenFolder({
+  selection,
+  relative,
+  className,
+  children,
+}: {
+  selection: StudioVaultSelection;
+  relative: string | null;
+  className?: string;
+  children: unknown;
+}) {
+  return (
+    <form method="get" action="/" className={className} data-studio-navigation>
+      <SelectionFields selection={openFolder(selection, relative)} />
+      <button type="submit">{children}</button>
+    </form>
+  );
+}
+
+/** Built from the selection alone, so it renders before the tree is listed. */
+function VaultBreadcrumb({
+  page,
+  selection,
+}: {
+  page: StudioPage;
+  selection: StudioVaultSelection;
+}) {
+  const current = selection.openPath ?? selection.openDir ?? "";
+  const parts = segments(current);
+  const rootName = page.companion
+    ? (segments(page.companion.path).at(-1) ?? "companion")
+    : "companion";
+  return (
+    <nav className="vault-breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li>
+          {parts.length === 0 ? (
+            <span aria-current="page">{rootName}</span>
+          ) : (
+            <OpenFolder selection={selection} relative={null} className="vault-crumb">
+              {rootName}
+            </OpenFolder>
+          )}
+        </li>
+        {parts.map((name, index) => (
+          <li key={parts.slice(0, index + 1).join("/")}>
+            {index === parts.length - 1 ? (
+              <span aria-current="page">{name}</span>
+            ) : (
+              <OpenFolder
+                selection={selection}
+                relative={parts.slice(0, index + 1).join("/")}
+                className="vault-crumb"
+              >
+                {name}
+              </OpenFolder>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+function VaultListingSlot({
+  selection,
+  vault,
+}: {
+  selection: StudioVaultSelection;
+  vault: StudioVaultPage;
+}) {
+  if (vault.failure) {
+    return (
+      <div data-vault-slot="listing" className="panel vault-listing">
+        <p className="note vault-warning">The files could not be listed: {vault.failure}</p>
+      </div>
+    );
+  }
+  if (vault.tree === null) {
+    return (
+      <div data-vault-slot="listing" className="panel vault-listing" aria-busy="true">
+        <p className="empty">Listing files…</p>
+      </div>
+    );
+  }
+  const requested = selection.openDir ? findDirectory(vault.tree, selection.openDir) : null;
+  const entries = (requested ? (requested.children ?? []) : vault.tree).toSorted(byKindThenName);
+  const parts = requested ? segments(selection.openDir ?? "") : [];
+  return (
+    <div data-vault-slot="listing" className="panel vault-listing">
+      {selection.openDir !== null && requested === null ? (
+        <p className="note vault-warning">That folder is not in the tree; showing the root.</p>
+      ) : null}
+      {entries.length === 0 && parts.length === 0 ? (
+        <p className="empty">This companion has no markdown files.</p>
+      ) : (
+        <VaultListingRows selection={selection} parts={parts} entries={entries} />
+      )}
+    </div>
+  );
+}
+
+function VaultListingRows({
+  selection,
+  parts,
+  entries,
+}: {
+  selection: StudioVaultSelection;
+  parts: string[];
+  entries: VaultTreeNode[];
+}) {
+  return (
+    <ul className="vault-rows" aria-label="Folder contents">
+      {parts.length > 0 ? (
+        <li>
+          <OpenFolder
+            selection={selection}
+            relative={parts.length > 1 ? parts.slice(0, -1).join("/") : null}
+            className="vault-row"
+          >
+            <FolderIcon />
+            <span>..</span>
+          </OpenFolder>
+        </li>
+      ) : null}
+      {entries.map((node) => (
+        <li key={node.path}>
+          <VaultListingEntry selection={selection} node={node} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function VaultListingEntry({
+  selection,
+  node,
+}: {
+  selection: StudioVaultSelection;
+  node: VaultTreeNode;
+}) {
+  if (node.kind === "directory") {
+    return (
+      <OpenFolder
+        selection={selection}
+        relative={segments(node.path).join("/")}
+        className="vault-row"
+      >
+        <FolderIcon />
+        <span>{node.name}</span>
+      </OpenFolder>
+    );
+  }
+  return (
+    <form method="get" action="/" className="vault-row" data-studio-navigation>
+      <SelectionFields selection={openFile(selection, node.path)} />
+      <button type="submit">
+        <FileIcon />
+        <span>{node.name}</span>
+      </button>
+    </form>
+  );
+}
+
+function VaultEditor({
+  page,
+  selection,
+  vault,
+}: {
+  page: StudioPage;
+  selection: StudioVaultSelection;
+  vault: StudioVaultPage;
+}) {
   if (!vault.open) {
     return (
       <div className="panel vault-editor-panel">
@@ -372,7 +657,7 @@ function VaultEditor({ page, vault }: { page: StudioPage; vault: StudioVaultPage
     >
       <div className="section-header">
         <div>
-          <h3>{vault.open.path}</h3>
+          <h3>{segments(vault.open.path).at(-1) ?? vault.open.path}</h3>
           <p className="section-note">
             {page.writable
               ? "Changes stay in the editor until you save."
@@ -389,6 +674,7 @@ function VaultEditor({ page, vault }: { page: StudioPage; vault: StudioVaultPage
         id="vault-editor"
         data-vault-editor
         data-vault-path={vault.open.path}
+        data-vault-events={toHref(openFile(selection, vault.open.path), "/api/vault/events")}
         data-vault-token={vault.open.token}
         {...(page.writable ? {} : { readOnly: true })}
         spellCheck={false}

@@ -8,9 +8,9 @@ import {
 import { collectStudioInventory, type StudioInventory } from "./inventory";
 import { assembleCompanionPayload, type StudioCompanionResponse } from "./payload";
 import { STUDIO_HOSTNAME } from "./routes";
-import { companionDigest, parseStudioSelection, resolveCompanion } from "./selection";
+import { companionDigest, parse, parseVaultSelection, resolveCompanion } from "./selection";
 import { createStudioSnapshotCache, type StudioSnapshotCache } from "./snapshot";
-import type { StudioPage } from "./views/model";
+import type { StudioPage, StudioVaultPage } from "./views/model";
 import { createVaultManager, resolveVaultPath, VaultPathError, type VaultManager } from "./vault";
 import {
   DEFAULT_DETACH_MINUTES,
@@ -41,11 +41,17 @@ export interface StudioSocket {
 
 export interface StudioUpgrader {
   upgrade(request: Request, options: { data: StudioSocket["data"] }): boolean;
+  /** Per-request idle timeout in seconds; `0` disables it. */
+  timeout?(request: Request, seconds: number): void;
 }
+
+/** Bun's maximum; its 10 s default cut slow Vault listings into empty responses. */
+export const STUDIO_IDLE_TIMEOUT_SECONDS = 255;
 
 export interface StudioServeOptions {
   port: number;
   hostname: string;
+  idleTimeout: number;
   fetch: (request: Request, server: StudioUpgrader) => Promise<Response | undefined>;
   websocket?: {
     open(ws: StudioSocket): void;
@@ -97,6 +103,8 @@ export interface StudioServerOptions {
   detachMinutes?: number;
   /** Pins every terminal launch to this registered companion. */
   launchCompanion?: string | null;
+  /** Seconds; defaults to `STUDIO_IDLE_TIMEOUT_SECONDS`. */
+  idleTimeout?: number;
   /** Terminal launches skip companion Git synchronization. */
   noGit?: boolean;
 }
@@ -108,6 +116,11 @@ export interface StudioServerOptions {
 async function renderStudioDocument(page: StudioPage): Promise<string> {
   const views = await import("./views/document");
   return views.renderStudioDocument(page);
+}
+
+async function renderVaultView(page: StudioPage): Promise<string> {
+  const views = await import("./views/document");
+  return views.renderVaultView(page);
 }
 
 function html(body: string): Response {
@@ -301,12 +314,11 @@ export function createStudioFetch(
     }
 
     if (url.pathname === "/api/vault/tree") {
-      const selected = await selectedCompanion(url, inventory);
+      const selection = parseVaultSelection(url);
+      const selected = await selectedCompanion(selection.companionDigest, inventory);
       if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
       try {
-        return respond(
-          json(await vault.tree(selected.path, url.searchParams.get("refresh") === "1")),
-        );
+        return respond(json(await vault.tree(selected.path, selection.refresh)));
       } catch (error) {
         return respond(
           json({ reason: error instanceof Error ? error.message : String(error) }, 400),
@@ -314,11 +326,48 @@ export function createStudioFetch(
       }
     }
 
+    if (url.pathname === "/api/vault/view") {
+      const collected = await inventory();
+      const selection = parseVaultSelection(url);
+      const companion = resolveCompanion(collected, selection.companionDigest);
+      if (!companion) return respond(json({ reason: "no registered companion was selected" }, 400));
+      const base = { tree: null, open: null, refusal: null, incoming: null, overwritten: null };
+      let state: StudioVaultPage;
+      try {
+        const tree = await vault.tree(companion.path);
+        state = { ...base, tree: tree.tree, watching: tree.watching, warning: tree.warning };
+      } catch (error) {
+        state = {
+          ...base,
+          watching: false,
+          warning: null,
+          failure: error instanceof Error ? error.message : String(error),
+        };
+      }
+      return respond(
+        new Response(
+          await renderVaultView({
+            inventory: collected,
+            selection,
+            companion,
+            payload: null,
+            error: null,
+            collectedAt: null,
+            writable,
+            vault: state,
+            terminal: null,
+          }),
+          { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
+        ),
+      );
+    }
+
     if (url.pathname === "/api/vault/file") {
-      const selected = await selectedCompanion(url, inventory);
+      const selection = parseVaultSelection(url);
+      const selected = await selectedCompanion(selection.companionDigest, inventory);
       if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
       try {
-        return respond(json(await vault.open(selected.path, url.searchParams.get("path") ?? "")));
+        return respond(json(await vault.open(selected.path, selection.openPath ?? "")));
       } catch (error) {
         return respond(
           json({ reason: error instanceof Error ? error.message : String(error) }, 400),
@@ -327,10 +376,12 @@ export function createStudioFetch(
     }
 
     if (url.pathname === "/api/vault/events") {
-      const selected = await selectedCompanion(url, inventory);
+      const selection = parseVaultSelection(url);
+      const selected = await selectedCompanion(selection.companionDigest, inventory);
       if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
       try {
-        const opened = await resolveVaultPath(selected.path, url.searchParams.get("path") ?? "");
+        const opened = await resolveVaultPath(selected.path, selection.openPath ?? "");
+        server?.timeout?.(request, 0);
         return respond(vaultEvents(vault, selected.path, opened.relative));
       } catch (error) {
         return respond(
@@ -355,7 +406,7 @@ export function createStudioFetch(
         return respond(json({ reason: "save requires a JSON body" }, 400));
       }
       const selected = await selectedCompanion(
-        new URL(`${url.origin}/?companion=${encodeURIComponent(body.companion ?? "")}`),
+        typeof body.companion === "string" ? body.companion : null,
         inventory,
       );
       if (!selected || typeof body.path !== "string" || typeof body.content !== "string") {
@@ -403,11 +454,10 @@ export function createStudioFetch(
 }
 
 async function selectedCompanion(
-  url: URL,
+  digest: string | null,
   collectInventory: () => Promise<StudioInventory>,
 ): Promise<ReturnType<typeof resolveCompanion>> {
-  const inventory = await collectInventory();
-  return resolveCompanion(inventory, parseStudioSelection(url).companionDigest);
+  return resolveCompanion(await collectInventory(), digest);
 }
 
 function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: string): Response {
@@ -448,7 +498,7 @@ async function collectStudioPage(
   vault: VaultManager,
   writable: boolean,
 ): Promise<StudioPage> {
-  const selection = parseStudioSelection(url);
+  const selection = parse(url);
   const inventory = await collectInventory();
   const companion = resolveCompanion(inventory, selection.companionDigest);
   const page: StudioPage = {
@@ -470,7 +520,7 @@ async function collectStudioPage(
 
   if (selection.view === "vault") {
     try {
-      const tree = await vault.tree(companion.path, selection.refresh);
+      const tree = await vault.prefetch(companion.path, selection.refresh);
       let open = null;
       let refusal: string | null = null;
       if (selection.openPath) {
@@ -483,13 +533,13 @@ async function collectStudioPage(
       return {
         ...page,
         vault: {
-          tree: tree.tree,
+          tree: tree?.tree ?? null,
           open,
           refusal,
           incoming: null,
           overwritten: null,
-          watching: tree.watching,
-          warning: tree.warning,
+          watching: tree?.watching ?? false,
+          warning: tree?.warning ?? null,
         },
       };
     } catch (error) {
@@ -569,6 +619,7 @@ export function startStudioServer(
   const server = serve({
     port,
     hostname,
+    idleTimeout: options.idleTimeout ?? STUDIO_IDLE_TIMEOUT_SECONDS,
     fetch: fetchHandler,
     ...(registry
       ? {
