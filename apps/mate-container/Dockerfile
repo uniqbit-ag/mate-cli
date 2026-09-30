@@ -44,6 +44,10 @@ ARG OPENCODE_VERSION
 ARG OPENCODE_INSTALLER_SHA256
 ARG OPENCODE_SHA256_AMD64
 ARG OPENCODE_SHA256_ARM64
+ARG CLAUDE_VERSION
+ARG CLAUDE_RELEASE_BASE_URL
+ARG CLAUDE_SHA256_AMD64
+ARG CLAUDE_SHA256_ARM64
 ARG UV_VERSION
 ARG UV_SHA256_AMD64
 ARG UV_SHA256_ARM64
@@ -133,6 +137,18 @@ RUN case "${TARGETARCH}" in \
  && cp "/fetch/ochome/.opencode/bin/opencode" /out/bin/opencode \
  && test "$(/out/bin/opencode --version)" = "${OPENCODE_VERSION}"
 
+# --- Claude Code ----------------------------------------------------------
+# The native release binary for the exact version, checked against the digest
+# its release manifest publishes. No installer runs, so no channel is resolved.
+RUN case "${TARGETARCH}" in \
+      amd64) CC_FILE=linux-x64/claude; CC_SHA="${CLAUDE_SHA256_AMD64}" ;; \
+      arm64) CC_FILE=linux-arm64/claude; CC_SHA="${CLAUDE_SHA256_ARM64}" ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && fetch-verified "${CLAUDE_RELEASE_BASE_URL}/${CLAUDE_VERSION}/${CC_FILE}" "${CC_SHA}" /out/bin/claude \
+ && chmod 0755 /out/bin/claude \
+ && /out/bin/claude --version | grep -q "^${CLAUDE_VERSION} "
+
 # ===========================================================================
 # Stage: packages — the npm graphs, installed from checked-in lockfiles.
 #
@@ -197,6 +213,7 @@ FROM ${NODE_IMAGE} AS runtime
 ARG TARGETARCH
 ARG MATE_VERSION
 ARG OPENCODE_VERSION
+ARG CLAUDE_VERSION
 ARG GRAPHIFY_VERSION
 ARG GRAPHIFY_PYTHON_VERSION
 ARG GIT_VERSION
@@ -305,22 +322,27 @@ RUN set -e \
  && command -v tokensave \
  && command -v context7-mcp \
  && command -v opencode \
+ && command -v claude \
  && command -v xdg-open \
  && test "$(opencode --version)" = "${OPENCODE_VERSION}" \
+ && claude --version | grep -q "^${CLAUDE_VERSION} " \
+ && bun -e 'if (typeof Bun.Terminal !== "function") { console.error("this Bun has no native pseudo-terminal; the agent terminal needs 1.3.5 or later"); process.exit(1); }' \
  && MATE_UPDATE_POLICY=pinned mate --version | tail -1 | grep -qx "${MATE_VERSION}" \
  && test ! -e /root/.mate \
  && test ! -e /home/mate/.mate
 
 # The version the image contains, readable without starting anything.
 LABEL org.opencontainers.image.title="Mate appliance" \
-      org.opencontainers.image.description="A single-tenant Mate appliance: an OpenCode session over the web with Studio beside it." \
+      org.opencontainers.image.description="A single-tenant Mate appliance: Studio, with a browser terminal that starts Claude Code or OpenCode." \
       org.opencontainers.image.source="https://github.com/uniqbit-ag/mate-cli" \
       org.opencontainers.image.licenses="MIT" \
       ai.mate.version="${MATE_VERSION}" \
-      ai.mate.opencode.version="${OPENCODE_VERSION}"
+      ai.mate.opencode.version="${OPENCODE_VERSION}" \
+      ai.mate.claude.version="${CLAUDE_VERSION}"
 
 ENV MATE_VERSION=${MATE_VERSION} \
     MATE_OPENCODE_VERSION=${OPENCODE_VERSION} \
+    MATE_CLAUDE_VERSION=${CLAUDE_VERSION} \
     MATE_PREBUILT_WORKSPACE=/opt/mate/prebuilt \
     MATE_COMPANIONS_DIR=/companions \
     MATE_UPDATE_POLICY=pinned \
@@ -330,7 +352,7 @@ ENV MATE_VERSION=${MATE_VERSION} \
 USER mate
 WORKDIR /home/mate
 
-# Both ports are unauthenticated; what fronts them is the operator's.
-EXPOSE 4096 4097
+# Studio alone. Its access token guards it; TLS and anything else in front is the operator's.
+EXPOSE 4097
 
 ENTRYPOINT ["/usr/local/bin/mate-appliance"]

@@ -78,15 +78,19 @@ function config(overrides: Partial<ApplianceConfig> = {}): ApplianceConfig {
     companionsDir: root,
     companionRepos: [],
     companion: null,
-    agentPort: 4096,
-    agentHost: "0.0.0.0",
     studioPort: 4097,
     studioHost: "0.0.0.0",
     studioWritable: true,
+    studioTerminal: true,
+    studioDetachMinutes: 30,
+    studioToken: null,
+    studioAllowedHosts: [],
+    studioPublicOrigin: null,
     gitSync: false,
     gitUserName: null,
     gitUserEmail: null,
     credentials: {},
+    removed: [],
     ...overrides,
   };
 }
@@ -355,15 +359,21 @@ describe("what startup hands the supervisor", () => {
     const rendered = renderPlan({
       companion: "/companions/acme",
       companions: ["/companions/acme"],
-      agentPort: 4096,
-      agentHost: "0.0.0.0",
       studioPort: 4097,
       studioHost: "0.0.0.0",
       studioWritable: true,
+      studioTerminal: true,
+      studioDetachMinutes: 30,
+      studioAllowedHosts: ["studio.acme.test", "localhost:8080"],
+      studioPublicOrigin: "https://studio.acme.test",
       gitSync: false,
     });
     expect(rendered).toContain("MATE_PLAN_COMPANION='/companions/acme'");
-    expect(rendered).toContain("MATE_PLAN_AGENT_PORT='4096'");
+    expect(rendered).not.toContain("AGENT_PORT");
+    expect(rendered).toContain("MATE_PLAN_STUDIO_TERMINAL='1'");
+    expect(rendered).toContain("MATE_PLAN_STUDIO_DETACH_MINUTES='30'");
+    expect(rendered).toContain("MATE_PLAN_STUDIO_ALLOWED_HOSTS='studio.acme.test,localhost:8080'");
+    expect(rendered).toContain("MATE_PLAN_STUDIO_PUBLIC_ORIGIN='https://studio.acme.test'");
     expect(rendered).toContain("MATE_PLAN_STUDIO_WRITABLE='1'");
     expect(rendered).toContain("MATE_PLAN_GIT_SYNC=''");
   });
@@ -372,11 +382,13 @@ describe("what startup hands the supervisor", () => {
     const rendered = renderPlan({
       companion: "/companions/it's",
       companions: [],
-      agentPort: 1,
-      agentHost: "h",
       studioPort: 2,
       studioHost: "h",
       studioWritable: false,
+      studioTerminal: false,
+      studioDetachMinutes: 30,
+      studioAllowedHosts: [],
+      studioPublicOrigin: null,
       gitSync: false,
     });
     expect(rendered).toContain(`MATE_PLAN_COMPANION='/companions/it'\\''s'`);
@@ -396,6 +408,25 @@ describe("what startup hands the supervisor", () => {
     makeCompanion(path.join(root, "acme"));
     const plan = renderPlan(prepareStartup(applianceConfig, deps()));
     expect(plan).not.toContain("secret");
+  });
+
+  test("a pinned Studio token travels with the credentials, never the plan", () => {
+    const applianceConfig = config({ studioToken: "s".repeat(40) });
+    expect(renderCredentials(applianceConfig)).toContain(
+      `export MATE_STUDIO_TOKEN='${"s".repeat(40)}'`,
+    );
+    makeCompanion(path.join(root, "acme"));
+    expect(renderPlan(prepareStartup(applianceConfig, deps()))).not.toContain("s".repeat(40));
+  });
+
+  test("a removed agent setting is warned about by name", () => {
+    makeCompanion(path.join(root, "acme"));
+    const lines: string[] = [];
+    prepareStartup(
+      config({ removed: ["MATE_AGENT_PORT"] }),
+      deps({ log: (line) => lines.push(line) }),
+    );
+    expect(lines.some((line) => line.includes("MATE_AGENT_PORT is no longer used"))).toBe(true);
   });
 
   test("nothing a credential contains is written into the companion", () => {

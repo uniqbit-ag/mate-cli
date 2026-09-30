@@ -43,6 +43,24 @@ describe("CompanionPicker", () => {
     expect(markup).toContain('<input type="hidden" name="view" value="workflow"/>');
   });
 
+  it("keeps the vault and drops its open file when switching from one", () => {
+    const markup = render(
+      { companions: [{ path: acme, health: "ready", pairings: [] }] },
+      {
+        companionDigest: companionDigest(acme),
+        view: "vault",
+        refresh: true,
+        openPath: "docs/note.md",
+        openDir: "docs",
+      },
+    );
+    expect(markup).toContain('<input type="hidden" name="view" value="vault"/>');
+    expect(markup).not.toContain('name="path"');
+    expect(markup).not.toContain('name="dir"');
+    expect(markup).not.toContain('name="refresh"');
+    expect(markup).not.toContain('type="hidden" name="companion"');
+  });
+
   it("marks a companion that is not ready and states its reason", () => {
     const markup = render({
       companions: [

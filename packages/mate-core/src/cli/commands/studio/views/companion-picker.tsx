@@ -1,8 +1,14 @@
 /** @jsxImportSource hono/jsx */
 
 import type { StudioInventory, StudioInventoryCompanion } from "../inventory";
-import { companionDigest, type StudioSelection } from "../selection";
+import {
+  COMPANION_PARAM,
+  companionDigest,
+  type StudioSelection,
+  switchCompanion,
+} from "../selection";
 import { healthNote } from "./model";
+import { SelectionFields } from "./selection-fields";
 
 interface CompanionPickerProps {
   inventory: StudioInventory;
@@ -45,9 +51,7 @@ export function CompanionPicker({ inventory, selection }: CompanionPickerProps) 
         Studio serves one companion at a time, and remembers the one you choose for your next visit.
       </p>
       <form method="get" action="/">
-        {selection.view === "dashboard" ? null : (
-          <input type="hidden" name="view" value={selection.view} />
-        )}
+        <SelectionFields selection={switchCompanion(selection, null)} />
         <div className="picker-grid">
           {companions.map((companion) => (
             <CompanionCard key={companionDigest(companion.path)} companion={companion} />
@@ -66,7 +70,7 @@ function CompanionCard({ companion }: { companion: StudioInventoryCompanion }) {
   return (
     <button
       type="submit"
-      name="companion"
+      name={COMPANION_PARAM}
       value={companionDigest(companion.path)}
       className="picker-card"
       data-unready={companion.health === "ready" ? undefined : "true"}

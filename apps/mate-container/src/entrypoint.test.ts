@@ -52,7 +52,15 @@ function writeExecutable(name: string, body: string): void {
  * Stands in for the startup program: prints the plan the supervisor evaluates,
  * so these cases are about the supervisor rather than about discovery.
  */
-function stubStartup(writable = true, gitSync = false): void {
+function stubStartup(
+  options: {
+    writable?: boolean;
+    gitSync?: boolean;
+    allowedHosts?: string;
+    publicOrigin?: string;
+  } = {},
+): void {
+  const writable = options.writable ?? true;
   writeExecutable(
     "bun",
     `#!/usr/bin/env bash
@@ -60,34 +68,17 @@ if [[ "\${2:-}" == "--credentials" ]]; then
   echo "export STUB_CREDENTIAL='secret'"
   exit 0
 fi
-cat <<'EOF'
+cat <<'PLAN'
 MATE_PLAN_COMPANION='${COMPANION}'
-MATE_PLAN_AGENT_PORT='4096'
-MATE_PLAN_AGENT_HOST='0.0.0.0'
 MATE_PLAN_STUDIO_PORT='4097'
 MATE_PLAN_STUDIO_HOST='0.0.0.0'
 MATE_PLAN_STUDIO_WRITABLE='${writable ? "1" : ""}'
-MATE_PLAN_GIT_SYNC='${gitSync ? "1" : ""}'
-EOF
-`,
-  );
-}
-
-/**
- * A `mate` whose two subcommands behave as each case needs. Each records that
- * it started and that it stopped, so a case can assert that neither process
- * was left running.
- */
-function stubMate(studio: string, agent: string): void {
-  writeExecutable(
-    "mate",
-    `#!/usr/bin/env bash
-LOG="${LOG}"
-note() { echo "$1 $2" >> "$LOG"; }
-case "$1" in
-  studio) note studio started; ${studio} ;;
-  opencode) note agent started; ${agent} ;;
-esac
+MATE_PLAN_STUDIO_TERMINAL='${writable ? "1" : ""}'
+MATE_PLAN_STUDIO_DETACH_MINUTES='30'
+MATE_PLAN_STUDIO_ALLOWED_HOSTS='${options.allowedHosts ?? ""}'
+MATE_PLAN_STUDIO_PUBLIC_ORIGIN='${options.publicOrigin ?? ""}'
+MATE_PLAN_GIT_SYNC='${options.gitSync ? "1" : ""}'
+PLAN
 `,
   );
 }
@@ -102,6 +93,38 @@ while :; do sleep 0.05 & wait $!; done
 
 /** Ends on its own with a given status. */
 const endsWith = (status: number) => `sleep 0.4; note "$1" stopped; exit ${status}`;
+
+/**
+ * A `mate` whose `studio` behaves as each case needs. Studio also starts an
+ * "agent" in its own session that it deliberately never stops, the way a
+ * crashed Studio would leave a terminal session behind.
+ */
+function stubMate(studio: string, agent = RUNS_UNTIL_SIGNALLED): void {
+  writeExecutable(
+    "agent",
+    `#!/usr/bin/env bash
+LOG="${LOG}"
+note() { echo "$1 $2" >> "$LOG"; }
+set -- agent
+note agent started
+${agent}
+`,
+  );
+  writeExecutable(
+    "mate",
+    `#!/usr/bin/env bash
+LOG="${LOG}"
+note() { echo "$1 $2" >> "$LOG"; }
+case "$1" in
+  studio)
+    note studio started
+    setsid agent &
+    set -- studio
+    ${studio} ;;
+esac
+`,
+  );
+}
 
 interface Outcome {
   status: number;
@@ -141,16 +164,12 @@ async function runSupervisor(signal?: { name: string }): Promise<Outcome> {
   child.stdout.resume();
 
   if (signal) {
-    // Wait for the supervisor to say both processes are up rather than guessing
-    // a delay: a signal that arrives before the traps are installed would be
-    // testing the shell's default disposition, not this script.
+    /**
+     * Waits for Studio and its agent to have installed their traps: a signal
+     * before that tests the shell's default disposition, not this script.
+     * Generous, because container starts are slow under a concurrent suite.
+     */
     void (async () => {
-      // Generous, because several of these cases run concurrently with the
-      // rest of the suite and a container start is not instant under that
-      // contention. Signalling early would test the shell's default signal
-      // disposition rather than this script's traps.
-      // Both children must also have installed their own traps; before that a
-      // forwarded signal kills them by default and they never record stopping.
       const logFile = path.join(root, "processes.log");
       const bothReady = () =>
         fs.existsSync(logFile) &&
@@ -177,90 +196,67 @@ async function runSupervisor(signal?: { name: string }): Promise<Outcome> {
   };
 }
 
-/** Both processes started and both recorded that they stopped. */
-function bothStopped(log: string): boolean {
-  const started = (log.match(/ started/g) ?? []).length;
-  const stopped = (log.match(/ stopped/g) ?? []).length;
-  return started === 2 && stopped === 2;
-}
-
 const CASE_TIMEOUT = 60_000;
 
-withContainer("a termination signal stops both processes", () => {
+withContainer("a termination signal stops Studio and every agent session", () => {
   test(
-    "SIGTERM stops both, leaves nothing running, and the container exits zero",
+    "SIGTERM stops Studio and a detached agent, and the container exits zero",
     async () => {
       stubStartup();
-      stubMate(RUNS_UNTIL_SIGNALLED, RUNS_UNTIL_SIGNALLED);
+      stubMate(RUNS_UNTIL_SIGNALLED);
 
       const outcome = await runSupervisor({ name: "TERM" });
 
-      expect(outcome.log).toContain("studio started");
-      expect(outcome.log).toContain("agent started");
-      expect(bothStopped(outcome.log)).toBe(true);
+      expect(outcome.log).toContain("studio stopped");
+      expect(outcome.log).toContain("agent stopped");
       expect(outcome.status).toBe(0);
     },
     CASE_TIMEOUT,
   );
 
   test(
-    "SIGINT stops both and the container exits zero",
+    "SIGINT stops Studio and the container exits zero",
     async () => {
       stubStartup();
-      stubMate(RUNS_UNTIL_SIGNALLED, RUNS_UNTIL_SIGNALLED);
+      stubMate(RUNS_UNTIL_SIGNALLED);
 
       const outcome = await runSupervisor({ name: "INT" });
 
-      expect(bothStopped(outcome.log)).toBe(true);
+      expect(outcome.log).toContain("studio stopped");
       expect(outcome.status).toBe(0);
     },
     CASE_TIMEOUT,
   );
 });
 
-withContainer("the first process to end on its own decides the status", () => {
+withContainer("Studio's own outcome decides the status", () => {
   test(
-    "the session exiting non-zero is what the container reports",
+    "Studio exiting non-zero is reported, after the session it left is stopped",
     async () => {
       stubStartup();
-      stubMate(RUNS_UNTIL_SIGNALLED, endsWith(7));
-
-      const outcome = await runSupervisor();
-
-      expect(outcome.status).toBe(7);
-      expect(outcome.stderr).toContain("session ended with status 7");
-      expect(bothStopped(outcome.log)).toBe(true);
-    },
-    CASE_TIMEOUT,
-  );
-
-  test(
-    "Studio exiting non-zero is reported as Studio's status, not the session's",
-    async () => {
-      stubStartup();
-      // The session is then stopped as cleanup and reports 143; that must not
-      // replace Studio's own status.
-      stubMate(endsWith(5), RUNS_UNTIL_SIGNALLED);
+      stubMate(endsWith(5));
 
       const outcome = await runSupervisor();
 
       expect(outcome.status).toBe(5);
       expect(outcome.stderr).toContain("studio ended with status 5");
-      expect(bothStopped(outcome.log)).toBe(true);
+      expect(outcome.log).toContain("agent stopped");
     },
     CASE_TIMEOUT,
   );
 
   test(
-    "a dead session is not survived by Studio",
+    "an agent session ending keeps Studio and the container running",
     async () => {
       stubStartup();
-      stubMate(RUNS_UNTIL_SIGNALLED, endsWith(0));
+      stubMate(RUNS_UNTIL_SIGNALLED, `note agent ready; sleep 0.2; note agent stopped; exit 9`);
 
-      const outcome = await runSupervisor();
+      const outcome = await runSupervisor({ name: "TERM" });
 
+      expect(outcome.log.indexOf("agent stopped")).toBeLessThan(
+        outcome.log.indexOf("studio stopped"),
+      );
       expect(outcome.status).toBe(0);
-      expect(bothStopped(outcome.log)).toBe(true);
     },
     CASE_TIMEOUT,
   );
@@ -271,8 +267,7 @@ withContainer("a stop the container caused is told apart from one it did not", (
     "a signal the container did not send is reported as it was",
     async () => {
       stubStartup();
-      // Nothing terminated this container; the session simply reports 143.
-      stubMate(RUNS_UNTIL_SIGNALLED, endsWith(143));
+      stubMate(endsWith(143));
 
       const outcome = await runSupervisor();
 
@@ -285,7 +280,7 @@ withContainer("a stop the container caused is told apart from one it did not", (
     "an OOM kill is not reported as a clean shutdown",
     async () => {
       stubStartup();
-      stubMate(RUNS_UNTIL_SIGNALLED, endsWith(137));
+      stubMate(endsWith(137));
 
       const outcome = await runSupervisor();
 
@@ -295,15 +290,15 @@ withContainer("a stop the container caused is told apart from one it did not", (
   );
 });
 
-withContainer("a startup that cannot complete leaves nothing running", () => {
+withContainer("a startup that cannot reach Studio leaves nothing running", () => {
   test(
-    "a failing startup program stops the container before either process starts",
+    "a failing startup program stops the container before Studio starts",
     async () => {
       writeExecutable(
         "bun",
         `#!/usr/bin/env bash\necho "mate-appliance: no companion to serve" >&2\nexit 1\n`,
       );
-      stubMate(RUNS_UNTIL_SIGNALLED, RUNS_UNTIL_SIGNALLED);
+      stubMate(RUNS_UNTIL_SIGNALLED);
 
       const outcome = await runSupervisor();
 
@@ -313,80 +308,52 @@ withContainer("a startup that cannot complete leaves nothing running", () => {
     },
     CASE_TIMEOUT,
   );
-
-  test(
-    "a launch preflight refusal is passed through with its guidance and status",
-    async () => {
-      stubStartup();
-      // A refusal reaches the supervisor as a non-zero status, not as output
-      // the supervisor has to interpret.
-      stubMate(
-        RUNS_UNTIL_SIGNALLED,
-        `echo "mate: the openspec capability is not installed; run \\\`mate install\\\`" >&2
-note "$1" stopped
-exit 3`,
-      );
-
-      const outcome = await runSupervisor();
-
-      expect(outcome.status).toBe(3);
-      expect(outcome.stderr).toContain("the openspec capability is not installed");
-      expect(outcome.stderr).toContain("mate install");
-    },
-    CASE_TIMEOUT,
-  );
 });
 
-withContainer("what the supervisor starts the two processes with", () => {
-  test(
-    "Studio gets its port, host and writability; the session gets the companion and the policy",
-    async () => {
-      stubStartup();
-      writeExecutable(
-        "mate",
-        `#!/usr/bin/env bash
-LOG="${LOG}"
-note() { echo "$1 $2" >> "$LOG"; }
+/** Records what `mate` was started with, then exits. */
+function recordingMate(): void {
+  writeExecutable(
+    "mate",
+    `#!/usr/bin/env bash
 { echo "$1 argv: $*"
   echo "$1 cwd: $PWD"
   echo "$1 companion: \${MATE_ARTIFACT_PATH:-}"
   echo "$1 policy: \${MATE_UPDATE_POLICY:-}"
   echo "$1 credential: \${STUB_CREDENTIAL:-}"; } >> "${CASE}/argv.log"
-note "$1" started
-sleep 0.4
-note "$1" stopped
+sleep 0.3
 exit 0
 `,
-      );
+  );
+}
+
+withContainer("what the supervisor starts Studio with", () => {
+  test(
+    "Studio gets its port, host, write path, terminal, launch companion, and the policy",
+    async () => {
+      stubStartup();
+      recordingMate();
 
       await runSupervisor();
       const recorded = fs.readFileSync(path.join(root, "argv.log"), "utf8");
 
-      expect(recorded).toContain("studio argv: studio serve --port 4097 --host 0.0.0.0 --writable");
       expect(recorded).toContain(
-        "opencode argv: opencode -- --companion --yes --no-git web --port 4096 --hostname 0.0.0.0",
+        `studio argv: studio serve --port 4097 --host 0.0.0.0 --writable --terminal --detach-timeout 30 --companion ${COMPANION} --no-git\n`,
       );
-      // The companion is named to the session explicitly rather than inferred
-      // from the directory the container happened to start in.
-      expect(recorded).toContain(`opencode companion: ${COMPANION}`);
-      expect(recorded).toContain(`opencode cwd: ${COMPANION}`);
-      // The pinned policy reaches both serving processes.
+      expect(recorded).toContain(`studio companion: ${COMPANION}`);
+      expect(recorded).toContain(`studio cwd: ${COMPANION}`);
       expect(recorded).toContain("studio policy: pinned");
-      expect(recorded).toContain("opencode policy: pinned");
-      // Credentials reach the session's environment.
-      expect(recorded).toContain("opencode credential: secret");
+      /** Credentials reach Studio, whose agent sessions inherit them. */
+      expect(recorded).toContain("studio credential: secret");
+      expect(recorded).not.toContain("opencode");
     },
     CASE_TIMEOUT,
   );
 
   test(
-    "Studio is started without --writable when it is not configured",
+    "without the write path Studio gets neither --writable nor the terminal",
     async () => {
-      stubStartup(false);
-      writeExecutable(
-        "mate",
-        `#!/usr/bin/env bash\necho "$1 argv: $*" >> "${CASE}/argv.log"\nsleep 0.3\nexit 0\n`,
-      );
+      stubStartup({ writable: false });
+      recordingMate();
 
       await runSupervisor();
 
@@ -396,22 +363,21 @@ exit 0
     },
     CASE_TIMEOUT,
   );
-});
 
-withContainer("whether the session synchronizes Git", () => {
   test(
-    "a session configured to synchronize is started without --no-git",
+    "Git synchronization drops --no-git; proxy settings are passed through",
     async () => {
-      stubStartup(true, true);
-      writeExecutable(
-        "mate",
-        `#!/usr/bin/env bash\necho "$1 argv: $*" >> "${CASE}/argv.log"\nsleep 0.3\nexit 0\n`,
-      );
+      stubStartup({
+        gitSync: true,
+        allowedHosts: "studio.acme.test",
+        publicOrigin: "https://studio.acme.test",
+      });
+      recordingMate();
 
       await runSupervisor();
 
       expect(fs.readFileSync(path.join(root, "argv.log"), "utf8")).toContain(
-        "opencode argv: opencode -- --companion --yes web --port 4096 --hostname 0.0.0.0\n",
+        `--companion ${COMPANION} --allowed-host studio.acme.test --public-origin https://studio.acme.test\n`,
       );
     },
     CASE_TIMEOUT,
