@@ -33,7 +33,7 @@ export interface StudioTerminalPage {
 export interface StudioVaultPage {
   /** `null` while the listing runs; the page then fetches the tree separately. */
   tree: VaultTreeNode[] | null;
-  /** Why the listing failed; only set on the separately fetched tree. */
+  /** Why the listing failed, whether requested in the page or separately. */
   failure?: string | null;
   open: VaultFile | null;
   refusal: string | null;

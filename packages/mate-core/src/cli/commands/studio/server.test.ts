@@ -11,8 +11,9 @@ import {
   STUDIO_IDLE_TIMEOUT_SECONDS,
   type StudioServerDeps,
 } from "./server";
+import { renderStudioDocument, renderVaultView } from "./views/document";
 import type { StudioPage } from "./views/model";
-import { createVaultManager } from "./vault";
+import { createVaultManager, type VaultManager, type VaultTreeResult } from "./vault";
 
 const ACME = "/companions/acme";
 const BROKEN = "/companions/broken";
@@ -334,6 +335,98 @@ describe("createStudioFetch", () => {
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+
+  test.each(["listed", "failed"] as const)(
+    "page and /view agree on vault state when listing is %s",
+    async (result) => {
+      const digest = companionDigest(ACME);
+      const tree: VaultTreeResult = {
+        tree: [{ name: "note.md", path: "note.md", kind: "file" }],
+        watching: true,
+        warning: null,
+      };
+      const listing = async (): Promise<VaultTreeResult> => {
+        if (result === "failed") throw new Error("listing failed");
+        return tree;
+      };
+      const opened: string[] = [];
+      const vault = {
+        prefetch: listing,
+        tree: listing,
+        open: async (_root: string, file: string) => {
+          opened.push(file);
+          return { path: file, content: "acme", token: "v1" };
+        },
+        deactivate: () => {},
+        stop: () => {},
+      } as VaultManager;
+      const pages: StudioPage[] = [];
+      const handler = createStudioFetch({
+        collectStudioInventory: async () => ({
+          companions: [{ path: ACME, health: "ready", pairings: [] }],
+        }),
+        renderDocument: (page) => {
+          pages.push(page);
+          return renderStudioDocument(page);
+        },
+        vault,
+      });
+      const query = `companion=${digest}&view=vault&path=note.md`;
+
+      const page = (await handler(new Request(`http://localhost/?${query}`)))!;
+      const view = (await handler(new Request(`http://localhost/api/vault/view?${query}`)))!;
+      expect(page.status).toBe(200);
+      expect(view.status).toBe(200);
+      expect(pages[0]?.error).toBeNull();
+      expect(pages[0]?.vault).toMatchObject({
+        tree: result === "listed" ? tree.tree : null,
+        failure: result === "failed" ? "listing failed" : null,
+        open: { path: "note.md", content: "acme", token: "v1" },
+      });
+      expect(await view.text()).toBe(renderVaultView(pages[0]!));
+      expect(opened).toEqual(["note.md", "note.md"]);
+      const markup = await page.text();
+      expect(markup).toContain("data-vault-layout");
+      if (result === "failed") {
+        expect(markup).toContain("The files could not be listed: listing failed");
+        expect(markup).toContain("Refresh tree");
+      }
+      await handler.close();
+    },
+  );
+
+  test("renders a full vault page with a listing failure in the tree", async () => {
+    const vault = {
+      prefetch: async () => {
+        throw new Error("listing failed");
+      },
+      deactivate: () => {},
+      stop: () => {},
+    } as unknown as VaultManager;
+    const pages: StudioPage[] = [];
+    const handler = createStudioFetch({
+      collectStudioInventory: async () => ({
+        companions: [{ path: ACME, health: "ready", pairings: [] }],
+      }),
+      renderDocument: (page) => {
+        pages.push(page);
+        return renderStudioDocument(page);
+      },
+      vault,
+    });
+
+    const response = (await handler(
+      new Request(`http://localhost/?companion=${companionDigest(ACME)}&view=vault`),
+    ))!;
+    const markup = await response.text();
+    expect(response.status).toBe(200);
+    expect(pages[0]?.error).toBeNull();
+    expect(pages[0]?.vault?.failure).toBe("listing failed");
+    expect(markup).toContain('data-vault-slot="tree"');
+    expect(markup).toContain("The files could not be listed: listing failed");
+    expect(markup).toContain("Refresh tree");
+    await handler.close();
   });
 
   test("answers deferred forms that stay in the vault with their file and folder", async () => {

@@ -8,7 +8,13 @@ import {
 import { collectStudioInventory, type StudioInventory } from "./inventory";
 import { assembleCompanionPayload, type StudioCompanionResponse } from "./payload";
 import { STUDIO_HOSTNAME } from "./routes";
-import { companionDigest, parse, parseVaultSelection, resolveCompanion } from "./selection";
+import {
+  companionDigest,
+  parse,
+  parseVaultSelection,
+  resolveCompanion,
+  type StudioVaultSelection,
+} from "./selection";
 import { createStudioSnapshotCache, type StudioSnapshotCache } from "./snapshot";
 import type { StudioPage, StudioVaultPage } from "./views/model";
 import { createVaultManager, resolveVaultPath, VaultPathError, type VaultManager } from "./vault";
@@ -121,6 +127,17 @@ async function renderStudioDocument(page: StudioPage): Promise<string> {
 async function renderVaultView(page: StudioPage): Promise<string> {
   const views = await import("./views/document");
   return views.renderVaultView(page);
+}
+
+/** Keep the CLI entry free of eager Studio view imports. */
+async function collectVaultState(
+  vault: VaultManager,
+  companionPath: string,
+  selection: StudioVaultSelection,
+  options: { tree: "prefetch" | "await" },
+): Promise<StudioVaultPage> {
+  const { vaultState } = await import("./views/vault/state");
+  return vaultState(vault, companionPath, selection, options);
 }
 
 function html(body: string): Response {
@@ -331,19 +348,7 @@ export function createStudioFetch(
       const selection = parseVaultSelection(url);
       const companion = resolveCompanion(collected, selection.companionDigest);
       if (!companion) return respond(json({ reason: "no registered companion was selected" }, 400));
-      const base = { tree: null, open: null, refusal: null, incoming: null, overwritten: null };
-      let state: StudioVaultPage;
-      try {
-        const tree = await vault.tree(companion.path);
-        state = { ...base, tree: tree.tree, watching: tree.watching, warning: tree.warning };
-      } catch (error) {
-        state = {
-          ...base,
-          watching: false,
-          warning: null,
-          failure: error instanceof Error ? error.message : String(error),
-        };
-      }
+      const state = await collectVaultState(vault, companion.path, selection, { tree: "await" });
       return respond(
         new Response(
           await renderVaultView({
@@ -519,38 +524,10 @@ async function collectStudioPage(
   }
 
   if (selection.view === "vault") {
-    try {
-      const tree = await vault.prefetch(companion.path, selection.refresh);
-      let open = null;
-      let refusal: string | null = null;
-      if (selection.openPath) {
-        try {
-          open = await vault.open(companion.path, selection.openPath);
-        } catch (error) {
-          refusal = error instanceof Error ? error.message : String(error);
-        }
-      }
-      return {
-        ...page,
-        vault: {
-          tree: tree?.tree ?? null,
-          open,
-          refusal,
-          incoming: null,
-          overwritten: null,
-          watching: tree?.watching ?? false,
-          warning: tree?.warning ?? null,
-        },
-      };
-    } catch (error) {
-      return {
-        ...page,
-        error: {
-          companionPath: companion.path,
-          reason: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
+    return {
+      ...page,
+      vault: await collectVaultState(vault, companion.path, selection, { tree: "prefetch" }),
+    };
   }
 
   vault.deactivate();
