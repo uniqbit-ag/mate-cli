@@ -1,0 +1,320 @@
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+import { FRAMEWORK_NAME } from "../../../framework";
+import { ConfigStore } from "../../../lib/orchestrator/config-store";
+import type { FrameworkConfig } from "../../../lib/orchestrator/types";
+import { YamlFileStore } from "../../../lib/orchestrator/yaml-file-store";
+import {
+  fetchLatestVersion,
+  getCurrentVersion,
+  isCanaryVersion,
+  isNewer,
+} from "../../../lib/update-checker";
+import { resolveCompanionRuntime } from "../../../runtime/env";
+import { syncCompanionFiles } from "../../../tools/setup";
+import { runCommand } from "../../../tools/setup/utils";
+import { confirm } from "../../confirm";
+import { defaultGitOps, type GitOps } from "../artifact/finish/git";
+import { resolveCompanionPath } from "./tui";
+
+/** Snapshot marker for a changed path that no longer exists on disk. */
+export const DELETED = "<deleted>";
+
+const SKILLS_LOCKFILE = "skills-lock.json";
+
+function frameworkConfigPath(companionPath: string): string {
+  return path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+}
+
+/**
+ * Raw view of `framework.yaml`: `ConfigStore.load()` merges defaults, so saving
+ * its result would add keys the companion never declared.
+ */
+class RawFrameworkConfigStore extends YamlFileStore<Record<string, unknown>> {
+  protected onMissing(): Promise<Record<string, unknown>> {
+    return Promise.resolve({});
+  }
+}
+
+async function hashTree(absolute: string, hash: crypto.Hash, relative: string): Promise<void> {
+  const stat = await fs.lstat(absolute);
+  if (stat.isDirectory()) {
+    const entries = (await fs.readdir(absolute)).toSorted();
+    for (const entry of entries) {
+      await hashTree(path.join(absolute, entry), hash, path.posix.join(relative, entry));
+    }
+    return;
+  }
+  hash.update(`${relative}\0`);
+  hash.update(stat.isSymbolicLink() ? await fs.readlink(absolute) : await fs.readFile(absolute));
+  hash.update("\0");
+}
+
+/** Porcelain collapses an untracked directory into one `dir/` entry, so directories hash their whole tree. */
+async function snapshotPath(companionPath: string, relativePath: string): Promise<string> {
+  const absolute = path.join(companionPath, relativePath);
+  try {
+    const hash = crypto.createHash("sha256");
+    await hashTree(absolute, hash, ".");
+    return hash.digest("hex");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return DELETED;
+    throw error;
+  }
+}
+
+export interface CompanionUpdateDeps {
+  resolveCompanionPath: typeof resolveCompanionPath;
+  resolveProjectedCompanionPath: (cwd: string) => string | undefined;
+  getCurrentVersion: () => string;
+  fetchLatestVersion: () => Promise<string>;
+  loadConfig: (companionPath: string) => Promise<FrameworkConfig>;
+  syncCompanionFiles: (companionPath: string, config: FrameworkConfig) => Promise<void>;
+  /** Returns true when the file was rewritten. */
+  writeEngineFloor: (companionPath: string, range: string) => Promise<boolean>;
+  hasSkillsLock: (companionPath: string) => Promise<boolean>;
+  runSkillsUpdate: (companionPath: string) => Promise<void>;
+  createGitOps: (companionPath: string) => GitOps;
+  snapshotPath: (companionPath: string, relativePath: string) => Promise<string>;
+  confirm: (question: string) => Promise<boolean>;
+  isInteractive: () => boolean;
+}
+
+export const companionUpdateDeps: CompanionUpdateDeps = {
+  resolveCompanionPath,
+  resolveProjectedCompanionPath: (cwd) =>
+    resolveCompanionRuntime(process.env, cwd).context.companionPath || undefined,
+  getCurrentVersion,
+  fetchLatestVersion,
+  loadConfig: (companionPath) => new ConfigStore(frameworkConfigPath(companionPath)).load(),
+  syncCompanionFiles,
+  async writeEngineFloor(companionPath, range) {
+    const store = new RawFrameworkConfigStore(frameworkConfigPath(companionPath));
+    const raw = (await store.load()) ?? {};
+    const engines = (raw.engines ?? {}) as Record<string, string>;
+    if (engines[FRAMEWORK_NAME] === range) return false;
+    await store.save({ ...raw, engines: { ...engines, [FRAMEWORK_NAME]: range } });
+    return true;
+  },
+  hasSkillsLock: (companionPath) =>
+    fs
+      .access(path.join(companionPath, SKILLS_LOCKFILE))
+      .then(() => true)
+      .catch(() => false),
+  runSkillsUpdate: (companionPath) =>
+    runCommand("npx", ["skills", "update", "-p", "-y"], { cwd: companionPath }),
+  createGitOps: (companionPath) => defaultGitOps(companionPath, undefined),
+  snapshotPath,
+  confirm,
+  isInteractive: () => !!(process.stdin.isTTY && process.stdout.isTTY),
+};
+
+export interface UpdateChanges {
+  written: string[];
+  conflict: string[];
+}
+
+/** Content snapshot of every uncommitted path, taken before the update writes. */
+export async function snapshotChangedPaths(
+  companionPath: string,
+  git: GitOps,
+): Promise<Map<string, string>> {
+  const before = new Map<string, string>();
+  for (const changed of await git.changedPaths()) {
+    before.set(changed, await companionUpdateDeps.snapshotPath(companionPath, changed));
+  }
+  return before;
+}
+
+/** Paths the update wrote, and the subset that already carried local edits (design D4). */
+export async function diffChangedPaths(
+  companionPath: string,
+  git: GitOps,
+  before: Map<string, string>,
+): Promise<UpdateChanges> {
+  const written: string[] = [];
+  const conflict: string[] = [];
+  for (const changed of await git.changedPaths()) {
+    if (!before.has(changed)) written.push(changed);
+  }
+  for (const [changed, hash] of before) {
+    if ((await companionUpdateDeps.snapshotPath(companionPath, changed)) === hash) continue;
+    written.push(changed);
+    conflict.push(changed);
+  }
+  return { written: written.toSorted(), conflict: conflict.toSorted() };
+}
+
+async function resolveCompanion(cwd: string): Promise<string | undefined> {
+  const resolved = await companionUpdateDeps.resolveCompanionPath(cwd);
+  if (resolved) return resolved;
+  return companionUpdateDeps.resolveProjectedCompanionPath(cwd);
+}
+
+function fail(message: string): void {
+  process.stderr.write(`${FRAMEWORK_NAME}: ${message}\n`);
+  process.exitCode = 1;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function listPaths(paths: string[]): string {
+  return paths.map((changed) => `  ${changed}`).join("\n");
+}
+
+/** Version precondition; returns the running version when the update may proceed. */
+async function checkVersion(): Promise<string | undefined> {
+  const current = companionUpdateDeps.getCurrentVersion();
+  if (isCanaryVersion(current)) {
+    fail(
+      `\`${FRAMEWORK_NAME} companion update\` requires a stable ${FRAMEWORK_NAME}; ${current} is a prerelease.`,
+    );
+    return undefined;
+  }
+  let latest: string;
+  try {
+    latest = await companionUpdateDeps.fetchLatestVersion();
+  } catch (error) {
+    fail(`could not check the registry for the newest version: ${errorMessage(error)}`);
+    return undefined;
+  }
+  if (isNewer(latest, current)) {
+    fail(
+      [
+        `${current} is installed, but the newest stable version is ${latest}.`,
+        `  Run \`${FRAMEWORK_NAME} update\` first.`,
+      ].join("\n"),
+    );
+    return undefined;
+  }
+  return current;
+}
+
+async function commitAndPush(
+  git: GitOps,
+  written: string[],
+  version: string,
+  yes: boolean,
+): Promise<void> {
+  if (!yes && !companionUpdateDeps.isInteractive()) {
+    process.stdout.write(
+      `${FRAMEWORK_NAME}: not an interactive shell; changes left uncommitted. Re-run with --yes to commit and push.\n`,
+    );
+    return;
+  }
+
+  const message = `chore(${FRAMEWORK_NAME}): update companion to ${FRAMEWORK_NAME} ${version}`;
+  if (!yes && !(await companionUpdateDeps.confirm(`Commit as "${message}"?`))) {
+    process.stdout.write(`${FRAMEWORK_NAME}: changes left uncommitted.\n`);
+    return;
+  }
+  try {
+    await git.add(written);
+    await git.commit(message, written);
+  } catch (error) {
+    fail(`commit failed: ${errorMessage(error)}`);
+    return;
+  }
+  process.stdout.write(`${FRAMEWORK_NAME}: committed "${message}".\n`);
+
+  if (!yes && !(await companionUpdateDeps.confirm("Push the commit?"))) return;
+  if (!(await git.hasUpstream())) {
+    process.stdout.write(
+      `${FRAMEWORK_NAME}: the current branch has no upstream; the commit stays local.\n`,
+    );
+    return;
+  }
+  const pushed = await git.push();
+  if (!pushed.ok) {
+    fail(`push failed; the commit stays local.\n  ${pushed.error}`);
+    return;
+  }
+  process.stdout.write(`${FRAMEWORK_NAME}: pushed.\n`);
+}
+
+/**
+ * @command mate companion update
+ * @description Regenerates the companion's Mate-managed files and skills with
+ * the newest stable Mate, raises `engines.mate` to match, and offers to commit
+ * and push exactly the files the update wrote.
+ */
+export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
+  const unknown = argv.filter((arg) => arg !== "--yes");
+  if (unknown.length > 0) {
+    fail(`unknown argument for companion update: ${unknown.join(" ")}`);
+    return;
+  }
+  const yes = argv.includes("--yes");
+
+  const companionPath = await resolveCompanion(process.cwd());
+  if (!companionPath) {
+    fail(
+      `no companion resolves for this directory. Run \`${FRAMEWORK_NAME} companion link\` first.`,
+    );
+    return;
+  }
+
+  const version = await checkVersion();
+  if (!version) return;
+
+  let git: GitOps;
+  let before: Map<string, string>;
+  try {
+    git = companionUpdateDeps.createGitOps(companionPath);
+    before = await snapshotChangedPaths(companionPath, git);
+  } catch (error) {
+    fail(errorMessage(error));
+    return;
+  }
+
+  try {
+    const config = await companionUpdateDeps.loadConfig(companionPath);
+    await companionUpdateDeps.syncCompanionFiles(companionPath, config);
+  } catch (error) {
+    fail(`companion file synchronization failed: ${errorMessage(error)}`);
+    return;
+  }
+
+  if (await companionUpdateDeps.hasSkillsLock(companionPath)) {
+    try {
+      await companionUpdateDeps.runSkillsUpdate(companionPath);
+    } catch (error) {
+      process.stderr.write(
+        `${FRAMEWORK_NAME}: warning: third-party skill refresh failed: ${errorMessage(error)}\n`,
+      );
+    }
+  }
+
+  try {
+    await companionUpdateDeps.writeEngineFloor(companionPath, `>=${version}`);
+  } catch (error) {
+    fail(`could not set engines.${FRAMEWORK_NAME}: ${errorMessage(error)}`);
+    return;
+  }
+
+  const { written, conflict } = await diffChangedPaths(companionPath, git, before);
+  if (written.length === 0) {
+    process.stdout.write(
+      `${FRAMEWORK_NAME}: ${companionPath} is already up to date with ${FRAMEWORK_NAME} ${version}.\n`,
+    );
+    return;
+  }
+  if (conflict.length > 0) {
+    fail(
+      [
+        "the update rewrote files that already had uncommitted changes; local edits and update output can no longer be separated, so nothing is committed:",
+        listPaths(conflict),
+      ].join("\n"),
+    );
+    return;
+  }
+
+  process.stdout.write(
+    [`${FRAMEWORK_NAME}: the update changed ${companionPath}:`, listPaths(written), ""].join("\n"),
+  );
+  await commitAndPush(git, written, version, yes);
+}

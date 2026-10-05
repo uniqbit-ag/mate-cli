@@ -5,6 +5,7 @@ import { runCompanionPrepareCommand } from "./prepare";
 import { runSetupCommand } from "../setup";
 import { runCompanionListCommand } from "./list";
 import { runCompanionSyncCommand } from "./sync";
+import { runCompanionUpdateCommand } from "./update";
 import { runWorkspaceOpenCommand } from "./open";
 import { runCompanionTuiCommand } from "./tui";
 
@@ -30,6 +31,9 @@ export async function runCompanionCommand(
       return;
     case "sync":
       await runCompanionSyncCommand();
+      return;
+    case "update":
+      await runCompanionUpdateCommand(argv);
       return;
     case "open":
       await runWorkspaceOpenCommand();
