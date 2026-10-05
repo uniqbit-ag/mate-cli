@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate-opencode-plugin",
-  "version": "0.17.0-canary.10",
+  "version": "0.17.0-canary.11",
   "description": "OpenCode plugin integration for Mate.",
   "license": "MIT",
   "files": [
@@ -25,7 +25,10 @@
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.18.3",
-    "@uniqbit/mate-core": "0.17.0-canary.10"
+    "@opentui/core": "^0.4.5",
+    "@opentui/keymap": "^0.4.5",
+    "@opentui/solid": "^0.4.5",
+    "@uniqbit/mate-core": "0.17.0-canary.11"
   },
   "devDependencies": {
     "@opentui/core": "^0.4.5",

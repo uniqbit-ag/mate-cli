@@ -49,4 +49,41 @@ describe("runInstallCommand", () => {
       code: "ENOENT",
     });
   });
+
+  async function companionWithPlugin(): Promise<string> {
+    const companion = path.join(home, "companion");
+    await fs.mkdir(path.join(companion, ".mate", "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(companion, ".mate", "config", "framework.yaml"),
+      JSON.stringify({ plugins: [{ package: "@acme/reader", version: "^1.0.0" }] }),
+    );
+    process.env.MATE_ARTIFACT_PATH = companion;
+    return companion;
+  }
+
+  test("a declared plugin that fails to install fails the command before state is recorded", async () => {
+    await companionWithPlugin();
+    expect(await runInstallCommand(["--yes"])).toBe(false);
+    expect(process.exitCode).toBe(1);
+    expect(stderr.join(" ")).toContain('plugin "@acme/reader" failed to install');
+    await expect(fs.access(path.join(home, ".mate", "install-state"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  test("frozen mode refuses an absent lockfile and an unlisted plugin before npm runs", async () => {
+    await companionWithPlugin();
+    expect(await runInstallCommand(["--yes", "--frozen-plugins"])).toBe(false);
+    expect(process.exitCode).toBe(1);
+    expect(stderr.join(" ")).toContain("frozen plugin install refused");
+
+    stderr.length = 0;
+    process.env.MATE_ALLOWED_PLUGINS = "@other/*";
+    try {
+      expect(await runInstallCommand(["--yes", "--frozen-plugins"])).toBe(false);
+    } finally {
+      delete process.env.MATE_ALLOWED_PLUGINS;
+    }
+    expect(stderr.join(" ")).toContain('plugin "@acme/reader" is not allowed');
+  });
 });

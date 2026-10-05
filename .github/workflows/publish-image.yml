@@ -103,16 +103,16 @@ jobs:
             exit 1
           fi
 
-      - name: The packages the image installs must already be published
+      - name: Wait for the packages the image installs to be published
+        env:
+          PACKAGE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          for package in @uniqbit/mate-core @uniqbit/mate-opencode-plugin @uniqbit/mate; do
-            if ! npm view "$package@${{ inputs.version }}" version >/dev/null 2>&1; then
-              echo "::error::$package@${{ inputs.version }} is not on the registry; nothing was built." >&2
-              echo "Dispatch again once npm publication has succeeded." >&2
-              exit 1
-            fi
-          done
+          node apps/mate-container/scripts/wait-for-published-packages.mjs \
+            "$PACKAGE_VERSION" \
+            @uniqbit/mate-core \
+            @uniqbit/mate-opencode-plugin \
+            @uniqbit/mate
 
       - name: Name the image
         id: name
