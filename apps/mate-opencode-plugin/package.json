@@ -24,15 +24,14 @@
     "format:check": "oxfmt src/ --check"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "^1.18.3",
+    "@opencode/plugin": "^2.0.23",
     "@uniqbit/mate-core": "0.17.0-canary.11"
   },
   "devDependencies": {
     "@opentui/core": "^0.4.5",
     "@opentui/keymap": "^0.4.5",
     "@opentui/solid": "^0.4.5",
-    "@types/bun": "^1.3.14",
-    "context-mode": "1.0.169"
+    "@types/bun": "^1.3.14"
   },
   "peerDependencies": {
     "@opentui/core": ">=0.4.5",

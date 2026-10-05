@@ -33,6 +33,7 @@ import type { AdapterContext } from "./base";
 import { withEnv } from "../../../../test/helpers";
 
 const tempRoots: string[] = [];
+const OPENCODE_V2 = () => "2.0.20";
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -87,12 +88,7 @@ async function writeOpenCodeRuntime(
   await fs.mkdir(path.join(companionPath, ".opencode"), { recursive: true });
   await fs.writeFile(
     path.join(companionPath, ".opencode", "opencode.json"),
-    JSON.stringify({ plugin: [pluginReference] }, null, 2) + "\n",
-    "utf8",
-  );
-  await fs.writeFile(
-    path.join(companionPath, ".opencode", "tui.json"),
-    JSON.stringify({ plugin: [pluginReference] }, null, 2) + "\n",
+    JSON.stringify({ plugins: [pluginReference] }, null, 2) + "\n",
     "utf8",
   );
 }
@@ -117,7 +113,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
     const binDir = await makeTempDir("mate-launch-bin-");
 
     await withPath(binDir, async () => {
-      const launch = await new OpenCodeAdapter().prepareLaunch(
+      const launch = await new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(
         makeContext([{ name: "retired-capability" }]),
         ["--mode", "chat"],
       );
@@ -134,7 +130,23 @@ describe("LaunchAdapter.prepareLaunch", () => {
     await writeOpenCodeRuntime(companionPath);
 
     await expect(
-      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("refuses an OpenCode launch below 2.x or without a runnable binary", async () => {
+    const companionPath = await makeTempDir("mate-opencode-version-");
+    await writeOpenCodeRuntime(companionPath);
+    const context = { ...makeContext(), companionPath };
+
+    await expect(new OpenCodeAdapter(() => "1.18.29").validateLaunch(context)).rejects.toThrow(
+      /OpenCode 1\.18\.29 is not supported[\s\S]*requires OpenCode 2\.x/,
+    );
+    await expect(new OpenCodeAdapter(() => undefined).validateLaunch(context)).rejects.toThrow(
+      LaunchPreflightError,
+    );
+    await expect(
+      new OpenCodeAdapter(() => "opencode v2.0.23").validateLaunch(context),
     ).resolves.toBeUndefined();
   });
 
@@ -142,10 +154,10 @@ describe("LaunchAdapter.prepareLaunch", () => {
     const companionPath = await makeTempDir("mate-opencode-missing-");
 
     await expect(
-      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
     ).rejects.toThrow(LaunchPreflightError);
     await expect(
-      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
     ).rejects.toThrow(/OpenCode companion runtime is incomplete/);
   });
 
@@ -155,17 +167,26 @@ describe("LaunchAdapter.prepareLaunch", () => {
     await fs.writeFile(path.join(missingPath, ".opencode", "opencode.json"), "{}\n", "utf8");
 
     await expect(
-      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath: missingPath }),
+      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({
+        ...makeContext(),
+        companionPath: missingPath,
+      }),
     ).rejects.toThrow(/Missing Mate plugin package reference in .opencode\/opencode\.json/);
 
     const stalePath = await makeTempDir("mate-opencode-stale-plugin-ref-");
     await writeOpenCodeRuntime(stalePath, "@uniqbit/mate-opencode-plugin@0.0.1");
 
     await expect(
-      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath: stalePath }),
+      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({
+        ...makeContext(),
+        companionPath: stalePath,
+      }),
     ).rejects.toThrow(/Stale Mate plugin package reference/);
     await expect(
-      new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath: stalePath }),
+      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({
+        ...makeContext(),
+        companionPath: stalePath,
+      }),
     ).rejects.toThrow(/Expected Mate plugin package: @uniqbit\/mate-opencode-plugin@/);
   });
 
@@ -199,7 +220,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
       const companionPath = await withBoundPlugin("mate-opencode-bound-ok-", expectedVersion);
 
       await expect(
-        new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+        new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
       ).resolves.toBeUndefined();
     });
 
@@ -207,7 +228,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
       const companionPath = await withBoundPlugin("mate-opencode-bound-stale-", "0.0.1");
 
       await expect(
-        new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+        new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
       ).rejects.toThrow(/which is 0\.0\.1 rather than /);
     });
 
@@ -215,7 +236,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
       const companionPath = await withBoundPlugin("mate-opencode-bound-absent-", null);
 
       await expect(
-        new OpenCodeAdapter().validateLaunch({ ...makeContext(), companionPath }),
+        new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
       ).rejects.toThrow(/which is not installed rather than /);
     });
   });
@@ -225,16 +246,16 @@ describe("LaunchAdapter.prepareLaunch", () => {
     await writeOpenCodeRuntime(companionPath);
     const context = { ...makeContext([{ name: "context-mode" }]), companionPath };
 
-    await expect(new OpenCodeAdapter().validateLaunch(context)).resolves.toBeUndefined();
+    await expect(new OpenCodeAdapter(OPENCODE_V2).validateLaunch(context)).resolves.toBeUndefined();
     await fs.writeFile(
       path.join(companionPath, ".opencode", "opencode.json"),
-      JSON.stringify({ plugin: [getOpenCodePluginPackageReference(), "context-mode@0.0.1"] }),
+      JSON.stringify({ plugins: [getOpenCodePluginPackageReference(), "context-mode@0.0.1"] }),
     );
-    await expect(new OpenCodeAdapter().validateLaunch(context)).resolves.toBeUndefined();
+    await expect(new OpenCodeAdapter(OPENCODE_V2).validateLaunch(context)).resolves.toBeUndefined();
   });
 
   test("injects the companion guidance payload into the OpenCode launch environment", async () => {
-    const adapter = new OpenCodeAdapter();
+    const adapter = new OpenCodeAdapter(OPENCODE_V2);
 
     const baseEnv = adapter.extendEnvironment(makeContext());
     const baseGuidance = JSON.parse(baseEnv.MATE_GUIDANCE_JSON ?? "{}");
@@ -268,7 +289,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
         repository: undefined,
         launchWorkingDirectory: "/tmp/companion",
       };
-      const launch = await new OpenCodeAdapter().prepareLaunch(context, []);
+      const launch = await new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(context, []);
 
       expect(launch.env.MATE_ARTIFACT_PATH).toBe("/tmp/companion");
       expect(launch.env.MATE_VERSION).toEqual(expect.any(String));
@@ -292,7 +313,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
   });
 
   test("propagates real capabilities into companionGuidance, matching the Claude provider", async () => {
-    const adapter = new OpenCodeAdapter();
+    const adapter = new OpenCodeAdapter(OPENCODE_V2);
 
     // Regression test: buildOpenCodeGuidance previously hardcoded an empty
     // capabilities array when calling buildCompanionGuidance, so
@@ -443,11 +464,11 @@ describe("launch environment and the projection agree", () => {
   test("grants the same companion directories a projected OpenCode document would", async () => {
     const context = makeContext();
     const launch = await withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
-      new OpenCodeAdapter().prepareLaunch(context, []),
+      new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(context, []),
     );
 
     const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.permission.external_directory).toEqual(
+    expect(config.permissions).toEqual(
       renderCompanionExternalDirectoryPermissions(context.companionPath),
     );
   });
@@ -566,15 +587,17 @@ describe("Adapter base-URL rewriting is gone", () => {
 
   test("OpenCodeAdapter injects the mate reference through OPENCODE_CONFIG_CONTENT", async () => {
     const launch = await withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
-      new OpenCodeAdapter().prepareLaunch(makeContext(), []),
+      new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(makeContext(), []),
     );
 
     expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeDefined();
     const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
     expect(config.references.mate).toBe("/tmp/companion");
-    expect(config.permission.external_directory["/tmp/companion"]).toBe("allow");
-    expect(config.permission.external_directory["/tmp/companion/**"]).toBe("allow");
-    expect(config.skills.paths).toEqual(["/tmp/companion/.agents/skills"]);
+    expect(config.permissions).toEqual([
+      { action: "external_directory", resource: "/tmp/companion", effect: "allow" },
+      { action: "external_directory", resource: "/tmp/companion/**", effect: "allow" },
+    ]);
+    expect(config.skills).toEqual(["/tmp/companion/.agents/skills"]);
   });
 
   test("OpenCodeAdapter merges the mate reference and permissions with inherited OPENCODE_CONFIG_CONTENT", async () => {
@@ -586,16 +609,18 @@ describe("Adapter base-URL rewriting is gone", () => {
         references: { docs: "../docs" },
         skills: { paths: ["../team-skills"] },
       }),
-      () => new OpenCodeAdapter().prepareLaunch(makeContext(), []),
+      () => new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(makeContext(), []),
     );
 
     const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.permission.external_directory["../docs/**"]).toBe("allow");
-    expect(config.permission.external_directory["/tmp/companion"]).toBe("allow");
-    expect(config.permission.external_directory["/tmp/companion/**"]).toBe("allow");
+    expect(config.permissions).toEqual([
+      { action: "external_directory", resource: "../docs/**", effect: "allow" },
+      { action: "external_directory", resource: "/tmp/companion", effect: "allow" },
+      { action: "external_directory", resource: "/tmp/companion/**", effect: "allow" },
+    ]);
     expect(config.references.docs).toBe("../docs");
     expect(config.references.mate).toBe("/tmp/companion");
-    expect(config.skills.paths).toEqual(["../team-skills", "/tmp/companion/.agents/skills"]);
+    expect(config.skills).toEqual(["../team-skills", "/tmp/companion/.agents/skills"]);
     expect(config.model).toBe("anthropic/test");
   });
 
@@ -622,7 +647,7 @@ describe("Adapter base-URL rewriting is gone", () => {
     const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
       withEnv("OPENAI_BASE_URL", undefined, () =>
         withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
-          new OpenCodeAdapter().prepareLaunch({ ...makeContext(), companionPath }, []),
+          new OpenCodeAdapter(OPENCODE_V2).prepareLaunch({ ...makeContext(), companionPath }, []),
         ),
       ),
     );
@@ -632,8 +657,10 @@ describe("Adapter base-URL rewriting is gone", () => {
     expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeDefined();
     const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
     expect(config.references.mate).toBe(companionPath);
-    expect(config.permission.external_directory[companionPath]).toBe("allow");
-    expect(config.permission.external_directory[`${companionPath}/**`]).toBe("allow");
+    expect(config.permissions).toEqual([
+      { action: "external_directory", resource: companionPath, effect: "allow" },
+      { action: "external_directory", resource: `${companionPath}/**`, effect: "allow" },
+    ]);
     expect(config.provider).toBeUndefined();
   });
 
@@ -656,7 +683,7 @@ describe("Adapter base-URL rewriting is gone", () => {
     const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
       withEnv("OPENAI_BASE_URL", undefined, () =>
         withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
-          new OpenCodeAdapter().prepareLaunch(makeContext(), []),
+          new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(makeContext(), []),
         ),
       ),
     );
@@ -665,7 +692,9 @@ describe("Adapter base-URL rewriting is gone", () => {
     expect(launch.env.OPENAI_BASE_URL).toBeUndefined();
     const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
     expect(config.references.mate).toBe("/tmp/companion");
-    expect(config.permission.external_directory["/tmp/companion"]).toBe("allow");
-    expect(config.permission.external_directory["/tmp/companion/**"]).toBe("allow");
+    expect(config.permissions).toEqual([
+      { action: "external_directory", resource: "/tmp/companion", effect: "allow" },
+      { action: "external_directory", resource: "/tmp/companion/**", effect: "allow" },
+    ]);
   });
 });

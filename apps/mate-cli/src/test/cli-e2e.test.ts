@@ -423,6 +423,9 @@ async function writeAdapterStub(
   const source = [
     "#!/usr/bin/env bun",
     'import fs from "node:fs";',
+    ...(toolName === "opencode"
+      ? ['if (process.argv[2] === "--version") { console.log("2.0.23"); process.exit(0); }']
+      : []),
     "const capturePath = process.env.MATE_E2E_CAPTURE_PATH;",
     "if (!capturePath) process.exit(2);",
     "const payload = {",
@@ -916,19 +919,14 @@ describe("mate CLI e2e", () => {
     const opencodeConfig = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
     );
-    const tuiConfig = JSON.parse(
-      await fs.readFile(path.join(scenario.companion, ".opencode", "tui.json"), "utf8"),
-    );
     expect(
-      opencodeConfig.plugin.filter((entry: string) =>
+      opencodeConfig.plugins.filter((entry: string) =>
         entry.startsWith("@uniqbit/mate-opencode-plugin@"),
       ),
     ).toHaveLength(1);
-    expect(
-      tuiConfig.plugin.filter((entry: string) =>
-        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
-      ),
-    ).toHaveLength(1);
+    await expect(
+      fs.access(path.join(scenario.companion, ".opencode", "tui.json")),
+    ).rejects.toThrow();
     // Guidance is delivered through the launch environment; setup writes no
     // guidance file and copies no plugin sources.
     await expect(
@@ -998,8 +996,12 @@ describe("mate CLI e2e", () => {
 
     const opencodeConfig = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
-    ) as { mcp?: Record<string, { command?: string[] }> };
-    expect(opencodeConfig.mcp?.context7?.command).toEqual(["npx", "-y", "@upstash/context7-mcp"]);
+    ) as { mcp?: { servers?: Record<string, { command?: string[] }> } };
+    expect(opencodeConfig.mcp?.servers?.context7?.command).toEqual([
+      "npx",
+      "-y",
+      "@upstash/context7-mcp",
+    ]);
 
     expect(
       (
@@ -1021,8 +1023,8 @@ describe("mate CLI e2e", () => {
     });
     const preinstalledOpenCode = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
-    ) as { mcp?: Record<string, { command?: string[] }> };
-    expect(preinstalledOpenCode.mcp?.context7?.command).toEqual(["context7-mcp"]);
+    ) as { mcp?: { servers?: Record<string, { command?: string[] }> } };
+    expect(preinstalledOpenCode.mcp?.servers?.context7?.command).toEqual(["context7-mcp"]);
 
     expect(
       (
@@ -2196,9 +2198,7 @@ describe("mate CLI e2e", () => {
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
     const configPath = path.join(scenario.companion, ".opencode", "opencode.json");
-    const tuiConfigPath = path.join(scenario.companion, ".opencode", "tui.json");
     await fs.rm(configPath);
-    await fs.rm(tuiConfigPath);
     // Legacy runtime files from the copied-plugin era are cleaned up by sync.
     const legacyGuidancePath = path.join(scenario.companion, ".opencode", ".mate-guidance.json");
     await fs.writeFile(legacyGuidancePath, '{"version":1}\n', "utf8");
@@ -2210,19 +2210,16 @@ describe("mate CLI e2e", () => {
       env: { MATE_E2E_CAPTURE_PATH: capturePath },
     });
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
-    const repairedTuiConfig = JSON.parse(await fs.readFile(tuiConfigPath, "utf8"));
     expect(
-      repairedConfig.plugin.filter((entry: string) =>
+      repairedConfig.plugins.filter((entry: string) =>
         entry.startsWith("@uniqbit/mate-opencode-plugin@"),
       ),
     ).toHaveLength(1);
-    expect(
-      repairedTuiConfig.plugin.filter((entry: string) =>
-        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
-      ),
-    ).toHaveLength(1);
+    await expect(
+      fs.access(path.join(scenario.companion, ".opencode", "tui.json")),
+    ).rejects.toThrow();
     await expect(fs.access(legacyGuidancePath)).rejects.toThrow();
     const invocation = await readJson<{ env: { MATE_GUIDANCE_JSON: string | null } }>(capturePath);
     const guidance = JSON.parse(invocation.env.MATE_GUIDANCE_JSON ?? "{}");

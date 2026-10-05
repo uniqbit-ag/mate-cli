@@ -3,12 +3,11 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
-import type { Config, Hooks } from "@opencode-ai/plugin";
-import { MATE_ENV, renderProjectionEnv, renderProjectionYaml } from "@uniqbit/mate-core/runtime";
 
-import { AddDirPlugin } from "./add-dir";
+import { registerCompanionAccess } from "./add-dir";
 
-type ConfigHook = NonNullable<Hooks["config"]>;
+type Hook = (event: Record<string, unknown>) => unknown;
+type SkillRecord = Record<string, unknown> & { id: string };
 
 const tempRoots: string[] = [];
 
@@ -16,191 +15,127 @@ afterEach(() => {
   for (const dir of tempRoots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function withEnv<T>(key: string, value: string | undefined, fn: () => Promise<T>): Promise<T> {
-  const previous = process.env[key];
-  if (value === undefined) {
-    delete process.env[key];
-  } else {
-    process.env[key] = value;
-  }
-
-  return fn().finally(() => {
-    if (previous === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = previous;
-    }
-  });
+function tempDir(prefix: string): string {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  tempRoots.push(dir);
+  return dir;
 }
 
-/** Clears every launch variable and runs from a wrapped Working Repository. */
-async function inUnmanagedSession<T>(cwd: string, fn: () => Promise<T>): Promise<T> {
-  const previousCwd = process.cwd();
-  const previousEnv = new Map<string, string | undefined>();
-  for (const name of Object.values(MATE_ENV)) {
-    previousEnv.set(name, process.env[name]);
-    delete process.env[name];
-  }
-  process.chdir(cwd);
-  try {
-    return await fn();
-  } finally {
-    process.chdir(previousCwd);
-    for (const [name, value] of previousEnv) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-  }
-}
-
-function wrappedRepo(companionPath: string): string {
-  const repoRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-add-dir-")));
-  tempRoots.push(repoRoot);
-  const mateDir = path.join(repoRoot, ".mate");
-  fs.mkdirSync(path.join(mateDir, "config"), { recursive: true });
-  fs.writeFileSync(path.join(mateDir, "config", "registry.yaml"), "companions: []\n", "utf8");
-  const file = {
-    stamp: "deadbeef",
-    projection: {
-      version: "0.0.0",
-      companionPath,
-      repositoryPath: repoRoot,
-      repositoryId: "acme",
-      wrapperBinPath: path.join(companionPath, "wrappers", "bin"),
-      reactDoctorBinPath: path.join(companionPath, "react-doctor"),
-      graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
+function fakeApi(existingSkills: SkillRecord[] = []) {
+  const hooks = new Map<string, Hook>();
+  const skills = new Map(existingSkills.map((skill) => [skill.id, skill]));
+  const api = {
+    permission: {
+      hook: async (name: string, callback: Hook) => {
+        hooks.set(`permission.${name}`, callback);
+      },
+    },
+    skill: {
+      transform: async (
+        transform: (editor: {
+          get: (id: string) => SkillRecord | undefined;
+          add: (skill: SkillRecord) => void;
+          update: (id: string, update: (skill: SkillRecord) => void) => void;
+        }) => void,
+      ) => {
+        transform({
+          get: (id) => skills.get(id),
+          add: (skill) => skills.set(skill.id, skill),
+          update: (id, update) => {
+            const skill = skills.get(id);
+            if (skill) update(skill);
+          },
+        });
+      },
     },
   };
-  fs.writeFileSync(path.join(mateDir, "projection.yaml"), renderProjectionYaml(file), "utf8");
-  fs.writeFileSync(path.join(mateDir, "projection.env"), renderProjectionEnv(file), "utf8");
-  return repoRoot;
+  return { api: api as never, hooks, skills };
 }
 
-describe("OpenCode add-dir plugin", () => {
-  test("adds companion skill roots without replacing user paths", async () => {
-    await withEnv("MATE_ARTIFACT_PATH", "/tmp/companion", async () => {
-      const plugin = await AddDirPlugin();
-      const config: Config = {
-        skills: {
-          paths: ["../team-skills", "/tmp/companion/.agents/skills"],
-        },
-      };
+function writeSkill(root: string, name: string, frontmatter: string): string {
+  const dir = path.join(root, name);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, "SKILL.md");
+  fs.writeFileSync(file, `---\n${frontmatter}\n---\nbody\n`, "utf8");
+  return file;
+}
 
-      await (plugin.config as ConfigHook | undefined)?.(config);
+describe("companion access registration", () => {
+  test("allows evaluations that touch the companion and keeps every other verdict", async () => {
+    const companion = tempDir("mate-add-dir-");
+    const { api, hooks } = fakeApi();
+    await registerCompanionAccess(api, companion);
+    const evaluate = hooks.get("permission.evaluate")!;
 
-      expect(config.skills?.paths).toEqual([
-        "../team-skills",
-        "/tmp/companion/.agents/skills",
-        "/tmp/companion/.opencode/skills",
-      ]);
-    });
+    const inside = {
+      resources: [path.join(companion, "notes.md")],
+      effect: "ask",
+      message: "external directory",
+    };
+    await evaluate(inside);
+    expect(inside).toEqual({ resources: inside.resources, effect: "allow" });
+
+    const root = { resources: [companion], effect: "ask" };
+    await evaluate(root);
+    expect(root.effect).toBe("allow");
+
+    const outside = { resources: [`${companion}-sibling/notes.md`, "/tmp/acme"], effect: "deny" };
+    await evaluate(outside);
+    expect(outside.effect).toBe("deny");
   });
 
-  test("adds companion path external_directory allow rules without replacing user config", async () => {
-    await withEnv("MATE_ARTIFACT_PATH", "/tmp/companion", async () => {
-      const plugin = await AddDirPlugin();
-      const config: Config = {
-        permission: {
-          external_directory: {
-            "/tmp/custom": "deny",
-          },
-        },
-      };
-
-      await (plugin.config as ConfigHook | undefined)?.(config);
-
-      expect(config).toEqual({
-        permission: {
-          external_directory: {
-            "/tmp/custom": "deny",
-            "/tmp/companion": "allow",
-            "/tmp/companion/**": "allow",
-          },
-        },
-        skills: {
-          paths: ["/tmp/companion/.agents/skills", "/tmp/companion/.opencode/skills"],
-        },
-      });
-    });
-  });
-
-  test("registers no rules when neither the environment nor a projection resolves", async () => {
-    const bare = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-add-dir-bare-")));
-    tempRoots.push(bare);
-
-    const plugin = await inUnmanagedSession(bare, () => AddDirPlugin());
-
-    expect(plugin).toEqual({});
-  });
-
-  test("allow-lists the projected companion when the environment is empty", async () => {
-    const repoRoot = wrappedRepo("/tmp/projected-companion");
-
-    const plugin = await inUnmanagedSession(repoRoot, () => AddDirPlugin());
-    const config: Config = {};
-    await (plugin.config as ConfigHook | undefined)?.(config);
-
-    expect(config).toEqual({
-      permission: {
-        external_directory: {
-          "/tmp/projected-companion": "allow",
-          "/tmp/projected-companion/**": "allow",
-        },
-      },
-      skills: {
-        paths: [
-          "/tmp/projected-companion/.agents/skills",
-          "/tmp/projected-companion/.opencode/skills",
-        ],
-      },
-    });
-  });
-
-  test("the launch environment outranks the projection", async () => {
-    const repoRoot = wrappedRepo("/tmp/projected-companion");
-
-    const plugin = await inUnmanagedSession(repoRoot, () =>
-      withEnv(MATE_ENV.companionPath, "/tmp/launched-companion", () => AddDirPlugin()),
+  test("registers companion skills from both skill roots", async () => {
+    const companion = tempDir("mate-add-dir-skills-");
+    const agentsSkill = writeSkill(
+      path.join(companion, ".agents", "skills"),
+      "acme-review",
+      'name: acme-review\ndescription: "Review acme changes"',
     );
-    const config: Config = {};
-    await (plugin.config as ConfigHook | undefined)?.(config);
+    const opencodeSkill = writeSkill(
+      path.join(companion, ".opencode", "skills", "nested"),
+      "Acme Plan",
+      "description: Plan acme work",
+    );
+    const { api, skills } = fakeApi();
 
-    expect(
-      Object.keys((config.permission as { external_directory: object }).external_directory),
-    ).toEqual(["/tmp/launched-companion", "/tmp/launched-companion/**"]);
+    await registerCompanionAccess(api, companion);
+
+    expect(skills.get("acme-review")).toMatchObject({
+      name: "acme-review",
+      description: "Review acme changes",
+      path: agentsSkill,
+    });
+    expect(skills.get("acme-plan")).toMatchObject({
+      name: "Acme Plan",
+      description: "Plan acme work",
+      path: opencodeSkill,
+    });
   });
 
-  test("spells no MATE_ variable name of its own", async () => {
+  test("updates a skill OpenCode already registered under the same id", async () => {
+    const companion = tempDir("mate-add-dir-update-");
+    writeSkill(path.join(companion, ".agents", "skills"), "acme", "name: acme");
+    const existing = { id: "acme", name: "acme", origin: "host" };
+    const { api, skills } = fakeApi([existing]);
+
+    await registerCompanionAccess(api, companion);
+
+    expect(skills.get("acme")).toBe(existing);
+    expect(existing).toMatchObject({ origin: "host", content: expect.stringContaining("body") });
+  });
+
+  test("leaves skills untouched when the companion has none", async () => {
+    const companion = tempDir("mate-add-dir-empty-");
+    const { api, skills } = fakeApi();
+
+    await registerCompanionAccess(api, companion);
+
+    expect(skills.size).toBe(0);
+  });
+
+  test("spells no MATE_ variable name of its own", () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "add-dir.ts"), "utf8");
 
     expect(source).not.toContain("MATE_");
-  });
-
-  test("preserves existing companion path rules", async () => {
-    await withEnv("MATE_ARTIFACT_PATH", "/tmp/companion", async () => {
-      const plugin = await AddDirPlugin();
-      const config: Config = {
-        permission: {
-          external_directory: {
-            "/tmp/companion": "deny",
-            "/tmp/companion/**": "ask",
-          },
-        },
-      };
-
-      await (plugin.config as ConfigHook | undefined)?.(config);
-
-      expect(config).toEqual({
-        permission: {
-          external_directory: {
-            "/tmp/companion": "deny",
-            "/tmp/companion/**": "ask",
-          },
-        },
-        skills: {
-          paths: ["/tmp/companion/.agents/skills", "/tmp/companion/.opencode/skills"],
-        },
-      });
-    });
   });
 });

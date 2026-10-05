@@ -26,7 +26,8 @@ describe("plugin package dependency boundary", () => {
   test("owns the non-host runtime dependencies of the server and TUI entry points", async () => {
     const packageJson = await readOwnManifest();
 
-    expect(packageJson.dependencies?.["@opencode-ai/plugin"]).toBeDefined();
+    expect(packageJson.dependencies?.["@opencode/plugin"]).toBeDefined();
+    expect(packageJson.dependencies?.["@opencode-ai/plugin"]).toBeUndefined();
     expect(packageJson.dependencies?.["@uniqbit/mate-core"]).toBeDefined();
   });
 
@@ -37,25 +38,6 @@ describe("plugin package dependency boundary", () => {
       expect(packageJson.dependencies?.[name]).toBeUndefined();
       expect(packageJson.peerDependencies?.[name]).toBeDefined();
       expect(packageJson.peerDependenciesMeta?.[name]?.optional).toBe(true);
-    }
-  });
-
-  test("declares OpenTUI peer floors compatible with the resolved @opencode-ai/plugin peers", async () => {
-    const packageJson = await readOwnManifest();
-    const resolvedPluginManifest = await import.meta
-      .resolve("@opencode-ai/plugin/package.json")
-      .replace("file://", "");
-    const opencodePlugin = await readJson<PackageManifest>(resolvedPluginManifest);
-
-    const hostPeers = opencodePlugin.peerDependencies ?? {};
-    for (const name of OPENTUI_PACKAGES) {
-      const hostRange = hostPeers[name];
-      expect(hostRange).toBeDefined();
-
-      const declaredRange = packageJson.peerDependencies?.[name];
-      expect(declaredRange).toBeDefined();
-      const minimumVersion = declaredRange!.replace(/^(?:>=|[\^~])/, "");
-      expect(Bun.semver.satisfies(minimumVersion, hostRange!)).toBe(true);
     }
   });
 

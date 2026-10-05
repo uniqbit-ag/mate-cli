@@ -151,15 +151,19 @@ export function renderDocumentsForTarget(
     documents.push(
       ...document(OPENCODE_CONFIG_DOCUMENT, [
         {
-          at: ["plugin"],
+          at: ["plugins"],
           kind: "list",
           values: [getOpenCodePluginPackageReference()],
         },
-        { at: ["mcp"], kind: "map", entries: renderManagedOpenCodeMcpServers(inputs) },
         {
-          at: ["permission", "external_directory"],
+          at: ["mcp", "servers"],
           kind: "map",
-          entries: renderCompanionExternalDirectoryPermissions(ctx.companionPath),
+          entries: renderManagedOpenCodeMcpServers(inputs),
+        },
+        {
+          at: ["permissions"],
+          kind: "list",
+          values: renderCompanionExternalDirectoryPermissions(ctx.companionPath),
         },
       ]),
     );

@@ -126,7 +126,7 @@ describe("published package", () => {
         "#!/bin/sh",
         'if [ "$1" = "view" ]; then printf "99.0.0\\n"; exit 0; fi',
         'if [ "$1" = "root" ]; then printf "%s\\n" "$NPM_GLOBAL_ROOT"; exit 0; fi',
-        'if [ "$1" = "install" ]; then printf "%s\\n" "$@" > "$NPM_CAPTURE"; exit 0; fi',
+        'if [ "$1" = "install" ]; then printf "%s\\n" "$@" >> "$NPM_CAPTURE"; exit 0; fi',
         "exit 1",
         "",
       ].join("\n"),

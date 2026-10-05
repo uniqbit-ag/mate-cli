@@ -191,8 +191,17 @@ export async function isTokensaveAgentIntegrated(agent: string): Promise<boolean
   if (agent === "opencode") {
     const configDir = path.join(home, ".config", "opencode");
     const config = await readJsonObject(path.join(configDir, "opencode.json"));
-    const mcp = config?.mcp as Record<string, unknown> | undefined;
-    return mcp?.tokensave !== undefined && (await fileExists(path.join(configDir, "tokensave.md")));
+    /**
+     * `tokensave install` writes the flat `mcp.<name>` entry, which OpenCode 2.x
+     * still loads; `mcp.servers.<name>` is the 2.x-native spelling.
+     */
+    const mcp = config?.mcp as
+      | (Record<string, unknown> & { servers?: Record<string, unknown> })
+      | undefined;
+    return (
+      (mcp?.tokensave !== undefined || mcp?.servers?.tokensave !== undefined) &&
+      (await fileExists(path.join(configDir, "tokensave.md")))
+    );
   }
   return true;
 }

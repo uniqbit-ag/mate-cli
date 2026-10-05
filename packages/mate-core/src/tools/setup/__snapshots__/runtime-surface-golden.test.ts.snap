@@ -237,10 +237,12 @@ exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -274,12 +276,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "
 ,
   },
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -336,20 +333,24 @@ exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -363,7 +364,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 3`] = `
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -372,14 +373,21 @@ exports[`runtime surface golden fixtures setup graphify × opencode 3`] = `
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -456,10 +464,12 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -493,12 +503,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "
 ,
   },
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -612,20 +617,24 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -713,7 +722,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -722,14 +731,21 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -1005,20 +1021,24 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
-    },
-    "mcp": {
-      "tokensave": {
-        "command": [
-          "tokensave",
-          "serve",
-        ],
-        "enabled": true,
-        "type": "local",
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
       },
     },
-    "plugin": [
+    "mcp": {
+      "servers": {
+        "tokensave": {
+          "command": [
+            "tokensave",
+            "serve",
+          ],
+          "disabled": false,
+          "type": "local",
+        },
+      },
+    },
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -1031,12 +1051,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
   },
   "opencodePlugins": {},
   "opencodeSkills": {},
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -1090,20 +1105,24 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -1117,7 +1136,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -1127,6 +1146,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
       {
         "at": [
           "mcp",
+          "servers",
         ],
         "entries": {
           "tokensave": {
@@ -1134,7 +1154,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
               "tokensave",
               "serve",
             ],
-            "enabled": true,
+            "disabled": false,
             "type": "local",
           },
         },
@@ -1142,14 +1162,21 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -1243,20 +1270,24 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
-    },
-    "mcp": {
-      "tokensave": {
-        "command": [
-          "tokensave",
-          "serve",
-        ],
-        "enabled": true,
-        "type": "local",
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
       },
     },
-    "plugin": [
+    "mcp": {
+      "servers": {
+        "tokensave": {
+          "command": [
+            "tokensave",
+            "serve",
+          ],
+          "disabled": false,
+          "type": "local",
+        },
+      },
+    },
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -1269,12 +1300,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
   },
   "opencodePlugins": {},
   "opencodeSkills": {},
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -1382,20 +1408,24 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -1501,7 +1531,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -1511,6 +1541,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
       {
         "at": [
           "mcp",
+          "servers",
         ],
         "entries": {
           "tokensave": {
@@ -1518,7 +1549,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
               "tokensave",
               "serve",
             ],
-            "enabled": true,
+            "disabled": false,
             "type": "local",
           },
         },
@@ -1526,14 +1557,21 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -1743,10 +1781,12 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
@@ -1760,13 +1800,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   },
   "opencodePlugins": {},
   "opencodeSkills": {},
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-      "context-mode@1.0.169",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -1812,20 +1846,24 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -1839,7 +1877,7 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 3`] = `
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -1848,14 +1886,21 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 3`] = `
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -1909,10 +1954,12 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
@@ -1926,13 +1973,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   },
   "opencodePlugins": {},
   "opencodeSkills": {},
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-      "context-mode@1.0.169",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -2026,20 +2067,24 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -2125,7 +2170,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -2134,14 +2179,21 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -2373,10 +2425,12 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -2392,12 +2446,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
     "react-doctor/SKILL.md": "df58b3490543",
     "react-doctor/references/explain.md": "2382ea820f20",
   },
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -2443,20 +2492,24 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -2470,7 +2523,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 3`] = `
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -2479,14 +2532,21 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 3`] = `
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -2563,10 +2623,12 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -2582,12 +2644,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
     "react-doctor/SKILL.md": "df58b3490543",
     "react-doctor/references/explain.md": "2382ea820f20",
   },
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -2679,20 +2736,24 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -2779,7 +2840,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -2788,14 +2849,21 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -3043,10 +3111,12 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -3077,12 +3147,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     "openspec-explore/SKILL.md": "87d1237e5ffa",
     "openspec-propose/SKILL.md": "3618b84ce74c",
   },
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -3130,20 +3195,24 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -3157,7 +3226,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 3`] = `
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -3166,14 +3235,21 @@ exports[`runtime surface golden fixtures setup openspec × opencode 3`] = `
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -3251,10 +3327,12 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -3285,12 +3363,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "openspec-explore/SKILL.md": "87d1237e5ffa",
     "openspec-propose/SKILL.md": "3618b84ce74c",
   },
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -3386,20 +3459,24 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -3499,7 +3576,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -3508,14 +3585,21 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -3709,20 +3793,24 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
-    },
-    "mcp": {
-      "tokensave": {
-        "command": [
-          "tokensave",
-          "serve",
-        ],
-        "enabled": true,
-        "type": "local",
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
       },
     },
-    "plugin": [
+    "mcp": {
+      "servers": {
+        "tokensave": {
+          "command": [
+            "tokensave",
+            "serve",
+          ],
+          "disabled": false,
+          "type": "local",
+        },
+      },
+    },
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
@@ -3776,13 +3864,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "react-doctor/SKILL.md": "df58b3490543",
     "react-doctor/references/explain.md": "2382ea820f20",
   },
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-      "context-mode@1.0.169",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -3902,20 +3984,24 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       "version": 1,
     },
     "OPENCODE_CONFIG_CONTENT": {
-      "permission": {
-        "external_directory": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
+      "permissions": [
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion",
         },
-      },
+        {
+          "action": "external_directory",
+          "effect": "allow",
+          "resource": "<root>/companion/**",
+        },
+      ],
       "references": {
         "mate": "<root>/companion",
       },
-      "skills": {
-        "paths": [
-          "<root>/companion/.agents/skills",
-        ],
-      },
+      "skills": [
+        "<root>/companion/.agents/skills",
+      ],
     },
     "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
   },
@@ -4046,7 +4132,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     "regions": [
       {
         "at": [
-          "plugin",
+          "plugins",
         ],
         "kind": "list",
         "values": [
@@ -4056,6 +4142,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       {
         "at": [
           "mcp",
+          "servers",
         ],
         "entries": {
           "tokensave": {
@@ -4063,7 +4150,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
               "tokensave",
               "serve",
             ],
-            "enabled": true,
+            "disabled": false,
             "type": "local",
           },
         },
@@ -4071,14 +4158,21 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       },
       {
         "at": [
-          "permission",
-          "external_directory",
+          "permissions",
         ],
-        "entries": {
-          "<root>/companion": "allow",
-          "<root>/companion/**": "allow",
-        },
-        "kind": "map",
+        "kind": "list",
+        "values": [
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion",
+          },
+          {
+            "action": "external_directory",
+            "effect": "allow",
+            "resource": "<root>/companion/**",
+          },
+        ],
       },
     ],
   },
@@ -4122,10 +4216,12 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -4138,12 +4234,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
   },
   "opencodePlugins": {},
   "opencodeSkills": {},
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -4184,10 +4275,12 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -4200,12 +4293,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
   },
   "opencodePlugins": {},
   "opencodeSkills": {},
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -4247,10 +4335,12 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -4263,12 +4353,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
   },
   "opencodePlugins": {},
   "opencodeSkills": {},
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -4309,10 +4394,12 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -4325,12 +4412,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
   },
   "opencodePlugins": {},
   "opencodeSkills": {},
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -4371,10 +4453,12 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "prune": true,
-      "reserved": 15000,
+      "buffer": 15000,
+      "keep": {
+        "tokens": 15000,
+      },
     },
-    "plugin": [
+    "plugins": [
       "@uniqbit/mate-opencode-plugin@<version>",
     ],
     "references": {
@@ -4387,12 +4471,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
   },
   "opencodePlugins": {},
   "opencodeSkills": {},
-  "opencodeTui": {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
-  },
+  "opencodeTui": null,
 }
 `;
 
@@ -4588,13 +4667,15 @@ exports[`working repo golden fixtures hub roots set up providers only without co
   "claudeSkills": {},
   "opencodeConfig": {
     "mcp": {
-      "tokensave": {
-        "command": [
-          "tokensave",
-          "serve",
-        ],
-        "enabled": true,
-        "type": "local",
+      "servers": {
+        "tokensave": {
+          "command": [
+            "tokensave",
+            "serve",
+          ],
+          "disabled": false,
+          "type": "local",
+        },
       },
     },
   },

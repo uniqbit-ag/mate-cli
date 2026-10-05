@@ -47,11 +47,18 @@ const serverEntry = pkg.exports?.["./server"];
 if (!serverEntry) throw new Error("missing ./server export");
 
 const server = await import(path.join(root, serverEntry));
-if (typeof server.default !== "function") throw new Error("./server default export is not a Plugin");
+if (
+  typeof server.default?.id !== "string" ||
+  server.default.id.length === 0 ||
+  typeof server.default.setup !== "function"
+) {
+  throw new Error("./server default export is not a V2 server plugin definition");
+}
 
-const hooks = await server.default({});
-if (Object.keys(hooks).length !== 0) {
-  throw new Error("aggregate plugin must stay inert without the Mate launch environment");
+/** Any domain access would throw: the plugin must stay inert without the Mate launch environment. */
+const cleanup = await server.default.setup({ location: { directory: process.cwd() } });
+if (cleanup !== undefined) {
+  throw new Error("plugin must stay inert without the Mate launch environment");
 }
 
 console.log("SERVER_SMOKE_OK");

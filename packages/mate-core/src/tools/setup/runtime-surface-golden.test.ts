@@ -113,7 +113,7 @@ async function installStubs(root: string): Promise<string> {
       "  const cfgPath = path.join(cwd, '.opencode', 'opencode.json');",
       "  let cfg = {};",
       "  try { cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8')); } catch {}",
-      "  cfg.plugin = [...(Array.isArray(cfg.plugin) ? cfg.plugin : []), '.opencode/plugins/graphify.js'];",
+      "  cfg.plugins = [...(Array.isArray(cfg.plugins) ? cfg.plugins : []), '.opencode/plugins/graphify.js'];",
       "  fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + '\\n');",
       "}",
       "process.exit(0);",

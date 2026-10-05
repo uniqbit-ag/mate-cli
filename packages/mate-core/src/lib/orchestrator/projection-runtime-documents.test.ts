@@ -17,6 +17,7 @@ import {
 import type { RenderedRuntimeDocument } from "./projection-types";
 import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
 import type { LinkedRepository } from "./types";
+import { repoLocalDirPath } from "../../runtime/repo-local";
 import {
   isWorkingRepositoryWrapped,
   project,
@@ -47,7 +48,7 @@ function openCodeDocument(pluginReference: string): RenderedRuntimeDocument[] {
   return [
     {
       path: OPENCODE_CONFIG_DOCUMENT,
-      regions: [{ at: ["plugin"], kind: "list", values: [pluginReference] }],
+      regions: [{ at: ["plugins"], kind: "list", values: [pluginReference] }],
     },
   ];
 }
@@ -92,6 +93,102 @@ function localConfigDocument(): RenderedRuntimeDocument[] {
  * the successor is ever recorded as Mate's to remove.
  */
 describe("placing a runtime document twice", () => {
+  test("a V2 update replaces the previous Mate-owned V1 regions", async () => {
+    const repoPath = await makeRepo("runtime-document-v1-to-v2-");
+    const companionPath = path.join(repoPath, "companion");
+    const target = path.join(repoPath, ".opencode", "opencode.json");
+    const oldReference = "@uniqbit/mate-opencode-plugin@0.15.5";
+    const oldMcp = {
+      type: "local",
+      command: ["tokensave", "serve"],
+      enabled: true,
+    };
+    const oldPermission = {
+      [companionPath]: "allow",
+      [`${companionPath}/**`]: "allow",
+    };
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(
+      target,
+      `${JSON.stringify(
+        {
+          plugin: [oldReference],
+          mcp: { tokensave: oldMcp },
+          permission: { external_directory: oldPermission },
+          model: "keep-me",
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    const manifestPath = path.join(repoLocalDirPath(repoPath), "runtime-documents.json");
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          documents: {
+            [OPENCODE_CONFIG_DOCUMENT]: [
+              { at: ["plugin"], kind: "list", values: [oldReference] },
+              { at: ["mcp"], kind: "map", entries: { tokensave: oldMcp } },
+              { at: ["permission", "external_directory"], kind: "map", entries: oldPermission },
+            ],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    await placeRuntimeDocument(repoPath, OPENCODE_CONFIG_DOCUMENT, [
+      {
+        path: OPENCODE_CONFIG_DOCUMENT,
+        regions: [
+          { at: ["plugins"], kind: "list", values: ["@uniqbit/mate-opencode-plugin@0.16.0"] },
+          {
+            at: ["mcp", "servers"],
+            kind: "map",
+            entries: {
+              tokensave: {
+                type: "local",
+                command: ["tokensave", "serve"],
+                disabled: false,
+              },
+            },
+          },
+          {
+            at: ["permissions"],
+            kind: "list",
+            values: [
+              { action: "external_directory", resource: companionPath, effect: "allow" },
+              { action: "external_directory", resource: `${companionPath}/**`, effect: "allow" },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(JSON.parse(await fs.readFile(target, "utf8"))).toEqual({
+      model: "keep-me",
+      plugins: ["@uniqbit/mate-opencode-plugin@0.16.0"],
+      mcp: {
+        servers: {
+          tokensave: {
+            type: "local",
+            command: ["tokensave", "serve"],
+            disabled: false,
+          },
+        },
+      },
+      permissions: [
+        { action: "external_directory", resource: companionPath, effect: "allow" },
+        { action: "external_directory", resource: `${companionPath}/**`, effect: "allow" },
+      ],
+    });
+  });
+
   test("a changed value replaces its predecessor instead of joining it", async () => {
     const repoPath = await makeRepo("runtime-document-rewrap-");
     const target = path.join(repoPath, ".opencode", "opencode.json");
@@ -108,7 +205,7 @@ describe("placing a runtime document twice", () => {
     );
 
     expect(state).toBe("written");
-    expect(JSON.parse(await fs.readFile(target, "utf8")).plugin).toEqual([
+    expect(JSON.parse(await fs.readFile(target, "utf8")).plugins).toEqual([
       "@uniqbit/mate-opencode-plugin@0.16.0",
     ]);
   });
@@ -190,7 +287,7 @@ describe("placing a runtime document twice", () => {
       openCodeDocument("@uniqbit/mate-opencode-plugin@0.15.5"),
     );
     const seeded = JSON.parse(await fs.readFile(target, "utf8"));
-    seeded.plugin = ["acme-plugin", ...seeded.plugin];
+    seeded.plugins = ["acme-plugin", ...seeded.plugins];
     await fs.writeFile(target, `${JSON.stringify(seeded, null, 2)}\n`, "utf8");
 
     await placeRuntimeDocument(
@@ -199,7 +296,7 @@ describe("placing a runtime document twice", () => {
       openCodeDocument("@uniqbit/mate-opencode-plugin@0.16.0"),
     );
 
-    expect(JSON.parse(await fs.readFile(target, "utf8")).plugin).toEqual([
+    expect(JSON.parse(await fs.readFile(target, "utf8")).plugins).toEqual([
       "acme-plugin",
       "@uniqbit/mate-opencode-plugin@0.16.0",
     ]);

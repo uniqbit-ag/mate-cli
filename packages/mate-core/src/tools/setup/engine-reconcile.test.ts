@@ -101,11 +101,11 @@ describe("engine contribution reconciliation", () => {
 
     const opencodeConfig = JSON.parse(
       await fs.readFile(path.join(companionPath, ".opencode", "opencode.json"), "utf8"),
-    ) as { mcp: Record<string, unknown> };
-    expect(opencodeConfig.mcp.acme).toEqual({
+    ) as { mcp: { servers: Record<string, unknown> } };
+    expect(opencodeConfig.mcp.servers.acme).toEqual({
       type: "local",
       command: ["acme", "serve"],
-      enabled: true,
+      disabled: false,
     });
   });
 

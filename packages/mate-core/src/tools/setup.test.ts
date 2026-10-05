@@ -559,9 +559,9 @@ describe("executeSetup", () => {
       await fs.access(path.join(root, ".opencode", "skills", "react-doctor", "SKILL.md"));
       await fs.access(path.join(root, ".opencode", "skills", "openspec-explore", "SKILL.md"));
       const setupConfig = await fs.readFile(path.join(root, ".opencode", "opencode.json"), "utf8");
-      const setupTuiConfig = await fs.readFile(path.join(root, ".opencode", "tui.json"), "utf8");
       expect(setupConfig).toContain("@uniqbit/mate-opencode-plugin@");
-      expect(setupTuiConfig).toContain("@uniqbit/mate-opencode-plugin@");
+      expect(setupConfig).toContain('"plugins"');
+      await expect(fs.access(path.join(root, ".opencode", "tui.json"))).rejects.toThrow();
       // Guidance is delivered via the launch environment; setup writes no
       // guidance file and copies no plugin sources.
       await expect(
@@ -651,9 +651,20 @@ describe("executeSetup", () => {
         JSON.stringify(
           {
             instructions: ["./custom.md"],
-            compaction: { preserve_recent_tokens: 999 },
+            compaction: { preserve_recent_tokens: 999, reserved: 20000, prune: true },
             tool_output: { max_lines: 10 },
             plugin: ["./plugins/custom.ts", "@uniqbit/mate-opencode-plugin@0.0.1"],
+            mcp: {
+              custom: {
+                type: "local",
+                command: ["tokensave", "serve"],
+                enabled: true,
+                timeout: 30000,
+              },
+            },
+            permission: { bash: { "git status *": "allow" } },
+            tools: { websearch: false },
+            skills: { paths: ["../team-skills"] },
           },
           null,
           2,
@@ -662,7 +673,15 @@ describe("executeSetup", () => {
       );
       await fs.writeFile(
         tuiConfigPath,
-        JSON.stringify({ plugin: ["./plugins/mate-companion-tui.tsx"] }, null, 2) + "\n",
+        JSON.stringify(
+          {
+            $schema: "https://opencode.ai/tui.json",
+            plugin: ["./plugins/mate-companion-tui.tsx", "user-tui-plugin"],
+            theme: "user-theme",
+          },
+          null,
+          2,
+        ) + "\n",
         "utf8",
       );
       await fs.writeFile(
@@ -685,29 +704,46 @@ describe("executeSetup", () => {
       await expect(fs.readFile(userPluginPath, "utf8")).resolves.toBe("user plugin\n");
 
       const mergedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
-      expect(mergedConfig.plugin).toContain("./plugins/custom.ts");
+      expect(mergedConfig.plugins).toContain("./plugins/custom.ts");
       expect(
-        mergedConfig.plugin.filter((entry: string) =>
+        mergedConfig.plugins.filter((entry: string) =>
           entry.startsWith("@uniqbit/mate-opencode-plugin@"),
         ),
       ).toHaveLength(1);
-      expect(mergedConfig.plugin).not.toContain("@uniqbit/mate-opencode-plugin@0.0.1");
+      expect(mergedConfig.plugins).not.toContain("@uniqbit/mate-opencode-plugin@0.0.1");
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"./custom.md"');
-      await expect(fs.readFile(configPath, "utf8")).resolves.toContain(
-        '"preserve_recent_tokens": 999',
-      );
-      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"reserved": 15000');
+      expect(mergedConfig.compaction).toEqual({
+        auto: true,
+        keep: { tokens: 999 },
+        buffer: 20000,
+      });
+      expect(mergedConfig.mcp.servers.custom).toEqual({
+        type: "local",
+        command: ["tokensave", "serve"],
+        disabled: false,
+        timeout: { catalog: 30000, execution: 30000 },
+      });
+      expect(mergedConfig.permissions).toContainEqual({
+        action: "shell",
+        resource: "git status *",
+        effect: "allow",
+      });
+      expect(mergedConfig.permissions).toContainEqual({
+        action: "websearch",
+        resource: "*",
+        effect: "deny",
+      });
+      expect(mergedConfig.skills).toContain("../team-skills");
+      expect(mergedConfig.permission).toBeUndefined();
+      expect(mergedConfig.tools).toBeUndefined();
+      expect(mergedConfig.plugin).toBeUndefined();
+      expect(mergedConfig.compaction.prune).toBeUndefined();
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_lines": 10');
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_bytes": 20000');
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"mate": ".."');
 
-      const mergedTuiConfig = JSON.parse(await fs.readFile(tuiConfigPath, "utf8"));
-      expect(
-        mergedTuiConfig.plugin.filter((entry: string) =>
-          entry.startsWith("@uniqbit/mate-opencode-plugin@"),
-        ),
-      ).toHaveLength(1);
-      expect(mergedTuiConfig.plugin).not.toContain("./plugins/mate-companion-tui.tsx");
+      const migratedTuiConfig = JSON.parse(await fs.readFile(tuiConfigPath, "utf8"));
+      expect(migratedTuiConfig).toEqual({ plugin: ["user-tui-plugin"], theme: "user-theme" });
 
       // Legacy guidance and manifest files are removed; guidance is delivered
       // through the launch environment now.
@@ -1350,10 +1386,10 @@ describe("applySetupCompatibilities — tokensave", () => {
       );
       // The command resolves to the tokensave binary on PATH (absolute when
       // available, bare name otherwise) — same source as the Claude entry.
-      expect(companionConfig.mcp?.tokensave).toEqual({
+      expect(companionConfig.mcp?.servers?.tokensave).toEqual({
         type: "local",
         command: [expect.stringContaining("tokensave"), "serve"],
-        enabled: true,
+        disabled: false,
       });
 
       await expect(fs.access(path.join(workingRepoRoot, "AGENTS.md"))).rejects.toThrow();

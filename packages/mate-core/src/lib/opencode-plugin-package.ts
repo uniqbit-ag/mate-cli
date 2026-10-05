@@ -21,6 +21,9 @@ export function getOpenCodePluginPackageReference(version: string = getCurrentVe
 
 /** Matches the published reference and a reference bound to an installed copy alike. */
 export function isMateOpenCodePluginReference(value: unknown): boolean {
+  if (typeof value === "object" && value !== null && !Array.isArray(value) && "package" in value) {
+    return isMateOpenCodePluginReference(value.package);
+  }
   if (typeof value !== "string") return false;
   if (
     value === OPENCODE_PLUGIN_PACKAGE_NAME ||

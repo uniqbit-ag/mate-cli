@@ -73,7 +73,7 @@ bag["env-registry"] = {
 };
 
 const server = await import(${JSON.stringify(SERVER_ENTRY)});
-await server.default({});
+await server.default.setup({ location: { directory: import.meta.dirname } });
 console.log("CONFLICT_OK");
 `);
 

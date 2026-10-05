@@ -581,8 +581,12 @@ describe("tokensavePlugin.teardown", () => {
     const config = JSON.parse(
       await fs.readFile(path.join(companionDir, ".opencode", "opencode.json"), "utf8"),
     );
-    expect(config.mcp?.tokensave).toBeUndefined();
-    expect(config.mcp?.other).toEqual({ type: "local", command: ["echo", "ok"], enabled: true });
+    expect(config.mcp?.servers?.tokensave).toBeUndefined();
+    expect(config.mcp?.servers?.other).toEqual({
+      type: "local",
+      command: ["echo", "ok"],
+      disabled: false,
+    });
   });
 });
 
@@ -660,8 +664,20 @@ describe("tokensave agent integration install requirements", () => {
     expect(await isTokensaveAgentIntegrated("opencode")).toBe(false);
     await fs.writeFile(
       path.join(dir, "opencode.json"),
-      JSON.stringify({ mcp: { tokensave: { type: "local" } } }),
+      JSON.stringify({ mcp: { servers: { tokensave: { type: "local" } } } }),
     );
+    expect(await isTokensaveAgentIntegrated("opencode")).toBe(true);
+  });
+
+  test("accepts the flat mcp entry `tokensave install --agent opencode` writes", async () => {
+    const dir = path.join(home, ".config", "opencode");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "tokensave.md"), "rules", "utf8");
+    await fs.writeFile(
+      path.join(dir, "opencode.json"),
+      JSON.stringify({ mcp: { tokensave: { type: "local", command: ["tokensave", "serve"] } } }),
+    );
+
     expect(await isTokensaveAgentIntegrated("opencode")).toBe(true);
   });
 

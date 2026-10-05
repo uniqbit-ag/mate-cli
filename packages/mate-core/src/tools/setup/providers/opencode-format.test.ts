@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   getOpenCodePluginReferences,
   mergeOpenCodeConfigContent,
+  normalizeOpenCodeConfig,
   readOpenCodeConfig,
   setOpenCodePluginReferences,
   toOpenCodeMcpEntry,
@@ -43,29 +44,81 @@ describe("readOpenCodeConfig / writeOpenCodeConfig", () => {
     const dir = await makeTempDir();
     const configPath = path.join(dir, ".opencode", "opencode.json");
 
-    await writeOpenCodeConfig(configPath, { mcp: { tokensave: { enabled: true } } });
+    await writeOpenCodeConfig(configPath, {
+      mcp: { servers: { tokensave: { disabled: false } } },
+    });
 
     const raw = await fs.readFile(configPath, "utf8");
     expect(raw.endsWith("\n")).toBe(true);
-    expect(JSON.parse(raw)).toEqual({ mcp: { tokensave: { enabled: true } } });
+    expect(JSON.parse(raw)).toEqual({
+      mcp: { servers: { tokensave: { disabled: false } } },
+    });
   });
 });
 
 describe("plugin references", () => {
   test("reads plugin entries and tolerates a missing array", () => {
     expect(getOpenCodePluginReferences({})).toEqual([]);
-    expect(getOpenCodePluginReferences({ plugin: ["a", "b"] })).toEqual(["a", "b"]);
+    expect(getOpenCodePluginReferences({ plugin: ["a"], plugins: ["b"] })).toEqual(["a", "b"]);
   });
 
   test("setting references replaces the array and drops it when empty", () => {
     const config: Record<string, unknown> = { plugin: ["a"], other: true };
 
     setOpenCodePluginReferences(config, ["a", "b"]);
-    expect(config.plugin).toEqual(["a", "b"]);
+    expect(config.plugins).toEqual(["a", "b"]);
+    expect(config.plugin).toBeUndefined();
 
     setOpenCodePluginReferences(config, []);
-    expect("plugin" in config).toBe(false);
+    expect("plugins" in config).toBe(false);
     expect(config.other).toBe(true);
+  });
+});
+
+describe("V1 config normalization", () => {
+  test("migrates Mate-relevant V1 config fields and preserves existing V2 settings", () => {
+    const config = normalizeOpenCodeConfig({
+      plugin: ["mate@1", ["./local", { enabled: true }]],
+      plugins: ["user-plugin"],
+      compaction: { preserve_recent_tokens: 8000, reserved: 20000, prune: true },
+      mcp: {
+        playwright: {
+          type: "local",
+          command: ["npx", "@playwright/mcp"],
+          enabled: true,
+          timeout: 30000,
+        },
+      },
+      permission: {
+        bash: { "git push *": "ask" },
+        external_directory: { "/tmp/companion/**": "allow" },
+      },
+      tools: { websearch: false },
+      skills: { paths: ["./team-skills"], urls: ["https://example.test/skills/"] },
+      instructions: ["./custom.md"],
+    });
+
+    expect(config).toEqual({
+      plugins: ["mate@1", { package: "./local", options: { enabled: true } }, "user-plugin"],
+      compaction: { keep: { tokens: 8000 }, buffer: 20000 },
+      mcp: {
+        servers: {
+          playwright: {
+            type: "local",
+            command: ["npx", "@playwright/mcp"],
+            disabled: false,
+            timeout: { catalog: 30000, execution: 30000 },
+          },
+        },
+      },
+      permissions: [
+        { action: "shell", resource: "git push *", effect: "ask" },
+        { action: "external_directory", resource: "/tmp/companion/**", effect: "allow" },
+        { action: "websearch", resource: "*", effect: "deny" },
+      ],
+      skills: ["./team-skills", "https://example.test/skills/"],
+      instructions: ["./custom.md"],
+    });
   });
 });
 
@@ -74,7 +127,7 @@ describe("toOpenCodeMcpEntry", () => {
     expect(toOpenCodeMcpEntry({ name: "s", url: "https://example.test" })).toEqual({
       type: "remote",
       url: "https://example.test",
-      enabled: true,
+      disabled: false,
     });
   });
 
@@ -85,7 +138,7 @@ describe("toOpenCodeMcpEntry", () => {
       type: "local",
       command: ["tokensave", "serve"],
       environment: { A: "1" },
-      enabled: true,
+      disabled: false,
     });
   });
 });
@@ -111,16 +164,16 @@ describe("mergeOpenCodeConfigContent", () => {
     const env = { OPENCODE_CONFIG_CONTENT: "not json" } as NodeJS.ProcessEnv;
     expect(
       JSON.parse(mergeOpenCodeConfigContent({}, env, { appendSkillPaths: ["/skills"] })),
-    ).toEqual({ skills: { paths: ["/skills"] } });
+    ).toEqual({ skills: ["/skills"] });
 
     const envWithSkills = {
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ skills: { paths: ["/skills"] } }),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({ skills: ["/skills"] }),
     } as NodeJS.ProcessEnv;
     expect(
       JSON.parse(
         mergeOpenCodeConfigContent({}, envWithSkills, { appendSkillPaths: ["/skills", "/new"] }),
       ),
-    ).toEqual({ skills: { paths: ["/skills", "/new"] } });
+    ).toEqual({ skills: ["/skills", "/new"] });
   });
 });
 
@@ -136,7 +189,15 @@ describe("updateOpenCodeMcpServer", () => {
     });
 
     expect(JSON.parse(await fs.readFile(configPath, "utf8"))).toEqual({
-      mcp: { tokensave: { type: "local", command: ["tokensave", "serve"], enabled: true } },
+      mcp: {
+        servers: {
+          tokensave: {
+            type: "local",
+            command: ["tokensave", "serve"],
+            disabled: false,
+          },
+        },
+      },
     });
   });
 
@@ -152,7 +213,7 @@ describe("updateOpenCodeMcpServer", () => {
 
     await updateOpenCodeMcpServer(configPath, "tokensave", null);
 
-    expect(JSON.parse(await fs.readFile(configPath, "utf8"))).toEqual({ plugin: ["x"] });
+    expect(JSON.parse(await fs.readFile(configPath, "utf8"))).toEqual({ plugins: ["x"] });
   });
 
   test("removing from an absent file does not create it", async () => {

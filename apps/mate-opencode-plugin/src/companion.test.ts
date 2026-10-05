@@ -2,14 +2,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
-mock.module("@opencode-ai/plugin", () => ({
-  tool: (definition: unknown) => definition,
-}));
+import { extractPatchPaths, readContext } from "@uniqbit/mate-core/opencode";
 
-const { CompanionPlugin } = await import("./companion");
-const { extractPatchPaths } = await import("@uniqbit/mate-core/opencode");
+import { registerCompanion } from "./companion";
+
+type Hook = (event: Record<string, unknown>) => unknown;
+type ToolInfo = {
+  name: string;
+  execute: () => Promise<{ content: string; metadata?: Record<string, string> }>;
+};
+type SystemPart = { type: "text"; text: string };
 
 const tempRoots: string[] = [];
 
@@ -31,29 +35,49 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => Promise<T
   const previous = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(env)) {
     previous.set(key, process.env[key]);
-    if (value === undefined) {
-      delete process.env[key];
-    } else {
-      process.env[key] = value;
-    }
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
   }
-
   return fn().finally(() => {
-    for (const [key, value] of previous.entries()) {
-      if (value === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
   });
+}
+
+async function register(directory: string) {
+  const hooks = new Map<string, Hook>();
+  const tools: ToolInfo[] = [];
+  const recorder =
+    (domain: string) =>
+    async (name: string, callback: Hook): Promise<void> => {
+      hooks.set(`${domain}.${name}`, callback);
+    };
+  const api = {
+    session: { hook: recorder("session") },
+    shell: { hook: recorder("shell") },
+    tool: {
+      transform: async (transform: (editor: { add: (tool: ToolInfo) => void }) => void) => {
+        transform({ add: (tool) => tools.push(tool) });
+      },
+    },
+  };
+  await registerCompanion(api as never, readContext(process.env, directory));
+
+  const system = async (...texts: string[]) => {
+    const event = { system: texts.map((text): SystemPart => ({ type: "text", text })) };
+    await hooks.get("session.context")!(event);
+    return event.system.map((part) => part.text);
+  };
+  return { hooks, tools, system };
 }
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-describe("OpenCode companion plugin", () => {
+describe("OpenCode companion registration", () => {
   test("exposes companion bin metadata and shell env for explicit wrapper resolution", async () => {
     const root = await makeTempDir("mate-opencode-metadata-");
     const companion = path.join(root, "companion");
@@ -74,38 +98,28 @@ describe("OpenCode companion plugin", () => {
         PATH: "/usr/bin",
       },
       async () => {
-        const plugin = await CompanionPlugin();
-        const toolDef = plugin.tool?.companion_paths as
-          | { execute?: () => Promise<{ output: string; metadata?: Record<string, string> }> }
-          | undefined;
-        const result = await toolDef?.execute?.();
-        const payload = JSON.parse(result?.output ?? "{}");
+        const { hooks, tools, system } = await register(repo);
+        const pathsTool = tools.find((tool) => tool.name === "companion_paths");
+        const result = await pathsTool?.execute();
+        const payload = JSON.parse(result?.content ?? "{}");
 
         expect(payload.wrapperBinPath).toBe("/package/wrappers/bin");
         expect(result?.metadata?.wrapperBinPath).toBe("/package/wrappers/bin");
 
-        const envHook = plugin["shell.env"] as
-          | ((input: unknown, output: { env: Record<string, string> }) => Promise<void>)
-          | undefined;
-        const output = { env: {} as Record<string, string> };
-        await envHook?.({}, output);
+        const shell = { env: { MATE_GUIDANCE_JSON: GUIDANCE_JSON } as Record<string, string> };
+        await hooks.get("shell.create.before")!(shell);
 
-        expect(output.env.MATE_WRAPPER_BIN_PATH).toBe("/package/wrappers/bin");
-        expect(output.env.MATE_VERSION).toBe("0.14.0-test");
-        expect(output.env.MATE_NAME).toBe("mate");
-        expect(output.env.PATH).toBe("/package/wrappers/bin:/usr/bin");
-        // The guidance payload is session-scoped and must not leak into shells.
-        expect(output.env.MATE_GUIDANCE_JSON).toBe("");
+        expect(shell.env.MATE_WRAPPER_BIN_PATH).toBe("/package/wrappers/bin");
+        expect(shell.env.MATE_VERSION).toBe("0.14.0-test");
+        expect(shell.env.MATE_NAME).toBe("mate");
+        expect(shell.env.PATH).toBe("/package/wrappers/bin:/usr/bin");
+        /** The guidance payload is session-scoped and must not leak into shells. */
+        expect(shell.env.MATE_GUIDANCE_JSON).toBe("");
 
-        const transform = plugin["experimental.chat.system.transform"] as
-          | ((input: unknown, output: { system: string[] }) => Promise<void>)
-          | undefined;
-        const prompt = { system: ["base"] };
-        await transform?.({}, prompt);
-
-        expect(prompt.system[0]).toContain("/package/wrappers/bin/openspec");
-        expect(prompt.system[0]).toContain("<cli-tools>");
-        expect(prompt.system[0]).toContain('name="mate" type="global"');
+        const [prompt] = await system("base");
+        expect(prompt).toContain("/package/wrappers/bin/openspec");
+        expect(prompt).toContain("<cli-tools>");
+        expect(prompt).toContain('name="mate" type="global"');
       },
     );
   });
@@ -126,32 +140,79 @@ describe("OpenCode companion plugin", () => {
         MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
       },
       async () => {
-        const plugin = await CompanionPlugin();
-        const toolDef = plugin.tool?.companion_paths as
-          | { execute?: () => Promise<{ output: string; metadata?: Record<string, string> }> }
-          | undefined;
-        const result = await toolDef?.execute?.();
-        const payload = JSON.parse(result?.output ?? "{}");
+        const { hooks, tools, system } = await register(companion);
+        const result = await tools.find((tool) => tool.name === "companion_paths")?.execute();
+        const payload = JSON.parse(result?.content ?? "{}");
         expect(payload.companionFrameworkPath).toBe(companion);
         expect(payload.repositoryPath).toBeUndefined();
         expect(payload.repositoryId).toBeUndefined();
 
-        const output = { env: {} as Record<string, string> };
-        await (plugin["shell.env"] as (input: unknown, output: typeof output) => Promise<void>)(
-          {},
-          output,
-        );
-        expect(output.env.MATE_ARTIFACT_PATH).toBe(companion);
-        expect(output.env.MATE_REPO_PATH).toBeUndefined();
-        expect(output.env.MATE_REPO_ID).toBeUndefined();
+        const shell = {
+          env: { MATE_REPO_PATH: "/stale", MATE_REPO_ID: "stale" } as Record<string, string>,
+        };
+        await hooks.get("shell.create.before")!(shell);
+        expect(shell.env.MATE_ARTIFACT_PATH).toBe(companion);
+        expect(shell.env.MATE_REPO_PATH).toBeUndefined();
+        expect(shell.env.MATE_REPO_ID).toBeUndefined();
 
-        const transform = plugin["experimental.chat.system.transform"] as
-          | ((input: unknown, output: { system: string[] }) => Promise<void>)
-          | undefined;
-        const prompt = { system: ["base"] };
-        await transform?.({}, prompt);
-        expect(prompt.system[0]).toContain(companion);
-        expect(prompt.system[0]).not.toContain("MATE_REPO_PATH");
+        const [prompt] = await system("base");
+        expect(prompt).toContain(companion);
+        expect(prompt).not.toContain("MATE_REPO_PATH");
+      },
+    );
+  });
+
+  test("collapses the system prompt into one part and stays inert on a second load", async () => {
+    const root = await makeTempDir("mate-opencode-system-");
+    const companion = path.join(root, "companion");
+    const repo = path.join(root, "repo");
+    await fs.mkdir(repo, { recursive: true });
+
+    await withEnv(
+      {
+        MATE_ARTIFACT_PATH: companion,
+        MATE_REPO_PATH: repo,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+        MATE_REPO_ID: "app",
+        MATE_POLICY_JSON: "{}",
+        MATE_GIT_AUTO_MODE: "0",
+      },
+      async () => {
+        const { system } = await register(repo);
+
+        const once = await system("base", " ", "extra");
+        expect(once).toHaveLength(1);
+        expect(once[0]).toStartWith("base\n\nextra\n\n<companion-policy");
+
+        expect(await system(...once)).toEqual(once);
+      },
+    );
+  });
+
+  test("adds the companion guidance to compaction once", async () => {
+    const root = await makeTempDir("mate-opencode-compaction-");
+    const companion = path.join(root, "companion");
+    const repo = path.join(root, "repo");
+    await fs.mkdir(repo, { recursive: true });
+
+    await withEnv(
+      {
+        MATE_ARTIFACT_PATH: companion,
+        MATE_REPO_PATH: repo,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+        MATE_REPO_ID: "app",
+        MATE_POLICY_JSON: "{}",
+        MATE_GIT_AUTO_MODE: "0",
+      },
+      async () => {
+        const { hooks } = await register(repo);
+        const event = { system: [{ type: "text", text: "summary" }] as SystemPart[] };
+
+        await hooks.get("session.compaction")!(event);
+        await hooks.get("session.compaction")!(event);
+
+        expect(event.system).toHaveLength(2);
+        expect(event.system[1]?.text).toContain("<companion-policy");
       },
     );
   });
@@ -178,17 +239,12 @@ describe("OpenCode companion plugin", () => {
         MATE_GIT_AUTO_MODE: "0",
       },
       async () => {
-        const plugin = await CompanionPlugin();
-        const transform = plugin["experimental.chat.system.transform"] as
-          | ((input: unknown, output: { system: string[] }) => Promise<void>)
-          | undefined;
-        const prompt = { system: ["base"] };
-        await transform?.({}, prompt);
+        const [prompt] = await (await register(repo)).system("base");
 
-        expect(prompt.system[0]).toContain("<agents.md>");
-        expect(prompt.system[0]).toContain("# Agent Instructions");
-        expect(prompt.system[0]).toContain("Always be nice.");
-        expect(prompt.system[0]).toContain("</agents.md>");
+        expect(prompt).toContain("<agents.md>");
+        expect(prompt).toContain("# Agent Instructions");
+        expect(prompt).toContain("Always be nice.");
+        expect(prompt).toContain("</agents.md>");
       },
     );
   });
@@ -210,14 +266,9 @@ describe("OpenCode companion plugin", () => {
         MATE_GIT_AUTO_MODE: "0",
       },
       async () => {
-        const plugin = await CompanionPlugin();
-        const transform = plugin["experimental.chat.system.transform"] as
-          | ((input: unknown, output: { system: string[] }) => Promise<void>)
-          | undefined;
-        const prompt = { system: ["base"] };
-        await transform?.({}, prompt);
+        const [prompt] = await (await register(repo)).system("base");
 
-        expect(prompt.system[0]).not.toContain("<agents.md>");
+        expect(prompt).not.toContain("<agents.md>");
       },
     );
   });

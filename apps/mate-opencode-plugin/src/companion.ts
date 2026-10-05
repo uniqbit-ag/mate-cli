@@ -1,22 +1,21 @@
 import path from "node:path";
 
-import type { Plugin } from "@opencode-ai/plugin";
-import { tool } from "@opencode-ai/plugin";
+import type { Context } from "@opencode/plugin/promise/plugin";
 import {
   COMPANION_POLICY_MARKER,
   MATE_ENV,
   type MateGuidanceFile,
 } from "@uniqbit/mate-core/runtime";
 
-import {
-  readContext,
-  resolveOpenCodeGuidance,
-  type CompanionContext,
-} from "@uniqbit/mate-core/opencode";
+import { resolveOpenCodeGuidance, type CompanionContext } from "@uniqbit/mate-core/opencode";
 
 function prependPathEntry(pathValue: string | undefined, entry: string): string {
   const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
   return [entry, ...entries.filter((value) => value !== entry)].join(path.delimiter);
+}
+
+function resolveWrapperBinPath(): string {
+  return process.env.MATE_WRAPPER_BIN_PATH ?? "$MATE_WRAPPER_BIN_PATH";
 }
 
 function buildStartupError(details: string[]): Error {
@@ -41,7 +40,7 @@ function loadGuidance(): MateGuidanceFile | null {
 }
 
 function materializeCompanionGuidance(guidance: string, context: CompanionContext): string {
-  const wrapperBinPath = process.env.MATE_WRAPPER_BIN_PATH ?? "$MATE_WRAPPER_BIN_PATH";
+  const wrapperBinPath = resolveWrapperBinPath();
   return guidance
     .replaceAll("$MATE_REPO_PATH", context.repositoryPath)
     .replaceAll("$MATE_ARTIFACT_PATH", context.companionPath)
@@ -63,95 +62,117 @@ function buildSystemPrompt(context: CompanionContext, guidance: MateGuidanceFile
   return lines;
 }
 
-export const CompanionPlugin: Plugin = async () => {
-  const context = readContext();
-  if (!context.companionPath) {
-    return {};
+function readSystemText(part: unknown): string {
+  if (typeof part === "string") return part;
+  if (typeof part !== "object" || part === null || !("text" in part)) return "";
+  return typeof part.text === "string" ? part.text : "";
+}
+
+/** Session-scoped variables a spawned shell sees; mutates `env` in place. */
+function applyCompanionShellEnv(
+  context: CompanionContext,
+  env: Record<string, string | undefined>,
+): void {
+  const wrapperBinPath = resolveWrapperBinPath();
+  env.MATE_NAME = context.frameworkName;
+  env.MATE_VERSION = process.env.MATE_VERSION ?? "unknown";
+  env.MATE_ARTIFACT_PATH = context.companionPath;
+  env.MATE_WRAPPER_BIN_PATH = wrapperBinPath;
+  if (context.repositoryPath) {
+    env.MATE_REPO_PATH = context.repositoryPath;
+    env.MATE_REPO_ID = context.repositoryId;
+  } else {
+    delete env.MATE_REPO_PATH;
+    delete env.MATE_REPO_ID;
   }
+  env.MATE_POLICY_JSON = context.policyJson;
+  env.MATE_GRAPHIFY_ENABLED = context.graphifyEnabled ? "1" : "0";
+  env.MATE_GIT_AUTO_MODE = context.gitAutoModeEnabled ? "1" : "0";
+  /**
+   * Session-scoped payload consumed at plugin startup: masked so the multi-KB
+   * guidance JSON never leaks into spawned shells (and a nested `mate` launch
+   * can never inherit a stale copy).
+   */
+  env[MATE_ENV.guidanceJson] = "";
+  env.PATH = prependPathEntry(process.env.PATH, wrapperBinPath);
+}
 
-  const guidance = loadGuidance();
-  if (!guidance) return {};
-
-  const wrapperBinPath = process.env.MATE_WRAPPER_BIN_PATH ?? "$MATE_WRAPPER_BIN_PATH";
-
+function companionPathsResult(context: CompanionContext) {
+  const wrapperBinPath = resolveWrapperBinPath();
   return {
-    tool: {
-      companion_paths: tool({
-        description: `Return active ${context.frameworkName} companion framework and working repository paths.`,
-        args: {},
-        async execute() {
-          return {
-            output: JSON.stringify(
-              {
-                companionFrameworkPath: context.companionPath,
-                wrapperBinPath,
-                ...(context.repositoryPath
-                  ? { repositoryPath: context.repositoryPath, repositoryId: context.repositoryId }
-                  : {}),
-                policy: JSON.parse(context.policyJson || "{}"),
-              },
-              null,
-              2,
-            ),
-            metadata: {
-              companionPath: context.companionPath,
-              wrapperBinPath,
-              ...(context.repositoryPath ? { repositoryPath: context.repositoryPath } : {}),
-            },
-          };
-        },
-      }),
-    },
-    "experimental.chat.system.transform": async (_input: any, output: { system: string[] }) => {
-      // A wrapped repository lists this plugin in its own project config, so a
-      // managed launch — whose OPENCODE_CONFIG_DIR names the companion, which
-      // lists it too — loads it twice. The marker is what makes the second load
-      // inert instead of appending the companion block a second time.
-      if (output.system.some((part) => part.includes(COMPANION_POLICY_MARKER))) return;
-
-      // Collapse the whole system prompt into a single entry. opencode expands
-      // each `system[]` element into its own `role:"system"` wire message, and
-      // some self-hosted chat templates (e.g. Qwen served via vLLM) reject any
-      // system message that is not the very first message. Merging opencode's
-      // own parts with the mate companion block guarantees exactly one leading
-      // system message.
-      const companion = buildSystemPrompt(context, guidance).join("\n");
-      const merged = [...output.system, companion]
-        .map((part) => part.trim())
-        .filter((part) => part.length > 0)
-        .join("\n\n");
-      output.system.length = 0;
-      if (merged.length > 0) {
-        output.system.push(merged);
-      }
-    },
-    "experimental.session.compacting": async (_input: any, output: { context: string[] }) => {
-      if (output.context.some((part) => part.includes(COMPANION_POLICY_MARKER))) return;
-      output.context.push(buildSystemPrompt(context, guidance).join("\n"));
-    },
-    "shell.env": async (_input: any, output: { env: Record<string, string> }) => {
-      output.env.MATE_NAME = context.frameworkName;
-      output.env.MATE_VERSION = process.env.MATE_VERSION ?? "unknown";
-      output.env.MATE_ARTIFACT_PATH = context.companionPath;
-      output.env.MATE_WRAPPER_BIN_PATH = wrapperBinPath;
-      if (context.repositoryPath) {
-        output.env.MATE_REPO_PATH = context.repositoryPath;
-        output.env.MATE_REPO_ID = context.repositoryId;
-      } else {
-        delete output.env.MATE_REPO_PATH;
-        delete output.env.MATE_REPO_ID;
-      }
-      output.env.MATE_POLICY_JSON = context.policyJson;
-      output.env.MATE_GRAPHIFY_ENABLED = context.graphifyEnabled ? "1" : "0";
-      output.env.MATE_GIT_AUTO_MODE = context.gitAutoModeEnabled ? "1" : "0";
-      // Session-scoped payload consumed above at plugin startup: mask it so
-      // the multi-KB guidance JSON never leaks into spawned shells (and a
-      // nested `mate` launch can never inherit a stale copy).
-      output.env[MATE_ENV.guidanceJson] = "";
-
-      output.env.PATH = prependPathEntry(process.env.PATH, wrapperBinPath);
+    content: JSON.stringify(
+      {
+        companionFrameworkPath: context.companionPath,
+        wrapperBinPath,
+        ...(context.repositoryPath
+          ? { repositoryPath: context.repositoryPath, repositoryId: context.repositoryId }
+          : {}),
+        policy: JSON.parse(context.policyJson || "{}"),
+      },
+      null,
+      2,
+    ),
+    metadata: {
+      companionPath: context.companionPath,
+      wrapperBinPath,
+      ...(context.repositoryPath ? { repositoryPath: context.repositoryPath } : {}),
     },
   };
-};
+}
 
-export default CompanionPlugin;
+/**
+ * Collapses the whole system prompt into a single entry. OpenCode sends each
+ * `system[]` element as its own system message, and some self-hosted chat
+ * templates (e.g. Qwen served via vLLM) reject any system message that is not
+ * the very first one.
+ */
+function mergeCompanionSystem(system: unknown[], companion: string): string[] {
+  const texts = system.map(readSystemText);
+  /**
+   * A wrapped repository lists this plugin in its own project config, so a
+   * managed launch loads it twice; the marker keeps the second load inert.
+   */
+  if (texts.some((text) => text.includes(COMPANION_POLICY_MARKER))) return texts;
+  const merged = [...texts, companion]
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+  return merged.length > 0 ? [merged] : [];
+}
+
+/** Registers guidance, compaction context, shell env, and `companion_paths`. */
+export async function registerCompanion(api: Context, context: CompanionContext): Promise<void> {
+  const guidance = loadGuidance();
+  if (!guidance) return;
+
+  const companion = buildSystemPrompt(context, guidance).join("\n");
+
+  await api.session.hook("context", (event) => {
+    const merged = mergeCompanionSystem(event.system, companion);
+    event.system.splice(
+      0,
+      event.system.length,
+      ...merged.map((text) => ({ type: "text" as const, text }) as never),
+    );
+  });
+
+  await api.session.hook("compaction", (event) => {
+    if (event.system.some((part) => readSystemText(part).includes(COMPANION_POLICY_MARKER))) return;
+    event.system.push({ type: "text", text: companion } as never);
+  });
+
+  await api.shell.hook("create.before", (event) => {
+    applyCompanionShellEnv(context, event.env);
+  });
+
+  await api.tool.transform((editor) => {
+    editor.add({
+      name: "companion_paths",
+      description: `Return active ${context.frameworkName} companion framework and working repository paths.`,
+      input: { type: "object", properties: {}, additionalProperties: false },
+      async execute() {
+        return companionPathsResult(context);
+      },
+    });
+  });
+}

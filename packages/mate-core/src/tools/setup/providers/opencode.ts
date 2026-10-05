@@ -25,6 +25,7 @@ import { mergeDir, pruneEmptyAncestors } from "../utils";
 import {
   getOpenCodePluginReferences,
   isRecord,
+  normalizeOpenCodeConfig,
   readOpenCodeConfig,
   setOpenCodePluginReferences,
   toOpenCodeMcpEntry,
@@ -111,6 +112,11 @@ function isLegacyMatePluginConfigEntry(entry: unknown): boolean {
   return typeof entry === "string" && LEGACY_PLUGIN_CONFIG_ENTRY_PATTERN.test(entry);
 }
 
+/** Current package references and legacy copied-file references alike. */
+function isMatePluginEntry(entry: unknown): boolean {
+  return isMateOpenCodePluginReference(entry) || isLegacyMatePluginConfigEntry(entry);
+}
+
 /**
  * Replace any Mate plugin entry (stale package pins and legacy copied-file
  * references) with the current pinned package reference while preserving
@@ -118,16 +124,16 @@ function isLegacyMatePluginConfigEntry(entry: unknown): boolean {
  */
 function ensureMatePluginReference(config: OpenCodeConfig, pluginReference: string): void {
   const preserved = getOpenCodePluginReferences(config).filter(
-    (entry) => !isMateOpenCodePluginReference(entry) && !isLegacyMatePluginConfigEntry(entry),
+    (entry) => !isMatePluginEntry(entry),
   );
   setOpenCodePluginReferences(config, [...preserved, pluginReference]);
 }
 
 function stripMatePluginReference(config: OpenCodeConfig): void {
-  if (!Array.isArray(config.plugin)) return;
+  if (!Array.isArray(config.plugin) && !Array.isArray(config.plugins)) return;
 
   const preserved = getOpenCodePluginReferences(config).filter(
-    (entry) => !isMateOpenCodePluginReference(entry) && !isLegacyMatePluginConfigEntry(entry),
+    (entry) => !isMatePluginEntry(entry),
   );
   setOpenCodePluginReferences(config, preserved);
 }
@@ -137,11 +143,15 @@ async function syncOpenCodeConfigFile(
   destPath: string,
   pluginReference: string,
 ): Promise<void> {
-  const defaults = JSON.parse(await fs.readFile(srcPath, "utf8")) as Record<string, unknown>;
+  const defaults = normalizeOpenCodeConfig(
+    JSON.parse(await fs.readFile(srcPath, "utf8")) as Record<string, unknown>,
+  );
 
   let existing: Record<string, unknown> = {};
   try {
-    existing = JSON.parse(await fs.readFile(destPath, "utf8")) as Record<string, unknown>;
+    existing = normalizeOpenCodeConfig(
+      JSON.parse(await fs.readFile(destPath, "utf8")) as Record<string, unknown>,
+    );
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ENOENT") {
@@ -152,6 +162,38 @@ async function syncOpenCodeConfigFile(
   mergeConfigDefaults(existing, defaults);
   ensureMatePluginReference(existing, pluginReference);
   await writeOpenCodeConfig(destPath, existing);
+}
+
+/**
+ * V2 loads TUI components exposed by server plugins declared in opencode.json;
+ * project-local tui.json is no longer a config destination. Strip only Mate's
+ * old duplicate reference and leave unrelated legacy contents for OpenCode's
+ * own TUI-config migration.
+ */
+async function removeMatePluginFromLegacyTuiConfig(configDir: string): Promise<void> {
+  const configPath = path.join(configDir, "tui.json");
+  let config: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as unknown;
+    if (!isRecord(parsed)) return;
+    config = parsed;
+  } catch {
+    return;
+  }
+
+  for (const key of ["plugin", "plugins"]) {
+    if (!Array.isArray(config[key])) continue;
+    const kept = (config[key] as unknown[]).filter((entry) => !isMatePluginEntry(entry));
+    if (kept.length > 0) config[key] = kept;
+    else delete config[key];
+  }
+  if (config.$schema === "https://opencode.ai/tui.json") delete config.$schema;
+
+  if (Object.keys(config).length === 0) {
+    await fs.unlink(configPath).catch(() => {});
+    return;
+  }
+  await writeOpenCodeConfig(configPath, config);
 }
 
 function normalizeForComparison(value: unknown): unknown {
@@ -284,11 +326,7 @@ async function syncOpenCodeRuntimeFiles(
     path.join(dest, "opencode.json"),
     pluginReference,
   );
-  await syncOpenCodeConfigFile(
-    path.join(src, "tui.json"),
-    path.join(dest, "tui.json"),
-    pluginReference,
-  );
+  await removeMatePluginFromLegacyTuiConfig(dest);
   await removeLegacyRuntimeFiles(dest);
   await removeLegacyTuiDependencies(dest);
 
@@ -331,7 +369,7 @@ async function teardownOpenCode(companionPath: string, activeProviders: string[]
     path.join(src, "opencode.json"),
     path.join(dest, "opencode.json"),
   );
-  await teardownOpenCodeConfigFile(path.join(src, "tui.json"), path.join(dest, "tui.json"));
+  await removeMatePluginFromLegacyTuiConfig(dest);
   await removeLegacyRuntimeFiles(dest);
   await removeLegacyTuiDependencies(dest);
   await pruneEmptyAncestors(path.join(dest, "plugins"), companionPath);
@@ -405,10 +443,10 @@ export async function removeOpenCodeForeignPluginReferences(
   }
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (Array.isArray(parsed.plugin)) {
+    if (Array.isArray(parsed.plugin) || Array.isArray(parsed.plugins)) {
       setOpenCodePluginReferences(
         parsed,
-        parsed.plugin.filter((entry) => !isForeign(entry)),
+        getOpenCodePluginReferences(parsed).filter((entry) => !isForeign(entry)),
       );
     }
     if (Object.keys(parsed).length === 0) {
@@ -428,7 +466,7 @@ export async function removeOpenCodeForeignPluginReferences(
 // skill trees.
 // ---------------------------------------------------------------------------
 
-const OPENCODE_CONTRIBUTION_CONFIG_FILES = ["opencode.json", "tui.json"];
+const OPENCODE_CONTRIBUTION_CONFIG_FILES = ["opencode.json"];
 
 export async function reconcileOpenCodeContributions(
   ctx: SetupContext,
@@ -517,7 +555,7 @@ async function reconcileOpenCodeMcpContributions(
   }
 }
 
-/** The Mate-managed `mcp` map of one pass, as a value. */
+/** The Mate-managed V2 `mcp.servers` map of one pass, as a value. */
 export function renderManagedOpenCodeMcpServers(
   contributions: CapabilityContributionInput[] = [],
 ): Record<string, unknown> {
@@ -532,14 +570,17 @@ export function renderManagedOpenCodeMcpServers(
 }
 
 /**
- * The Mate-managed `permission.external_directory` map, as a value. Rendered
- * once for both destinations a session can reach it through — the projected
+ * The Mate-managed V2 `external_directory` rules. Rendered once for both
+ * destinations a session can reach them through — the projected
  * document and the launch environment — so the two cannot drift.
  */
 export function renderCompanionExternalDirectoryPermissions(
   companionPath: string,
-): Record<string, string> {
-  return { [companionPath]: "allow", [`${companionPath}/**`]: "allow" };
+): Array<{ action: string; resource: string; effect: string }> {
+  return [
+    { action: "external_directory", resource: companionPath, effect: "allow" },
+    { action: "external_directory", resource: `${companionPath}/**`, effect: "allow" },
+  ];
 }
 
 /**

@@ -55,14 +55,17 @@ export const updateCommandDeps = {
       latestVersion: latest,
     });
   },
+  /** Re-runs install from dev (`cli.ts`) or prod (`cli.mjs`/bootstrap) entrypoints so config reconciles during `mate update`. */
   runPostInstall: (skipConfirm: boolean): InstallResult => {
     const entrypoint = process.argv[1];
-    if (!entrypoint?.endsWith("/cli.ts") && !entrypoint?.endsWith("\\cli.ts")) {
+    if (!entrypoint || !/(?:^|[\\/])(?:cli\.ts|cli\.mjs|cli-bootstrap\.cjs)$/.test(entrypoint)) {
       return { status: 0, error: undefined } as InstallResult;
     }
     const args = [entrypoint, "install", ...(skipConfirm ? ["--yes"] : [])];
-    return spawnSync(process.execPath, args, { stdio: "inherit" }) as InstallResult;
+    return updateCommandDeps.spawnPostInstall(process.execPath, args);
   },
+  spawnPostInstall: (executable: string, args: string[]): InstallResult =>
+    spawnSync(executable, args, { stdio: "inherit" }) as InstallResult,
   warmOpenCodePluginCache: (latest: string) =>
     warmOpenCodePluginCache(latest, process.env, getUpdateConfig().registry),
 };

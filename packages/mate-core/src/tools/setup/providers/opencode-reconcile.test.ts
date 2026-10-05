@@ -80,15 +80,14 @@ describe("reconcileOpenCodeContributions", () => {
     ]);
 
     const config = await readJson(configPath);
-    expect(config.plugin).toEqual(["user-plugin", "acme-plugin@2.0.0"]);
-    expect((config.mcp as Record<string, unknown>).acme).toEqual({
+    expect(config.plugins).toEqual(["user-plugin", "acme-plugin@2.0.0"]);
+    expect((config.mcp as { servers: Record<string, unknown> }).servers.acme).toEqual({
       type: "local",
       command: ["acme", "serve"],
-      enabled: true,
+      disabled: false,
     });
 
-    const tui = await readJson(path.join(companionPath, ".opencode", "tui.json"));
-    expect(tui.plugin).toEqual(["acme-plugin@2.0.0"]);
+    await expect(fs.access(path.join(companionPath, ".opencode", "tui.json"))).rejects.toThrow();
 
     const agentsMd = await fs.readFile(path.join(companionPath, "AGENTS.md"), "utf8");
     expect(agentsMd).toContain("## Acme");
@@ -109,12 +108,12 @@ describe("reconcileOpenCodeContributions", () => {
     await reconcileOpenCodeContributions(ctx, [contribution(true, companionPath)]);
     const configPath = path.join(companionPath, ".opencode", "opencode.json");
     const config = await readJson(configPath);
-    expect(config.plugin).toEqual(["acme-plugin@2.0.0"]);
+    expect(config.plugins).toEqual(["acme-plugin@2.0.0"]);
 
     await reconcileOpenCodeContributions(ctx, [contribution(false, companionPath)]);
 
     const after = await readJson(configPath);
-    expect(after.plugin).toBeUndefined();
+    expect(after.plugins).toBeUndefined();
     expect(after.mcp).toBeUndefined();
     await expect(fs.access(path.join(companionPath, "AGENTS.md"))).rejects.toThrow();
     await expect(
@@ -170,7 +169,7 @@ describe("opencode escape hatch", () => {
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(
       configPath,
-      JSON.stringify({ plugin: [".opencode/plugins/acme.js", "user-plugin"] }),
+      JSON.stringify({ plugins: [".opencode/plugins/acme.js", "user-plugin"] }),
       "utf8",
     );
 
@@ -178,12 +177,12 @@ describe("opencode escape hatch", () => {
       String(entry).includes("acme"),
     );
     expect(JSON.parse(await fs.readFile(configPath, "utf8"))).toEqual({
-      plugin: ["user-plugin"],
+      plugins: ["user-plugin"],
     });
 
     await fs.writeFile(
       configPath,
-      JSON.stringify({ plugin: [".opencode/plugins/acme.js"] }),
+      JSON.stringify({ plugins: [".opencode/plugins/acme.js"] }),
       "utf8",
     );
     await removeOpenCodeForeignPluginReferences(companionPath, (entry) =>

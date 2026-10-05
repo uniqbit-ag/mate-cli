@@ -1,7 +1,8 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
+import type { Cleanup, Context } from "@opencode/plugin/promise/plugin";
 
 import {
   companionForkRefusal,
@@ -15,7 +16,6 @@ import {
   extractPatchPaths,
   isArtifactPath,
   normalizeTargetPath,
-  readContext,
   shouldBlockArtifactWrite,
   type CompanionContext,
 } from "./companion-policy";
@@ -43,67 +43,80 @@ const REACT_DOCTOR_ARGS = [
   "30",
 ];
 
-async function runReactDoctorScan(
+export type CommandResult = { exitCode: number | null; output: string };
+export type CommandRunner = (
+  command: string,
+  args: string[],
+  cwd: string,
+) => Promise<CommandResult>;
+type SessionPrompt = Pick<Context["session"], "prompt">;
+
+/** Combined stdout and stderr; rejects only when the process cannot be spawned. */
+export const runCommand: CommandRunner = (command, args, cwd) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (output += chunk));
+    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (output += chunk));
+    child.once("error", reject);
+    child.once("close", (exitCode) => resolve({ exitCode, output: output.trim() }));
+  });
+
+function reactDoctorCommand(repo: string): { command: string; args: string[] } {
+  const localBin = path.join(repo, "node_modules", ".bin", "react-doctor");
+  const mateBin = process.env.MATE_REACT_DOCTOR_BIN_PATH;
+  const doctorBin = mateBin && fs.existsSync(mateBin) ? mateBin : localBin;
+  return fs.existsSync(doctorBin)
+    ? { command: doctorBin, args: REACT_DOCTOR_ARGS }
+    : {
+        command: "npx",
+        args: ["--yes", `react-doctor@${REACT_DOCTOR_VERSION}`, ...REACT_DOCTOR_ARGS],
+      };
+}
+
+/**
+ * Tracks edited sessions and scans each at most once per idle, never twice
+ * concurrently for the same session.
+ */
+export function createReactDoctorScanner(
   context: CompanionContext,
-  client: PluginInput["client"],
-  $: PluginInput["$"],
-  sessionID: string,
-  scansInFlight: Set<string>,
-): Promise<void> {
-  const repo = context.repositoryPath;
-  if (!repo || scansInFlight.has(sessionID)) return;
-  scansInFlight.add(sessionID);
-  try {
-    const localBin = path.join(repo, "node_modules", ".bin", "react-doctor");
-    const mateBin = process.env.MATE_REACT_DOCTOR_BIN_PATH;
-    const doctorBin = mateBin && fs.existsSync(mateBin) ? mateBin : localBin;
+  session: SessionPrompt,
+  run: CommandRunner = runCommand,
+) {
+  const dirtySessions = new Set<string>();
+  const scansInFlight = new Set<string>();
 
-    const result = fs.existsSync(doctorBin)
-      ? await $`${doctorBin} ${REACT_DOCTOR_ARGS}`.cwd(repo).nothrow().quiet()
-      : await $`npx --yes ${`react-doctor@${REACT_DOCTOR_VERSION}`} ${REACT_DOCTOR_ARGS}`
-          .cwd(repo)
-          .nothrow()
-          .quiet();
+  return {
+    markEdited(tool: string, sessionID: string): void {
+      if (REACT_DOCTOR_EDIT_TOOLS.has(tool)) dirtySessions.add(sessionID);
+    },
+    async idle(sessionID: string): Promise<void> {
+      const repo = context.repositoryPath;
+      if (!repo || scansInFlight.has(sessionID) || !dirtySessions.delete(sessionID)) return;
+      scansInFlight.add(sessionID);
+      try {
+        const { command, args } = reactDoctorCommand(repo);
+        const { exitCode, output } = await run(command, args, repo);
+        if (exitCode === 0 || !output) return;
+        if (REACT_DOCTOR_NON_LINT_FAILURES.some((re) => re.test(output))) return;
 
-    if (result.exitCode === 0) return;
-
-    const output = `${result.stdout?.toString() ?? ""}${result.stderr?.toString() ?? ""}`.trim();
-    if (!output || REACT_DOCTOR_NON_LINT_FAILURES.some((re) => re.test(output))) return;
-
-    await client.tui
-      .showToast({
-        query: { directory: repo },
-        body: {
-          title: "React Doctor",
-          message: "Found issues in the changed files — review before finishing.",
-          variant: "warning",
-        },
-      })
-      .catch(() => {});
-    await client.session
-      .promptAsync({
-        path: { id: sessionID },
-        query: { directory: repo },
-        body: {
-          parts: [
-            {
-              type: "text",
-              synthetic: true,
-              text:
-                "React Doctor found issues in the changed files. Review this output and fix " +
-                "the regressions before finishing. For confirmed issues that cannot be fixed " +
-                "now, create GitHub issues with the rule, file/line, confidence, impact, and " +
-                `proposed fix.\n\n${output}`,
-            },
-          ],
-        },
-      })
-      .catch(() => {});
-  } catch {
-    // Never break the session because a diagnostic scan failed.
-  } finally {
-    scansInFlight.delete(sessionID);
-  }
+        await session
+          .prompt({
+            sessionID,
+            text:
+              "React Doctor found issues in the changed files. Review this output and fix " +
+              "the regressions before finishing. For confirmed issues that cannot be fixed " +
+              "now, create GitHub issues with the rule, file/line, confidence, impact, and " +
+              `proposed fix.\n\n${output}`,
+          } as never)
+          .catch(() => {});
+      } catch {
+        /** Never break the session because a diagnostic scan failed. */
+      } finally {
+        scansInFlight.delete(sessionID);
+      }
+    },
+  };
 }
 
 /**
@@ -120,7 +133,6 @@ const repairedCompanions = new Set<string>();
  */
 export async function repairCompanionGitOnce(
   context: CompanionContext,
-  client: PluginInput["client"] | undefined,
   env: Record<string, string | undefined> = process.env,
 ): Promise<string[]> {
   if (
@@ -132,27 +144,12 @@ export async function repairCompanionGitOnce(
   if (repairedCompanions.has(context.companionPath)) return [];
   repairedCompanions.add(context.companionPath);
 
-  const notes = unattendedSyncStalenessLines(syncCompanionUnattended(context.companionPath));
-  if (notes.length === 0) return [];
-
   /**
    * Operator-facing only: a model told to run the command would run it
-   * unattended. Delivery is best-effort in both directions — a client that
-   * throws rather than rejecting must not cost the caller its notes.
+   * unattended. The V2 server API has no toast; the notes reach the operator
+   * through the persisted record and the TUI's staleness lines.
    */
-  try {
-    await client?.tui?.showToast({
-      query: { directory: context.repositoryPath },
-      body: {
-        title: `${context.frameworkName} companion`,
-        message: notes.join("\n"),
-        variant: "warning",
-      },
-    });
-  } catch {
-    /** The note survives in the persisted record and the TUI's staleness lines. */
-  }
-  return notes;
+  return unattendedSyncStalenessLines(syncCompanionUnattended(context.companionPath));
 }
 
 /** Test seam: the once-per-session guard is process-wide by design. */
@@ -180,83 +177,64 @@ export function refuseForkedCompanionWrite(
   if (refusal) throw new Error(refusal);
 }
 
-type PluginEventInput = Parameters<NonNullable<Hooks["event"]>>[0];
-type ToolBeforeInput = Parameters<NonNullable<Hooks["tool.execute.before"]>>[0];
-type ToolBeforeOutput = Parameters<NonNullable<Hooks["tool.execute.before"]>>[1];
-type ToolAfterInput = Parameters<NonNullable<Hooks["tool.execute.after"]>>[0];
+/** Throws when the tool call would write an artifact outside the companion. */
+export function guardToolInput(context: CompanionContext, tool: string, input: unknown): void {
+  const args = (input ?? {}) as Record<string, unknown>;
+  const filePaths =
+    tool === "write" || tool === "edit"
+      ? [String(args.filePath ?? "")]
+      : tool === "apply_patch"
+        ? extractPatchPaths(String(args.patchText ?? ""))
+        : [];
 
-export const CompanionHooksPlugin: Plugin = async (pluginInput = {} as PluginInput) => {
-  const { client, $ } = pluginInput;
-  const context = readContext();
-  if (!context.companionPath) return {};
+  for (const filePath of filePaths) {
+    if (context.repositoryPath && filePath && shouldBlockArtifactWrite(context, filePath)) {
+      throw new Error(buildArtifactError(context, filePath));
+    }
+    refuseForkedCompanionWrite(context, filePath);
+  }
+}
 
-  /**
-   * The repair sits above the returned hooks, so anything escaping it would
-   * cost the session every guardrail below — the artifact guard, the React
-   * Doctor scan — to save a synchronization that is optional by design.
-   */
-  await repairCompanionGitOnce(context, client).catch(() => []);
-
-  const dirtyReactDoctorSessions = new Set<string>();
-  const reactDoctorScansInFlight = new Set<string>();
-
-  return {
-    ...(context.repositoryPath
-      ? {
-          event: async ({ event }: PluginEventInput) => {
-            if (event.type !== "session.idle") return;
-            const sessionID = event.properties.sessionID;
-            if (
-              !context.reactDoctorEnabled ||
-              reactDoctorScansInFlight.has(sessionID) ||
-              !dirtyReactDoctorSessions.delete(sessionID)
-            ) {
-              return;
-            }
-            await runReactDoctorScan(context, client, $, sessionID, reactDoctorScansInFlight);
-          },
-        }
-      : {}),
-    "tool.execute.before": async (input: ToolBeforeInput, output: ToolBeforeOutput) => {
-      const toolName = String(input.tool ?? "");
-      const args = output.args ?? {};
-      if (context.repositoryPath && ["write", "edit"].includes(toolName)) {
-        const filePath = String(args.filePath ?? "");
-        if (filePath && shouldBlockArtifactWrite(context, filePath)) {
-          throw new Error(buildArtifactError(context, filePath));
-        }
-        refuseForkedCompanionWrite(context, filePath);
-      }
-      if (context.repositoryPath && toolName === "apply_patch") {
-        for (const filePath of extractPatchPaths(String(args.patchText ?? ""))) {
-          if (shouldBlockArtifactWrite(context, filePath)) {
-            throw new Error(buildArtifactError(context, filePath));
-          }
-          refuseForkedCompanionWrite(context, filePath);
-        }
-      }
-      if (!context.repositoryPath && toolName === "write") {
-        refuseForkedCompanionWrite(context, String(args.filePath ?? ""));
-      }
-      if (!context.repositoryPath && toolName === "edit") {
-        refuseForkedCompanionWrite(context, String(args.filePath ?? ""));
-      }
-      if (!context.repositoryPath && toolName === "apply_patch") {
-        for (const filePath of extractPatchPaths(String(args.patchText ?? ""))) {
-          refuseForkedCompanionWrite(context, filePath);
-        }
-      }
-    },
-    ...(context.repositoryPath
-      ? {
-          "tool.execute.after": async (input: ToolAfterInput) => {
-            if (context.reactDoctorEnabled && REACT_DOCTOR_EDIT_TOOLS.has(input.tool)) {
-              dirtyReactDoctorSessions.add(input.sessionID);
-            }
-          },
-        }
-      : {}),
-  };
+export type CompanionHooksOptions = {
+  /** Test seam for the React Doctor process. */
+  run?: CommandRunner;
 };
 
-export default CompanionHooksPlugin;
+/**
+ * Registers the companion guardrails on an OpenCode V2 plugin context.
+ * The caller resolves `context` and skips this when no companion resolved.
+ */
+export async function registerCompanionHooks(
+  api: Context,
+  context: CompanionContext,
+  options: CompanionHooksOptions = {},
+): Promise<Cleanup | undefined> {
+  /**
+   * Anything escaping the repair would cost the session every guardrail
+   * below to save a synchronization that is optional by design.
+   */
+  await repairCompanionGitOnce(context).catch(() => []);
+
+  await api.tool.hook("execute.before", (event) => {
+    guardToolInput(context, event.tool, event.input);
+  });
+
+  if (!context.repositoryPath || !context.reactDoctorEnabled) return;
+
+  const scanner = createReactDoctorScanner(context, api.session, options.run);
+  await api.tool.hook("execute.after", (event) => {
+    if (event.status === "completed") scanner.markEdited(event.tool, event.sessionID);
+  });
+
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of api.event.subscribe({ signal: controller.signal })) {
+        if (event.type === "session.idle") await scanner.idle(event.data.sessionID);
+      }
+    } catch {
+      /** Plugin shutdown aborts the subscription; event delivery is best effort. */
+    }
+  })();
+  return () => controller.abort();
+}

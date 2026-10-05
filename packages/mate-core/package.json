@@ -32,7 +32,7 @@
     "format:check": "oxfmt src/ \"!**/*.generated.*\" \"!**/report-assets/**\" --check"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "^1.18.3",
+    "@opencode/plugin": "^2.0.23",
     "@opentui/core": "^0.4.5",
     "@opentui/keymap": "^0.4.5",
     "@opentui/solid": "^0.4.5",
