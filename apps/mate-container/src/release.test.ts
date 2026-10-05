@@ -187,8 +187,8 @@ describe("the image workflow", () => {
     expect(validate).toBeLessThan(build);
   });
 
-  test("refuses a version that is not published, and one whose channel does not match", () => {
-    expect(workflow).toContain("is not on the registry");
+  test("uses the callable registry wait, and refuses a channel that does not match", () => {
+    expect(workflow).toContain("wait-for-published-packages.mjs");
     expect(workflow).toContain("cannot be published as latest");
     expect(workflow).toContain("cannot be published as canary");
   });

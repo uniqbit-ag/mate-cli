@@ -2,6 +2,7 @@ import { COMPANION_DIGEST_PATTERN, COMPANION_PARAM } from "../selection";
 
 export const THEME_STORAGE_KEY = "mate-studio-theme";
 export const COMPANION_STORAGE_KEY = "mate-studio-companion";
+export const VAULT_TREE_STORAGE_KEY = "mate-studio-vault-tree";
 
 /**
  * Runs in `<head>` before first paint. A server-rendered document arrives with
@@ -19,6 +20,9 @@ export const STUDIO_PREPAINT_SCRIPT = `(function () {
     var chosen = localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
     if (chosen === "dark" || chosen === "light") {
       document.documentElement.setAttribute("data-theme", chosen);
+    }
+    if (localStorage.getItem(${JSON.stringify(VAULT_TREE_STORAGE_KEY)}) === "hidden") {
+      document.documentElement.setAttribute("data-vault-tree", "hidden");
     }
   } catch (error) {
     /* a blocked web store only costs the preference, never the page */
@@ -38,9 +42,9 @@ export const STUDIO_PREPAINT_SCRIPT = `(function () {
 
 /**
  * The only browser code Studio ships: cycling the appearance, remembering the
- * companion on screen, switching workflow schema tabs, and copying a prompt.
- * Each needs an API the server does not have, and nothing else here renders,
- * fetches, or holds state.
+ * companion on screen, switching workflow schema tabs, copying a prompt, the
+ * vault's editor, filter and tree toggle, and swapping in a deferred vault tree.
+ * Each needs an API the server does not have; all markup comes from the server.
  */
 export const STUDIO_CLIENT_SCRIPT = `(function () {
   var THEME_KEY = ${JSON.stringify(THEME_STORAGE_KEY)};
@@ -248,8 +252,8 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
     if (submitter && submitter.name && submitter.value) target.searchParams.set(submitter.name, submitter.value);
     return target.toString();
   }
-  function wireNavigation() {
-    document.querySelectorAll('form[method="get"]').forEach(function (form) {
+  function wireNavigation(scope) {
+    (scope || document).querySelectorAll('form[method="get"]').forEach(function (form) {
       form.addEventListener("submit", function (event) {
         event.preventDefault();
         navigate(navigationUrl(form, event.submitter));
@@ -299,10 +303,9 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
     if (recover) recover.addEventListener("click", function () {
       acceptIncoming({ content: recover.getAttribute("data-vault-content") || "", token: recover.getAttribute("data-vault-token") || "" });
     });
-    var companion = document.querySelector("[data-companion]");
-    var path = node.getAttribute("data-vault-path");
-    if (companion && path && typeof EventSource !== "undefined") {
-      var events = new EventSource("/api/vault/events?companion=" + encodeURIComponent(companion.getAttribute("data-companion") || "") + "&path=" + encodeURIComponent(path));
+    var eventsUrl = node.getAttribute("data-vault-events");
+    if (eventsUrl && typeof EventSource !== "undefined") {
+      var events = new EventSource(eventsUrl);
       events.onmessage = function (message) {
         var event;
         try { event = JSON.parse(message.data); } catch (error) { return; }
@@ -332,6 +335,84 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
       event.preventDefault();
       event.returnValue = "";
     });
+  function filterTree(query) {
+    var needle = query.trim().toLowerCase();
+    document.querySelectorAll("[data-vault-entry]").forEach(function (entry) {
+      entry.hidden = !!needle && (entry.getAttribute("data-vault-entry") || "").toLowerCase().indexOf(needle) === -1;
+    });
+    document.querySelectorAll("[data-vault-dir]").forEach(function (folder) {
+      if (!needle) {
+        folder.hidden = false;
+        folder.open = folder.hasAttribute("data-vault-expanded");
+        return;
+      }
+      var match = folder.querySelector("[data-vault-entry]:not([hidden])");
+      folder.hidden = !match;
+      if (match) folder.open = true;
+    });
+  }
+  function showTree(shown) {
+    var root = document.documentElement;
+    if (shown) root.removeAttribute("data-vault-tree");
+    else root.setAttribute("data-vault-tree", "hidden");
+    var toggle = document.getElementById("vault-tree-toggle");
+    if (toggle) {
+      toggle.textContent = shown ? "Hide files" : "Show files";
+      toggle.setAttribute("aria-expanded", shown ? "true" : "false");
+    }
+    try {
+      localStorage.setItem(${JSON.stringify(VAULT_TREE_STORAGE_KEY)}, shown ? "shown" : "hidden");
+    } catch (error) {
+      /* a blocked web store only costs the preference, never the page */
+    }
+  }
+  /** Moves server-rendered parts into place; builds no markup of its own. */
+  function swapVaultSlots(markup) {
+    var parsed = new DOMParser().parseFromString(markup, "text/html");
+    parsed.querySelectorAll("[data-vault-slot]").forEach(function (slot) {
+      var target = document.querySelector('[data-vault-slot="' + slot.getAttribute("data-vault-slot") + '"]');
+      if (!target) return;
+      var node = document.importNode(slot, true);
+      target.replaceWith(node);
+      wireNavigation(node);
+    });
+    var filter = document.getElementById("vault-filter");
+    if (filter && filter.value) filterTree(filter.value);
+  }
+  function failVaultSlots(message) {
+    document.querySelectorAll("[data-vault-slot][aria-busy]").forEach(function (slot) {
+      slot.removeAttribute("aria-busy");
+      slot.textContent = message;
+    });
+  }
+  function wireVaultBrowser() {
+    var layout = document.querySelector("[data-vault-layout]");
+    if (!layout) return;
+    var filter = document.getElementById("vault-filter");
+    if (filter) {
+      filter.hidden = false;
+      filter.addEventListener("input", function () { filterTree(filter.value); });
+    }
+    var toggle = document.getElementById("vault-tree-toggle");
+    if (toggle) {
+      toggle.hidden = false;
+      var hidden = document.documentElement.getAttribute("data-vault-tree") === "hidden";
+      toggle.textContent = hidden ? "Show files" : "Hide files";
+      toggle.setAttribute("aria-expanded", hidden ? "false" : "true");
+      toggle.addEventListener("click", function () {
+        showTree(document.documentElement.getAttribute("data-vault-tree") === "hidden");
+      });
+    }
+    var deferred = layout.getAttribute("data-vault-view");
+    if (!deferred) return;
+    fetch(deferred, { headers: { accept: "text/html" } }).then(function (response) {
+      if (!response.ok) throw new Error("status " + response.status);
+      return response.text();
+    }).then(swapVaultSlots).catch(function (error) {
+      failVaultSlots("The files could not be listed: " + (error && error.message ? error.message : String(error)));
+    });
+  }
   wireNavigation();
   wireVault();
+  wireVaultBrowser();
 })();`;

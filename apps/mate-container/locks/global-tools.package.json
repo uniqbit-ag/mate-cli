@@ -4,7 +4,7 @@
   "private": true,
   "description": "Global CLI tools the image installs. Locked so a rebuild cannot resolve a newer graph.",
   "dependencies": {
-    "@uniqbit/mate": "0.17.0-canary.10",
+    "@uniqbit/mate": "0.17.0-canary.11",
     "@fission-ai/openspec": "1.13.1",
     "@upstash/context7-mcp": "4.1.1"
   }

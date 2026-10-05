@@ -45,6 +45,11 @@ export interface ImageInputs {
     release_base_url: string;
     artifacts: Record<string, CheckedArtifact>;
   };
+  claude: {
+    version: string;
+    release_base_url: string;
+    artifacts: Record<string, CheckedArtifact>;
+  };
   tools: Record<string, ToolInput>;
   locks: Record<string, { manifest: string; lockfile: string }>;
   prebuilt_workspace: {

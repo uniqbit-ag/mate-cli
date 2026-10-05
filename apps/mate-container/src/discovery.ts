@@ -162,10 +162,16 @@ export function discoverCompanions(companionsDir: string): string[] {
  * without a configured choice is reported with the candidates listed, rather
  * than chosen arbitrarily.
  */
-export function selectCompanion(companions: string[], configured: string | null): string {
+export function selectCompanion(
+  companions: string[],
+  configured: string | null,
+  setupHint: string | null = null,
+): string {
   if (companions.length === 0) {
     throw new StartupError(
-      `No Companion Repository was found to serve. Mount one into the companions directory, or set MATE_COMPANION_REPOS to a Git location to check out.`,
+      `No Companion Repository was found to serve. ` +
+        (setupHint ??
+          `Mount one into the companions directory, or set MATE_COMPANION_REPOS to a Git location to check out.`),
     );
   }
 
