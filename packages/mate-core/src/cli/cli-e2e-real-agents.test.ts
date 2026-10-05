@@ -167,6 +167,7 @@ async function runMate(
         __CFBundleIdentifier: "",
         CI: "", // unset so piped stdin ("y\n") is read normally in the spawned process
         MATE_ARTIFACT_PATH: "",
+        MATE_VERSION: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
         MATE_POLICY_JSON: "",
@@ -271,6 +272,7 @@ async function runMateInTty(
         __CFBundleIdentifier: "",
         CI: "",
         MATE_ARTIFACT_PATH: "",
+        MATE_VERSION: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
         MATE_POLICY_JSON: "",

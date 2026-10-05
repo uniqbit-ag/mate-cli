@@ -58,6 +58,7 @@ async function runMate(cwd: string, home: string, args: string[]): Promise<RunRe
         __CFBundleIdentifier: "",
         CI: "",
         MATE_ARTIFACT_PATH: "",
+        MATE_VERSION: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
         MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",

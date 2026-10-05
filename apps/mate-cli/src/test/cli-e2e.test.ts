@@ -153,6 +153,7 @@ async function runMate(
         CI: "", // unset so piped stdin ("y\n") is read normally in spawned processes
         // Prevent dev-environment contamination when running tests inside a Mate-managed agent session
         MATE_ARTIFACT_PATH: "",
+        MATE_VERSION: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
         MATE_POLICY_JSON: "",
@@ -285,6 +286,7 @@ async function runMateInTty(
         __CFBundleIdentifier: "",
         CI: "",
         MATE_ARTIFACT_PATH: "",
+        MATE_VERSION: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
         MATE_POLICY_JSON: "",
@@ -2455,6 +2457,7 @@ async function startStudio(scenario: E2EScenario, cwd: string): Promise<StudioPr
       PATH: `${scenario.bin}:${process.env.PATH ?? ""}`,
       CI: "",
       MATE_ARTIFACT_PATH: "",
+      MATE_VERSION: "",
       MATE_REPO_ID: "",
       MATE_REPO_PATH: "",
       MATE_POLICY_JSON: "",
