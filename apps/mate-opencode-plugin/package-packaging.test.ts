@@ -34,17 +34,17 @@ async function packInto(packageRoot: string, destination: string): Promise<strin
 // Mirrors OpenCode's npm plugin loading: config references the package root,
 // the loader selects the `./server` or `./tui` export subpath by plugin kind
 // and imports the resolved entry point.
-const LOADER_SCRIPT = `
+const LOADER_PRELUDE = `
 import fs from "node:fs";
 import path from "node:path";
 
 const root = path.join(process.cwd(), "node_modules", "@uniqbit", "mate-opencode-plugin");
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+`;
 
+const SERVER_LOADER_SCRIPT = `${LOADER_PRELUDE}
 const serverEntry = pkg.exports?.["./server"];
-const tuiEntry = pkg.exports?.["./tui"];
 if (!serverEntry) throw new Error("missing ./server export");
-if (!tuiEntry) throw new Error("missing ./tui export");
 
 const server = await import(path.join(root, serverEntry));
 if (typeof server.default !== "function") throw new Error("./server default export is not a Plugin");
@@ -54,16 +54,33 @@ if (Object.keys(hooks).length !== 0) {
   throw new Error("aggregate plugin must stay inert without the Mate launch environment");
 }
 
-const tui = await import(path.join(root, tuiEntry));
-if (typeof tui.default?.tui !== "function") {
-  throw new Error("./tui default export is not a TuiPluginModule");
-}
-
-console.log("SMOKE_OK");
+console.log("SERVER_SMOKE_OK");
 `;
 
+const TUI_LOADER_SCRIPT = `${LOADER_PRELUDE}
+const tuiEntry = pkg.exports?.["./tui"];
+if (!tuiEntry) throw new Error("missing ./tui export");
+
+const tui = await import(path.join(root, tuiEntry));
+if (
+  typeof tui.default?.id !== "string" ||
+  tui.default.id.length === 0 ||
+  typeof tui.default.setup !== "function"
+) {
+  throw new Error("./tui default export is not a V2 TUI plugin module");
+}
+
+console.log("TUI_SMOKE_OK");
+`;
+
+const OPENTUI_PACKAGES = ["@opentui/core", "@opentui/keymap", "@opentui/solid"];
+
+function runInProject(project: string, args: string[], env: NodeJS.ProcessEnv = process.env) {
+  return spawnSync("bun", args, { cwd: project, env: { ...env, CI: "1" }, encoding: "utf8" });
+}
+
 describe("packed @uniqbit/mate-opencode-plugin", () => {
-  test("loads ./server and ./tui outside the workspace through the OpenCode export contract", async () => {
+  test("loads ./server without OpenTUI and ./tui with host-provided OpenTUI through the OpenCode export contract", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-plugin-package-smoke-"));
     tempRoots.push(root);
 
@@ -100,30 +117,45 @@ describe("packed @uniqbit/mate-opencode-plugin", () => {
       "utf8",
     );
 
-    const install = spawnSync("bun", ["install", "--production"], {
-      cwd: project,
-      env: { ...process.env, CI: "1" },
-      encoding: "utf8",
-    });
+    const install = runInProject(project, ["install", "--production"]);
     expect(`${install.stderr}\n${install.stdout}`).not.toContain("error:");
     expect(install.status).toBe(0);
 
-    await fs.writeFile(path.join(project, "smoke.ts"), LOADER_SCRIPT, "utf8");
+    /** The plugin must not install a private OpenTUI copy; its peers stay optional. */
+    const pluginInstall = path.join(project, "node_modules", "@uniqbit", "mate-opencode-plugin");
+    await expect(fs.stat(path.join(pluginInstall, "node_modules", "@opentui"))).rejects.toThrow();
+
+    /**
+     * mate-core's transitive OpenTUI is hoisted; drop it so `./server` proves it
+     * loads with every `@opentui/*` package absent from its resolution path.
+     */
+    await fs.rm(path.join(project, "node_modules", "@opentui"), { recursive: true, force: true });
+
+    await fs.writeFile(path.join(project, "server-smoke.ts"), SERVER_LOADER_SCRIPT, "utf8");
+    await fs.writeFile(path.join(project, "tui-smoke.ts"), TUI_LOADER_SCRIPT, "utf8");
 
     // Strip Mate session variables so the inert-without-context check holds
     // even when this test itself runs inside a managed Mate session.
     const cleanEnv = Object.fromEntries(
       Object.entries(process.env).filter(([key]) => !key.startsWith("MATE_")),
     );
-    const smoke = spawnSync("bun", ["smoke.ts"], {
-      cwd: project,
-      env: { ...cleanEnv, CI: "1" },
-      encoding: "utf8",
-    });
 
-    expect(smoke.stderr).not.toContain("error");
-    expect(smoke.stdout).toContain("SMOKE_OK");
-    expect(smoke.status).toBe(0);
+    const serverSmoke = runInProject(project, ["server-smoke.ts"], cleanEnv);
+    expect(serverSmoke.stderr).not.toContain("error");
+    expect(serverSmoke.stdout).toContain("SERVER_SMOKE_OK");
+    expect(serverSmoke.status).toBe(0);
+
+    /** OpenCode provides OpenTUI to TUI plugins; simulate that host before loading `./tui`. */
+    const hostOpenTui = runInProject(project, [
+      "add",
+      ...OPENTUI_PACKAGES.map((name) => `${name}@^0.4.5`),
+    ]);
+    expect(hostOpenTui.status).toBe(0);
+
+    const tuiSmoke = runInProject(project, ["tui-smoke.ts"], cleanEnv);
+    expect(tuiSmoke.stderr).not.toContain("error");
+    expect(tuiSmoke.stdout).toContain("TUI_SMOKE_OK");
+    expect(tuiSmoke.status).toBe(0);
   }, 240_000);
 
   test("packed tarball ships only the source entry points and package manifest", async () => {

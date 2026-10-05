@@ -16,6 +16,7 @@
     "./plugins": "./src/plugins.ts",
     "./runtime": "./src/runtime/index.ts",
     "./opencode": "./src/opencode/index.ts",
+    "./opencode/tui": "./src/opencode/tui.tsx",
     "./tui": "./src/tui.ts"
   },
   "publishConfig": {

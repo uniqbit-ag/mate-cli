@@ -9,50 +9,59 @@ async function readJson<T>(filePath: string): Promise<T> {
   return JSON.parse(await fs.readFile(filePath, "utf8")) as T;
 }
 
+const OPENTUI_PACKAGES = ["@opentui/core", "@opentui/keymap", "@opentui/solid"];
+
+type PackageManifest = {
+  version: string;
+  dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+};
+
+function readOwnManifest(): Promise<PackageManifest> {
+  return readJson<PackageManifest>(path.join(packageRoot, "package.json"));
+}
+
 describe("plugin package dependency boundary", () => {
-  test("owns every runtime dependency of the server and TUI entry points", async () => {
-    const packageJson = await readJson<{ dependencies?: Record<string, string> }>(
-      path.join(packageRoot, "package.json"),
-    );
+  test("owns the non-host runtime dependencies of the server and TUI entry points", async () => {
+    const packageJson = await readOwnManifest();
 
     expect(packageJson.dependencies?.["@opencode-ai/plugin"]).toBeDefined();
-    expect(packageJson.dependencies?.["@opentui/core"]).toBeDefined();
-    expect(packageJson.dependencies?.["@opentui/keymap"]).toBeDefined();
-    expect(packageJson.dependencies?.["@opentui/solid"]).toBeDefined();
     expect(packageJson.dependencies?.["@uniqbit/mate-core"]).toBeDefined();
   });
 
-  test("declares OpenTUI versions compatible with the resolved @opencode-ai/plugin peers", async () => {
-    const packageJson = await readJson<{ dependencies: Record<string, string> }>(
-      path.join(packageRoot, "package.json"),
-    );
+  test("declares OpenTUI as optional host-provided peers, never as dependencies", async () => {
+    const packageJson = await readOwnManifest();
+
+    for (const name of OPENTUI_PACKAGES) {
+      expect(packageJson.dependencies?.[name]).toBeUndefined();
+      expect(packageJson.peerDependencies?.[name]).toBeDefined();
+      expect(packageJson.peerDependenciesMeta?.[name]?.optional).toBe(true);
+    }
+  });
+
+  test("declares OpenTUI peer floors compatible with the resolved @opencode-ai/plugin peers", async () => {
+    const packageJson = await readOwnManifest();
     const resolvedPluginManifest = await import.meta
       .resolve("@opencode-ai/plugin/package.json")
       .replace("file://", "");
-    const opencodePlugin = await readJson<{ peerDependencies?: Record<string, string> }>(
-      resolvedPluginManifest,
-    );
+    const opencodePlugin = await readJson<PackageManifest>(resolvedPluginManifest);
 
-    const peers = opencodePlugin.peerDependencies ?? {};
-    for (const name of ["@opentui/core", "@opentui/keymap", "@opentui/solid"]) {
-      const peerRange = peers[name];
-      expect(peerRange).toBeDefined();
+    const hostPeers = opencodePlugin.peerDependencies ?? {};
+    for (const name of OPENTUI_PACKAGES) {
+      const hostRange = hostPeers[name];
+      expect(hostRange).toBeDefined();
 
-      // The declared range's minimum version must satisfy the peer floor, so
-      // installs of the published plugin package resolve OpenTUI versions the
-      // supported @opencode-ai/plugin release accepts.
-      const declaredRange = packageJson.dependencies[name];
-      const minimumVersion = declaredRange.replace(/^[\^~]/, "");
-      expect(Bun.semver.satisfies(minimumVersion, peerRange!)).toBe(true);
+      const declaredRange = packageJson.peerDependencies?.[name];
+      expect(declaredRange).toBeDefined();
+      const minimumVersion = declaredRange!.replace(/^(?:>=|[\^~])/, "");
+      expect(Bun.semver.satisfies(minimumVersion, hostRange!)).toBe(true);
     }
   });
 
   test("keeps the shared mate-core dependency pinned to the coordinated version", async () => {
-    const packageJson = await readJson<{
-      version: string;
-      dependencies: Record<string, string>;
-    }>(path.join(packageRoot, "package.json"));
+    const packageJson = await readOwnManifest();
 
-    expect(packageJson.dependencies["@uniqbit/mate-core"]).toBe(packageJson.version);
+    expect(packageJson.dependencies?.["@uniqbit/mate-core"]).toBe(packageJson.version);
   });
 });

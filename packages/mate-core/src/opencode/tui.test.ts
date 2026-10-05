@@ -6,6 +6,7 @@ import path from "node:path";
 import { MATE_ENV } from "../runtime/env-names";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import type { MateSlotClaim, MateTuiApi } from "./tui";
 
 const tempRoots: string[] = [];
 
@@ -55,55 +56,64 @@ async function inUnmanagedSession<T>(cwd: string, fn: () => Promise<T>): Promise
   }
 }
 
-describe("Mate OpenCode TUI plugin", () => {
-  test("keeps full home/sidebar content and adds a compact active-session footer", async () => {
-    const source = await fs.readFile(path.resolve(import.meta.dirname, "./tui.tsx"), "utf8");
+function fakeApi(): { api: MateTuiApi; claims: MateSlotClaim[] } {
+  const claims: MateSlotClaim[] = [];
+  const api: MateTuiApi = {
+    theme: { text: { muted: "#808080" } },
+    ui: {
+      slot(claim) {
+        claims.push(claim);
+        return () => {};
+      },
+    },
+  };
+  return { api, claims };
+}
 
-    expect(source).toContain("slots: {\n      home_bottom()");
-    expect(source).toContain("sidebar_content()");
-    expect(source).toContain("app_bottom()");
-    expect(source).toContain("api.renderer.width >= NARROW_TERMINAL_WIDTH");
-    expect(source).toContain('api.route.current.name !== "session"');
-    expect(source).toContain("compact />");
-    expect(source).toContain("sidebar />");
-    expect(source).toContain("order: 0");
-    expect(source).toContain("mate v{MATE_VERSION}");
-    expect(source).toContain("context.stalenessLines.map");
-    expect(source).not.toContain("managed session");
-    expect(source).not.toContain("showToast");
+describe("Mate OpenCode TUI plugin", () => {
+  test("default export is a V2 TUI plugin module", async () => {
+    const { default: tuiPlugin } = await import("./tui");
+
+    expect(typeof tuiPlugin.id).toBe("string");
+    expect(tuiPlugin.id.length).toBeGreaterThan(0);
+    expect(typeof tuiPlugin.setup).toBe("function");
+    expect(tuiPlugin).not.toHaveProperty("tui");
   });
 
-  test("registers its slots from a projection when the environment is empty", async () => {
+  test("claims home footer and sidebar placements from a projection when the environment is empty", async () => {
     const { repo } = await wrappedRepo();
     const { default: tuiPlugin } = await import("./tui");
-    const registered: unknown[] = [];
-    const api = { slots: { register: (entry: unknown) => registered.push(entry) } };
+    const { api, claims } = fakeApi();
 
-    await inUnmanagedSession(repo, () => tuiPlugin.tui(api as never));
+    await inUnmanagedSession(repo, async () => tuiPlugin.setup(api));
 
-    expect(registered).toHaveLength(1);
+    expect(claims.map(({ render: _render, ...placement }) => placement)).toEqual([
+      { prepend: "home.footer" },
+      { append: "sidebar.content" },
+    ]);
+    for (const claim of claims) expect(typeof claim.render).toBe("function");
   });
 
-  test("registers nothing when neither the environment nor a projection resolves", async () => {
+  test("claims nothing when neither the environment nor a projection resolves", async () => {
     const bare = await fs.mkdtemp(path.join(os.tmpdir(), "mate-tui-unwrapped-"));
     tempRoots.push(bare);
     const { default: tuiPlugin } = await import("./tui");
-    const registered: unknown[] = [];
-    const api = { slots: { register: (entry: unknown) => registered.push(entry) } };
+    const { api, claims } = fakeApi();
 
-    await inUnmanagedSession(bare, () => tuiPlugin.tui(api as never));
+    await inUnmanagedSession(bare, async () => tuiPlugin.setup(api));
 
-    expect(registered).toHaveLength(0);
+    expect(claims).toHaveLength(0);
   });
 
-  test("is exported through the core ./opencode subpath", async () => {
+  test("is exported through the core ./opencode/tui subpath, not the ./opencode barrel", async () => {
     const packageJson = JSON.parse(
       await fs.readFile(path.resolve(import.meta.dirname, "..", "..", "package.json"), "utf8"),
     ) as { exports?: Record<string, string> };
 
+    expect(packageJson.exports?.["./opencode/tui"]).toBe("./src/opencode/tui.tsx");
     expect(packageJson.exports?.["./opencode"]).toBe("./src/opencode/index.ts");
 
     const index = await fs.readFile(path.resolve(import.meta.dirname, "index.ts"), "utf8");
-    expect(index).toContain('export { default as tuiPlugin } from "./tui"');
+    expect(index).not.toMatch(/from\s+["']\.\/tui["']/);
   });
 });

@@ -1,82 +1,79 @@
 /** @jsxImportSource @opentui/solid */
 /* oxlint-disable react/no-unknown-property, react/react-in-jsx-scope, react/jsx-key, react-doctor/jsx-key */
 /**
+ * OpenCode V2 TUI plugin module (`{ id, setup }`), OpenCode 2.x only.
  * Solid JSX, not React: `key` is not a reconciliation prop here and `TextProps`
  * does not accept it, so the jsx-key rules cannot be satisfied — only suppressed.
  * Static arrays render through `.map`; a reactive one would need `<For>`.
  */
-import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui";
-
 import { mateVersion } from "../runtime/install";
 import { readContext } from "./companion-policy";
 
+/** Minimal structural slice of the OpenCode V2 TUI API; the published SDK ships no V2 TUI types. */
+export type MateTuiApi = {
+  /** Host getter: returns the current theme tokens on every read. */
+  readonly theme: {
+    text: {
+      muted: string;
+      feedback?: { warning?: { base: string } };
+    };
+  };
+  ui: {
+    slot(claim: MateSlotClaim): () => void;
+  };
+};
+
+export type MateSlotClaim = {
+  prepend?: "home.footer";
+  append?: "sidebar.content";
+  render: () => unknown;
+};
+
+export type MateTuiPluginModule = {
+  id: string;
+  setup(api: MateTuiApi): void | Promise<void>;
+};
+
 const MIDNIGHT_PURPLE_BRIGHT = "#c084fc";
-const NARROW_TERMINAL_WIDTH = 80;
 const MATE_VERSION = process.env.MATE_VERSION ?? mateVersion();
 
-function SessionContext({
-  api,
-  compact = false,
-  sidebar = false,
-}: {
-  api: TuiPluginApi;
-  compact?: boolean;
-  sidebar?: boolean;
-}) {
+function SessionContext({ api, sidebar = false }: { api: MateTuiApi; sidebar?: boolean }) {
   const context = readContext();
-  const theme = api.theme.current;
-
-  if (compact) {
-    return (
-      <box width="100%" paddingTop={0} flexShrink={0}>
-        <text fg={theme.textMuted}>
-          mate v{MATE_VERSION} | repo: {context.repositoryPath} | mate: {context.companionPath}
-        </text>
-      </box>
-    );
-  }
+  const text = api.theme.text;
+  const warning = text.feedback?.warning?.base ?? text.muted;
 
   return (
-    <box width="100%" maxWidth={75} paddingTop={sidebar ? 0 : 2} paddingBottom={1} flexShrink={0}>
+    <box
+      width="100%"
+      maxWidth={sidebar ? undefined : 75}
+      paddingLeft={sidebar ? 0 : 2}
+      paddingRight={sidebar ? 0 : 2}
+      paddingBottom={sidebar ? 1 : 0}
+      flexShrink={0}
+    >
       <text fg={MIDNIGHT_PURPLE_BRIGHT}>mate v{MATE_VERSION}</text>
-      <text fg={theme.textMuted}>repo: {context.repositoryPath}</text>
-      <text fg={theme.textMuted}>mate: {context.companionPath}</text>
+      <text fg={text.muted}>repo: {context.repositoryPath}</text>
+      <text fg={text.muted}>mate: {context.companionPath}</text>
       {context.stalenessLines.map((note) => (
-        <text fg={theme.warning ?? theme.textMuted}>{note}</text>
+        <text fg={warning}>{note}</text>
       ))}
     </box>
   );
 }
 
-const tui: TuiPlugin = async (api) => {
+function setup(api: MateTuiApi): void {
   const context = readContext();
   if (!context.companionPath || !context.repositoryPath) {
     return;
   }
 
-  api.slots.register({
-    order: 0,
-    slots: {
-      home_bottom() {
-        return <SessionContext api={api} />;
-      },
-      sidebar_content() {
-        return <SessionContext api={api} sidebar />;
-      },
-      app_bottom() {
-        if (api.renderer.width >= NARROW_TERMINAL_WIDTH || api.route.current.name !== "session") {
-          return null;
-        }
+  api.ui.slot({ prepend: "home.footer", render: () => <SessionContext api={api} /> });
+  api.ui.slot({ append: "sidebar.content", render: () => <SessionContext api={api} sidebar /> });
+}
 
-        return <SessionContext api={api} compact />;
-      },
-    },
-  });
-};
-
-const plugin: TuiPluginModule & { id: string } = {
+const plugin: MateTuiPluginModule = {
   id: "mate-companion-tui",
-  tui,
+  setup,
 };
 
 export default plugin;
