@@ -165,7 +165,7 @@ describe("packed @uniqbit/mate-opencode-plugin", () => {
     expect(tuiSmoke.status).toBe(0);
   }, 240_000);
 
-  test("packed tarball ships only the source entry points and package manifest", async () => {
+  test("packed tarball ships only the source and root entry points and package manifest", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-plugin-pack-files-"));
     tempRoots.push(root);
 
@@ -176,6 +176,8 @@ describe("packed @uniqbit/mate-opencode-plugin", () => {
     const entries = list.stdout.split("\n").filter(Boolean);
     expect(entries).toContain("package/src/server.ts");
     expect(entries).toContain("package/src/tui.tsx");
+    expect(entries).toContain("package/server.ts");
+    expect(entries).toContain("package/tui.tsx");
     expect(entries).toContain("package/package.json");
     expect(entries.some((entry) => entry.includes("test"))).toBe(false);
   });

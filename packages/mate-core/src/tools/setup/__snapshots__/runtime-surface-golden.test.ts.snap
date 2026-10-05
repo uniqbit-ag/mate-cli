@@ -237,7 +237,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -249,8 +249,8 @@ exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {
@@ -464,7 +464,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -476,8 +476,8 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {
@@ -1021,7 +1021,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -1045,8 +1045,8 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -1270,7 +1270,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -1294,8 +1294,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -1781,7 +1781,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -1794,8 +1794,8 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -1954,7 +1954,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -1967,8 +1967,8 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -2425,7 +2425,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -2437,8 +2437,8 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -2623,7 +2623,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -2635,8 +2635,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -3111,7 +3111,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -3123,8 +3123,8 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -3327,7 +3327,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -3339,8 +3339,8 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -3793,7 +3793,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -3818,8 +3818,8 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {
@@ -4216,7 +4216,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -4228,8 +4228,8 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -4275,7 +4275,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -4287,8 +4287,8 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -4335,7 +4335,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -4347,8 +4347,8 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -4394,7 +4394,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -4406,8 +4406,8 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},
@@ -4453,7 +4453,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
     "$schema": "https://opencode.ai/config.json",
     "compaction": {
       "auto": true,
-      "buffer": 15000,
+      "buffer": 20000,
       "keep": {
         "tokens": 15000,
       },
@@ -4465,8 +4465,8 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
       "mate": "..",
     },
     "tool_output": {
-      "max_bytes": 20000,
-      "max_lines": 500,
+      "max_bytes": 40000,
+      "max_lines": 1000,
     },
   },
   "opencodePlugins": {},

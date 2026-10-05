@@ -739,7 +739,7 @@ describe("executeSetup", () => {
       expect(mergedConfig.plugin).toBeUndefined();
       expect(mergedConfig.compaction.prune).toBeUndefined();
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_lines": 10');
-      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_bytes": 20000');
+      await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"max_bytes": 40000');
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"mate": ".."');
 
       const migratedTuiConfig = JSON.parse(await fs.readFile(tuiConfigPath, "utf8"));

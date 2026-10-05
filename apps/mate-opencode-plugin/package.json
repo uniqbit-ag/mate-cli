@@ -4,6 +4,8 @@
   "description": "OpenCode plugin integration for Mate.",
   "license": "MIT",
   "files": [
+    "server.ts",
+    "tui.tsx",
     "src/",
     "!src/**/*.test.ts"
   ],

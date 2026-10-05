@@ -2,14 +2,14 @@
   "$schema": "https://opencode.ai/config.json",
   "compaction": {
     "auto": true,
-    "buffer": 15000,
+    "buffer": 20000,
     "keep": {
       "tokens": 15000
     }
   },
   "tool_output": {
-    "max_lines": 500,
-    "max_bytes": 20000
+    "max_lines": 1000,
+    "max_bytes": 40000
   },
   "references": {
     "mate": ".."
