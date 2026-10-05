@@ -155,7 +155,7 @@ describe("packed @uniqbit/mate-opencode-plugin", () => {
     /** OpenCode provides OpenTUI to TUI plugins; simulate that host before loading `./tui`. */
     const hostOpenTui = runInProject(project, [
       "add",
-      ...OPENTUI_PACKAGES.map((name) => `${name}@^0.4.5`),
+      ...OPENTUI_PACKAGES.map((name) => `${name}@^0.5.14`),
     ]);
     expect(hostOpenTui.status).toBe(0);
 

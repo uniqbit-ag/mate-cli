@@ -30,15 +30,15 @@
     "@uniqbit/mate-core": "0.17.0-canary.11"
   },
   "devDependencies": {
-    "@opentui/core": "^0.4.5",
-    "@opentui/keymap": "^0.4.5",
-    "@opentui/solid": "^0.4.5",
+    "@opentui/core": "^0.5.14",
+    "@opentui/keymap": "^0.5.14",
+    "@opentui/solid": "^0.5.14",
     "@types/bun": "^1.3.14"
   },
   "peerDependencies": {
-    "@opentui/core": ">=0.4.5",
-    "@opentui/keymap": ">=0.4.5",
-    "@opentui/solid": ">=0.4.5"
+    "@opentui/core": ">=0.5.14",
+    "@opentui/keymap": ">=0.5.14",
+    "@opentui/solid": ">=0.5.14"
   },
   "peerDependenciesMeta": {
     "@opentui/core": {
