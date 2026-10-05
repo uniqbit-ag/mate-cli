@@ -110,22 +110,29 @@ CI=1 npm install -g "$CLI_TARBALL"
 # @uniqbit/mate-opencode-plugin@<local version> in the global OpenCode config,
 # but neither OpenCode's on-demand install nor mate's prefetch can fetch an
 # unpublished version from npm — without this seed the plugin silently never
-# loads. Mirrors OpenCode's layout: <cache>/packages/<spec>/ containing a
-# package.json plus node_modules; OpenCode skips install when
-# node_modules/<name> already exists and imports the package's ./server export.
-OPENCODE_SPEC_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/opencode/packages/@uniqbit/mate-opencode-plugin@$VERSION"
-rm -rf "$OPENCODE_SPEC_DIR"
-mkdir -p "$OPENCODE_SPEC_DIR"
+# loads. OpenCode (>= 2.0) resolves <cache>/npm/<spec>/<generation>/, picking
+# the highest numeric (epoch-ms) generation, and skips install when its
+# node_modules/<name> exists; it then imports the package's ./server export.
+# Older OpenCode used <cache>/packages/<spec>/ directly, so seed both.
+OPENCODE_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
+OPENCODE_SPEC="@uniqbit/mate-opencode-plugin@$VERSION"
+OPENCODE_NPM_SPEC_DIR="$OPENCODE_CACHE_DIR/npm/$OPENCODE_SPEC"
+OPENCODE_SEED_DIR="$OPENCODE_NPM_SPEC_DIR/$(node -p 'Date.now()')"
+OPENCODE_LEGACY_SPEC_DIR="$OPENCODE_CACHE_DIR/packages/$OPENCODE_SPEC"
+rm -rf "$OPENCODE_NPM_SPEC_DIR" "$OPENCODE_LEGACY_SPEC_DIR"
+mkdir -p "$OPENCODE_SEED_DIR" "$(dirname "$OPENCODE_LEGACY_SPEC_DIR")"
 # package.json must exist before npm install: npm otherwise walks up to
 # ~/.cache/opencode/package.json and installs the plugin there.
 printf '{\n  "dependencies": {\n    "@uniqbit/mate-opencode-plugin": "%s"\n  }\n}\n' "$VERSION" \
-  > "$OPENCODE_SPEC_DIR/package.json"
-(cd "$OPENCODE_SPEC_DIR" && CI=1 npm install --no-audit --no-fund --no-save --silent \
+  > "$OPENCODE_SEED_DIR/package.json"
+(cd "$OPENCODE_SEED_DIR" && CI=1 npm install --no-audit --no-fund --no-save --silent \
   "$OUT_DIR/uniqbit-mate-opencode-plugin-$VERSION.tgz")
-echo "Seeded OpenCode plugin cache: $OPENCODE_SPEC_DIR"
+cp -a "$OPENCODE_SEED_DIR" "$OPENCODE_LEGACY_SPEC_DIR"
+echo "Seeded OpenCode plugin cache: $OPENCODE_SEED_DIR"
+echo "                              $OPENCODE_LEGACY_SPEC_DIR (legacy layout)"
 
 echo ""
 echo "Installed: mate $(mate --version)"
 echo "Try it:    mate sync --check   (read-only staleness report)"
 echo "Restore:   npm install -g @uniqbit/mate@latest"
-echo "           (then remove the seeded dir above so OpenCode reinstalls from npm)"
+echo "           (then remove the seeded dirs above so OpenCode reinstalls from npm)"

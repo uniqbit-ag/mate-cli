@@ -30,6 +30,7 @@ describe("OpenCode plugin import isolation", () => {
         if (
           specifier === "@uniqbit/mate-core/runtime" ||
           specifier === "@uniqbit/mate-core/opencode" ||
+          specifier === "@uniqbit/mate-core/opencode/tui" ||
           specifier === "@uniqbit/mate-core/tui"
         ) {
           continue;
