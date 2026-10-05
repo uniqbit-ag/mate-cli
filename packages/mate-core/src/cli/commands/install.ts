@@ -15,8 +15,14 @@ import {
   type PluginInstallResult,
 } from "../../tools/setup/dynamic-plugins/install";
 import { registryConfigHint } from "../../tools/setup/dynamic-plugins/registry-hint";
+import {
+  FrozenInstallError,
+  installDeclaredPluginsFrozen,
+} from "../../tools/setup/dynamic-plugins/frozen";
+import { verifyTrackedPluginOutputs } from "../../tools/setup/dynamic-plugins/staging";
+import { verifyDeclaredPlugins } from "../../tools/setup/dynamic-plugins/verify";
 
-export function reportPluginInstallResults(results: PluginInstallResult[]): void {
+export function reportPluginInstallResults(results: PluginInstallResult[]): boolean {
   for (const result of results) {
     if (result.status === "failed") {
       process.stderr.write(
@@ -27,6 +33,7 @@ export function reportPluginInstallResults(results: PluginInstallResult[]): void
       console.log(`  installed plugin ${result.package}@${result.resolvedVersion}`);
     }
   }
+  return results.every((result) => result.status !== "failed");
 }
 
 function printPlanText(plan: Awaited<ReturnType<typeof inspectInstallPlan>>): void {
@@ -47,10 +54,17 @@ function printPlanText(plan: Awaited<ReturnType<typeof inspectInstallPlan>>): vo
  * @description Installs and verifies the core runtime and dependencies selected by the current companion.
  * @flags
  * - `--yes` — skip confirmation; required for non-TTY execution.
+ * - `--frozen-plugins` — deployment restore: install declared plugins exactly from the committed lockfile, verify plugin-generated tracked files are committed, never rewrite tracked files.
  */
 export async function runInstallCommand(argv: string[], cwd = process.cwd()): Promise<boolean> {
   const skipConfirm = argv.includes("--yes");
+  const frozen = argv.includes("--frozen-plugins");
   const context = await resolveInstallContext(cwd);
+  if (frozen && context.kind !== "companion") {
+    process.stderr.write(`${FRAMEWORK_NAME}: --frozen-plugins requires a companion context.\n`);
+    process.exitCode = 1;
+    return false;
+  }
   if (context.kind === "ambiguous") {
     process.stderr.write(`${context.message}\n`);
     process.exitCode = 1;
@@ -64,10 +78,35 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     context.companionPath &&
     context.config.plugins?.length
   ) {
-    reportPluginInstallResults(
-      await installDeclaredPlugins(context.companionPath, context.config.plugins),
-    );
+    let results: PluginInstallResult[];
+    try {
+      results = frozen
+        ? await installDeclaredPluginsFrozen(context.companionPath, context.config.plugins)
+        : await installDeclaredPlugins(context.companionPath, context.config.plugins);
+    } catch (error) {
+      if (!(error instanceof FrozenInstallError)) throw error;
+      process.stderr.write(`${FRAMEWORK_NAME}: frozen plugin install refused: ${error.message}\n`);
+      process.exitCode = 1;
+      return false;
+    }
+    if (!reportPluginInstallResults(results)) {
+      process.stderr.write(
+        `${FRAMEWORK_NAME}: a declared plugin failed to install; installation is incomplete.\n`,
+      );
+      process.exitCode = 1;
+      return false;
+    }
     await hydrateDynamicPlugins({ companionPath: context.companionPath });
+    if (frozen) {
+      const failures = await verifyDeclaredPlugins(context.companionPath);
+      if (failures.length > 0) {
+        for (const failure of failures) {
+          process.stderr.write(`${FRAMEWORK_NAME}: plugin ${failure.package}: ${failure.reason}\n`);
+        }
+        process.exitCode = 1;
+        return false;
+      }
+    }
   }
   const plan = await inspectInstallPlan(buildInstallPlan(context));
   const missing = plan.requirements.filter((item) => !item.satisfied);
@@ -120,7 +159,22 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
   }
 
   try {
-    await reconcileInstalledCompanion(plan);
+    if (frozen && plan.context.companionPath) {
+      const { syncCompanionFiles } = await import("../../tools/setup");
+      const drift = await verifyTrackedPluginOutputs(plan.context.companionPath, (staged) =>
+        syncCompanionFiles(staged, plan.context.config),
+      );
+      if (drift.length > 0) {
+        process.stderr.write(
+          `${FRAMEWORK_NAME}: plugin-generated files differ from the committed checkout: ${drift.join(", ")}\n` +
+            `Prepare and commit them in the companion's authoring flow; the checkout was left unchanged.\n`,
+        );
+        process.exitCode = 1;
+        return false;
+      }
+    } else {
+      await reconcileInstalledCompanion(plan);
+    }
     await saveCompleteInstallState(plan, execution.results);
   } catch (error) {
     process.stderr.write(

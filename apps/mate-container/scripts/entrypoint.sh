@@ -34,20 +34,24 @@ fail() { log "$*"; exit 1; }
 # Startup. Nothing is served until all of it has succeeded, so a failed startup
 # leaves nothing running and the container never reports itself ready.
 # ---------------------------------------------------------------------------
-PLAN="$("$BUN" "$STARTUP_SCRIPT")" || exit 1
-eval "$PLAN" || fail "the startup plan could not be read"
-
-: "${MATE_PLAN_COMPANION:?startup produced no companion}"
-: "${MATE_PLAN_STUDIO_PORT:?startup produced no Studio port}"
 
 # Credentials never touch the filesystem: they are evaluated straight into this
 # shell's environment, inherited by Studio and the agent sessions it starts, and
-# gone when the container is.
+# gone when the container is. They come before the startup plan because that
+# plan runs Mate, which hydrates the companion's declared plugins, and a plugin
+# configured with `${VARIABLE}` needs the credentials and the plugin allowlist
+# already in its environment.
 CREDENTIALS="$("$BUN" "$STARTUP_SCRIPT" --credentials)" || exit 1
 if [[ -n "$CREDENTIALS" ]]; then
   eval "$CREDENTIALS" || fail "the supplied credentials could not be read"
 fi
 unset CREDENTIALS
+
+PLAN="$("$BUN" "$STARTUP_SCRIPT")" || exit 1
+eval "$PLAN" || fail "the startup plan could not be read"
+
+: "${MATE_PLAN_COMPANION:?startup produced no companion}"
+: "${MATE_PLAN_STUDIO_PORT:?startup produced no Studio port}"
 
 STUDIO_ARGS=(studio serve --port "$MATE_PLAN_STUDIO_PORT" --host "$MATE_PLAN_STUDIO_HOST")
 [[ -n "$MATE_PLAN_STUDIO_WRITABLE" ]] && STUDIO_ARGS+=(--writable)

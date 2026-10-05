@@ -90,6 +90,8 @@ function config(overrides: Partial<ApplianceConfig> = {}): ApplianceConfig {
     gitUserName: null,
     gitUserEmail: null,
     credentials: {},
+    allowedPlugins: null,
+    setupHint: null,
     removed: [],
     ...overrides,
   };
@@ -408,6 +410,69 @@ describe("what startup hands the supervisor", () => {
     makeCompanion(path.join(root, "acme"));
     const plan = renderPlan(prepareStartup(applianceConfig, deps()));
     expect(plan).not.toContain("secret");
+  });
+
+  test("the plugin allowlist is exported with the credentials, an empty one included", () => {
+    expect(renderCredentials(config())).not.toContain("MATE_ALLOWED_PLUGINS");
+    expect(renderCredentials(config({ allowedPlugins: "@acme/*,@other/one" }))).toContain(
+      "export MATE_ALLOWED_PLUGINS='@acme/*,@other/one'",
+    );
+    expect(renderCredentials(config({ allowedPlugins: "" }))).toContain(
+      "export MATE_ALLOWED_PLUGINS=''",
+    );
+  });
+
+  test("with an allowlist, plugins are verified in the companion before Studio and nothing installs", () => {
+    const companion = makeCompanion(path.join(root, "acme"));
+    const { run, calls } = recorder();
+    prepareStartup(config({ allowedPlugins: "@acme/*" }), deps({ run }));
+    expect(calls).toContainEqual(["mate", "plugin", "verify"]);
+    expect(calls.some((call) => call.includes("install"))).toBe(false);
+    void companion;
+  });
+
+  test("without an allowlist, plugins are not verified", () => {
+    makeCompanion(path.join(root, "acme"));
+    const { run, calls } = recorder();
+    prepareStartup(config(), deps({ run }));
+    expect(calls.some((call) => call.includes("verify"))).toBe(false);
+  });
+
+  test("a plugin that is not ready stops startup with the reason", () => {
+    makeCompanion(path.join(root, "acme"));
+    const { run } = recorder({
+      "plugin verify": {
+        status: 1,
+        stdout: "",
+        stderr: "plugin @acme/reader: not installed; run setup",
+      },
+    });
+    expect(() => prepareStartup(config({ allowedPlugins: "@acme/*" }), deps({ run }))).toThrow(
+      /@acme\/reader: not installed/,
+    );
+  });
+
+  test("an unknown capability is refused by name even when an allowed plugin might supply it", () => {
+    makeCompanion(
+      path.join(root, "acme"),
+      FRAMEWORK.replace("- name: openspec", "- name: acme-reader"),
+    );
+    expect(() => prepareStartup(config({ allowedPlugins: "@acme/*" }), deps())).toThrow(
+      /capability "acme-reader"/,
+    );
+  });
+
+  test("an absent checkout gets the operator's setup command, a missing package is named by verify", () => {
+    fs.mkdirSync(path.join(root, "empty"));
+    expect(() =>
+      prepareStartup(
+        config({
+          companionsDir: path.join(root, "empty"),
+          setupHint: "Run `docker compose run --rm setup`.",
+        }),
+        deps(),
+      ),
+    ).toThrow(/docker compose run --rm setup/);
   });
 
   test("a pinned Studio token travels with the credentials, never the plan", () => {

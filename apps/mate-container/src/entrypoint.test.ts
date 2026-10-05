@@ -401,6 +401,16 @@ describe("the supervisor script itself", () => {
     expect(policyAt).toBeLessThan(firstMateAt);
   });
 
+  test("exports credentials and the plugin policy before the startup plan runs Mate", () => {
+    const source = fs.readFileSync(ENTRYPOINT, "utf8");
+    const credentialsAt = source.indexOf('"$BUN" "$STARTUP_SCRIPT" --credentials');
+    const evalAt = source.indexOf('eval "$CREDENTIALS"');
+    const planAt = source.indexOf('PLAN="$("$BUN" "$STARTUP_SCRIPT")"');
+    expect(credentialsAt).toBeGreaterThan(-1);
+    expect(evalAt).toBeGreaterThan(credentialsAt);
+    expect(planAt).toBeGreaterThan(evalAt);
+  });
+
   test("refuses a bash too old for the wait it relies on", () => {
     const source = fs.readFileSync(ENTRYPOINT, "utf8");
     expect(source).toContain("BASH_VERSINFO");

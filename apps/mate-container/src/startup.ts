@@ -207,10 +207,24 @@ export function prepareStartup(
     deps.log(`registered ${companion}`);
   }
 
-  const companion = selectCompanion(companions, config.companion);
+  const companion = selectCompanion(companions, config.companion, config.setupHint);
   deps.log(`serving ${companion}`);
 
   assertRequirementsCarried(readCompanionSelections(companion), deps.onPath);
+
+  // With a policy, every declared plugin must be allowed, installed and
+  // loadable under the credentials this process already carries. Nothing is
+  // installed to make it so.
+  if (config.allowedPlugins !== null) {
+    const verified = deps.run(deps.mate, ["plugin", "verify"], companion);
+    if (verified.status !== 0) {
+      throw new StartupError(
+        `The declared plugins of ${companion} are not ready:\n` +
+          `${(verified.stderr || verified.stdout).trim() || `mate exited ${verified.status}`}\n` +
+          `Nothing was installed to repair this. Run setup, or change the allowlist or credentials.`,
+      );
+    }
+  }
 
   // Filesystem-only: preparation validates the image's bundle and copies it.
   const prepared = deps.run(deps.mate, [
@@ -266,11 +280,18 @@ export function renderPlan(plan: StartupPlan): string {
  * evaluates them straight into Studio's environment, which agent sessions
  * inherit. Studio's pinned token travels the same way rather than as an
  * argument a process listing would show; Studio strips it from each launch.
+ * The plugin allowlist is not secret but travels with them so one evaluation
+ * gives a process both its credentials and its policy.
  */
 export function renderCredentials(config: ApplianceConfig): string {
   const lines = Object.entries(config.credentials).map(
     ([name, value]) => `export ${name}=${shellQuote(value)}`,
   );
+  // Exported before any Mate process may hydrate a plugin, so every child
+  // enforces the effective policy, an explicitly empty one included.
+  if (config.allowedPlugins !== null) {
+    lines.push(`export MATE_ALLOWED_PLUGINS=${shellQuote(config.allowedPlugins)}`);
+  }
   if (config.studioToken !== null) {
     lines.push(`export MATE_STUDIO_TOKEN=${shellQuote(config.studioToken)}`);
   }

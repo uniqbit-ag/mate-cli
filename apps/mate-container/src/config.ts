@@ -44,6 +44,13 @@ export interface ApplianceConfig {
   gitUserEmail: string | null;
   /** Passed into the agent sessions' environment untouched, and never written into a companion. */
   credentials: Record<string, string>;
+  /**
+   * Comma-separated allowlist of declared plugin packages. Null: no policy;
+   * an empty string: an explicit policy that allows none.
+   */
+  allowedPlugins: string | null;
+  /** Appended to the error for a missing companion, e.g. the operator's setup command. */
+  setupHint: string | null;
   /** Settings this container no longer has but the operator still sets; warned about, not refused. */
   removed: string[];
 }
@@ -194,6 +201,22 @@ export const SETTINGS: Setting[] = [
     key: "credentials",
     meaning:
       "The agents' own credentials, passed into every agent session's environment untouched. A file is the sensible place for these; in the environment, `NAME=value` pairs one per line.",
+    default: null,
+    required: false,
+  },
+  {
+    env: "MATE_ALLOWED_PLUGINS",
+    key: "allowedPlugins",
+    meaning:
+      "The npm packages a companion may declare as plugins: comma-separated exact names or scope patterns such as `@acme/*`. Unset: no restriction. Set but empty: none allowed. A scope pattern trusts every package published to that scope; it is a trust decision, not a sandbox.",
+    default: null,
+    required: false,
+  },
+  {
+    env: "MATE_SETUP_HINT",
+    key: "setupHint",
+    meaning:
+      "Text added to the error reported when no companion is found, such as the command that sets one up.",
     default: null,
     required: false,
   },
@@ -421,6 +444,28 @@ function credentials(setting: Setting, raw: unknown): Record<string, string> {
   return result;
 }
 
+const PLUGIN_NAME = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
+const PLUGIN_SCOPE = /^@[a-z0-9][a-z0-9._~-]*\/\*$/;
+
+/** Same grammar mate-core enforces; validated here so a typo stops startup by name. */
+function allowedPlugins(setting: Setting, raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  const entries = (Array.isArray(raw) ? raw.map(String) : String(raw).split(","))
+    .map((entry) => entry.trim())
+    .filter((entry, _, all) => entry !== "" || all.length > 1);
+  if (entries.length === 1 && entries[0] === "") return "";
+  for (const entry of entries) {
+    if (!PLUGIN_NAME.test(entry) && !PLUGIN_SCOPE.test(entry)) {
+      throw new ConfigError(
+        setting.env,
+        entry,
+        'must list exact package names or scope patterns such as "@acme/*"',
+      );
+    }
+  }
+  return entries.join(",");
+}
+
 function setting(env: string): Setting {
   const found = SETTINGS.find((candidate) => candidate.env === env);
   if (!found) throw new Error(`no such setting: ${env}`);
@@ -464,6 +509,8 @@ export function resolveConfig(
     gitUserName: optionalText(read("MATE_GIT_USER_NAME")),
     gitUserEmail: optionalText(read("MATE_GIT_USER_EMAIL")),
     credentials: credentials(setting("MATE_AGENT_CREDENTIALS"), read("MATE_AGENT_CREDENTIALS")),
+    allowedPlugins: allowedPlugins(setting("MATE_ALLOWED_PLUGINS"), read("MATE_ALLOWED_PLUGINS")),
+    setupHint: optionalText(read("MATE_SETUP_HINT")),
     removed: REMOVED_SETTINGS.filter(
       (name) => env[name] !== undefined || file[REMOVED_KEYS[name]] !== undefined,
     ),

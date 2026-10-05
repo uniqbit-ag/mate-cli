@@ -1,5 +1,6 @@
 import { usage } from "../../usage";
 import { runPluginInstallCommand } from "./install";
+import { runPluginVerifyCommand } from "./verify";
 
 export async function runPluginCommand(
   subcommand: string | undefined,
@@ -8,6 +9,9 @@ export async function runPluginCommand(
   switch (subcommand) {
     case "install":
       await runPluginInstallCommand(argv);
+      return;
+    case "verify":
+      await runPluginVerifyCommand();
       return;
     default:
       console.error(`Unknown plugin command: ${subcommand ?? ""}`);

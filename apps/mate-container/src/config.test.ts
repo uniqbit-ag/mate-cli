@@ -48,6 +48,8 @@ describe("every setting is readable from both sources", () => {
       MATE_GIT_USER_NAME: "Appliance",
       MATE_GIT_USER_EMAIL: "appliance@example.com",
       MATE_AGENT_CREDENTIALS: "ANTHROPIC_API_KEY=secret",
+      MATE_ALLOWED_PLUGINS: "@acme/*, plain-plugin",
+      MATE_SETUP_HINT: "Run setup.",
     };
     const config = resolveConfig(env, noFile);
     expect(config).toEqual({
@@ -66,6 +68,8 @@ describe("every setting is readable from both sources", () => {
       gitUserName: "Appliance",
       gitUserEmail: "appliance@example.com",
       credentials: { ANTHROPIC_API_KEY: "secret" },
+      allowedPlugins: "@acme/*,plain-plugin",
+      setupHint: "Run setup.",
       removed: [],
     });
   });
@@ -256,6 +260,31 @@ describe("the terminal settings", () => {
       resolveConfig({ MATE_AGENT_PORT: "4096" }, file({ agentHost: "0.0.0.0" })).removed,
     ).toEqual(["MATE_AGENT_PORT", "MATE_AGENT_HOST"]);
     expect(SETTINGS.map((setting) => setting.env)).not.toContain("MATE_AGENT_PORT");
+  });
+});
+
+describe("the plugin allowlist", () => {
+  test("absent is no policy; explicitly empty is a policy that allows none", () => {
+    expect(resolveConfig({}, noFile).allowedPlugins).toBeNull();
+    expect(resolveConfig({ MATE_ALLOWED_PLUGINS: "" }, noFile).allowedPlugins).toBe("");
+    expect(resolveConfig({}, file({ allowedPlugins: [] })).allowedPlugins).toBe("");
+  });
+
+  test("the file supplies it and the environment takes precedence, an empty override included", () => {
+    const fromFile = file({ allowedPlugins: ["@acme/reader", "@acme/writer"] });
+    expect(resolveConfig({}, fromFile).allowedPlugins).toBe("@acme/reader,@acme/writer");
+    expect(resolveConfig({ MATE_ALLOWED_PLUGINS: "@other/*" }, fromFile).allowedPlugins).toBe(
+      "@other/*",
+    );
+    expect(resolveConfig({ MATE_ALLOWED_PLUGINS: "" }, fromFile).allowedPlugins).toBe("");
+  });
+
+  test("malformed entries stop startup naming the setting", () => {
+    for (const bad of ["@acme", "*", "a,,b", "@acme/re*der"]) {
+      expect(() => resolveConfig({ MATE_ALLOWED_PLUGINS: bad }, noFile)).toThrow(
+        /MATE_ALLOWED_PLUGINS/,
+      );
+    }
   });
 });
 
