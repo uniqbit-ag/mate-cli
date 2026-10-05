@@ -13,6 +13,7 @@ import {
   companionUpdateDeps,
   diffChangedPaths,
   DELETED,
+  isOpenSpecGenerated,
   runCompanionUpdateCommand,
   snapshotChangedPaths,
 } from "./update";
@@ -317,6 +318,38 @@ describe("mate companion update — commit scope", () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(git.commit).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
+  });
+
+  test("commits rewritten OpenSpec skills and commands that were already uncommitted", async () => {
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, ".claude/skills/openspec-propose/SKILL.md", "stale");
+    write(world, ".opencode/commands/opsx-apply.md", "stale");
+    const { git } = setup({
+      world,
+      sync: (w) => {
+        write(w, ".claude/skills/openspec-propose/SKILL.md", "regenerated");
+        write(w, ".opencode/commands/opsx-apply.md", "regenerated");
+      },
+      answers: [true, false],
+    });
+    const { err } = await run();
+    expect(err).toBe("");
+    const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
+    expect(committed).toEqual([
+      ".claude/skills/openspec-propose/SKILL.md",
+      ".mate/config/framework.yaml",
+      ".opencode/commands/opsx-apply.md",
+    ]);
+  });
+
+  test("matches only OpenSpec CLI output as regenerated", () => {
+    expect(isOpenSpecGenerated(".claude/skills/openspec-explore/SKILL.md")).toBe(true);
+    expect(isOpenSpecGenerated(".opencode/skills/openspec-sync-specs/")).toBe(true);
+    expect(isOpenSpecGenerated(".claude/commands/opsx/apply.md")).toBe(true);
+    expect(isOpenSpecGenerated(".opencode/commands/opsx-archive.md")).toBe(true);
+    expect(isOpenSpecGenerated(".claude/skills/mate-grill-me/SKILL.md")).toBe(false);
+    expect(isOpenSpecGenerated(".claude/skills/")).toBe(false);
+    expect(isOpenSpecGenerated("openspec/config.yaml")).toBe(false);
   });
 
   test("reports up to date without prompting when nothing was written", async () => {
