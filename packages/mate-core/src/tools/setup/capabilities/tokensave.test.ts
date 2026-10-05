@@ -13,6 +13,7 @@ import {
   TOKENSAVE_STORE_DIR,
   TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
   ensureTokensaveBranchingPosture,
+  isTokensaveAgentIntegrated,
   tokensaveDeps,
   createTokensavePlugin,
 } from "./tokensave";
@@ -600,6 +601,93 @@ describe("tokensavePlugin.isEnabled", () => {
         capabilities: [{ name: "graphify" }],
       }),
     ).toBe(false);
+  });
+});
+
+describe("tokensave agent integration install requirements", () => {
+  let originalDeps: typeof tokensaveDeps;
+  let home: string;
+
+  beforeEach(async () => {
+    originalDeps = { ...tokensaveDeps };
+    home = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-home-"));
+    tempRoots.push(home);
+    tokensaveDeps.homeDir = () => home;
+    tokensaveDeps.isCommandOnPath = () => false;
+  });
+
+  afterEach(() => {
+    Object.assign(tokensaveDeps, originalDeps);
+  });
+
+  const requirementsFor = (allowedAgents: string[]) =>
+    tokensavePlugin.getInstallRequirements?.({
+      config: { allowedAgents, capabilities: [{ name: "tokensave" }] },
+    }) ?? [];
+
+  test("adds one integration requirement per enabled supported provider", () => {
+    const ids = requirementsFor(["opencode", "codex", "claude"]).map((r) => r.id);
+    expect(ids).toEqual([
+      "capability:tokensave",
+      "capability:tokensave:claude",
+      "capability:tokensave:opencode",
+    ]);
+  });
+
+  test("adds no integration requirement for disabled providers", () => {
+    expect(requirementsFor(["opencode"]).map((r) => r.id)).not.toContain(
+      "capability:tokensave:claude",
+    );
+  });
+
+  test("detects claude integration from global settings and rules", async () => {
+    expect(await isTokensaveAgentIntegrated("claude")).toBe(false);
+    await fs.mkdir(path.join(home, ".claude", "rules"), { recursive: true });
+    await fs.writeFile(
+      path.join(home, ".claude", "settings.json"),
+      JSON.stringify({ permissions: { allow: ["mcp__tokensave__*"] } }),
+    );
+    expect(await isTokensaveAgentIntegrated("claude")).toBe(false);
+    await fs.writeFile(path.join(home, ".claude", "rules", "tokensave.md"), "");
+    expect(await isTokensaveAgentIntegrated("claude")).toBe(true);
+  });
+
+  test("detects opencode integration from global config and rules", async () => {
+    const dir = path.join(home, ".config", "opencode");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "tokensave.md"), "");
+    await fs.writeFile(path.join(dir, "opencode.json"), "{}");
+    expect(await isTokensaveAgentIntegrated("opencode")).toBe(false);
+    await fs.writeFile(
+      path.join(dir, "opencode.json"),
+      JSON.stringify({ mcp: { tokensave: { type: "local" } } }),
+    );
+    expect(await isTokensaveAgentIntegrated("opencode")).toBe(true);
+  });
+
+  test("install runs tokensave install for the agent without git hooks", async () => {
+    const runMock = mock(() => ({ ok: true, stderr: "", stdout: "" }));
+    tokensaveDeps.run = runMock;
+    const requirement = requirementsFor(["claude"]).find(
+      (r) => r.id === "capability:tokensave:claude",
+    );
+    await requirement?.install();
+    expect(runMock.mock.calls[0]?.[0]).toEqual([
+      "install",
+      "--agent",
+      "claude",
+      "--git-hook",
+      "no",
+      "--wildcard-permissions",
+    ]);
+  });
+
+  test("install throws when tokensave install fails", async () => {
+    tokensaveDeps.run = () => ({ ok: false, stderr: "boom", stdout: "" });
+    const requirement = requirementsFor(["claude"]).find(
+      (r) => r.id === "capability:tokensave:claude",
+    );
+    await expect(requirement!.install()).rejects.toThrow("boom");
   });
 });
 

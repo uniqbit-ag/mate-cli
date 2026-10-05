@@ -681,8 +681,8 @@ function main(argv: string[]): number {
   }
 
   const inputs = readImageInputs();
-  const image = option(argv, "image") ?? `mate-appliance:${inputs.mate.minimum_compatible}`;
-  const mateVersion = option(argv, "mate-version") ?? inputs.mate.minimum_compatible;
+  const image = option(argv, "image") ?? `mate-appliance:${inputs.mate.version}`;
+  const mateVersion = option(argv, "mate-version") ?? inputs.mate.version;
   const skipStartup = argv.includes("--no-startup");
 
   const checks = report(

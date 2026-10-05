@@ -78,9 +78,9 @@ function main(argv: string[]): number {
   }
 
   const inputs = readImageInputs();
-  // A local build defaults to the minimum compatible version; the publication
-  // workflow passes the release's own version instead.
-  const mateVersion = option(argv, "mate-version") ?? inputs.mate.minimum_compatible;
+  // Defaults to the pinned version: the global-tools lock installs exactly it,
+  // and the Dockerfile rejects any other `MATE_VERSION`.
+  const mateVersion = option(argv, "mate-version") ?? inputs.mate.version;
   const tag = option(argv, "tag") ?? `mate-appliance:${mateVersion}`;
   const platform = option(argv, "platform");
 

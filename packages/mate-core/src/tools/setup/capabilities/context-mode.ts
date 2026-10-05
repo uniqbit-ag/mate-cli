@@ -18,6 +18,7 @@ import type {
   RuntimeContributionsByRuntime,
   SetupContext,
 } from "../plugin";
+import type { InstallRequirement } from "../install-contract";
 import { readClaudeMcpConfig } from "../providers/claude-format";
 import { getOpenCodePluginReferences, readOpenCodeConfig } from "../providers/opencode-format";
 import { pruneEmptyAncestors } from "../utils";
@@ -153,6 +154,30 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
           ],
         },
       };
+    },
+    /**
+     * The machine-local workspace is gitignored, so a fresh checkout has none;
+     * `mate install` provisions it here because sync-mode apply only validates.
+     */
+    getInstallRequirements: ({ companionPath }): InstallRequirement[] => {
+      if (!companionPath) return [];
+      const command = `npm install ${getContextModePackageReference()} (in .mate/plugins/.local)`;
+      return [
+        {
+          id: "capability:context-mode",
+          label: "Context Mode package",
+          group: "companion",
+          source: "Context Mode capability",
+          command,
+          fingerprint: `context-mode:${command}`,
+          detect: () =>
+            validatePackage(companionPath).then(
+              () => true,
+              () => false,
+            ),
+          install: () => installPackage(companionPath),
+        },
+      ];
     },
     async apply(ctx) {
       const legacyInstallDir = getLegacyInstallDir(ctx.companionPath);

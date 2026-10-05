@@ -78,6 +78,49 @@ describe("createContextModePlugin", () => {
     expect(validatePackage).toHaveBeenCalledTimes(1);
   });
 
+  test("declares a companion install requirement that provisions a missing package", async () => {
+    const ctx = await makeContext();
+    const installPackage = mock(async () => {});
+    const validatePackage = mock(async () => {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+    const plugin = createContextModePlugin({ installPackage, validatePackage });
+
+    const [requirement, ...rest] =
+      plugin.getInstallRequirements?.({ companionPath: ctx.companionPath, config: ctx.config }) ??
+      [];
+
+    expect(rest).toHaveLength(0);
+    expect(requirement?.id).toBe("capability:context-mode");
+    expect(requirement?.group).toBe("companion");
+    expect(requirement?.command).toContain(getContextModePackageReference());
+    expect(await requirement?.detect()).toBe(false);
+    await requirement?.install();
+    expect(installPackage).toHaveBeenCalledWith(ctx.companionPath);
+  });
+
+  test("install requirement is satisfied by a valid installed package", async () => {
+    const ctx = await makeContext();
+    const validatePackage = mock(async () => {});
+    const plugin = createContextModePlugin({ validatePackage });
+
+    const [requirement] =
+      plugin.getInstallRequirements?.({ companionPath: ctx.companionPath, config: ctx.config }) ??
+      [];
+
+    expect(await requirement?.detect()).toBe(true);
+    expect(validatePackage).toHaveBeenCalledWith(ctx.companionPath);
+  });
+
+  test("declares no install requirement without a companion", () => {
+    const plugin = createContextModePlugin();
+    expect(
+      plugin.getInstallRequirements?.({
+        config: { allowedAgents: [], capabilities: [{ name: "context-mode" }] },
+      }),
+    ).toEqual([]);
+  });
+
   test("removes a leftover legacy .mate/dependencies tree on apply", async () => {
     const ctx = await makeContext();
     const legacyDir = path.join(ctx.companionPath, ".mate", "dependencies", "context-mode");

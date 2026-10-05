@@ -25,9 +25,6 @@
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.18.3",
-    "@opentui/core": "^0.4.5",
-    "@opentui/keymap": "^0.4.5",
-    "@opentui/solid": "^0.4.5",
     "@uniqbit/mate-core": "0.17.0-canary.11"
   },
   "devDependencies": {

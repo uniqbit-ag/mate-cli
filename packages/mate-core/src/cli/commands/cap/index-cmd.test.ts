@@ -188,7 +188,7 @@ describe("runIndexCapCommand", () => {
 
     expect(calls).toEqual(["exclude"]);
     expect(invocations).toEqual([
-      { runner: "tokensave", args: ["init"] },
+      { runner: "tokensave", args: ["init", "--no-git-hook"] },
       { runner: "tokensave", args: ["sync"] },
     ]);
     expect(process.exitCode).toBe(0);
@@ -212,7 +212,7 @@ describe("runIndexCapCommand", () => {
 
     await runIndexCapCommand([], deps);
 
-    expect(calls).toEqual(["exclude", "tokensave init", "posture", "tokensave sync"]);
+    expect(calls).toEqual(["exclude", "tokensave init --no-git-hook", "posture", "tokensave sync"]);
     expect(process.exitCode).toBe(0);
   });
 
@@ -314,7 +314,7 @@ describe("runIndexCapCommand", () => {
 
     await runIndexCapCommand([], deps);
 
-    expect(invocations).toEqual([{ runner: "tokensave", args: ["init"] }]);
+    expect(invocations).toEqual([{ runner: "tokensave", args: ["init", "--no-git-hook"] }]);
     expect(process.exitCode).toBe(1);
   });
 
