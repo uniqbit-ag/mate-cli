@@ -47,10 +47,17 @@ describe("checkEngineRequirement", () => {
     expect(result.reason).toContain("invalid");
   });
 
-  test("blocks a canary current version behind the required range", () => {
-    const result = checkEngineRequirement(config({ mate: ">=0.15.0" }), "mate", "0.15.0-canary.1");
+  test("blocks a canary current version below the required range", () => {
+    const result = checkEngineRequirement(config({ mate: ">=0.15.0" }), "mate", "0.14.9-canary.1");
     expect(result.ok).toBe(false);
   });
+
+  for (const version of ["0.16.0-canary.1", "0.16.0-local.1"]) {
+    test(`allows a ${version.split("-")[1].split(".")[0]} version at the required release`, () => {
+      const result = checkEngineRequirement(config({ mate: ">=0.16.0" }), "mate", version);
+      expect(result).toEqual({ ok: true });
+    });
+  }
 
   test("allows a canary current version ahead of the required range", () => {
     const result = checkEngineRequirement(config({ mate: ">=0.14.0" }), "mate", "0.15.0-canary.1");

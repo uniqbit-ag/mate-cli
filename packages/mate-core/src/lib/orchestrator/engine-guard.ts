@@ -27,7 +27,15 @@ export function checkEngineRequirement(
     };
   }
 
-  const satisfied = semver.satisfies(currentVersion, range, { includePrerelease: true });
+  const current = semver.parse(currentVersion);
+  const currentReleaseVersion =
+    current && current.prerelease.length > 0
+      ? `${current.major}.${current.minor}.${current.patch}`
+      : null;
+  const satisfied =
+    semver.satisfies(currentVersion, range, { includePrerelease: true }) ||
+    (currentReleaseVersion !== null &&
+      semver.satisfies(currentReleaseVersion, range, { includePrerelease: true }));
   if (!satisfied) {
     return {
       ok: false,
