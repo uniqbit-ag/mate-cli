@@ -42,7 +42,6 @@ export function usage(): string {
     ` ${n} cap graphify <subcommand> [args...]`,
     ` ${n} cap index [--graphify] [--tokensave]`,
     ` ${n} plugin install <package>[@version]`,
-    ` ${n} plugin verify`,
     ...pluginCliCommandLines(),
     ` ${n} update`,
     ` ${n} update --check`,

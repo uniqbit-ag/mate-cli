@@ -426,7 +426,7 @@ describe("what startup hands the supervisor", () => {
     const companion = makeCompanion(path.join(root, "acme"));
     const { run, calls } = recorder();
     prepareStartup(config({ allowedPlugins: "@acme/*" }), deps({ run }));
-    expect(calls).toContainEqual(["mate", "plugin", "verify"]);
+    expect(calls).toContainEqual(["mate", "doctor"]);
     expect(calls.some((call) => call.includes("install"))).toBe(false);
     void companion;
   });
@@ -435,13 +435,13 @@ describe("what startup hands the supervisor", () => {
     makeCompanion(path.join(root, "acme"));
     const { run, calls } = recorder();
     prepareStartup(config(), deps({ run }));
-    expect(calls.some((call) => call.includes("verify"))).toBe(false);
+    expect(calls.some((call) => call.includes("doctor"))).toBe(false);
   });
 
   test("a plugin that is not ready stops startup with the reason", () => {
     makeCompanion(path.join(root, "acme"));
     const { run } = recorder({
-      "plugin verify": {
+      "mate doctor": {
         status: 1,
         stdout: "",
         stderr: "plugin @acme/reader: not installed; run setup",

@@ -216,7 +216,7 @@ export function prepareStartup(
   // loadable under the credentials this process already carries. Nothing is
   // installed to make it so.
   if (config.allowedPlugins !== null) {
-    const verified = deps.run(deps.mate, ["plugin", "verify"], companion);
+    const verified = deps.run(deps.mate, ["doctor"], companion);
     if (verified.status !== 0) {
       throw new StartupError(
         `The declared plugins of ${companion} are not ready:\n` +

@@ -288,16 +288,11 @@ describe("command gating", () => {
       errors.push(args.join(" "));
     });
     try {
-      for (const argv of [
-        ["hub", "sync"],
-        ["companion", "hub", "sync"],
-      ]) {
-        const { gateCalls, deps } = recordingDeps({ rootKind: "companion" });
-        process.exitCode = 0;
-        await main(["node", "mate", ...argv], deps);
-        expect(gateCalls).toEqual(["root"]);
-        expect(process.exitCode).toBe(1);
-      }
+      const { gateCalls, deps } = recordingDeps({ rootKind: "companion" });
+      process.exitCode = 0;
+      await main(["node", "mate", "hub", "sync"], deps);
+      expect(gateCalls).toEqual(["root"]);
+      expect(process.exitCode).toBe(1);
       expect(dispatched).toEqual([]);
       expect(errors.join("\n")).toContain("companion root");
     } finally {
@@ -342,17 +337,6 @@ describe("command gating", () => {
     await main(["node", "mate", "claude"], deps);
     expect(gateCalls).toEqual(["companion", "install"]);
     expect(dispatched).toEqual(["claude"]);
-  });
-
-  test("deprecated launch aliases use the selected agent launch path", async () => {
-    const claude = recordingDeps();
-    await main(["node", "mate", "launch", "claude", "--", "--yes"], claude.deps);
-    expect(claude.gateCalls).toEqual(["companion", "install"]);
-
-    const opencode = recordingDeps();
-    await main(["node", "mate", "launch", "opencode", "--", "--yes"], opencode.deps);
-    expect(opencode.gateCalls).toEqual(["companion", "install"]);
-    expect(dispatched).toEqual(["claude", "opencode"]);
   });
 
   test("an ambiguous companion still blocks launch commands", async () => {

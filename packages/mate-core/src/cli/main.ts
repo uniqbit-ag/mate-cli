@@ -200,12 +200,6 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
         case "prepare":
           if (!(await gate({ updateGuard: true }))) return;
           break;
-        // Hub commands establish and operate on a local hub root directly;
-        // they must not require a linked working repository or installation —
-        // but companions are never hubs.
-        case "hub":
-          if (!(await gate({ updateGuard: true, notCompanionRoot: true }))) return;
-          break;
         // open/tui/sync/update consume a companion context.
         case "open":
         case "tui":
@@ -252,29 +246,6 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
         return;
       await runLaunchOpenCodeCommand(argv.slice(3), { directPassthrough: true });
       return;
-    case "launch": {
-      const launchArgs = argv.slice(4);
-      const companion = parseDirectLaunchArgs(launchArgs).scope === "companion";
-      if (subcommand !== "claude" && subcommand !== "opencode") {
-        console.error(`${FRAMEWORK_NAME}: expected launch claude or launch opencode.`);
-        process.exitCode = 1;
-        return;
-      }
-
-      const launchCommand =
-        subcommand === "claude" ? runLaunchClaudeCommand : runLaunchOpenCodeCommand;
-      if (
-        !(await gate({
-          updateGuard: true,
-          companion: companion ? { persistSelection: false } : true,
-          install: true,
-        }))
-      )
-        return;
-
-      await launchCommand(launchArgs, { directPassthrough: true });
-      return;
-    }
     case "report":
       if (!(await gate({ updateGuard: true, install: true }))) return;
       await runReportCommand(argv.slice(3));

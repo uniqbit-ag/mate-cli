@@ -174,6 +174,64 @@ describe("runDoctorCommand", () => {
     expect(output).toContain("none");
   });
 
+  test("names declared plugins that fail verification and exits non-zero", async () => {
+    const root = await makeTempDir("doctor-plugins-");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
+    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    const verified: string[] = [];
+    const stderr: string[] = [];
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      stderr.push(String(chunk));
+      return true;
+    });
+    const originalExitCode = process.exitCode;
+
+    try {
+      const output = await captureStdout(() =>
+        runDoctorCommand([], {
+          cwd: root,
+          globalConfigStore,
+          verifyPlugins: async (companionPath) => {
+            verified.push(companionPath);
+            return [{ package: "@acme/reader", reason: "not installed" }];
+          },
+        }),
+      );
+
+      expect(verified).toEqual([root]);
+      expect(output).toContain("Declared Plugins");
+      expect(output).toContain("@acme/reader");
+      expect(stderr.join("")).toContain(`${FRAMEWORK_NAME}: plugin @acme/reader: not installed`);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      stderrSpy.mockRestore();
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
+  test("omits the declared plugins section and keeps a zero exit when plugins verify", async () => {
+    const root = await makeTempDir("doctor-plugins-ok-");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
+    await fs.writeFile(localConfigPath, "allowedAgents:\n  - claude\n", "utf8");
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    try {
+      const output = await captureStdout(() =>
+        runDoctorCommand([], { cwd: root, globalConfigStore, verifyPlugins: async () => [] }),
+      );
+
+      expect(output).not.toContain("Declared Plugins");
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = originalExitCode ?? 0;
+    }
+  });
+
   test("reports required-plugin drift when a required capability is missing from the config", async () => {
     const { createMate } = await import("../../create-mate");
     const { resetActiveDistribution } = await import("../../distribution");
