@@ -14,6 +14,7 @@ import {
 } from "../../../lib/update-checker";
 import { resolveCompanionRuntime } from "../../../runtime/env";
 import { syncCompanionFiles } from "../../../tools/setup";
+import { MANAGED_MATE_SKILL_NAMES } from "../../../tools/setup/mate";
 import { runCommand } from "../../../tools/setup/utils";
 import { confirm } from "../../confirm";
 import { defaultGitOps, type GitOps } from "../artifact/finish/git";
@@ -37,6 +38,15 @@ const OPENSPEC_GENERATED = [
 
 export function isOpenSpecGenerated(relativePath: string): boolean {
   return OPENSPEC_GENERATED.some((pattern) => pattern.test(relativePath));
+}
+
+/** Mate-owned skills: `applyMateSkills` overwrites them wholesale, so a local edit there never survives a sync. */
+const MATE_MANAGED_SKILL = new RegExp(
+  `^\\.(claude|agents|opencode)/skills/(${MANAGED_MATE_SKILL_NAMES.join("|")})(/|$)`,
+);
+
+export function isMateManagedSkill(relativePath: string): boolean {
+  return MATE_MANAGED_SKILL.test(relativePath);
 }
 
 function frameworkConfigPath(companionPath: string): string {
@@ -129,6 +139,8 @@ export const companionUpdateDeps: CompanionUpdateDeps = {
 export interface UpdateChanges {
   written: string[];
   conflict: string[];
+  /** Mate-managed skills whose uncommitted edits the update replaced. */
+  overwritten: string[];
 }
 
 /** Content snapshot of every uncommitted path, taken before the update writes. */
@@ -151,15 +163,30 @@ export async function diffChangedPaths(
 ): Promise<UpdateChanges> {
   const written: string[] = [];
   const conflict: string[] = [];
+  const overwritten: string[] = [];
   for (const changed of await git.changedPaths()) {
     if (!before.has(changed)) written.push(changed);
   }
-  for (const [changed, hash] of before) {
-    if ((await companionUpdateDeps.snapshotPath(companionPath, changed)) === hash) continue;
+  const preexisting = await Promise.all(
+    [...before].map(async ([changed, hash]) => ({
+      changed,
+      openspec: isOpenSpecGenerated(changed),
+      mate: isMateManagedSkill(changed),
+      unchanged: (await companionUpdateDeps.snapshotPath(companionPath, changed)) === hash,
+    })),
+  );
+  for (const { changed, openspec, mate, unchanged } of preexisting) {
+    /** Generated output is committed even when a prior run already wrote identical content. */
+    if (!openspec && !mate && unchanged) continue;
     written.push(changed);
-    if (!isOpenSpecGenerated(changed)) conflict.push(changed);
+    if (openspec || (mate && unchanged)) continue;
+    (mate ? overwritten : conflict).push(changed);
   }
-  return { written: written.toSorted(), conflict: conflict.toSorted() };
+  return {
+    written: written.toSorted(),
+    conflict: conflict.toSorted(),
+    overwritten: overwritten.toSorted(),
+  };
 }
 
 async function resolveCompanion(cwd: string): Promise<string | undefined> {
@@ -311,7 +338,7 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
     return;
   }
 
-  const { written, conflict } = await diffChangedPaths(companionPath, git, before);
+  const { written, conflict, overwritten } = await diffChangedPaths(companionPath, git, before);
   if (written.length === 0) {
     process.stdout.write(
       `${FRAMEWORK_NAME}: ${companionPath} is already up to date with ${FRAMEWORK_NAME} ${version}.\n`,
@@ -328,6 +355,15 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
     return;
   }
 
+  if (overwritten.length > 0) {
+    process.stderr.write(
+      [
+        `${FRAMEWORK_NAME}: warning: the update overwrote local edits to Mate-managed skills:`,
+        listPaths(overwritten),
+        "",
+      ].join("\n"),
+    );
+  }
   process.stdout.write(
     [`${FRAMEWORK_NAME}: the update changed ${companionPath}:`, listPaths(written), ""].join("\n"),
   );
