@@ -19,6 +19,7 @@ import { runSetupFlowAtPath } from "../setup";
 import { runInstallCommand } from "../install";
 import type { CompanionSource, LinkedRepository } from "../../../lib/orchestrator/types";
 import { invalidateInstallState } from "../../../lib/install";
+import { toSshUrl } from "../../../runtime/companion-git";
 
 interface CompanionLinkCommandDeps {
   selectCompanionLinkInputs?: (
@@ -59,23 +60,6 @@ export const companionLinkCommandDeps = {
 
 export async function runCompanionLinkCommand(argv: string[]): Promise<void> {
   return companionLinkCommandDeps.runCompanionLinkCommandWithDeps(argv);
-}
-
-function toSshUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url.trim());
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-    if (!parsed.hostname || parsed.pathname === "/") return null;
-
-    const repositoryPath = parsed.pathname.replace(/^\/+/, "");
-    if (!repositoryPath) return null;
-
-    // Keep the usual scp-style form when no SSH port is specified.
-    if (!parsed.port) return `git@${parsed.hostname}:${repositoryPath}`;
-    return `ssh://git@${parsed.hostname}:${parsed.port}/${repositoryPath}`;
-  } catch {
-    return null;
-  }
 }
 
 function exitWithError(message: string): never {

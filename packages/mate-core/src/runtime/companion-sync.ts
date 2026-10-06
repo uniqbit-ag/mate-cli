@@ -30,6 +30,7 @@ import {
   outputLines,
   resolveUpstreamTargetSync,
   runGitSync,
+  runPreferringSsh,
   type CompanionForkState,
 } from "./companion-git";
 import { hasLaunchEnvironment } from "./env";
@@ -130,10 +131,10 @@ export function syncCompanionUnattended(
     );
   }
 
-  const fetch = runGitSync(
-    companionPath,
+  const fetch = runPreferringSsh(
+    (args) => runGitSync(companionPath, args, remaining()),
     ["fetch", "--no-progress", target.remote, target.branch],
-    remaining(),
+    (result) => result,
   );
   if (fetch.status !== 0) {
     if (isAuthenticationFailure(fetch)) {

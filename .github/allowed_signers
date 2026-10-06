@@ -1,0 +1,2 @@
+# Release tag signers. CI reads this file from main only; see .github/workflows/release.yml.
+12394370+timosg@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAH1dKEnV8bkTFzs5szSR8p5KgArznasAFbqpLdN84rf

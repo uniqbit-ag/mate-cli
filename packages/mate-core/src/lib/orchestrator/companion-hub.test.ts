@@ -155,6 +155,35 @@ describe("companion hub lifecycle", () => {
     expect(await fs.stat(path.join(hub, "companions", "acme")).catch(() => null)).toBeNull();
   });
 
+  test("clones over SSH first and falls back to the given HTTPS URL", async () => {
+    const root = await makeTempDir("hub-ssh-clone-");
+    const { source } = await makeGitCompanion(root);
+    const hub = path.join(root, "hub");
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
+    const cloned: string[] = [];
+    const sshFailing = (cwd: string, args: string[]) => {
+      if (args[0] !== "clone") return defaultGitCommand(cwd, args);
+      const url = args.at(-2)!;
+      cloned.push(url);
+      if (url.startsWith("git@")) {
+        return { status: 128, stdout: "", stderr: "Permission denied (publickey)." };
+      }
+      return defaultGitCommand(cwd, ["clone", source, args.at(-1)!]);
+    };
+
+    const member = await materializeHubMember(
+      hub,
+      { kind: "git", url: "https://example.test/acme/acme.git" },
+      { git: sshFailing },
+    );
+
+    expect(cloned).toEqual([
+      "git@example.test:acme/acme.git",
+      "https://example.test/acme/acme.git",
+    ]);
+    expect(member.materializedCommit).toBeTruthy();
+  });
+
   test("fast-forwards clean Git children and protects dirty children", async () => {
     const root = await makeTempDir("hub-sync-");
     const { source } = await makeGitCompanion(root);

@@ -3,6 +3,8 @@
   "git": {
     "commitMessage": "chore(release): ${version}",
     "tagName": "${version}",
+    "commitArgs": ["-S"],
+    "tagArgs": ["-s"],
     "tagExclude": "*-*",
     "requireBranch": "main",
     "requireCleanWorkingDir": true,
