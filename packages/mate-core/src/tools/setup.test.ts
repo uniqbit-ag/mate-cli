@@ -245,6 +245,7 @@ describe("executeSetup", () => {
     const originalRunCommand = tokensaveDeps.runCommand;
     const originalIsCommandOnPath = tokensaveDeps.isCommandOnPath;
     const originalPathValue = tokensaveDeps.pathValue;
+    const originalPlatform = tokensaveDeps.platform;
     const versionChecks: string[] = [];
     const installCalls: Array<{ command: string; args: string[] }> = [];
 
@@ -262,6 +263,7 @@ describe("executeSetup", () => {
     tokensaveDeps.runCommand = runCommandMock;
     tokensaveDeps.isCommandOnPath = (command) => command === "brew";
     tokensaveDeps.pathValue = () => "/opt/homebrew/bin";
+    tokensaveDeps.platform = () => "darwin";
 
     try {
       await executeSetup(
@@ -291,6 +293,7 @@ describe("executeSetup", () => {
       tokensaveDeps.runCommand = originalRunCommand;
       tokensaveDeps.isCommandOnPath = originalIsCommandOnPath;
       tokensaveDeps.pathValue = originalPathValue;
+      tokensaveDeps.platform = originalPlatform;
     }
   });
 

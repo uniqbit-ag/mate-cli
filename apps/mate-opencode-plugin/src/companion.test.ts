@@ -55,6 +55,7 @@ async function register(directory: string) {
       hooks.set(`${domain}.${name}`, callback);
     };
   const api = {
+    location: { directory },
     session: { hook: recorder("session") },
     shell: { hook: recorder("shell") },
     tool: {

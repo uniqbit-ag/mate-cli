@@ -339,6 +339,8 @@ describe("install execution and state", () => {
     const context = await resolveInstallContext(root);
     const plan = buildInstallPlan(context);
     await saveCompleteInstallState(plan, [], store);
+    /** Host tools decide `ok`; only a change caused by the hub edit matters here. */
+    const before = await inspectInstallPreflight(root, { stateStore: store });
 
     await fs.writeFile(
       configPath,
@@ -357,7 +359,11 @@ describe("install execution and state", () => {
     );
 
     const preflight = await inspectInstallPreflight(root, { stateStore: store });
-    expect(preflight.ok).toBe(true);
+    expect({ ok: preflight.ok, reason: preflight.reason }).toEqual({
+      ok: before.ok,
+      reason: before.reason,
+    });
+    expect(preflight.reason ?? "").not.toMatch(/context has changed|dependency plan has changed/);
   });
 
   test("keeps install state separate for multiple companions", async () => {

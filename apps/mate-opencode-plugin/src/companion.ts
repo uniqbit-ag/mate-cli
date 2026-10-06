@@ -33,8 +33,8 @@ function buildStartupError(details: string[]): Error {
  * an Unmanaged Session in a wrapped repository builds the same payload from the
  * companion the projection names, with the Capability names read live.
  */
-function loadGuidance(): MateGuidanceFile | null {
-  const { guidance, errors } = resolveOpenCodeGuidance();
+function loadGuidance(directory: string): MateGuidanceFile | null {
+  const { guidance, errors } = resolveOpenCodeGuidance(process.env, directory);
   if (errors.length > 0) throw buildStartupError(errors);
   return guidance;
 }
@@ -142,7 +142,7 @@ function mergeCompanionSystem(system: unknown[], companion: string): string[] {
 
 /** Registers guidance, compaction context, shell env, and `companion_paths`. */
 export async function registerCompanion(api: Context, context: CompanionContext): Promise<void> {
-  const guidance = loadGuidance();
+  const guidance = loadGuidance(api.location.directory);
   if (!guidance) return;
 
   const companion = buildSystemPrompt(context, guidance).join("\n");
