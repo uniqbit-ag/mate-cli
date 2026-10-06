@@ -49,6 +49,25 @@ describe("engines parsing", () => {
   });
 });
 
+describe("studio.terminal.agent parsing", () => {
+  test.each([
+    {
+      name: "a name",
+      yaml: "studio:\n  terminal:\n    agent: acme-analyst\n",
+      agent: "acme-analyst",
+    },
+    { name: "no key", yaml: "", agent: undefined },
+    { name: "an unrelated studio key", yaml: "studio:\n  other: 1\n", agent: undefined },
+  ])("loads $name", async ({ yaml, agent }) => {
+    const root = await makeTempDir("config-store-studio-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(configPath, `allowedAgents: []\n${yaml}`, "utf8");
+
+    const config = await new ConfigStore(configPath).load();
+    expect(config.studio?.terminal?.agent).toBe(agent);
+  });
+});
+
 describe("hub manifest parsing", () => {
   test("loads Git source provenance and materialized commit", async () => {
     const root = await makeTempDir("config-store-hub-git-");
