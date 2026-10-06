@@ -307,6 +307,11 @@ versions, so nothing is installed when one starts.
   selected (`MATE_COMPANION`), with that companion as its working directory,
   even while the page browses another registered companion. The terminal
   control names that target.
+- **A companion can set its persona.** `studio.terminal.agent` in the
+  companion's `framework.yaml` selects an agent for every session when its
+  definition exists, such as one a plugin wrote to `.claude/agents/`; otherwise
+  the session starts plain and says so. See [the Studio
+  reference](/mate-cli/reference/studio#agent-terminal).
 - **Sessions outlive their tab.** Closing or reloading the tab, or losing the
   network, detaches the session; the agent keeps running for the detach window
   (`MATE_STUDIO_DETACH_MINUTES`, 30 minutes), and reloading or opening Studio in

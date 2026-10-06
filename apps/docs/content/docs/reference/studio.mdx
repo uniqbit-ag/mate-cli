@@ -147,6 +147,22 @@ missing.
   `serve --companion <path>` pins every launch to that registered companion
   instead, whatever the page shows. `serve --no-git` passes `--no-git` to each
   launch.
+- **Default agent.** A companion can name an agent persona for its terminal
+  sessions in `framework.yaml`:
+
+  ```yaml
+  studio:
+    terminal:
+      agent: acme-analyst
+  ```
+
+  The launch then adds `--agent acme-analyst`, when the companion holds that
+  agent's definition for the started provider (`.claude/agents/acme-analyst.md`
+  for Claude, `.opencode/agents/acme-analyst.md` for OpenCode). Otherwise, or
+  when the name is not lowercase letters, digits and hyphens (up to 64), the
+  session starts plain and the terminal says why. The name comes only from the
+  companion; the page cannot choose it. Without the key, launches are unchanged.
+
 - **One viewer.** A session has one attached tab. Reloading the tab reattaches
   it; any other tab holding the cookie can attach, taking it over, and the
   previous tab is told so and does not reconnect by itself. After a lost
