@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.18.0](https://github.com/uniqbit-ag/mate-cli/compare/0.17.1...0.18.0) (2026-10-06)
+
+### Bug Fixes
+
+- commit Mate-managed skills on companion update and warn on overwritten edits ([d7e3a07](https://github.com/uniqbit-ag/mate-cli/commit/d7e3a0794954b189d7be25a18ffc2a37407ab387))
+
+## [0.18.0-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.17.1...0.18.0) (2026-10-06)
+
+### Features
+
+- install OpenCode skills into shared .agents/skills root ([4d1b159](https://github.com/uniqbit-ag/mate-cli/commit/4d1b159ab007186bdf0ad939749bdbbeebfba451))
+- refresh satisfied install requirements and move skill credits to metadata ([d0692f6](https://github.com/uniqbit-ag/mate-cli/commit/d0692f65d3433d0c420fd3a8d739f83d2b5f9687))
+
+### Bug Fixes
+
+- **release:** hash packed tarball instead of parsing npm pack --json ([356486d](https://github.com/uniqbit-ag/mate-cli/commit/356486d45e9ef5ebd7191d5fad0b686a1a709aed))
+
 ## [0.17.1](https://github.com/uniqbit-ag/mate-cli/compare/0.17.0...0.17.1) (2026-10-06)
 
 ## [0.17.0](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-10-06)
