@@ -11,7 +11,7 @@ export async function runPluginCommand(
       await runPluginInstallCommand(argv);
       return;
     case "verify":
-      await runPluginVerifyCommand();
+      await runPluginVerifyCommand(argv);
       return;
     default:
       console.error(`Unknown plugin command: ${subcommand ?? ""}`);
