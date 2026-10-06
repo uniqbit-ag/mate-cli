@@ -9,6 +9,9 @@
     "apps/*",
     "packages/*"
   ],
+  "devDependencies": {
+    "oxfmt": "^0.72.0"
+  },
   "scripts": {
     "docs": "bun run --filter @uniqbit/mate-docs dev",
     "docs:build": "bun run --filter @uniqbit/mate-docs build",
@@ -23,7 +26,7 @@
     "typecheck": "bun run --filter @uniqbit/mate typecheck",
     "lint": "bunx oxlint apps packages --no-error-on-unmatched-pattern",
     "lint:fix": "bunx oxlint apps packages --fix --no-error-on-unmatched-pattern",
-    "format": "bunx oxfmt apps packages \"!**/*.generated.*\" \"!**/report-assets/**\" --no-error-on-unmatched-pattern",
-    "format:check": "bunx oxfmt apps packages \"!**/*.generated.*\" \"!**/report-assets/**\" --check --no-error-on-unmatched-pattern"
+    "format": "oxfmt apps packages \"!**/*.generated.*\" \"!**/report-assets/**\" --no-error-on-unmatched-pattern",
+    "format:check": "oxfmt apps packages \"!**/*.generated.*\" \"!**/report-assets/**\" --check --no-error-on-unmatched-pattern"
   }
 }
