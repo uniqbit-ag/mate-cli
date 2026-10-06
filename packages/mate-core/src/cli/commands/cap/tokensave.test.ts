@@ -40,7 +40,7 @@ describe("runTokensaveCapCommand", () => {
       spawn: spawn as typeof spawn,
     });
 
-    expect(ensureInstalled).toHaveBeenCalledWith(repoPath, { upgrade: true });
+    expect(ensureInstalled).toHaveBeenCalledWith(repoPath);
     expect(spawn).toHaveBeenCalledWith("tokensave", ["sync"], {
       cwd: repoPath,
       stdio: "inherit",
@@ -60,7 +60,7 @@ describe("runTokensaveCapCommand", () => {
       spawn: spawn as typeof spawn,
     });
 
-    expect(ensureInstalled).toHaveBeenCalledWith(repoPath, { upgrade: true });
+    expect(ensureInstalled).toHaveBeenCalledWith(repoPath);
     expect(spawn).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });

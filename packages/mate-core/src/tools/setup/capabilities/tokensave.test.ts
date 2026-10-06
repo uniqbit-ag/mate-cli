@@ -145,7 +145,7 @@ describe("tokensavePlugin.apply", () => {
       "upgrade",
       "install",
     ]);
-    expect(runMock.mock.calls[1][0]).toEqual(["upgrade", "--kill"]);
+    expect(runMock.mock.calls[1][0]).toEqual(["upgrade"]);
     expect(stderrWrites.join("")).toContain("automatic upgrade failed");
     expect(stderrWrites.join("")).toContain("network unavailable");
   });

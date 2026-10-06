@@ -114,11 +114,12 @@ async function tokensaveInstalled(repoPath: string): Promise<boolean> {
 
 /**
  * Upgrades the installed binary without making setup depend on network
- * availability. `--kill` keeps the non-interactive setup path from hanging on
- * a running Tokensave MCP process.
+ * availability. Never passes `--kill`: it stops every tokensave process on the
+ * machine, including MCP servers of running agent sessions. Without a TTY,
+ * tokensave upgrades and leaves them running.
  */
 async function upgradeTokensave(repoPath: string): Promise<void> {
-  const result = tokensaveDeps.run(["upgrade", "--kill"], repoPath);
+  const result = tokensaveDeps.run(["upgrade"], repoPath);
   if (result.ok) return;
 
   const detail = result.stderr.trim();
