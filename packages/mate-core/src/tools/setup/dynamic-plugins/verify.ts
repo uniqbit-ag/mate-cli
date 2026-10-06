@@ -5,12 +5,6 @@ import type { PluginDeclaration } from "../../../lib/orchestrator/types";
 import { readDeclarations, validateDeclaration } from "./declarations";
 import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
 import { pluginPackageRoot } from "./paths";
-import {
-  disallowedPluginMessage,
-  isPluginAllowed,
-  PluginPolicyError,
-  readPluginPolicy,
-} from "./policy";
 
 export interface PluginVerificationFailure {
   package: string;
@@ -19,15 +13,14 @@ export interface PluginVerificationFailure {
 
 export interface PluginInspection {
   failures: PluginVerificationFailure[];
-  /** IDs of the capabilities the loaded, allowlisted plugins provide. */
+  /** IDs of the capabilities the loaded plugins provide. */
   capabilities: string[];
 }
 
 /**
- * Strict, installation-free check of every declared plugin: allowed, installed
+ * Strict, installation-free check of every declared plugin: installed
  * and loadable with the effective environment. Unlike hydration it fails
- * closed on the first-class problems ordinary commands only warn about. Only
- * allowlisted packages are imported.
+ * closed on the first-class problems ordinary commands only warn about.
  */
 export async function verifyDeclaredPlugins(
   companionPath: string,
@@ -43,14 +36,6 @@ export async function inspectDeclaredPlugins(
   const env = deps.env ?? process.env;
   const failures: PluginVerificationFailure[] = [];
   const capabilities: string[] = [];
-  let policy: ReturnType<typeof readPluginPolicy>;
-  try {
-    policy = readPluginPolicy(env);
-  } catch (error) {
-    if (!(error instanceof PluginPolicyError)) throw error;
-    return { failures: [{ package: "(allowlist)", reason: error.message }], capabilities };
-  }
-
   const declarations: PluginDeclaration[] = [];
   for (const entry of await readDeclarations(companionPath)) {
     const { declaration, error } = validateDeclaration(entry);
@@ -60,10 +45,6 @@ export async function inspectDeclaredPlugins(
 
   for (const declaration of declarations) {
     const name = declaration.package;
-    if (!isPluginAllowed(policy, name)) {
-      failures.push({ package: name, reason: disallowedPluginMessage(name) });
-      continue;
-    }
     // oxlint-disable-next-line no-await-in-loop -- declared order is part of the contract
     const installed = await fs
       .access(pluginPackageRoot(companionPath, name))

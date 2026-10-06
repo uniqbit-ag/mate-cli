@@ -401,7 +401,7 @@ describe("the supervisor script itself", () => {
     expect(policyAt).toBeLessThan(firstMateAt);
   });
 
-  test("exports credentials and the plugin policy before the startup plan runs Mate", () => {
+  test("exports credentials before the startup plan runs Mate", () => {
     const source = fs.readFileSync(ENTRYPOINT, "utf8");
     const credentialsAt = source.indexOf('"$BUN" "$STARTUP_SCRIPT" --credentials');
     const evalAt = source.indexOf('eval "$CREDENTIALS"');
@@ -409,6 +409,15 @@ describe("the supervisor script itself", () => {
     expect(credentialsAt).toBeGreaterThan(-1);
     expect(evalAt).toBeGreaterThan(credentialsAt);
     expect(planAt).toBeGreaterThan(evalAt);
+  });
+
+  test("clears the startup-only tokens after the plan and before Studio starts", () => {
+    const source = fs.readFileSync(ENTRYPOINT, "utf8");
+    const planAt = source.indexOf('PLAN="$("$BUN" "$STARTUP_SCRIPT")"');
+    const unsetAt = source.indexOf("unset MATE_PLUGIN_REGISTRY_TOKEN MATE_GIT_CLONE_TOKEN");
+    const studioAt = source.indexOf('"$MATE" "${STUDIO_ARGS[@]}"');
+    expect(unsetAt).toBeGreaterThan(planAt);
+    expect(unsetAt).toBeLessThan(studioAt);
   });
 
   test("refuses a bash too old for the wait it relies on", () => {

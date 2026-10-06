@@ -64,28 +64,6 @@ async function installTree(
 }
 
 describe("installDeclaredPluginsFrozen", () => {
-  test("refuses an unlisted package before npm runs", async () => {
-    const { companion } = await workspace({});
-    let ran = false;
-    await expect(
-      installDeclaredPluginsFrozen(companion, [READER], {
-        env: { MATE_ALLOWED_PLUGINS: "@other/*" },
-        runNpmCi: () => {
-          ran = true;
-          return { ok: true };
-        },
-      }),
-    ).rejects.toThrow(/@acme\/reader.*not allowed/);
-    expect(ran).toBe(false);
-  });
-
-  test("an explicitly empty allowlist refuses everything", async () => {
-    const { companion } = await workspace({});
-    await expect(
-      installDeclaredPluginsFrozen(companion, [READER], { env: { MATE_ALLOWED_PLUGINS: "" } }),
-    ).rejects.toBeInstanceOf(FrozenInstallError);
-  });
-
   test("refuses an absent lockfile, manifest drift and lockfile drift", async () => {
     const none = await workspace({ lockfile: false });
     await expect(

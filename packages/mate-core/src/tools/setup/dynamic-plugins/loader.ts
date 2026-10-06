@@ -14,12 +14,6 @@ import {
   type PluginHost,
 } from "./host";
 import { dynamicPluginsWorkspaceRoot, pluginPackageRoot } from "./paths";
-import {
-  disallowedPluginMessage,
-  isPluginAllowed,
-  PluginPolicyError,
-  readPluginPolicy,
-} from "./policy";
 
 interface PluginManifest {
   mate?: { pluginApiVersion?: unknown };
@@ -52,16 +46,6 @@ export async function loadDynamicPlugin(
 ): Promise<DynamicPluginLoadResult> {
   const name = declaration.package;
   const packageRoot = pluginPackageRoot(companionPath, name);
-
-  /** Fails closed: a malformed policy allows nothing. Checked before any plugin file is touched. */
-  try {
-    if (!isPluginAllowed(readPluginPolicy(deps.env ?? process.env), name)) {
-      return { ok: false, warning: `${disallowedPluginMessage(name)}; not loaded.` };
-    }
-  } catch (error) {
-    if (!(error instanceof PluginPolicyError)) throw error;
-    return { ok: false, warning: `plugin "${name}" not loaded: ${error.message}` };
-  }
 
   let manifest: PluginManifest;
   try {
