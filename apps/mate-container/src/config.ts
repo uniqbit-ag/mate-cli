@@ -25,6 +25,14 @@ export interface GitLocation {
   directory: string;
 }
 
+export interface PluginRegistry {
+  /** Npm scope including the leading `@`, e.g. `@acme`. */
+  scope: string;
+  /** Registry base URL, always ending in `/`. */
+  url: string;
+  token: string;
+}
+
 export interface ApplianceConfig {
   companionsDir: string;
   companionRepos: GitLocation[];
@@ -44,22 +52,26 @@ export interface ApplianceConfig {
   gitUserEmail: string | null;
   /** Passed into the agent sessions' environment untouched, and never written into a companion. */
   credentials: Record<string, string>;
-  /**
-   * Comma-separated allowlist of declared plugin packages. Null: no policy;
-   * an empty string: an explicit policy that allows none.
-   */
-  allowedPlugins: string | null;
+  /** Scoped plugin registry; null leaves startup setup disabled. Startup-only, never forwarded to Studio. */
+  pluginRegistry: PluginRegistry | null;
+  /** Startup-only credential for cloning private companions; never forwarded to Studio. */
+  gitCloneToken: string | null;
   /** Appended to the error for a missing companion, e.g. the operator's setup command. */
   setupHint: string | null;
   /** Settings this container no longer has but the operator still sets; warned about, not refused. */
   removed: string[];
 }
 
-/** Removed with the `opencode web` session; still recognised so a stale setting is named. */
-export const REMOVED_SETTINGS = ["MATE_AGENT_PORT", "MATE_AGENT_HOST"] as const;
+/** Settings the container dropped; still recognised so a stale one is named. */
+export const REMOVED_SETTINGS = [
+  "MATE_AGENT_PORT",
+  "MATE_AGENT_HOST",
+  "MATE_ALLOWED_PLUGINS",
+] as const;
 const REMOVED_KEYS: Record<(typeof REMOVED_SETTINGS)[number], string> = {
   MATE_AGENT_PORT: "agentPort",
   MATE_AGENT_HOST: "agentHost",
+  MATE_ALLOWED_PLUGINS: "allowedPlugins",
 };
 
 /** Mirrors Studio's own minimum for a pinned token. */
@@ -205,10 +217,26 @@ export const SETTINGS: Setting[] = [
     required: false,
   },
   {
-    env: "MATE_ALLOWED_PLUGINS",
-    key: "allowedPlugins",
+    env: "MATE_PLUGIN_REGISTRY",
+    key: "pluginRegistry",
     meaning:
-      "The npm packages a companion may declare as plugins: comma-separated exact names or scope patterns such as `@acme/*`. Unset: no restriction. Set but empty: none allowed. A scope pattern trusts every package published to that scope; it is a trust decision, not a sandbox. When set, a `capabilities:` entry the image does not carry is accepted if a verified, allowed plugin provides that exact capability ID.",
+      "`<scope>=<registry-url>`, e.g. `@acme=https://registry.acme.test/api/npm/`. Setting it opts in to startup restore: the selected companion's locked plugins are installed from this scoped registry before Studio starts. Requires `MATE_PLUGIN_REGISTRY_TOKEN`. Unset: startup installs nothing. Startup-only; never forwarded to Studio or agent sessions.",
+    default: null,
+    required: false,
+  },
+  {
+    env: "MATE_PLUGIN_REGISTRY_TOKEN",
+    key: "pluginRegistryToken",
+    meaning:
+      "The read token for the scoped plugin registry. Startup-only; never forwarded to Studio or agent sessions.",
+    default: null,
+    required: false,
+  },
+  {
+    env: "MATE_GIT_CLONE_TOKEN",
+    key: "gitCloneToken",
+    meaning:
+      "A read token used only to clone a private location from `MATE_COMPANION_REPOS`; it is never written into the remote URL, command arguments or checkout, and is not forwarded to Studio or agent sessions.",
     default: null,
     required: false,
   },
@@ -444,26 +472,50 @@ function credentials(setting: Setting, raw: unknown): Record<string, string> {
   return result;
 }
 
-const PLUGIN_NAME = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
-const PLUGIN_SCOPE = /^@[a-z0-9][a-z0-9._~-]*\/\*$/;
+const REGISTRY_SCOPE = /^@[a-z0-9][a-z0-9._~-]*$/;
 
-/** Same grammar mate-core enforces; validated here so a typo stops startup by name. */
-function allowedPlugins(setting: Setting, raw: unknown): string | null {
-  if (raw === null || raw === undefined) return null;
-  const entries = (Array.isArray(raw) ? raw.map(String) : String(raw).split(","))
-    .map((entry) => entry.trim())
-    .filter((entry, _, all) => entry !== "" || all.length > 1);
-  if (entries.length === 1 && entries[0] === "") return "";
-  for (const entry of entries) {
-    if (!PLUGIN_NAME.test(entry) && !PLUGIN_SCOPE.test(entry)) {
-      throw new ConfigError(
-        setting.env,
-        entry,
-        'must list exact package names or scope patterns such as "@acme/*"',
-      );
-    }
+/** Validates `<scope>=<url>` plus its token; the token is never echoed. */
+function pluginRegistry(
+  registry: Setting,
+  rawRegistry: unknown,
+  tokenSetting: Setting,
+  rawToken: unknown,
+): PluginRegistry | null {
+  const value = optionalText(rawRegistry);
+  if (value === null) return null;
+  const separator = value.indexOf("=");
+  const scope = separator === -1 ? "" : value.slice(0, separator).trim();
+  const location = separator === -1 ? "" : value.slice(separator + 1).trim();
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(location);
+  } catch {
+    /** Reported below. */
   }
-  return entries.join(",");
+  if (
+    !REGISTRY_SCOPE.test(scope) ||
+    !parsed ||
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new ConfigError(
+      registry.env,
+      "<hidden>",
+      "must be <scope>=<registry-url> with a URL free of credentials, such as @acme=https://registry.acme.test/api/npm/",
+    );
+  }
+  const secret = optionalText(rawToken);
+  if (secret === null || /\s/.test(secret)) {
+    throw new ConfigError(
+      tokenSetting.env,
+      "<hidden>",
+      `is required, without whitespace, when ${registry.env} is set`,
+    );
+  }
+  return { scope, url: parsed.href.endsWith("/") ? parsed.href : `${parsed.href}/`, token: secret };
 }
 
 function setting(env: string): Setting {
@@ -509,7 +561,13 @@ export function resolveConfig(
     gitUserName: optionalText(read("MATE_GIT_USER_NAME")),
     gitUserEmail: optionalText(read("MATE_GIT_USER_EMAIL")),
     credentials: credentials(setting("MATE_AGENT_CREDENTIALS"), read("MATE_AGENT_CREDENTIALS")),
-    allowedPlugins: allowedPlugins(setting("MATE_ALLOWED_PLUGINS"), read("MATE_ALLOWED_PLUGINS")),
+    pluginRegistry: pluginRegistry(
+      setting("MATE_PLUGIN_REGISTRY"),
+      read("MATE_PLUGIN_REGISTRY"),
+      setting("MATE_PLUGIN_REGISTRY_TOKEN"),
+      read("MATE_PLUGIN_REGISTRY_TOKEN"),
+    ),
+    gitCloneToken: optionalText(read("MATE_GIT_CLONE_TOKEN")),
     setupHint: optionalText(read("MATE_SETUP_HINT")),
     removed: REMOVED_SETTINGS.filter(
       (name) => env[name] !== undefined || file[REMOVED_KEYS[name]] !== undefined,
