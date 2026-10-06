@@ -501,6 +501,30 @@ describe("what startup hands the supervisor", () => {
     expect(JSON.stringify(calls)).not.toContain("reg-tok");
   });
 
+  test("a successful restore passes its warnings to the log only, token redacted", () => {
+    makeCompanion(path.join(root, "acme"));
+    const { run } = recorder({
+      "setup.sh": {
+        status: 0,
+        stdout: "",
+        stderr:
+          "mate: warning: plugin-generated files differ from the committed checkout: AGENTS.md reg-tok\nmate: ok\n",
+      },
+    });
+    const lines: string[] = [];
+    const plan = prepareStartup(
+      config({
+        pluginRegistry: { scope: "@acme", url: "https://registry.acme.test/", token: "reg-tok" },
+      }),
+      deps({ run, log: (line) => lines.push(line) }),
+    );
+    expect(plan.companion).toBe(path.resolve(root, "acme"));
+    const warning = lines.find((line) => line.includes("warning: plugin-generated files differ"));
+    expect(warning).toContain("AGENTS.md");
+    expect(warning).not.toContain("reg-tok");
+    expect(lines.some((line) => line.includes("mate: ok"))).toBe(false);
+  });
+
   test("a failed restore stops startup, redacts the token and verifies nothing", () => {
     makeCompanion(path.join(root, "acme"));
     const { run, calls } = recorder({

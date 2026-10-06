@@ -225,6 +225,10 @@ function restorePlugins(registry: PluginRegistry, companion: string, deps: Start
       `Restoring the plugins of ${companion} failed:\n${detail || `setup exited ${restored.status}`}`,
     );
   }
+  // Drift of plugin-generated files is a warning: it reaches the log, never blocks serving.
+  for (const line of redact(restored.stderr, registry.token).split("\n")) {
+    if (/warning:/i.test(line)) deps.log(line.trim());
+  }
 }
 
 export function prepareStartup(

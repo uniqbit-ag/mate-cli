@@ -166,11 +166,9 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
       );
       if (drift.length > 0) {
         process.stderr.write(
-          `${FRAMEWORK_NAME}: plugin-generated files differ from the committed checkout: ${drift.join(", ")}\n` +
+          `${FRAMEWORK_NAME}: warning: plugin-generated files differ from the committed checkout: ${drift.join(", ")}\n` +
             `Prepare and commit them in the companion's authoring flow; the checkout was left unchanged.\n`,
         );
-        process.exitCode = 1;
-        return false;
       }
     } else {
       await reconcileInstalledCompanion(plan);
