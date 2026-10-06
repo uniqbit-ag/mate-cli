@@ -228,6 +228,9 @@ export async function runInstallPlan(
 ): Promise<{ ok: boolean; results: InstallRequirementResult[] }> {
   const results: InstallRequirementResult[] = [];
   let ok = true;
+  await Promise.all(
+    plan.requirements.map((item) => (item.satisfied ? item.update?.().catch(() => {}) : undefined)),
+  );
   for (const item of plan.requirements) {
     options.onStart?.(item);
     if (item.satisfied) {

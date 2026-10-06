@@ -27,22 +27,72 @@ const attributedSkillNames = [
   "mate-simplify-code",
 ] as const;
 
-const attributionBySkill = {
-  "mate-interview-me":
-    "> Inspired by [Addy Osmani's interview-me skill](https://github.com/addyosmani/agent-skills/tree/main/skills/interview-me) and adapted here as a Mate process-driven skill.",
-  "mate-grill-me":
-    "> Inspired by [Matt Pocock's grill-me skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) and adapted here as a Mate process-driven skill.",
-  "mate-grilling":
-    "> Inspired by [Matt Pocock's grilling skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling) and adapted here as a Mate process-driven skill.",
-  "mate-grill-with-docs":
-    "> Inspired by [Matt Pocock's grill-with-docs skill](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) and adapted here as a Mate process-driven skill.",
-  "mate-domain-modeling":
-    "> Inspired by [Matt Pocock's domain-modeling skill](https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling) and adapted here as a Mate process-driven skill.",
-  "mate-simplify-code":
-    "> Inspired by [Addy Osmani's code-simplification skill](https://github.com/addyosmani/agent-skills/tree/main/skills/code-simplification) and adapted here as a Mate process-driven skill.",
-  "mate-show-me":
-    "> Inspired by [humanlayer's show-me skill](https://github.com/humanlayer/skills/tree/main/plugins/show-me/skills/show-me) and adapted here as a Mate process-driven skill.",
-} as const;
+interface SkillCredits {
+  skill: string;
+  author: string;
+  organisation?: string;
+  url: string;
+}
+
+const creditsBySkill: Record<(typeof attributedSkillNames)[number], SkillCredits> = {
+  "mate-interview-me": {
+    skill: "interview-me",
+    author: "Addy Osmani",
+    url: "https://github.com/addyosmani/agent-skills/blob/main/skills/interview-me/SKILL.md",
+  },
+  "mate-grill-me": {
+    skill: "grill-me",
+    author: "Matt Pocock",
+    url: "https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md",
+  },
+  "mate-grilling": {
+    skill: "grilling",
+    author: "Matt Pocock",
+    url: "https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md",
+  },
+  "mate-grill-with-docs": {
+    skill: "grill-with-docs",
+    author: "Matt Pocock",
+    url: "https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md",
+  },
+  "mate-domain-modeling": {
+    skill: "domain-modeling",
+    author: "Matt Pocock",
+    url: "https://github.com/mattpocock/skills/blob/main/skills/engineering/domain-modeling/SKILL.md",
+  },
+  "mate-simplify-code": {
+    skill: "code-simplification",
+    author: "Addy Osmani",
+    url: "https://github.com/addyosmani/agent-skills/blob/main/skills/code-simplification/SKILL.md",
+  },
+  "mate-show-me": {
+    skill: "show-me",
+    author: "Dex Horthy",
+    organisation: "Humanlayer",
+    url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md",
+  },
+};
+
+const originalSkillNames = ["mate-artifact-publish", "mate-openspec-backfill"] as const;
+
+const frontmatterPattern = /^---\n([\s\S]*?)\n---\n/;
+
+function parseFrontmatter(source: string): Record<string, unknown> {
+  const match = frontmatterPattern.exec(source);
+  if (!match) {
+    throw new Error("SKILL.md has no frontmatter");
+  }
+  return Bun.YAML.parse(match[1]) as Record<string, unknown>;
+}
+
+function stripFrontmatter(source: string): string {
+  return source.replace(frontmatterPattern, "");
+}
+
+function readCredits(source: string): unknown {
+  const metadata = parseFrontmatter(source).metadata as Record<string, unknown> | undefined;
+  return metadata?.credits;
+}
 
 async function readReference(root: string, name: string, file: string): Promise<string> {
   return fs.readFile(path.join(root, name, "references", file), "utf8");
@@ -87,16 +137,25 @@ describe("bundled Mate pre-explore skills", () => {
     }
   });
 
-  test("attributes each new skill in both source trees", async () => {
+  test("credits each adapted skill in frontmatter in both source trees", async () => {
     for (const root of [skillsRoot, claudeSkillsRoot]) {
       for (const name of attributedSkillNames) {
-        const source = await readSkillFrom(root, name);
-        expect(source).toContain(attributionBySkill[name]);
+        expect(readCredits(await readSkillFrom(root, name))).toEqual(creditsBySkill[name]);
       }
 
-      const customSkill = await readSkillFrom(root, "mate-openspec-backfill");
-      expect(customSkill).not.toContain("Inspired by");
+      for (const name of originalSkillNames) {
+        expect(readCredits(await readSkillFrom(root, name))).toBeUndefined();
+      }
+
+      for (const name of skillNames) {
+        expect(await readSkillFrom(root, name)).not.toContain("Inspired by");
+      }
     }
+  });
+
+  test("keeps existing show-me frontmatter metadata next to credits", async () => {
+    const metadata = parseFrontmatter(await readSkill("mate-show-me")).metadata;
+    expect(metadata).toMatchObject({ author: "mate", version: "1.0" });
   });
 
   test("has a prefixed frontmatter name for every bundled tree", async () => {
@@ -113,8 +172,7 @@ describe("bundled Mate pre-explore skills", () => {
     expect(docs).toContain("/mate-domain-modeling");
 
     for (const name of skillNames) {
-      const source = await readSkill(name);
-      const body = source.replace(/^> Inspired by.*$/gm, "");
+      const body = stripFrontmatter(await readSkill(name));
       expect(body).not.toMatch(
         /\/(?:grill-me|grilling|grill-with-docs|domain-modeling|interview-me)(?![a-z-])/,
       );

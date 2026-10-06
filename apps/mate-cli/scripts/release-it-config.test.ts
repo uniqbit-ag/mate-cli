@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -71,13 +72,20 @@ async function commitFile(repoDir: string, content: string, message: string) {
   });
 }
 
-const FIXTURE_INTEGRITY = "sha512-acme";
+const FIXTURE_PACK_CONTENT = "acme-tarball";
+
+function packIntegrity(content: string): string {
+  return `sha512-${createHash("sha512").update(content).digest("base64")}`;
+}
+
+const FIXTURE_INTEGRITY = packIntegrity(FIXTURE_PACK_CONTENT);
 
 type PublishFixture = {
   binDir: string;
   callsPath: string;
   npmrcCapturePath: string;
   scriptPath: string;
+  version: string;
 };
 
 async function createPublishFixture(
@@ -137,28 +145,37 @@ async function createPublishFixture(
       "set -eu",
       'printf "%s\\n" "$*" >> "$NPM_CALLS_PATH"',
       'cp "$NPM_CONFIG_USERCONFIG" "$NPMRC_CAPTURE_PATH"',
-      'case " $* " in *" --json "*) printf \'[{"integrity":"%s"}]\\n\' "$FAKE_PACK_INTEGRITY" ;; esac',
+      'workspace=""; dest=""; prev=""',
+      'for arg in "$@"; do',
+      '  case "$prev" in --workspace) workspace="$arg" ;; --pack-destination) dest="$arg" ;; esac',
+      '  prev="$arg"',
+      "done",
+      'if [ -n "$dest" ]; then',
+      '  file=$(printf "%s" "$workspace" | sed "s/^@//; s#/#-#")',
+      '  printf "%s" "$FAKE_PACK_CONTENT" > "$dest/$file-$FAKE_PACK_VERSION.tgz"',
+      "fi",
       "",
     ].join("\n"),
     "utf8",
   );
   await fs.chmod(fakeNpmPath, 0o755);
 
-  return { binDir, callsPath, npmrcCapturePath, scriptPath };
+  return { binDir, callsPath, npmrcCapturePath, scriptPath, version };
 }
 
 function runPublish(
   fixture: PublishFixture,
   tag: string,
   npmToken: string | null = "test-token",
-  packIntegrity = FIXTURE_INTEGRITY,
+  packContent = FIXTURE_PACK_CONTENT,
 ) {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${fixture.binDir}${path.delimiter}${process.env.PATH ?? ""}`,
     NPM_CALLS_PATH: fixture.callsPath,
     NPMRC_CAPTURE_PATH: fixture.npmrcCapturePath,
-    FAKE_PACK_INTEGRITY: packIntegrity,
+    FAKE_PACK_CONTENT: packContent,
+    FAKE_PACK_VERSION: fixture.version,
   };
 
   if (npmToken === null) {
@@ -395,11 +412,11 @@ describe("publish.sh", () => {
 
   test("publishes nothing when a packed tarball differs from the image lock pins", async () => {
     const fixture = await createPublishFixture("1.2.3");
-    const result = runPublish(fixture, "latest", "test-token", "sha512-changed");
+    const result = runPublish(fixture, "latest", "test-token", "acme-changed");
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain(
-      "@uniqbit/mate-core@1.2.3 would publish as sha512-changed, but global-tools.package-lock.json, local-workspace.package-lock.json pin another tarball",
+      `@uniqbit/mate-core@1.2.3 would publish as ${packIntegrity("acme-changed")}, but global-tools.package-lock.json, local-workspace.package-lock.json pin another tarball`,
     );
     const calls = await fs.readFile(fixture.callsPath, "utf8");
     expect(calls).not.toContain("publish --workspace");

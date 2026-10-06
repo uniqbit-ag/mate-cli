@@ -11,6 +11,7 @@ import {
 } from "../../../lib/opencode-plugin-package";
 import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
 import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
+import { reconcileSharedSkillTree } from "./agents-skill-root";
 import { patchSkillTreeMarkdownFiles } from "./skill-tree";
 import {
   instructionBlockKey,
@@ -21,7 +22,7 @@ import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "
 import { surfaceRoot } from "../surface-target";
 import { resolvePreinstalledPluginReference } from "../../../lib/preinstalled-plugins";
 import { getCurrentVersion } from "../../../lib/update-checker";
-import { mergeDir, pruneEmptyAncestors } from "../utils";
+import { pruneEmptyAncestors } from "../utils";
 import {
   getOpenCodePluginReferences,
   isRecord,
@@ -465,7 +466,7 @@ export async function removeOpenCodeForeignPluginReferences(
 // Runtime Surface reconciliation: apply/remove declared Capability
 // contributions (spec: runtime-surface). Managed identity: named MCP servers,
 // `isManagedReference` for plugin entries, managed guidance blocks, and named
-// skill trees.
+// skill trees (written to the shared `.agents/skills` root).
 // ---------------------------------------------------------------------------
 
 const OPENCODE_CONTRIBUTION_CONFIG_FILES = ["opencode.json"];
@@ -530,13 +531,11 @@ export async function reconcileOpenCodeContributions(
     }
 
     for (const skillTree of input.contributions.skillTrees ?? []) {
-      const skillDir = path.join(root, ".opencode", "skills", skillTree.name);
-      if (input.enabled) {
-        await mergeDir(skillTree.sourceDir, skillDir);
-      } else {
-        await fs.rm(skillDir, { recursive: true, force: true });
-        await pruneEmptyAncestors(path.join(root, ".opencode", "skills"), root);
-      }
+      await reconcileSharedSkillTree(root, skillTree, {
+        enabled: input.enabled,
+        capabilityEnabled: input.capabilityEnabled ?? false,
+        activeProviders: ctx.activeProviders,
+      });
     }
   }
 }

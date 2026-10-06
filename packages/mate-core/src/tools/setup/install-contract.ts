@@ -17,4 +17,6 @@ export interface InstallRequirement {
   detect(): boolean | Promise<boolean>;
   install(): Promise<void>;
   verify?(): boolean | Promise<boolean>;
+  /** Best-effort refresh of an already-satisfied requirement; must never throw. */
+  update?(): Promise<void>;
 }

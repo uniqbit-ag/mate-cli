@@ -2,11 +2,14 @@
 name: mate-interview-me
 description: Clarify intent through a focused, one-question-at-a-time conversation before planning.
 disable-model-invocation: true
+metadata:
+  credits:
+    skill: interview-me
+    author: Addy Osmani
+    url: "https://github.com/addyosmani/agent-skills/blob/main/skills/interview-me/SKILL.md"
 ---
 
 # Mate Interview Me
-
-> Inspired by [Addy Osmani's interview-me skill](https://github.com/addyosmani/agent-skills/tree/main/skills/interview-me) and adapted here as a Mate process-driven skill.
 
 ## Overview
 

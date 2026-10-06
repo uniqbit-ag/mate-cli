@@ -2,7 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
+import { removeLegacyOpenCodeSkills } from "../providers/agents-skill-root";
 import { pruneEmptyAncestors } from "../utils";
+
+const SKILL_NAME = "react-doctor";
 
 const SKILL_SRC = path.join(
   import.meta.dirname,
@@ -27,7 +30,7 @@ export function createReactDoctorPlugin(): CapabilityPlugin {
     // format the surface owns).
     getRuntimeContributions(ctx: SetupContext): RuntimeContributionsByRuntime {
       const hookCommand = `sh "${ctx.companionPath}/.claude/hooks/react-doctor.sh"`;
-      const skillTrees = [{ name: "react-doctor", sourceDir: SKILL_SRC }];
+      const skillTrees = [{ name: SKILL_NAME, sourceDir: SKILL_SRC }];
       return {
         claude: {
           hookGroups: [
@@ -57,22 +60,11 @@ export function createReactDoctorPlugin(): CapabilityPlugin {
       };
     },
     async apply(ctx: SetupContext) {
-      // Migrate: remove legacy shared .agents/skills/react-doctor/ from previous installs.
-      try {
-        await fs.rm(path.join(ctx.companionPath, ".agents", "skills", "react-doctor"), {
-          recursive: true,
-          force: true,
-        });
-      } catch {
-        /* not present */
-      }
-      await pruneEmptyAncestors(
-        path.join(ctx.companionPath, ".agents", "skills"),
-        ctx.companionPath,
-      );
-      await pruneEmptyAncestors(path.join(ctx.companionPath, ".agents"), ctx.companionPath);
+      await removeLegacyOpenCodeSkills(ctx.companionPath, [SKILL_NAME]);
     },
-    async teardown() {},
+    async teardown(ctx: SetupContext) {
+      await removeLegacyOpenCodeSkills(ctx.companionPath, [SKILL_NAME]);
+    },
     forProvider: {
       claude: {
         async apply(ctx: SetupContext) {

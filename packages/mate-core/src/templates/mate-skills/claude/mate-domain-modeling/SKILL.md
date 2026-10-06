@@ -2,11 +2,14 @@
 name: mate-domain-modeling
 description: Build a project domain model using Mate context-map scope and Companion Repository artifacts.
 disable-model-invocation: true
+metadata:
+  credits:
+    skill: domain-modeling
+    author: Matt Pocock
+    url: "https://github.com/mattpocock/skills/blob/main/skills/engineering/domain-modeling/SKILL.md"
 ---
 
 # Mate Domain Modeling
-
-> Inspired by [Matt Pocock's domain-modeling skill](https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling) and adapted here as a Mate process-driven skill.
 
 Actively sharpen project terminology and durable domain decisions. Reading a
 context for vocabulary is not enough: challenge fuzzy terms, test boundaries

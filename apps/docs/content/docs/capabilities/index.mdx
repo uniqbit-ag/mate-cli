@@ -37,6 +37,19 @@ those selections. Run `mate install` afterward to refresh the dependency plan.
 Then `mate opencode` and `mate claude` launch from the working repository with
 the selected companion-managed capabilities available.
 
+## Skill Locations
+
+Capability skills live in two companion skill roots:
+
+- `.claude/skills/` for Claude.
+- `.agents/skills/` for every other agent runtime, currently OpenCode.
+
+OpenCode keeps its `/opsx-*` OpenSpec commands in `.opencode/commands/`.
+Mate only manages the skills it installs, so your own skills and third-party
+skills in `.agents/skills/` stay untouched. Companions created by earlier Mate
+versions kept OpenCode skills in `.opencode/skills/`. Run
+`mate companion update` once to move them, then commit the result.
+
 ## Capability Details
 
 ### OpenSpec

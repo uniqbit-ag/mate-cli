@@ -629,6 +629,29 @@ describe("tokensave agent integration install requirements", () => {
       config: { allowedAgents, capabilities: [{ name: "tokensave" }] },
     }) ?? [];
 
+  test("CLI requirement update upgrades the installed binary without --kill", async () => {
+    const runMock = mock(() => ({ ok: true, stderr: "", stdout: "" }));
+    tokensaveDeps.run = runMock;
+    await requirementsFor([])[0]?.update?.();
+    expect(runMock.mock.calls.map((c) => c[0])).toEqual([["upgrade"]]);
+  });
+
+  test("CLI requirement update tolerates a failed upgrade", async () => {
+    tokensaveDeps.run = () => ({ ok: false, stderr: "offline", stdout: "" });
+    const stderrWrites: string[] = [];
+    const originalWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrWrites.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      await requirementsFor([])[0]?.update?.();
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+    expect(stderrWrites.join("")).toContain("automatic upgrade failed: offline");
+  });
+
   test("adds one integration requirement per enabled supported provider", () => {
     const ids = requirementsFor(["opencode", "codex", "claude"]).map((r) => r.id);
     expect(ids).toEqual([

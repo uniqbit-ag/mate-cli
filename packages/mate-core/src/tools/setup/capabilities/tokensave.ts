@@ -446,6 +446,7 @@ export function createTokensavePlugin(): CapabilityPlugin {
             await plan.run();
           },
           verify: () => tokensaveDeps.run(["--version"], process.cwd()).ok,
+          update: () => upgradeTokensave(process.cwd()),
         },
         ...(config.allowedAgents ?? [])
           .filter((agent) => TOKENSAVE_SUPPORTED_AGENTS.has(agent))

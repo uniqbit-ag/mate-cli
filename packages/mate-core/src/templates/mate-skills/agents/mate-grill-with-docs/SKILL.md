@@ -2,11 +2,14 @@
 name: mate-grill-with-docs
 description: Sharpen a design conversationally and record confirmed domain decisions on the Companion Repository artifact plane.
 disable-model-invocation: true
+metadata:
+  credits:
+    skill: grill-with-docs
+    author: Matt Pocock
+    url: "https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md"
 ---
 
 # Mate Grill With Docs
-
-> Inspired by [Matt Pocock's grill-with-docs skill](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) and adapted here as a Mate process-driven skill.
 
 First invoke `/mate-grilling` and wait for explicit decisions. Then invoke
 `/mate-domain-modeling` only for confirmed project terminology or durable

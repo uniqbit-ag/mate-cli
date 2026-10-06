@@ -2,11 +2,14 @@
 name: mate-grilling
 description: Relentlessly sharpen a plan through dependency-ordered design-tree rounds.
 disable-model-invocation: true
+metadata:
+  credits:
+    skill: grilling
+    author: Matt Pocock
+    url: "https://github.com/mattpocock/skills/blob/main/skills/productivity/grilling/SKILL.md"
 ---
 
 # Mate Grilling
-
-> Inspired by [Matt Pocock's grilling skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling) and adapted here as a Mate process-driven skill.
 
 Stress-test the current plan or idea as a design tree. This is a conversation,
 not an implementation or documentation session: do not create or modify code,

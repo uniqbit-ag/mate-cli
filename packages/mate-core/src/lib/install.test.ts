@@ -186,6 +186,43 @@ describe("install execution and state", () => {
     expect(installs).toBe(0);
   });
 
+  test("refreshes satisfied requirements via update without failing the plan", async () => {
+    const updated: string[] = [];
+    const requirement = (id: string, update: () => Promise<void>) => ({
+      id,
+      label: id,
+      group: "core" as const,
+      source: "test",
+      command: `install ${id}`,
+      satisfied: true,
+      detect: () => true,
+      install: async () => {},
+      update,
+    });
+    const plan = {
+      context: { kind: "core" as const, config: {} as never, fingerprint: "context" },
+      fingerprint: "requirements",
+      requirements: [
+        requirement("test:ok", async () => {
+          updated.push("test:ok");
+        }),
+        requirement("test:broken", async () => {
+          throw new Error("offline");
+        }),
+      ],
+    };
+
+    const result = await runInstallPlan(plan);
+    expect(updated).toEqual(["test:ok"]);
+    expect(result).toEqual({
+      ok: true,
+      results: [
+        { id: "test:ok", status: "skipped", verified: true },
+        { id: "test:broken", status: "skipped", verified: true },
+      ],
+    });
+  });
+
   test("returns a failed result when verification cannot pass", async () => {
     const plan = {
       context: { kind: "core" as const, config: {} as never, fingerprint: "context" },
@@ -317,7 +354,7 @@ describe("install execution and state", () => {
     const home = await tempRoot();
     process.env.HOME = home;
     const root = await tempRoot();
-    const context = await resolveInstallContext(root);
+    await resolveInstallContext(root);
     const store = new InstallStateStore(path.join(home, "install-state.yaml"));
 
     const preflight = await inspectInstallPreflight(root, { stateStore: store });

@@ -17,6 +17,8 @@ export const MATE_SKILLS = [
   "mate-simplify-code",
 ] as const;
 const LEGACY_MATE_SKILLS = ["mate-artifact-finish", "mate-openspec-artifact-finish"] as const;
+/** Every Mate-owned skill name a skill root may hold, current or retired. */
+export const MANAGED_MATE_SKILL_NAMES = [...MATE_SKILLS, ...LEGACY_MATE_SKILLS] as const;
 
 const MATE_SKILLS_SOURCE = path.join(import.meta.dirname, "../../templates/mate-skills");
 
@@ -147,7 +149,7 @@ export async function applyMateSkills(skillsDir: string, tool: string): Promise<
 }
 
 export async function teardownMateSkills(skillsDir: string, companionPath: string): Promise<void> {
-  for (const skill of [...MATE_SKILLS, ...LEGACY_MATE_SKILLS]) {
+  for (const skill of MANAGED_MATE_SKILL_NAMES) {
     try {
       await fs.rm(path.join(skillsDir, skill), { recursive: true, force: true });
     } catch {

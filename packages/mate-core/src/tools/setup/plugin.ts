@@ -219,6 +219,8 @@ export type RuntimeContributionsByRuntime = Partial<Record<string, RuntimeContri
 export interface CapabilityContributionInput {
   pluginId: string;
   enabled: boolean;
+  /** Capability enabled regardless of runtime; absent means disabled. */
+  capabilityEnabled?: boolean;
   contributions: RuntimeContributions;
 }
 
