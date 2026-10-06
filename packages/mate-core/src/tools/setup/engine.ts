@@ -221,7 +221,12 @@ async function collectContributionInputs(
       // are torn down. The surfaces never create files for disabled inputs.
       const runtimeActive = plan.activeProviders.includes(runtimeId);
       const inputs = inputsByRuntime.get(runtimeId) ?? [];
-      inputs.push({ pluginId: capability.id, enabled: enabled && runtimeActive, contributions });
+      inputs.push({
+        pluginId: capability.id,
+        enabled: enabled && runtimeActive,
+        capabilityEnabled: enabled,
+        contributions,
+      });
       inputsByRuntime.set(runtimeId, inputs);
     }
   }

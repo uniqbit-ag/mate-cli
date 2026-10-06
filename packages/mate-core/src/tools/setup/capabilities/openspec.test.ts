@@ -73,8 +73,14 @@ describe("deriveOpenSpecTools", () => {
   test("keeps only supported providers in stable runtime order", () => {
     expect(deriveOpenSpecTools(["tokensave", "claude", "custom", "opencode"])).toEqual([
       "claude",
+      "agents",
       "opencode",
     ]);
+  });
+
+  test("maps opencode to the shared agents tool plus opencode commands", () => {
+    expect(deriveOpenSpecTools(["opencode"])).toEqual(["agents", "opencode"]);
+    expect(deriveOpenSpecTools(["claude"])).toEqual(["claude"]);
   });
 });
 
@@ -98,7 +104,7 @@ describe("createOpenspecPlugin", () => {
     expect(runCommand).toHaveBeenNthCalledWith(
       2,
       "openspec",
-      ["init", "--tools", "claude,opencode", "--force", "/tmp/companion"],
+      ["init", "--tools", "claude,agents,opencode", "--force", "/tmp/companion"],
       { cwd: "/tmp/companion" },
     );
     expect(runCommand).toHaveBeenNthCalledWith(
@@ -459,7 +465,8 @@ describe("createOpenspecPlugin", () => {
       makeCtx(root, ["claude", "opencode"], [{ name: "openspec" }], "setup", "auto"),
     );
 
-    for (const runtimeDir of [".claude", ".opencode"]) {
+    await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
+    for (const runtimeDir of [".claude", ".agents"]) {
       const markers: Record<(typeof MATE_SKILLS)[number], string> = {
         "mate-artifact-publish": "artifact pending --json",
         "mate-create-report": "report --input",
@@ -484,7 +491,7 @@ describe("createOpenspecPlugin", () => {
 
     // Every runtime confirms the commit + tag + push before the first finish
     // call and keeps the deterministic CLI as the publication primitive.
-    for (const runtimeDir of [".claude", ".opencode"]) {
+    for (const runtimeDir of [".claude", ".agents"]) {
       const publishSkill = await fs.readFile(
         path.join(root, runtimeDir, "skills", "mate-artifact-publish", "SKILL.md"),
         "utf8",
@@ -507,6 +514,71 @@ describe("createOpenspecPlugin", () => {
           "utf8",
         ),
       ).resolves.toContain("Sequencing A Multi-Part Selection");
+    }
+  });
+
+  test("removes opencode-tool skill duplicates after update and keeps opsx commands", async () => {
+    const root = await makeTempDir("mate-openspec-opencode-duplicates-");
+    /** Simulates the openspec CLI: `update` re-creates the opencode tool's skills. */
+    const runCommand = mock(async (_command: string, args: string[]) => {
+      if (args[0] !== "update") return;
+      for (const skill of OPENSPEC_SKILLS) {
+        const dir = path.join(root, ".opencode", "skills", skill);
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(path.join(dir, "SKILL.md"), "opencode\n", "utf8");
+      }
+      await fs.mkdir(path.join(root, ".opencode", "commands"), { recursive: true });
+      await fs.writeFile(path.join(root, ".opencode", "commands", "opsx-propose.md"), "x\n");
+    });
+    const graphify = path.join(root, ".opencode", "skills", "graphify", "SKILL.md");
+    await fs.mkdir(path.dirname(graphify), { recursive: true });
+    await fs.writeFile(graphify, "graphify\n", "utf8");
+    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
+
+    await plugin.apply(makeCtx(root, ["opencode"]));
+
+    for (const skill of [...OPENSPEC_SKILLS, ...MATE_SKILLS]) {
+      await expect(fs.access(path.join(root, ".opencode", "skills", skill))).rejects.toThrow();
+    }
+    await expect(fs.readFile(graphify, "utf8")).resolves.toBe("graphify\n");
+    await expect(
+      fs.access(path.join(root, ".opencode", "commands", "opsx-propose.md")),
+    ).resolves.toBeNull();
+    await expect(
+      fs.access(path.join(root, ".agents", "skills", "mate-grill-me", "SKILL.md")),
+    ).resolves.toBeNull();
+    await expect(fs.access(path.join(root, ".claude", "skills"))).rejects.toThrow();
+  });
+
+  test("removes legacy managed opencode skills even when opencode is inactive", async () => {
+    const root = await makeTempDir("mate-openspec-legacy-inactive-");
+    const legacy = path.join(root, ".opencode", "skills", "mate-grill-me");
+    await fs.mkdir(legacy, { recursive: true });
+    await fs.writeFile(path.join(legacy, "SKILL.md"), "legacy\n", "utf8");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+
+    await plugin.apply(makeCtx(root, ["claude"]));
+
+    await expect(fs.access(path.join(root, ".opencode"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, ".agents"))).rejects.toThrow();
+  });
+
+  test("shared root receives the agents skill variant", async () => {
+    const root = await makeTempDir("mate-openspec-agents-variant-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+
+    await plugin.apply(makeCtx(root, ["claude", "opencode"]));
+
+    const templates = path.join(import.meta.dirname, "../../../templates/mate-skills");
+    for (const [runtimeDir, bucket] of [
+      [".agents", "agents"],
+      [".claude", "claude"],
+    ] as const) {
+      await expect(
+        fs.readFile(path.join(root, runtimeDir, "skills", "mate-show-me", "SKILL.md"), "utf8"),
+      ).resolves.toBe(
+        await fs.readFile(path.join(templates, bucket, "mate-show-me", "SKILL.md"), "utf8"),
+      );
     }
   });
 
@@ -600,6 +672,7 @@ describe("createOpenspecPlugin", () => {
     await plugin.apply(makeCtx(root, ["custom"]));
 
     await expect(fs.access(path.join(root, ".claude", "skills"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, ".agents", "skills"))).rejects.toThrow();
     await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
   });
 
@@ -607,7 +680,7 @@ describe("createOpenspecPlugin", () => {
     const root = await makeTempDir("mate-openspec-mate-skills-teardown-");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}) });
 
-    for (const runtimeDir of [".claude", ".opencode"]) {
+    for (const runtimeDir of [".claude", ".agents", ".opencode"]) {
       for (const skill of [
         ...MATE_SKILLS,
         ...MATE_ARTIFACT_SKILLS,
@@ -626,6 +699,7 @@ describe("createOpenspecPlugin", () => {
     await plugin.teardown(makeCtx(root, []));
 
     await expect(fs.access(path.join(root, ".claude", "skills"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, ".agents", "skills"))).rejects.toThrow();
     await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
   });
 
@@ -853,23 +927,42 @@ describe("createOpenspecPlugin", () => {
         "claude\n",
         "utf8",
       );
-      await fs.mkdir(path.join(root, ".opencode", "skills", skill), { recursive: true });
+      await fs.mkdir(path.join(root, ".agents", "skills", skill), { recursive: true });
       await fs.writeFile(
-        path.join(root, ".opencode", "skills", skill, "SKILL.md"),
-        "opencode\n",
+        path.join(root, ".agents", "skills", skill, "SKILL.md"),
+        "agents\n",
         "utf8",
       );
     }
     for (const skill of MATE_SKILLS) {
       await fs.mkdir(path.join(root, ".claude", "skills", skill), { recursive: true });
-      await fs.mkdir(path.join(root, ".opencode", "skills", skill), { recursive: true });
+      await fs.mkdir(path.join(root, ".agents", "skills", skill), { recursive: true });
     }
 
     await plugin.forProvider!.claude.teardown(makeCtx(root, ["opencode"]));
 
     await expect(fs.access(path.join(root, ".claude", "skills"))).rejects.toThrow();
     await expect(
-      fs.access(path.join(root, ".opencode", "skills", "openspec-explore", "SKILL.md")),
+      fs.access(path.join(root, ".agents", "skills", "openspec-explore", "SKILL.md")),
+    ).resolves.toBeNull();
+  });
+
+  test("opencode teardown clears the shared root when no reading runtime remains", async () => {
+    const root = await makeTempDir("mate-openspec-shared-teardown-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const sharedDir = path.join(root, ".agents", "skills");
+
+    for (const skill of [...OPENSPEC_SKILLS, ...MATE_SKILLS, "acme-notes"]) {
+      await fs.mkdir(path.join(sharedDir, skill), { recursive: true });
+      await fs.mkdir(path.join(root, ".claude", "skills", skill), { recursive: true });
+    }
+    await fs.writeFile(path.join(sharedDir, ".openspec-target"), "agents\n", "utf8");
+
+    await plugin.forProvider!.opencode.teardown(makeCtx(root, ["claude"]));
+
+    expect(await fs.readdir(sharedDir)).toEqual(["acme-notes"]);
+    await expect(
+      fs.access(path.join(root, ".claude", "skills", "openspec-explore")),
     ).resolves.toBeNull();
   });
 
@@ -877,7 +970,7 @@ describe("createOpenspecPlugin", () => {
     const root = await makeTempDir("mate-openspec-full-teardown-");
     const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}) });
 
-    for (const runtimeDir of [".claude", ".opencode"]) {
+    for (const runtimeDir of [".claude", ".agents", ".opencode"]) {
       for (const skill of OPENSPEC_SKILLS) {
         await fs.mkdir(path.join(root, runtimeDir, "skills", skill), { recursive: true });
         await fs.writeFile(
@@ -887,11 +980,17 @@ describe("createOpenspecPlugin", () => {
         );
       }
     }
+    await fs.writeFile(path.join(root, ".agents", "skills", ".openspec-target"), "agents\n");
+    const thirdParty = path.join(root, ".agents", "skills", "acme-skill", "SKILL.md");
+    await fs.mkdir(path.dirname(thirdParty), { recursive: true });
+    await fs.writeFile(thirdParty, "acme\n", "utf8");
 
     await plugin.teardown(makeCtx(root, []));
 
     await expect(fs.access(path.join(root, ".claude", "skills"))).rejects.toThrow();
     await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
+    expect(await fs.readdir(path.join(root, ".agents", "skills"))).toEqual(["acme-skill"]);
+    await expect(fs.readFile(thirdParty, "utf8")).resolves.toBe("acme\n");
   });
 
   test("capability teardown removes managed mate-v1 schema state", async () => {

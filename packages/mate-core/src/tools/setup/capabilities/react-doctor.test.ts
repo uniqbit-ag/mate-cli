@@ -234,6 +234,41 @@ describe("reactDoctorPlugin", () => {
     expect(result.stdout).toBe("");
   });
 
+  test("apply keeps the shared-root skill and removes the legacy opencode copy", async () => {
+    const companionPath = await makeTempDir("mate-react-doctor-apply-");
+    const shared = path.join(companionPath, ".agents", "skills", "react-doctor");
+    const legacy = path.join(companionPath, ".opencode", "skills", "react-doctor");
+    for (const dir of [shared, legacy]) {
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, "SKILL.md"), "react-doctor\n", "utf8");
+    }
+
+    await reactDoctorPlugin.apply({
+      companionPath,
+      config: { allowedAgents: ["opencode"], capabilities: [{ name: "react-doctor" }] },
+      mode: "setup",
+      activeProviders: ["opencode"],
+    });
+
+    await expect(fs.access(path.join(shared, "SKILL.md"))).resolves.toBeNull();
+    await expect(fs.access(path.join(companionPath, ".opencode"))).rejects.toThrow();
+  });
+
+  test("teardown removes a legacy opencode skill copy", async () => {
+    const companionPath = await makeTempDir("mate-react-doctor-legacy-teardown-");
+    const legacy = path.join(companionPath, ".opencode", "skills", "react-doctor");
+    await fs.mkdir(legacy, { recursive: true });
+
+    await reactDoctorPlugin.teardown({
+      companionPath,
+      config: { allowedAgents: [], capabilities: [] },
+      mode: "setup",
+      activeProviders: [],
+    });
+
+    await expect(fs.access(legacy)).rejects.toThrow();
+  });
+
   test("teardown leaves companion Claude settings untouched", async () => {
     const companionPath = await makeTempDir("mate-react-doctor-claude-teardown-");
     const settingsPath = path.join(companionPath, ".claude", "settings.local.json");

@@ -29,7 +29,8 @@ const SKILLS_LOCKFILE = "skills-lock.json";
  * pre-existing uncommitted edits there are stale output, never local work worth separating.
  */
 const OPENSPEC_GENERATED = [
-  /^\.(claude|opencode)\/skills\/openspec-[^/]+(\/|$)/,
+  /^\.(claude|agents|opencode)\/skills\/openspec-[^/]+(\/|$)/,
+  /^\.agents\/skills\/\.openspec-target$/,
   /^\.claude\/commands\/opsx(\/|$)/,
   /^\.opencode\/commands\/opsx-[^/]+$/,
 ];

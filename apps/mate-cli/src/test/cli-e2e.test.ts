@@ -567,7 +567,7 @@ async function writeOpenSpecStub(scenario: E2EScenario): Promise<string> {
     'import path from "node:path";',
     "const args = process.argv.slice(2);",
     "const skills = ['openspec-explore', 'openspec-propose', 'openspec-apply-change', 'openspec-archive-change'];",
-    "const runtimeDirs = { claude: '.claude', opencode: '.opencode' };",
+    "const runtimeDirs = { agents: '.agents', claude: '.claude', opencode: '.opencode' };",
     "const command = args[0];",
     "const targetPath = args[args.length - 1];",
     "const capturePath = process.env.MATE_E2E_OPENSPEC_CAPTURE_PATH;",
@@ -1066,8 +1066,11 @@ describe("mate CLI e2e", () => {
     ).toBe(0);
 
     await fs.access(
-      path.join(scenario.companion, ".opencode", "skills", "openspec-explore", "SKILL.md"),
+      path.join(scenario.companion, ".agents", "skills", "openspec-explore", "SKILL.md"),
     );
+    await expect(
+      fs.access(path.join(scenario.companion, ".opencode", "skills", "openspec-explore")),
+    ).rejects.toThrow();
     await expect(
       fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore")),
     ).rejects.toThrow();
@@ -1087,7 +1090,7 @@ describe("mate CLI e2e", () => {
       path.join(scenario.companion, ".claude", "skills", "openspec-explore", "SKILL.md"),
     );
     await fs.access(
-      path.join(scenario.companion, ".opencode", "skills", "openspec-explore", "SKILL.md"),
+      path.join(scenario.companion, ".agents", "skills", "openspec-explore", "SKILL.md"),
     );
 
     expect(
@@ -1102,7 +1105,7 @@ describe("mate CLI e2e", () => {
     ).toBe(0);
 
     await expect(
-      fs.access(path.join(scenario.companion, ".opencode", "skills", "openspec-explore")),
+      fs.access(path.join(scenario.companion, ".agents", "skills", "openspec-explore")),
     ).resolves.toBeNull();
 
     const invocations = await readJson<Array<{ command: string; args: string[] }>>(capturePath);
@@ -1118,9 +1121,9 @@ describe("mate CLI e2e", () => {
       "update",
     ]);
     expect(invocations[0]?.args).toEqual(["config", "reset", "--all", "-y"]);
-    expect(invocations[1]?.args).toContain("opencode");
-    expect(invocations[4]?.args).toContain("claude,opencode");
-    expect(invocations[7]?.args).toContain("opencode");
+    expect(invocations[1]?.args).toContain("agents,opencode");
+    expect(invocations[4]?.args).toContain("claude,agents,opencode");
+    expect(invocations[7]?.args).toContain("agents,opencode");
   });
 
   test("declined setup leaves no companion config or provider files behind", async () => {

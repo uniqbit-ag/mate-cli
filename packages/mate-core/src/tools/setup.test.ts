@@ -63,7 +63,7 @@ async function installOpenSpecStub(root: string): Promise<void> {
     'import path from "node:path";',
     "const args = process.argv.slice(2);",
     "const skills = ['openspec-explore', 'openspec-propose', 'openspec-apply-change', 'openspec-archive-change'];",
-    "const runtimeDirs = { claude: '.claude', opencode: '.opencode' };",
+    "const runtimeDirs = { claude: '.claude', agents: '.agents', opencode: '.opencode' };",
     "const command = args[0];",
     "const targetPath = args[args.length - 1];",
     "if (command === 'init') {",
@@ -75,6 +75,11 @@ async function installOpenSpecStub(root: string): Promise<void> {
     "      const skillDir = path.join(targetPath, runtimeDir, 'skills', skill);",
     "      fs.mkdirSync(skillDir, { recursive: true });",
     "      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `${tool}:${skill}\\n`);",
+    "    }",
+    "    if (tool === 'agents') fs.writeFileSync(path.join(targetPath, '.agents', 'skills', '.openspec-target'), 'agents\\n');",
+    "    if (tool === 'opencode') {",
+    "      fs.mkdirSync(path.join(targetPath, '.opencode', 'commands'), { recursive: true });",
+    "      fs.writeFileSync(path.join(targetPath, '.opencode', 'commands', 'opsx-propose.md'), 'opsx\\n');",
     "    }",
     "  }",
     "  process.exit(0);",
@@ -328,13 +333,15 @@ describe("executeSetup", () => {
       await expect(fs.access(path.join(root, ".mate", "bin", "openspec"))).rejects.toThrow();
       await expect(fs.access(path.join(root, ".opencode", "bin", "openspec"))).rejects.toThrow();
       await expect(fs.access(path.join(root, ".claude", "bin", "openspec"))).rejects.toThrow();
-      await expect(fs.access(path.join(root, ".opencode"))).rejects.toThrow();
+      /** OpenSpec `/opsx-*` commands outlive OpenCode deselection by design. */
+      expect(await fs.readdir(path.join(root, ".opencode"))).toEqual(["commands"]);
+      await expect(fs.access(path.join(root, ".agents"))).rejects.toThrow();
     },
     { timeout: 20000 },
   );
 
   test(
-    "setup deploys react-doctor skill to per-tool dirs, not .agents",
+    "setup deploys react-doctor skill to .claude and the shared .agents root",
     async () => {
       const root = await makeTempDir("mate-setup-skill-dirs-");
       const globalConfigStore = new GlobalConfigStore(
@@ -350,13 +357,13 @@ describe("executeSetup", () => {
       );
 
       await fs.access(path.join(root, ".claude", "skills", "react-doctor", "SKILL.md"));
-      await fs.access(path.join(root, ".opencode", "skills", "react-doctor", "SKILL.md"));
-      await expect(fs.access(path.join(root, ".agents"))).rejects.toThrow();
+      await fs.access(path.join(root, ".agents", "skills", "react-doctor", "SKILL.md"));
+      await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
     },
     { timeout: 30000 },
   );
 
-  test("setup deploys openspec skills to per-tool dirs based on allowedAgents", async () => {
+  test("setup deploys openspec skills to .claude and the shared .agents root", async () => {
     const root = await makeTempDir("mate-setup-openspec-skill-dirs-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
@@ -378,9 +385,14 @@ describe("executeSetup", () => {
       "openspec-archive-change",
     ]) {
       await fs.access(path.join(root, ".claude", "skills", skill, "SKILL.md"));
-      await fs.access(path.join(root, ".opencode", "skills", skill, "SKILL.md"));
+      await fs.access(path.join(root, ".agents", "skills", skill, "SKILL.md"));
     }
-    await expect(fs.access(path.join(root, ".agents"))).rejects.toThrow();
+    for (const skill of ["mate-grill-me", "mate-domain-modeling"]) {
+      await fs.access(path.join(root, ".claude", "skills", skill, "SKILL.md"));
+      await fs.access(path.join(root, ".agents", "skills", skill, "SKILL.md"));
+    }
+    await fs.access(path.join(root, ".opencode", "commands", "opsx-propose.md"));
+    await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
   });
 
   test("openspec skills not deployed to agent dir when that agent is not in allowedAgents", async () => {
@@ -400,9 +412,7 @@ describe("executeSetup", () => {
     );
 
     await fs.access(path.join(root, ".claude", "skills", "openspec-explore", "SKILL.md"));
-    await expect(
-      fs.access(path.join(root, ".opencode", "skills", "openspec-explore")),
-    ).rejects.toThrow();
+    await expect(fs.access(path.join(root, ".agents"))).rejects.toThrow();
     await expect(
       fs.access(path.join(root, ".opencode", "skills", "openspec-explore")),
     ).rejects.toThrow();
@@ -437,6 +447,7 @@ describe("executeSetup", () => {
         "openspec-archive-change",
       ]) {
         await expect(fs.access(path.join(root, ".claude", "skills", skill))).rejects.toThrow();
+        await expect(fs.access(path.join(root, ".agents", "skills", skill))).rejects.toThrow();
         await expect(fs.access(path.join(root, ".opencode", "skills", skill))).rejects.toThrow();
       }
     },
@@ -468,7 +479,7 @@ describe("executeSetup", () => {
         fs.access(path.join(root, ".claude", "skills", "react-doctor")),
       ).rejects.toThrow();
       await expect(
-        fs.access(path.join(root, ".opencode", "skills", "react-doctor")),
+        fs.access(path.join(root, ".agents", "skills", "react-doctor")),
       ).rejects.toThrow();
       await expect(
         fs.access(path.join(root, ".claude", "hooks", "react-doctor.sh")),
@@ -543,7 +554,7 @@ describe("executeSetup", () => {
   );
 
   test(
-    "setup with opencode then without opencode leaves no .opencode directory",
+    "setup with opencode then without opencode removes managed skills from every root",
     async () => {
       const root = await makeTempDir("mate-teardown-opencode-");
       const globalConfigStore = new GlobalConfigStore(
@@ -559,8 +570,9 @@ describe("executeSetup", () => {
         { cwd: root, globalConfigStore },
       );
 
-      await fs.access(path.join(root, ".opencode", "skills", "react-doctor", "SKILL.md"));
-      await fs.access(path.join(root, ".opencode", "skills", "openspec-explore", "SKILL.md"));
+      await fs.access(path.join(root, ".agents", "skills", "react-doctor", "SKILL.md"));
+      await fs.access(path.join(root, ".agents", "skills", "openspec-explore", "SKILL.md"));
+      await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
       const setupConfig = await fs.readFile(path.join(root, ".opencode", "opencode.json"), "utf8");
       expect(setupConfig).toContain("@uniqbit/mate-opencode-plugin@");
       expect(setupConfig).toContain('"plugins"');
@@ -580,30 +592,66 @@ describe("executeSetup", () => {
         { cwd: root, globalConfigStore },
       );
 
-      await expect(fs.access(path.join(root, ".opencode"))).rejects.toThrow();
+      await expect(
+        fs.access(path.join(root, ".agents", "skills", "react-doctor")),
+      ).rejects.toThrow();
+      await expect(
+        fs.access(path.join(root, ".agents", "skills", "openspec-explore")),
+      ).rejects.toThrow();
+      await expect(
+        fs.access(path.join(root, ".agents", "skills", "mate-grill-me")),
+      ).rejects.toThrow();
+      await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
     },
     { timeout: 10000 },
   );
 
-  test("setup migrates legacy .agents/skills/react-doctor on configure", async () => {
-    const root = await makeTempDir("mate-setup-legacy-migrate-");
-    const globalConfigStore = new GlobalConfigStore(
-      path.join(root, "home", ".mate", "config.yaml"),
-    );
+  test(
+    "setup migrates earlier-layout .opencode/skills to the shared root and keeps unmanaged trees",
+    async () => {
+      const root = await makeTempDir("mate-setup-legacy-migrate-");
+      const globalConfigStore = new GlobalConfigStore(
+        path.join(root, "home", ".mate", "config.yaml"),
+      );
+      await installOpenSpecStub(root);
 
-    // Simulate legacy state: .agents/skills/react-doctor/ exists from a previous install.
-    const legacySkillDir = path.join(root, ".agents", "skills", "react-doctor");
-    await fs.mkdir(legacySkillDir, { recursive: true });
-    await fs.writeFile(path.join(legacySkillDir, "SKILL.md"), "legacy", "utf8");
+      const legacyRoot = path.join(root, ".opencode", "skills");
+      for (const skill of ["openspec-explore", "mate-grill-me", "react-doctor", "acme-local"]) {
+        await fs.mkdir(path.join(legacyRoot, skill), { recursive: true });
+        await fs.writeFile(path.join(legacyRoot, skill, "SKILL.md"), "legacy", "utf8");
+      }
+      const thirdParty = path.join(root, ".agents", "skills", "acme-skill", "SKILL.md");
+      await fs.mkdir(path.dirname(thirdParty), { recursive: true });
+      await fs.writeFile(thirdParty, "acme", "utf8");
 
-    await executeSetup(
-      { allowedAgents: ["opencode"], capabilities: [{ name: "react-doctor" }] },
-      { cwd: root, globalConfigStore },
-    );
+      const config = {
+        allowedAgents: ["opencode"],
+        capabilities: [{ name: "openspec" }, { name: "react-doctor" }],
+      };
+      await executeSetup(config, { cwd: root, globalConfigStore });
 
-    await expect(fs.access(path.join(root, ".agents"))).rejects.toThrow();
-    await fs.access(path.join(root, ".opencode", "skills", "react-doctor", "SKILL.md"));
-  });
+      expect((await fs.readdir(legacyRoot)).toSorted()).toEqual(["acme-local"]);
+      for (const skill of ["openspec-explore", "mate-grill-me", "react-doctor"]) {
+        await fs.access(path.join(root, ".agents", "skills", skill, "SKILL.md"));
+      }
+      await expect(fs.readFile(thirdParty, "utf8")).resolves.toBe("acme");
+
+      const snapshot = async () =>
+        Promise.all(
+          (await fs.readdir(path.join(root, ".agents", "skills"), { recursive: true }))
+            .toSorted()
+            .map(async (entry) => {
+              const full = path.join(root, ".agents", "skills", entry);
+              const stat = await fs.stat(full);
+              return stat.isFile() ? `${entry}:${await fs.readFile(full, "utf8")}` : entry;
+            }),
+        );
+      const first = await snapshot();
+      await executeSetup(config, { cwd: root, globalConfigStore });
+      expect(await snapshot()).toEqual(first);
+    },
+    { timeout: 20000 },
+  );
 
   test(
     "launch-time sync restores OpenCode package references without removing unrelated files",

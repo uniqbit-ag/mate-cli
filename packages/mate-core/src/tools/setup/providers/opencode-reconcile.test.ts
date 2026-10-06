@@ -92,7 +92,8 @@ describe("reconcileOpenCodeContributions", () => {
     const agentsMd = await fs.readFile(path.join(companionPath, "AGENTS.md"), "utf8");
     expect(agentsMd).toContain("## Acme");
 
-    await fs.access(path.join(companionPath, ".opencode", "skills", "acme", "SKILL.md"));
+    await fs.access(path.join(companionPath, ".agents", "skills", "acme", "SKILL.md"));
+    await expect(fs.access(path.join(companionPath, ".opencode", "skills"))).rejects.toThrow();
 
     expect(
       await fs.readFile(path.join(companionPath, ".opencode", "agents", "acme-agent.md"), "utf8"),
@@ -116,12 +117,39 @@ describe("reconcileOpenCodeContributions", () => {
     expect(after.plugins).toBeUndefined();
     expect(after.mcp).toBeUndefined();
     await expect(fs.access(path.join(companionPath, "AGENTS.md"))).rejects.toThrow();
-    await expect(
-      fs.access(path.join(companionPath, ".opencode", "skills", "acme")),
-    ).rejects.toThrow();
+    await expect(fs.access(path.join(companionPath, ".agents"))).rejects.toThrow();
     await expect(
       fs.access(path.join(companionPath, ".opencode", "agents", "acme-agent.md")),
     ).rejects.toThrow();
+  });
+
+  test("runtime deselect removes the shared tree once no reading runtime remains", async () => {
+    const companionPath = await makeCompanion();
+    await seedSkillSource(companionPath);
+    await reconcileOpenCodeContributions(makeCtx(companionPath, ["opencode"]), [
+      contribution(true, companionPath),
+    ]);
+
+    await reconcileOpenCodeContributions(makeCtx(companionPath, ["claude"]), [
+      { ...contribution(false, companionPath), capabilityEnabled: true },
+    ]);
+
+    await expect(fs.access(path.join(companionPath, ".agents"))).rejects.toThrow();
+  });
+
+  test("migrates a legacy .opencode/skills copy of a declared tree", async () => {
+    const companionPath = await makeCompanion();
+    await seedSkillSource(companionPath);
+    const legacy = path.join(companionPath, ".opencode", "skills", "acme");
+    await fs.mkdir(legacy, { recursive: true });
+    await fs.writeFile(path.join(legacy, "SKILL.md"), "old\n", "utf8");
+
+    await reconcileOpenCodeContributions(makeCtx(companionPath, ["opencode"]), [
+      contribution(true, companionPath),
+    ]);
+
+    await expect(fs.access(legacy)).rejects.toThrow();
+    await fs.access(path.join(companionPath, ".agents", "skills", "acme", "SKILL.md"));
   });
 
   // Capability teardown strips the section even from a shared file — the

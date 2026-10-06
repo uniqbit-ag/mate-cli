@@ -70,6 +70,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -277,6 +278,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 ,
   },
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -505,6 +507,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 ,
   },
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -841,6 +844,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -1054,6 +1058,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -1304,6 +1309,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -1621,6 +1627,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -1805,6 +1812,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -1979,6 +1987,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -2276,6 +2285,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -2448,11 +2458,12 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
     },
   },
   "opencodePlugins": {},
-  "opencodeSkills": {
+  "opencodeSkills": {},
+  "opencodeTui": null,
+  "sharedSkills": {
     "react-doctor/SKILL.md": "df58b3490543",
     "react-doctor/references/explain.md": "2382ea820f20",
   },
-  "opencodeTui": null,
 }
 `;
 
@@ -2647,11 +2658,12 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
     },
   },
   "opencodePlugins": {},
-  "opencodeSkills": {
+  "opencodeSkills": {},
+  "opencodeTui": null,
+  "sharedSkills": {
     "react-doctor/SKILL.md": "df58b3490543",
     "react-doctor/references/explain.md": "2382ea820f20",
   },
-  "opencodeTui": null,
 }
 `;
 
@@ -2949,6 +2961,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -3136,7 +3149,10 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     },
   },
   "opencodePlugins": {},
-  "opencodeSkills": {
+  "opencodeSkills": {},
+  "opencodeTui": null,
+  "sharedSkills": {
+    ".openspec-target": "38700dfad571",
     "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
     "mate-create-report/SKILL.md": "4dda64fab7b7",
@@ -3150,12 +3166,11 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-show-me/SKILL.md": "7ccd84f967cf",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
-    "openspec-apply-change/SKILL.md": "cb6e43b175c8",
-    "openspec-archive-change/SKILL.md": "920c4cc68edf",
-    "openspec-explore/SKILL.md": "87d1237e5ffa",
-    "openspec-propose/SKILL.md": "3618b84ce74c",
+    "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
+    "openspec-archive-change/SKILL.md": "ad2463670c0f",
+    "openspec-explore/SKILL.md": "214bba092ffa",
+    "openspec-propose/SKILL.md": "c09159964f8e",
   },
-  "opencodeTui": null,
 }
 `;
 
@@ -3353,7 +3368,10 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "opencodePlugins": {},
-  "opencodeSkills": {
+  "opencodeSkills": {},
+  "opencodeTui": null,
+  "sharedSkills": {
+    ".openspec-target": "38700dfad571",
     "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
     "mate-create-report/SKILL.md": "4dda64fab7b7",
@@ -3367,12 +3385,11 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-show-me/SKILL.md": "7ccd84f967cf",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
-    "openspec-apply-change/SKILL.md": "cb6e43b175c8",
-    "openspec-archive-change/SKILL.md": "920c4cc68edf",
-    "openspec-explore/SKILL.md": "87d1237e5ffa",
-    "openspec-propose/SKILL.md": "3618b84ce74c",
+    "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
+    "openspec-archive-change/SKILL.md": "ad2463670c0f",
+    "openspec-explore/SKILL.md": "214bba092ffa",
+    "openspec-propose/SKILL.md": "c09159964f8e",
   },
-  "opencodeTui": null,
 }
 `;
 
@@ -3854,6 +3871,10 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
+  },
+  "opencodeTui": null,
+  "sharedSkills": {
+    ".openspec-target": "38700dfad571",
     "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
     "mate-create-report/SKILL.md": "4dda64fab7b7",
@@ -3867,14 +3888,13 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
     "mate-show-me/SKILL.md": "7ccd84f967cf",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
-    "openspec-apply-change/SKILL.md": "cb6e43b175c8",
-    "openspec-archive-change/SKILL.md": "920c4cc68edf",
-    "openspec-explore/SKILL.md": "87d1237e5ffa",
-    "openspec-propose/SKILL.md": "3618b84ce74c",
+    "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
+    "openspec-archive-change/SKILL.md": "ad2463670c0f",
+    "openspec-explore/SKILL.md": "214bba092ffa",
+    "openspec-propose/SKILL.md": "c09159964f8e",
     "react-doctor/SKILL.md": "df58b3490543",
     "react-doctor/references/explain.md": "2382ea820f20",
   },
-  "opencodeTui": null,
 }
 `;
 
@@ -4246,6 +4266,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -4305,6 +4326,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -4365,6 +4387,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -4424,6 +4447,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -4483,6 +4507,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -4556,6 +4581,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;
 
@@ -4693,5 +4719,6 @@ exports[`working repo golden fixtures hub roots set up providers only without co
   "opencodePlugins": {},
   "opencodeSkills": {},
   "opencodeTui": null,
+  "sharedSkills": {},
 }
 `;

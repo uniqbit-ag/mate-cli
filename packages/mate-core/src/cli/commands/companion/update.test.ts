@@ -342,11 +342,75 @@ describe("mate companion update — commit scope", () => {
     ]);
   });
 
+  test("commits stale shared-root OpenSpec output without a conflict", async () => {
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, ".agents/skills/openspec-explore/SKILL.md", "stale");
+    const { git } = setup({
+      world,
+      sync: (w) => write(w, ".agents/skills/openspec-explore/SKILL.md", "regenerated"),
+      answers: [true, false],
+    });
+    const { err } = await run();
+    expect(err).toBe("");
+    const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
+    expect(committed).toContain(".agents/skills/openspec-explore/SKILL.md");
+  });
+
+  test("an edited shared-root Mate skill still conflicts", async () => {
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, ".agents/skills/mate-grill-me/SKILL.md", "local edit");
+    const { git } = setup({
+      world,
+      sync: (w) => write(w, ".agents/skills/mate-grill-me/SKILL.md", "new skill"),
+    });
+    const { err } = await run();
+    expect(err).toContain(".agents/skills/mate-grill-me/SKILL.md");
+    expect(git.commit).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("migrates an earlier-layout companion in one run, deletions and additions", async () => {
+    const legacy = [
+      ".opencode/skills/openspec-explore/SKILL.md",
+      ".opencode/skills/mate-grill-me/SKILL.md",
+    ];
+    const world: World = {
+      changed: new Set(),
+      content: new Map(legacy.map((file) => [file, "committed"])),
+    };
+    const { git } = setup({
+      world,
+      sync: (w) => {
+        for (const file of legacy) {
+          w.changed.add(file);
+          w.content.delete(file);
+        }
+        write(w, ".agents/skills/openspec-explore/SKILL.md", "shared");
+        write(w, ".agents/skills/mate-grill-me/SKILL.md", "shared");
+      },
+      answers: [true, false],
+    });
+    const { out, err } = await run();
+    expect(err).toBe("");
+    const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
+    expect(committed).toEqual([
+      ".agents/skills/mate-grill-me/SKILL.md",
+      ".agents/skills/openspec-explore/SKILL.md",
+      ".mate/config/framework.yaml",
+      ...legacy.toSorted(),
+    ]);
+    for (const file of legacy) expect(out).toContain(file);
+  });
+
   test("matches only OpenSpec CLI output as regenerated", () => {
     expect(isOpenSpecGenerated(".claude/skills/openspec-explore/SKILL.md")).toBe(true);
     expect(isOpenSpecGenerated(".opencode/skills/openspec-sync-specs/")).toBe(true);
     expect(isOpenSpecGenerated(".claude/commands/opsx/apply.md")).toBe(true);
     expect(isOpenSpecGenerated(".opencode/commands/opsx-archive.md")).toBe(true);
+    expect(isOpenSpecGenerated(".agents/skills/openspec-explore/SKILL.md")).toBe(true);
+    expect(isOpenSpecGenerated(".agents/skills/.openspec-target")).toBe(true);
+    expect(isOpenSpecGenerated(".agents/skills/mate-grill-me/SKILL.md")).toBe(false);
+    expect(isOpenSpecGenerated(".agents/skills/acme-skill/SKILL.md")).toBe(false);
     expect(isOpenSpecGenerated(".claude/skills/mate-grill-me/SKILL.md")).toBe(false);
     expect(isOpenSpecGenerated(".claude/skills/")).toBe(false);
     expect(isOpenSpecGenerated("openspec/config.yaml")).toBe(false);
