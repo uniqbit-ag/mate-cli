@@ -61,6 +61,72 @@ export function isAuthenticationFailure(result: GitResult): boolean {
   ].some((marker) => output.includes(marker));
 }
 
+/** `git@host:path` (`ssh://` when a port is given) for an HTTP(S) Git URL; `null` otherwise. */
+export function toSshUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (!parsed.hostname || parsed.pathname === "/") return null;
+
+    const repositoryPath = parsed.pathname.replace(/^\/+/, "");
+    if (!repositoryPath) return null;
+
+    if (!parsed.port) return `git@${parsed.hostname}:${repositoryPath}`;
+    return `ssh://git@${parsed.hostname}:${parsed.port}/${repositoryPath}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Lists every configured remote URL, one `remote.<name>.<key> <url>` per line. */
+export const REMOTE_URLS_QUERY: readonly string[] = [
+  "config",
+  "--get-regexp",
+  String.raw`^remote\..+\.(url|pushurl)$`,
+];
+
+/**
+ * `-c url.<ssh>.insteadOf=<https>` per HTTP(S) remote in `REMOTE_URLS_QUERY`
+ * output, so one invocation reaches every remote over SSH without rewriting
+ * the stored configuration. Empty when no remote is HTTP(S).
+ */
+export function sshRewriteArgs(remoteUrlsOutput: string): string[] {
+  const urls = new Set(
+    outputLines(remoteUrlsOutput).flatMap((line) => {
+      const url = line.slice(line.indexOf(" ") + 1).trim();
+      return url ? [url] : [];
+    }),
+  );
+  return [...urls].flatMap((url) => {
+    const ssh = toSshUrl(url);
+    return ssh ? ["-c", `url.${ssh}.insteadOf=${url}`] : [];
+  });
+}
+
+/** A remote rejection is a verdict the configured URL would repeat; anything else may be SSH-only. */
+export function shouldRetryWithoutSsh(result: GitResult): boolean {
+  if (result.status === 0) return false;
+  return !/\[(?:remote )?rejected\]/.test(`${result.stderr}\n${result.stdout}`);
+}
+
+/**
+ * Runs a network command over SSH first when a remote is HTTP(S), then as
+ * configured. `run` is the caller's own Git driver.
+ */
+export function runPreferringSsh<R extends { status: number | null }>(
+  run: (args: readonly string[]) => R,
+  args: readonly string[],
+  toResult: (result: R) => GitResult,
+): R {
+  const remotes = toResult(run(REMOTE_URLS_QUERY));
+  const rewrite = remotes.status === 0 ? sshRewriteArgs(remotes.stdout) : [];
+  if (rewrite.length > 0) {
+    const overSsh = run([...rewrite, ...args]);
+    if (!shouldRetryWithoutSsh(toResult(overSsh))) return overSsh;
+  }
+  return run(args);
+}
+
 /**
  * Inherited `GIT_*` overrides would point Git at the session's own repository
  * rather than the companion, so they are stripped from every invocation.

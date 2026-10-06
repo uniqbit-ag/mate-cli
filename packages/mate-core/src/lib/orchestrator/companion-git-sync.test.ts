@@ -249,6 +249,43 @@ describe("CompanionGitSync", () => {
     expect(fetchMode).toBe("interactive");
   });
 
+  test("fetches an HTTPS remote over SSH first, then falls back interactively", async () => {
+    const { companion } = await makeRepository();
+    const fetches: Array<{ args: string[]; mode: string | undefined }> = [];
+    const recording: GitRunner = async (args, cwd, mode) => {
+      if (args[0] === "config" && args[1] === "--get-regexp") {
+        return {
+          status: 0,
+          stdout: "remote.origin.url https://github.com/acme/acme.git\n",
+          stderr: "",
+        };
+      }
+      if (args.includes("fetch")) {
+        fetches.push({ args: [...args], mode });
+        if (args[0] === "-c") {
+          return { status: 128, stdout: "", stderr: "Permission denied (publickey)." };
+        }
+      }
+      return companionGitSyncDeps.runGit(args, cwd, mode);
+    };
+
+    await new CompanionGitSync(recording).sync(companion, undefined, true);
+
+    expect(fetches).toEqual([
+      {
+        args: [
+          "-c",
+          "url.git@github.com:acme/acme.git.insteadOf=https://github.com/acme/acme.git",
+          "fetch",
+          "origin",
+          "main",
+        ],
+        mode: undefined,
+      },
+      { args: ["fetch", "origin", "main"], mode: "interactive" },
+    ]);
+  });
+
   test("keeps generic fetch failures on the existing recovery path", async () => {
     const { companion } = await makeRepository();
     const recording: GitRunner = async (args, cwd, mode) => {

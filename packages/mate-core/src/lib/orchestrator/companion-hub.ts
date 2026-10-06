@@ -17,6 +17,7 @@ import {
 import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
 import { applySetupCompatibilities } from "../../tools/setup";
 import { findRepoLocalRegistryFile } from "./repo-local-registry";
+import { runPreferringSsh, toSshUrl } from "../../runtime/companion-git";
 
 export interface GitCommandResult {
   status: number | null;
@@ -217,10 +218,15 @@ export async function materializeHubMember(
   await fs.mkdir(path.dirname(destination), { recursive: true });
   try {
     if (source.kind === "git") {
-      const args = ["clone"];
-      if (source.ref) args.push("--branch", source.ref);
-      args.push(source.url!, destination);
-      gitOutputOrThrow(git(hubPath, args), `Cloning ${source.url}`);
+      const branch = source.ref ? ["--branch", source.ref] : [];
+      const cloneFrom = (url: string) => git(hubPath, ["clone", ...branch, url, destination]);
+      const sshUrl = toSshUrl(source.url!);
+      let clone = sshUrl ? cloneFrom(sshUrl) : undefined;
+      if (!clone || clone.status !== 0) {
+        if (clone) await fs.rm(destination, { recursive: true, force: true });
+        clone = cloneFrom(source.url!);
+      }
+      gitOutputOrThrow(clone, `Cloning ${source.url}`);
     } else {
       await copyWithoutGit(source.path!, destination);
     }
@@ -288,7 +294,11 @@ async function syncHubMember(
     return { id: member.id, status: "dirty", message: "local changes must be resolved first" };
   }
 
-  const fetch = git(memberPath, ["fetch", "origin"]);
+  const fetch = runPreferringSsh(
+    (args) => git(memberPath, [...args]),
+    ["fetch", "origin"],
+    (result) => ({ ...result, status: result.status ?? 1 }),
+  );
   if (fetch.status !== 0) {
     return { id: member.id, status: "failed", message: fetch.stderr || "fetch failed" };
   }

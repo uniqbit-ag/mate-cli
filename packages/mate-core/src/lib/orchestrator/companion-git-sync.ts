@@ -10,7 +10,10 @@ import {
   gitEnvironment,
   isAuthenticationFailure,
   outputLines,
+  REMOTE_URLS_QUERY,
   resolveUpstreamTargetWith,
+  shouldRetryWithoutSsh,
+  sshRewriteArgs,
   type GitResult,
 } from "../../runtime/companion-git";
 import { recordCompanionSync } from "../../runtime/companion-git-state";
@@ -172,11 +175,7 @@ export class CompanionGitSync {
     }
     const dirty = outputLines(before.stdout).length > 0;
 
-    const fetch = await this.command(
-      companionPath,
-      ["fetch", target.remote, target.branch],
-      interactiveGit ? "interactive" : undefined,
-    );
+    const fetch = await this.fetch(companionPath, target, interactiveGit);
     if (fetch.status !== 0) {
       const authenticationFailure = isAuthenticationFailure(fetch);
       const recovery = interactiveGit
@@ -246,6 +245,25 @@ export class CompanionGitSync {
       changed: headBefore.stdout.trim() !== headAfter.stdout.trim(),
       companionPath,
     };
+  }
+
+  /**
+   * SSH attempt stays captured: a failure there is expected noise, and SSH
+   * still prompts for passphrases or host keys on the terminal itself.
+   */
+  private async fetch(
+    companionPath: string,
+    target: SyncTarget,
+    interactiveGit: boolean,
+  ): Promise<GitCommandResult> {
+    const args = ["fetch", target.remote, target.branch];
+    const remotes = await this.command(companionPath, REMOTE_URLS_QUERY);
+    const rewrite = remotes.status === 0 ? sshRewriteArgs(remotes.stdout) : [];
+    if (rewrite.length > 0) {
+      const overSsh = await this.command(companionPath, [...rewrite, ...args]);
+      if (!shouldRetryWithoutSsh(overSsh)) return overSsh;
+    }
+    return this.command(companionPath, args, interactiveGit ? "interactive" : undefined);
   }
 
   private async mergeAndRestore(

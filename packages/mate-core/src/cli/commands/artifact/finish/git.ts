@@ -2,6 +2,8 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
+import { runPreferringSsh, type GitResult } from "../../../../runtime/companion-git";
+
 export interface RebaseResult {
   ok: boolean;
   conflictedPaths: string[];
@@ -46,7 +48,7 @@ export interface GitOps {
 
 function gitRun(
   companionPath: string,
-  args: string[],
+  args: readonly string[],
 ): { status: number; out: string; err: string } {
   const {
     GIT_DIR: _gitDir,
@@ -112,7 +114,13 @@ export function defaultGitOps(
   workingRepoPath = process.env.MATE_REPO_PATH,
 ): GitOps {
   assertSafeCompanionRoot(companionPath, workingRepoPath);
-  const exec = (args: string[]) => gitRun(companionPath, args);
+  const exec = (args: readonly string[]) => gitRun(companionPath, args);
+  const toResult = (res: ReturnType<typeof exec>): GitResult => ({
+    status: res.status,
+    stdout: res.out,
+    stderr: res.err,
+  });
+  const execNetwork = (args: string[]) => runPreferringSsh(exec, args, toResult);
   const execOrThrow = (args: string[]) => {
     const res = exec(args);
     if (res.status !== 0) {
@@ -185,7 +193,8 @@ export function defaultGitOps(
       return exec(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).status === 0;
     },
     async fetch() {
-      execOrThrow(["fetch"]);
+      const res = execNetwork(["fetch"]);
+      if (res.status !== 0) throw new Error(`git fetch failed: ${res.err || res.out}`);
     },
     async rebaseOntoUpstream() {
       const res = exec(["rebase", "--autostash", "@{u}"]);
@@ -205,7 +214,7 @@ export function defaultGitOps(
       execOrThrow(["tag", "-a", name, "-m", message]);
     },
     async push() {
-      const res = exec(["push", "--follow-tags"]);
+      const res = execNetwork(["push", "--follow-tags"]);
       return { ok: res.status === 0, error: res.err || res.out };
     },
   };
