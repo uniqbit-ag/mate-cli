@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.17.1](https://github.com/uniqbit-ag/mate-cli/compare/0.17.0...0.17.1) (2026-10-06)
+
 ## [0.17.0](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-10-06)
 
 ### Bug Fixes
