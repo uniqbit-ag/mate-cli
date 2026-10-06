@@ -1589,6 +1589,19 @@ describe("updateProjectGitignore", () => {
     expect(gitignore).toContain(".claude/state/");
   });
 
+  test("adds OpenCode service state to the managed gitignore block when opencode is enabled", async () => {
+    const root = await makeTempDir("mate-sync-opencode-service-gitignore-");
+    await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
+
+    await updateProjectGitignore(root, {
+      allowedAgents: ["opencode"],
+      packageManagers: ["bun"],
+    });
+
+    const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
+    expect(gitignore).toContain(".opencode/service.json");
+  });
+
   test("keeps sticky managed entries when no features are enabled", async () => {
     const root = await makeTempDir("mate-sync-uv-gitignore-remove-");
     await fs.writeFile(

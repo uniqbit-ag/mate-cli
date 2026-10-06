@@ -35,6 +35,8 @@ import {
 } from "./opencode-format";
 import { getSetupProvidersRoot, getSetupRootTemplates } from "./utils";
 
+const COMPANION_GITIGNORE_ENTRIES = [".opencode/service.json"];
+
 // Copied Mate plugin source files from earlier releases. Plugin code is
 // package-owned now; these exact filenames are removed during sync and
 // teardown while every other companion-local plugin is preserved.
@@ -616,6 +618,7 @@ export function createOpenCodePlugin(): ProviderPlugin {
     description: "Install the OpenCode plugin workspace.",
     defaultSelected: false,
     isEnabled: (config) => (config.allowedAgents ?? []).includes("opencode"),
+    gitignoreEntries: () => COMPANION_GITIGNORE_ENTRIES,
     hosting: {
       mcp: {
         async register(ctx: SetupContext, descriptor) {
