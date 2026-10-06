@@ -12,7 +12,6 @@ import {
   findDescendantRepoLocalRegistries,
   findRepoLocalLinkedRepository,
   findRepoLocalRegistryFile,
-  listOtherRepoLocalCompanionPaths,
   repoLocalFrameworkPath,
   repoLocalRegistryPath,
   writeRepoLocalFrameworkConfig,
@@ -267,38 +266,6 @@ describe("findDescendantRepoLocalRegistries", () => {
     } finally {
       await fs.chmod(unreadable, 0o755);
     }
-  });
-});
-
-describe("listOtherRepoLocalCompanionPaths", () => {
-  test("excludes the given path and returns the rest", async () => {
-    const root = await makeTempDir("repo-local-others-");
-    const repoPath = path.join(root, "repo");
-    await initGitRepo(repoPath);
-    await writeRepoLocalRegistryEntry(
-      repoPath,
-      "/tmp/companion-a",
-      { id: "app", path: repoPath },
-      "git",
-    );
-    await writeRepoLocalRegistryEntry(
-      repoPath,
-      "/tmp/companion-b",
-      { id: "app", path: repoPath },
-      "git",
-    );
-
-    const others = await listOtherRepoLocalCompanionPaths(repoPath, "/tmp/companion-a");
-
-    expect(others).toEqual([path.resolve("/tmp/companion-b")]);
-  });
-
-  test("returns an empty array when the registry file is missing", async () => {
-    const root = await makeTempDir("repo-local-others-missing-");
-    const repoPath = path.join(root, "repo");
-    await fs.mkdir(repoPath, { recursive: true });
-
-    expect(await listOtherRepoLocalCompanionPaths(repoPath, "/tmp/companion-a")).toEqual([]);
   });
 });
 

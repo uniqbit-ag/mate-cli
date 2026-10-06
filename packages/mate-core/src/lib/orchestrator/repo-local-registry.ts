@@ -75,27 +75,6 @@ export async function findRepoLocalLinkedRepository(cwd: string): Promise<Linked
   }
 }
 
-/** Returns other companion paths this repo is locally linked to, excluding `excludePath`. */
-export async function listOtherRepoLocalCompanionPaths(
-  repoPath: string,
-  excludePath: string,
-): Promise<string[]> {
-  const resolvedExclude = path.resolve(excludePath);
-  try {
-    const raw = await fs.readFile(repoLocalRegistryPath(repoPath), "utf8");
-    const parsed = parse(raw) as Partial<RepoLocalRegistry> | null;
-    if (!parsed || !Array.isArray(parsed.companions)) return [];
-    const paths: string[] = [];
-    for (const pointer of parsed.companions) {
-      const resolvedPath = path.resolve(pointer.path);
-      if (resolvedPath !== resolvedExclude) paths.push(resolvedPath);
-    }
-    return paths;
-  } catch {
-    return [];
-  }
-}
-
 /** Walks up from `cwd` looking for the nearest ancestor holding a repo-local registry file. */
 export async function findRepoLocalRegistryFile(
   cwd: string,

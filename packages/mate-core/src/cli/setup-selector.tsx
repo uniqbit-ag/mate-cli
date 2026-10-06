@@ -1,5 +1,5 @@
 import { Box, Text, render as inkRender } from "ink";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 
 import { SelectMenu, type SelectMenuItem } from "../lib/components/select-menu";
 import { WizardFooter } from "../lib/components/wizard-footer";

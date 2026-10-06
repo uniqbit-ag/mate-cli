@@ -11,7 +11,3 @@ export function formatTokens(count: number): string {
 export function formatCost(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
-
-export function formatPercentage(value: number): string {
-  return `${value.toFixed(1)}%`;
-}

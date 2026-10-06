@@ -71,10 +71,6 @@ const CLAUDE_MANAGED_HOOK_COMMAND_SUFFIXES = new Set([
   "/.claude/hooks/mate-artifact-finish.sh",
 ]);
 
-export function deriveGraphifyProviders(activeProviders: string[]): string[] {
-  return GRAPHIFY_SUPPORTED_PROVIDERS.filter((p) => activeProviders.includes(p));
-}
-
 // graphifyy's `graphify install` emits a skill whose pipeline writes to a
 // cwd-relative graphify-out/ using literal path strings (inline Python + bash)
 // that graphifyy's own GRAPHIFY_OUT/paths.py override cannot redirect. Rewrite
