@@ -71,6 +71,8 @@ async function commitFile(repoDir: string, content: string, message: string) {
   });
 }
 
+const FIXTURE_INTEGRITY = "sha512-acme";
+
 type PublishFixture = {
   binDir: string;
   callsPath: string;
@@ -108,6 +110,25 @@ async function createPublishFixture(
     );
   }
 
+  const lockDir = path.join(tempDir, "apps/mate-container/locks");
+  await fs.mkdir(lockDir, { recursive: true });
+  const lockEntries = (names: string[]) =>
+    Object.fromEntries(
+      names.map((name) => [`node_modules/${name}`, { version, integrity: FIXTURE_INTEGRITY }]),
+    );
+  await fs.writeFile(
+    path.join(lockDir, "global-tools.package-lock.json"),
+    JSON.stringify({ packages: lockEntries(workspacePackages.map(([, , name]) => name)) }),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(lockDir, "local-workspace.package-lock.json"),
+    JSON.stringify({
+      packages: lockEntries(["@uniqbit/mate-core", "@uniqbit/mate-opencode-plugin"]),
+    }),
+    "utf8",
+  );
+
   const fakeNpmPath = path.join(binDir, "npm");
   await fs.writeFile(
     fakeNpmPath,
@@ -116,6 +137,7 @@ async function createPublishFixture(
       "set -eu",
       'printf "%s\\n" "$*" >> "$NPM_CALLS_PATH"',
       'cp "$NPM_CONFIG_USERCONFIG" "$NPMRC_CAPTURE_PATH"',
+      'case " $* " in *" --json "*) printf \'[{"integrity":"%s"}]\\n\' "$FAKE_PACK_INTEGRITY" ;; esac',
       "",
     ].join("\n"),
     "utf8",
@@ -125,12 +147,18 @@ async function createPublishFixture(
   return { binDir, callsPath, npmrcCapturePath, scriptPath };
 }
 
-function runPublish(fixture: PublishFixture, tag: string, npmToken: string | null = "test-token") {
+function runPublish(
+  fixture: PublishFixture,
+  tag: string,
+  npmToken: string | null = "test-token",
+  packIntegrity = FIXTURE_INTEGRITY,
+) {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${fixture.binDir}${path.delimiter}${process.env.PATH ?? ""}`,
     NPM_CALLS_PATH: fixture.callsPath,
     NPMRC_CAPTURE_PATH: fixture.npmrcCapturePath,
+    FAKE_PACK_INTEGRITY: packIntegrity,
   };
 
   if (npmToken === null) {
@@ -363,6 +391,18 @@ describe("publish.sh", () => {
       expect(npmrc).toContain("//registry.npmjs.org/:_authToken=test-token");
       expect(npmrc).toContain("@uniqbit:registry=https://registry.npmjs.org/");
     }
+  });
+
+  test("publishes nothing when a packed tarball differs from the image lock pins", async () => {
+    const fixture = await createPublishFixture("1.2.3");
+    const result = runPublish(fixture, "latest", "test-token", "sha512-changed");
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "@uniqbit/mate-core@1.2.3 would publish as sha512-changed, but global-tools.package-lock.json, local-workspace.package-lock.json pin another tarball",
+    );
+    const calls = await fs.readFile(fixture.callsPath, "utf8");
+    expect(calls).not.toContain("publish --workspace");
   });
 
   test("rejects unsynchronized package versions before invoking npm", async () => {
