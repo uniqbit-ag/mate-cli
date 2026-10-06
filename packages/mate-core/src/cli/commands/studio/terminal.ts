@@ -177,7 +177,15 @@ export interface TerminalSessionInfo {
   startedAt: number;
 }
 
-export type TerminalLaunchResolution = { companionPath: string } | { reason: string };
+export type TerminalLaunchResolution =
+  | {
+      companionPath: string;
+      /** Extra argv entries for the managed launch; set only by companion configuration. */
+      agentArgs?: string[];
+      /** Written to the terminal before the agent starts. */
+      notice?: string;
+    }
+  | { reason: string };
 
 export interface TerminalRegistryOptions {
   detachMs: number;
@@ -388,7 +396,7 @@ export class TerminalRegistry {
       void this.finish(detached, { type: "ended", reason: "evicted" });
     }
 
-    const session = this.launch(agent, resolved.companionPath, size);
+    const session = this.launch(agent, resolved.companionPath, size, resolved);
     this.attachTo(connection, session, size);
   }
 
@@ -396,6 +404,7 @@ export class TerminalRegistry {
     agent: TerminalAgent,
     companionPath: string,
     size: { cols: number; rows: number },
+    extras: { agentArgs?: string[]; notice?: string } = {},
   ): Session {
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(this.options.env ?? process.env)) {
@@ -413,6 +422,7 @@ export class TerminalRegistry {
       "--companion",
       "--yes",
       ...(this.options.noGit ? ["--no-git"] : []),
+      ...(extras.agentArgs ?? []),
     ];
 
     const session = {
@@ -427,6 +437,7 @@ export class TerminalRegistry {
       ending: null,
       exited: false,
     } as Omit<Session, "process"> as Session;
+    if (extras.notice) session.ring.push(new TextEncoder().encode(`${extras.notice}\r\n`));
     session.process = this.spawn({
       argv,
       cwd: companionPath,

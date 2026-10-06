@@ -120,6 +120,11 @@ export interface PluginDeclaration {
   config?: unknown;
 }
 
+export interface StudioTerminalConfig {
+  /** Persona selected with `--agent` when Studio's terminal starts a provider. */
+  agent?: string;
+}
+
 export interface FrameworkConfig {
   type?: FrameworkType;
   git?: GitModeProfile;
@@ -131,6 +136,7 @@ export interface FrameworkConfig {
   cliTools?: CliToolConfig[];
   packageManagers?: string[];
   engines?: EngineConstraints;
+  studio?: { terminal?: StudioTerminalConfig };
 }
 
 export interface CompanionRegistryConfig {
