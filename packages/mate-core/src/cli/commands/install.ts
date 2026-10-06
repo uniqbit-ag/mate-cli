@@ -19,7 +19,6 @@ import {
   FrozenInstallError,
   installDeclaredPluginsFrozen,
 } from "../../tools/setup/dynamic-plugins/frozen";
-import { verifyTrackedPluginOutputs } from "../../tools/setup/dynamic-plugins/staging";
 import { verifyDeclaredPlugins } from "../../tools/setup/dynamic-plugins/verify";
 
 export function reportPluginInstallResults(results: PluginInstallResult[]): boolean {
@@ -159,20 +158,7 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
   }
 
   try {
-    if (frozen && plan.context.companionPath) {
-      const { syncCompanionFiles } = await import("../../tools/setup");
-      const drift = await verifyTrackedPluginOutputs(plan.context.companionPath, (staged) =>
-        syncCompanionFiles(staged, plan.context.config),
-      );
-      if (drift.length > 0) {
-        process.stderr.write(
-          `${FRAMEWORK_NAME}: warning: plugin-generated files differ from the committed checkout: ${drift.join(", ")}\n` +
-            `Prepare and commit them in the companion's authoring flow; the checkout was left unchanged.\n`,
-        );
-      }
-    } else {
-      await reconcileInstalledCompanion(plan);
-    }
+    await reconcileInstalledCompanion(plan);
     await saveCompleteInstallState(plan, execution.results);
   } catch (error) {
     process.stderr.write(
