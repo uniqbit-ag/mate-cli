@@ -36,13 +36,13 @@
     },
     "apps/mate-cli": {
       "name": "@uniqbit/mate",
-      "version": "0.17.2-canary.1",
+      "version": "0.17.2-canary.2",
       "bin": {
         "mate": "src/cli-bootstrap.cjs",
       },
       "dependencies": {
-        "@uniqbit/mate-core": "0.17.2-canary.1",
-        "@uniqbit/mate-opencode-plugin": "0.17.2-canary.1",
+        "@uniqbit/mate-core": "0.17.2-canary.2",
+        "@uniqbit/mate-opencode-plugin": "0.17.2-canary.2",
         "yaml": "^2.9.0",
       },
       "devDependencies": {
@@ -67,10 +67,10 @@
     },
     "apps/mate-opencode-plugin": {
       "name": "@uniqbit/mate-opencode-plugin",
-      "version": "0.17.2-canary.1",
+      "version": "0.17.2-canary.2",
       "dependencies": {
         "@opencode/plugin": "^2.0.23",
-        "@uniqbit/mate-core": "0.17.2-canary.1",
+        "@uniqbit/mate-core": "0.17.2-canary.2",
       },
       "devDependencies": {
         "@opentui/core": "^0.5.14",
@@ -91,7 +91,7 @@
     },
     "packages/mate-core": {
       "name": "@uniqbit/mate-core",
-      "version": "0.17.2-canary.1",
+      "version": "0.17.2-canary.2",
       "dependencies": {
         "@opencode/plugin": "^2.0.23",
         "@opentui/core": "^0.5.14",
