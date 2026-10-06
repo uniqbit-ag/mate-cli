@@ -77,7 +77,11 @@ describe("hub setup scope", () => {
     expect(
       JSON.parse(await fs.readFile(path.join(hubPath, ".opencode", "opencode.json"), "utf8")),
     ).toEqual({
-      mcp: { acme: { type: "local", command: ["acme", "serve"], enabled: true } },
+      mcp: {
+        servers: {
+          acme: { type: "local", command: ["acme", "serve"], disabled: false },
+        },
+      },
     });
     await fs.access(path.join(hubPath, ".claude", "settings.local.json"));
 

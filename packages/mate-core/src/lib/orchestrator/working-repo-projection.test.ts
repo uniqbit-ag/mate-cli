@@ -483,9 +483,9 @@ describe("the runtime documents under a launch", () => {
   }
 
   interface OpenCodeDocument {
-    plugin?: string[];
-    mcp?: Record<string, unknown>;
-    permission?: { external_directory?: Record<string, string> };
+    plugins?: string[];
+    mcp?: { servers?: Record<string, unknown> };
+    permissions?: Array<{ action: string; resource: string; effect: string }>;
   }
 
   async function readOpenCode(repoPath: string): Promise<OpenCodeDocument> {
@@ -501,7 +501,7 @@ describe("the runtime documents under a launch", () => {
   test("a launch re-pins the plugin reference the wrap baked in", async () => {
     const { repoPath, at } = await makeWrappable("projection-launch-repin-");
     await at("wrap", "0.15.5");
-    expect((await readOpenCode(repoPath)).plugin).toEqual([
+    expect((await readOpenCode(repoPath)).plugins).toEqual([
       getOpenCodePluginPackageReference("0.15.5"),
     ]);
 
@@ -509,7 +509,7 @@ describe("the runtime documents under a launch", () => {
 
     expect(stateOf(launched, "opencode-runtime-document")).toBe("written");
     /** One entry, not the old one with its successor beside it. */
-    expect((await readOpenCode(repoPath)).plugin).toEqual([
+    expect((await readOpenCode(repoPath)).plugins).toEqual([
       getOpenCodePluginPackageReference("0.16.0"),
     ]);
   });
@@ -539,14 +539,18 @@ describe("the runtime documents under a launch", () => {
     const settings = JSON.parse(await fs.readFile(settingsPath, "utf8")) as Record<string, unknown>;
     const localConfigPath = path.join(runtimeDocumentDeps.homeDir(), ".claude.json");
     const localConfig = await fs.readFile(localConfigPath, "utf8");
-    expect(Object.keys(wrapped.mcp ?? {})).toEqual(["tokensave"]);
+    expect(Object.keys(wrapped.mcp?.servers ?? {})).toEqual(["tokensave"]);
 
     await at("launch", "0.16.0");
 
     const launched = await readOpenCode(repoPath);
-    expect(launched.mcp).toEqual(wrapped.mcp!);
-    expect(launched.permission?.external_directory?.[companionPath]).toBe("allow");
-    expect(launched.permission).toEqual(wrapped.permission!);
+    expect(launched.mcp?.servers).toEqual(wrapped.mcp?.servers);
+    expect(launched.permissions).toContainEqual({
+      action: "external_directory",
+      resource: companionPath,
+      effect: "allow",
+    });
+    expect(launched.permissions).toEqual(wrapped.permissions);
     expect(JSON.parse(await fs.readFile(settingsPath, "utf8"))).toEqual(settings);
     expect(await fs.readFile(localConfigPath, "utf8")).toBe(localConfig);
   });
@@ -585,7 +589,7 @@ describe("the runtime documents under a launch", () => {
 
     expect(warmed.ok).toBe(true);
     /** The spec directory the warm created is named by the projected reference. */
-    const pinned = (await readOpenCode(repoPath)).plugin![0]!;
+    const pinned = (await readOpenCode(repoPath)).plugins![0]!;
     const specDir = path.join(
       getOpenCodeCacheDir({ XDG_CACHE_HOME: cacheHome }),
       "packages",
@@ -717,7 +721,7 @@ describe("the owner's reporting", () => {
 describe("a tracked runtime document", () => {
   const document: RenderedRuntimeDocument = {
     path: ".opencode/opencode.json",
-    regions: [{ at: ["plugin"], kind: "list", values: ["@acme/plugin@1.0.0"] }],
+    regions: [{ at: ["plugins"], kind: "list", values: ["@acme/plugin@1.0.0"] }],
   };
   const config = { allowedAgents: ["opencode"], capabilities: [] };
 

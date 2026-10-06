@@ -6,6 +6,7 @@ import { publicNpmDeps } from "../../lib/public-npm";
 import { runUpdateCommand, updateCommandDeps } from "./update";
 
 const realIsNpmManagedInstall = updateCommandDeps.isNpmManagedInstall;
+const realRunPostInstall = updateCommandDeps.runPostInstall;
 
 function captureStderr(): { chunks: string[]; restore: () => void } {
   const chunks: string[] = [];
@@ -169,6 +170,27 @@ describe("runUpdateCommand", () => {
     expect(updateCommandDeps.installLatest).toHaveBeenCalledWith("0.16.0-canary.1");
     expect(updateCommandDeps.saveUpdateState).toHaveBeenCalledWith("0.16.0-canary.1");
     expect(updateCommandDeps.warmOpenCodePluginCache).toHaveBeenCalledWith("0.16.0-canary.1");
+  });
+
+  test("runs post-update install from the compiled production entrypoint", () => {
+    const originalEntrypoint = process.argv[1];
+    const originalSpawn = updateCommandDeps.spawnPostInstall;
+    const originalRunPostInstall = updateCommandDeps.runPostInstall;
+    const spawn = mock(() => ({ status: 0, error: undefined }) as never);
+    const entrypoint = "/opt/mate/dist/cli.mjs";
+    process.argv[1] = entrypoint;
+    updateCommandDeps.runPostInstall = realRunPostInstall;
+    updateCommandDeps.spawnPostInstall = spawn;
+
+    try {
+      expect(updateCommandDeps.runPostInstall(true)).toMatchObject({ status: 0 });
+    } finally {
+      process.argv[1] = originalEntrypoint;
+      updateCommandDeps.spawnPostInstall = originalSpawn;
+      updateCommandDeps.runPostInstall = originalRunPostInstall;
+    }
+
+    expect(spawn).toHaveBeenCalledWith(process.execPath, [entrypoint, "install", "--yes"]);
   });
 
   test("rejects self-update when the running Mate is not npm-managed", async () => {

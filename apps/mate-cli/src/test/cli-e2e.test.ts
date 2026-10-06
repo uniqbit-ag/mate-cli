@@ -141,7 +141,7 @@ async function runMate(
   },
 ): Promise<CliRunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn("bun", [path.join(APP_ROOT, "src/cli.ts"), ...args], {
+    const child = spawn(process.execPath, [path.join(APP_ROOT, "src/cli.ts"), ...args], {
       cwd,
       env: {
         ...process.env,
@@ -153,6 +153,7 @@ async function runMate(
         CI: "", // unset so piped stdin ("y\n") is read normally in spawned processes
         // Prevent dev-environment contamination when running tests inside a Mate-managed agent session
         MATE_ARTIFACT_PATH: "",
+        MATE_VERSION: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
         MATE_POLICY_JSON: "",
@@ -285,6 +286,7 @@ async function runMateInTty(
         __CFBundleIdentifier: "",
         CI: "",
         MATE_ARTIFACT_PATH: "",
+        MATE_VERSION: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
         MATE_POLICY_JSON: "",
@@ -423,6 +425,9 @@ async function writeAdapterStub(
   const source = [
     "#!/usr/bin/env bun",
     'import fs from "node:fs";',
+    ...(toolName === "opencode"
+      ? ['if (process.argv[2] === "--version") { console.log("2.0.23"); process.exit(0); }']
+      : []),
     "const capturePath = process.env.MATE_E2E_CAPTURE_PATH;",
     "if (!capturePath) process.exit(2);",
     "const payload = {",
@@ -739,6 +744,29 @@ async function writeTokensaveInstallStub(scenario: E2EScenario): Promise<void> {
     "#!/usr/bin/env bun",
     "const args = process.argv.slice(2);",
     "if (args[0] === '--version') process.exit(0);",
+    "if (args[0] === 'install' && args[1] === '--agent') {",
+    "  const fs = require('node:fs');",
+    "  const path = require('node:path');",
+    "  const home = process.env.HOME;",
+    "  if (args[2] === 'claude') {",
+    "    const dir = path.join(home, '.claude');",
+    "    fs.mkdirSync(path.join(dir, 'rules'), { recursive: true });",
+    "    const file = path.join(dir, 'settings.json');",
+    "    const settings = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};",
+    "    settings.permissions = { ...settings.permissions, allow: [...(settings.permissions?.allow ?? []), 'mcp__tokensave__*'] };",
+    "    fs.writeFileSync(file, JSON.stringify(settings));",
+    "    fs.writeFileSync(path.join(dir, 'rules', 'tokensave.md'), '');",
+    "  }",
+    "  if (args[2] === 'opencode') {",
+    "    const dir = path.join(home, '.config', 'opencode');",
+    "    fs.mkdirSync(dir, { recursive: true });",
+    "    const file = path.join(dir, 'opencode.json');",
+    "    const config = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};",
+    "    config.mcp = { ...config.mcp, tokensave: {} };",
+    "    fs.writeFileSync(file, JSON.stringify(config));",
+    "    fs.writeFileSync(path.join(dir, 'tokensave.md'), '');",
+    "  }",
+    "}",
     "process.exit(0);",
   ].join("\n");
 
@@ -893,19 +921,14 @@ describe("mate CLI e2e", () => {
     const opencodeConfig = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
     );
-    const tuiConfig = JSON.parse(
-      await fs.readFile(path.join(scenario.companion, ".opencode", "tui.json"), "utf8"),
-    );
     expect(
-      opencodeConfig.plugin.filter((entry: string) =>
+      opencodeConfig.plugins.filter((entry: string) =>
         entry.startsWith("@uniqbit/mate-opencode-plugin@"),
       ),
     ).toHaveLength(1);
-    expect(
-      tuiConfig.plugin.filter((entry: string) =>
-        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
-      ),
-    ).toHaveLength(1);
+    await expect(
+      fs.access(path.join(scenario.companion, ".opencode", "tui.json")),
+    ).rejects.toThrow();
     // Guidance is delivered through the launch environment; setup writes no
     // guidance file and copies no plugin sources.
     await expect(
@@ -975,8 +998,12 @@ describe("mate CLI e2e", () => {
 
     const opencodeConfig = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
-    ) as { mcp?: Record<string, { command?: string[] }> };
-    expect(opencodeConfig.mcp?.context7?.command).toEqual(["npx", "-y", "@upstash/context7-mcp"]);
+    ) as { mcp?: { servers?: Record<string, { command?: string[] }> } };
+    expect(opencodeConfig.mcp?.servers?.context7?.command).toEqual([
+      "npx",
+      "-y",
+      "@upstash/context7-mcp",
+    ]);
 
     expect(
       (
@@ -998,8 +1025,8 @@ describe("mate CLI e2e", () => {
     });
     const preinstalledOpenCode = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
-    ) as { mcp?: Record<string, { command?: string[] }> };
-    expect(preinstalledOpenCode.mcp?.context7?.command).toEqual(["context7-mcp"]);
+    ) as { mcp?: { servers?: Record<string, { command?: string[] }> } };
+    expect(preinstalledOpenCode.mcp?.servers?.context7?.command).toEqual(["context7-mcp"]);
 
     expect(
       (
@@ -1863,6 +1890,8 @@ describe("mate CLI e2e", () => {
   test("companion open falls back to code-insiders when code is unavailable", async () => {
     const scenario = await createScenario("mate-cli-e2e-workspace-open-insiders-");
     const capturePath = await writeEditorStub(scenario, "code-insiders");
+    /** Stripping `code` from PATH may drop bun's dir too; stubs need bun via their shebang. */
+    await fs.symlink(process.execPath, path.join(scenario.bin, "bun"));
 
     expect((await setupCompanion(scenario)).exitCode).toBe(0);
     expect((await linkRepository(scenario)).exitCode).toBe(0);
@@ -2171,9 +2200,7 @@ describe("mate CLI e2e", () => {
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
     const configPath = path.join(scenario.companion, ".opencode", "opencode.json");
-    const tuiConfigPath = path.join(scenario.companion, ".opencode", "tui.json");
     await fs.rm(configPath);
-    await fs.rm(tuiConfigPath);
     // Legacy runtime files from the copied-plugin era are cleaned up by sync.
     const legacyGuidancePath = path.join(scenario.companion, ".opencode", ".mate-guidance.json");
     await fs.writeFile(legacyGuidancePath, '{"version":1}\n', "utf8");
@@ -2185,19 +2212,16 @@ describe("mate CLI e2e", () => {
       env: { MATE_E2E_CAPTURE_PATH: capturePath },
     });
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
-    const repairedTuiConfig = JSON.parse(await fs.readFile(tuiConfigPath, "utf8"));
     expect(
-      repairedConfig.plugin.filter((entry: string) =>
+      repairedConfig.plugins.filter((entry: string) =>
         entry.startsWith("@uniqbit/mate-opencode-plugin@"),
       ),
     ).toHaveLength(1);
-    expect(
-      repairedTuiConfig.plugin.filter((entry: string) =>
-        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
-      ),
-    ).toHaveLength(1);
+    await expect(
+      fs.access(path.join(scenario.companion, ".opencode", "tui.json")),
+    ).rejects.toThrow();
     await expect(fs.access(legacyGuidancePath)).rejects.toThrow();
     const invocation = await readJson<{ env: { MATE_GUIDANCE_JSON: string | null } }>(capturePath);
     const guidance = JSON.parse(invocation.env.MATE_GUIDANCE_JSON ?? "{}");
@@ -2425,7 +2449,7 @@ interface StudioProcess {
  */
 async function startStudio(scenario: E2EScenario, cwd: string): Promise<StudioProcess> {
   const browserCapturePath = await writeBrowserStub(scenario);
-  const child = spawn("bun", [path.join(APP_ROOT, "src/cli.ts"), "studio"], {
+  const child = spawn(process.execPath, [path.join(APP_ROOT, "src/cli.ts"), "studio"], {
     cwd,
     env: {
       ...process.env,
@@ -2433,6 +2457,7 @@ async function startStudio(scenario: E2EScenario, cwd: string): Promise<StudioPr
       PATH: `${scenario.bin}:${process.env.PATH ?? ""}`,
       CI: "",
       MATE_ARTIFACT_PATH: "",
+      MATE_VERSION: "",
       MATE_REPO_ID: "",
       MATE_REPO_PATH: "",
       MATE_POLICY_JSON: "",

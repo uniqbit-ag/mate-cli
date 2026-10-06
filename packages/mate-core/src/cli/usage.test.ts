@@ -27,3 +27,6 @@ test("lists studio", () => {
     expect(usage()).toContain(flag);
   }
 });
+test("lists companion update", () => {
+  expect(usage()).toContain("mate companion update [--yes]");
+});

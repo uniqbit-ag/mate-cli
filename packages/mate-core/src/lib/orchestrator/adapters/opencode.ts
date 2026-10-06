@@ -1,4 +1,6 @@
 // oxlint-disable no-await-in-loop
+import { spawnSync } from "node:child_process";
+
 const fs = await import("node:fs/promises");
 const path = await import("node:path");
 
@@ -21,18 +23,61 @@ import { buildOpenCodeGuidance } from "../opencode-guidance";
 import { LaunchPreflightError } from "../types";
 import { type AdapterContext, LaunchAdapter } from "./base";
 
+/** The Mate plugin is a V2 plugin; an older host rejects it at load time. */
+const MIN_OPENCODE_MAJOR = 2;
+
+/**
+ * OpenCode 2.x attaches to a shared background service by default; plugins and
+ * config load in that server, so the per-launch Mate env never reaches it.
+ */
+const STANDALONE_FLAG = "--standalone";
+
+/** Raw `opencode --version` output, or `undefined` when the binary cannot run. */
+export type OpenCodeVersionProbe = () => string | undefined;
+
+const probeOpenCodeVersion: OpenCodeVersionProbe = () => {
+  const result = spawnSync("opencode", ["--version"], { encoding: "utf8", timeout: 10_000 });
+  return result.status === 0 ? result.stdout.trim() : undefined;
+};
+
+function parseOpenCodeMajor(output: string | undefined): number | undefined {
+  const match = output?.match(/(\d+)\.\d+\.\d+/);
+  return match ? Number(match[1]) : undefined;
+}
+
 export class OpenCodeAdapter extends LaunchAdapter {
   readonly toolName = "opencode";
   readonly interactive = true;
+  private readonly requiredRuntimeAssets = [path.join(".opencode", "opencode.json")] as const;
 
-  private readonly requiredRuntimeAssets = [
-    path.join(".opencode", "opencode.json"),
-    path.join(".opencode", "tui.json"),
-  ] as const;
+  constructor(private readonly probeVersion: OpenCodeVersionProbe = probeOpenCodeVersion) {
+    super();
+  }
+
+  private validateOpenCodeVersion(): void {
+    const output = this.probeVersion();
+    const major = parseOpenCodeMajor(output);
+    if (major !== undefined && major >= MIN_OPENCODE_MAJOR) return;
+    throw new LaunchPreflightError(
+      [
+        output === undefined
+          ? "OpenCode is not installed or `opencode --version` failed."
+          : `OpenCode ${output} is not supported.`,
+        `Mate requires OpenCode ${MIN_OPENCODE_MAJOR}.x or newer. Upgrade OpenCode and retry.`,
+      ].join("\n"),
+    );
+  }
 
   buildArgs(context: AdapterContext, args: string[]): string[] {
     const codeDir = context.launchWorkingDirectory;
-    return args.length === 0 || args[0]?.startsWith("-") ? [codeDir, ...args] : args;
+    const isTui = args.length === 0 || args[0]?.startsWith("-");
+    const [command, ...rest] = isTui ? [codeDir, ...args] : args;
+    if (!command) return args;
+    const hostsServer = isTui || command === "run";
+    const choosesServer = rest.some(
+      (arg) => arg === "--standalone" || arg === "--server" || arg.startsWith("--server="),
+    );
+    return hostsServer && !choosesServer ? [command, STANDALONE_FLAG, ...rest] : [command, ...rest];
   }
 
   extendEnvironment(context: AdapterContext): NodeJS.ProcessEnv {
@@ -40,9 +85,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
       OPENCODE_CONFIG_DIR: path.join(context.companionPath, ".opencode"),
       OPENCODE_CONFIG_CONTENT: mergeOpenCodeConfigContent(
         {
-          permission: {
-            external_directory: renderCompanionExternalDirectoryPermissions(context.companionPath),
-          },
+          permissions: renderCompanionExternalDirectoryPermissions(context.companionPath),
           references: {
             mate: context.companionPath,
           },
@@ -63,6 +106,8 @@ export class OpenCodeAdapter extends LaunchAdapter {
   }
 
   async validateLaunch(context: AdapterContext): Promise<void> {
+    this.validateOpenCodeVersion();
+
     const missingAssets = await Promise.all(
       this.requiredRuntimeAssets.map(async (asset) => {
         const assetPath = path.join(context.companionPath, asset);
@@ -90,11 +135,6 @@ export class OpenCodeAdapter extends LaunchAdapter {
       ...(await this.validatePluginReference(
         context,
         path.join(".opencode", "opencode.json"),
-        expectedPluginReference,
-      )),
-      ...(await this.validatePluginReference(
-        context,
-        path.join(".opencode", "tui.json"),
         expectedPluginReference,
       )),
       ...this.validateGuidance(context),

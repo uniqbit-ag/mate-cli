@@ -19,8 +19,6 @@ export interface StudioAccessOptions {
   token?: string | null;
 }
 
-export type StudioRequirement = "none" | "token";
-
 /**
  * One server's Host, Origin, and token policy. `null` token means the server
  * is unguarded and issues none.

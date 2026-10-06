@@ -112,7 +112,6 @@ body {
   flex-direction: column;
   gap: 24px;
 }
-.pairings li { padding: 6px 0; font-size: .84rem; }
 select, button {
   font: inherit;
   color: inherit;
@@ -234,9 +233,6 @@ ul.plain li:last-child { border-bottom: 0; }
 .sidebar-label { color: var(--muted); font-size: .62rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
 .sidebar-scope { display: grid; gap: 7px; }
 .sidebar-scope select { padding: 8px 9px; font-family: var(--mono); font-size: .72rem; }
-.sidebar-pairings { color: var(--muted); font-family: var(--mono); font-size: .67rem; line-height: 1.45; }
-.sidebar-pairings .plain li { padding: 4px 0; }
-.sidebar-pairings .muted { font-size: .67rem; }
 .sidebar-nav { display: grid; gap: 3px; }
 .sidebar-nav-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .sidebar-nav button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 10px; border-color: transparent; border-radius: 7px; background: transparent; font-size: .8rem; }

@@ -98,7 +98,7 @@ capabilities:
 export const MCP_ANSWERS = `
 const { spawn } = require("node:child_process");
 const config = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
-const [command, ...args] = config.mcp.context7.command;
+const [command, ...args] = config.mcp.servers.context7.command;
 const child = spawn(command, args, { stdio: ["pipe", "pipe", "inherit"] });
 const timer = setTimeout(() => { child.kill(); process.exit(1); }, 30000);
 let out = "";
@@ -125,7 +125,7 @@ export function makeFreshCompanion(root: string): string {
   fs.mkdirSync(path.join(companion, ".opencode"), { recursive: true });
   fs.writeFileSync(
     path.join(companion, ".opencode", "opencode.json"),
-    `${JSON.stringify({ mcp: { context7: { type: "local", command: ["npx", "-y", "@upstash/context7-mcp"], enabled: true } } }, null, 2)}\n`,
+    `${JSON.stringify({ mcp: { servers: { context7: { type: "local", command: ["npx", "-y", "@upstash/context7-mcp"], disabled: false } } } }, null, 2)}\n`,
   );
   fs.writeFileSync(
     path.join(companion, ".mcp.json"),
@@ -681,8 +681,8 @@ function main(argv: string[]): number {
   }
 
   const inputs = readImageInputs();
-  const image = option(argv, "image") ?? `mate-appliance:${inputs.mate.minimum_compatible}`;
-  const mateVersion = option(argv, "mate-version") ?? inputs.mate.minimum_compatible;
+  const image = option(argv, "image") ?? `mate-appliance:${inputs.mate.version}`;
+  const mateVersion = option(argv, "mate-version") ?? inputs.mate.version;
   const skipStartup = argv.includes("--no-startup");
 
   const checks = report(

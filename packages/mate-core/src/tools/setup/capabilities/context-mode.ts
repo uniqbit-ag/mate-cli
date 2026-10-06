@@ -18,6 +18,7 @@ import type {
   RuntimeContributionsByRuntime,
   SetupContext,
 } from "../plugin";
+import type { InstallRequirement } from "../install-contract";
 import { readClaudeMcpConfig } from "../providers/claude-format";
 import { getOpenCodePluginReferences, readOpenCodeConfig } from "../providers/opencode-format";
 import { pruneEmptyAncestors } from "../utils";
@@ -84,32 +85,27 @@ async function assertNoMcpConflict(ctx: SetupContext, provider: "claude" | "open
  */
 async function validateOpenCodeReferences(ctx: LaunchPreflightContext): Promise<string[]> {
   const expected = getContextModePackageReference();
-  const diagnostics: string[] = [];
-  for (const name of ["opencode.json", "tui.json"]) {
-    const configPath = path.join(ctx.companionPath, ".opencode", name);
-    const { config } = await readOpenCodeConfig(configPath);
-    const references = getOpenCodePluginReferences(config);
-    if (references.includes(expected)) continue;
+  const configPath = path.join(ctx.companionPath, ".opencode", "opencode.json");
+  const { config } = await readOpenCodeConfig(configPath);
+  const references = getOpenCodePluginReferences(config);
+  if (references.includes(expected)) return [];
 
-    const bound = references.find(
-      (reference): reference is string =>
-        typeof reference === "string" &&
-        isPreinstalledPluginPath(reference, CONTEXT_MODE_PACKAGE_NAME),
-    );
-    if (bound !== undefined) {
-      const version = await installedVersionAt(bound);
-      if (version === CONTEXT_MODE_VERSION) continue;
-      diagnostics.push(
-        `Stale context-mode package reference in ${configPath}; it points at ${bound}, which is ${version ?? "not installed"} rather than ${CONTEXT_MODE_VERSION}.`,
-      );
-      continue;
-    }
-
-    diagnostics.push(
-      `Missing or stale context-mode package reference in ${configPath}; expected ${expected}.`,
-    );
+  const bound = references.find(
+    (reference): reference is string =>
+      typeof reference === "string" &&
+      isPreinstalledPluginPath(reference, CONTEXT_MODE_PACKAGE_NAME),
+  );
+  if (bound !== undefined) {
+    const version = await installedVersionAt(bound);
+    if (version === CONTEXT_MODE_VERSION) return [];
+    return [
+      `Stale context-mode package reference in ${configPath}; it points at ${bound}, which is ${version ?? "not installed"} rather than ${CONTEXT_MODE_VERSION}.`,
+    ];
   }
-  return diagnostics;
+
+  return [
+    `Missing or stale context-mode package reference in ${configPath}; expected ${expected}.`,
+  ];
 }
 
 export function createContextModePlugin(deps: ContextModePluginDeps = {}): CapabilityPlugin {
@@ -144,7 +140,7 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
             {
               reference: getContextModePackageReference(),
               isManagedReference: isContextModePackageReference,
-              configFiles: ["opencode.json", "tui.json"],
+              configFiles: ["opencode.json"],
               preinstalled: {
                 packageName: CONTEXT_MODE_PACKAGE_NAME,
                 version: CONTEXT_MODE_VERSION,
@@ -153,6 +149,30 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
           ],
         },
       };
+    },
+    /**
+     * The machine-local workspace is gitignored, so a fresh checkout has none;
+     * `mate install` provisions it here because sync-mode apply only validates.
+     */
+    getInstallRequirements: ({ companionPath }): InstallRequirement[] => {
+      if (!companionPath) return [];
+      const command = `npm install ${getContextModePackageReference()} (in .mate/plugins/.local)`;
+      return [
+        {
+          id: "capability:context-mode",
+          label: "Context Mode package",
+          group: "companion",
+          source: "Context Mode capability",
+          command,
+          fingerprint: `context-mode:${command}`,
+          detect: () =>
+            validatePackage(companionPath).then(
+              () => true,
+              () => false,
+            ),
+          install: () => installPackage(companionPath),
+        },
+      ];
     },
     async apply(ctx) {
       const legacyInstallDir = getLegacyInstallDir(ctx.companionPath);

@@ -5,12 +5,16 @@ import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-mock.module("@opencode-ai/plugin", () => ({ tool: (definition: unknown) => definition }));
-
-const { CompanionHooksPlugin } = await import("./companion-hooks");
-const { MATE_ENV } = await import("../runtime/env-names");
-const { writeProjectionPair } = await import("../runtime/projection");
-const { repoLocalRegistryPath } = await import("../runtime/repo-local");
+import {
+  createReactDoctorScanner,
+  guardToolInput,
+  registerCompanionHooks,
+  type CommandResult,
+} from "./companion-hooks";
+import { readContext, type CompanionContext } from "./companion-policy";
+import { MATE_ENV } from "../runtime/env-names";
+import { writeProjectionPair } from "../runtime/projection";
+import { repoLocalRegistryPath } from "../runtime/repo-local";
 const tempRoots: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -57,341 +61,223 @@ async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> 
   });
 }
 
-async function inDirectory<T>(dir: string, fn: () => Promise<T>): Promise<T> {
-  const previous = process.cwd();
-  process.chdir(dir);
-  try {
-    return await fn();
-  } finally {
-    process.chdir(previous);
-  }
+type Hook = (event: Record<string, unknown>) => unknown;
+
+/** Records registered hooks; the event stream never yields. */
+function fakeApi(directory: string) {
+  const hooks = new Map<string, Hook>();
+  const register =
+    (domain: string) =>
+    async (name: string, callback: Hook): Promise<void> => {
+      hooks.set(`${domain}.${name}`, callback);
+    };
+  const api = {
+    location: { directory },
+    tool: { hook: register("tool") },
+    session: { prompt: mock(async () => undefined) },
+    event: {
+      subscribe: async function* () {
+        await new Promise(() => {});
+      },
+    },
+  };
+  return { api: api as never, hooks };
+}
+
+function launchContext(
+  companion: string,
+  repo: string | undefined,
+  extra: Record<string, string> = {},
+): Promise<CompanionContext> {
+  return withEnv(
+    {
+      ...noLaunchEnvironment(),
+      MATE_ARTIFACT_PATH: companion,
+      MATE_REPO_PATH: repo,
+      MATE_REPO_ID: repo ? "acme" : undefined,
+      MATE_POLICY_JSON: "{}",
+      MATE_GIT_AUTO_MODE: "0",
+      ...extra,
+    },
+    async () => readContext(process.env, repo ?? companion),
+  );
+}
+
+async function setupRepoFixture(prefix: string) {
+  const root = await makeTempDir(prefix);
+  const repo = path.join(root, "repo");
+  const companion = path.join(root, "companion");
+  await fs.mkdir(repo, { recursive: true });
+  await fs.mkdir(companion, { recursive: true });
+  spawnSync("git", ["init"], { cwd: repo, stdio: "ignore" });
+  return { repo, companion };
+}
+
+function scanResult(exitCode: number, output = ""): Promise<CommandResult> {
+  return Promise.resolve({ exitCode, output });
 }
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-describe("OpenCode companion hooks plugin without a launch", () => {
+describe("OpenCode companion hooks without a launch", () => {
   test("activates from a projection and blocks an artifact write", async () => {
     const repo = await makeTempDir("mate-hooks-wrapped-");
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
     await wrapRepo(repo, companion);
 
-    const plugin = await withEnv(noLaunchEnvironment(), () =>
-      inDirectory(repo, () => CompanionHooksPlugin()),
-    );
-
-    const before = plugin["tool.execute.before"]!;
-    await expect(
-      before(
-        { tool: "write", sessionID: "s", callID: "c" },
-        { args: { filePath: path.join(repo, "design.md") } },
-      ),
-    ).rejects.toThrow("artifact writes must go to the companion framework path");
+    const context = readContext(noLaunchEnvironment(), repo);
+    expect(context.companionPath).toBe(companion);
+    expect(() =>
+      guardToolInput(context, "write", { filePath: path.join(repo, "design.md") }),
+    ).toThrow("artifact writes must go to the companion framework path");
   });
 
-  test("fails open when neither the environment nor a projection resolves", async () => {
+  test("resolves no companion when neither the environment nor a projection does", async () => {
     const repo = await makeTempDir("mate-hooks-unwrapped-");
 
-    const plugin = await withEnv(noLaunchEnvironment(), () =>
-      inDirectory(repo, () => CompanionHooksPlugin()),
-    );
-
-    expect(plugin).toEqual({});
+    expect(readContext(noLaunchEnvironment(), repo).companionPath).toBe("");
   });
 
-  test("keeps companion hooks active without a working repository", async () => {
+  test("registers only the guard without a working repository", async () => {
     const companion = await makeTempDir("mate-hooks-companion-only-");
+    const context = await launchContext(companion, undefined, { MATE_REACT_DOCTOR_ENABLED: "1" });
+    const { api, hooks } = fakeApi(companion);
 
-    const plugin = await withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: undefined,
-        MATE_REPO_ID: undefined,
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "0",
-      },
-      () => CompanionHooksPlugin(),
-    );
-
-    expect(plugin["tool.execute.before"]).toBeFunction();
-    expect(plugin.event).toBeUndefined();
-    expect(plugin["tool.execute.after"]).toBeUndefined();
+    expect(await registerCompanionHooks(api, context)).toBeUndefined();
+    expect([...hooks.keys()]).toEqual(["tool.execute.before"]);
   });
 });
 
-describe("OpenCode companion hooks plugin", () => {
-  async function setupCompanion() {
-    const root = await makeTempDir("mate-opencode-companion-");
-    const companion = path.join(root, "companion");
-    const repo = path.join(root, "repo");
-    const archiveDir = path.join(companion, "openspec", "changes", "archive");
-    await fs.mkdir(archiveDir, { recursive: true });
-    await fs.mkdir(repo, { recursive: true });
-    return { companion, repo, archiveDir };
-  }
+describe("OpenCode companion hooks", () => {
+  test("registers the guard, the edit tracker, and a cleanup with React Doctor enabled", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-register-");
+    const context = await launchContext(companion, repo, { MATE_REACT_DOCTOR_ENABLED: "1" });
+    const { api, hooks } = fakeApi(repo);
 
-  async function getHooks(companion: string, repo: string, autoMode = "1") {
-    return withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: autoMode,
-      },
-      () => CompanionHooksPlugin(),
-    );
-  }
+    const cleanup = await registerCompanionHooks(api, context);
 
-  function makeReactDoctorRuntime(
-    result: Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>,
-  ) {
-    const shellCalls: Array<{ strings: string[]; expressions: unknown[] }> = [];
-    const shell = (strings: TemplateStringsArray, ...expressions: unknown[]) => {
-      shellCalls.push({ strings: [...strings], expressions });
-      const command = {
-        cwd: () => command,
-        nothrow: () => command,
-        quiet: () => result,
-      };
-      return command;
-    };
-    const showToast = mock(async () => true);
-    const promptAsync = mock(async () => undefined);
-    const client = { tui: { showToast }, session: { promptAsync } };
-    return { shell, shellCalls, client, showToast, promptAsync };
-  }
-
-  async function getReactDoctorHooks(
-    companion: string,
-    repo: string,
-    runtime: ReturnType<typeof makeReactDoctorRuntime>,
-  ) {
-    return withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "0",
-        MATE_REACT_DOCTOR_ENABLED: "1",
-      },
-      () => CompanionHooksPlugin({ client: runtime.client, $: runtime.shell } as never),
-    );
-  }
-
-  test("uses the Mate-owned React Doctor executable when no repo binary exists", async () => {
-    const { repo, companion } = await setupRepoFixture("mate-opencode-react-doctor-runtime-");
-    const mateBin = path.join(await makeTempDir("mate-opencode-react-doctor-bin-"), "react-doctor");
-    await fs.writeFile(mateBin, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(mateBin, 0o755);
-    const runtime = makeReactDoctorRuntime(
-      Promise.resolve({ exitCode: 0, stdout: Buffer.from(""), stderr: Buffer.from("") }),
-    );
-
-    await withEnv({ MATE_REACT_DOCTOR_BIN_PATH: mateBin }, async () => {
-      const plugin = await getReactDoctorHooks(companion, repo, runtime);
-      await plugin["tool.execute.after"]!(
-        { tool: "edit", sessionID: "one", callID: "call", args: {} },
-        { title: "", output: "", metadata: {} },
-      );
-      await plugin.event!({
-        event: { type: "session.idle", properties: { sessionID: "one" } },
-      } as never);
-    });
-
-    expect(runtime.shellCalls[0]?.expressions.flat()).toContain(mateBin);
+    expect([...hooks.keys()].sort()).toEqual(["tool.execute.after", "tool.execute.before"]);
+    expect(cleanup).toBeFunction();
+    cleanup?.();
   });
 
-  test("neither nudges nor blocks when an archive entry appears during a tool call", async () => {
-    const { companion, repo, archiveDir } = await setupCompanion();
-    const plugin = await getHooks(companion, repo);
-    const output = { title: "", output: "", metadata: {} };
+  test("registers no edit tracker with React Doctor disabled", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-register-off-");
+    const context = await launchContext(companion, repo);
+    const { api, hooks } = fakeApi(repo);
 
-    await plugin["tool.execute.before"]!(
-      { tool: "read", sessionID: "session", callID: "call" },
-      { args: {} },
-    );
-    await fs.mkdir(path.join(archiveDir, "2026-07-14-acme"));
-    await plugin["tool.execute.after"]!(
-      { tool: "read", sessionID: "session", callID: "call", args: {} },
-      output,
-    );
-
-    expect(output.output).toBe("");
+    expect(await registerCompanionHooks(api, context)).toBeUndefined();
+    expect([...hooks.keys()]).toEqual(["tool.execute.before"]);
   });
 
-  test("allows an archive command and a raw archive move without guidance", async () => {
-    const { companion, repo } = await setupCompanion();
-    const plugin = await getHooks(companion, repo);
+  test("the registered guard rejects an artifact write", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-before-hook-");
+    const context = await launchContext(companion, repo);
+    const { api, hooks } = fakeApi(repo);
+    await registerCompanionHooks(api, context);
 
-    for (const command of [
-      "openspec archive acme --json --yes",
-      'mv "acme" "openspec/changes/archive/2026-07-14-acme"',
-    ]) {
-      const output = { title: "", output: "", metadata: {} };
-      await plugin["tool.execute.before"]!(
-        { tool: "bash", sessionID: "session", callID: "call" },
-        { args: { command } },
-      );
-      await plugin["tool.execute.after"]!(
-        { tool: "bash", sessionID: "session", callID: "call", args: { command } },
-        output,
-      );
-      expect(output.output).toBe("");
-    }
+    expect(() =>
+      hooks.get("tool.execute.before")!({
+        tool: "write",
+        sessionID: "s",
+        input: { filePath: path.join(repo, "spec.md") },
+      }),
+    ).toThrow("guardrail");
   });
-
-  test("keeps the tool hooks registered regardless of Git auto mode", async () => {
-    const { companion, repo } = await setupCompanion();
-
-    for (const autoMode of ["1", "0"]) {
-      const plugin = await getHooks(companion, repo, autoMode);
-      expect(plugin["tool.execute.before"]).toBeDefined();
-      expect(plugin["tool.execute.after"]).toBeDefined();
-    }
-  });
-
-  async function setupRepoFixture(prefix: string) {
-    const root = await makeTempDir(prefix);
-    const repo = path.join(root, "repo");
-    const companion = path.join(root, "companion");
-    await fs.mkdir(repo, { recursive: true });
-    await fs.mkdir(companion, { recursive: true });
-    spawnSync("git", ["init"], { cwd: repo, stdio: "ignore" });
-    return { repo, companion };
-  }
 
   test("blocks artifact writes and allows source writes", async () => {
     const { repo, companion } = await setupRepoFixture("mate-opencode-before-");
-    await withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "0",
-      },
-      async () => {
-        const plugin = await CompanionHooksPlugin();
-        const before = plugin["tool.execute.before"] as (
-          input: { tool: string },
-          output: { args: Record<string, unknown> },
-        ) => Promise<void>;
-        await expect(
-          before({ tool: "write" }, { args: { filePath: path.join(repo, "spec.md") } }),
-        ).rejects.toThrow("guardrail");
-        await expect(
-          before({ tool: "write" }, { args: { filePath: path.join(repo, "src", "main.ts") } }),
-        ).resolves.toBeUndefined();
-      },
-    );
+    const context = await launchContext(companion, repo);
+
+    expect(() =>
+      guardToolInput(context, "write", { filePath: path.join(repo, "spec.md") }),
+    ).toThrow("guardrail");
+    expect(() =>
+      guardToolInput(context, "write", { filePath: path.join(repo, "src", "main.ts") }),
+    ).not.toThrow();
   });
 
   test("blocks artifact paths in apply_patch", async () => {
     const { repo, companion } = await setupRepoFixture("mate-opencode-patch-");
-    await withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "0",
-      },
-      async () => {
-        const plugin = await CompanionHooksPlugin();
-        const before = plugin["tool.execute.before"] as (
-          input: { tool: string },
-          output: { args: Record<string, unknown> },
-        ) => Promise<void>;
-        await expect(
-          before(
-            { tool: "apply_patch" },
-            { args: { patchText: "*** Add File: spec.md\ncontent" } },
-          ),
-        ).rejects.toThrow("guardrail");
-        await expect(
-          before(
-            { tool: "apply_patch" },
-            { args: { patchText: "*** Add File: src/main.ts\ncontent" } },
-          ),
-        ).resolves.toBeUndefined();
-      },
-    );
+    const context = await launchContext(companion, repo);
+
+    expect(() =>
+      guardToolInput(context, "apply_patch", { patchText: "*** Add File: spec.md\ncontent" }),
+    ).toThrow("guardrail");
+    expect(() =>
+      guardToolInput(context, "apply_patch", { patchText: "*** Add File: src/main.ts\ncontent" }),
+    ).not.toThrow();
   });
 
   test("allows gitignored artifact writes", async () => {
     const { repo, companion } = await setupRepoFixture("mate-opencode-gitignore-");
     await fs.writeFile(path.join(repo, ".gitignore"), "local-notes.md\n", "utf8");
-    await withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "0",
-      },
-      async () => {
-        const plugin = await CompanionHooksPlugin();
-        const before = plugin["tool.execute.before"] as (
-          input: { tool: string },
-          output: { args: Record<string, unknown> },
-        ) => Promise<void>;
-        await expect(
-          before({ tool: "write" }, { args: { filePath: path.join(repo, "local-notes.md") } }),
-        ).resolves.toBeUndefined();
-      },
-    );
+    const context = await launchContext(companion, repo);
+
+    expect(() =>
+      guardToolInput(context, "write", { filePath: path.join(repo, "local-notes.md") }),
+    ).not.toThrow();
   });
 
-  test("allows apply_patch with no artifact paths", async () => {
-    const { repo, companion } = await setupRepoFixture("mate-opencode-patch-ok-");
-    await withEnv(
-      {
-        MATE_ARTIFACT_PATH: companion,
-        MATE_REPO_PATH: repo,
-        MATE_REPO_ID: "app",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "0",
-      },
-      async () => {
-        const plugin = await CompanionHooksPlugin();
-        const before = plugin["tool.execute.before"] as (
-          input: { tool: string },
-          output: { args: Record<string, unknown> },
-        ) => Promise<void>;
-        await expect(
-          before(
-            { tool: "apply_patch" },
-            { args: { patchText: "*** Add File: src/main.ts\ncontent" } },
-          ),
-        ).resolves.toBeUndefined();
-      },
+  test("ignores tools that write nothing", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-read-");
+    const context = await launchContext(companion, repo);
+
+    expect(() =>
+      guardToolInput(context, "read", { filePath: path.join(repo, "spec.md") }),
+    ).not.toThrow();
+    expect(() => guardToolInput(context, "bash", undefined)).not.toThrow();
+  });
+});
+
+describe("React Doctor scanner", () => {
+  async function scanner(prefix: string, result: () => Promise<CommandResult>) {
+    const { repo, companion } = await setupRepoFixture(prefix);
+    const context = await launchContext(companion, repo, { MATE_REACT_DOCTOR_ENABLED: "1" });
+    const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
+    const session = { prompt: mock(async (_input: unknown) => undefined) };
+    const run = async (command: string, args: string[], cwd: string) => {
+      calls.push({ command, args, cwd });
+      return result();
+    };
+    return { repo, calls, session, scan: createReactDoctorScanner(context, session as never, run) };
+  }
+
+  test("uses the Mate-owned React Doctor executable when no repo binary exists", async () => {
+    const mateBin = path.join(await makeTempDir("mate-opencode-react-doctor-bin-"), "react-doctor");
+    await fs.writeFile(mateBin, "#!/bin/sh\nexit 0\n", "utf8");
+    await fs.chmod(mateBin, 0o755);
+    const { calls, scan } = await scanner("mate-opencode-react-doctor-runtime-", () =>
+      scanResult(0),
     );
+
+    await withEnv({ MATE_REACT_DOCTOR_BIN_PATH: mateBin }, async () => {
+      scan.markEdited("edit", "one");
+      await scan.idle("one");
+    });
+
+    expect(calls[0]?.command).toBe(mateBin);
   });
 
-  test("runs one bounded scan only after a successful edit", async () => {
-    const { repo, companion } = await setupRepoFixture("mate-opencode-react-doctor-");
-    const runtime = makeReactDoctorRuntime(
-      Promise.resolve({ exitCode: 0, stdout: Buffer.from(""), stderr: Buffer.from("") }),
+  test("runs one bounded scan only after an edit", async () => {
+    const { repo, calls, session, scan } = await scanner("mate-opencode-react-doctor-", () =>
+      scanResult(0),
     );
-    const plugin = await getReactDoctorHooks(companion, repo, runtime);
-    const event = plugin.event!;
-    const after = plugin["tool.execute.after"]!;
 
-    await event({ event: { type: "session.idle", properties: { sessionID: "one" } } } as never);
-    await after(
-      { tool: "edit", sessionID: "one", callID: "call", args: {} },
-      { title: "", output: "", metadata: {} },
-    );
-    await event({ event: { type: "session.idle", properties: { sessionID: "two" } } } as never);
-    await event({ event: { type: "session.idle", properties: { sessionID: "one" } } } as never);
-    await event({ event: { type: "session.idle", properties: { sessionID: "one" } } } as never);
+    await scan.idle("one");
+    scan.markEdited("read", "one");
+    await scan.idle("one");
+    scan.markEdited("edit", "one");
+    await scan.idle("two");
+    await scan.idle("one");
+    await scan.idle("one");
 
-    expect(runtime.shellCalls).toHaveLength(1);
-    expect(runtime.shellCalls[0]?.expressions.flat()).toEqual(
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.cwd).toBe(repo);
+    expect(calls[0]?.args).toEqual(
       expect.arrayContaining([
         "--yes",
         "--scope",
@@ -402,108 +288,58 @@ describe("OpenCode companion hooks plugin", () => {
         "30",
       ]),
     );
-    expect(runtime.promptAsync).not.toHaveBeenCalled();
+    expect(session.prompt).not.toHaveBeenCalled();
   });
 
-  test("automatically sends findings to the edited session", async () => {
-    const { repo, companion } = await setupRepoFixture("mate-opencode-react-findings-");
-    const runtime = makeReactDoctorRuntime(
-      Promise.resolve({
-        exitCode: 1,
-        stdout: Buffer.from("src/App.tsx:1 warning"),
-        stderr: Buffer.from(""),
-      }),
+  test("sends findings to the edited session", async () => {
+    const { calls, session, scan } = await scanner("mate-opencode-react-findings-", () =>
+      scanResult(1, "src/App.tsx:1 warning"),
     );
-    const plugin = await getReactDoctorHooks(companion, repo, runtime);
 
-    await plugin["tool.execute.after"]!(
-      { tool: "apply_patch", sessionID: "session-a", callID: "call", args: {} },
-      { title: "", output: "", metadata: {} },
-    );
-    await plugin.event!({
-      event: { type: "session.idle", properties: { sessionID: "session-a" } },
-    } as never);
+    scan.markEdited("apply_patch", "session-a");
+    await scan.idle("session-a");
 
-    expect(runtime.showToast).toHaveBeenCalledTimes(1);
-    expect(runtime.promptAsync).toHaveBeenCalledWith({
-      path: { id: "session-a" },
-      query: { directory: repo },
-      body: {
-        parts: [
-          {
-            type: "text",
-            synthetic: true,
-            text: expect.stringContaining("src/App.tsx:1 warning"),
-          },
-        ],
-      },
+    expect(session.prompt).toHaveBeenCalledWith({
+      sessionID: "session-a",
+      text: expect.stringContaining("src/App.tsx:1 warning"),
     });
 
-    await plugin.event!({
-      event: { type: "session.idle", properties: { sessionID: "session-a" } },
-    } as never);
-    expect(runtime.shellCalls).toHaveLength(1);
+    await scan.idle("session-a");
+    expect(calls).toHaveLength(1);
   });
 
   test("suppresses non-lint failures and command errors", async () => {
-    const { repo, companion } = await setupRepoFixture("mate-opencode-react-errors-");
-    const nonLint = makeReactDoctorRuntime(
-      Promise.resolve({
-        exitCode: 1,
-        stdout: Buffer.from("No React dependency found"),
-        stderr: Buffer.from(""),
-      }),
+    const nonLint = await scanner("mate-opencode-react-nonlint-", () =>
+      scanResult(1, "No React dependency found"),
     );
-    const nonLintPlugin = await getReactDoctorHooks(companion, repo, nonLint);
-    await nonLintPlugin["tool.execute.after"]!(
-      { tool: "edit", sessionID: "one", callID: "1", args: {} },
-      { title: "", output: "", metadata: {} },
-    );
-    await nonLintPlugin.event!({
-      event: { type: "session.idle", properties: { sessionID: "one" } },
-    } as never);
-    expect(nonLint.promptAsync).not.toHaveBeenCalled();
+    nonLint.scan.markEdited("edit", "one");
+    await nonLint.scan.idle("one");
+    expect(nonLint.session.prompt).not.toHaveBeenCalled();
 
-    const failed = makeReactDoctorRuntime(Promise.reject(new Error("spawn failed")));
-    const failedPlugin = await getReactDoctorHooks(companion, repo, failed);
-    await failedPlugin["tool.execute.after"]!(
-      { tool: "write", sessionID: "two", callID: "2", args: {} },
-      { title: "", output: "", metadata: {} },
+    const failed = await scanner("mate-opencode-react-errors-", () =>
+      Promise.reject(new Error("spawn failed")),
     );
-    await expect(
-      failedPlugin.event!({
-        event: { type: "session.idle", properties: { sessionID: "two" } },
-      } as never),
-    ).resolves.toBeUndefined();
-    expect(failed.promptAsync).not.toHaveBeenCalled();
+    failed.scan.markEdited("write", "two");
+    await expect(failed.scan.idle("two")).resolves.toBeUndefined();
+    expect(failed.session.prompt).not.toHaveBeenCalled();
   });
 
   test("deduplicates overlapping idle events per session without blocking another session", async () => {
-    const { repo, companion } = await setupRepoFixture("mate-opencode-react-concurrent-");
-    let resolveScan!: (result: { exitCode: number; stdout: Buffer; stderr: Buffer }) => void;
-    const scan = new Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>((resolve) => {
+    let resolveScan!: (result: CommandResult) => void;
+    const pending = new Promise<CommandResult>((resolve) => {
       resolveScan = resolve;
     });
-    const runtime = makeReactDoctorRuntime(scan);
-    const plugin = await getReactDoctorHooks(companion, repo, runtime);
-    const after = plugin["tool.execute.after"]!;
-    const event = plugin.event!;
-    const output = { title: "", output: "", metadata: {} };
+    const { calls, scan } = await scanner("mate-opencode-react-concurrent-", () => pending);
 
-    await after({ tool: "write", sessionID: "one", callID: "1", args: {} }, output);
-    await after({ tool: "write", sessionID: "two", callID: "2", args: {} }, output);
-    const first = event({
-      event: { type: "session.idle", properties: { sessionID: "one" } },
-    } as never);
-    await event({
-      event: { type: "session.idle", properties: { sessionID: "one" } },
-    } as never);
-    const second = event({
-      event: { type: "session.idle", properties: { sessionID: "two" } },
-    } as never);
+    scan.markEdited("write", "one");
+    scan.markEdited("write", "two");
+    const first = scan.idle("one");
+    scan.markEdited("write", "one");
+    await scan.idle("one");
+    const second = scan.idle("two");
 
-    expect(runtime.shellCalls).toHaveLength(2);
-    resolveScan({ exitCode: 0, stdout: Buffer.from(""), stderr: Buffer.from("") });
+    expect(calls).toHaveLength(2);
+    resolveScan({ exitCode: 0, output: "" });
     await Promise.all([first, second]);
   });
 });

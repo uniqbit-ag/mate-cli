@@ -159,7 +159,7 @@ export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {})
     const repoPath = process.env.MATE_REPO_PATH ?? process.cwd();
     if (!(await isTokensaveInitialized())) {
       await ensureStoreExcluded(repoPath);
-      const initOk = await runCapStep(() => runTokensave(["init"]));
+      const initOk = await runCapStep(() => runTokensave(["init", "--no-git-hook"]));
       if (!initOk) {
         failed = true;
         onStepDone("tokensave", false);

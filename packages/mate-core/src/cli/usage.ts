@@ -17,6 +17,7 @@ export function usage(): string {
     ` ${n} companion prepare --from <bundle> [path]`,
     ` ${n} companion list`,
     ` ${n} companion sync`,
+    ` ${n} companion update [--yes]`,
     ` ${n} companion open`,
     ` ${n} companion tui`,
     ` ${n} working cleanup`,

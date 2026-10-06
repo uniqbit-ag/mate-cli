@@ -297,6 +297,18 @@ RUN groupadd --gid "${MATE_GID}" mate \
  && chown -R "${MATE_UID}:${MATE_GID}" /companions /home/mate \
  && chmod 0755 /companions
 
+# TokenSave's per-agent integration lives in those homes, and the launch's
+# installation gate requires it for every allowed agent. `tokensave install`
+# only writes config files, so it runs here, offline, as the identity whose
+# homes it configures — never at launch.
+USER mate
+RUN cd /home/mate \
+ && HOME=/home/mate tokensave install --agent claude --git-hook no --wildcard-permissions </dev/null \
+ && HOME=/home/mate tokensave install --agent opencode --git-hook no --wildcard-permissions </dev/null \
+ && test -f /home/mate/.claude/rules/tokensave.md \
+ && test -f /home/mate/.config/opencode/tokensave.md
+USER root
+
 # --- the entrypoint --------------------------------------------------------
 # The startup program lives under /opt/mate/tools so that `yaml`, which the
 # Mate CLI's own locked graph already installs there, resolves from an ancestor

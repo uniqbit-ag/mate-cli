@@ -48,7 +48,7 @@ function contextModeContribution(enabled = true): CapabilityContributionInput {
         {
           reference: `${CONTEXT_MODE_PACKAGE_NAME}@${CONTEXT_MODE_VERSION}`,
           isManagedReference: isContextModePackageReference,
-          configFiles: ["opencode.json", "tui.json"],
+          configFiles: ["opencode.json"],
           preinstalled: {
             packageName: CONTEXT_MODE_PACKAGE_NAME,
             version: CONTEXT_MODE_VERSION,
@@ -81,14 +81,12 @@ async function markSupplied(companionPath: string): Promise<void> {
   );
 }
 
-async function readConfigs(companionPath: string): Promise<[unknown, unknown]> {
-  const read = async (name: string) =>
-    (
-      JSON.parse(await fs.readFile(path.join(companionPath, ".opencode", name), "utf8")) as {
-        plugin?: unknown;
-      }
-    ).plugin;
-  return [await read("opencode.json"), await read("tui.json")];
+async function readPlugins(companionPath: string): Promise<unknown> {
+  return (
+    JSON.parse(
+      await fs.readFile(path.join(companionPath, ".opencode", "opencode.json"), "utf8"),
+    ) as { plugins?: unknown }
+  ).plugins;
 }
 
 describe("binding a declared plugin reference to a preinstalled package", () => {
@@ -98,9 +96,8 @@ describe("binding a declared plugin reference to a preinstalled package", () => 
 
     await reconcileOpenCodeContributions(makeCtx(companionPath), [contextModeContribution()]);
 
-    const [opencode, tui] = await readConfigs(companionPath);
-    expect(opencode).toEqual([installed]);
-    expect(tui).toEqual([installed]);
+    expect(await readPlugins(companionPath)).toEqual([installed]);
+    await expect(fs.access(path.join(companionPath, ".opencode", "tui.json"))).rejects.toThrow();
   });
 
   test("without an installed copy, the published reference is written as before", async () => {
@@ -108,9 +105,10 @@ describe("binding a declared plugin reference to a preinstalled package", () => 
 
     await reconcileOpenCodeContributions(makeCtx(companionPath), [contextModeContribution()]);
 
-    const [opencode, tui] = await readConfigs(companionPath);
-    expect(opencode).toEqual([`${CONTEXT_MODE_PACKAGE_NAME}@${CONTEXT_MODE_VERSION}`]);
-    expect(tui).toEqual([`${CONTEXT_MODE_PACKAGE_NAME}@${CONTEXT_MODE_VERSION}`]);
+    expect(await readPlugins(companionPath)).toEqual([
+      `${CONTEXT_MODE_PACKAGE_NAME}@${CONTEXT_MODE_VERSION}`,
+    ]);
+    await expect(fs.access(path.join(companionPath, ".opencode", "tui.json"))).rejects.toThrow();
   });
 
   test("a package-manager cache entry is not a binding", async () => {
@@ -134,8 +132,9 @@ describe("binding a declared plugin reference to a preinstalled package", () => 
 
     await reconcileOpenCodeContributions(makeCtx(companionPath), [contextModeContribution()]);
 
-    const [opencode] = await readConfigs(companionPath);
-    expect(opencode).toEqual([`${CONTEXT_MODE_PACKAGE_NAME}@${CONTEXT_MODE_VERSION}`]);
+    expect(await readPlugins(companionPath)).toEqual([
+      `${CONTEXT_MODE_PACKAGE_NAME}@${CONTEXT_MODE_VERSION}`,
+    ]);
   });
 
   test("a mismatched installed copy is named and refused rather than bound", async () => {
@@ -168,16 +167,13 @@ describe("binding a declared plugin reference to a preinstalled package", () => 
 
     await reconcileOpenCodeContributions(ctx, [contextModeContribution()]);
     const first = await fs.readFile(path.join(companionPath, ".opencode", "opencode.json"), "utf8");
-    const firstTui = await fs.readFile(path.join(companionPath, ".opencode", "tui.json"), "utf8");
 
     await reconcileOpenCodeContributions(ctx, [contextModeContribution()]);
 
     expect(await fs.readFile(path.join(companionPath, ".opencode", "opencode.json"), "utf8")).toBe(
       first,
     );
-    expect(await fs.readFile(path.join(companionPath, ".opencode", "tui.json"), "utf8")).toBe(
-      firstTui,
-    );
+    await expect(fs.access(path.join(companionPath, ".opencode", "tui.json"))).rejects.toThrow();
     expect(await fs.readFile(configFile, "utf8")).toBe(
       "type: companion\ncapabilities:\n  - name: context-mode\n",
     );
@@ -190,14 +186,14 @@ describe("binding a declared plugin reference to a preinstalled package", () => 
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(
       configPath,
-      JSON.stringify({ plugin: ["user-plugin"], theme: "acme" }),
+      JSON.stringify({ plugins: ["user-plugin"], theme: "acme" }),
       "utf8",
     );
 
     await reconcileOpenCodeContributions(makeCtx(companionPath), [contextModeContribution()]);
 
     const config = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
-    expect(config.plugin).toEqual(["user-plugin", installed]);
+    expect(config.plugins).toEqual(["user-plugin", installed]);
     expect(config.theme).toBe("acme");
   });
 });
@@ -212,8 +208,8 @@ describe("Mate's own OpenCode plugin binds the same way", () => {
     await createOpenCodePlugin().apply?.(makeCtx(withoutCopy));
     const published = JSON.parse(
       await fs.readFile(path.join(withoutCopy, ".opencode", "opencode.json"), "utf8"),
-    ) as { plugin?: string[] };
-    expect(published.plugin).toContain(`${OPENCODE_PLUGIN_PACKAGE_NAME}@${getCurrentVersion()}`);
+    ) as { plugins?: string[] };
+    expect(published.plugins).toContain(`${OPENCODE_PLUGIN_PACKAGE_NAME}@${getCurrentVersion()}`);
 
     const withCopy = await makeCompanion();
     const installed = getPreinstalledPluginDir(withCopy, OPENCODE_PLUGIN_PACKAGE_NAME);
@@ -229,8 +225,8 @@ describe("Mate's own OpenCode plugin binds the same way", () => {
 
     const bound = JSON.parse(
       await fs.readFile(path.join(withCopy, ".opencode", "opencode.json"), "utf8"),
-    ) as { plugin?: string[] };
-    expect(bound.plugin).toContain(installed);
-    expect(bound.plugin).not.toContain(`${OPENCODE_PLUGIN_PACKAGE_NAME}@${getCurrentVersion()}`);
+    ) as { plugins?: string[] };
+    expect(bound.plugins).toContain(installed);
+    expect(bound.plugins).not.toContain(`${OPENCODE_PLUGIN_PACKAGE_NAME}@${getCurrentVersion()}`);
   });
 });

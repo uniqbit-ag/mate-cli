@@ -1,54 +1,25 @@
-// oxlint-disable no-await-in-loop -- modules must initialize in their fixed execution order
-import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
+import { Plugin } from "@opencode/plugin";
+import { readContext, registerCompanionHooks } from "@uniqbit/mate-core/opencode";
 
-import { AddDirPlugin } from "./add-dir";
-import { CompanionHooksPlugin } from "@uniqbit/mate-core/opencode";
-import { CompanionPlugin } from "./companion";
-
-// Compose the implementation modules in the execution order the previously
-// copied plugin files were discovered in (alphabetical file order:
-// mate-add-dir, mate-companion-hooks, mate-companion).
-const MODULES: Plugin[] = [AddDirPlugin, CompanionHooksPlugin, CompanionPlugin];
-
-type HookValue = Hooks[keyof Hooks];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function chainHooks(first: HookValue, second: HookValue): HookValue {
-  if (typeof first === "function" && typeof second === "function") {
-    return (async (...args: unknown[]) => {
-      await (first as (...values: unknown[]) => Promise<unknown>)(...args);
-      await (second as (...values: unknown[]) => Promise<unknown>)(...args);
-    }) as HookValue;
-  }
-
-  if (isRecord(first) && isRecord(second)) {
-    return { ...first, ...second } as HookValue;
-  }
-
-  return second;
-}
+import { registerCompanionAccess } from "./add-dir";
+import { registerCompanion } from "./companion";
 
 /**
- * Aggregate regular Mate OpenCode plugin. Loaded through the package's
- * `./server` export; stays inert when the session is not Mate-managed
- * because every composed module checks the Mate launch environment itself.
+ * Mate OpenCode server plugin (OpenCode 2.x). Loaded through the package's
+ * `./server` export; stays inert when no companion resolves from the launch
+ * environment or a Projection Root above the session directory.
  */
-export const MateOpenCodePlugin: Plugin = async (input: PluginInput) => {
-  const merged: Record<string, HookValue> = {};
+export const MateOpenCodePlugin = Plugin.define({
+  id: "mate-opencode-plugin",
+  async setup(api) {
+    const context = readContext(process.env, api.location.directory);
+    if (!context.companionPath) return;
 
-  for (const module of MODULES) {
-    const hooks = await module(input);
-    for (const [name, value] of Object.entries(hooks) as Array<[string, HookValue]>) {
-      if (value === undefined) continue;
-      const existing = merged[name];
-      merged[name] = existing === undefined ? value : chainHooks(existing, value);
-    }
-  }
-
-  return merged as Hooks;
-};
+    await registerCompanionAccess(api, context.companionPath);
+    const cleanup = await registerCompanionHooks(api, context);
+    await registerCompanion(api, context);
+    return cleanup;
+  },
+});
 
 export default MateOpenCodePlugin;

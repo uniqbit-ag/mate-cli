@@ -1,9 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import { resolveGitInfoExcludePath } from "../git-utils";
+import type { InstallRequirement } from "../install-contract";
 import type { CapabilityPlugin, RuntimeContributionsByRuntime } from "../plugin";
 import { isCommandOnPath, resolveCommandOnPath, runCommand, runShellCommand } from "../utils";
 import { TOKENSAVE_CLAUDE_MD_MARKER } from "./tokensave-shared";
@@ -73,6 +75,9 @@ export const tokensaveDeps = {
   pathValue(): string {
     return process.env.PATH ?? "";
   },
+  homeDir(): string {
+    return os.homedir();
+  },
 };
 
 async function cleanupRepoLocalTokensaveArtifacts(repoPath: string): Promise<void> {
@@ -109,11 +114,12 @@ async function tokensaveInstalled(repoPath: string): Promise<boolean> {
 
 /**
  * Upgrades the installed binary without making setup depend on network
- * availability. `--kill` keeps the non-interactive setup path from hanging on
- * a running Tokensave MCP process.
+ * availability. Never passes `--kill`: it stops every tokensave process on the
+ * machine, including MCP servers of running agent sessions. Without a TTY,
+ * tokensave upgrades and leaves them running.
  */
 async function upgradeTokensave(repoPath: string): Promise<void> {
-  const result = tokensaveDeps.run(["upgrade", "--kill"], repoPath);
+  const result = tokensaveDeps.run(["upgrade"], repoPath);
   if (result.ok) return;
 
   const detail = result.stderr.trim();
@@ -122,17 +128,22 @@ async function upgradeTokensave(repoPath: string): Promise<void> {
   );
 }
 
-// Global agent integration (MCP entry, session hooks, wildcard permission grant, and
-// tokensave's own config bookkeeping) is owned by tokensave's installer — Mate never
-// hand-edits ~/.tokensave/config.toml. Runs in setup mode only; the installer is
-// idempotent, so re-running on every setup doubles as repair for stale global state.
+/**
+ * Global agent integration (MCP entry, session hooks, wildcard permission grant, and
+ * tokensave's own config bookkeeping) is owned by tokensave's installer — Mate never
+ * hand-edits ~/.tokensave/config.toml. Idempotent, so re-running doubles as repair.
+ */
+function installTokensaveAgentIntegration(agent: string, cwd: string): TokensaveRunResult {
+  return tokensaveDeps.run(
+    ["install", "--agent", agent, "--git-hook", "no", "--wildcard-permissions"],
+    cwd,
+  );
+}
+
 function installTokensaveAgentIntegrations(providers: string[], cwd: string): void {
   const agents = providers.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).sort();
   for (const agent of agents) {
-    const result = tokensaveDeps.run(
-      ["install", "--agent", agent, "--git-hook", "no", "--wildcard-permissions"],
-      cwd,
-    );
+    const result = installTokensaveAgentIntegration(agent, cwd);
     if (!result.ok) {
       const detail = result.stderr.trim();
       process.stderr.write(
@@ -140,6 +151,60 @@ function installTokensaveAgentIntegrations(providers: string[], cwd: string): vo
       );
     }
   }
+}
+
+async function readJsonObject(filePath: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await fs.readFile(filePath, "utf8"));
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath, fsConstants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Read-only probe of the global files `tokensave install --agent <agent>` writes.
+ * tokensave's own permission check reads only these global files, never the
+ * companion-scoped settings Mate loads via `--settings`.
+ */
+export async function isTokensaveAgentIntegrated(agent: string): Promise<boolean> {
+  const home = tokensaveDeps.homeDir();
+  if (agent === "claude") {
+    const settings = await readJsonObject(path.join(home, ".claude", "settings.json"));
+    const allow = (settings?.permissions as { allow?: unknown } | undefined)?.allow;
+    return (
+      Array.isArray(allow) &&
+      allow.includes("mcp__tokensave__*") &&
+      (await fileExists(path.join(home, ".claude", "rules", "tokensave.md")))
+    );
+  }
+  if (agent === "opencode") {
+    const configDir = path.join(home, ".config", "opencode");
+    const config = await readJsonObject(path.join(configDir, "opencode.json"));
+    /**
+     * `tokensave install` writes the flat `mcp.<name>` entry, which OpenCode 2.x
+     * still loads; `mcp.servers.<name>` is the 2.x-native spelling.
+     */
+    const mcp = config?.mcp as
+      | (Record<string, unknown> & { servers?: Record<string, unknown> })
+      | undefined;
+    return (
+      (mcp?.tokensave !== undefined || mcp?.servers?.tokensave !== undefined) &&
+      (await fileExists(path.join(configDir, "tokensave.md")))
+    );
+  }
+  return true;
 }
 
 function getCargoRustVersionError(): string | undefined {
@@ -361,7 +426,7 @@ export function createTokensavePlugin(): CapabilityPlugin {
       "Enable TokenSave indexing in the repo and MCP access via companion-managed config.",
     defaultSelected: false,
     isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "tokensave"),
-    getInstallRequirements: () => {
+    getInstallRequirements: ({ config }) => {
       const plan = getTokensaveInstallPlan();
       return [
         {
@@ -382,6 +447,27 @@ export function createTokensavePlugin(): CapabilityPlugin {
           },
           verify: () => tokensaveDeps.run(["--version"], process.cwd()).ok,
         },
+        ...(config.allowedAgents ?? [])
+          .filter((agent) => TOKENSAVE_SUPPORTED_AGENTS.has(agent))
+          .sort()
+          .map((agent): InstallRequirement => ({
+            id: `capability:tokensave:${agent}`,
+            label: `TokenSave ${agent} integration`,
+            group: "companion",
+            source: "TokenSave capability",
+            command: `tokensave install --agent ${agent} --git-hook no --wildcard-permissions`,
+            fingerprint: `tokensave-agent:${agent}`,
+            detect: () => isTokensaveAgentIntegrated(agent),
+            install: async () => {
+              const result = installTokensaveAgentIntegration(agent, process.cwd());
+              if (!result.ok) {
+                const detail = result.stderr.trim();
+                throw new Error(
+                  `\`tokensave install --agent ${agent}\` failed${detail ? `: ${detail}` : ""}`,
+                );
+              }
+            },
+          })),
       ];
     },
     // MCP access, session hooks, and permission pre-seeds are declared below

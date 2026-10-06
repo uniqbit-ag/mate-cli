@@ -188,7 +188,17 @@ describe("fork check", () => {
 
   test("reports no fork when the bound is exceeded", () => {
     const fixture = makeFixture();
-    expect(companionForkState(fixture.companion, 1)).toBeNull();
+    /** A Git that outlasts the bound on every OS; a 1ms bound alone races a fast Git. */
+    const slowBin = path.join(fixture.root, "slow-bin");
+    fs.mkdirSync(slowBin);
+    fs.writeFileSync(path.join(slowBin, "git"), "#!/bin/sh\nexec sleep 2\n", { mode: 0o755 });
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${slowBin}${path.delimiter}${originalPath}`;
+    try {
+      expect(companionForkState(fixture.companion, 50)).toBeNull();
+    } finally {
+      process.env.PATH = originalPath;
+    }
   });
 });
 

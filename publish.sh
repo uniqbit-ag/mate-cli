@@ -86,6 +86,42 @@ for NAME in "${PACKAGE_NAMES[@]}"; do
   NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm pack --dry-run --workspace "$NAME"
 done
 
+# The image locks pin the integrity sync-image-inputs packed at the version
+# bump. A tree changed since then (an editor's format-on-save is enough) would
+# publish a tarball the image can never install, and a published version cannot
+# be replaced — so nothing is published unless every pin still matches.
+LOCK_DIR="$ROOT_DIR/apps/mate-container/locks"
+for NAME in "${PACKAGE_NAMES[@]}"; do
+  PACKED_JSON="$(NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm pack --dry-run --json --workspace "$NAME")"
+  PACKED_JSON="$PACKED_JSON" node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const [name, version, lockDir] = process.argv.slice(1);
+    const packed = JSON.parse(process.env.PACKED_JSON)[0]?.integrity;
+    if (!packed) {
+      console.error(`Error: npm pack reported no integrity for ${name}.`);
+      process.exit(1);
+    }
+    let pins = 0;
+    const stale = [];
+    for (const file of fs.readdirSync(lockDir).filter((f) => f.endsWith(".package-lock.json"))) {
+      const entry = JSON.parse(fs.readFileSync(path.join(lockDir, file), "utf8")).packages?.[`node_modules/${name}`];
+      if (!entry) continue;
+      pins += 1;
+      if (entry.version !== version || entry.integrity !== packed) stale.push(file);
+    }
+    if (pins === 0) {
+      console.error(`Error: no image lock in ${lockDir} pins ${name}.`);
+      process.exit(1);
+    }
+    if (stale.length > 0) {
+      console.error(`Error: ${name}@${version} would publish as ${packed}, but ${stale.join(", ")} pin another tarball.`);
+      console.error("The working tree changed after the version bump. Restore it to the release commit and rerun publish.sh.");
+      process.exit(1);
+    }
+  ' "$NAME" "$VERSION" "$LOCK_DIR"
+done
+
 for NAME in "${PACKAGE_NAMES[@]}"; do
   echo "Publishing $NAME@$VERSION with tag: $TAG"
   NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm publish --workspace "$NAME" --access public --tag "$TAG"

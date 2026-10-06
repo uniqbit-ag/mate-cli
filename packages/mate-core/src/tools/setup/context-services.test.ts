@@ -309,7 +309,10 @@ describe("tokensave capability via context services", () => {
     });
 
     const opencodeConfig = await readJson(path.join(root, ".opencode", "opencode.json"));
-    expect(opencodeConfig.mcp.tokensave).toMatchObject({ type: "local", enabled: true });
+    expect(opencodeConfig.mcp.servers.tokensave).toMatchObject({
+      type: "local",
+      disabled: false,
+    });
   });
 });
 
@@ -370,11 +373,11 @@ describe("ctx.mcp.register", () => {
     });
 
     const opencodeConfig = await readJson(path.join(root, ".opencode", "opencode.json"));
-    expect(opencodeConfig.mcp["acme-kb"]).toEqual({
+    expect(opencodeConfig.mcp.servers["acme-kb"]).toEqual({
       type: "local",
       command: ["acme-kb-mcp", "--serve"],
       environment: { ACME_TOKEN: "x" },
-      enabled: true,
+      disabled: false,
     });
   });
 

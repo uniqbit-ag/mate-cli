@@ -47,11 +47,18 @@ const serverEntry = pkg.exports?.["./server"];
 if (!serverEntry) throw new Error("missing ./server export");
 
 const server = await import(path.join(root, serverEntry));
-if (typeof server.default !== "function") throw new Error("./server default export is not a Plugin");
+if (
+  typeof server.default?.id !== "string" ||
+  server.default.id.length === 0 ||
+  typeof server.default.setup !== "function"
+) {
+  throw new Error("./server default export is not a V2 server plugin definition");
+}
 
-const hooks = await server.default({});
-if (Object.keys(hooks).length !== 0) {
-  throw new Error("aggregate plugin must stay inert without the Mate launch environment");
+/** Any domain access would throw: the plugin must stay inert without the Mate launch environment. */
+const cleanup = await server.default.setup({ location: { directory: process.cwd() } });
+if (cleanup !== undefined) {
+  throw new Error("plugin must stay inert without the Mate launch environment");
 }
 
 console.log("SERVER_SMOKE_OK");
@@ -148,7 +155,7 @@ describe("packed @uniqbit/mate-opencode-plugin", () => {
     /** OpenCode provides OpenTUI to TUI plugins; simulate that host before loading `./tui`. */
     const hostOpenTui = runInProject(project, [
       "add",
-      ...OPENTUI_PACKAGES.map((name) => `${name}@^0.4.5`),
+      ...OPENTUI_PACKAGES.map((name) => `${name}@^0.5.14`),
     ]);
     expect(hostOpenTui.status).toBe(0);
 
@@ -158,7 +165,7 @@ describe("packed @uniqbit/mate-opencode-plugin", () => {
     expect(tuiSmoke.status).toBe(0);
   }, 240_000);
 
-  test("packed tarball ships only the source entry points and package manifest", async () => {
+  test("packed tarball ships only the source and root entry points and package manifest", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-plugin-pack-files-"));
     tempRoots.push(root);
 
@@ -169,6 +176,8 @@ describe("packed @uniqbit/mate-opencode-plugin", () => {
     const entries = list.stdout.split("\n").filter(Boolean);
     expect(entries).toContain("package/src/server.ts");
     expect(entries).toContain("package/src/tui.tsx");
+    expect(entries).toContain("package/server.ts");
+    expect(entries).toContain("package/tui.tsx");
     expect(entries).toContain("package/package.json");
     expect(entries.some((entry) => entry.includes("test"))).toBe(false);
   });

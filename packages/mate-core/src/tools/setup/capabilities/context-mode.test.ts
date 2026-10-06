@@ -78,6 +78,49 @@ describe("createContextModePlugin", () => {
     expect(validatePackage).toHaveBeenCalledTimes(1);
   });
 
+  test("declares a companion install requirement that provisions a missing package", async () => {
+    const ctx = await makeContext();
+    const installPackage = mock(async () => {});
+    const validatePackage = mock(async () => {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+    const plugin = createContextModePlugin({ installPackage, validatePackage });
+
+    const [requirement, ...rest] =
+      plugin.getInstallRequirements?.({ companionPath: ctx.companionPath, config: ctx.config }) ??
+      [];
+
+    expect(rest).toHaveLength(0);
+    expect(requirement?.id).toBe("capability:context-mode");
+    expect(requirement?.group).toBe("companion");
+    expect(requirement?.command).toContain(getContextModePackageReference());
+    expect(await requirement?.detect()).toBe(false);
+    await requirement?.install();
+    expect(installPackage).toHaveBeenCalledWith(ctx.companionPath);
+  });
+
+  test("install requirement is satisfied by a valid installed package", async () => {
+    const ctx = await makeContext();
+    const validatePackage = mock(async () => {});
+    const plugin = createContextModePlugin({ validatePackage });
+
+    const [requirement] =
+      plugin.getInstallRequirements?.({ companionPath: ctx.companionPath, config: ctx.config }) ??
+      [];
+
+    expect(await requirement?.detect()).toBe(true);
+    expect(validatePackage).toHaveBeenCalledWith(ctx.companionPath);
+  });
+
+  test("declares no install requirement without a companion", () => {
+    const plugin = createContextModePlugin();
+    expect(
+      plugin.getInstallRequirements?.({
+        config: { allowedAgents: [], capabilities: [{ name: "context-mode" }] },
+      }),
+    ).toEqual([]);
+  });
+
   test("removes a leftover legacy .mate/dependencies tree on apply", async () => {
     const ctx = await makeContext();
     const legacyDir = path.join(ctx.companionPath, ".mate", "dependencies", "context-mode");
@@ -109,9 +152,7 @@ describe("createContextModePlugin", () => {
   test("declared reference lands after existing plugins idempotently", async () => {
     const ctx = await makeContext();
     const configPath = path.join(ctx.companionPath, ".opencode", "opencode.json");
-    const tuiPath = path.join(ctx.companionPath, ".opencode", "tui.json");
-    await fs.writeFile(configPath, JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }));
-    await fs.writeFile(tuiPath, "{}\n");
+    await fs.writeFile(configPath, JSON.stringify({ plugins: ["acme-plugin@1.0.0"] }));
     const plugin = createContextModePlugin();
     const inputs = [
       {
@@ -125,22 +166,15 @@ describe("createContextModePlugin", () => {
     await reconcileOpenCodeContributions(ctx, inputs);
 
     const config = JSON.parse(await fs.readFile(configPath, "utf8"));
-    expect(config.plugin).toEqual(["acme-plugin@1.0.0", getContextModePackageReference()]);
-    const tui = JSON.parse(await fs.readFile(tuiPath, "utf8"));
-    expect(tui.plugin).toEqual([getContextModePackageReference()]);
+    expect(config.plugins).toEqual(["acme-plugin@1.0.0", getContextModePackageReference()]);
   });
 
-  test("preflight validates both pinned OpenCode references without modifying files", async () => {
+  test("preflight validates the pinned OpenCode reference without modifying files", async () => {
     const ctx = await makeContext();
     const configPath = path.join(ctx.companionPath, ".opencode", "opencode.json");
-    const tuiPath = path.join(ctx.companionPath, ".opencode", "tui.json");
     const expected = getContextModePackageReference();
-    await fs.writeFile(configPath, JSON.stringify({ plugin: [expected] }));
-    await fs.writeFile(tuiPath, JSON.stringify({ plugin: [expected] }));
-    const before = await Promise.all([
-      fs.readFile(configPath, "utf8"),
-      fs.readFile(tuiPath, "utf8"),
-    ]);
+    await fs.writeFile(configPath, JSON.stringify({ plugins: [expected] }));
+    const before = await fs.readFile(configPath, "utf8");
     const preflight = createContextModePlugin().forProvider?.opencode?.preflight;
     const launchContext: LaunchPreflightContext = {
       companionPath: ctx.companionPath,
@@ -150,12 +184,10 @@ describe("createContextModePlugin", () => {
     };
 
     await expect(preflight?.(launchContext)).resolves.toEqual([]);
-    expect(
-      await Promise.all([fs.readFile(configPath, "utf8"), fs.readFile(tuiPath, "utf8")]),
-    ).toEqual(before);
+    expect(await fs.readFile(configPath, "utf8")).toBe(before);
   });
 
-  test("preflight reports missing and stale references in each affected file", async () => {
+  test("preflight reports a missing or stale reference in the companion config", async () => {
     const ctx = await makeContext();
     const configPath = path.join(ctx.companionPath, ".opencode", "opencode.json");
     await fs.writeFile(configPath, JSON.stringify({ plugin: ["context-mode@0.0.1"] }));
@@ -168,9 +200,8 @@ describe("createContextModePlugin", () => {
       providerId: "opencode",
     });
 
-    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics).toHaveLength(1);
     expect(diagnostics?.[0]).toContain(configPath);
-    expect(diagnostics?.[1]).toContain(path.join(ctx.companionPath, ".opencode", "tui.json"));
     expect(
       diagnostics?.every((diagnostic) => diagnostic.includes(getContextModePackageReference())),
     ).toBe(true);
@@ -180,12 +211,10 @@ describe("createContextModePlugin", () => {
     /** The bound form that caused the launch preflight regression. */
     const ctx = await makeContext();
     const installed = await writePreinstalledCopy(ctx.companionPath, CONTEXT_MODE_VERSION);
-    for (const name of ["opencode.json", "tui.json"]) {
-      await fs.writeFile(
-        path.join(ctx.companionPath, ".opencode", name),
-        JSON.stringify({ plugin: [installed] }),
-      );
-    }
+    await fs.writeFile(
+      path.join(ctx.companionPath, ".opencode", "opencode.json"),
+      JSON.stringify({ plugins: [installed] }),
+    );
     const preflight = createContextModePlugin().forProvider?.opencode?.preflight;
 
     await expect(
@@ -201,12 +230,10 @@ describe("createContextModePlugin", () => {
   test("preflight reports a bound reference whose installed copy is the wrong version", async () => {
     const ctx = await makeContext();
     const installed = await writePreinstalledCopy(ctx.companionPath, "0.0.1");
-    for (const name of ["opencode.json", "tui.json"]) {
-      await fs.writeFile(
-        path.join(ctx.companionPath, ".opencode", name),
-        JSON.stringify({ plugin: [installed] }),
-      );
-    }
+    await fs.writeFile(
+      path.join(ctx.companionPath, ".opencode", "opencode.json"),
+      JSON.stringify({ plugins: [installed] }),
+    );
     const preflight = createContextModePlugin().forProvider?.opencode?.preflight;
 
     const diagnostics = await preflight?.({
@@ -216,7 +243,7 @@ describe("createContextModePlugin", () => {
       providerId: "opencode",
     });
 
-    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics).toHaveLength(1);
     expect(diagnostics?.[0]).toContain("0.0.1");
     expect(diagnostics?.[0]).toContain(CONTEXT_MODE_VERSION);
   });
@@ -231,12 +258,10 @@ describe("createContextModePlugin", () => {
       "node_modules",
       "context-mode",
     );
-    for (const name of ["opencode.json", "tui.json"]) {
-      await fs.writeFile(
-        path.join(ctx.companionPath, ".opencode", name),
-        JSON.stringify({ plugin: [missing] }),
-      );
-    }
+    await fs.writeFile(
+      path.join(ctx.companionPath, ".opencode", "opencode.json"),
+      JSON.stringify({ plugins: [missing] }),
+    );
     const preflight = createContextModePlugin().forProvider?.opencode?.preflight;
 
     const diagnostics = await preflight?.({
@@ -246,28 +271,21 @@ describe("createContextModePlugin", () => {
       providerId: "opencode",
     });
 
-    expect(diagnostics).toHaveLength(2);
+    expect(diagnostics).toHaveLength(1);
     expect(diagnostics?.[0]).toContain("not installed");
   });
 
   test("teardown removes only references that Mate added", async () => {
     const ctx = await makeContext();
     const configPath = path.join(ctx.companionPath, ".opencode", "opencode.json");
-    const tuiPath = path.join(ctx.companionPath, ".opencode", "tui.json");
-    await fs.writeFile(configPath, JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }));
-    await fs.writeFile(
-      tuiPath,
-      JSON.stringify({ plugin: [getContextModePackageReference(), "user-plugin@2.0.0"] }),
-    );
+    await fs.writeFile(configPath, JSON.stringify({ plugins: ["acme-plugin@1.0.0"] }));
     const handler = createContextModePlugin().forProvider?.opencode;
 
     await handler?.apply(ctx);
     await handler?.teardown(ctx);
 
     const config = JSON.parse(await fs.readFile(configPath, "utf8"));
-    const tui = JSON.parse(await fs.readFile(tuiPath, "utf8"));
-    expect(config.plugin).toEqual(["acme-plugin@1.0.0"]);
-    expect(tui.plugin).toEqual([getContextModePackageReference(), "user-plugin@2.0.0"]);
+    expect(config.plugins).toEqual(["acme-plugin@1.0.0"]);
   });
 
   test("teardown leaves unowned and malformed provider configuration untouched", async () => {
@@ -284,12 +302,10 @@ describe("createContextModePlugin", () => {
     const ctx = await makeContext();
     const configPath = path.join(ctx.companionPath, ".opencode", "opencode.json");
     const original = {
-      mcp: { contextMode: { command: ["context-mode"] } },
-      plugin: ["context-mode@1.0.1"],
+      mcp: { servers: { contextMode: { type: "local", command: ["context-mode"] } } },
+      plugins: ["context-mode@1.0.1"],
     };
     await fs.writeFile(configPath, JSON.stringify(original));
-    await fs.writeFile(path.join(ctx.companionPath, ".opencode", "tui.json"), "{}\n");
-
     await expect(createContextModePlugin().forProvider?.opencode?.apply(ctx)).rejects.toThrow(
       "already contains a context-mode MCP registration",
     );

@@ -90,6 +90,7 @@ async function runMate(root: string, cwd: string, args: string[]): Promise<RunRe
         HOME: path.join(root, "home"),
         PATH: `${path.dirname(process.execPath)}${path.delimiter}/usr/bin${path.delimiter}/bin`,
         MATE_ARTIFACT_PATH: "",
+        MATE_VERSION: "",
         MATE_REPO_ID: "",
         MATE_REPO_PATH: "",
       },
