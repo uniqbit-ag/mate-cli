@@ -53,7 +53,7 @@ function printPlanText(plan: Awaited<ReturnType<typeof inspectInstallPlan>>): vo
  * @description Installs and verifies the core runtime and dependencies selected by the current companion.
  * @flags
  * - `--yes` — skip confirmation; required for non-TTY execution.
- * - `--frozen-plugins` — deployment restore: install declared plugins exactly from the committed lockfile, verify plugin-generated tracked files are committed, never rewrite tracked files.
+ * - `--frozen-plugins` — deployment restore: install declared plugins exactly from the committed lockfile, never rewrite the plugin manifest or lockfile. The checkout's plugin-generated files are written, not committed.
  */
 export async function runInstallCommand(argv: string[], cwd = process.cwd()): Promise<boolean> {
   const skipConfirm = argv.includes("--yes");

@@ -522,6 +522,73 @@ describe("what startup hands the supervisor", () => {
     expect(calls.some((call) => call.includes("verify") || call.includes("prepare"))).toBe(false);
   });
 
+  describe("startup-only tokens are redacted from every printed failure", () => {
+    const registry = { scope: "@acme", url: "https://registry.acme.test/", token: "reg-tok" };
+    const leak = "leaked reg-tok and git-tok here\n";
+    const failing = (match: string) =>
+      recorder({ [match]: { status: 1, stdout: "", stderr: leak } });
+
+    for (const [name, match] of [
+      ["registration", "register"],
+      ["restore", "setup.sh"],
+      ["verification", "plugin verify"],
+      ["preparation", "prepare"],
+    ] as const) {
+      test(`${name} omits both tokens`, () => {
+        makeCompanion(path.join(root, "acme"));
+        let message = "";
+        try {
+          prepareStartup(
+            config({ pluginRegistry: registry, gitCloneToken: "git-tok" }),
+            deps({ run: failing(match).run }),
+          );
+        } catch (error) {
+          message = (error as Error).message;
+        }
+        expect(message).toContain("leaked");
+        expect(message).not.toMatch(/reg-tok|git-tok/);
+      });
+    }
+
+    test("clone omits both tokens", () => {
+      const { run } = recorder({ clone: { status: 128, stdout: "", stderr: leak } });
+      let message = "";
+      try {
+        prepareStartup(
+          config({
+            pluginRegistry: registry,
+            gitCloneToken: "git-tok",
+            companionRepos: [{ url: "https://example.com/gone.git", directory: "gone" }],
+          }),
+          deps({ run }),
+        );
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toContain("leaked");
+      expect(message).not.toMatch(/reg-tok|git-tok/);
+    });
+  });
+
+  test("a companion-local npm auth line for the registry host blocks the restore", () => {
+    const companion = makeCompanion(path.join(root, "acme"));
+    fs.mkdirSync(path.join(companion, ".mate", "plugins"), { recursive: true });
+    fs.writeFileSync(
+      path.join(companion, ".mate", "plugins", ".npmrc"),
+      "//pkg.acme.test/:_authToken=other\n",
+    );
+    const { run, calls } = recorder();
+    expect(() =>
+      prepareStartup(
+        config({
+          pluginRegistry: { scope: "@acme", url: "https://pkg.acme.test/", token: "t" },
+        }),
+        deps({ run }),
+      ),
+    ).toThrow(/\.npmrc overrides/);
+    expect(calls.some((call) => call[0] === "bash")).toBe(false);
+  });
+
   test("a companion-local npm override of the registry blocks the restore", () => {
     const companion = makeCompanion(path.join(root, "acme"));
     fs.mkdirSync(path.join(companion, ".mate", "plugins"), { recursive: true });
@@ -533,7 +600,7 @@ describe("what startup hands the supervisor", () => {
     expect(() =>
       prepareStartup(
         config({
-          pluginRegistry: { scope: "@acme", url: "https://registry.acme.test/", token: "t" },
+          pluginRegistry: { scope: "@acme", url: "https://pkg.acme.test/", token: "t" },
         }),
         deps({ run }),
       ),

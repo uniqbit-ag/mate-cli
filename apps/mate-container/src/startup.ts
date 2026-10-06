@@ -11,6 +11,7 @@ import {
   discoverCompanions,
   redact,
   type Runner,
+  type RunResult,
   runCommand,
   selectCompanion,
   StartupError,
@@ -102,12 +103,7 @@ export function commandOnPath(
   return false;
 }
 
-/**
- * Checks what the companion asks for against what the image carries, before
- * either serving process starts — so an unsatisfiable selection is a sentence
- * naming the requirement, rather than the installation gate refusing the
- * session with repair advice written for a human at a terminal.
- */
+/** Fails with a sentence naming each requirement the image cannot satisfy. */
 export function assertRequirementsCarried(
   selections: CompanionSelections,
   onPath: (command: string) => boolean = (command) => commandOnPath(command),
@@ -201,14 +197,32 @@ export function defaultDeps(): StartupDeps {
   };
 }
 
+/** Child output as printed: trimmed, startup-only tokens masked, `fallback` when empty. */
+function childDetail(result: RunResult, fallback: string, secrets: Array<string | null>): string {
+  return redact((result.stderr || result.stdout).trim(), ...secrets) || fallback;
+}
+
 /**
- * Frozen restore of the selected companion's locked plugins through the
- * image-owned setup script. The secrets reach only that child, and every
- * printed diagnostic is redacted.
+ * npm reads the project `.npmrc` beside `.mate/plugins/package.json`, so only
+ * that file can redirect the registry or carry credentials for it.
  */
-function restorePlugins(registry: PluginRegistry, companion: string, deps: StartupDeps): void {
+function overridesRegistry(npmrc: string, registry: PluginRegistry): boolean {
+  if (/registry/i.test(npmrc)) return true;
+  const host = new URL(registry.url).host;
+  return npmrc
+    .split("\n")
+    .some((line) => /^\s*\/\/.*:_auth(Token)?\s*=/.test(line) && line.includes(host));
+}
+
+/** Frozen restore of the companion's locked plugins through the image-owned setup script. */
+function restorePlugins(
+  registry: PluginRegistry,
+  companion: string,
+  deps: StartupDeps,
+  secrets: Array<string | null>,
+): void {
   const override = path.join(companion, ".mate", "plugins", ".npmrc");
-  if (fs.existsSync(override) && /registry/i.test(fs.readFileSync(override, "utf8"))) {
+  if (fs.existsSync(override) && overridesRegistry(fs.readFileSync(override, "utf8"), registry)) {
     throw new StartupError(
       `${override} overrides the configured plugin registry; remove it from the companion.`,
     );
@@ -220,22 +234,27 @@ function restorePlugins(registry: PluginRegistry, companion: string, deps: Start
     MATE_PLUGIN_REGISTRY_TOKEN: registry.token,
   });
   if (restored.status !== 0) {
-    const detail = redact((restored.stderr || restored.stdout).trim(), registry.token);
     throw new StartupError(
-      `Restoring the plugins of ${companion} failed:\n${detail || `setup exited ${restored.status}`}`,
+      `Restoring the plugins of ${companion} failed:\n${childDetail(restored, `setup exited ${restored.status}`, secrets)}`,
     );
   }
 }
+
+/** Why each removed setting is ignored. */
+const REMOVED_SETTING_NOTES: Record<string, string> = {
+  MATE_ALLOWED_PLUGINS:
+    "the selected companion's plugin declarations are authoritative, so restrict who can change them",
+};
+const DEFAULT_REMOVED_NOTE = "the container serves Studio alone and agents start from its terminal";
 
 export function prepareStartup(
   config: ApplianceConfig,
   deps: StartupDeps = defaultDeps(),
 ): StartupPlan {
+  const secrets = [config.pluginRegistry?.token ?? null, config.gitCloneToken];
   for (const name of config.removed) {
     deps.log(
-      name === "MATE_ALLOWED_PLUGINS"
-        ? `warning: ${name} is no longer used; the selected companion's plugin declarations are authoritative, so restrict who can change them`
-        : `warning: ${name} is no longer used; the container serves Studio alone and agents start from its terminal`,
+      `warning: ${name} is no longer used; ${REMOVED_SETTING_NOTES[name] ?? DEFAULT_REMOVED_NOTE}`,
     );
   }
   assertCompanionsDirUsable(config.companionsDir, deps.identity);
@@ -245,6 +264,7 @@ export function prepareStartup(
     config.companionRepos,
     deps.run,
     config.gitCloneToken,
+    config.pluginRegistry?.token ?? null,
   )) {
     deps.log(
       outcome.cloned
@@ -255,13 +275,12 @@ export function prepareStartup(
 
   const companions = discoverCompanions(config.companionsDir);
 
-  // Registration feeds Studio's inventory, which also validates the launch
-  // companion Studio is pinned to; the launch itself never reads the registry.
+  /** Registration feeds Studio's inventory and validates its pinned launch companion. */
   for (const companion of companions) {
     const result = deps.run(deps.mate, ["companion", "register", companion]);
     if (result.status !== 0) {
       throw new StartupError(
-        `Registering ${companion} failed: ${(result.stderr || result.stdout).trim() || `mate exited ${result.status}`}`,
+        `Registering ${companion} failed: ${childDetail(result, `mate exited ${result.status}`, secrets)}`,
       );
     }
     deps.log(`registered ${companion}`);
@@ -270,17 +289,15 @@ export function prepareStartup(
   const companion = selectCompanion(companions, config.companion, config.setupHint);
   deps.log(`serving ${companion}`);
 
-  if (config.pluginRegistry !== null) restorePlugins(config.pluginRegistry, companion, deps);
+  if (config.pluginRegistry !== null)
+    restorePlugins(config.pluginRegistry, companion, deps, secrets);
 
-  // Every declared plugin must be installed and loadable under the credentials
-  // this process already carries. Nothing is installed to make it so. Runs
-  // before the requirement check because the capabilities the verified plugins
-  // provide are part of what it accepts.
-  const verified = deps.run(deps.mate, ["doctor", "--json"], companion);
-  if (verified.status !== 0) {
+  /** Runs before the requirement check: verified plugins' capabilities feed it. */
+  const verifyResult = deps.run(deps.mate, ["doctor", "--json"], companion);
+  if (verifyResult.status !== 0) {
     throw new StartupError(
       `The declared plugins of ${companion} are not ready:\n` +
-        `${(verified.stderr || verified.stdout).trim() || `mate exited ${verified.status}`}\n` +
+        `${childDetail(verifyResult, `mate exited ${verifyResult.status}`, secrets)}\n` +
         `Nothing was installed to repair this. ${
           config.pluginRegistry === null
             ? "Configure MATE_PLUGIN_REGISTRY to restore them at startup, or change the credentials."
@@ -288,11 +305,10 @@ export function prepareStartup(
         }`,
     );
   }
-  const pluginCapabilities = parsePluginCapabilities(verified.stdout);
+  const pluginCapabilities = parsePluginCapabilities(verifyResult.stdout);
 
   assertRequirementsCarried(readCompanionSelections(companion), deps.onPath, pluginCapabilities);
 
-  // Filesystem-only: preparation validates the image's bundle and copies it.
   const prepared = deps.run(deps.mate, [
     "companion",
     "prepare",
@@ -303,7 +319,7 @@ export function prepareStartup(
   if (prepared.status !== 0) {
     throw new StartupError(
       `Preparing the machine-local dependencies of ${companion} from ${deps.prebuilt} failed:\n` +
-        `${(prepared.stderr || prepared.stdout).trim() || `mate exited ${prepared.status}`}`,
+        childDetail(prepared, `mate exited ${prepared.status}`, secrets),
     );
   }
   deps.log((prepared.stdout || prepared.stderr).trim() || `prepared ${companion}`);

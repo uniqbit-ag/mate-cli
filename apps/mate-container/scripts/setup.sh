@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# Image-owned plugin restore, run by startup only when a scoped plugin
-# registry is configured. Restores the selected companion's plugins from its
-# committed lockfile; never updates a tracked file.
-#
-# The scoped npm configuration is generated under the container user's home,
-# owner-only, and references the token by name for npm to expand from this
-# process's environment, so no expanded secret is written anywhere. It is
-# removed whether the restore succeeds or fails.
+# Frozen plugin restore from the companion's lockfile; run by startup when a
+# plugin registry is configured. The npm config is owner-only, references the
+# token by name (no expanded secret on disk) and is removed on exit.
 set -euo pipefail
 
 COMPANION="${1:?usage: setup.sh <companion-path>}"

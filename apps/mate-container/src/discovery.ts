@@ -121,12 +121,8 @@ export function sameRemote(a: string, b: string): boolean {
   return normalize(a) === normalize(b);
 }
 
-/**
- * Reads the token from the child's environment, so it reaches neither a URL,
- * an argument nor `.git/config`. Passed as top-level `-c`, which `git clone`
- * does not persist, after an empty helper that resets any configured ones.
- */
 export const CLONE_TOKEN_ENV = "MATE_GIT_CLONE_TOKEN";
+/** Reads the token from the child's environment, so it never reaches a URL, argument or `.git/config`. */
 const CLONE_CREDENTIAL_HELPER = `!f() { echo username=x-access-token; echo "password=\${${CLONE_TOKEN_ENV}}"; }; f`;
 
 export interface CheckoutOutcome {
@@ -145,6 +141,7 @@ export function checkoutConfigured(
   locations: GitLocation[],
   run: Runner = runCommand,
   cloneToken: string | null = null,
+  registryToken: string | null = null,
 ): CheckoutOutcome[] {
   const outcomes: CheckoutOutcome[] = [];
   for (const location of locations) {
@@ -162,6 +159,7 @@ export function checkoutConfigured(
       continue;
     }
 
+    /** Top-level `-c` is not persisted by `git clone`; the empty helper resets configured ones. */
     const result =
       cloneToken === null
         ? run("git", ["clone", location.url, destination])
@@ -181,7 +179,7 @@ export function checkoutConfigured(
           );
     if (result.status !== 0) {
       throw new StartupError(
-        `Cloning ${location.url} into ${destination} failed: ${redact((result.stderr || result.stdout).trim(), cloneToken) || `git exited ${result.status}`}`,
+        `Cloning ${location.url} into ${destination} failed: ${redact((result.stderr || result.stdout).trim(), cloneToken, registryToken) || `git exited ${result.status}`}`,
       );
     }
     outcomes.push({ location, destination, cloned: true });

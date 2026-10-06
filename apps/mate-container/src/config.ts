@@ -485,10 +485,10 @@ function pluginRegistry(
   if (value === null) return null;
   const separator = value.indexOf("=");
   const scope = separator === -1 ? "" : value.slice(0, separator).trim();
-  const location = separator === -1 ? "" : value.slice(separator + 1).trim();
+  const registryUrl = separator === -1 ? "" : value.slice(separator + 1).trim();
   let parsed: URL | null = null;
   try {
-    parsed = new URL(location);
+    parsed = new URL(registryUrl);
   } catch {
     /** Reported below. */
   }
