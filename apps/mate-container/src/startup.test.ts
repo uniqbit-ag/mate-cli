@@ -16,6 +16,7 @@ import {
 } from "./discovery";
 import {
   assertRequirementsCarried,
+  parsePluginCapabilities,
   prepareStartup,
   readCompanionSelections,
   renderCredentials,
@@ -426,7 +427,7 @@ describe("what startup hands the supervisor", () => {
     const companion = makeCompanion(path.join(root, "acme"));
     const { run, calls } = recorder();
     prepareStartup(config({ allowedPlugins: "@acme/*" }), deps({ run }));
-    expect(calls).toContainEqual(["mate", "doctor"]);
+    expect(calls).toContainEqual(["mate", "doctor", "--json"]);
     expect(calls.some((call) => call.includes("install"))).toBe(false);
     void companion;
   });
@@ -450,6 +451,59 @@ describe("what startup hands the supervisor", () => {
     expect(() => prepareStartup(config({ allowedPlugins: "@acme/*" }), deps({ run }))).toThrow(
       /@acme\/reader: not installed/,
     );
+  });
+
+  test("a capability an allowed, verified plugin reports providing is accepted", () => {
+    makeCompanion(
+      path.join(root, "acme"),
+      FRAMEWORK.replace("- name: openspec", "- name: acme-reader"),
+    );
+    const { run } = recorder({
+      doctor: { status: 0, stdout: '{"pluginCapabilities":["acme-reader"]}\n', stderr: "" },
+    });
+    expect(() =>
+      prepareStartup(config({ allowedPlugins: "@acme/*" }), deps({ run })),
+    ).not.toThrow();
+  });
+
+  test("a plugin's capability is not accepted without an allowlist", () => {
+    makeCompanion(
+      path.join(root, "acme"),
+      FRAMEWORK.replace("- name: openspec", "- name: acme-reader"),
+    );
+    const { run } = recorder({
+      doctor: { status: 0, stdout: '{"pluginCapabilities":["acme-reader"]}\n', stderr: "" },
+    });
+    expect(() => prepareStartup(config(), deps({ run }))).toThrow(/capability "acme-reader"/);
+  });
+
+  test("a plugin cannot vouch for a different capability name", () => {
+    makeCompanion(
+      path.join(root, "acme"),
+      FRAMEWORK.replace("- name: openspec", "- name: other-thing"),
+    );
+    const { run } = recorder({
+      doctor: { status: 0, stdout: '{"pluginCapabilities":["acme-reader"]}\n', stderr: "" },
+    });
+    expect(() => prepareStartup(config({ allowedPlugins: "@acme/*" }), deps({ run }))).toThrow(
+      /capability "other-thing"/,
+    );
+  });
+
+  test("a plugin's capability does not excuse an unsupported package manager", () => {
+    expect(() =>
+      assertRequirementsCarried(
+        { packageManagers: ["pnpm"], capabilities: ["acme-reader"] },
+        () => true,
+        ["acme-reader"],
+      ),
+    ).toThrow(/package manager "pnpm"/);
+  });
+
+  test("unreadable doctor output provides nothing", () => {
+    expect(parsePluginCapabilities("")).toEqual([]);
+    expect(parsePluginCapabilities("not json")).toEqual([]);
+    expect(parsePluginCapabilities('{"pluginCapabilities":["a",1]}')).toEqual(["a"]);
   });
 
   test("an unknown capability is refused by name even when an allowed plugin might supply it", () => {

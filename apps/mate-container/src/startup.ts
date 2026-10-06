@@ -107,6 +107,7 @@ export function commandOnPath(
 export function assertRequirementsCarried(
   selections: CompanionSelections,
   onPath: (command: string) => boolean = (command) => commandOnPath(command),
+  pluginCapabilities: readonly string[] = [],
 ): void {
   const unsatisfied: string[] = [];
 
@@ -125,7 +126,15 @@ export function assertRequirementsCarried(
 
   for (const name of selections.packageManagers)
     check("package manager", name, SUPPORTED_PACKAGE_MANAGERS);
-  for (const name of selections.capabilities) check("capability", name, SUPPORTED_CAPABILITIES);
+  /**
+   * A capability the image does not know passes only when an allowlisted,
+   * verified plugin reports providing that exact ID; a plugin's package name
+   * or an unrelated declaration never stands in for it.
+   */
+  for (const name of selections.capabilities) {
+    if (!(name in SUPPORTED_CAPABILITIES) && pluginCapabilities.includes(name)) continue;
+    check("capability", name, SUPPORTED_CAPABILITIES);
+  }
 
   if (unsatisfied.length > 0) {
     throw new StartupError(
@@ -133,6 +142,18 @@ export function assertRequirementsCarried(
         unsatisfied.map((entry) => `  - ${entry}`).join("\n") +
         `\nNothing was installed to repair this. Use an image that carries them, or change the companion's selections.`,
     );
+  }
+}
+
+/** Reads `mate doctor --json`'s `pluginCapabilities`; anything unreadable provides nothing. */
+export function parsePluginCapabilities(stdout: string): string[] {
+  try {
+    const parsed = JSON.parse(stdout) as { pluginCapabilities?: unknown };
+    return Array.isArray(parsed.pluginCapabilities)
+      ? parsed.pluginCapabilities.filter((name): name is string => typeof name === "string")
+      : [];
+  } catch {
+    return [];
   }
 }
 
@@ -210,13 +231,13 @@ export function prepareStartup(
   const companion = selectCompanion(companions, config.companion, config.setupHint);
   deps.log(`serving ${companion}`);
 
-  assertRequirementsCarried(readCompanionSelections(companion), deps.onPath);
-
   // With a policy, every declared plugin must be allowed, installed and
   // loadable under the credentials this process already carries. Nothing is
-  // installed to make it so.
+  // installed to make it so. Runs before the requirement check because the
+  // capabilities the verified plugins provide are part of what it accepts.
+  let pluginCapabilities: string[] = [];
   if (config.allowedPlugins !== null) {
-    const verified = deps.run(deps.mate, ["doctor"], companion);
+    const verified = deps.run(deps.mate, ["doctor", "--json"], companion);
     if (verified.status !== 0) {
       throw new StartupError(
         `The declared plugins of ${companion} are not ready:\n` +
@@ -224,7 +245,10 @@ export function prepareStartup(
           `Nothing was installed to repair this. Run setup, or change the allowlist or credentials.`,
       );
     }
+    pluginCapabilities = parsePluginCapabilities(verified.stdout);
   }
+
+  assertRequirementsCarried(readCompanionSelections(companion), deps.onPath, pluginCapabilities);
 
   // Filesystem-only: preparation validates the image's bundle and copies it.
   const prepared = deps.run(deps.mate, [

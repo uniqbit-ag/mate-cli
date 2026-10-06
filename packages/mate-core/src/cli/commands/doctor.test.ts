@@ -193,9 +193,12 @@ describe("runDoctorCommand", () => {
         runDoctorCommand([], {
           cwd: root,
           globalConfigStore,
-          verifyPlugins: async (companionPath) => {
+          inspectPlugins: async (companionPath) => {
             verified.push(companionPath);
-            return [{ package: "@acme/reader", reason: "not installed" }];
+            return {
+              failures: [{ package: "@acme/reader", reason: "not installed" }],
+              capabilities: [],
+            };
           },
         }),
       );
@@ -222,7 +225,7 @@ describe("runDoctorCommand", () => {
 
     try {
       const output = await captureStdout(() =>
-        runDoctorCommand([], { cwd: root, globalConfigStore, verifyPlugins: async () => [] }),
+        runDoctorCommand([], { cwd: root, globalConfigStore, inspectPlugins: async () => ({ failures: [], capabilities: [] }) }),
       );
 
       expect(output).not.toContain("Declared Plugins");
