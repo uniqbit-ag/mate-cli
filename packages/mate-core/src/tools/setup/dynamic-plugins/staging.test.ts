@@ -55,10 +55,15 @@ describe("verifyTrackedPluginOutputs", () => {
     await expect(fs.access(path.join(dir, "new.md"))).rejects.toThrow();
   });
 
-  test("refuses a checkout with its own edits", async () => {
+  test("compares the committed state and leaves the checkout's own edits alone", async () => {
     const dir = await repo();
     await fs.writeFile(path.join(dir, TRACKED), "edited\n");
-    await expect(verifyTrackedPluginOutputs(dir, async () => {})).rejects.toThrow(/instructions/);
+    await fs.writeFile(path.join(dir, "notes.md"), "mine\n");
+    const drift = await verifyTrackedPluginOutputs(dir, async (staged) => {
+      await fs.writeFile(path.join(staged, TRACKED), "committed\n");
+    });
+    expect(drift).toEqual([]);
     expect(await fs.readFile(path.join(dir, TRACKED), "utf8")).toBe("edited\n");
+    expect(await fs.readFile(path.join(dir, "notes.md"), "utf8")).toBe("mine\n");
   });
 });

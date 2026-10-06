@@ -25,22 +25,16 @@ function changedPaths(cwd: string): string[] {
 }
 
 /**
- * Checks that what plugins would generate is already committed. The live
- * checkout must have no edits of its own; the projection then runs against a
- * disposable clone of its commit, and any file that differs afterwards is
- * drift. Nothing is written back to the live checkout. Returns the drifting
- * paths (empty when the checkout is complete).
+ * Reports what plugins would generate that is not already committed. The
+ * projection runs against a disposable clone of the checkout's commit, so edits
+ * in the live checkout neither matter nor are touched, and any file that
+ * differs afterwards is drift. Nothing is written back to the live checkout.
+ * Returns the drifting paths (empty when the commit is complete).
  */
 export async function verifyTrackedPluginOutputs(
   companionPath: string,
   project: StagedProjection,
 ): Promise<string[]> {
-  const pending = changedPaths(companionPath);
-  if (pending.length > 0) {
-    throw new TrackedOutputError(
-      `the checkout has uncommitted changes, which frozen setup will not overwrite: ${pending.join(", ")}`,
-    );
-  }
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-staging-"));
   try {
     const staged = path.join(root, "companion");
