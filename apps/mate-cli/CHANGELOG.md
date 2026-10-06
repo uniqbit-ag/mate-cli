@@ -1,5 +1,115 @@
 # Changelog
 
+## [0.17.0](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-10-06)
+
+### Bug Fixes
+
+- block publish when packed tarballs differ from image lock pins ([41a48bb](https://github.com/uniqbit-ag/mate-cli/commit/41a48bb2c99bfabcd27aafa7b4b7fa31f75fef5d))
+- gitignore OpenCode service state when opencode is enabled ([3546274](https://github.com/uniqbit-ag/mate-cli/commit/35462743014f4c2e52df51d6eb8989a0bea7c91c))
+- integrate TokenSave with agent runtimes at image build time ([f3d9777](https://github.com/uniqbit-ag/mate-cli/commit/f3d9777a9f038e66781901e5a12b816521e8c9c0))
+- launch OpenCode standalone so companion config reaches it ([7f146d3](https://github.com/uniqbit-ag/mate-cli/commit/7f146d3379cbc55254b7a55309fe4e3cea15a981))
+- resolve OpenCode guidance from session directory; deflake tests ([a286afb](https://github.com/uniqbit-ag/mate-cli/commit/a286afbc36b026229bd8cb225fde0726536a2b96))
+- stop mate cap index from killing running tokensave MCP servers ([cd72156](https://github.com/uniqbit-ag/mate-cli/commit/cd721567207fc60a144f10177be99ba69c671df4))
+
+## [0.17.0-canary.14](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-10-05)
+
+### Bug Fixes
+
+- compare prerelease engine versions to release ranges ([47682be](https://github.com/uniqbit-ag/mate-cli/commit/47682be04e9c3d08486639e61790609e4b401060))
+
+## [0.17.0-canary.13](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-10-05)
+
+## [0.17.0-canary.12](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-10-05)
+
+### Features
+
+- add companion update command, drop container bundle test ([fcb645e](https://github.com/uniqbit-ag/mate-cli/commit/fcb645e134372c030972105eb0e386301bd208f6))
+- add opencode plugin root entries for path-bound loading, raise tool output limits ([7f5f2e9](https://github.com/uniqbit-ag/mate-cli/commit/7f5f2e92c6b3cd7eb61a7e6a8c4e4c141866ad3e))
+- **container:** verify and freeze dynamic plugins at startup ([d0a8f85](https://github.com/uniqbit-ag/mate-cli/commit/d0a8f85ec1c18a3e67fc4e3c86eab551413e515b))
+- migrate opencode integration to @opencode/plugin v2 ([dac8cad](https://github.com/uniqbit-ag/mate-cli/commit/dac8cad3934cd198a9d284b88a63a1e389122a9a))
+- smaller fixes, test adjustments ([7b3c558](https://github.com/uniqbit-ag/mate-cli/commit/7b3c5588cebb2cde6116cd13d5e65c72ef83d089))
+- **studio:** dock the agent terminal as a right sidebar ([ec93835](https://github.com/uniqbit-ag/mate-cli/commit/ec9383586809cf95850a8c1678b71713977bf4fb))
+- **studio:** list the vault fast and own every URL parameter in one module ([b7b1462](https://github.com/uniqbit-ag/mate-cli/commit/b7b14622fae67139efa1498c4ddb8162d4afcc55))
+- upgraded opencode to plugin v2 ([c0eaa32](https://github.com/uniqbit-ag/mate-cli/commit/c0eaa325a5b026f7126b5c05c64cf097d6476587))
+
+### Bug Fixes
+
+- let companion update commit pre-dirty OpenSpec skills and commands ([99478ed](https://github.com/uniqbit-ag/mate-cli/commit/99478edc22a8d84be500a17e74cac9d58c26dffb))
+
+## [0.17.0-canary.11](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-25)
+
+### Features
+
+- **studio:** add agent terminal and access token; serve Studio alone in the appliance ([a4980f4](https://github.com/uniqbit-ag/mate-cli/commit/a4980f4000b05851cfada91af33d01a20c6a181e))
+
+### Bug Fixes
+
+- **container:** wait for published packages before building the image ([9b5e927](https://github.com/uniqbit-ag/mate-cli/commit/9b5e92716e8f6c17f759256027cd34f14ca2dfb7))
+
+## [0.17.0-canary.10](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-25)
+
+### Bug Fixes
+
+- added baseline for auto update fix ([fd13883](https://github.com/uniqbit-ag/mate-cli/commit/fd1388327667cbc495318dda283a9adcaa848e2b))
+
+## [0.17.0-canary.9](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-24)
+
+### Features
+
+- **container:** register the preinstalled Context7 server ([11fc2e8](https://github.com/uniqbit-ag/mate-cli/commit/11fc2e8b836347a2430010e4b0775eb07f4e5c8a))
+
+## [0.17.0-canary.8](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-24)
+
+### Features
+
+- **cli:** make launches prompt-free and use npx for Context7 ([a44b0b0](https://github.com/uniqbit-ag/mate-cli/commit/a44b0b03af133996761808cd4316e9a6be78ac6f))
+
+## [0.17.0-canary.7](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-23)
+
+### Features
+
+- **cli:** register context7 as the installed context7-mcp server ([6eb2784](https://github.com/uniqbit-ag/mate-cli/commit/6eb2784589c4bd861414023ce2c116127f00ab1f))
+- **container:** carry the SSH client and the Context7 server ([eec3c67](https://github.com/uniqbit-ag/mate-cli/commit/eec3c678186465ad278b4b3398d26ea8327aa65e))
+
+### Bug Fixes
+
+- **container:** start the session with --no-git unless Git sync is configured ([79e8e6d](https://github.com/uniqbit-ag/mate-cli/commit/79e8e6d9e91917206be6518574078f4a33389b8f))
+- **studio:** make the vault editor read-only without --writable ([b9c9f66](https://github.com/uniqbit-ag/mate-cli/commit/b9c9f66d89797ede567ddecf7eabb2756018e3a9))
+
+## [0.17.0-canary.6](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-22)
+
+### Bug Fixes
+
+- **core:** accept a plugin bound to a preinstalled copy at launch ([a9098eb](https://github.com/uniqbit-ag/mate-cli/commit/a9098ebfec5ef75c9224243c76b74c3ebbe2718e))
+
+## [0.17.0-canary.5](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-22)
+
+### Features
+
+- **container:** add the Mate appliance image ([3da21a3](https://github.com/uniqbit-ag/mate-cli/commit/3da21a38112f1ba4d8dc85e36fde46a970a8cf2b))
+
+### Bug Fixes
+
+- **container:** prepare image locks before npm publish ([02bdfce](https://github.com/uniqbit-ag/mate-cli/commit/02bdfce9057959b4a7e2e086e46c6e46fe86533a))
+- **core:** let a pinned deployment reach a session ([63668b4](https://github.com/uniqbit-ag/mate-cli/commit/63668b4546e8b96f01d7346a61f5c00f64b13614))
+
+## [0.17.0-canary.3](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-22)
+
+### Bug Fixes
+
+- **core:** skip engines.node enforcement where no Node backs the runtime ([9281b5e](https://github.com/uniqbit-ag/mate-cli/commit/9281b5ee41aa5c596deb7a24f564f14e30fdad32))
+
+## [0.17.0-canary.2](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-21)
+
+## [0.17.0-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-21)
+
+## [0.17.0-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.16.0...0.17.0) (2026-09-21)
+
+### Features
+
+- add companion launches and studio vault ([d33b8c6](https://github.com/uniqbit-ag/mate-cli/commit/d33b8c67b0fd9be68891022efc7016bdd42e88f7))
+- add unattended deployment CLI ([5c76e08](https://github.com/uniqbit-ag/mate-cli/commit/5c76e08aa8954b431931c7b0369899cae6915521))
+
 ## Unreleased
 
 ### ⚠ BREAKING CHANGES
