@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { pluginPackageRoot } from "./paths";
-import { verifyDeclaredPlugins } from "./verify";
+import { inspectDeclaredPlugins, verifyDeclaredPlugins } from "./verify";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -81,6 +81,18 @@ describe("verifyDeclaredPlugins", () => {
     expect(await verifyDeclaredPlugins(dir, { env: { ACME_READ_TOKEN: "t" } })).toEqual([]);
     const failures = await verifyDeclaredPlugins(dir, { env: {} });
     expect(failures[0]?.reason).toMatch(/ACME_READ_TOKEN/);
+  });
+
+  test("reports the capability IDs of the verified plugins only", async () => {
+    const dir = await companion([
+      { package: "@acme/reader", version: "1.0.0" },
+      { package: "@evil/x", version: "1.0.0" },
+    ]);
+    await install(dir, "@acme/reader");
+    await install(dir, "@evil/x");
+    const result = await inspectDeclaredPlugins(dir, { env: { MATE_ALLOWED_PLUGINS: "@acme/*" } });
+    expect(result.capabilities).toEqual(["p"]);
+    expect(result.failures.map((failure) => failure.package)).toEqual(["@evil/x"]);
   });
 
   test("a malformed allowlist fails closed", async () => {

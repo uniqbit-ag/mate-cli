@@ -208,7 +208,7 @@ export const SETTINGS: Setting[] = [
     env: "MATE_ALLOWED_PLUGINS",
     key: "allowedPlugins",
     meaning:
-      "The npm packages a companion may declare as plugins: comma-separated exact names or scope patterns such as `@acme/*`. Unset: no restriction. Set but empty: none allowed. A scope pattern trusts every package published to that scope; it is a trust decision, not a sandbox.",
+      "The npm packages a companion may declare as plugins: comma-separated exact names or scope patterns such as `@acme/*`. Unset: no restriction. Set but empty: none allowed. A scope pattern trusts every package published to that scope; it is a trust decision, not a sandbox. When set, a `capabilities:` entry the image does not carry is accepted if a verified, allowed plugin provides that exact capability ID.",
     default: null,
     required: false,
   },
