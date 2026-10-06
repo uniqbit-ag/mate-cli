@@ -209,16 +209,13 @@ present:
   `MATE_PLUGIN_REGISTRY_TOKEN`. After the companion is checked out and
   registered, and before verification, the image runs
   `mate install --yes --frozen-plugins` in it. Plugin versions come only from the
-  committed lockfile and tracked files are never rewritten; the command may
-  still install other requirements the companion declares. A missing or
-  disagreeing lockfile, a rejected token, or an unavailable package stops
-  startup before Studio. Plugin-generated files that differ from what is
-  committed are only logged as a warning naming them; Studio still starts. A restart with a matching installed tree
+  committed lockfile and the lockfile is never rewritten; the command may still
+  install other requirements the companion declares. A missing or disagreeing
+  lockfile, a rejected token, or an unavailable package stops startup before
+  Studio. After the restore, startup writes the files the plugins generate,
+  such as agent definitions, into the checkout; it commits nothing, so they show
+  up as uncommitted changes. A restart with a matching installed tree
   reinstalls nothing.
-
-  Regenerate and commit the lockfile and plugin-generated files with the
-  image's Mate version whenever the image version or a plugin changes, to
-  silence that warning.
 
 The registry token and `MATE_GIT_CLONE_TOKEN` exist only for startup. They are
 handed to the clone and restore processes alone, redacted from printed
