@@ -17,12 +17,22 @@ PACKAGE_DIRS=(
   "$ROOT_DIR/apps/mate-cli"
 )
 
-if [[ $# -ne 1 || -z "${1:-}" ]]; then
-  echo "Usage: ./publish.sh <latest|canary>" >&2
+REGISTRY="https://registry.npmjs.org/"
+
+if [[ $# -lt 1 || $# -gt 2 || -z "${1:-}" ]]; then
+  echo "Usage: ./publish.sh <latest|canary> [release-tag]" >&2
   exit 1
 fi
 
 TAG="$1"
+
+# Publication needs the OIDC identity only the release workflow's publish job
+# receives; anywhere else there is no credential, and no other path is allowed.
+if [[ "${GITHUB_ACTIONS:-}" != "true" || "${GITHUB_WORKFLOW_REF:-}" != */.github/workflows/release.yml@* ]]; then
+  echo "Error: publish.sh only runs inside the release workflow (.github/workflows/release.yml)." >&2
+  echo "Run bun release or bun release:canary; the pushed signed tag starts the publication." >&2
+  exit 1
+fi
 
 case "$TAG" in
   latest|canary) ;;
@@ -42,10 +52,14 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-VERSION="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version' "$ROOT_DIR/apps/mate-cli/package.json")"
+read_version() {
+  node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version' "$1/package.json"
+}
+
+VERSION="$(read_version "$ROOT_DIR/apps/mate-cli")"
 
 for DIR in "${PACKAGE_DIRS[@]}"; do
-  PACKAGE_VERSION="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version' "$DIR/package.json")"
+  PACKAGE_VERSION="$(read_version "$DIR")"
   if [[ "$PACKAGE_VERSION" != "$VERSION" ]]; then
     echo "Error: $DIR/package.json is at version '$PACKAGE_VERSION' but @uniqbit/mate is at '$VERSION'." >&2
     echo "All public packages must be released with synchronized versions (run the release pipeline, not npm publish directly)." >&2
@@ -53,51 +67,50 @@ for DIR in "${PACKAGE_DIRS[@]}"; do
   fi
 done
 
-if [[ "$TAG" == "latest" && ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "Error: version '$VERSION' cannot be published with dist-tag latest; expected a stable version." >&2
+if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  CHANNEL="latest"
+elif [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-canary\.[0-9]+$ ]]; then
+  CHANNEL="canary"
+else
+  echo "Error: unsupported version shape '$VERSION'; expected x.y.z (latest) or x.y.z-canary.n (canary)." >&2
   exit 1
 fi
 
-if [[ "$TAG" == "canary" && ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-canary\.[0-9]+$ ]]; then
-  echo "Error: version '$VERSION' cannot be published with dist-tag canary; expected x.y.z-canary.n." >&2
+if [[ "$TAG" != "$CHANNEL" ]]; then
+  echo "Error: version '$VERSION' cannot be published with dist-tag $TAG; it belongs to $CHANNEL." >&2
   exit 1
 fi
 
-if [[ -z "${NPM_TOKEN:-}" ]]; then
-  echo "Error: NPM_TOKEN environment variable is not set." >&2
-  echo "Export it from your npmjs.com account settings (Access Tokens)." >&2
+# A dispatched retry runs on a branch ref, so the workflow passes the tag.
+RELEASE_TAG="${2:-${GITHUB_REF_NAME:-}}"
+if [[ "$RELEASE_TAG" != "$VERSION" ]]; then
+  echo "Error: release tag '$RELEASE_TAG' does not match version '$VERSION' of ${PACKAGE_NAMES[*]}." >&2
+  echo "Publish only from the signed tag release-it created for this version." >&2
   exit 1
 fi
 
-NPMRC_PATH="$(mktemp)"
 PACK_DIR="$(mktemp -d)"
 cleanup() {
-  rm -f "$NPMRC_PATH"
   rm -rf "$PACK_DIR"
 }
 trap cleanup EXIT
 
-cat > "$NPMRC_PATH" <<EOF
-registry=https://registry.npmjs.org/
-//registry.npmjs.org/:_authToken=${NPM_TOKEN}
-@uniqbit:registry=https://registry.npmjs.org/
-EOF
-
 for NAME in "${PACKAGE_NAMES[@]}"; do
   echo "Previewing $NAME@$VERSION publish contents..."
-  NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm pack --dry-run --workspace "$NAME"
+  npm pack --dry-run --workspace "$NAME"
 done
 
 # The image locks pin the integrity sync-image-inputs packed at the version
-# bump. A tree changed since then (an editor's format-on-save is enough) would
-# publish a tarball the image can never install, and a published version cannot
-# be replaced — so nothing is published unless every pin still matches.
-# Packed and hashed the way sync-image-inputs does; lifecycle output (prepack
-# builds) goes to stderr so it cannot corrupt anything read from stdout.
+# bump. A tree changed since then would publish a tarball the image can never
+# install, and a published version cannot be replaced — so nothing is published
+# unless every pin still matches. Packed and hashed the way sync-image-inputs
+# does; lifecycle output (prepack builds) goes to stderr so it cannot corrupt
+# anything read from stdout.
 LOCK_DIR="$ROOT_DIR/apps/mate-container/locks"
+PACKED_INTEGRITIES=()
 for NAME in "${PACKAGE_NAMES[@]}"; do
-  CI=1 NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm pack --workspace "$NAME" --pack-destination "$PACK_DIR" --loglevel error >&2
-  node -e '
+  CI=1 npm pack --workspace "$NAME" --pack-destination "$PACK_DIR" --loglevel error >&2
+  PACKED_INTEGRITIES+=("$(node -e '
     const crypto = require("crypto");
     const fs = require("fs");
     const path = require("path");
@@ -110,7 +123,7 @@ for NAME in "${PACKAGE_NAMES[@]}"; do
     const packed = `sha512-${crypto.createHash("sha512").update(fs.readFileSync(archive)).digest("base64")}`;
     let pins = 0;
     const stale = [];
-    for (const file of fs.readdirSync(lockDir).filter((f) => f.endsWith(".package-lock.json"))) {
+    for (const file of fs.readdirSync(lockDir).filter((f) => f.endsWith(".package-lock.json")).sort()) {
       const entry = JSON.parse(fs.readFileSync(path.join(lockDir, file), "utf8")).packages?.[`node_modules/${name}`];
       if (!entry) continue;
       pins += 1;
@@ -122,56 +135,49 @@ for NAME in "${PACKAGE_NAMES[@]}"; do
     }
     if (stale.length > 0) {
       console.error(`Error: ${name}@${version} would publish as ${packed}, but ${stale.join(", ")} pin another tarball.`);
-      console.error("The working tree changed after the version bump. Restore it to the release commit and rerun publish.sh.");
+      console.error("The tagged tree does not pack to the tarball pinned at the version bump; nothing was published.");
       process.exit(1);
     }
-  ' "$NAME" "$VERSION" "$LOCK_DIR" "$PACK_DIR"
+    process.stdout.write(packed);
+  ' "$NAME" "$VERSION" "$LOCK_DIR" "$PACK_DIR")")
 done
 
-for NAME in "${PACKAGE_NAMES[@]}"; do
-  echo "Publishing $NAME@$VERSION with tag: $TAG"
-  NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm publish --workspace "$NAME" --access public --tag "$TAG"
-  echo "Published $NAME@$VERSION with tag: $TAG"
-done
-
-# ---------------------------------------------------------------------------
-# Ask for an appliance image, now that every package it installs exists.
-#
-# Publication is complete at this point and stays complete: this request is
-# best-effort and bounded, and nothing below changes this script's exit status.
-# A release without an image is a release missing an image, not a failed one —
-# and the same dispatch, run by hand with the inputs printed here, is the retry.
-# ---------------------------------------------------------------------------
-IMAGE_WORKFLOW="publish-image.yml"
-REPOSITORY="uniqbit-ag/mate-cli"
-# release-it tags the release commit with the bare version, and pushes it
-# before this script runs, so the tag to build from is the version itself.
-RELEASE_TAG="$VERSION"
-
-retry_instruction() {
-  echo "  Retry it with:" >&2
-  echo "    gh workflow run $IMAGE_WORKFLOW --repo $REPOSITORY \\" >&2
-  echo "      --field version=$VERSION --field channel=$TAG --field ref=$RELEASE_TAG" >&2
+# Prints the registry integrity of an exact version, or nothing when that
+# version does not exist. Any other registry failure stops the release.
+published_integrity() {
+  local output status=0
+  output="$(npm view "$1@$VERSION" dist.integrity --registry "$REGISTRY" 2>&1)" || status=$?
+  if [[ $status -eq 0 ]]; then
+    printf "%s" "$output"
+  elif [[ "$output" != *E404* ]]; then
+    echo "Error: could not read $1@$VERSION from $REGISTRY:" >&2
+    echo "$output" >&2
+    exit 1
+  fi
 }
 
-echo
-if ! command -v gh >/dev/null 2>&1; then
-  echo "Note: npm publication succeeded; the image was not requested because gh is not installed." >&2
-  retry_instruction
-elif ! gh auth status >/dev/null 2>&1; then
-  echo "Note: npm publication succeeded; the image was not requested because gh is not authenticated." >&2
-  retry_instruction
-elif ! gh workflow view "$IMAGE_WORKFLOW" --repo "$REPOSITORY" >/dev/null 2>&1; then
-  echo "Note: npm publication succeeded; the image was not requested because $IMAGE_WORKFLOW is not available on the default branch." >&2
-  retry_instruction
-elif ! gh workflow run "$IMAGE_WORKFLOW" \
-        --repo "$REPOSITORY" \
-        --field version="$VERSION" \
-        --field channel="$TAG" \
-        --field ref="$RELEASE_TAG" >/dev/null 2>&1; then
-  echo "Note: npm publication succeeded; the image request was rejected." >&2
-  retry_instruction
-else
-  echo "Requested an appliance image for $VERSION ($TAG) from $RELEASE_TAG."
-  echo "The build runs on its own; this release is complete either way."
-fi
+# A rerun of the release workflow completes a partial publication: versions
+# already on the registry with the identical tarball are skipped, and any other
+# tarball under the same version stops the run before publishing further.
+for i in "${!PACKAGE_NAMES[@]}"; do
+  NAME="${PACKAGE_NAMES[$i]}"
+  PACKED="${PACKED_INTEGRITIES[$i]}"
+  PUBLISHED="$(published_integrity "$NAME")"
+  if [[ -n "$PUBLISHED" ]]; then
+    if [[ "$PUBLISHED" == "$PACKED" ]]; then
+      echo "Skipping $NAME@$VERSION: already published with the same integrity."
+      continue
+    fi
+    echo "Error: $NAME@$VERSION is already published as $PUBLISHED, but this release packed $PACKED." >&2
+    echo "A published version cannot be replaced; no further package was published." >&2
+    exit 1
+  fi
+
+  echo "Publishing $NAME@$VERSION with tag: $TAG"
+  if ! npm publish --workspace "$NAME" --access public --tag "$TAG" --provenance --registry "$REGISTRY"; then
+    echo "Error: npm rejected $NAME@$VERSION. Check its trusted publisher on npmjs.com" >&2
+    echo "(repository uniqbit-ag/mate-cli, workflow release.yml, environment npm-publish) and that the job has id-token: write." >&2
+    exit 1
+  fi
+  echo "Published $NAME@$VERSION with tag: $TAG"
+done

@@ -3,6 +3,11 @@
   "version": "0.18.0",
   "description": "OpenCode plugin integration for Mate.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uniqbit-ag/mate-cli.git",
+    "directory": "apps/mate-opencode-plugin"
+  },
   "files": [
     "server.ts",
     "tui.tsx",

@@ -2,6 +2,11 @@
   "name": "@uniqbit/mate",
   "version": "0.18.0",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uniqbit-ag/mate-cli.git",
+    "directory": "apps/mate-cli"
+  },
   "bin": {
     "mate": "src/cli-bootstrap.cjs"
   },
@@ -18,8 +23,8 @@
     "prepare": "bun scripts/prepare.ts",
     "build": "tsdown --config tsdown.config.ts",
     "prepack": "bun run build",
-    "release": "release-it --config ../../.release-it.json && ../../publish.sh latest",
-    "release:canary": "release-it --config ../../.release-it.canary.json --preRelease=canary && ../../publish.sh canary",
+    "release": "release-it --config ../../.release-it.json",
+    "release:canary": "release-it --config ../../.release-it.canary.json --preRelease=canary",
     "release:dry-run": "release-it --config ../../.release-it.json --dry-run --no-git.push",
     "test": "CI=1 bun ../../test/run-isolated.ts",
     "test:ci": "bun scripts/generate-test-reports.ts --junit",

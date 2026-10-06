@@ -16,6 +16,14 @@ const gitlabCiPath = path.join(repoRoot, ".gitlab-ci.yml");
 const publishScriptPath = path.join(repoRoot, "publish.sh");
 const readmePath = path.join(repoRoot, "README.md");
 const packageJsonPath = path.join(repoRoot, "apps/mate-cli/package.json");
+const releaseWorkflowPath = path.join(repoRoot, ".github/workflows/release.yml");
+const codeownersPath = path.join(repoRoot, ".github/CODEOWNERS");
+const allowedSignersPath = path.join(repoRoot, ".github/allowed_signers");
+const PUBLISHED_PACKAGES = [
+  ["packages/mate-core", "@uniqbit/mate-core"],
+  ["apps/mate-opencode-plugin", "@uniqbit/mate-opencode-plugin"],
+  ["apps/mate-cli", "@uniqbit/mate"],
+] as const;
 
 type ReleaseConfig = {
   hooks?: {
@@ -23,11 +31,22 @@ type ReleaseConfig = {
   };
   git?: {
     tagExclude?: string;
+    commitArgs?: string[];
+    tagArgs?: string[];
+  };
+  npm?: {
+    publish?: boolean;
   };
   plugins?: Record<string, unknown>;
 };
 
 type PackageJson = {
+  name?: string;
+  repository?: {
+    type?: string;
+    url?: string;
+    directory?: string;
+  };
   scripts?: Record<string, string | undefined>;
   publishConfig?: {
     access?: string;
@@ -83,9 +102,18 @@ const FIXTURE_INTEGRITY = packIntegrity(FIXTURE_PACK_CONTENT);
 type PublishFixture = {
   binDir: string;
   callsPath: string;
-  npmrcCapturePath: string;
+  registryDir: string;
   scriptPath: string;
   version: string;
+};
+
+type PublishOptions = {
+  /** `null` runs outside GitHub Actions. */
+  workflowRef?: string | null;
+  refName?: string;
+  releaseTagArg?: string;
+  packContent?: string;
+  failPublishFor?: string;
 };
 
 async function createPublishFixture(
@@ -98,9 +126,10 @@ async function createPublishFixture(
   const binDir = path.join(tempDir, "bin");
   const scriptPath = path.join(tempDir, "publish.sh");
   const callsPath = path.join(tempDir, "npm-calls.txt");
-  const npmrcCapturePath = path.join(tempDir, "captured.npmrc");
+  const registryDir = path.join(tempDir, "registry");
 
   await fs.mkdir(binDir);
+  await fs.mkdir(registryDir);
   await fs.copyFile(publishScriptPath, scriptPath);
 
   const workspacePackages: Array<["core" | "plugin" | "cli", string, string]> = [
@@ -144,12 +173,21 @@ async function createPublishFixture(
       "#!/bin/sh",
       "set -eu",
       'printf "%s\\n" "$*" >> "$NPM_CALLS_PATH"',
-      'cp "$NPM_CONFIG_USERCONFIG" "$NPMRC_CAPTURE_PATH"',
+      'if [ "$1" = view ]; then',
+      '  entry="$FAKE_REGISTRY_DIR/$(printf "%s" "$2" | sed "s/^@//; s#/#-#")"',
+      '  if [ -f "$entry" ]; then cat "$entry"; exit 0; fi',
+      '  echo "npm error code E404" >&2',
+      "  exit 1",
+      "fi",
       'workspace=""; dest=""; prev=""',
       'for arg in "$@"; do',
       '  case "$prev" in --workspace) workspace="$arg" ;; --pack-destination) dest="$arg" ;; esac',
       '  prev="$arg"',
       "done",
+      'if [ "$1" = publish ] && [ "$workspace" = "${FAKE_PUBLISH_FAIL_FOR:-}" ]; then',
+      '  echo "npm error code E404" >&2',
+      "  exit 1",
+      "fi",
       'if [ -n "$dest" ]; then',
       '  file=$(printf "%s" "$workspace" | sed "s/^@//; s#/#-#")',
       '  printf "%s" "$FAKE_PACK_CONTENT" > "$dest/$file-$FAKE_PACK_VERSION.tgz"',
@@ -160,34 +198,48 @@ async function createPublishFixture(
   );
   await fs.chmod(fakeNpmPath, 0o755);
 
-  return { binDir, callsPath, npmrcCapturePath, scriptPath, version };
+  return { binDir, callsPath, registryDir, scriptPath, version };
 }
 
-function runPublish(
-  fixture: PublishFixture,
-  tag: string,
-  npmToken: string | null = "test-token",
-  packContent = FIXTURE_PACK_CONTENT,
-) {
+/** Marks `name@version` as already on the fake registry with `integrity`. */
+async function seedRegistry(fixture: PublishFixture, name: string, integrity: string) {
+  const file = `${name.replace(/^@/, "").replace("/", "-")}@${fixture.version}`;
+  await fs.writeFile(path.join(fixture.registryDir, file), `${integrity}\n`, "utf8");
+}
+
+function runPublish(fixture: PublishFixture, tag: string, options: PublishOptions = {}) {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${fixture.binDir}${path.delimiter}${process.env.PATH ?? ""}`,
     NPM_CALLS_PATH: fixture.callsPath,
-    NPMRC_CAPTURE_PATH: fixture.npmrcCapturePath,
-    FAKE_PACK_CONTENT: packContent,
+    FAKE_REGISTRY_DIR: fixture.registryDir,
+    FAKE_PACK_CONTENT: options.packContent ?? FIXTURE_PACK_CONTENT,
     FAKE_PACK_VERSION: fixture.version,
+    FAKE_PUBLISH_FAIL_FOR: options.failPublishFor ?? "",
+    GITHUB_REF_NAME: options.refName ?? fixture.version,
   };
+  delete env.NPM_TOKEN;
 
-  if (npmToken === null) {
-    delete env.NPM_TOKEN;
+  const workflowRef =
+    options.workflowRef === undefined
+      ? `acme/acme/.github/workflows/release.yml@refs/tags/${fixture.version}`
+      : options.workflowRef;
+  if (workflowRef === null) {
+    delete env.GITHUB_ACTIONS;
+    delete env.GITHUB_WORKFLOW_REF;
   } else {
-    env.NPM_TOKEN = npmToken;
+    env.GITHUB_ACTIONS = "true";
+    env.GITHUB_WORKFLOW_REF = workflowRef;
   }
 
-  return spawnSync("bash", [fixture.scriptPath, tag], {
-    encoding: "utf8",
-    env,
-  });
+  const args = [fixture.scriptPath, tag];
+  if (options.releaseTagArg !== undefined) args.push(options.releaseTagArg);
+  return spawnSync("bash", args, { encoding: "utf8", env });
+}
+
+async function publishCalls(fixture: PublishFixture): Promise<string[]> {
+  const calls = await fs.readFile(fixture.callsPath, "utf8").catch(() => "");
+  return calls.split("\n").filter((line) => line.startsWith("publish "));
 }
 
 afterEach(async () => {
@@ -262,15 +314,21 @@ describe("stable release-it config", () => {
     expect(config["pre-commit"]?.commands?.format?.stage_fixed).toBe(true);
   });
 
-  test("chains stable and canary releases to the shared publish script", async () => {
+  test("prepares stable and canary releases without publishing locally", async () => {
     const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8")) as PackageJson;
 
-    expect(packageJson.scripts?.release).toBe(
-      "release-it --config ../../.release-it.json && ../../publish.sh latest",
-    );
+    expect(packageJson.scripts?.release).toBe("release-it --config ../../.release-it.json");
     expect(packageJson.scripts?.["release:canary"]).toBe(
-      "release-it --config ../../.release-it.canary.json --preRelease=canary && ../../publish.sh canary",
+      "release-it --config ../../.release-it.canary.json --preRelease=canary",
     );
+    for (const script of [packageJson.scripts?.release, packageJson.scripts?.["release:canary"]]) {
+      expect(script).not.toContain("publish.sh");
+      expect(script).not.toContain("npm publish");
+    }
+    for (const configPath of [stableReleaseConfigPath, canaryReleaseConfigPath]) {
+      const config = JSON.parse(await fs.readFile(configPath, "utf8")) as ReleaseConfig;
+      expect(config.npm?.publish).toBe(false);
+    }
     expect(packageJson.publishConfig).toEqual({
       access: "public",
       registry: "https://registry.npmjs.org/",
@@ -298,6 +356,59 @@ describe("stable release-it config", () => {
 
     expect(readme).toContain("npm install -g @uniqbit/mate");
     expect(readme).not.toContain("bun add -g @uniqbit/mate");
+  });
+});
+
+describe("signed release preparation", () => {
+  test("signs the release commit and the annotated release tag on both channels", async () => {
+    for (const configPath of [stableReleaseConfigPath, canaryReleaseConfigPath]) {
+      const config = JSON.parse(await fs.readFile(configPath, "utf8")) as ReleaseConfig;
+
+      expect(config.git?.commitArgs).toEqual(["-S"]);
+      expect(config.git?.tagArgs).toEqual(["-s"]);
+    }
+  });
+
+  test("fails before creating a commit when no signing key is usable", async () => {
+    const repoDir = await createTempRepo("mate-release-signing-");
+    await fs.writeFile(path.join(repoDir, "notes.txt"), "acme\n", "utf8");
+    execFileSync("git", ["add", "notes.txt"], { cwd: repoDir, stdio: "ignore" });
+
+    const result = spawnSync(
+      "git",
+      [
+        "-c",
+        "gpg.format=ssh",
+        "-c",
+        `user.signingkey=${path.join(repoDir, "missing-key")}`,
+        "commit",
+        "-S",
+        "-m",
+        "chore(release): 1.2.3",
+      ],
+      { cwd: repoDir, encoding: "utf8" },
+    );
+
+    expect(result.status).not.toBe(0);
+    const head = spawnSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: repoDir });
+    expect(head.status).not.toBe(0);
+  });
+});
+
+describe("published package metadata", () => {
+  test("declares the source repository so provenance binds to it", async () => {
+    for (const [dir, name] of PUBLISHED_PACKAGES) {
+      const packageJson = JSON.parse(
+        await fs.readFile(path.join(repoRoot, dir, "package.json"), "utf8"),
+      ) as PackageJson;
+
+      expect(packageJson.name).toBe(name);
+      expect(packageJson.repository).toEqual({
+        type: "git",
+        url: "git+https://github.com/uniqbit-ag/mate-cli.git",
+        directory: dir,
+      });
+    }
   });
 });
 
@@ -375,7 +486,7 @@ describe("sync-release-versions", () => {
 });
 
 describe("publish.sh", () => {
-  test("publishes stable and canary versions through npmjs.org without a real registry", async () => {
+  test("publishes stable and canary versions with provenance through npmjs.org without a real registry", async () => {
     for (const [version, tag] of [
       ["1.2.3", "latest"],
       ["1.3.0-canary.4", "canary"],
@@ -383,43 +494,56 @@ describe("publish.sh", () => {
       const fixture = await createPublishFixture(version);
       const result = runPublish(fixture, tag);
 
+      expect(result.stderr).toBe("");
       expect(result.status).toBe(0);
       const calls = await fs.readFile(fixture.callsPath, "utf8");
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-core");
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-opencode-plugin");
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate");
       for (const name of ["@uniqbit/mate-core", "@uniqbit/mate-opencode-plugin", "@uniqbit/mate"]) {
-        expect(calls).toContain(`publish --workspace ${name} --access public --tag ${tag}`);
+        expect(calls).toContain(
+          `publish --workspace ${name} --access public --tag ${tag} --provenance --registry https://registry.npmjs.org/`,
+        );
       }
 
       // Core and plugin must publish before the CLI that pins them.
-      const publishOrder = calls
-        .split("\n")
-        .filter((line) => line.startsWith("publish --workspace"))
-        .map((line) => line.split(" ")[2]);
-      expect(publishOrder).toEqual([
+      expect((await publishCalls(fixture)).map((line) => line.split(" ")[2])).toEqual([
         "@uniqbit/mate-core",
         "@uniqbit/mate-opencode-plugin",
         "@uniqbit/mate",
       ]);
+    }
+  });
 
-      const npmrc = await fs.readFile(fixture.npmrcCapturePath, "utf8");
-      expect(npmrc).toContain("registry=https://registry.npmjs.org/");
-      expect(npmrc).toContain("//registry.npmjs.org/:_authToken=test-token");
-      expect(npmrc).toContain("@uniqbit:registry=https://registry.npmjs.org/");
+  test("uses no long-lived npm token", async () => {
+    const publishScript = await fs.readFile(publishScriptPath, "utf8");
+
+    expect(publishScript).not.toContain("NPM_TOKEN");
+    expect(publishScript).not.toContain("_authToken");
+    expect(publishScript).not.toContain("NPM_CONFIG_USERCONFIG");
+  });
+
+  test("refuses to run outside the hosted release workflow before invoking npm", async () => {
+    for (const workflowRef of [null, "acme/acme/.github/workflows/ci.yml@refs/heads/main"]) {
+      const fixture = await createPublishFixture("1.2.3");
+      const result = runPublish(fixture, "latest", { workflowRef });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("only runs inside the release workflow");
+      expect(result.stderr).toContain(".github/workflows/release.yml");
+      expect(await fs.stat(fixture.callsPath).catch(() => undefined)).toBeUndefined();
     }
   });
 
   test("publishes nothing when a packed tarball differs from the image lock pins", async () => {
     const fixture = await createPublishFixture("1.2.3");
-    const result = runPublish(fixture, "latest", "test-token", "acme-changed");
+    const result = runPublish(fixture, "latest", { packContent: "acme-changed" });
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain(
       `@uniqbit/mate-core@1.2.3 would publish as ${packIntegrity("acme-changed")}, but global-tools.package-lock.json, local-workspace.package-lock.json pin another tarball`,
     );
-    const calls = await fs.readFile(fixture.callsPath, "utf8");
-    expect(calls).not.toContain("publish --workspace");
+    expect(await publishCalls(fixture)).toEqual([]);
   });
 
   test("rejects unsynchronized package versions before invoking npm", async () => {
@@ -440,6 +564,15 @@ describe("publish.sh", () => {
     expect(await fs.stat(fixture.callsPath).catch(() => undefined)).toBeUndefined();
   });
 
+  test("rejects unsupported version shapes before invoking npm", async () => {
+    const fixture = await createPublishFixture("1.3.0-next.1");
+    const result = runPublish(fixture, "canary");
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("expected x.y.z (latest) or x.y.z-canary.n (canary)");
+    expect(await fs.stat(fixture.callsPath).catch(() => undefined)).toBeUndefined();
+  });
+
   test("rejects stable and canary channel mismatches", async () => {
     const stableFixture = await createPublishFixture("1.2.3");
     const canaryFixture = await createPublishFixture("1.3.0-canary.4");
@@ -451,22 +584,193 @@ describe("publish.sh", () => {
     expect(stableAsCanary.stderr).toContain("cannot be published with dist-tag canary");
     expect(canaryAsLatest.status).not.toBe(0);
     expect(canaryAsLatest.stderr).toContain("cannot be published with dist-tag latest");
+    expect(await fs.stat(stableFixture.callsPath).catch(() => undefined)).toBeUndefined();
+    expect(await fs.stat(canaryFixture.callsPath).catch(() => undefined)).toBeUndefined();
   });
 
-  test("requires NPM_TOKEN before invoking npm", async () => {
+  test("rejects a release tag that differs from the package versions and names the package", async () => {
+    for (const options of [{ refName: "1.2.4" }, { refName: "main", releaseTagArg: "1.2.4" }]) {
+      const fixture = await createPublishFixture("1.2.3");
+      const result = runPublish(fixture, "latest", options);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("release tag '1.2.4'");
+      expect(result.stderr).toContain("@uniqbit/mate-core");
+      expect(await fs.stat(fixture.callsPath).catch(() => undefined)).toBeUndefined();
+    }
+  });
+
+  test("takes the release tag from the argument when the run is not tag-triggered", async () => {
     const fixture = await createPublishFixture("1.2.3");
-    const result = runPublish(fixture, "latest", null);
+    const result = runPublish(fixture, "latest", { refName: "main", releaseTagArg: "1.2.3" });
+
+    expect(result.status).toBe(0);
+    expect(await publishCalls(fixture)).toHaveLength(3);
+  });
+
+  test("completes a partial publication by skipping packages already published with the same integrity", async () => {
+    const fixture = await createPublishFixture("1.2.3");
+    await seedRegistry(fixture, "@uniqbit/mate-core", FIXTURE_INTEGRITY);
+
+    const result = runPublish(fixture, "latest");
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Skipping @uniqbit/mate-core@1.2.3");
+    expect((await publishCalls(fixture)).map((line) => line.split(" ")[2])).toEqual([
+      "@uniqbit/mate-opencode-plugin",
+      "@uniqbit/mate",
+    ]);
+  });
+
+  test("stops before publishing further packages when a published version has another integrity", async () => {
+    const fixture = await createPublishFixture("1.2.3");
+    await seedRegistry(fixture, "@uniqbit/mate-opencode-plugin", packIntegrity("acme-other"));
+
+    const result = runPublish(fixture, "latest");
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("NPM_TOKEN environment variable is not set");
-    expect(await fs.stat(fixture.callsPath).catch(() => undefined)).toBeUndefined();
+    expect(result.stderr).toContain(
+      `@uniqbit/mate-opencode-plugin@1.2.3 is already published as ${packIntegrity("acme-other")}`,
+    );
+    expect((await publishCalls(fixture)).map((line) => line.split(" ")[2])).toEqual([
+      "@uniqbit/mate-core",
+    ]);
   });
 
-  test("does not repeat release preparation checks", async () => {
+  test("names the trusted publisher when npm rejects a publication", async () => {
+    const fixture = await createPublishFixture("1.2.3");
+    const result = runPublish(fixture, "latest", { failPublishFor: "@uniqbit/mate-core" });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("trusted publisher");
+    expect((await publishCalls(fixture)).map((line) => line.split(" ")[2])).toEqual([
+      "@uniqbit/mate-core",
+    ]);
+  });
+
+  test("does not repeat release preparation checks or request the image", async () => {
     const publishScript = await fs.readFile(publishScriptPath, "utf8");
 
     expect(publishScript).not.toContain("bun install");
     expect(publishScript).not.toContain("bun run --filter @uniqbit/mate typecheck");
+    expect(publishScript).not.toContain("gh workflow run");
+  });
+});
+
+type WorkflowStep = { uses?: string; run?: string; env?: Record<string, string> };
+type WorkflowJob = {
+  needs?: string | string[];
+  environment?: string | { name?: string };
+  permissions?: Record<string, string>;
+  "continue-on-error"?: boolean;
+  steps?: WorkflowStep[];
+};
+type Workflow = {
+  on?: { push?: { tags?: string[] }; workflow_dispatch?: { inputs?: Record<string, unknown> } };
+  permissions?: Record<string, string>;
+  concurrency?: { group?: string; "cancel-in-progress"?: boolean };
+  jobs?: Record<string, WorkflowJob>;
+};
+
+describe("release workflow", () => {
+  async function readWorkflow(): Promise<{ source: string; workflow: Workflow }> {
+    const source = await fs.readFile(releaseWorkflowPath, "utf8");
+    return { source, workflow: YAML.parse(source) as Workflow };
+  }
+
+  test("runs for pushed release tags and for a dispatched tag, one run per tag", async () => {
+    const { workflow } = await readWorkflow();
+
+    expect(workflow.on?.push?.tags).toEqual(["[0-9]*.[0-9]*.[0-9]*"]);
+    expect(workflow.on?.workflow_dispatch?.inputs?.tag).toBeDefined();
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(workflow.concurrency?.group).toContain("release-");
+    expect(workflow.concurrency?.["cancel-in-progress"]).toBe(false);
+  });
+
+  test("pins every action to a full commit SHA", async () => {
+    const { workflow } = await readWorkflow();
+    const uses = Object.values(workflow.jobs ?? {}).flatMap((job) =>
+      (job.steps ?? []).flatMap((step) => (step.uses ? [step.uses] : [])),
+    );
+
+    expect(uses.length).toBeGreaterThan(0);
+    for (const action of uses) {
+      expect(action).toMatch(/^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/);
+    }
+  });
+
+  test("grants OIDC token issuance only to the publish job in the bound environment", async () => {
+    const { workflow } = await readWorkflow();
+    const jobs = workflow.jobs ?? {};
+
+    for (const [name, job] of Object.entries(jobs)) {
+      expect(job.permissions?.["id-token"]).toBe(name === "publish" ? "write" : undefined);
+    }
+    expect(jobs.publish?.environment).toBe("npm-publish");
+    expect(jobs.publish?.needs).toEqual(["verify"]);
+  });
+
+  test("references no npm token secret", async () => {
+    const { source } = await readWorkflow();
+
+    expect(source).not.toContain("NPM_TOKEN");
+    expect(source).not.toContain("NODE_AUTH_TOKEN");
+    expect(source).not.toMatch(/secrets\.(?!GITHUB_TOKEN)/);
+  });
+
+  test("verifies the signed tag against the default-branch allowed signers before publication", async () => {
+    const { workflow } = await readWorkflow();
+    const verify = (workflow.jobs?.verify?.steps ?? []).map((step) => step.run ?? "").join("\n");
+
+    expect(verify).toContain("+refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG");
+    expect(verify).toContain("git show origin/main:.github/allowed_signers");
+    expect(verify).toContain("gpg.format=ssh");
+    expect(verify).toContain("verify-tag");
+    expect(verify).toContain("merge-base --is-ancestor");
+  });
+
+  test("publishes through the shared publication entrypoint", async () => {
+    const { workflow } = await readWorkflow();
+    const publish = (workflow.jobs?.publish?.steps ?? []).map((step) => step.run ?? "").join("\n");
+
+    expect(publish).toContain("bun install --frozen-lockfile");
+    expect(publish).toContain("./publish.sh");
+    expect(publish).toMatch(/npm@11\.\d+\.\d+/);
+  });
+
+  test("requests the image only after publication, without failing the release", async () => {
+    const { workflow } = await readWorkflow();
+    const image = workflow.jobs?.image;
+
+    expect(image?.needs).toContain("publish");
+    expect(image?.["continue-on-error"]).toBe(true);
+    expect(image?.permissions).toEqual({ actions: "write" });
+  });
+});
+
+describe("release trust anchors", () => {
+  test("lists at least one SSH signing key with an email principal", async () => {
+    const signers = (await fs.readFile(allowedSignersPath, "utf8"))
+      .split("\n")
+      .filter((line) => line.trim() && !line.startsWith("#"));
+
+    expect(signers.length).toBeGreaterThan(0);
+    for (const line of signers) {
+      expect(line).toMatch(/^\S+@\S+ (namespaces="git" )?ssh-(ed25519|rsa) \S+/);
+    }
+  });
+
+  test("assigns code owners to release-critical files", async () => {
+    const codeowners = await fs.readFile(codeownersPath, "utf8");
+
+    for (const file of [
+      "/.github/workflows/release.yml",
+      "/.github/allowed_signers",
+      "/publish.sh",
+    ]) {
+      expect(codeowners).toMatch(new RegExp(`^${file.replaceAll(".", "\\.")}\\s+@\\S+`, "m"));
+    }
   });
 });
 

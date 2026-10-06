@@ -132,3 +132,20 @@ mate update
 mate --help
 mate --version
 ```
+
+## Verify The Package
+
+Every Mate release is published from the repository's release workflow with an
+npm provenance attestation that links the package to its source commit and
+workflow run. `npm audit signatures` checks the packages of a project, so
+verify a version from a scratch directory:
+
+```sh
+mkdir mate-verify && cd mate-verify
+npm init -y >/dev/null
+npm install @uniqbit/mate@<version>
+npm audit signatures
+```
+
+A package without a valid registry signature or attestation is reported as an
+error.

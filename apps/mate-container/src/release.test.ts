@@ -121,44 +121,40 @@ describe("the release runs the image-input sync", () => {
 
 describe("publication asks for an image only after npm has succeeded", () => {
   const publish = fs.readFileSync(path.join(WORKSPACE_ROOT, "publish.sh"), "utf8");
+  const release = fs.readFileSync(
+    path.join(WORKSPACE_ROOT, ".github", "workflows", "release.yml"),
+    "utf8",
+  );
+  const imageJob = release.slice(release.indexOf("\n  image:"));
 
-  test("the dispatch comes after the publish loop", () => {
-    const publishLoop = publish.lastIndexOf("npm publish --workspace");
-    const dispatch = publish.indexOf("gh workflow run");
-    expect(publishLoop).toBeGreaterThan(-1);
-    expect(dispatch).toBeGreaterThan(publishLoop);
+  test("the dispatch runs in its own job after the publish job", () => {
+    expect(publish).not.toContain("gh workflow run");
+    expect(imageJob).toContain("needs: [verify, publish]");
+    expect(imageJob).toContain("gh workflow run publish-image.yml");
   });
 
   test("a partial npm failure never reaches the dispatch", () => {
-    // `set -e` at the top means a failed `npm publish` ends the script before
-    // anything below the loop runs.
+    // `set -e` fails the publish job on the first failed `npm publish`, and the
+    // image job only runs after the publish job succeeded.
     expect(publish).toContain("set -euo pipefail");
+    expect(imageJob).not.toContain("if: always()");
   });
 
   test("it passes the exact version, the channel, and the pushed release tag", () => {
-    expect(publish).toContain('--field version="$VERSION"');
-    expect(publish).toContain('--field channel="$TAG"');
-    expect(publish).toContain('--field ref="$RELEASE_TAG"');
+    expect(imageJob).toContain('--field version="$RELEASE_TAG"');
+    expect(imageJob).toContain('--field channel="$CHANNEL"');
+    expect(imageJob).toContain('--field ref="$RELEASE_TAG"');
   });
 
-  test("missing tooling, credentials or workflow preserves npm success and prints the retry", () => {
-    for (const guard of [
-      "command -v gh",
-      "gh auth status",
-      "gh workflow view",
-      "the image request was rejected",
-    ]) {
-      expect(publish).toContain(guard);
-    }
-    // Every branch reports and continues; none of them exits non-zero.
-    const noteCount = (publish.match(/npm publication succeeded/g) ?? []).length;
-    expect(noteCount).toBe(4);
-    expect(publish).toContain("retry_instruction");
+  test("a failed request preserves npm success and prints the retry", () => {
+    expect(imageJob).toContain("continue-on-error: true");
+    expect(imageJob).toContain("npm publication succeeded");
+    expect(imageJob).toContain("Retry it with:");
   });
 
   test("it does not wait for the image build", () => {
-    expect(publish).not.toContain("gh run watch");
-    expect(publish).toContain("The build runs on its own");
+    expect(imageJob).not.toContain("gh run watch");
+    expect(imageJob).toContain("The build runs on its own");
   });
 });
 

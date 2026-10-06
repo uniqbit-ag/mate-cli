@@ -252,3 +252,69 @@ mate update --check
 npm-managed Mate package and starts a fresh post-update install. Self-update is
 supported only for npm global installations. `update --check` reports whether a
 new version exists without installing it.
+
+## Releasing
+
+Releases are prepared and signed locally, then published by the
+[`release.yml`](.github/workflows/release.yml) workflow. Nothing is published
+from a maintainer machine, and no npm token is involved.
+
+### One-Time Signing Setup
+
+Release commits and tags are signed with an SSH key. Add the public key to
+GitHub as a *Signing key*, list it in [`.github/allowed_signers`](.github/allowed_signers)
+on `main` with your git email as principal, and configure git:
+
+```sh
+git config gpg.format ssh
+git config user.signingkey ~/.ssh/<signing-key>.pub
+```
+
+Without a usable key, release-it fails before the release commit is created.
+
+### Prepare A Release
+
+```sh
+bun release          # stable x.y.z from main, npm dist-tag latest
+bun release:canary   # x.y.z-canary.n, npm dist-tag canary
+```
+
+release-it bumps and synchronizes the package versions, pins the image locks,
+creates a signed release commit and signed annotated tag, and pushes both.
+
+### CI Publication
+
+The pushed tag starts `release.yml`:
+
+1. `verify` checks the tag signature against `allowed_signers` read from `main`
+   and, for stable versions, that the tagged commit is on `main`.
+2. `publish` runs `publish.sh` in the `npm-publish` environment. It checks
+   synchronized versions, tag/version/channel agreement, and that every packed
+   tarball matches the image-lock pins, then publishes `@uniqbit/mate-core`,
+   `@uniqbit/mate-opencode-plugin`, and `@uniqbit/mate` via npm Trusted
+   Publishing with provenance.
+3. `image` requests `publish-image.yml` best-effort; a failure prints the
+   manual retry command and does not fail the release.
+
+### Retry
+
+Re-run the failed workflow run, or dispatch it for the existing tag:
+
+```sh
+gh workflow run release.yml --repo uniqbit-ag/mate-cli --field tag=<version>
+```
+
+Packages already published with the identical tarball are skipped; a version
+published with a different tarball stops the run. No new version is needed.
+
+### Verify A Release
+
+```sh
+mkdir mate-verify && cd mate-verify && npm init -y >/dev/null
+npm install @uniqbit/mate@<version>
+npm audit signatures
+```
+
+This verifies the registry signatures and provenance attestations of the
+installed packages. The npm package page also shows the provenance link to the source
+commit and workflow run.
