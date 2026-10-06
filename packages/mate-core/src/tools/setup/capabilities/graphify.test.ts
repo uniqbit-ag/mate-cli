@@ -9,7 +9,6 @@ import type { SetupContext } from "../plugin";
 import { getWrapperBinPath } from "../../../lib/package-paths";
 import {
   createGraphifyPlugin,
-  deriveGraphifyProviders,
   GRAPHIFY_COMPANION_OUT_PREFIX,
   removeGraphifySection,
   rewriteGraphifySkillOutputPaths,
@@ -44,19 +43,6 @@ function makeCtx(
     },
   };
 }
-
-describe("deriveGraphifyProviders", () => {
-  test("keeps only supported providers in stable order", () => {
-    expect(deriveGraphifyProviders(["tokensave", "claude", "custom", "opencode"])).toEqual([
-      "claude",
-      "opencode",
-    ]);
-  });
-
-  test("returns empty when no supported providers active", () => {
-    expect(deriveGraphifyProviders(["tokensave", "custom"])).toEqual([]);
-  });
-});
 
 describe("createGraphifyPlugin apply()", () => {
   test("skips install prompt when graphify binary is on PATH", async () => {

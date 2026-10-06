@@ -108,7 +108,7 @@ function inside(root: string, candidate: string): boolean {
   );
 }
 
-async function realpathContaining(root: string, candidate: string): Promise<string> {
+async function realpathContaining(candidate: string): Promise<string> {
   let current = candidate;
   while (true) {
     try {
@@ -146,7 +146,7 @@ export async function resolveVaultPath(
     absolute = await fsp.realpath(lexical);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    const containing = await realpathContaining(root, path.dirname(lexical));
+    const containing = await realpathContaining(path.dirname(lexical));
     if (!inside(root, containing))
       throw new VaultPathError("the requested path leaves the companion root");
     absolute = lexical;

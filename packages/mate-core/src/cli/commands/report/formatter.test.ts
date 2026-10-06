@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatCost, formatPercentage, formatTokens } from "./formatter";
+import { formatCost, formatTokens } from "./formatter";
 
 describe("formatTokens", () => {
   test("formats small numbers as-is", () => {
@@ -26,13 +26,5 @@ describe("formatCost", () => {
     expect(formatCost(0)).toBe("$0.00");
     expect(formatCost(42.5)).toBe("$42.50");
     expect(formatCost(1234.567)).toBe("$1234.57");
-  });
-});
-
-describe("formatPercentage", () => {
-  test("formats with one decimal and percent sign", () => {
-    expect(formatPercentage(0)).toBe("0.0%");
-    expect(formatPercentage(50)).toBe("50.0%");
-    expect(formatPercentage(33.333)).toBe("33.3%");
   });
 });
