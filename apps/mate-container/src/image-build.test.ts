@@ -176,6 +176,14 @@ describe("the recipe itself", () => {
     expect(dockerfile).toMatch(/^\s+MATE_CONTEXT7_MODE=preinstalled \\$/m);
   });
 
+  test("integrates TokenSave with every agent runtime at build time", () => {
+    for (const agent of ["claude", "opencode"]) {
+      expect(dockerfile).toContain(
+        `HOME=/home/mate tokensave install --agent ${agent} --git-hook no --wildcard-permissions`,
+      );
+    }
+  });
+
   test("runs as the unprivileged identity the inputs name", () => {
     expect(dockerfile).toContain("USER mate");
     expect(dockerfile).toContain(`ARG MATE_UID=${inputs.runtime.uid}`);
