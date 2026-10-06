@@ -125,6 +125,27 @@ describe("LaunchAdapter.prepareLaunch", () => {
     });
   });
 
+  test("runs OpenCode on a private server so the companion config reaches it", () => {
+    const adapter = new OpenCodeAdapter(OPENCODE_V2);
+    const context = makeContext();
+
+    expect(adapter.buildArgs(context, [])).toEqual(["/tmp/app", "--standalone"]);
+    expect(adapter.buildArgs(context, ["--mode", "chat"])).toEqual([
+      "/tmp/app",
+      "--standalone",
+      "--mode",
+      "chat",
+    ]);
+    expect(adapter.buildArgs(context, ["run", "hi"])).toEqual(["run", "--standalone", "hi"]);
+    expect(adapter.buildArgs(context, ["--standalone"])).toEqual(["/tmp/app", "--standalone"]);
+    expect(adapter.buildArgs(context, ["--server", "http://acme"])).toEqual([
+      "/tmp/app",
+      "--server",
+      "http://acme",
+    ]);
+    expect(adapter.buildArgs(context, ["mcp", "list"])).toEqual(["mcp", "list"]);
+  });
+
   test("validates the required OpenCode companion plugin before launch", async () => {
     const companionPath = await makeTempDir("mate-opencode-companion-");
     await writeOpenCodeRuntime(companionPath);

@@ -26,6 +26,12 @@ import { type AdapterContext, LaunchAdapter } from "./base";
 /** The Mate plugin is a V2 plugin; an older host rejects it at load time. */
 const MIN_OPENCODE_MAJOR = 2;
 
+/**
+ * OpenCode 2.x attaches to a shared background service by default; plugins and
+ * config load in that server, so the per-launch Mate env never reaches it.
+ */
+const STANDALONE_FLAG = "--standalone";
+
 /** Raw `opencode --version` output, or `undefined` when the binary cannot run. */
 export type OpenCodeVersionProbe = () => string | undefined;
 
@@ -64,7 +70,14 @@ export class OpenCodeAdapter extends LaunchAdapter {
 
   buildArgs(context: AdapterContext, args: string[]): string[] {
     const codeDir = context.launchWorkingDirectory;
-    return args.length === 0 || args[0]?.startsWith("-") ? [codeDir, ...args] : args;
+    const isTui = args.length === 0 || args[0]?.startsWith("-");
+    const [command, ...rest] = isTui ? [codeDir, ...args] : args;
+    if (!command) return args;
+    const hostsServer = isTui || command === "run";
+    const choosesServer = rest.some(
+      (arg) => arg === "--standalone" || arg === "--server" || arg.startsWith("--server="),
+    );
+    return hostsServer && !choosesServer ? [command, STANDALONE_FLAG, ...rest] : [command, ...rest];
   }
 
   extendEnvironment(context: AdapterContext): NodeJS.ProcessEnv {

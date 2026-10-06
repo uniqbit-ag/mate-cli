@@ -284,6 +284,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
 {
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -568,6 +569,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
   },
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -1059,6 +1061,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
 {
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -1362,6 +1365,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
   },
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -1808,6 +1812,7 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
 {
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -2029,6 +2034,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
   },
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -2454,6 +2460,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
 {
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -2698,6 +2705,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
   },
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -3155,6 +3163,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
 {
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -3419,6 +3428,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
   },
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
@@ -3933,6 +3943,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
   },
   "opencodeArgs": [
     "<root>/working",
+    "--standalone",
   ],
   "opencodeEnv": {
     "MATE_GUIDANCE_JSON": {
