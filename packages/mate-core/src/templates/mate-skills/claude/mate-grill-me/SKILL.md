@@ -2,11 +2,14 @@
 name: mate-grill-me
 description: Stress-test a plan or idea through dependency-ordered conversational design-tree rounds.
 disable-model-invocation: true
+metadata:
+  credits:
+    skill: grill-me
+    author: Matt Pocock
+    url: "https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md"
 ---
 
 # Mate Grill Me
-
-> Inspired by [Matt Pocock's grill-me skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) and adapted here as a Mate process-driven skill.
 
 Start `/mate-grilling`.
 

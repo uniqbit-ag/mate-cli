@@ -2,11 +2,14 @@
 name: mate-simplify-code
 description: Simplifies code for clarity. Use when refactoring code for clarity without changing behavior. Use when code works but is harder to read, maintain, or extend than it should be. Use when reviewing code that has accumulated unnecessary complexity.
 disable-model-invocation: true
+metadata:
+  credits:
+    skill: code-simplification
+    author: Addy Osmani
+    url: "https://github.com/addyosmani/agent-skills/blob/main/skills/code-simplification/SKILL.md"
 ---
 
 # Mate Simplify Code
-
-> Inspired by [Addy Osmani's code-simplification skill](https://github.com/addyosmani/agent-skills/tree/main/skills/code-simplification) and adapted here as a Mate process-driven skill.
 
 ## Overview
 

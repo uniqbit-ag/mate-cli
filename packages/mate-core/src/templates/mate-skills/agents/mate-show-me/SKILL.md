@@ -8,11 +8,14 @@ compatibility: Requires the mate CLI and the openspec capability enabled.
 metadata:
   author: mate
   version: "1.0"
+  credits:
+    skill: show-me
+    author: Dex Horthy
+    organisation: Humanlayer
+    url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"
 ---
 
 # Mate Show Me
-
-> Inspired by [humanlayer's show-me skill](https://github.com/humanlayer/skills/tree/main/plugins/show-me/skills/show-me) and adapted here as a Mate process-driven skill.
 
 Explain the current topic visually in a browser-rendered Mate report. Skip the preamble, keep prose brief, and pick the smallest report view that makes the key point clear.
 
