@@ -39,8 +39,8 @@ fail() { log "$*"; exit 1; }
 # shell's environment, inherited by Studio and the agent sessions it starts, and
 # gone when the container is. They come before the startup plan because that
 # plan runs Mate, which hydrates the companion's declared plugins, and a plugin
-# configured with `${VARIABLE}` needs the credentials and the plugin allowlist
-# already in its environment.
+# configured with `${VARIABLE}` needs the credentials already in its
+# environment.
 CREDENTIALS="$("$BUN" "$STARTUP_SCRIPT" --credentials)" || exit 1
 if [[ -n "$CREDENTIALS" ]]; then
   eval "$CREDENTIALS" || fail "the supplied credentials could not be read"
@@ -49,6 +49,10 @@ unset CREDENTIALS
 
 PLAN="$("$BUN" "$STARTUP_SCRIPT")" || exit 1
 eval "$PLAN" || fail "the startup plan could not be read"
+
+# Startup-only secrets served their purpose: Studio and the agent sessions it
+# starts inherit this environment and must not carry them.
+unset MATE_PLUGIN_REGISTRY_TOKEN MATE_GIT_CLONE_TOKEN MATE_PLUGIN_REGISTRY
 
 : "${MATE_PLAN_COMPANION:?startup produced no companion}"
 : "${MATE_PLAN_STUDIO_PORT:?startup produced no Studio port}"

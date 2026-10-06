@@ -316,6 +316,7 @@ USER root
 COPY scripts/entrypoint.sh /usr/local/bin/mate-appliance
 COPY scripts/xdg-open.sh /usr/local/bin/xdg-open
 COPY src/config.ts src/discovery.ts src/startup.ts /opt/mate/tools/startup/
+COPY scripts/setup.sh /opt/mate/tools/startup/setup.sh
 RUN chmod +x /usr/local/bin/mate-appliance /usr/local/bin/xdg-open \
  && test -d /opt/mate/tools/node_modules/yaml
 

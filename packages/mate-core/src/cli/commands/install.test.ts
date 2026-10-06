@@ -71,19 +71,10 @@ describe("runInstallCommand", () => {
     });
   });
 
-  test("frozen mode refuses an absent lockfile and an unlisted plugin before npm runs", async () => {
+  test("frozen mode refuses an absent lockfile before npm runs", async () => {
     await companionWithPlugin();
     expect(await runInstallCommand(["--yes", "--frozen-plugins"])).toBe(false);
     expect(process.exitCode).toBe(1);
     expect(stderr.join(" ")).toContain("frozen plugin install refused");
-
-    stderr.length = 0;
-    process.env.MATE_ALLOWED_PLUGINS = "@other/*";
-    try {
-      expect(await runInstallCommand(["--yes", "--frozen-plugins"])).toBe(false);
-    } finally {
-      delete process.env.MATE_ALLOWED_PLUGINS;
-    }
-    expect(stderr.join(" ")).toContain('plugin "@acme/reader" is not allowed');
   });
 });

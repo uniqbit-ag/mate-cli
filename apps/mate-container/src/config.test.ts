@@ -48,7 +48,9 @@ describe("every setting is readable from both sources", () => {
       MATE_GIT_USER_NAME: "Appliance",
       MATE_GIT_USER_EMAIL: "appliance@example.com",
       MATE_AGENT_CREDENTIALS: "ANTHROPIC_API_KEY=secret",
-      MATE_ALLOWED_PLUGINS: "@acme/*, plain-plugin",
+      MATE_PLUGIN_REGISTRY: "@acme=https://registry.acme.test/api/npm",
+      MATE_PLUGIN_REGISTRY_TOKEN: "reg-token",
+      MATE_GIT_CLONE_TOKEN: "git-token",
       MATE_SETUP_HINT: "Run setup.",
     };
     const config = resolveConfig(env, noFile);
@@ -68,7 +70,12 @@ describe("every setting is readable from both sources", () => {
       gitUserName: "Appliance",
       gitUserEmail: "appliance@example.com",
       credentials: { ANTHROPIC_API_KEY: "secret" },
-      allowedPlugins: "@acme/*,plain-plugin",
+      pluginRegistry: {
+        scope: "@acme",
+        url: "https://registry.acme.test/api/npm/",
+        token: "reg-token",
+      },
+      gitCloneToken: "git-token",
       setupHint: "Run setup.",
       removed: [],
     });
@@ -263,28 +270,59 @@ describe("the terminal settings", () => {
   });
 });
 
-describe("the plugin allowlist", () => {
-  test("absent is no policy; explicitly empty is a policy that allows none", () => {
-    expect(resolveConfig({}, noFile).allowedPlugins).toBeNull();
-    expect(resolveConfig({ MATE_ALLOWED_PLUGINS: "" }, noFile).allowedPlugins).toBe("");
-    expect(resolveConfig({}, file({ allowedPlugins: [] })).allowedPlugins).toBe("");
+describe("the plugin registry", () => {
+  const registry = "@acme=https://registry.acme.test/api/npm/";
+
+  test("absent leaves startup setup disabled", () => {
+    expect(resolveConfig({}, noFile).pluginRegistry).toBeNull();
+    expect(resolveConfig({ MATE_PLUGIN_REGISTRY_TOKEN: "t" }, noFile).pluginRegistry).toBeNull();
   });
 
-  test("the file supplies it and the environment takes precedence, an empty override included", () => {
-    const fromFile = file({ allowedPlugins: ["@acme/reader", "@acme/writer"] });
-    expect(resolveConfig({}, fromFile).allowedPlugins).toBe("@acme/reader,@acme/writer");
-    expect(resolveConfig({ MATE_ALLOWED_PLUGINS: "@other/*" }, fromFile).allowedPlugins).toBe(
-      "@other/*",
-    );
-    expect(resolveConfig({ MATE_ALLOWED_PLUGINS: "" }, fromFile).allowedPlugins).toBe("");
+  test("a scope, URL and token enable it, from either source with environment precedence", () => {
+    expect(
+      resolveConfig({ MATE_PLUGIN_REGISTRY: registry, MATE_PLUGIN_REGISTRY_TOKEN: "t" }, noFile)
+        .pluginRegistry,
+    ).toEqual({ scope: "@acme", url: "https://registry.acme.test/api/npm/", token: "t" });
+    const fromFile = file({
+      pluginRegistry: registry,
+      pluginRegistryToken: "from-file",
+    });
+    expect(resolveConfig({}, fromFile).pluginRegistry?.token).toBe("from-file");
+    expect(
+      resolveConfig(
+        { MATE_PLUGIN_REGISTRY: "@other=https://o.test/", MATE_PLUGIN_REGISTRY_TOKEN: "e" },
+        fromFile,
+      ).pluginRegistry,
+    ).toEqual({ scope: "@other", url: "https://o.test/", token: "e" });
   });
 
-  test("malformed entries stop startup naming the setting", () => {
-    for (const bad of ["@acme", "*", "a,,b", "@acme/re*der"]) {
-      expect(() => resolveConfig({ MATE_ALLOWED_PLUGINS: bad }, noFile)).toThrow(
-        /MATE_ALLOWED_PLUGINS/,
-      );
+  test("malformed values stop startup naming the setting without echoing the token", () => {
+    for (const bad of [
+      "acme=https://r.test/",
+      "@acme",
+      "@acme=not a url",
+      "@acme=https://u:p@r.test/",
+    ]) {
+      expect(() =>
+        resolveConfig({ MATE_PLUGIN_REGISTRY: bad, MATE_PLUGIN_REGISTRY_TOKEN: "sekrit" }, noFile),
+      ).toThrow(/MATE_PLUGIN_REGISTRY: /);
     }
+  });
+
+  test("a registry without a token fails, naming the token setting", () => {
+    let message = "";
+    try {
+      resolveConfig({ MATE_PLUGIN_REGISTRY: registry }, noFile);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("MATE_PLUGIN_REGISTRY_TOKEN");
+  });
+
+  test("a stale allowlist is reported as removed, not enforced", () => {
+    const config = resolveConfig({ MATE_ALLOWED_PLUGINS: "@acme/*" }, noFile);
+    expect(config.removed).toEqual(["MATE_ALLOWED_PLUGINS"]);
+    expect(SETTINGS.map((setting) => setting.env)).not.toContain("MATE_ALLOWED_PLUGINS");
   });
 });
 

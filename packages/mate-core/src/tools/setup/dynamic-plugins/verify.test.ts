@@ -43,28 +43,10 @@ async function install(dir: string, name: string, marker?: string): Promise<void
 }
 
 describe("verifyDeclaredPlugins", () => {
-  test("passes when every declared plugin is allowed, installed and loadable", async () => {
+  test("passes when every declared plugin is installed and loadable", async () => {
     const dir = await companion([{ package: "@acme/reader", version: "1.0.0" }]);
     await install(dir, "@acme/reader");
-    expect(await verifyDeclaredPlugins(dir, { env: { MATE_ALLOWED_PLUGINS: "@acme/*" } })).toEqual(
-      [],
-    );
-  });
-
-  test("an unlisted plugin is named and never executed", async () => {
-    const dir = await companion([{ package: "@evil/x", version: "1.0.0" }]);
-    const marker = path.join(dir, "executed");
-    await install(dir, "@evil/x", marker);
-    const failures = await verifyDeclaredPlugins(dir, { env: { MATE_ALLOWED_PLUGINS: "@acme/*" } });
-    expect(failures).toHaveLength(1);
-    expect(failures[0]).toMatchObject({ package: "@evil/x" });
-    await expect(fs.access(marker)).rejects.toThrow();
-  });
-
-  test("an empty allowlist refuses every declared plugin", async () => {
-    const dir = await companion([{ package: "@acme/reader", version: "1.0.0" }]);
-    await install(dir, "@acme/reader");
-    expect(await verifyDeclaredPlugins(dir, { env: { MATE_ALLOWED_PLUGINS: "" } })).toHaveLength(1);
+    expect(await verifyDeclaredPlugins(dir, { env: {} })).toEqual([]);
   });
 
   test("a missing package says setup must install it", async () => {
@@ -86,18 +68,11 @@ describe("verifyDeclaredPlugins", () => {
   test("reports the capability IDs of the verified plugins only", async () => {
     const dir = await companion([
       { package: "@acme/reader", version: "1.0.0" },
-      { package: "@evil/x", version: "1.0.0" },
+      { package: "@acme/missing", version: "1.0.0" },
     ]);
     await install(dir, "@acme/reader");
-    await install(dir, "@evil/x");
-    const result = await inspectDeclaredPlugins(dir, { env: { MATE_ALLOWED_PLUGINS: "@acme/*" } });
+    const result = await inspectDeclaredPlugins(dir, { env: {} });
     expect(result.capabilities).toEqual(["p"]);
-    expect(result.failures.map((failure) => failure.package)).toEqual(["@evil/x"]);
-  });
-
-  test("a malformed allowlist fails closed", async () => {
-    const dir = await companion([{ package: "@acme/reader", version: "1.0.0" }]);
-    const failures = await verifyDeclaredPlugins(dir, { env: { MATE_ALLOWED_PLUGINS: "@acme" } });
-    expect(failures[0]?.reason).toMatch(/malformed/);
+    expect(result.failures.map((failure) => failure.package)).toEqual(["@acme/missing"]);
   });
 });

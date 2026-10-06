@@ -4,7 +4,7 @@ import { inspectDeclaredPlugins } from "../../../tools/setup/dynamic-plugins/ver
 
 /**
  * @command mate plugin verify
- * @description Strict, installation-free check that every plugin declared by the companion is allowed by `MATE_ALLOWED_PLUGINS`, installed, and loadable with the current environment. Exits non-zero naming each failing package. With `--json`, prints `{"capabilities": [...]}` listing the capability IDs the verified plugins provide.
+ * @description Strict, installation-free check that every plugin declared by the companion is installed, and loadable with the current environment. Exits non-zero naming each failing package. With `--json`, prints `{"capabilities": [...]}` listing the capability IDs the verified plugins provide.
  */
 export async function runPluginVerifyCommand(
   argv: string[] = [],

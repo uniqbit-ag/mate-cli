@@ -31,16 +31,36 @@ export interface RunResult {
   stderr: string;
 }
 
-export type Runner = (command: string, args: string[], cwd?: string) => RunResult;
+/** `env` is merged over the process environment for this child only. */
+export type Runner = (
+  command: string,
+  args: string[],
+  cwd?: string,
+  env?: Record<string, string>,
+) => RunResult;
 
-export const runCommand: Runner = (command, args, cwd) => {
-  const result = spawnSync(command, args, { cwd, encoding: "utf8", stdio: "pipe" });
+export const runCommand: Runner = (command, args, cwd, env) => {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    stdio: "pipe",
+    env: env ? { ...process.env, ...env } : undefined,
+  });
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? (result.error ? result.error.message : ""),
   };
 };
+
+/** Masks a secret in child output before it is printed. */
+export function redact(text: string, ...secrets: Array<string | null>): string {
+  let result = text;
+  for (const secret of secrets) {
+    if (secret) result = result.split(secret).join("***");
+  }
+  return result;
+}
 
 function isCompanion(directory: string): boolean {
   return fs.existsSync(path.join(directory, COMPANION_CONFIG));
@@ -101,6 +121,14 @@ export function sameRemote(a: string, b: string): boolean {
   return normalize(a) === normalize(b);
 }
 
+/**
+ * Reads the token from the child's environment, so it reaches neither a URL,
+ * an argument nor `.git/config`. Passed as top-level `-c`, which `git clone`
+ * does not persist, after an empty helper that resets any configured ones.
+ */
+export const CLONE_TOKEN_ENV = "MATE_GIT_CLONE_TOKEN";
+const CLONE_CREDENTIAL_HELPER = `!f() { echo username=x-access-token; echo "password=\${${CLONE_TOKEN_ENV}}"; }; f`;
+
 export interface CheckoutOutcome {
   location: GitLocation;
   destination: string;
@@ -116,6 +144,7 @@ export function checkoutConfigured(
   companionsDir: string,
   locations: GitLocation[],
   run: Runner = runCommand,
+  cloneToken: string | null = null,
 ): CheckoutOutcome[] {
   const outcomes: CheckoutOutcome[] = [];
   for (const location of locations) {
@@ -133,10 +162,26 @@ export function checkoutConfigured(
       continue;
     }
 
-    const result = run("git", ["clone", location.url, destination]);
+    const result =
+      cloneToken === null
+        ? run("git", ["clone", location.url, destination])
+        : run(
+            "git",
+            [
+              "-c",
+              "credential.helper=",
+              "-c",
+              `credential.helper=${CLONE_CREDENTIAL_HELPER}`,
+              "clone",
+              location.url,
+              destination,
+            ],
+            undefined,
+            { [CLONE_TOKEN_ENV]: cloneToken, GIT_TERMINAL_PROMPT: "0" },
+          );
     if (result.status !== 0) {
       throw new StartupError(
-        `Cloning ${location.url} into ${destination} failed: ${(result.stderr || result.stdout).trim() || `git exited ${result.status}`}`,
+        `Cloning ${location.url} into ${destination} failed: ${redact((result.stderr || result.stdout).trim(), cloneToken) || `git exited ${result.status}`}`,
       );
     }
     outcomes.push({ location, destination, cloned: true });
