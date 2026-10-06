@@ -70,8 +70,10 @@ if [[ -z "${NPM_TOKEN:-}" ]]; then
 fi
 
 NPMRC_PATH="$(mktemp)"
+PACK_DIR="$(mktemp -d)"
 cleanup() {
   rm -f "$NPMRC_PATH"
+  rm -rf "$PACK_DIR"
 }
 trap cleanup EXIT
 
@@ -90,18 +92,22 @@ done
 # bump. A tree changed since then (an editor's format-on-save is enough) would
 # publish a tarball the image can never install, and a published version cannot
 # be replaced — so nothing is published unless every pin still matches.
+# Packed and hashed the way sync-image-inputs does; lifecycle output (prepack
+# builds) goes to stderr so it cannot corrupt anything read from stdout.
 LOCK_DIR="$ROOT_DIR/apps/mate-container/locks"
 for NAME in "${PACKAGE_NAMES[@]}"; do
-  PACKED_JSON="$(NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm pack --dry-run --json --workspace "$NAME")"
-  PACKED_JSON="$PACKED_JSON" node -e '
+  CI=1 NPM_CONFIG_USERCONFIG="$NPMRC_PATH" npm pack --workspace "$NAME" --pack-destination "$PACK_DIR" --loglevel error >&2
+  node -e '
+    const crypto = require("crypto");
     const fs = require("fs");
     const path = require("path");
-    const [name, version, lockDir] = process.argv.slice(1);
-    const packed = JSON.parse(process.env.PACKED_JSON)[0]?.integrity;
-    if (!packed) {
-      console.error(`Error: npm pack reported no integrity for ${name}.`);
+    const [name, version, lockDir, packDir] = process.argv.slice(1);
+    const archive = path.join(packDir, `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`);
+    if (!fs.existsSync(archive)) {
+      console.error(`Error: npm pack did not create ${path.basename(archive)} for ${name}.`);
       process.exit(1);
     }
+    const packed = `sha512-${crypto.createHash("sha512").update(fs.readFileSync(archive)).digest("base64")}`;
     let pins = 0;
     const stale = [];
     for (const file of fs.readdirSync(lockDir).filter((f) => f.endsWith(".package-lock.json"))) {
@@ -119,7 +125,7 @@ for NAME in "${PACKAGE_NAMES[@]}"; do
       console.error("The working tree changed after the version bump. Restore it to the release commit and rerun publish.sh.");
       process.exit(1);
     }
-  ' "$NAME" "$VERSION" "$LOCK_DIR"
+  ' "$NAME" "$VERSION" "$LOCK_DIR" "$PACK_DIR"
 done
 
 for NAME in "${PACKAGE_NAMES[@]}"; do
