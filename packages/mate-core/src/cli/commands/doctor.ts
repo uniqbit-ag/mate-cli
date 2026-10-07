@@ -10,7 +10,8 @@ import { pathIsDirectory } from "../../lib/orchestrator/repo-local-registry";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
 import {
-  verifyDeclaredPlugins,
+  inspectDeclaredPlugins,
+  type PluginInspection,
   type PluginVerificationFailure,
 } from "../../tools/setup/dynamic-plugins/verify";
 import { getRequiredPluginDrift } from "../../tools/setup/policy";
@@ -24,7 +25,7 @@ interface DoctorDeps {
   pathValue?: string;
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
   gitHead?: (memberPath: string) => string | null;
-  verifyPlugins?: (companionPath: string) => Promise<PluginVerificationFailure[]>;
+  inspectPlugins?: (companionPath: string) => Promise<PluginInspection>;
 }
 
 export type DoctorKind = "core" | "working" | "companion" | "hub";
@@ -58,6 +59,8 @@ export interface DoctorReport {
   toolInstallations?: DoctorToolInstallation[];
   requiredPluginDrift?: Array<{ pluginId: string; kind: string; reason: string }>;
   pluginFailures?: PluginVerificationFailure[];
+  /** IDs of the capabilities the verified plugins provide. */
+  pluginCapabilities?: string[];
   engineRequirement?: { range: string; ok: boolean; detail: string };
   hub?: { members: DoctorHubMember[] };
   resolutionFailures: Array<{ companionPath: string; message: string }>;
@@ -246,7 +249,9 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
   }
 
   if (root.rootPath && root.config) {
-    report.pluginFailures = await (deps.verifyPlugins ?? verifyDeclaredPlugins)(root.rootPath);
+    const inspection = await (deps.inspectPlugins ?? inspectDeclaredPlugins)(root.rootPath);
+    report.pluginFailures = inspection.failures;
+    report.pluginCapabilities = inspection.capabilities;
   }
 
   return report;

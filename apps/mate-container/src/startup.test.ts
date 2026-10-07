@@ -16,6 +16,7 @@ import {
 } from "./discovery";
 import {
   assertRequirementsCarried,
+  parsePluginCapabilities,
   prepareStartup,
   readCompanionSelections,
   renderCredentials,
@@ -48,17 +49,23 @@ function makeCompanion(directory: string, framework = FRAMEWORK): string {
   return directory;
 }
 
-function recorder(responses: Record<string, RunResult> = {}): { run: Runner; calls: string[][] } {
+function recorder(responses: Record<string, RunResult> = {}): {
+  run: Runner;
+  calls: string[][];
+  envs: Array<Record<string, string> | undefined>;
+} {
   const calls: string[][] = [];
-  const run: Runner = (command, args) => {
+  const envs: Array<Record<string, string> | undefined> = [];
+  const run: Runner = (command, args, _cwd, env) => {
     calls.push([command, ...args]);
+    envs.push(env);
     const key = [command, ...args].join(" ");
     for (const [match, response] of Object.entries(responses)) {
       if (key.includes(match)) return response;
     }
     return { status: 0, stdout: "", stderr: "" };
   };
-  return { run, calls };
+  return { run, calls, envs };
 }
 
 function deps(overrides: Partial<StartupDeps> = {}): StartupDeps {
@@ -66,6 +73,7 @@ function deps(overrides: Partial<StartupDeps> = {}): StartupDeps {
     run: recorder().run,
     mate: "mate",
     prebuilt: "/opt/mate/prebuilt",
+    setupScript: "/opt/mate/tools/startup/setup.sh",
     identity: "mate (uid 10001)",
     onPath: () => true,
     log: () => {},
@@ -90,7 +98,8 @@ function config(overrides: Partial<ApplianceConfig> = {}): ApplianceConfig {
     gitUserName: null,
     gitUserEmail: null,
     credentials: {},
-    allowedPlugins: null,
+    pluginRegistry: null,
+    gitCloneToken: null,
     setupHint: null,
     removed: [],
     ...overrides,
@@ -183,6 +192,42 @@ describe("checking out configured Git locations", () => {
   test("two spellings of the same remote are not a conflict", () => {
     expect(sameRemote("git@example.com:org/acme.git", "https://example.com/org/acme")).toBe(true);
     expect(sameRemote("https://example.com/a.git", "https://example.com/b.git")).toBe(false);
+  });
+
+  test("a clone token reaches only the child's environment, never arguments or the URL", () => {
+    const { run, calls, envs } = recorder();
+    checkoutConfigured(
+      root,
+      [{ url: "https://example.com/acme.git", directory: "acme" }],
+      run,
+      "tok-123",
+    );
+    expect(JSON.stringify(calls)).not.toContain("tok-123");
+    expect(envs[envs.length - 1]).toMatchObject({ MATE_GIT_CLONE_TOKEN: "tok-123" });
+    expect(calls[calls.length - 1]).toContain("https://example.com/acme.git");
+    expect(calls[calls.length - 1]!.slice(0, 2)).toEqual(["git", "-c"]);
+    expect(calls[calls.length - 1]!.indexOf("clone")).toBeGreaterThan(
+      calls[calls.length - 1]!.lastIndexOf("-c"),
+    );
+  });
+
+  test("a rejected clone token is redacted from the failure", () => {
+    const { run } = recorder({
+      clone: { status: 128, stdout: "", stderr: "fatal: auth failed for tok-123\n" },
+    });
+    let message = "";
+    try {
+      checkoutConfigured(
+        root,
+        [{ url: "https://example.com/gone.git", directory: "gone" }],
+        run,
+        "tok-123",
+      );
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("auth failed");
+    expect(message).not.toContain("tok-123");
   });
 
   test("a failed clone names the location and the reason", () => {
@@ -412,32 +457,167 @@ describe("what startup hands the supervisor", () => {
     expect(plan).not.toContain("secret");
   });
 
-  test("the plugin allowlist is exported with the credentials, an empty one included", () => {
-    expect(renderCredentials(config())).not.toContain("MATE_ALLOWED_PLUGINS");
-    expect(renderCredentials(config({ allowedPlugins: "@acme/*,@other/one" }))).toContain(
-      "export MATE_ALLOWED_PLUGINS='@acme/*,@other/one'",
-    );
-    expect(renderCredentials(config({ allowedPlugins: "" }))).toContain(
-      "export MATE_ALLOWED_PLUGINS=''",
-    );
+  test("startup-only tokens never travel with the credentials or the plan", () => {
+    const applianceConfig = config({
+      pluginRegistry: { scope: "@acme", url: "https://registry.acme.test/", token: "reg-tok" },
+      gitCloneToken: "git-tok",
+    });
+    expect(renderCredentials(applianceConfig)).not.toMatch(/reg-tok|git-tok|MATE_ALLOWED_PLUGINS/);
+    makeCompanion(path.join(root, "acme"));
+    const plan = renderPlan(prepareStartup(applianceConfig, deps()));
+    expect(plan).not.toMatch(/reg-tok|git-tok/);
   });
 
-  test("with an allowlist, plugins are verified in the companion before Studio and nothing installs", () => {
-    const companion = makeCompanion(path.join(root, "acme"));
-    const { run, calls } = recorder();
-    prepareStartup(config({ allowedPlugins: "@acme/*" }), deps({ run }));
-    expect(calls).toContainEqual(["mate", "doctor"]);
-    expect(calls.some((call) => call.includes("install"))).toBe(false);
-    void companion;
-  });
-
-  test("without an allowlist, plugins are not verified", () => {
+  test("without a registry, plugins are verified and nothing installs", () => {
     makeCompanion(path.join(root, "acme"));
     const { run, calls } = recorder();
     prepareStartup(config(), deps({ run }));
-    expect(calls.some((call) => call.includes("doctor"))).toBe(false);
+    expect(calls).toContainEqual(["mate", "doctor", "--json"]);
+    expect(calls.some((call) => call.includes("install") || call.includes("bash"))).toBe(false);
   });
 
+  test("with a registry, the image-owned restore runs after registration and before verification", () => {
+    const companion = makeCompanion(path.join(root, "acme"));
+    const { run, calls, envs } = recorder();
+    prepareStartup(
+      config({
+        pluginRegistry: { scope: "@acme", url: "https://registry.acme.test/", token: "reg-tok" },
+      }),
+      deps({ run }),
+    );
+    const order = calls.map((call) =>
+      call[1] === "companion"
+        ? call[2]
+        : call[0] === "bash"
+          ? "setup"
+          : call[1] === "doctor"
+            ? "verify"
+            : call[2],
+    );
+    expect(order.indexOf("register")).toBeLessThan(order.indexOf("setup"));
+    expect(order.indexOf("setup")).toBeLessThan(order.indexOf("verify"));
+    expect(order.indexOf("verify")).toBeLessThan(order.indexOf("prepare"));
+    const at = calls.findIndex((call) => call[0] === "bash");
+    expect(calls[at]).toEqual(["bash", "/opt/mate/tools/startup/setup.sh", companion]);
+    expect(envs[at]).toMatchObject({
+      MATE_PLUGIN_REGISTRY_SCOPE: "@acme",
+      MATE_PLUGIN_REGISTRY_URL: "https://registry.acme.test/",
+      MATE_PLUGIN_REGISTRY_TOKEN: "reg-tok",
+    });
+    expect(JSON.stringify(calls)).not.toContain("reg-tok");
+  });
+
+  test("a failed restore stops startup, redacts the token and verifies nothing", () => {
+    makeCompanion(path.join(root, "acme"));
+    const { run, calls } = recorder({
+      "setup.sh": { status: 1, stdout: "", stderr: "npm error 401 for reg-tok\n" },
+    });
+    let message = "";
+    try {
+      prepareStartup(
+        config({
+          pluginRegistry: { scope: "@acme", url: "https://registry.acme.test/", token: "reg-tok" },
+        }),
+        deps({ run }),
+      );
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("401");
+    expect(message).not.toContain("reg-tok");
+    expect(calls.some((call) => call.includes("doctor") || call.includes("prepare"))).toBe(false);
+  });
+
+  describe("startup-only tokens are redacted from every printed failure", () => {
+    const registry = { scope: "@acme", url: "https://registry.acme.test/", token: "reg-tok" };
+    const leak = "leaked reg-tok and git-tok here\n";
+    const failing = (match: string) =>
+      recorder({ [match]: { status: 1, stdout: "", stderr: leak } });
+
+    for (const [name, match] of [
+      ["registration", "register"],
+      ["restore", "setup.sh"],
+      ["verification", "doctor"],
+      ["preparation", "prepare"],
+    ] as const) {
+      test(`${name} omits both tokens`, () => {
+        makeCompanion(path.join(root, "acme"));
+        let message = "";
+        try {
+          prepareStartup(
+            config({ pluginRegistry: registry, gitCloneToken: "git-tok" }),
+            deps({ run: failing(match).run }),
+          );
+        } catch (error) {
+          message = (error as Error).message;
+        }
+        expect(message).toContain("leaked");
+        expect(message).not.toMatch(/reg-tok|git-tok/);
+      });
+    }
+
+    test("clone omits both tokens", () => {
+      const { run } = recorder({ clone: { status: 128, stdout: "", stderr: leak } });
+      let message = "";
+      try {
+        prepareStartup(
+          config({
+            pluginRegistry: registry,
+            gitCloneToken: "git-tok",
+            companionRepos: [{ url: "https://example.com/gone.git", directory: "gone" }],
+          }),
+          deps({ run }),
+        );
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toContain("leaked");
+      expect(message).not.toMatch(/reg-tok|git-tok/);
+    });
+  });
+
+  test("a companion-local npm auth line for the registry host blocks the restore", () => {
+    const companion = makeCompanion(path.join(root, "acme"));
+    fs.mkdirSync(path.join(companion, ".mate", "plugins"), { recursive: true });
+    fs.writeFileSync(
+      path.join(companion, ".mate", "plugins", ".npmrc"),
+      "//pkg.acme.test/:_authToken=other\n",
+    );
+    const { run, calls } = recorder();
+    expect(() =>
+      prepareStartup(
+        config({
+          pluginRegistry: { scope: "@acme", url: "https://pkg.acme.test/", token: "t" },
+        }),
+        deps({ run }),
+      ),
+    ).toThrow(/\.npmrc overrides/);
+    expect(calls.some((call) => call[0] === "bash")).toBe(false);
+  });
+
+  test("a companion-local npm override of the registry blocks the restore", () => {
+    const companion = makeCompanion(path.join(root, "acme"));
+    fs.mkdirSync(path.join(companion, ".mate", "plugins"), { recursive: true });
+    fs.writeFileSync(
+      path.join(companion, ".mate", "plugins", ".npmrc"),
+      "registry=https://x.test/\n",
+    );
+    const { run, calls } = recorder();
+    expect(() =>
+      prepareStartup(
+        config({
+          pluginRegistry: { scope: "@acme", url: "https://pkg.acme.test/", token: "t" },
+        }),
+        deps({ run }),
+      ),
+    ).toThrow(/\.npmrc overrides/);
+    expect(calls.some((call) => call[0] === "bash")).toBe(false);
+  });
+
+  test("a declared plugin needs no operator allowlist", () => {
+    makeCompanion(path.join(root, "acme"));
+    expect(() => prepareStartup(config(), deps())).not.toThrow();
+  });
   test("a plugin that is not ready stops startup with the reason", () => {
     makeCompanion(path.join(root, "acme"));
     const { run } = recorder({
@@ -447,19 +627,53 @@ describe("what startup hands the supervisor", () => {
         stderr: "plugin @acme/reader: not installed; run setup",
       },
     });
-    expect(() => prepareStartup(config({ allowedPlugins: "@acme/*" }), deps({ run }))).toThrow(
-      /@acme\/reader: not installed/,
-    );
+    expect(() => prepareStartup(config(), deps({ run }))).toThrow(/@acme\/reader: not installed/);
   });
 
-  test("an unknown capability is refused by name even when an allowed plugin might supply it", () => {
+  test("a capability a verified plugin reports providing is accepted", () => {
     makeCompanion(
       path.join(root, "acme"),
       FRAMEWORK.replace("- name: openspec", "- name: acme-reader"),
     );
-    expect(() => prepareStartup(config({ allowedPlugins: "@acme/*" }), deps())).toThrow(
-      /capability "acme-reader"/,
+    const { run } = recorder({
+      doctor: { status: 0, stdout: '{"pluginCapabilities":["acme-reader"]}\n', stderr: "" },
+    });
+    expect(() => prepareStartup(config(), deps({ run }))).not.toThrow();
+  });
+
+  test("a plugin cannot vouch for a different capability name", () => {
+    makeCompanion(
+      path.join(root, "acme"),
+      FRAMEWORK.replace("- name: openspec", "- name: other-thing"),
     );
+    const { run } = recorder({
+      doctor: { status: 0, stdout: '{"pluginCapabilities":["acme-reader"]}\n', stderr: "" },
+    });
+    expect(() => prepareStartup(config(), deps({ run }))).toThrow(/capability "other-thing"/);
+  });
+
+  test("a plugin's capability does not excuse an unsupported package manager", () => {
+    expect(() =>
+      assertRequirementsCarried(
+        { packageManagers: ["pnpm"], capabilities: ["acme-reader"] },
+        () => true,
+        ["acme-reader"],
+      ),
+    ).toThrow(/package manager "pnpm"/);
+  });
+
+  test("unreadable doctor output provides nothing", () => {
+    expect(parsePluginCapabilities("")).toEqual([]);
+    expect(parsePluginCapabilities("not json")).toEqual([]);
+    expect(parsePluginCapabilities('{"pluginCapabilities":["a",1]}')).toEqual(["a"]);
+  });
+
+  test("an unknown capability is refused by name even when a declared plugin might supply it", () => {
+    makeCompanion(
+      path.join(root, "acme"),
+      FRAMEWORK.replace("- name: openspec", "- name: acme-reader"),
+    );
+    expect(() => prepareStartup(config(), deps())).toThrow(/capability "acme-reader"/);
   });
 
   test("an absent checkout gets the operator's setup command, a missing package is named by verify", () => {
@@ -482,6 +696,18 @@ describe("what startup hands the supervisor", () => {
     );
     makeCompanion(path.join(root, "acme"));
     expect(renderPlan(prepareStartup(applianceConfig, deps()))).not.toContain("s".repeat(40));
+  });
+
+  test("a stale allowlist setting is warned about by name", () => {
+    makeCompanion(path.join(root, "acme"));
+    const lines: string[] = [];
+    prepareStartup(
+      config({ removed: ["MATE_ALLOWED_PLUGINS"] }),
+      deps({ log: (line) => lines.push(line) }),
+    );
+    expect(lines.some((line) => line.includes("MATE_ALLOWED_PLUGINS is no longer used"))).toBe(
+      true,
+    );
   });
 
   test("a removed agent setting is warned about by name", () => {

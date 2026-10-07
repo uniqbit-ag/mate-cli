@@ -1,4 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, test } from "bun:test";
+
+import { FRAMEWORK_NAME } from "../../../framework";
 
 import {
   bunTerminalSpawn,
@@ -10,7 +16,7 @@ import {
   type TerminalSpawnRequest,
   type TerminalViewer,
 } from "./terminal";
-import { createLaunchResolver } from "./terminal-launch";
+import { createLaunchResolver, defaultAgentFor } from "./terminal-launch";
 
 const ACME = "/companions/acme";
 
@@ -161,6 +167,53 @@ describe("launch", () => {
     await r.registry.stopAll();
   });
 
+  test("appends the resolved agent args after the managed flags", async () => {
+    const r = registry({
+      noGit: true,
+      resolveLaunch: async () => ({ companionPath: ACME, agentArgs: ["--agent", "acme-analyst"] }),
+    });
+    await started(r);
+    expect(r.spawned[0]!.request.argv).toEqual([
+      "bun",
+      "cli.mjs",
+      "claude",
+      "--",
+      "--companion",
+      "--yes",
+      "--no-git",
+      "--agent",
+      "acme-analyst",
+    ]);
+    await r.registry.stopAll();
+  });
+
+  test("shows the resolver's notice before the agent output", async () => {
+    const r = registry({
+      resolveLaunch: async () => ({ companionPath: ACME, notice: "Default agent not applied." }),
+    });
+    const { v } = await started(r);
+    r.spawned[0]!.emit("agent output");
+    expect(v.output).toBe("Default agent not applied.\r\nagent output");
+    await r.registry.stopAll();
+  });
+
+  test("ignores a client-supplied agent name or arguments", async () => {
+    const r = registry();
+    const v = viewer();
+    await r.registry
+      .connect(v)
+      .message(JSON.stringify({ ...START, args: ["--evil"], agentArgs: ["--x"], persona: "evil" }));
+    expect(r.spawned[0]!.request.argv).toEqual([
+      "bun",
+      "cli.mjs",
+      "claude",
+      "--",
+      "--companion",
+      "--yes",
+    ]);
+    await r.registry.stopAll();
+  });
+
   test.each([
     { name: "another command", message: { ...START, agent: "bash" } },
     { name: "an out-of-range size", message: { ...START, cols: 1 } },
@@ -224,6 +277,86 @@ describe("createLaunchResolver", () => {
       launchableAgents: async () => ["claude"],
     });
     expect(await gone("claude", null)).toHaveProperty("reason");
+  });
+});
+
+describe("defaultAgentFor", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  function companion(config: string | null, definitions: string[] = []): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "default-agent-"));
+    roots.push(root);
+    if (config !== null) {
+      const dir = path.join(root, `.${FRAMEWORK_NAME}`, "config");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "framework.yaml"), config);
+    }
+    for (const definition of definitions) {
+      fs.mkdirSync(path.join(root, path.dirname(definition)), { recursive: true });
+      fs.writeFileSync(path.join(root, definition), "---\nname: acme-analyst\n---\n");
+    }
+    return root;
+  }
+
+  const configured = (name: string) =>
+    `allowedAgents: [claude]\nstudio:\n  terminal:\n    agent: ${name}\n`;
+
+  test("selects the agent when the provider's definition exists", async () => {
+    const root = companion(configured("acme-analyst"), [".claude/agents/acme-analyst.md"]);
+    expect(await defaultAgentFor(root, "claude")).toEqual({
+      agentArgs: ["--agent", "acme-analyst"],
+    });
+  });
+
+  test("is per provider", async () => {
+    const root = companion(configured("acme-analyst"), [".claude/agents/acme-analyst.md"]);
+    const outcome = await defaultAgentFor(root, "opencode");
+    expect(outcome.agentArgs).toBeUndefined();
+    expect(outcome.notice).toContain("opencode");
+  });
+
+  test("a missing definition starts plain with a notice", async () => {
+    const root = companion(configured("acme-analyst"));
+    const outcome = await defaultAgentFor(root, "claude");
+    expect(outcome.agentArgs).toBeUndefined();
+    expect(outcome.notice).toContain("acme-analyst");
+  });
+
+  test.each(["'$(touch x)'", "'--evil'", "'Acme_Analyst'", `'${"a".repeat(65)}'`, "42"])(
+    "an unsafe name %s is never used or echoed",
+    async (value) => {
+      const root = companion(configured(value));
+      const outcome = await defaultAgentFor(root, "claude");
+      expect(outcome.agentArgs).toBeUndefined();
+      expect(outcome.notice).toContain("studio.terminal.agent");
+      expect(outcome.notice).not.toMatch(/[$()]|--evil|Acme_Analyst/);
+    },
+  );
+
+  test("no setting, no config, and an unrelated unknown key change nothing", async () => {
+    expect(await defaultAgentFor(companion("allowedAgents: [claude]\n"), "claude")).toEqual({});
+    expect(await defaultAgentFor(companion(null), "claude")).toEqual({});
+    expect(
+      await defaultAgentFor(companion("allowedAgents: [claude]\nstudio:\n  other: 1\n"), "claude"),
+    ).toEqual({});
+  });
+
+  test("the resolver carries the outcome and ignores the browser", async () => {
+    const resolve = createLaunchResolver({
+      collectInventory: async () => ({
+        companions: [{ path: ACME, health: "ready" as const, pairings: [] }],
+      }),
+      launchCompanion: ACME,
+      launchableAgents: async () => ["claude"],
+      defaultAgent: async () => ({ agentArgs: ["--agent", "acme-analyst"] }),
+    });
+    expect(await resolve("claude", null)).toEqual({
+      companionPath: ACME,
+      agentArgs: ["--agent", "acme-analyst"],
+    });
   });
 });
 

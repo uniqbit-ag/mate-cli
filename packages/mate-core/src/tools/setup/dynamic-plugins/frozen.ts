@@ -5,14 +5,8 @@ import path from "node:path";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
 import type { NpmInstallRunner, PluginInstallResult } from "./install";
 import { dynamicPluginsWorkspaceRoot } from "./paths";
-import {
-  disallowedPluginMessage,
-  isPluginAllowed,
-  PluginPolicyError,
-  readPluginPolicy,
-} from "./policy";
 
-/** Raised before anything is installed: policy, manifest or lockfile inputs are unusable. */
+/** Raised before anything is installed: manifest or lockfile inputs are unusable. */
 export class FrozenInstallError extends Error {}
 
 export interface FrozenInstallDeps {
@@ -112,8 +106,7 @@ async function treeMismatches(workspaceRoot: string, lock: Lockfile): Promise<st
 
 /**
  * Deployment restore: installs exactly what the committed lockfile records.
- * Inputs are validated before npm runs — the appliance allowlist, the
- * workspace manifest against the declarations, and the lockfile against the
+ * Inputs are validated before npm runs — the workspace manifest against the declarations, and the lockfile against the
  * manifest — and neither tracked file is ever rewritten. An installed tree is
  * reused only when it matches the lockfile's versions and integrity.
  */
@@ -126,20 +119,6 @@ export async function installDeclaredPluginsFrozen(
   const sorted = declarations.toSorted((a, b) => a.package.localeCompare(b.package));
   const desired: Record<string, string> = {};
   for (const declaration of sorted) desired[declaration.package] = declaration.version;
-
-  let policy: ReturnType<typeof readPluginPolicy>;
-  try {
-    policy = readPluginPolicy(deps.env ?? process.env);
-  } catch (error) {
-    if (error instanceof PluginPolicyError) throw new FrozenInstallError(error.message);
-    throw error;
-  }
-  const refused = sorted.filter((declaration) => !isPluginAllowed(policy, declaration.package));
-  if (refused.length > 0) {
-    throw new FrozenInstallError(
-      refused.map((declaration) => disallowedPluginMessage(declaration.package)).join("\n"),
-    );
-  }
 
   const manifestFile = path.join(workspaceRoot, "package.json");
   const lockFile = path.join(workspaceRoot, "package-lock.json");
