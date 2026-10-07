@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { createStudioAccess } from "./access";
 import { companionDigest, openFile, openFolder, parse, parseVaultSelection } from "./selection";
 import {
   createStudioFetch,
@@ -324,10 +325,9 @@ describe("createStudioFetch", () => {
       expect(markup).toContain('data-vault-slot="tree"');
       expect(markup).toContain('data-vault-slot="listing"');
       expect(markup).toContain("note.md");
-      const entry = markup.slice(markup.indexOf('data-vault-entry="docs/note.md"'));
-      const form = entry.slice(0, entry.indexOf("</form>"));
-      expect(form).toContain('name="view" value="vault"');
-      expect(form).toContain('name="path" value="docs/note.md"');
+      expect(markup).toContain(
+        `<a class="vault-file" href="/?companion=${digest}&amp;view=vault&amp;path=docs%2Fnote.md" data-vault-entry="docs/note.md"`,
+      );
 
       await handler(new Request(pageUrl));
       expect(JSON.stringify(pages[1]?.vault?.tree)).toContain("note.md");
@@ -464,6 +464,14 @@ describe("createStudioFetch", () => {
           return { entry: /data-vault-entry="([^"]*)"/.exec(attrs!)?.[1], selection: parse(url) };
         },
       );
+      const links = [
+        ...markup.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*data-vault-entry="([^"]*)"/g),
+      ].map(([, href, entry]) => ({
+        entry,
+        selection: parse(new URL(href!.replaceAll("&amp;", "&"), "http://localhost/")),
+      }));
+      expect(links.length).toBeGreaterThan(2);
+      submitted.push(...links);
       expect(submitted.length).toBeGreaterThan(4);
       for (const { entry, selection } of submitted) {
         expect(selection.view).toBe("vault");
@@ -486,6 +494,127 @@ describe("createStudioFetch", () => {
     }
   });
 
+  describe("lazy vault routes", () => {
+    async function lazyFixture(
+      run: (context: {
+        handler: ReturnType<typeof createStudioFetch>;
+        digest: string;
+        vault: VaultManager;
+      }) => Promise<void>,
+    ) {
+      const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-lazy-")));
+      try {
+        const vault = createVaultManager({
+          watch: () => ({ close() {} }),
+          git: async (args) =>
+            args.includes("ls-files")
+              ? { code: 0, stdout: "README.md\0docs/b.md\0docs/a/x.md\0other/Y.md\0", stderr: "" }
+              : { code: 1, stdout: "", stderr: "" },
+        });
+        const files = ["README.md", "docs/b.md", "docs/a/x.md", "other/Y.md"];
+        for (const file of files) {
+          await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true });
+          await fs.writeFile(path.join(root, file), "# acme\n");
+        }
+        const handler = createStudioFetch({
+          collectStudioInventory: async () => ({
+            companions: [{ path: root, health: "ready", pairings: [] }],
+          }),
+          vault,
+        });
+        await run({ handler, digest: companionDigest(root), vault });
+        await handler.close();
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    }
+
+    test("answers a listed folder's entries, collapsed, with the listing generation", async () => {
+      await lazyFixture(async ({ handler, digest }) => {
+        const response = (await handler(
+          new Request(`http://localhost/api/vault/dir?companion=${digest}&dir=docs`),
+        ))!;
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("text/html");
+        expect(response.headers.get("x-vault-generation")).toBe("0");
+        const markup = await response.text();
+        expect(markup).toContain('data-vault-entry="docs/b.md"');
+        expect(markup).toContain('data-vault-dir="docs/a"');
+        expect(markup).not.toContain("x.md");
+      });
+    });
+
+    test("refuses a folder the listed tree does not hold, never reading the disk", async () => {
+      await lazyFixture(async ({ handler, digest }) => {
+        for (const dir of ["nope", "../outside", "/etc"]) {
+          const response = (await handler(
+            new Request(
+              `http://localhost/api/vault/dir?companion=${digest}&dir=${encodeURIComponent(dir)}`,
+            ),
+          ))!;
+          expect(response.status).toBe(404);
+        }
+        const none = (await handler(new Request("http://localhost/api/vault/dir")))!;
+        expect(none.status).toBe(400);
+      });
+    });
+
+    test("answers bounded name-filter matches over unexpanded folders", async () => {
+      await lazyFixture(async ({ handler, digest }) => {
+        const response = (await handler(
+          new Request(`http://localhost/api/vault/filter?companion=${digest}&q=y.MD`),
+        ))!;
+        const markup = await response.text();
+        expect(markup).toContain('data-vault-entry="other/Y.md"');
+        expect(markup).not.toContain("README");
+        const empty = (await handler(
+          new Request(`http://localhost/api/vault/filter?companion=${digest}`),
+        ))!;
+        expect(await empty.text()).toBe("");
+      });
+    });
+
+    test("streams listing generations, never paths or content", async () => {
+      await lazyFixture(async ({ handler, digest }) => {
+        const response = (await handler(
+          new Request(`http://localhost/api/vault/changes?companion=${digest}`),
+        ))!;
+        expect(response.headers.get("content-type")).toContain("text/event-stream");
+        const reader = response.body!.getReader();
+        const chunks: string[] = [];
+        while (!chunks.join("").includes("data:")) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          chunks.push(new TextDecoder().decode(value));
+        }
+        const data = chunks
+          .join("")
+          .split("\n")
+          .find((line) => line.startsWith("data:"))!;
+        expect(JSON.parse(data.slice(5))).toEqual({ generation: 0 });
+        await reader.cancel();
+        const unselected = (await handler(new Request("http://localhost/api/vault/changes")))!;
+        expect(unselected.status).toBe(400);
+      });
+    });
+
+    test("holds the new read routes to the access token", async () => {
+      const access = createStudioAccess({
+        invocation: "serve",
+        terminal: false,
+        hostname: "127.0.0.1",
+        port: () => 80,
+        token: "secret",
+      });
+      const handler = createStudioFetch({}, { access });
+      for (const route of ["dir", "filter", "changes"]) {
+        const response = (await handler(new Request(`http://127.0.0.1/api/vault/${route}`)))!;
+        expect(response.status).toBe(401);
+      }
+      await handler.close();
+    });
+  });
+
   test("answers a failed listing in place of the tree", async () => {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-defer-")));
     try {
@@ -506,7 +635,6 @@ describe("createStudioFetch", () => {
       const markup = await response.text();
       expect(markup).toContain('data-vault-slot="tree"');
       expect(markup).toContain("could not be listed: git ls-files failed: fatal: acme broke");
-      expect(markup).toContain("Refresh tree");
       vault.stop();
     } finally {
       await fs.rm(root, { recursive: true, force: true });

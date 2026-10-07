@@ -292,6 +292,47 @@ describe("vault manager", () => {
     manager.stop();
   });
 
+  test("numbers each listing and signals watch invalidations as generations only", async () => {
+    const root = await fs.realpath(await fixture());
+    await fs.writeFile(path.join(root, "note.md"), "note");
+    const recorder = recordingWatch();
+    const manager = createVaultManager({ watch: recorder.watch });
+    const first = await manager.tree(root);
+    expect(first.generation).toBe(0);
+    const seen: unknown[] = [];
+    const stop = manager.subscribeTree(root, (generation) => seen.push(generation));
+    await settle(20);
+    expect(seen).toEqual([0]);
+    await fs.writeFile(path.join(root, "added.md"), "added");
+    recorder.listeners.get(root)?.("rename", "added.md");
+    await settle(200);
+    expect(seen).toEqual([0, 1]);
+    const next = await manager.tree(root);
+    expect(next.generation).toBe(1);
+    expect(JSON.stringify(seen)).not.toContain("added");
+    stop();
+    recorder.listeners.get(root)?.("rename", "added.md");
+    await settle(200);
+    expect(seen).toEqual([0, 1]);
+    manager.stop();
+  });
+
+  test("reports no signal when watching is unavailable, but still numbers the listing", async () => {
+    const root = await fixture();
+    await fs.writeFile(path.join(root, "note.md"), "note");
+    const manager = createVaultManager({
+      watch: () => {
+        throw new Error("watch unavailable");
+      },
+    });
+    const seen: number[] = [];
+    manager.subscribeTree(root, (generation) => seen.push(generation));
+    await settle(50);
+    expect(seen).toEqual([0]);
+    expect((await manager.refresh(root)).generation).toBe(0);
+    manager.stop();
+  });
+
   test("reports an explicit refresh path when watching is unavailable", async () => {
     const root = await fixture();
     await fs.writeFile(path.join(root, "note.md"), "note");

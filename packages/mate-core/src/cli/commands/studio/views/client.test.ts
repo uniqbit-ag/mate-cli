@@ -126,16 +126,34 @@ class FakeElement {
     node.parent = this.parent;
   }
 
+  replaceChildren(...nodes: FakeElement[]): void {
+    this.children = [];
+    for (const node of nodes) this.append(node);
+  }
+
+  closest(selector: string): FakeElement | null {
+    for (let node: FakeElement | null = this; node; node = node.parent) {
+      if (node.matches(selector)) return node;
+    }
+    return null;
+  }
+
+  get body(): { childNodes: FakeElement[] } {
+    return { childNodes: this.children };
+  }
+
   descendants(): FakeElement[] {
     return this.children.flatMap((child) => [child, ...child.descendants()]);
   }
 
   matches(selector: string): boolean {
-    const notHidden = selector.endsWith(":not([hidden])");
-    const plain = notHidden ? selector.slice(0, -":not([hidden])".length) : selector;
+    const excluded = [...selector.matchAll(/:not\(\[([\w-]+)\]\)/g)].map(([, name]) => name!);
+    const plain = selector.replace(/:not\(\[[\w-]+\]\)/g, "");
     const tag = /^[a-z]+/.exec(plain)?.[0];
     if (tag && this.getAttribute("tag") !== tag) return false;
-    if (notHidden && this.hidden) return false;
+    for (const name of excluded) {
+      if (name === "hidden" ? this.hidden : this.hasAttribute(name)) return false;
+    }
     return [...plain.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)].every(([, name, value]) =>
       value === undefined ? this.hasAttribute(name!) : this.getAttribute(name!) === value,
     );
@@ -154,16 +172,29 @@ function runVaultBrowser(options: {
   layout: Record<string, string>;
   tree: FakeElement;
   listing?: FakeElement;
+  /** Served for every parse; `answers` are served first, in order. */
   answer?: FakeElement;
-  fails?: boolean;
+  answers?: FakeElement[];
+  fails?: boolean | ((url: string) => boolean);
   stored?: string | null;
   editor?: FakeElement;
 }) {
   const filter = new FakeElement({ id: "vault-filter", hidden: "" });
+  const results = new FakeElement({ id: "vault-filter-results", hidden: "" });
+  const stale = new FakeElement({ id: "vault-stale", hidden: "" });
+  const status = new FakeElement({ id: "vault-refresh-status", hidden: "" });
+  const refresh = new FakeElement({ tag: "form", "data-vault-refresh": "" });
   const toggle = new FakeElement({ id: "vault-tree-toggle", hidden: "" });
-  const layout = new FakeElement({ "data-vault-layout": "", ...options.layout }, [
+  const panel = new FakeElement({ id: "vault-tree-panel" }, [
+    refresh,
+    stale,
+    status,
     filter,
+    results,
     options.tree,
+  ]);
+  const layout = new FakeElement({ "data-vault-layout": "", ...options.layout }, [
+    panel,
     toggle,
     ...(options.listing ? [options.listing] : []),
     ...(options.editor ? [options.editor] : []),
@@ -174,10 +205,15 @@ function runVaultBrowser(options: {
   const stored: Record<string, string> = {};
   const fetched: string[] = [];
   const streamed: string[] = [];
+  const navigated: string[] = [];
+  const timers: (() => void)[] = [];
+  const sources: EventSourceStub[] = [];
+  const answers = [...(options.answers ?? [])];
   class EventSourceStub {
-    onmessage: unknown = null;
+    onmessage: ((message: { data: string }) => void) | null = null;
     constructor(url: string) {
       streamed.push(url);
+      sources.push(this);
     }
   }
   const documentStub = {
@@ -189,12 +225,13 @@ function runVaultBrowser(options: {
   };
   class Parser {
     parseFromString() {
-      return options.answer;
+      return answers.shift() ?? options.answer;
     }
   }
   const fetchStub = (url: string) => {
     fetched.push(url);
-    return options.fails
+    const failing = typeof options.fails === "function" ? options.fails(url) : options.fails;
+    return failing
       ? Promise.reject(new Error("offline"))
       : Promise.resolve({ ok: true, text: () => Promise.resolve("answer") });
   };
@@ -207,31 +244,51 @@ function runVaultBrowser(options: {
     "fetch",
     "DOMParser",
     "EventSource",
+    "location",
     STUDIO_CLIENT_SCRIPT,
   )(
     documentStub,
     { getItem: () => null, setItem: (key: string, value: string) => (stored[key] = value) },
     {},
-    () => 0,
+    (callback: () => void) => timers.push(callback),
     () => {},
     fetchStub,
     Parser,
     EventSourceStub,
+    { href: "http://localhost/", assign: (url: string) => navigated.push(url) },
   );
-  return { body, root, filter, toggle, stored, fetched, streamed };
+  return {
+    body,
+    root,
+    filter,
+    results,
+    stale,
+    status,
+    refresh,
+    panel,
+    toggle,
+    stored,
+    fetched,
+    streamed,
+    navigated,
+    sources,
+    /** Runs the debounced filter the last input scheduled. */
+    flushFilter: () => timers.at(-1)?.(),
+  };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function sampleTree(): FakeElement {
   return new FakeElement({ "data-vault-slot": "tree" }, [
-    new FakeElement({ "data-vault-dir": "docs" }, [
-      new FakeElement({ "data-vault-entry": "docs/alpha.md", tag: "form", method: "get" }),
-      new FakeElement({ "data-vault-entry": "docs/beta.md", tag: "form", method: "get" }),
-    ]),
-    new FakeElement({ "data-vault-dir": "other", open: "", "data-vault-expanded": "" }, [
-      new FakeElement({ "data-vault-entry": "other/gamma.md", tag: "form", method: "get" }),
-    ]),
+    new FakeElement(
+      { "data-vault-dir": "docs", tag: "details", "data-vault-children-url": "/dir?d=docs" },
+      [new FakeElement({ class: "vault-children" })],
+    ),
+    new FakeElement(
+      { "data-vault-dir": "other", tag: "details", open: "", "data-vault-expanded": "" },
+      [new FakeElement({ "data-vault-entry": "other/gamma.md", tag: "a" })],
+    ),
   ]);
 }
 
@@ -300,7 +357,7 @@ describe("studio browser code", () => {
     expect(run.body.querySelector('[data-vault-slot="tree"]')).toBe(answeredTree);
     expect(run.body.querySelector('[data-vault-slot="listing"]')).toBe(answeredListing);
     expect(answeredListing.children[0]!.listeners.submit).toBeDefined();
-    expect(answeredTree.querySelector("[data-vault-entry]")!.listeners.submit).toBeDefined();
+    expect(answeredTree.querySelector("[data-vault-entry]")!.listeners.click).toBeUndefined();
   });
 
   it("states a failed deferred listing in place of the placeholders", async () => {
@@ -317,22 +374,159 @@ describe("studio browser code", () => {
     expect(run.fetched).toEqual([]);
   });
 
-  it("filters the tree by path and restores the served folders when cleared", () => {
+  it("filters over the listed tree on the server, debounced and bounded to the typed text", async () => {
     const tree = sampleTree();
-    const run = runVaultBrowser({ layout: {}, tree });
+    const run = runVaultBrowser({
+      layout: { "data-vault-filter-url": "/api/vault/filter?companion=abc" },
+      tree,
+      answer: new FakeElement({}, [
+        new FakeElement({ "data-vault-entry": "docs/beta.md", tag: "a" }),
+      ]),
+    });
     expect(run.filter.hidden).toBe(false);
-    const [docs, other] = tree.children as [FakeElement, FakeElement];
+    run.filter.value = "BE";
+    run.filter.listeners.input!();
     run.filter.value = "BETA";
     run.filter.listeners.input!();
-    expect(docs.children.map((entry) => entry.hidden)).toEqual([true, false]);
-    expect(docs.open).toBe(true);
-    expect(other.hidden).toBe(true);
+    expect(run.fetched).toEqual([]);
+    run.flushFilter();
+    await settle();
+    await settle();
+    expect(run.fetched).toEqual(["http://localhost/api/vault/filter?companion=abc&q=BETA"]);
+    expect(run.results.hidden).toBe(false);
+    expect(run.results.children).toHaveLength(1);
+    expect(run.panel.hasAttribute("data-vault-filtering")).toBe(true);
     run.filter.value = "";
     run.filter.listeners.input!();
-    expect(docs.children.every((entry) => !entry.hidden)).toBe(true);
-    expect(docs.open).toBe(false);
-    expect(other.open).toBe(true);
-    expect(other.hidden).toBe(false);
+    run.flushFilter();
+    expect(run.results.hidden).toBe(true);
+    expect(run.panel.hasAttribute("data-vault-filtering")).toBe(false);
+    expect(run.fetched).toHaveLength(1);
+  });
+
+  it("scans no tree entries per keystroke", () => {
+    expect(STUDIO_CLIENT_SCRIPT).not.toContain('querySelectorAll("[data-vault-entry]")');
+    expect(STUDIO_CLIENT_SCRIPT).not.toContain("function filterTree");
+  });
+
+  it("attaches one delegated click handler for tree entries and leaves modified clicks alone", () => {
+    const run = runVaultBrowser({ layout: {}, tree: sampleTree() });
+    const link = run.body.querySelector("[data-vault-entry]")!;
+    link.setAttribute("href", "/?path=other%2Fgamma.md");
+    Object.assign(link, { href: "http://localhost/?path=other%2Fgamma.md" });
+    expect(link.listeners.click).toBeUndefined();
+    let prevented = false;
+    const click = (extra: Record<string, unknown> = {}) =>
+      run.panel.listeners.click!({
+        button: 0,
+        target: link,
+        preventDefault: () => (prevented = true),
+        ...extra,
+      });
+    click({ ctrlKey: true });
+    expect(prevented).toBe(false);
+    click({ button: 1 });
+    expect(prevented).toBe(false);
+    click();
+    expect(prevented).toBe(true);
+  });
+
+  it("fetches a collapsed folder's entries when first opened and retries after a failure", async () => {
+    const tree = sampleTree();
+    const run = runVaultBrowser({
+      layout: {},
+      tree,
+      fails: (url) => url === "/dir?d=docs" && run.fetched.length === 1,
+      answer: new FakeElement({}, [
+        new FakeElement({ "data-vault-entry": "docs/alpha.md", tag: "a" }),
+      ]),
+    });
+    const docs = tree.children[0]!;
+    docs.open = true;
+    run.panel.listeners.toggle!({ target: docs });
+    await settle();
+    await settle();
+    expect(run.fetched).toEqual(["/dir?d=docs"]);
+    expect(docs.children[0]!.textContent).toBe("This folder could not be loaded: offline");
+    expect(docs.hasAttribute("data-vault-loaded")).toBe(false);
+    run.panel.listeners.toggle!({ target: docs });
+    await settle();
+    await settle();
+    expect(run.fetched).toEqual(["/dir?d=docs", "/dir?d=docs"]);
+    expect(docs.children[0]!.children).toHaveLength(1);
+    expect(docs.hasAttribute("data-vault-loaded")).toBe(true);
+    run.panel.listeners.toggle!({ target: docs });
+    expect(run.fetched).toHaveLength(2);
+  });
+
+  it("marks the displayed tree stale on a newer generation and clears it only on a current refresh", async () => {
+    const shown = new FakeElement({ "data-vault-slot": "tree", "data-vault-generation": "2" });
+    const run = runVaultBrowser({
+      layout: {
+        "data-vault-changes-url": "/api/vault/changes?companion=abc",
+        "data-vault-refresh-url": "/api/vault/view?companion=abc&refresh=1",
+      },
+      tree: shown,
+      answers: [
+        new FakeElement({}, [
+          new FakeElement({ "data-vault-slot": "tree", "data-vault-generation": "3" }),
+        ]),
+        new FakeElement({}, [
+          new FakeElement({ "data-vault-slot": "tree", "data-vault-generation": "4" }),
+        ]),
+      ],
+    });
+    expect(run.streamed).toEqual(["/api/vault/changes?companion=abc"]);
+    const send = (generation: number) =>
+      run.sources[0]!.onmessage!({ data: JSON.stringify({ generation }) });
+    send(2);
+    expect(run.stale.hidden).toBe(true);
+    send(4);
+    expect(run.stale.hidden).toBe(false);
+    const submit = () => run.refresh.listeners.submit!({ preventDefault: () => {} });
+    submit();
+    await settle();
+    await settle();
+    expect(run.fetched).toEqual(["/api/vault/view?companion=abc&refresh=1"]);
+    expect(run.stale.hidden).toBe(false);
+    submit();
+    await settle();
+    await settle();
+    expect(run.stale.hidden).toBe(true);
+  });
+
+  it("keeps the indicator and offers a retry when a refresh fails", async () => {
+    const run = runVaultBrowser({
+      layout: {
+        "data-vault-changes-url": "/changes",
+        "data-vault-refresh-url": "/refresh-view",
+      },
+      tree: new FakeElement({ "data-vault-slot": "tree", "data-vault-generation": "1" }),
+      fails: true,
+    });
+    run.sources[0]!.onmessage!({ data: JSON.stringify({ generation: 2 }) });
+    run.refresh.listeners.submit!({ preventDefault: () => {} });
+    await settle();
+    await settle();
+    expect(run.stale.hidden).toBe(false);
+    expect(run.status.hidden).toBe(false);
+    expect(run.status.textContent).toContain("could not be refreshed: offline");
+    expect(run.status.textContent).toContain("Refresh tree to retry");
+  });
+
+  it("applies a change that arrives before the deferred tree to the tree once it lands", async () => {
+    const run = runVaultBrowser({
+      layout: { "data-vault-view": "/api/vault/view", "data-vault-changes-url": "/changes" },
+      tree: new FakeElement({ "data-vault-slot": "tree", "aria-busy": "true" }),
+      answer: new FakeElement({}, [
+        new FakeElement({ "data-vault-slot": "tree", "data-vault-generation": "1" }),
+      ]),
+    });
+    run.sources[0]!.onmessage!({ data: JSON.stringify({ generation: 2 }) });
+    expect(run.stale.hidden).toBe(true);
+    await settle();
+    await settle();
+    expect(run.stale.hidden).toBe(false);
   });
 
   it("hides and shows the tree and remembers the choice in the browser", () => {
