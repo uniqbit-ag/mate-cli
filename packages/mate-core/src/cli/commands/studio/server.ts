@@ -7,7 +7,12 @@ import {
 } from "./access";
 import { collectStudioInventory, type StudioInventory } from "./inventory";
 import { assembleCompanionPayload, type StudioCompanionResponse } from "./payload";
-import { STUDIO_HOSTNAME } from "./routes";
+import {
+  STUDIO_HOSTNAME,
+  VAULT_CHANGES_ROUTE,
+  VAULT_DIR_ROUTE,
+  VAULT_FILTER_ROUTE,
+} from "./routes";
 import {
   companionDigest,
   parse,
@@ -127,6 +132,16 @@ async function renderStudioDocument(page: StudioPage): Promise<string> {
 async function renderVaultView(page: StudioPage): Promise<string> {
   const views = await import("./views/document");
   return views.renderVaultView(page);
+}
+
+async function renderVaultChildren(page: StudioPage): Promise<string | null> {
+  const views = await import("./views/document");
+  return views.renderVaultChildren(page);
+}
+
+async function renderVaultMatches(page: StudioPage, query: string): Promise<string> {
+  const views = await import("./views/document");
+  return views.renderVaultMatches(page, query);
 }
 
 /** Keep the CLI entry free of eager Studio view imports. */
@@ -367,6 +382,62 @@ export function createStudioFetch(
       );
     }
 
+    if (url.pathname === VAULT_DIR_ROUTE || url.pathname === VAULT_FILTER_ROUTE) {
+      const selection = parseVaultSelection(url);
+      const selected = await selectedCompanion(selection.companionDigest, inventory);
+      if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
+      let listed;
+      try {
+        listed = await vault.tree(selected.path);
+      } catch (error) {
+        return respond(
+          json({ reason: error instanceof Error ? error.message : String(error) }, 400),
+        );
+      }
+      const page: StudioPage = {
+        inventory: await inventory(),
+        selection,
+        companion: selected,
+        payload: null,
+        error: null,
+        collectedAt: null,
+        writable,
+        vault: {
+          tree: listed.tree,
+          open: null,
+          refusal: null,
+          incoming: null,
+          overwritten: null,
+          watching: listed.watching,
+          warning: listed.warning,
+          generation: listed.generation,
+        },
+        terminal: null,
+      };
+      const headers = {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "x-vault-generation": String(listed.generation),
+      };
+      if (url.pathname === VAULT_FILTER_ROUTE) {
+        const matches = await renderVaultMatches(page, url.searchParams.get("q") ?? "");
+        return respond(new Response(matches, { headers }));
+      }
+      const children = await renderVaultChildren(page);
+      if (children === null) {
+        return respond(json({ reason: "that folder is not in the listed tree" }, 404));
+      }
+      return respond(new Response(children, { headers }));
+    }
+
+    if (url.pathname === VAULT_CHANGES_ROUTE) {
+      const selection = parseVaultSelection(url);
+      const selected = await selectedCompanion(selection.companionDigest, inventory);
+      if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
+      server?.timeout?.(request, 0);
+      return respond(vaultChanges(vault, selected.path));
+    }
+
     if (url.pathname === "/api/vault/file") {
       const selection = parseVaultSelection(url);
       const selected = await selectedCompanion(selection.companionDigest, inventory);
@@ -474,6 +545,34 @@ function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: 
       unsubscribe = vault.subscribe(companionPath, requestedPath, (event) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        } catch {
+          unsubscribe();
+        }
+      });
+    },
+    cancel() {
+      unsubscribe();
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    },
+  });
+}
+
+/** Generations only: no paths and no file content leave through this stream. */
+function vaultChanges(vault: VaultManager, companionPath: string): Response {
+  const encoder = new TextEncoder();
+  let unsubscribe = () => {};
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(": studio vault changes\n\n"));
+      unsubscribe = vault.subscribeTree(companionPath, (generation) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ generation })}\n\n`));
         } catch {
           unsubscribe();
         }

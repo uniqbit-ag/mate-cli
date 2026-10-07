@@ -38,5 +38,6 @@ export async function vaultState(
     watching: tree?.watching ?? false,
     warning: tree?.warning ?? null,
     failure,
+    generation: tree?.generation ?? null,
   };
 }

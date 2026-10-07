@@ -11,7 +11,14 @@ import {
   switchView,
   toFields,
 } from "../selection";
-import { renderStudioDocument, renderVaultView } from "./document";
+import {
+  renderStudioDocument,
+  renderVaultChildren,
+  renderVaultMatches,
+  renderVaultView,
+  VAULT_FILTER_LIMIT,
+} from "./document";
+import { fixtureTree } from "../../../../../test/studio-vault-fixture";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
 import type { VaultTreeNode } from "../vault";
 
@@ -350,13 +357,17 @@ describe("renderStudioDocument", () => {
       const vaultForms = forms(renderStudioDocument(page)).filter(({ attrs }) =>
         attrs.includes("data-studio-navigation"),
       );
-      expect(vaultForms.length).toBeGreaterThan(4);
+      expect(vaultForms.length).toBeGreaterThan(2);
+      const markup = renderStudioDocument(page);
+      const links = [...markup.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*data-vault-entry="([^"]*)"/g)];
+      expect(links.length).toBeGreaterThan(2);
+      for (const [, href, entry] of links) {
+        const target = parse(new URL(href!.replaceAll("&amp;", "&"), "http://localhost:1/"));
+        expect(target).toEqual(openFile(current, entry!));
+      }
       for (const { attrs, body, fields } of vaultForms) {
         const target = submitted(fields);
-        const entry = /data-vault-entry="([^"]*)"/.exec(attrs)?.[1];
-        if (entry) expect(target).toEqual(openFile(current, entry));
-        else if (body.includes("Refresh tree"))
-          expect(target).toEqual({ ...current, refresh: true });
+        if (body.includes("Refresh tree")) expect(target).toEqual({ ...current, refresh: true });
         else {
           expect(target.view).toBe("vault");
           expect(target).toEqual(
@@ -370,6 +381,95 @@ describe("renderStudioDocument", () => {
       expect(listing).toContainEqual(openFile(current, "docs/b.md"));
       expect(listing).toContainEqual(openFolder(current, "docs/a"));
       expect(listing).toContainEqual(openFolder(current, null));
+    });
+
+    it("renders collapsed folders empty, addressed by their children route", () => {
+      const markup = renderStudioDocument(
+        vaultPage(
+          { openPath: "docs/a/x.md" },
+          state({ open: { path: "docs/a/x.md", content: "x", token: "t" } }),
+        ),
+      );
+      const other = markup.slice(markup.indexOf('data-vault-dir="other"'));
+      const details = other.slice(0, other.indexOf("</details>"));
+      expect(details).toContain(
+        `data-vault-children-url="/api/vault/dir?companion=${digest}&amp;view=vault&amp;dir=other"`,
+      );
+      expect(details).not.toContain("y.md");
+      expect(markup).not.toContain("other/y.md");
+      expect(opened(markup, "docs")).toBe(true);
+      expect(markup).toContain('data-vault-entry="docs/a/x.md"');
+    });
+
+    it("renders a folder's entries as an unexpanded fragment, only for listed folders", () => {
+      const fragment = renderVaultChildren(vaultPage({ openDir: "docs" }))!;
+      expect(fragment).toContain('data-vault-entry="docs/b.md"');
+      expect(fragment).toContain('data-vault-dir="docs/a"');
+      expect(fragment).not.toContain("x.md");
+      expect(fragment).not.toContain("open=");
+      expect(renderVaultChildren(vaultPage({ openDir: "../outside" }))).toBeNull();
+      expect(renderVaultChildren(vaultPage({ openDir: null }))).toBeNull();
+    });
+
+    it("filters the whole listed tree, including unexpanded folders, and bounds the matches", () => {
+      const found = renderVaultMatches(vaultPage({}), "Y.MD");
+      expect(found).toContain('data-vault-entry="other/y.md"');
+      expect(found).not.toContain("README.md");
+      expect(renderVaultMatches(vaultPage({}), "zzz")).toContain("No files match.");
+      const large = state({ tree: fixtureTree(VAULT_FILTER_LIMIT * 5) });
+      const bounded = renderVaultMatches(vaultPage({}, large), "note-");
+      expect(bounded.match(/data-vault-entry=/g)).toHaveLength(VAULT_FILTER_LIMIT);
+      expect(bounded).toContain(`${VAULT_FILTER_LIMIT * 4} more matches; refine the filter.`);
+    });
+
+    it("keeps the tree markup independent of the repository size and handler-free", () => {
+      /** The same hundred top-level folders, each holding `perFolder` files. */
+      const count = (perFolder: number) => {
+        const wide: VaultTreeNode[] = Array.from({ length: 100 }, (_, folder) => ({
+          name: `area-${folder}`,
+          path: `area-${folder}`,
+          kind: "directory" as const,
+          children: Array.from({ length: perFolder }, (_, file) => ({
+            name: `note-${file}.md`,
+            path: `area-${folder}/note-${file}.md`,
+            kind: "file" as const,
+          })),
+        }));
+        const markup = renderVaultView(vaultPage({}, state({ tree: wide })));
+        const treeMarkup = markup.slice(0, markup.indexOf('data-vault-slot="listing"'));
+        return {
+          nodes: (treeMarkup.match(/<[a-z]/g) ?? []).length,
+          forms: (treeMarkup.match(/<form\b/g) ?? []).length,
+          links: (treeMarkup.match(/<a\b/g) ?? []).length,
+        };
+      };
+      const small = count(1);
+      const large = count(200);
+      expect(large).toEqual(small);
+      expect(large.links).toBe(0);
+    });
+
+    it("offers the refresh control and the refresh and filter addresses", () => {
+      const markup = renderStudioDocument(vaultPage({ openDir: "docs" }));
+      expect(markup).toContain("data-vault-refresh");
+      expect(markup).toContain("Refresh tree");
+      expect(markup).toContain(
+        `data-vault-refresh-url="/api/vault/view?companion=${digest}&amp;view=vault&amp;dir=docs&amp;refresh=1"`,
+      );
+      expect(markup).toContain(
+        `data-vault-filter-url="/api/vault/filter?companion=${digest}&amp;view=vault&amp;dir=docs"`,
+      );
+      expect(markup).toContain(
+        `data-vault-changes-url="/api/vault/changes?companion=${digest}&amp;view=vault&amp;dir=docs"`,
+      );
+      expect(markup).toContain('id="vault-stale"');
+    });
+
+    it("states the tree may be out of date when it is not watched, and carries its generation", () => {
+      const markup = renderVaultView(vaultPage({}, state({ watching: false, generation: 7 })));
+      expect(markup).toContain("The tree may be out of date.");
+      expect(markup).toContain('data-vault-generation="7"');
+      expect(renderVaultView(vaultPage({}))).not.toContain("may be out of date");
     });
 
     it("addresses the deferred tree with the page's own vault selection", () => {

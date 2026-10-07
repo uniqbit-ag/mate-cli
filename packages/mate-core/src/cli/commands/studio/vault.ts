@@ -44,6 +44,8 @@ export interface VaultWatchEvent {
 
 export interface VaultTreeResult {
   tree: VaultTreeNode[];
+  /** Counts watch invalidations seen when this listing was taken; a larger one makes it stale. */
+  generation: number;
   watching: boolean;
   warning: string | null;
 }
@@ -379,6 +381,11 @@ interface SaveRecord {
   expires: ReturnType<typeof setTimeout>;
 }
 
+interface ListedTree {
+  tree: VaultTreeNode[];
+  generation: number;
+}
+
 interface Subscriber {
   path: string;
   notify: (event: VaultWatchEvent) => void;
@@ -400,6 +407,8 @@ export interface VaultManager {
     requestedPath: string,
     notify: (event: VaultWatchEvent) => void,
   ): () => void;
+  /** Reports the listing generation now and on every later invalidation; carries no paths or content. */
+  subscribeTree(companionRoot: string, notify: (generation: number) => void): () => void;
   refresh(companionRoot: string): Promise<VaultTreeResult>;
   deactivate(): void;
   stop(): void;
@@ -412,7 +421,8 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
   const git = deps.git ?? runGit;
   const trees = new Map<string, VaultTreeNode[]>();
   const generations = new Map<string, number>();
-  const listings = new Map<string, Promise<VaultTreeNode[]>>();
+  const listings = new Map<string, Promise<ListedTree>>();
+  const treeSubscribers = new Map<string, Set<(generation: number) => void>>();
   const listed = new Map<string, string[]>();
   const warnings = new Map<string, string | null>();
   const watchers = new Map<string, Map<string, VaultWatcher>>();
@@ -430,7 +440,9 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
 
   const invalidate = (root: string) => {
     trees.delete(root);
-    generations.set(root, (generations.get(root) ?? 0) + 1);
+    const generation = (generations.get(root) ?? 0) + 1;
+    generations.set(root, generation);
+    for (const notifyTree of treeSubscribers.get(root) ?? []) notifyTree(generation);
   };
 
   const notify = async (
@@ -624,7 +636,7 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
   };
 
   /** A change seen while listing leaves the cache empty, so the next request lists again. */
-  const listTree = (root: string): Promise<VaultTreeNode[]> => {
+  const listTree = (root: string): Promise<ListedTree> => {
     const inFlight = listings.get(root);
     if (inFlight) return inFlight;
     const generation = generations.get(root) ?? 0;
@@ -636,7 +648,7 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
         scheduleReconcile(root, files);
         const tree = asTree(files);
         if ((generations.get(root) ?? 0) === generation) trees.set(root, tree);
-        return tree;
+        return { tree, generation };
       } finally {
         listings.delete(root);
       }
@@ -761,11 +773,13 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
   return {
     async tree(companionRoot, refresh = false) {
       const root = await rootKey(companionRoot);
-      const tree = !refresh && trees.get(root);
-      const result = tree || (await listTree(root));
+      const cached = !refresh && trees.get(root);
+      const result: ListedTree = cached
+        ? { tree: cached, generation: generations.get(root) ?? 0 }
+        : await listTree(root);
       startWatching(root);
       return {
-        tree: result,
+        ...result,
         watching: watchers.has(root),
         warning: warnings.get(root) ?? null,
       };
@@ -775,7 +789,14 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
       if (refresh) invalidate(root);
       startWatching(root);
       const tree = trees.get(root);
-      if (tree) return { tree, watching: watchers.has(root), warning: warnings.get(root) ?? null };
+      if (tree) {
+        return {
+          tree,
+          generation: generations.get(root) ?? 0,
+          watching: watchers.has(root),
+          warning: warnings.get(root) ?? null,
+        };
+      }
       void listTree(root).catch(() => {});
       return null;
     },
@@ -818,6 +839,30 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
         if (currentSubscribers.size === 0) subscribers.delete(key);
       };
     },
+    subscribeTree(companionRoot, notifyTree) {
+      let active = true;
+      let current: { root: string; notifyTree: (generation: number) => void } | null = null;
+      void rootKey(companionRoot).then(
+        (root) => {
+          if (!active) return;
+          current = { root, notifyTree };
+          const set = treeSubscribers.get(root) ?? new Set();
+          set.add(notifyTree);
+          treeSubscribers.set(root, set);
+          startWatching(root);
+          if (!trees.has(root)) void listTree(root).catch(() => {});
+          notifyTree(generations.get(root) ?? 0);
+        },
+        () => {},
+      );
+      return () => {
+        active = false;
+        if (!current) return;
+        const set = treeSubscribers.get(current.root);
+        set?.delete(current.notifyTree);
+        if (set?.size === 0) treeSubscribers.delete(current.root);
+      };
+    },
     async refresh(companionRoot) {
       return this.tree(companionRoot, true);
     },
@@ -828,6 +873,7 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
       }
       activeRoot = null;
       subscribers.clear();
+      treeSubscribers.clear();
     },
     stop() {
       for (const root of watchers.keys()) closeWatchers(root);
@@ -838,6 +884,7 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
       pendingEvents.clear();
       recentSaves.clear();
       subscribers.clear();
+      treeSubscribers.clear();
     },
     getRecovery(companionRoot, requestedPath) {
       const root = path.resolve(companionRoot);
