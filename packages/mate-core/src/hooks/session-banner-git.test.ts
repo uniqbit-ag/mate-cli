@@ -105,45 +105,45 @@ afterEach(() => {
 });
 
 describe("SessionStart repairs the companion", () => {
-  test("runs the unattended synchronization before emitting its banner", () => {
+  test("runs the unattended synchronization before emitting its banner", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
 
-    const outcome = buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
 
     expect(outcome.exitCode).toBe(0);
     expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
     expect(bannerMessage(outcome.stdout)).toContain(fixture.companion);
   });
 
-  test("performs no Git work when the synchronization is not due", () => {
+  test("performs no Git work when the synchronization is not due", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     recordCompanionSync(fixture.companion, new Date(), fixture.home);
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
   });
 
-  test("performs no Git work when the Git policy is not automatic", () => {
+  test("performs no Git work when the Git policy is not automatic", async () => {
     const fixture = makeFixture("manual");
     commitUpstream(fixture, "remote");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
   });
 
-  test("performs no Git work in a managed session", () => {
+  test("performs no Git work in a managed session", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    buildBanner(
+    await buildBanner(
       { MATE_ARTIFACT_PATH: fixture.companion, MATE_REPO_PATH: fixture.repo },
       fixture.repo,
       [],
@@ -154,12 +154,12 @@ describe("SessionStart repairs the companion", () => {
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
   });
 
-  test("stays inert when no companion resolves", () => {
+  test("stays inert when no companion resolves", async () => {
     const fixture = makeFixture();
     const plain = path.join(fixture.root, "plain");
     fs.mkdirSync(plain);
 
-    const outcome = buildBanner({}, plain, [], { homeDir: fixture.home });
+    const outcome = await buildBanner({}, plain, [], { homeDir: fixture.home });
 
     expect(outcome).toEqual({ exitCode: 0, stdout: "" });
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
@@ -167,37 +167,37 @@ describe("SessionStart repairs the companion", () => {
 });
 
 describe("an unfinished synchronization is reported to the operator", () => {
-  test("names the reason and the recovery command in systemMessage", () => {
+  test("names the reason and the recovery command in systemMessage", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
 
     const message = bannerMessage(
-      buildBanner({}, fixture.repo, [], { homeDir: fixture.home }).stdout,
+      (await buildBanner({}, fixture.repo, [], { homeDir: fixture.home })).stdout,
     );
 
     expect(message).toContain("diverged");
     expect(message).toContain(COMPANION_SYNC_COMMAND);
   });
 
-  test("reports no Git staleness note when the synchronization completes", () => {
+  test("reports no Git staleness note when the synchronization completes", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
 
     const message = bannerMessage(
-      buildBanner({}, fixture.repo, [], { homeDir: fixture.home }).stdout,
+      (await buildBanner({}, fixture.repo, [], { homeDir: fixture.home })).stdout,
     );
 
     expect(message).not.toContain(COMPANION_SYNC_COMMAND);
   });
 
-  test("the note never reaches the model through additionalContext", () => {
+  test("the note never reaches the model through additionalContext", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
 
     const banner = bannerMessage(
-      buildBanner({}, fixture.repo, [], { homeDir: fixture.home }).stdout,
+      (await buildBanner({}, fixture.repo, [], { homeDir: fixture.home })).stdout,
     );
     expect(banner).toContain(COMPANION_SYNC_COMMAND);
 
@@ -208,12 +208,12 @@ describe("an unfinished synchronization is reported to the operator", () => {
 });
 
 describe("session start is never blocked", () => {
-  test("exits zero and emits its banner when the remote is unreachable", () => {
+  test("exits zero and emits its banner when the remote is unreachable", async () => {
     const fixture = makeFixture();
     git(fixture.companion, "remote", "set-url", "origin", path.join(fixture.root, "gone.git"));
 
     const started = Date.now();
-    const outcome = buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
     const elapsed = Date.now() - started;
 
     expect(outcome.exitCode).toBe(0);
@@ -221,12 +221,15 @@ describe("session start is never blocked", () => {
     expect(elapsed).toBeLessThan(TIME_BOUND_MS);
   });
 
-  test("exits zero within the bound when Git work exceeds its timeout", () => {
+  test("exits zero within the bound when Git work exceeds its timeout", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
 
     const started = Date.now();
-    const outcome = buildBanner({}, fixture.repo, [], { homeDir: fixture.home, timeoutMs: 1 });
+    const outcome = await buildBanner({}, fixture.repo, [], {
+      homeDir: fixture.home,
+      timeoutMs: 1,
+    });
     const elapsed = Date.now() - started;
 
     expect(outcome.exitCode).toBe(0);

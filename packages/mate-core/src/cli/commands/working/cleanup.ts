@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../../framework";
+import { gitEnvironment } from "../../../runtime/companion-git";
 import type { RootKind } from "../../../lib/orchestrator/root-context";
 import {
   collectWorkspaceInventory,
@@ -39,7 +40,9 @@ export interface WorkingCleanupCommandDeps {
 
 async function resolveGitRoot(cwd: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"]);
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], {
+      env: gitEnvironment(),
+    });
     return canonicalPath(stdout.trim());
   } catch {
     return null;

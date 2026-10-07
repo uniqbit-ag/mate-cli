@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -17,15 +16,12 @@ import {
 import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
 import { applySetupCompatibilities } from "../../tools/setup";
 import { findRepoLocalRegistryFile } from "./repo-local-registry";
-import { runPreferringSsh, toSshUrl } from "../../runtime/companion-git";
+import { companionGit, describeGitFailure, type CompanionGit } from "../../runtime/companion-git";
 
-export interface GitCommandResult {
-  status: number | null;
-  stdout: string;
-  stderr: string;
+export interface HubGitOptions {
+  /** Environment Git runs with. */
+  env?: Record<string, string | undefined>;
 }
-
-export type GitCommand = (cwd: string, args: string[]) => GitCommandResult;
 
 export interface HubSource {
   kind: "git" | "local";
@@ -47,16 +43,15 @@ export interface HubPluginSyncDeps {
   setup?: (companionPath: string, config: FrameworkConfig, mode: "setup" | "sync") => Promise<void>;
 }
 
-export function defaultGitCommand(cwd: string, args: string[]): GitCommandResult {
-  const result = spawnSync("git", ["-C", cwd, ...args], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return {
-    status: result.status,
-    stdout: String(result.stdout ?? "").trim(),
-    stderr: String(result.stderr ?? "").trim(),
-  };
+/** Hub work is operator-driven, so it may prompt when a terminal is attached. */
+function hubGit(cwd: string, options: HubGitOptions = {}): CompanionGit {
+  return companionGit(cwd, { prompt: "if-terminal", env: options.env });
+}
+
+async function gitOutput(git: CompanionGit, args: string[]): Promise<string | null> {
+  const result = await git.run(args);
+  const stdout = result.stdout.trim();
+  return result.status === 0 && stdout ? stdout : null;
 }
 
 function isInsideDir(parent: string, candidate: string): boolean {
@@ -138,32 +133,36 @@ export async function initializeCompanionHub(
   return hubPath;
 }
 
-export function discoverGitSource(
+export async function discoverGitSource(
   sourcePath: string,
-  git: GitCommand = defaultGitCommand,
-): HubSource {
-  const root = git(sourcePath, ["rev-parse", "--show-toplevel"]);
-  if (root.status !== 0 || !root.stdout) return { kind: "local", path: path.resolve(sourcePath) };
-
-  const remote = git(sourcePath, ["config", "--get", "remote.origin.url"]);
-  if (remote.status !== 0 || !remote.stdout)
+  options: HubGitOptions = {},
+): Promise<HubSource> {
+  const git = companionGit(sourcePath, { prompt: "never", env: options.env });
+  if (!(await gitOutput(git, ["rev-parse", "--show-toplevel"]))) {
     return { kind: "local", path: path.resolve(sourcePath) };
+  }
 
-  const branch = git(sourcePath, ["symbolic-ref", "--short", "HEAD"]);
+  const remote = await gitOutput(git, ["config", "--get", "remote.origin.url"]);
+  if (!remote) return { kind: "local", path: path.resolve(sourcePath) };
+
+  const branch = await gitOutput(git, ["symbolic-ref", "--short", "HEAD"]);
   return {
     kind: "git",
     path: path.resolve(sourcePath),
-    url: remote.stdout,
-    ref: branch.status === 0 && branch.stdout ? branch.stdout : undefined,
+    url: remote,
+    ref: branch ?? undefined,
   };
 }
 
-export function discoverHubSource(source: string, git: GitCommand = defaultGitCommand): HubSource {
+export async function discoverHubSource(
+  source: string,
+  options: HubGitOptions = {},
+): Promise<HubSource> {
   const trimmed = source.trim();
   if (/^(?:https?|ssh|git):\/\//i.test(trimmed) || trimmed.startsWith("git@")) {
     return { kind: "git", url: trimmed };
   }
-  return discoverGitSource(path.resolve(trimmed), git);
+  return discoverGitSource(path.resolve(trimmed), options);
 }
 
 function sourceForManifest(source: HubSource, fallbackPath: string): HubMemberSource {
@@ -171,15 +170,6 @@ function sourceForManifest(source: HubSource, fallbackPath: string): HubMemberSo
     return { kind: "git", url: source.url, ref: source.ref };
   }
   return { kind: "local", path: source.path ?? fallbackPath };
-}
-
-function gitOutputOrThrow(result: GitCommandResult, operation: string): string {
-  if (result.status !== 0) {
-    throw new Error(
-      `${operation} failed: ${result.stderr || result.stdout || "unknown Git error"}`,
-    );
-  }
-  return result.stdout;
 }
 
 async function copyWithoutGit(sourcePath: string, destination: string): Promise<void> {
@@ -198,16 +188,19 @@ async function assertMaterializedCompanion(memberPath: string): Promise<void> {
   }
 }
 
-async function currentCommit(memberPath: string, git: GitCommand): Promise<string> {
-  return gitOutputOrThrow(git(memberPath, ["rev-parse", "HEAD"]), `Reading ${memberPath} commit`);
+async function currentCommit(memberPath: string, options: HubGitOptions): Promise<string> {
+  const head = await hubGit(memberPath, options).run(["rev-parse", "HEAD"]);
+  if (head.status !== 0) {
+    throw new Error(`Reading ${memberPath} commit failed: ${describeGitFailure(head)}`);
+  }
+  return head.stdout.trim();
 }
 
 export async function materializeHubMember(
   hubPath: string,
   source: HubSource,
-  options: { id?: string; memberPath?: string; git?: GitCommand } = {},
+  options: { id?: string; memberPath?: string } & HubGitOptions = {},
 ): Promise<HubMember> {
-  const git = options.git ?? defaultGitCommand;
   const sourceName = source.url ?? source.path ?? "companion";
   const id = normalizeHubMemberId(options.id ?? path.basename(sourceName));
   const relativePath = options.memberPath ?? memberPathForId(id);
@@ -218,15 +211,12 @@ export async function materializeHubMember(
   await fs.mkdir(path.dirname(destination), { recursive: true });
   try {
     if (source.kind === "git") {
-      const branch = source.ref ? ["--branch", source.ref] : [];
-      const cloneFrom = (url: string) => git(hubPath, ["clone", ...branch, url, destination]);
-      const sshUrl = toSshUrl(source.url!);
-      let clone = sshUrl ? cloneFrom(sshUrl) : undefined;
-      if (!clone || clone.status !== 0) {
-        if (clone) await fs.rm(destination, { recursive: true, force: true });
-        clone = cloneFrom(source.url!);
+      const clone = await hubGit(hubPath, options).clone(source.url!, destination, {
+        branch: source.ref,
+      });
+      if (clone.status !== 0) {
+        throw new Error(`Cloning ${source.url} failed: ${describeGitFailure(clone)}`);
       }
-      gitOutputOrThrow(clone, `Cloning ${source.url}`);
     } else {
       await copyWithoutGit(source.path!, destination);
     }
@@ -237,7 +227,9 @@ export async function materializeHubMember(
       path: relativePath,
       source: sourceForManifest(source, source.path ?? relativePath),
     };
-    if (source.kind === "git") member.materializedCommit = await currentCommit(destination, git);
+    if (source.kind === "git") {
+      member.materializedCommit = await currentCommit(destination, options);
+    }
     return member;
   } catch (error) {
     await fs.rm(destination, { recursive: true, force: true });
@@ -248,7 +240,7 @@ export async function materializeHubMember(
 export async function addHubMember(
   hubPath: string,
   source: HubSource,
-  options: { id?: string; memberPath?: string; git?: GitCommand } = {},
+  options: { id?: string; memberPath?: string } & HubGitOptions = {},
 ): Promise<HubMember> {
   const { config, store } = await assertHubRoot(hubPath);
   const member = await materializeHubMember(hubPath, source, options);
@@ -261,98 +253,57 @@ export async function addHubMember(
   return member;
 }
 
-function syncTarget(memberPath: string, git: GitCommand): string | null {
-  const upstream = git(memberPath, [
-    "rev-parse",
-    "--abbrev-ref",
-    "--symbolic-full-name",
-    "@{upstream}",
-  ]);
-  if (upstream.status !== 0 || !upstream.stdout) return null;
-  return upstream.stdout;
-}
-
 async function syncHubMember(
   hubPath: string,
   member: HubMember,
-  git: GitCommand = defaultGitCommand,
+  options: HubGitOptions,
 ): Promise<HubSyncResult> {
   const memberPath = path.resolve(hubPath, member.path);
   if (member.source.kind === "local") {
     return { id: member.id, status: "local-only", message: "local-only child has no Git source" };
   }
+  const git = hubGit(memberPath, options);
+  const failed = (message: string): HubSyncResult => ({ id: member.id, status: "failed", message });
 
-  const dirty = git(memberPath, ["status", "--porcelain=v1", "--untracked-files=all"]);
-  if (dirty.status !== 0) {
-    return {
-      id: member.id,
-      status: "failed",
-      message: dirty.stderr || "unable to inspect Git state",
-    };
-  }
-  if (dirty.stdout) {
+  const dirty = await git.run(["status", "--porcelain=v1", "--untracked-files=all"]);
+  if (dirty.status !== 0) return failed(dirty.stderr.trim() || "unable to inspect Git state");
+  if (dirty.stdout.trim()) {
     return { id: member.id, status: "dirty", message: "local changes must be resolved first" };
   }
 
-  const fetch = runPreferringSsh(
-    (args) => git(memberPath, [...args]),
-    ["fetch", "origin"],
-    (result) => ({ ...result, status: result.status ?? 1 }),
-  );
-  if (fetch.status !== 0) {
-    return { id: member.id, status: "failed", message: fetch.stderr || "fetch failed" };
-  }
-  const target = syncTarget(memberPath, git);
-  if (!target) {
-    return { id: member.id, status: "failed", message: "no tracked upstream branch" };
-  }
-  const counts = git(memberPath, ["rev-list", "--left-right", "--count", `HEAD...${target}`]);
-  if (counts.status !== 0) {
-    return {
-      id: member.id,
-      status: "failed",
-      message: counts.stderr || "unable to compare branches",
-    };
-  }
-  const [ahead, behind] = counts.stdout.split(/\s+/).map(Number);
-  if (ahead > 0 && behind > 0) {
+  const fetch = await git.fetch(["origin"]);
+  if (fetch.status !== 0) return failed(fetch.stderr.trim() || "fetch failed");
+  const target = await git.upstreamTarget();
+  if (!target) return failed("no synchronization target resolves");
+  const fork = await git.forkState(target.ref);
+  if (!fork) return failed("unable to compare branches");
+  if (fork.forked) {
     return {
       id: member.id,
       status: "divergent",
       message: "local and remote branches have diverged",
     };
   }
-  if (behind === 0) {
-    const commit = await currentCommit(memberPath, git);
+  if (fork.behind === 0) {
     return {
       id: member.id,
       status: "up-to-date",
       message: "already up to date",
-      materializedCommit: commit,
+      materializedCommit: await currentCommit(memberPath, options),
     };
   }
 
-  const readTree = git(memberPath, ["read-tree", "-u", "-m", target]);
+  const readTree = await git.run(["read-tree", "-u", "-m", target.ref]);
   if (readTree.status !== 0) {
-    return {
-      id: member.id,
-      status: "failed",
-      message: readTree.stderr || "fast-forward worktree update failed",
-    };
+    return failed(readTree.stderr.trim() || "fast-forward worktree update failed");
   }
-  const branch = git(memberPath, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  if (branch.status !== 0 || !branch.stdout) {
-    return { id: member.id, status: "failed", message: "cannot advance a detached HEAD" };
-  }
-  const updateRef = git(memberPath, ["update-ref", `refs/heads/${branch.stdout}`, target, "HEAD"]);
+  const branch = await gitOutput(git, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  if (!branch) return failed("cannot advance a detached HEAD");
+  const updateRef = await git.run(["update-ref", `refs/heads/${branch}`, target.ref, "HEAD"]);
   if (updateRef.status !== 0) {
-    return {
-      id: member.id,
-      status: "failed",
-      message: updateRef.stderr || "fast-forward ref update failed",
-    };
+    return failed(updateRef.stderr.trim() || "fast-forward ref update failed");
   }
-  const commit = await currentCommit(memberPath, git);
+  const commit = await currentCommit(memberPath, options);
   return {
     id: member.id,
     status: "updated",
@@ -363,12 +314,12 @@ async function syncHubMember(
 
 export async function syncHub(
   hubPath: string,
-  git: GitCommand = defaultGitCommand,
+  options: HubGitOptions = {},
 ): Promise<HubSyncResult[]> {
   const { config, store } = await assertHubRoot(hubPath);
   const results: HubSyncResult[] = [];
   for (const member of config.hub!.companions) {
-    const result = await syncHubMember(hubPath, member, git);
+    const result = await syncHubMember(hubPath, member, options);
     results.push(result);
     if (result.materializedCommit && result.status === "updated") {
       member.materializedCommit = result.materializedCommit;

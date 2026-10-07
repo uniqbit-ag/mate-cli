@@ -4,6 +4,8 @@ import * as fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
+import { gitEnvironment } from "../../../runtime/companion-git";
+
 export interface VaultTreeNode {
   name: string;
   path: string;
@@ -167,7 +169,7 @@ export async function resolveVaultPath(
 
 function runGit(args: string[], input?: string): Promise<VaultGitResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn("git", args, { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("git", args, { stdio: ["pipe", "pipe", "pipe"], env: gitEnvironment() });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));

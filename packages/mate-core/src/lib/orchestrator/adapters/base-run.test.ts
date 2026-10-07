@@ -1,9 +1,10 @@
+import * as childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
 import path from "node:path";
 import type { spawn as SpawnFn } from "node:child_process";
 import type { AdapterContext } from "./base";
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 type SpawnResult = {
   child: EventEmitter & {
@@ -13,6 +14,9 @@ type SpawnResult = {
   stdout?: EventEmitter;
   stderr?: EventEmitter;
 };
+
+/** Captured as a value before `mock.module()` rewrites the export slot. */
+const realSpawn = childProcess.spawn;
 
 let spawnImpl: (
   command: string,
@@ -26,6 +30,11 @@ mock.module("node:child_process", () => ({
 }));
 
 const { LaunchAdapter } = await import("./base");
+
+/** `mock.module()` outlives this file; later files must reach the real spawn. */
+afterAll(() => {
+  spawnImpl = realSpawn as unknown as typeof spawnImpl;
+});
 
 function makeContext(): AdapterContext {
   return {

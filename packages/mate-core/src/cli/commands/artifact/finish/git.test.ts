@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { makeSshStub, stubSshUrl } from "../../../../../../../test/ssh-stub";
 import { defaultGitOps } from "./git";
 
 const tempRoots: string[] = [];
@@ -249,5 +250,83 @@ describe("defaultGitOps", () => {
     git(root, ["config", "init.defaultBranch", "trunk"]);
 
     await expect(defaultGitOps(root).defaultBranch()).resolves.toBe("trunk");
+  });
+});
+
+describe("publication credentials", () => {
+  async function publishable(): Promise<{ root: string; remote: string; local: string }> {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-auth-")));
+    tempRoots.push(root);
+    const remote = path.join(root, "remote.git");
+    const local = path.join(root, "local");
+    git(root, ["init", "--bare", "-q", "-b", "main", remote]);
+    git(root, ["clone", "-q", remote, local]);
+    configureGit(local);
+    git(local, ["checkout", "-q", "-b", "main"]);
+    await fs.writeFile(path.join(local, "spec.md"), "published\n", "utf8");
+    git(local, ["add", "."]);
+    git(local, ["commit", "-qm", "publish"]);
+    git(local, ["push", "-qu", "origin", "main"]);
+    await fs.writeFile(path.join(local, "spec.md"), "published again\n", "utf8");
+    git(local, ["commit", "-qam", "publish again"]);
+    git(local, ["tag", "-a", "acme-v1", "-m", "Publish acme"]);
+    return { root, remote, local };
+  }
+
+  test("an SSH passphrase failure names ssh-add and keeps the commit and tag", async () => {
+    const { root, remote, local } = await publishable();
+    git(local, ["remote", "set-url", "origin", stubSshUrl(remote)]);
+    const stub = makeSshStub(root);
+    const head = gitOutput(local, ["rev-parse", "HEAD"]);
+
+    const started = Date.now();
+    const push = await defaultGitOps(local, undefined, { env: stub.env("passphrase") }).push();
+
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(push.ok).toBe(false);
+    expect(push.error).toContain("ssh-add");
+    expect(stub.calls()[0]).toContain("BatchMode=yes");
+    expect(gitOutput(local, ["rev-parse", "HEAD"])).toBe(head);
+    expect(gitOutput(local, ["tag", "--list", "acme-v1"])).toBe("acme-v1");
+
+    const rerun = await defaultGitOps(local, undefined, { env: stub.env("ok") }).push();
+
+    expect(rerun.ok).toBe(true);
+    expect(gitOutput(remote, ["rev-parse", "main"])).toBe(head);
+    expect(gitOutput(remote, ["tag", "--list", "acme-v1"])).toBe("acme-v1");
+  });
+
+  test("an HTTPS credential failure names a credential helper without prompting", async () => {
+    const { root, local } = await publishable();
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: () =>
+        new Response("unauthorized", {
+          status: 401,
+          headers: { "WWW-Authenticate": 'Basic realm="acme"' },
+        }),
+    });
+    try {
+      git(local, ["remote", "set-url", "origin", `http://127.0.0.1:${server.port}/acme.git`]);
+      /** An editor's askpass helper would wait for input; publication must not call it. */
+      const askPass = path.join(root, "askpass");
+      await fs.writeFile(askPass, "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
+      const env = makeSshStub(root).env("refused", {
+        GIT_ASKPASS: askPass,
+        GIT_CONFIG_COUNT: "0",
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+      });
+      const ops = defaultGitOps(local, undefined, { env });
+
+      const push = await ops.push();
+
+      expect(push.ok).toBe(false);
+      expect(push.error).toContain("credential helper");
+      await expect(ops.fetch()).rejects.toThrow("credential helper");
+    } finally {
+      server.stop(true);
+    }
   });
 });

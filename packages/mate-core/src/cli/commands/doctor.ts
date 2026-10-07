@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { gitEnvironment } from "../../runtime/companion-git";
 import { getActiveDistribution } from "../../distribution";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
@@ -80,6 +81,7 @@ function defaultGitHead(memberPath: string): string | null {
   try {
     return execFileSync("git", ["-C", memberPath, "rev-parse", "HEAD"], {
       stdio: ["ignore", "pipe", "ignore"],
+      env: gitEnvironment(),
     })
       .toString()
       .trim();

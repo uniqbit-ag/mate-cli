@@ -1,40 +1,27 @@
 // Git index and merge operations must remain sequential.
 // oxlint-disable no-await-in-loop
-import { execFile as execFileCallback, spawn as spawnChild } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import {
+  companionGit,
   describeGitFailure,
-  gitEnvironment,
   isAuthenticationFailure,
   outputLines,
-  REMOTE_URLS_QUERY,
-  resolveUpstreamTargetWith,
-  shouldRetryWithoutSsh,
-  sshRewriteArgs,
   type GitResult,
+  type UpstreamTarget,
 } from "../../runtime/companion-git";
 import { recordCompanionSync } from "../../runtime/companion-git-state";
 import { LaunchPreflightError } from "./types";
 
-const execFile = promisify(execFileCallback);
-
-/** Bounded but far above any diagnostic output; default 1 MiB kills git mid-merge on large trees. */
-const GIT_MAX_BUFFER = 64 * 1024 * 1024;
-
-export type GitCommandResult = GitResult;
+type GitCommandResult = GitResult;
 
 export { describeGitFailure };
 
-export type GitExecutionMode = "captured" | "interactive";
-
-export type GitRunner = (
-  args: readonly string[],
-  cwd: string,
-  mode?: GitExecutionMode,
-) => Promise<GitCommandResult>;
+export interface CompanionGitSyncOptions {
+  /** Environment Git runs with. */
+  env?: Record<string, string | undefined>;
+}
 
 export interface CompanionGitSyncResult {
   skipped: boolean;
@@ -84,66 +71,9 @@ export class CompanionGitSyncError extends LaunchPreflightError {
   }
 }
 
-export const companionGitSyncDeps: { runGit: GitRunner } = {
-  runGit: async (args, cwd, mode = "captured") => {
-    const captured = gitEnvironment(process.env);
-    const { GIT_TERMINAL_PROMPT: _prompt, ...interactive } = captured;
-    const env = mode === "captured" ? captured : interactive;
-
-    if (mode === "interactive") {
-      return new Promise((resolve) => {
-        let settled = false;
-        const finish = (result: GitCommandResult) => {
-          if (settled) return;
-          settled = true;
-          resolve(result);
-        };
-
-        const child = spawnChild("git", [...args], {
-          cwd,
-          env,
-          stdio: "inherit",
-        });
-        child.once("error", (error) => {
-          finish({ status: 1, stdout: "", stderr: error.message });
-        });
-        child.once("close", (status) => {
-          finish({ status: status ?? 1, stdout: "", stderr: "" });
-        });
-      });
-    }
-
-    try {
-      const result = await execFile("git", [...args], {
-        cwd,
-        encoding: "utf8",
-        env,
-        maxBuffer: GIT_MAX_BUFFER,
-      });
-      return { status: 0, stdout: String(result.stdout), stderr: String(result.stderr) };
-    } catch (error) {
-      const commandError = error as {
-        code?: number | string;
-        stdout?: string;
-        stderr?: string;
-        message?: string;
-      };
-      return {
-        status: typeof commandError.code === "number" ? commandError.code : 1,
-        stdout: commandError.stdout ?? "",
-        stderr: commandError.stderr ?? commandError.message ?? "",
-      };
-    }
-  },
-};
-
 const MANAGED_ROOTS = [".mate", ".opencode", ".claude", ".agents", ".graphify"];
 
-interface SyncTarget {
-  remote: string;
-  branch: string;
-  ref: string;
-}
+type SyncTarget = UpstreamTarget;
 
 function isManagedPath(filePath: string): boolean {
   const normalized = filePath.replaceAll("\\", "/").replace(/^\.\//, "");
@@ -151,7 +81,7 @@ function isManagedPath(filePath: string): boolean {
 }
 
 export class CompanionGitSync {
-  constructor(private readonly runGit: GitRunner = companionGitSyncDeps.runGit) {}
+  constructor(private readonly options: CompanionGitSyncOptions = {}) {}
 
   async sync(
     companionPath: string,
@@ -247,23 +177,16 @@ export class CompanionGitSync {
     };
   }
 
-  /**
-   * SSH attempt stays captured: a failure there is expected noise, and SSH
-   * still prompts for passphrases or host keys on the terminal itself.
-   */
-  private async fetch(
+  /** Only this fetch may prompt, and only when the caller is interactive. */
+  private fetch(
     companionPath: string,
     target: SyncTarget,
     interactiveGit: boolean,
   ): Promise<GitCommandResult> {
-    const args = ["fetch", target.remote, target.branch];
-    const remotes = await this.command(companionPath, REMOTE_URLS_QUERY);
-    const rewrite = remotes.status === 0 ? sshRewriteArgs(remotes.stdout) : [];
-    if (rewrite.length > 0) {
-      const overSsh = await this.command(companionPath, [...rewrite, ...args]);
-      if (!shouldRetryWithoutSsh(overSsh)) return overSsh;
-    }
-    return this.command(companionPath, args, interactiveGit ? "interactive" : undefined);
+    return companionGit(companionPath, {
+      prompt: interactiveGit ? "if-terminal" : "never",
+      env: this.options.env,
+    }).fetch([target.remote, target.branch]);
   }
 
   private async mergeAndRestore(
@@ -376,7 +299,10 @@ export class CompanionGitSync {
    * must never disagree about which upstream they mean.
    */
   private async resolveSyncTarget(companionPath: string): Promise<SyncTarget> {
-    const target = await resolveUpstreamTargetWith((args) => this.command(companionPath, args));
+    const target = await companionGit(companionPath, {
+      prompt: "never",
+      env: this.options.env,
+    }).upstreamTarget();
     if (target) return target;
 
     throw this.failure(
@@ -483,12 +409,8 @@ export class CompanionGitSync {
     }
   }
 
-  private async command(
-    companionPath: string,
-    args: readonly string[],
-    mode?: GitExecutionMode,
-  ): Promise<GitCommandResult> {
-    return mode ? this.runGit(args, companionPath, mode) : this.runGit(args, companionPath);
+  private command(companionPath: string, args: readonly string[]): Promise<GitCommandResult> {
+    return companionGit(companionPath, { prompt: "never", env: this.options.env }).run(args);
   }
 
   private detail(result: GitCommandResult): string {
@@ -510,9 +432,5 @@ export async function syncCompanionGit(
   workingRepoPath?: string,
   interactiveGit = false,
 ): Promise<CompanionGitSyncResult> {
-  return new CompanionGitSync(companionGitSyncDeps.runGit).sync(
-    companionPath,
-    workingRepoPath,
-    interactiveGit,
-  );
+  return new CompanionGitSync().sync(companionPath, workingRepoPath, interactiveGit);
 }

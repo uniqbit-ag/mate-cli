@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { gitEnvironment } from "../runtime/companion-git";
 import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
 import { companionLinkPath } from "../runtime/repo-local";
@@ -143,6 +144,7 @@ function isGitignored(target: string, ctx: GuardContext): boolean {
   const relPath = path.relative(root, target);
   const result = spawnSync("git", ["-C", root, "check-ignore", "--no-index", "-q", "--", relPath], {
     stdio: "ignore",
+    env: gitEnvironment(),
   });
   return result.status === 0;
 }
@@ -156,6 +158,7 @@ function isGitTracked(target: string, ctx: GuardContext): boolean {
   const relPath = path.relative(root, target);
   const result = spawnSync("git", ["-C", root, "ls-files", "--error-unmatch", "--", relPath], {
     stdio: "ignore",
+    env: gitEnvironment(),
   });
   return result.status === 0;
 }
@@ -226,11 +229,14 @@ function checkFilePath(
  * gated on the absence of a launch environment, and the path refusal keeps its
  * input-only verdict and its double-load tolerance untouched.
  */
-function checkForkedCompanion(filePath: string, ctx: GuardContext): HookOutcome | null {
+async function checkForkedCompanion(
+  filePath: string,
+  ctx: GuardContext,
+): Promise<HookOutcome | null> {
   if (!filePath || !artifactLikePath(filePath)) return null;
   if (!isCompanionPath(normalizePath(filePath, ctx), ctx)) return null;
 
-  const refusal = companionForkRefusal(ctx.env, ctx.companion);
+  const refusal = await companionForkRefusal(ctx.env, ctx.companion);
   return refusal ? { exitCode: 2, stderr: `${refusal}\n` } : null;
 }
 
@@ -250,7 +256,11 @@ export function commandMatches(command: string): string[] {
  * Fails open only when no Mate context resolves from either source; in a
  * wrapped Working Repository the guard runs without a launch.
  */
-export function evaluate(payload: unknown, env: HookEnv, cwd: string = process.cwd()): HookOutcome {
+export async function evaluate(
+  payload: unknown,
+  env: HookEnv,
+  cwd: string = process.cwd(),
+): Promise<HookOutcome> {
   const allow: HookOutcome = { exitCode: 0, stderr: "" };
 
   const ctx = guardContext(env, cwd);
@@ -267,7 +277,7 @@ export function evaluate(payload: unknown, env: HookEnv, cwd: string = process.c
     const filePath = String(toolInput.file_path ?? "");
     /** The path refusal wins when both apply: its message is not replaced. */
     const outcome = checkFilePath(filePath, ctx, toolName === "Edit" || toolName === "MultiEdit");
-    return outcome ?? checkForkedCompanion(filePath, ctx) ?? allow;
+    return outcome ?? (await checkForkedCompanion(filePath, ctx)) ?? allow;
   }
 
   if (toolName === "Bash") {
@@ -278,7 +288,8 @@ export function evaluate(payload: unknown, env: HookEnv, cwd: string = process.c
       if (outcome) return outcome;
     }
     for (const target of targets) {
-      const outcome = checkForkedCompanion(target, ctx);
+      // oxlint-disable-next-line no-await-in-loop -- the first refusal wins
+      const outcome = await checkForkedCompanion(target, ctx);
       if (outcome) return outcome;
     }
     return allow;
@@ -303,7 +314,7 @@ export async function run(): Promise<number> {
   } catch {
     payload = {};
   }
-  const outcome = evaluate(payload, process.env);
+  const outcome = await evaluate(payload, process.env);
   if (outcome.stderr) process.stderr.write(outcome.stderr);
   return outcome.exitCode;
 }

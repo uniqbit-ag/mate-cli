@@ -6,12 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { CompanionGitSync } from "../lib/orchestrator/companion-git-sync";
-import {
-  companionForkState,
-  resolveUpstreamTargetSync,
-  resolveUpstreamTargetWith,
-  runGitSync,
-} from "./companion-git";
+import { companionForkState, companionGit } from "./companion-git";
 import {
   COMPANION_SYNC_TTL_MS,
   isCompanionSyncDue,
@@ -23,11 +18,13 @@ import {
   cachedCompanionForkState,
   companionForkRefusal,
   COMPANION_SYNC_COMMAND,
+  COMPANION_SYNC_TIMEOUT_MS,
   persistedCompanionGitStalenessLines,
   syncCompanionUnattended,
   unattendedSyncStalenessLines,
 } from "./companion-sync";
 import { emptyCompanionPolicy } from "./policy";
+import { makeSshStub, stubSshUrl } from "../../../../test/ssh-stub";
 
 const tempRoots: string[] = [];
 
@@ -98,95 +95,93 @@ function fetchOnly(fixture: Fixture): void {
   git(fixture.companion, "fetch", "-q", "origin", "main");
 }
 
+function upstreamTarget(cwd: string) {
+  return companionGit(cwd, { prompt: "never" }).upstreamTarget();
+}
+
 afterEach(() => {
   for (const root of tempRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe("shared upstream-ref resolution", () => {
-  test("resolves the configured @{u} ref", () => {
+  test("resolves the configured @{u} ref", async () => {
     const { companion } = makeFixture();
-    expect(resolveUpstreamTargetSync(companion)).toEqual({
+    expect(await upstreamTarget(companion)).toEqual({
       remote: "origin",
       branch: "main",
       ref: "origin/main",
     });
   });
 
-  test("falls back to origin/main when no upstream is configured", () => {
+  test("falls back to origin/main when no upstream is configured", async () => {
     const { companion } = makeFixture();
     git(companion, "branch", "--unset-upstream");
-    expect(resolveUpstreamTargetSync(companion)?.ref).toBe("origin/main");
+    expect((await upstreamTarget(companion))?.ref).toBe("origin/main");
   });
 
-  test("yields null outside a Git working tree", () => {
+  test("yields null outside a Git working tree", async () => {
     const { root } = makeFixture();
     const plain = path.join(root, "plain");
     fs.mkdirSync(plain);
-    expect(resolveUpstreamTargetSync(plain)).toBeNull();
-  });
-
-  test("both halves resolve the same ref for the same companion", async () => {
-    const { companion } = makeFixture();
-    const sync = resolveUpstreamTargetSync(companion);
-    const asynchronous = await resolveUpstreamTargetWith((args) =>
-      Promise.resolve(runGitSync(companion, args)),
-    );
-    expect(asynchronous).toEqual(sync);
-
-    // The attended half must agree too: it delegates to the same resolution.
-    const seen: string[][] = [];
-    const attended = new CompanionGitSync((args, cwd) => {
-      seen.push([...args]);
-      return Promise.resolve(runGitSync(cwd, args));
-    });
-    await attended.sync(companion).catch(() => undefined);
-    expect(seen.some((args) => args.join(" ").includes("@{u}"))).toBe(true);
+    expect(await upstreamTarget(plain)).toBeNull();
   });
 });
 
 describe("fork check", () => {
-  test("reports a fork when ahead and behind", () => {
+  test("reports a fork when ahead and behind", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
     fetchOnly(fixture);
-    expect(companionForkState(fixture.companion)).toEqual({ ahead: 1, behind: 1, forked: true });
+    expect(await companionForkState(fixture.companion)).toEqual({
+      ahead: 1,
+      behind: 1,
+      forked: true,
+    });
   });
 
-  test("reports no fork when only ahead", () => {
+  test("reports no fork when only ahead", async () => {
     const fixture = makeFixture();
     commitCompanion(fixture, "local");
-    expect(companionForkState(fixture.companion)).toEqual({ ahead: 1, behind: 0, forked: false });
+    expect(await companionForkState(fixture.companion)).toEqual({
+      ahead: 1,
+      behind: 0,
+      forked: false,
+    });
   });
 
-  test("reports no fork when only behind", () => {
+  test("reports no fork when only behind", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     fetchOnly(fixture);
-    expect(companionForkState(fixture.companion)).toEqual({ ahead: 0, behind: 1, forked: false });
+    expect(await companionForkState(fixture.companion)).toEqual({
+      ahead: 0,
+      behind: 1,
+      forked: false,
+    });
   });
 
-  test("reports no fork when no upstream ref exists locally", () => {
+  test("reports no fork when no upstream ref exists locally", async () => {
     const fixture = makeFixture();
     git(fixture.companion, "branch", "--unset-upstream");
     git(fixture.companion, "remote", "remove", "origin");
     git(fixture.companion, "update-ref", "-d", "refs/remotes/origin/main");
-    expect(companionForkState(fixture.companion)).toBeNull();
+    expect(await companionForkState(fixture.companion)).toBeNull();
   });
 
-  test("reports no fork outside a Git working tree", () => {
+  test("reports no fork outside a Git working tree", async () => {
     const { root } = makeFixture();
     const plain = path.join(root, "plain");
     fs.mkdirSync(plain);
-    expect(companionForkState(plain)).toBeNull();
+    expect(await companionForkState(plain)).toBeNull();
   });
 
-  test("reports no fork when Git cannot be run", () => {
+  test("reports no fork when Git cannot be run", async () => {
     const fixture = makeFixture();
-    expect(companionForkState(path.join(fixture.root, "missing"))).toBeNull();
+    expect(await companionForkState(path.join(fixture.root, "missing"))).toBeNull();
   });
 
-  test("reports no fork when the bound is exceeded", () => {
+  test("reports no fork when the bound is exceeded", async () => {
     const fixture = makeFixture();
     /** A Git that outlasts the bound on every OS; a 1ms bound alone races a fast Git. */
     const slowBin = path.join(fixture.root, "slow-bin");
@@ -195,7 +190,7 @@ describe("fork check", () => {
     const originalPath = process.env.PATH;
     process.env.PATH = `${slowBin}${path.delimiter}${originalPath}`;
     try {
-      expect(companionForkState(fixture.companion, 50)).toBeNull();
+      expect(await companionForkState(fixture.companion, 50)).toBeNull();
     } finally {
       process.env.PATH = originalPath;
     }
@@ -203,86 +198,86 @@ describe("fork check", () => {
 });
 
 describe("the consent gate", () => {
-  test("emptyCompanionPolicy keeps gitAutoMode false", () => {
+  test("emptyCompanionPolicy keeps gitAutoMode false", async () => {
     expect(emptyCompanionPolicy().gitAutoMode).toBe(false);
   });
 
-  test("does nothing when Git handling is not automatic", () => {
+  test("does nothing when Git handling is not automatic", async () => {
     const fixture = makeFixture("manual");
     commitUpstream(fixture, "remote");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(outcome.status).toBe("not-applicable");
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
   });
 
-  test("treats an absent companion configuration as not automatic", () => {
+  test("treats an absent companion configuration as not automatic", async () => {
     const fixture = makeFixture(null);
-    expect(syncCompanionUnattended(fixture.companion, { homeDir: fixture.home }).status).toBe(
-      "not-applicable",
-    );
+    expect(
+      (await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home })).status,
+    ).toBe("not-applicable");
   });
 
-  test("treats a malformed companion configuration as not automatic", () => {
+  test("treats a malformed companion configuration as not automatic", async () => {
     const fixture = makeFixture();
     fs.writeFileSync(
       path.join(fixture.companion, ".mate", "config", "framework.yaml"),
       "git: [unclosed\n",
       "utf8",
     );
-    expect(syncCompanionUnattended(fixture.companion, { homeDir: fixture.home }).status).toBe(
-      "not-applicable",
-    );
+    expect(
+      (await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home })).status,
+    ).toBe("not-applicable");
   });
 
-  test("is checked before the freshness interval", () => {
+  test("is checked before the freshness interval", async () => {
     const fixture = makeFixture("manual");
     recordCompanionSync(fixture.companion, new Date(), fixture.home);
-    expect(syncCompanionUnattended(fixture.companion, { homeDir: fixture.home }).status).toBe(
-      "not-applicable",
-    );
+    expect(
+      (await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home })).status,
+    ).toBe("not-applicable");
   });
 });
 
 describe("the unattended mode", () => {
-  test("fast-forwards a companion that is strictly behind", () => {
+  test("fast-forwards a companion that is strictly behind", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
 
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(outcome.status).toBe("complete");
     expect(outcome.changed).toBe(true);
     expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
   });
 
-  test("changes nothing when already up to date", () => {
+  test("changes nothing when already up to date", async () => {
     const fixture = makeFixture();
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
     expect(outcome).toMatchObject({ status: "complete", changed: false });
   });
 
-  test("treats an ahead-only companion as complete without merging", () => {
+  test("treats an ahead-only companion as complete without merging", async () => {
     const fixture = makeFixture();
     commitCompanion(fixture, "local");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(outcome).toMatchObject({ status: "complete", changed: false });
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
   });
 
-  test("reports divergence without merging", () => {
+  test("reports divergence without merging", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(outcome.status).toBe("unfinished");
     expect(outcome.reason).toContain("diverged");
@@ -290,60 +285,105 @@ describe("the unattended mode", () => {
     expect(git(fixture.companion, "status", "--porcelain=v1")).toBe("");
   });
 
-  test("reports a dirty tree that blocks the fast-forward", () => {
+  test("reports a dirty tree that blocks the fast-forward", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     fs.appendFileSync(path.join(fixture.companion, "notes.md"), "local edit\n");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(outcome.status).toBe("unfinished");
     expect(outcome.reason).toContain("local changes");
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
   });
 
-  test("reports an in-progress merge without touching it", () => {
+  test("reports an in-progress merge without touching it", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     fs.writeFileSync(path.join(fixture.companion, ".git", "MERGE_HEAD"), "deadbeef\n");
 
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(outcome.status).toBe("unfinished");
     expect(outcome.reason).toContain("MERGE_HEAD");
   });
 
-  test("reports an unreachable remote and never raises", () => {
+  test("reports an unreachable remote and never raises", async () => {
     const fixture = makeFixture();
     git(fixture.companion, "remote", "set-url", "origin", path.join(fixture.root, "gone.git"));
 
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(outcome.status).toBe("unfinished");
     expect(outcome.reason).toContain("unable to fetch");
   });
 
-  test("never pushes", () => {
+  test("an SSH key that needs a passphrase fails promptly as authentication", async () => {
+    const fixture = makeFixture();
+    const stub = makeSshStub(fixture.root);
+    git(
+      fixture.companion,
+      "remote",
+      "set-url",
+      "origin",
+      stubSshUrl(path.join(fixture.root, "remote.git")),
+    );
+    const started = Date.now();
+
+    const outcome = await syncCompanionUnattended(fixture.companion, {
+      homeDir: fixture.home,
+      env: stub.env("passphrase"),
+    });
+
+    expect(Date.now() - started).toBeLessThan(COMPANION_SYNC_TIMEOUT_MS / 2);
+    expect(outcome.status).toBe("unfinished");
+    expect(outcome.reason).toContain("authentication");
+    expect(stub.calls()[0]).toContain("BatchMode=yes");
+  });
+
+  test("an unknown SSH host key is not confirmed", async () => {
+    const fixture = makeFixture();
+    const stub = makeSshStub(fixture.root);
+    git(
+      fixture.companion,
+      "remote",
+      "set-url",
+      "origin",
+      stubSshUrl(path.join(fixture.root, "remote.git")),
+    );
+    const started = Date.now();
+
+    const outcome = await syncCompanionUnattended(fixture.companion, {
+      homeDir: fixture.home,
+      env: stub.env("hostkey"),
+    });
+
+    expect(Date.now() - started).toBeLessThan(COMPANION_SYNC_TIMEOUT_MS / 2);
+    expect(outcome.status).toBe("unfinished");
+    expect(stub.calls()[0]).toContain("BatchMode=yes");
+  });
+
+  test("never pushes", async () => {
     const fixture = makeFixture();
     commitCompanion(fixture, "local");
-    syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
     expect(git(fixture.upstream, "log", "-1", "--pretty=%s")).toBe("base");
   });
 
-  test("reports rather than raising outside a Git working tree", () => {
+  test("reports rather than raising outside a Git working tree", async () => {
     const { root, home } = makeFixture();
     const plain = path.join(root, "plain");
     fs.mkdirSync(plain);
     fs.mkdirSync(path.join(plain, ".mate", "config"), { recursive: true });
     fs.writeFileSync(path.join(plain, ".mate", "config", "framework.yaml"), "git: auto\n");
-    expect(syncCompanionUnattended(plain, { homeDir: home }).status).toBe("not-applicable");
+    expect((await syncCompanionUnattended(plain, { homeDir: home })).status).toBe("not-applicable");
   });
 
-  test("abandons work that exceeds the bound", () => {
+  test("abandons work that exceeds the bound", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
-    const outcome = syncCompanionUnattended(fixture.companion, {
+    const outcome = await syncCompanionUnattended(fixture.companion, {
       homeDir: fixture.home,
       timeoutMs: 1,
     });
@@ -352,25 +392,25 @@ describe("the unattended mode", () => {
 });
 
 describe("the completion record", () => {
-  test("records a completed synchronization outside the companion", () => {
+  test("records a completed synchronization outside the companion", async () => {
     const fixture = makeFixture();
     const statusBefore = git(fixture.companion, "status", "--porcelain=v1");
 
-    syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(readCompanionGitRecord(fixture.companion, fixture.home).syncedAt).toBeString();
     expect(git(fixture.companion, "status", "--porcelain=v1")).toBe(statusBefore);
     expect(fs.existsSync(path.join(fixture.companion, ".mate", "companion-git-state"))).toBe(false);
   });
 
-  test("a missing record means a synchronization is due", () => {
+  test("a missing record means a synchronization is due", async () => {
     const fixture = makeFixture();
     expect(
       isCompanionSyncDue(fixture.companion, COMPANION_SYNC_TTL_MS, new Date(), fixture.home),
     ).toBe(true);
   });
 
-  test("a record inside the interval means it is not due", () => {
+  test("a record inside the interval means it is not due", async () => {
     const fixture = makeFixture();
     const now = new Date("2026-01-01T12:00:00.000Z");
     recordCompanionSync(fixture.companion, now, fixture.home);
@@ -379,7 +419,7 @@ describe("the completion record", () => {
     ).toBe(false);
   });
 
-  test("a record older than the interval means it is due", () => {
+  test("a record older than the interval means it is due", async () => {
     const fixture = makeFixture();
     const now = new Date("2026-01-01T12:00:00.000Z");
     recordCompanionSync(fixture.companion, now, fixture.home);
@@ -388,19 +428,19 @@ describe("the completion record", () => {
     ).toBe(true);
   });
 
-  test("a fresh record short-circuits before any Git work", () => {
+  test("a fresh record short-circuits before any Git work", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     recordCompanionSync(fixture.companion, new Date(), fixture.home);
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(outcome.status).toBe("fresh");
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
   });
 
-  test("an unfinished run leaves no completion for a later run to trust", () => {
+  test("an unfinished run leaves no completion for a later run to trust", async () => {
     const fixture = makeFixture();
     const now = new Date("2026-01-01T12:00:00.000Z");
     /** Two sessions share one companion: one completes, the other loses on a lock. */
@@ -413,11 +453,11 @@ describe("the completion record", () => {
     expect(persistedCompanionGitStalenessLines(fixture.companion, fixture.home)).toHaveLength(1);
   });
 
-  test("the next completed run clears the unfinished reason", () => {
+  test("the next completed run clears the unfinished reason", async () => {
     const fixture = makeFixture();
     recordCompanionSyncUnfinished(fixture.companion, "index.lock exists", fixture.home);
 
-    const outcome = syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
 
     expect(outcome.status).toBe("complete");
     expect(persistedCompanionGitStalenessLines(fixture.companion, fixture.home)).toEqual([]);
@@ -429,9 +469,7 @@ describe("the completion record", () => {
     process.env.HOME = fixture.home;
     try {
       commitUpstream(fixture, "remote");
-      await new CompanionGitSync((args, cwd) => Promise.resolve(runGitSync(cwd, args))).sync(
-        fixture.companion,
-      );
+      await new CompanionGitSync().sync(fixture.companion);
       expect(readCompanionGitRecord(fixture.companion, fixture.home).syncedAt).toBeString();
     } finally {
       if (home === undefined) delete process.env.HOME;
@@ -441,74 +479,75 @@ describe("the completion record", () => {
 });
 
 describe("the shared fork refusal", () => {
-  test("refuses in an unmanaged session while the history has forked", () => {
+  test("refuses in an unmanaged session while the history has forked", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
     fetchOnly(fixture);
 
-    const refusal = companionForkRefusal({}, fixture.companion, { homeDir: fixture.home });
+    const refusal = await companionForkRefusal({}, fixture.companion, { homeDir: fixture.home });
 
     expect(refusal).toContain("forked");
     expect(refusal).toContain(COMPANION_SYNC_COMMAND);
   });
 
-  test("permits when a launch environment is present", () => {
+  test("permits when a launch environment is present", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
     fetchOnly(fixture);
 
     expect(
-      companionForkRefusal({ MATE_ARTIFACT_PATH: fixture.companion }, fixture.companion, {
+      await companionForkRefusal({ MATE_ARTIFACT_PATH: fixture.companion }, fixture.companion, {
         homeDir: fixture.home,
       }),
     ).toBeNull();
   });
 
-  test("permits an ahead-only companion", () => {
+  test("permits an ahead-only companion", async () => {
     const fixture = makeFixture();
     commitCompanion(fixture, "local");
-    expect(companionForkRefusal({}, fixture.companion, { homeDir: fixture.home })).toBeNull();
+    expect(await companionForkRefusal({}, fixture.companion, { homeDir: fixture.home })).toBeNull();
   });
 
-  test("permits a behind-only companion", () => {
+  test("permits a behind-only companion", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     fetchOnly(fixture);
-    expect(companionForkRefusal({}, fixture.companion, { homeDir: fixture.home })).toBeNull();
+    expect(await companionForkRefusal({}, fixture.companion, { homeDir: fixture.home })).toBeNull();
   });
 
-  test("permits when the check cannot complete", () => {
+  test("permits when the check cannot complete", async () => {
     const { root, home } = makeFixture();
     const plain = path.join(root, "plain");
     fs.mkdirSync(plain);
-    expect(companionForkRefusal({}, plain, { homeDir: home })).toBeNull();
+    expect(await companionForkRefusal({}, plain, { homeDir: home })).toBeNull();
   });
 
-  test("caches the verdict for the interval instead of spawning Git per write", () => {
+  test("caches the verdict for the interval instead of spawning Git per write", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
     fetchOnly(fixture);
 
-    const first = cachedCompanionForkState(fixture.companion, { homeDir: fixture.home });
+    const first = await cachedCompanionForkState(fixture.companion, { homeDir: fixture.home });
     expect(first?.forked).toBe(true);
 
     // The verdict is now cached; a repaired companion still reads as forked
     // until the interval elapses, which is what keeps repeated writes cheap.
     git(fixture.companion, "reset", "-q", "--hard", "origin/main");
-    expect(cachedCompanionForkState(fixture.companion, { homeDir: fixture.home })?.forked).toBe(
-      true,
-    );
     expect(
-      cachedCompanionForkState(fixture.companion, { homeDir: fixture.home, ttlMs: 0 })?.forked,
+      (await cachedCompanionForkState(fixture.companion, { homeDir: fixture.home }))?.forked,
+    ).toBe(true);
+    expect(
+      (await cachedCompanionForkState(fixture.companion, { homeDir: fixture.home, ttlMs: 0 }))
+        ?.forked,
     ).toBe(false);
   });
 });
 
 describe("operator-facing staleness lines", () => {
-  test("name the reason and the recovery command", () => {
+  test("name the reason and the recovery command", async () => {
     const lines = unattendedSyncStalenessLines({
       status: "unfinished",
       changed: false,
@@ -520,7 +559,7 @@ describe("operator-facing staleness lines", () => {
     expect(lines[0]).toContain(COMPANION_SYNC_COMMAND);
   });
 
-  test("are empty for every other outcome", () => {
+  test("are empty for every other outcome", async () => {
     for (const status of ["not-applicable", "fresh", "complete"] as const) {
       expect(
         unattendedSyncStalenessLines({ status, changed: false, companionPath: "/tmp/acme" }),

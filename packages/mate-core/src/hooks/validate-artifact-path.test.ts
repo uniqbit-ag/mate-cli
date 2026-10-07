@@ -49,7 +49,7 @@ afterEach(async () => {
 describe("validate-artifact-path hook module", () => {
   test("fails open when neither the environment nor a projection resolves", async () => {
     const bare = await makeTempDir("mate-hook-unwrapped-");
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: "/anywhere/design.md" } },
       {},
       bare,
@@ -64,7 +64,7 @@ describe("validate-artifact-path hook module", () => {
     await initGitRepo(repo);
     await wrapRepo(repo, companion);
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
       {},
       repo,
@@ -81,10 +81,12 @@ describe("validate-artifact-path hook module", () => {
     await wrapRepo(repo, companion, "written-by-another-mate");
 
     expect(
-      evaluate(
-        { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
-        {},
-        repo,
+      (
+        await evaluate(
+          { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
+          {},
+          repo,
+        )
       ).exitCode,
     ).toBe(2);
   });
@@ -100,17 +102,21 @@ describe("validate-artifact-path hook module", () => {
 
     const env = { MATE_ARTIFACT_PATH: launched, MATE_REPO_PATH: repo };
     expect(
-      evaluate(
-        { tool_name: "Write", tool_input: { file_path: path.join(launched, "design.md") } },
-        env,
-        repo,
+      (
+        await evaluate(
+          { tool_name: "Write", tool_input: { file_path: path.join(launched, "design.md") } },
+          env,
+          repo,
+        )
       ).exitCode,
     ).toBe(0);
     expect(
-      evaluate(
-        { tool_name: "Write", tool_input: { file_path: path.join(projected, "design.md") } },
-        env,
-        repo,
+      (
+        await evaluate(
+          { tool_name: "Write", tool_input: { file_path: path.join(projected, "design.md") } },
+          env,
+          repo,
+        )
       ).exitCode,
     ).toBe(2);
   });
@@ -120,7 +126,7 @@ describe("validate-artifact-path hook module", () => {
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: path.join(companion, "design.md") } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
@@ -133,7 +139,7 @@ describe("validate-artifact-path hook module", () => {
     await fs.mkdir(companion, { recursive: true });
     await initGitRepo(repo);
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "src", "index.ts") } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
@@ -146,7 +152,7 @@ describe("validate-artifact-path hook module", () => {
     await fs.mkdir(companion, { recursive: true });
     await initGitRepo(repo);
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "README.md") } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
@@ -161,7 +167,7 @@ describe("validate-artifact-path hook module", () => {
     await fs.mkdir(path.join(repo, "scratch"), { recursive: true });
     await fs.writeFile(path.join(repo, ".gitignore"), "scratch/*.md\n", "utf8");
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "scratch", "note.md") } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
@@ -174,7 +180,7 @@ describe("validate-artifact-path hook module", () => {
     await fs.mkdir(companion, { recursive: true });
     await initGitRepo(repo);
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "scratch", "note.md") } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
@@ -188,7 +194,7 @@ describe("validate-artifact-path hook module", () => {
     await fs.mkdir(companion, { recursive: true });
     await initGitRepo(repo);
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "CLAUDE.md") } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
@@ -204,7 +210,7 @@ describe("validate-artifact-path hook module", () => {
     await fs.mkdir(path.join(repo, "scratch"), { recursive: true });
     await fs.writeFile(path.join(repo, ".gitignore"), "scratch/*.md\n", "utf8");
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Bash", tool_input: { command: "printf hello | tee scratch/note.md" } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
@@ -217,7 +223,7 @@ describe("validate-artifact-path hook module", () => {
     await fs.mkdir(companion, { recursive: true });
     await initGitRepo(repo);
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Bash", tool_input: { command: "echo notes >> scratch/note.md" } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
@@ -240,7 +246,7 @@ describe("validate-artifact-path hook module", () => {
       path.join(repo, ".storybook", "preview.ts"),
       path.join(repo, "storybook", "intro.mdx"),
     ]) {
-      const result = evaluate(
+      const result = await evaluate(
         { tool_name: "Write", tool_input: { file_path: filePath } },
         { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
       );
@@ -262,7 +268,7 @@ describe("validate-artifact-path hook module", () => {
       path.join(repo, "docs", "prd", "new-feature.md"),
       path.join(repo, "docs", "usage", "tasks.md"),
     ]) {
-      const result = evaluate(
+      const result = await evaluate(
         { tool_name: "Write", tool_input: { file_path: filePath } },
         { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
       );
@@ -286,11 +292,42 @@ describe("validate-artifact-path hook module", () => {
       { cwd: repo, stdio: "ignore" },
     );
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Edit", tool_input: { file_path: skillPath } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
     expect(result.exitCode).toBe(0);
+  });
+
+  test("an inherited GIT_DIR does not change the tracked-path answer", async () => {
+    const repo = await makeTempDir("mate-hook-git-dir-");
+    const elsewhere = await makeTempDir("mate-hook-elsewhere-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    await initGitRepo(elsewhere);
+    const docPath = path.join(repo, "notes", "acme.md");
+    await fs.mkdir(path.dirname(docPath), { recursive: true });
+    await fs.writeFile(docPath, "tracked\n", "utf8");
+    spawnSync("git", ["add", "."], { cwd: repo, stdio: "ignore" });
+    spawnSync(
+      "git",
+      ["-c", "user.name=Mate", "-c", "user.email=mate@example.test", "commit", "-qm", "initial"],
+      { cwd: repo, stdio: "ignore" },
+    );
+
+    const previous = process.env.GIT_DIR;
+    process.env.GIT_DIR = path.join(elsewhere, ".git");
+    try {
+      const result = await evaluate(
+        { tool_name: "Write", tool_input: { file_path: docPath } },
+        { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+      );
+      expect(result.exitCode).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = previous;
+    }
   });
 
   test("allows editing existing working-repo artifact files, but still blocks Write", async () => {
@@ -303,16 +340,21 @@ describe("validate-artifact-path hook module", () => {
     await fs.writeFile(notePath, "existing untracked artifact\n", "utf8");
     const env = { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo };
 
-    expect(evaluate({ tool_name: "Edit", tool_input: { file_path: notePath } }, env).exitCode).toBe(
-      0,
-    );
     expect(
-      evaluate({ tool_name: "Write", tool_input: { file_path: notePath } }, env).exitCode,
+      (await evaluate({ tool_name: "Edit", tool_input: { file_path: notePath } }, env)).exitCode,
+    ).toBe(0);
+    expect(
+      (await evaluate({ tool_name: "Write", tool_input: { file_path: notePath } }, env)).exitCode,
     ).toBe(2);
     expect(
-      evaluate(
-        { tool_name: "Edit", tool_input: { file_path: path.join(repo, "scratch", "missing.md") } },
-        env,
+      (
+        await evaluate(
+          {
+            tool_name: "Edit",
+            tool_input: { file_path: path.join(repo, "scratch", "missing.md") },
+          },
+          env,
+        )
       ).exitCode,
     ).toBe(2);
   });
@@ -327,33 +369,39 @@ describe("validate-artifact-path hook module", () => {
     const env = { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo, HOME: home };
 
     expect(
-      evaluate(
-        {
-          tool_name: "Write",
-          tool_input: { file_path: path.join(home, ".claude", "plans", "my-plan.md") },
-        },
-        env,
+      (
+        await evaluate(
+          {
+            tool_name: "Write",
+            tool_input: { file_path: path.join(home, ".claude", "plans", "my-plan.md") },
+          },
+          env,
+        )
       ).exitCode,
     ).toBe(0);
 
     expect(
-      evaluate(
-        {
-          tool_name: "Write",
-          tool_input: { file_path: path.join(configDir, "plans", "my-plan.md") },
-        },
-        { ...env, CLAUDE_CONFIG_DIR: configDir },
+      (
+        await evaluate(
+          {
+            tool_name: "Write",
+            tool_input: { file_path: path.join(configDir, "plans", "my-plan.md") },
+          },
+          { ...env, CLAUDE_CONFIG_DIR: configDir },
+        )
       ).exitCode,
     ).toBe(0);
 
     // An overridden config dir must not leave the default ~/.claude allowed.
     expect(
-      evaluate(
-        {
-          tool_name: "Write",
-          tool_input: { file_path: path.join(home, ".claude", "plans", "my-plan.md") },
-        },
-        { ...env, CLAUDE_CONFIG_DIR: configDir },
+      (
+        await evaluate(
+          {
+            tool_name: "Write",
+            tool_input: { file_path: path.join(home, ".claude", "plans", "my-plan.md") },
+          },
+          { ...env, CLAUDE_CONFIG_DIR: configDir },
+        )
       ).exitCode,
     ).toBe(2);
   });
@@ -374,13 +422,16 @@ describe("validate-artifact-path hook module", () => {
       "proposal.md",
     );
     expect(
-      evaluate({ tool_name: "Write", tool_input: { file_path: throughLink } }, {}, repo).exitCode,
+      (await evaluate({ tool_name: "Write", tool_input: { file_path: throughLink } }, {}, repo))
+        .exitCode,
     ).toBe(0);
     expect(
-      evaluate(
-        { tool_name: "Write", tool_input: { file_path: path.join(repo, "proposal.md") } },
-        {},
-        repo,
+      (
+        await evaluate(
+          { tool_name: "Write", tool_input: { file_path: path.join(repo, "proposal.md") } },
+          {},
+          repo,
+        )
       ).exitCode,
     ).toBe(2);
   });
@@ -392,7 +443,7 @@ describe("validate-artifact-path hook module", () => {
     await initGitRepo(repo);
     await fs.symlink(companion, path.join(repo, "artifacts"), "dir");
 
-    const result = evaluate(
+    const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "artifacts", "design.md") } },
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
       repo,
@@ -400,11 +451,11 @@ describe("validate-artifact-path hook module", () => {
     expect(result.exitCode).toBe(0);
   });
 
-  test("tolerates malformed payloads", () => {
-    expect(evaluate(null, { MATE_ARTIFACT_PATH: "/tmp/companion" }).exitCode).toBe(0);
-    expect(evaluate("garbage", { MATE_ARTIFACT_PATH: "/tmp/companion" }).exitCode).toBe(0);
+  test("tolerates malformed payloads", async () => {
+    expect((await evaluate(null, { MATE_ARTIFACT_PATH: "/tmp/companion" })).exitCode).toBe(0);
+    expect((await evaluate("garbage", { MATE_ARTIFACT_PATH: "/tmp/companion" })).exitCode).toBe(0);
     expect(
-      evaluate({ tool_name: "Write" }, { MATE_ARTIFACT_PATH: "/tmp/companion" }).exitCode,
+      (await evaluate({ tool_name: "Write" }, { MATE_ARTIFACT_PATH: "/tmp/companion" })).exitCode,
     ).toBe(0);
   });
 });

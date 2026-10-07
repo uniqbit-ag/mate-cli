@@ -3,11 +3,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
+import { companionGitDeps } from "../../runtime/companion-git";
+import { makeSshStub, stubHttpsUrl } from "../../../../../test/ssh-stub";
 import {
   addHubMember,
-  defaultGitCommand,
   discoverGitSource,
   discoverHubSource,
   initializeCompanionHub,
@@ -65,7 +66,14 @@ async function makeGitCompanion(root: string): Promise<{ remote: string; source:
   return { remote, source };
 }
 
+const originalIsTerminal = companionGitDeps.isTerminal;
+
+beforeEach(() => {
+  companionGitDeps.isTerminal = () => false;
+});
+
 afterEach(async () => {
+  companionGitDeps.isTerminal = originalIsTerminal;
   await Promise.all(
     tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })),
   );
@@ -116,7 +124,7 @@ describe("companion hub lifecycle", () => {
     const hub = path.join(root, "hub");
     await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
 
-    const member = await addHubMember(hub, discoverHubSource(source));
+    const member = await addHubMember(hub, await discoverHubSource(source));
 
     expect(member.source.kind).toBe("local");
     expect(await fs.readFile(path.join(hub, member.path, "notes.md"), "utf8")).toBe("initial\n");
@@ -129,7 +137,7 @@ describe("companion hub lifecycle", () => {
     const hub = path.join(root, "hub");
     await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
 
-    const member = await addHubMember(hub, discoverGitSource(source));
+    const member = await addHubMember(hub, await discoverGitSource(source));
 
     expect(member.source.kind).toBe("git");
     expect(member.materializedCommit).toBeTruthy();
@@ -143,45 +151,33 @@ describe("companion hub lifecycle", () => {
     const root = await makeTempDir("hub-failed-clone-");
     const hub = path.join(root, "hub");
     await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
-    const failingGit = () => ({ status: 1, stdout: "", stderr: "clone failed" });
+    /** No `insteadOf`: both the SSH attempt and the HTTPS fallback fail. */
+    const env = { ...makeSshStub(root).env("refused"), GIT_CONFIG_COUNT: "0" };
 
     await expect(
-      materializeHubMember(
-        hub,
-        { kind: "git", url: "https://example.test/acme.git" },
-        { git: failingGit },
-      ),
-    ).rejects.toThrow("clone failed");
+      materializeHubMember(hub, { kind: "git", url: "https://example.test/acme.git" }, { env }),
+    ).rejects.toThrow("Cloning https://example.test/acme.git failed");
     expect(await fs.stat(path.join(hub, "companions", "acme")).catch(() => null)).toBeNull();
   });
 
   test("clones over SSH first and falls back to the given HTTPS URL", async () => {
     const root = await makeTempDir("hub-ssh-clone-");
-    const { source } = await makeGitCompanion(root);
+    const { remote } = await makeGitCompanion(root);
     const hub = path.join(root, "hub");
     await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
-    const cloned: string[] = [];
-    const sshFailing = (cwd: string, args: string[]) => {
-      if (args[0] !== "clone") return defaultGitCommand(cwd, args);
-      const url = args.at(-2)!;
-      cloned.push(url);
-      if (url.startsWith("git@")) {
-        return { status: 128, stdout: "", stderr: "Permission denied (publickey)." };
-      }
-      return defaultGitCommand(cwd, ["clone", source, args.at(-1)!]);
-    };
+    const stub = makeSshStub(root);
+    const url = stubHttpsUrl(remote);
 
     const member = await materializeHubMember(
       hub,
-      { kind: "git", url: "https://example.test/acme/acme.git" },
-      { git: sshFailing },
+      { kind: "git", url },
+      { env: stub.env("refused") },
     );
 
-    expect(cloned).toEqual([
-      "git@example.test:acme/acme.git",
-      "https://example.test/acme/acme.git",
-    ]);
+    expect(stub.calls()).toHaveLength(1);
+    expect(stub.calls()[0]).toContain("git@example.test");
     expect(member.materializedCommit).toBeTruthy();
+    expect(git(path.join(hub, member.path), "remote", "get-url", "origin")).toBe(url);
   });
 
   test("fast-forwards clean Git children and protects dirty children", async () => {
@@ -189,7 +185,7 @@ describe("companion hub lifecycle", () => {
     const { source } = await makeGitCompanion(root);
     const hub = path.join(root, "hub");
     await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
-    const member = await addHubMember(hub, discoverGitSource(source));
+    const member = await addHubMember(hub, await discoverGitSource(source));
 
     await fs.writeFile(path.join(source, "notes.md"), "updated\n", "utf8");
     git(source, "add", "notes.md");
@@ -211,18 +207,87 @@ describe("companion hub lifecycle", () => {
     git(source, "commit", "-m", "remote update");
     git(source, "push");
 
-    const commands: string[][] = [];
-    const divergent = await syncHub(hub, (cwd, args) => {
-      commands.push(args);
-      return defaultGitCommand(cwd, args);
-    });
+    const childHead = git(child, "rev-parse", "HEAD");
+    const remoteHead = git(source, "rev-parse", "HEAD");
+    const divergent = await syncHub(hub);
     expect(divergent[0]?.status).toBe("divergent");
-    expect(commands.some((args) => ["push", "merge", "reset"].includes(args[0] ?? ""))).toBe(false);
+    expect(git(child, "rev-parse", "HEAD")).toBe(childHead);
+    expect(git(source, "ls-remote", "origin", "main").split(/\s+/)[0]).toBe(remoteHead);
 
     await fs.writeFile(path.join(hub, member.path, "notes.md"), "local\n", "utf8");
     const dirty = await syncHub(hub);
     expect(dirty[0]?.status).toBe("dirty");
     expect(await fs.readFile(path.join(hub, member.path, "notes.md"), "utf8")).toBe("local\n");
+  });
+
+  test("fast-forwards a child without a configured upstream to origin/HEAD", async () => {
+    const root = await makeTempDir("hub-no-upstream-");
+    const { source } = await makeGitCompanion(root);
+    const hub = path.join(root, "hub");
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
+    const member = await addHubMember(hub, await discoverGitSource(source));
+    const child = path.join(hub, member.path);
+    git(child, "branch", "--unset-upstream");
+
+    await fs.writeFile(path.join(source, "notes.md"), "updated\n", "utf8");
+    git(source, "commit", "-am", "update");
+    git(source, "push");
+
+    const results = await syncHub(hub);
+
+    expect(results[0]?.status).toBe("updated");
+    expect(await fs.readFile(path.join(child, "notes.md"), "utf8")).toBe("updated\n");
+  });
+
+  test("reports a child with no resolvable synchronization target", async () => {
+    const root = await makeTempDir("hub-no-target-");
+    const { source } = await makeGitCompanion(root);
+    const hub = path.join(root, "hub");
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
+    const member = await addHubMember(hub, await discoverGitSource(source));
+    const child = path.join(hub, member.path);
+    git(child, "branch", "--unset-upstream");
+    git(child, "remote", "set-head", "origin", "--delete");
+    git(child, "update-ref", "-d", "refs/remotes/origin/main");
+    git(
+      child,
+      "config",
+      "remote.origin.fetch",
+      "+refs/heads/feature/*:refs/remotes/origin/feature/*",
+    );
+    const head = git(child, "rev-parse", "HEAD");
+
+    const results = await syncHub(hub);
+
+    expect(results[0]?.status).toBe("failed");
+    expect(results[0]?.message).toBe("no synchronization target resolves");
+    expect(git(child, "rev-parse", "HEAD")).toBe(head);
+  });
+
+  test("an exported GIT_DIR does not redirect hub sync", async () => {
+    const root = await makeTempDir("hub-git-dir-");
+    const { source } = await makeGitCompanion(root);
+    const hub = path.join(root, "hub");
+    await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
+    const member = await addHubMember(hub, await discoverGitSource(source));
+    const elsewhere = path.join(root, "elsewhere");
+    await fs.mkdir(elsewhere);
+    git(elsewhere, "init", "-q");
+
+    await fs.writeFile(path.join(source, "notes.md"), "updated\n", "utf8");
+    git(source, "commit", "-am", "update");
+    git(source, "push");
+
+    const previous = process.env.GIT_DIR;
+    process.env.GIT_DIR = path.join(elsewhere, ".git");
+    try {
+      const results = await syncHub(hub);
+      expect(results[0]?.status).toBe("updated");
+    } finally {
+      if (previous === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = previous;
+    }
+    expect(await fs.readFile(path.join(hub, member.path, "notes.md"), "utf8")).toBe("updated\n");
   });
 
   test("reports local-only members without invoking Git", async () => {
@@ -231,15 +296,12 @@ describe("companion hub lifecycle", () => {
     const hub = path.join(root, "hub");
     await initializeCompanionHub(hub, isolatedGlobalConfigStore(root));
     await addHubMember(hub, { kind: "local", path: source });
-    const calls: string[][] = [];
+    const trace = path.join(root, "git-trace.log");
 
-    const result = await syncHub(hub, (_cwd, args) => {
-      calls.push(args);
-      return defaultGitCommand(_cwd, args);
-    });
+    const result = await syncHub(hub, { env: { ...process.env, GIT_TRACE: trace } });
 
     expect(result[0]?.status).toBe("local-only");
-    expect(calls).toEqual([]);
+    expect(await fs.stat(trace).catch(() => null)).toBeNull();
   });
 
   test("updates declared hub plugins without touching child plugin workspaces", async () => {

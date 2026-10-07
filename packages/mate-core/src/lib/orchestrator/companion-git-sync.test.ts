@@ -3,14 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
-import {
-  CompanionGitSync,
-  CompanionGitSyncError,
-  companionGitSyncDeps,
-  describeGitFailure,
-  type GitRunner,
-} from "./companion-git-sync";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { CompanionGitSync, CompanionGitSyncError, describeGitFailure } from "./companion-git-sync";
+import { companionGitDeps } from "../../runtime/companion-git";
+import { makeSshStub, stubSshUrl } from "../../../../../test/ssh-stub";
 
 const tempRoots: string[] = [];
 const managedRoots = [".mate", ".opencode", ".claude", ".agents", ".graphify"];
@@ -57,7 +53,42 @@ async function makeRepository(): Promise<{ root: string; companion: string; upst
   return { root, companion, upstream };
 }
 
+const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+
+/** A `git` on PATH that logs `<GIT_TERMINAL_PROMPT>\t<argv>` per call, then runs the real one. */
+async function recordingGit(root: string): Promise<{
+  env: Record<string, string | undefined>;
+  calls: () => Promise<Array<{ prompt: string; args: string }>>;
+}> {
+  const bin = path.join(root, "recording-bin");
+  const log = path.join(root, "git-calls.log");
+  await fs.mkdir(bin, { recursive: true });
+  await fs.writeFile(
+    path.join(bin, "git"),
+    `#!/bin/sh\nprintf '%s\\t%s\\n' "\${GIT_TERMINAL_PROMPT-unset}" "$*" >> '${log}'\nexec '${realGit}' "$@"\n`,
+    { mode: 0o755 },
+  );
+  return {
+    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` },
+    calls: async () =>
+      (await fs.readFile(log, "utf8").catch(() => ""))
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [prompt, args] = line.split("\t");
+          return { prompt: prompt!, args: args ?? "" };
+        }),
+  };
+}
+
+const originalIsTerminal = companionGitDeps.isTerminal;
+
+beforeEach(() => {
+  companionGitDeps.isTerminal = () => false;
+});
+
 afterEach(async () => {
+  companionGitDeps.isTerminal = originalIsTerminal;
   await Promise.all(
     tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })),
   );
@@ -164,184 +195,81 @@ describe("CompanionGitSync", () => {
   });
 
   test("merges with --no-stat --no-progress and reports changed via HEAD movement", async () => {
-    const { companion, upstream } = await makeRepository();
+    const { root, companion, upstream } = await makeRepository();
     await fs.writeFile(path.join(upstream, "remote.md"), "remote\n");
     git(upstream, "add", "remote.md");
     git(upstream, "commit", "-qm", "remote");
     git(upstream, "push", "-q");
 
-    const calls: string[][] = [];
-    const recording: GitRunner = async (args, cwd) => {
-      calls.push([...args]);
-      return companionGitSyncDeps.runGit(args, cwd);
-    };
+    const recording = await recordingGit(root);
 
-    const first = await new CompanionGitSync(recording).sync(companion);
-    const merge = calls.find((args) => args[0] === "merge");
-    expect(merge).toEqual(["merge", "origin/main", "--no-stat", "--no-progress", "--no-edit"]);
+    const first = await new CompanionGitSync({ env: recording.env }).sync(companion);
+    expect((await recording.calls()).map(({ args }) => args)).toContain(
+      "merge origin/main --no-stat --no-progress --no-edit",
+    );
     expect(first.changed).toBe(true);
 
     const second = await new CompanionGitSync().sync(companion);
     expect(second.changed).toBe(false);
   });
 
-  test("keeps captured execution as the default", async () => {
-    const { companion } = await makeRepository();
-    const calls: Array<{ args: string[]; mode: string | undefined }> = [];
-    const recording: GitRunner = async (args, cwd, mode) => {
-      calls.push({ args: [...args], mode });
-      return companionGitSyncDeps.runGit(args, cwd, mode);
-    };
+  test("keeps every command non-prompting by default", async () => {
+    const { root, companion } = await makeRepository();
+    const recording = await recordingGit(root);
 
-    await new CompanionGitSync(recording).sync(companion);
+    await new CompanionGitSync({ env: recording.env }).sync(companion);
 
-    expect(calls.every(({ mode }) => mode === undefined)).toBe(true);
+    const calls = await recording.calls();
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.every(({ prompt }) => prompt === "0")).toBe(true);
   });
 
-  test("attaches interactive execution only to the authentication-sensitive fetch", async () => {
-    const { companion } = await makeRepository();
-    const calls: Array<{ args: string[]; mode: string | undefined }> = [];
-    const recording: GitRunner = async (args, cwd, mode) => {
-      calls.push({ args: [...args], mode });
-      return companionGitSyncDeps.runGit(args, cwd, mode);
-    };
+  test("lets only the fetch prompt in an interactive launch at a terminal", async () => {
+    const { root, companion } = await makeRepository();
+    const recording = await recordingGit(root);
+    companionGitDeps.isTerminal = () => true;
 
-    await new CompanionGitSync(recording).sync(companion, undefined, true);
+    await new CompanionGitSync({ env: recording.env }).sync(companion, undefined, true);
 
-    expect(calls.find(({ args }) => args[0] === "fetch")?.mode).toBe("interactive");
+    const calls = await recording.calls();
+    expect(calls.find(({ args }) => args.startsWith("fetch "))?.prompt).toBe("unset");
     expect(
-      calls.filter(({ args }) => args[0] !== "fetch").every(({ mode }) => mode === undefined),
+      calls.filter(({ args }) => !args.startsWith("fetch ")).every(({ prompt }) => prompt === "0"),
     ).toBe(true);
   });
 
   test("formats non-TTY authentication failures with non-interactive recovery guidance", async () => {
-    const { companion } = await makeRepository();
-    const recording: GitRunner = async (args, cwd, mode) => {
-      if (args[0] === "fetch") {
-        return {
-          status: 128,
-          stdout: "",
-          stderr: "fatal: could not read Username: terminal prompts disabled",
-        };
-      }
-      return companionGitSyncDeps.runGit(args, cwd, mode);
-    };
+    const { root, companion } = await makeRepository();
+    git(companion, "remote", "set-url", "origin", stubSshUrl(path.join(root, "remote.git")));
+    const stub = makeSshStub(root);
 
-    await expect(new CompanionGitSync(recording).sync(companion)).rejects.toThrow(
-      /non-interactive Git credential helper or SSH agent[\s\S]*retry from a terminal[\s\S]*--no-git/,
+    await expect(
+      new CompanionGitSync({ env: stub.env("passphrase") }).sync(companion),
+    ).rejects.toThrow(
+      /Permission denied \(publickey\)[\s\S]*non-interactive Git credential helper or SSH agent[\s\S]*retry from a terminal[\s\S]*--no-git/,
     );
+    expect(stub.calls()[0]).toContain("BatchMode=yes");
   });
 
-  test("preserves TTY authentication diagnostics and retry guidance", async () => {
-    const { companion } = await makeRepository();
-    let fetchMode: string | undefined;
-    const recording: GitRunner = async (args, cwd, mode) => {
-      if (args[0] === "fetch") {
-        fetchMode = mode;
-        return { status: 128, stdout: "", stderr: "Permission denied (publickey)." };
-      }
-      return companionGitSyncDeps.runGit(args, cwd, mode);
-    };
+  test("points an interactive failure at the diagnostics Git printed", async () => {
+    const { root, companion } = await makeRepository();
+    git(companion, "remote", "set-url", "origin", stubSshUrl(path.join(root, "remote.git")));
+    const stub = makeSshStub(root);
+    companionGitDeps.isTerminal = () => true;
 
-    await expect(new CompanionGitSync(recording).sync(companion, undefined, true)).rejects.toThrow(
-      /Permission denied \(publickey\)[\s\S]*Retry the launch[\s\S]*--no-git/,
-    );
-    expect(fetchMode).toBe("interactive");
-  });
-
-  test("fetches an HTTPS remote over SSH first, then falls back interactively", async () => {
-    const { companion } = await makeRepository();
-    const fetches: Array<{ args: string[]; mode: string | undefined }> = [];
-    const recording: GitRunner = async (args, cwd, mode) => {
-      if (args[0] === "config" && args[1] === "--get-regexp") {
-        return {
-          status: 0,
-          stdout: "remote.origin.url https://github.com/acme/acme.git\n",
-          stderr: "",
-        };
-      }
-      if (args.includes("fetch")) {
-        fetches.push({ args: [...args], mode });
-        if (args[0] === "-c") {
-          return { status: 128, stdout: "", stderr: "Permission denied (publickey)." };
-        }
-      }
-      return companionGitSyncDeps.runGit(args, cwd, mode);
-    };
-
-    await new CompanionGitSync(recording).sync(companion, undefined, true);
-
-    expect(fetches).toEqual([
-      {
-        args: [
-          "-c",
-          "url.git@github.com:acme/acme.git.insteadOf=https://github.com/acme/acme.git",
-          "fetch",
-          "origin",
-          "main",
-        ],
-        mode: undefined,
-      },
-      { args: ["fetch", "origin", "main"], mode: "interactive" },
-    ]);
+    await expect(
+      new CompanionGitSync({ env: stub.env("refused") }).sync(companion, undefined, true),
+    ).rejects.toThrow(/review the Git or SSH diagnostics above[\s\S]*--no-git/);
+    expect(stub.calls()[0]).not.toContain("BatchMode=yes");
   });
 
   test("keeps generic fetch failures on the existing recovery path", async () => {
-    const { companion } = await makeRepository();
-    const recording: GitRunner = async (args, cwd, mode) => {
-      if (args[0] === "fetch") {
-        return { status: 128, stdout: "", stderr: "fatal: unable to access remote" };
-      }
-      return companionGitSyncDeps.runGit(args, cwd, mode);
-    };
+    const { root, companion } = await makeRepository();
+    git(companion, "remote", "set-url", "origin", path.join(root, "gone.git"));
 
-    await expect(new CompanionGitSync(recording).sync(companion)).rejects.toThrow(
+    await expect(new CompanionGitSync().sync(companion)).rejects.toThrow(
       /Check the remote and network[\s\S]*--no-git/,
     );
-  });
-
-  test("captures Git output beyond 1 MiB without killing the process", async () => {
-    const { companion } = await makeRepository();
-    await fs.writeFile(path.join(companion, "big.txt"), "x".repeat(2 * 1024 * 1024));
-    git(companion, "add", "big.txt");
-    git(companion, "commit", "-qm", "big");
-
-    const result = await companionGitSyncDeps.runGit(["show", "HEAD:big.txt"], companion);
-
-    expect(result.status).toBe(0);
-    expect(result.stdout.length).toBeGreaterThan(1024 * 1024);
-  });
-
-  test("disables terminal prompting for captured Git execution", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-git-runner-"));
-    tempRoots.push(root);
-    const bin = path.join(root, "bin");
-    const marker = path.join(root, "prompt-mode");
-    await fs.mkdir(bin);
-    const fakeGit = path.join(bin, "git");
-    await fs.writeFile(
-      fakeGit,
-      `#!/usr/bin/env bun
-await Bun.write(process.env.MATE_TEST_PROMPT_MODE!, process.env.GIT_TERMINAL_PROMPT ?? "unset");
-process.exit(1);
-`,
-    );
-    await fs.chmod(fakeGit, 0o755);
-
-    const originalPath = process.env.PATH;
-    const originalMarker = process.env.MATE_TEST_PROMPT_MODE;
-    process.env.PATH = `${bin}:${originalPath ?? ""}`;
-    process.env.MATE_TEST_PROMPT_MODE = marker;
-    try {
-      const result = await companionGitSyncDeps.runGit(["fetch"], root);
-      expect(result.status).toBe(1);
-      await expect(fs.readFile(marker, "utf8")).resolves.toBe("0");
-    } finally {
-      if (originalPath === undefined) delete process.env.PATH;
-      else process.env.PATH = originalPath;
-      if (originalMarker === undefined) delete process.env.MATE_TEST_PROMPT_MODE;
-      else process.env.MATE_TEST_PROMPT_MODE = originalMarker;
-    }
   });
 
   test("fetches and fast-forwards a companion behind origin/main", async () => {

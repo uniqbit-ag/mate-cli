@@ -149,7 +149,7 @@ export async function repairCompanionGitOnce(
    * unattended. The V2 server API has no toast; the notes reach the operator
    * through the persisted record and the TUI's staleness lines.
    */
-  return unattendedSyncStalenessLines(syncCompanionUnattended(context.companionPath));
+  return unattendedSyncStalenessLines(await syncCompanionUnattended(context.companionPath));
 }
 
 /** Test seam: the once-per-session guard is process-wide by design. */
@@ -164,21 +164,25 @@ export function resetCompanionGitRepairGuard(): void {
  * reason — including the launch-environment gate that keeps a Managed
  * Launch's Git decision authoritative for the session it started.
  */
-export function refuseForkedCompanionWrite(
+export async function refuseForkedCompanionWrite(
   context: CompanionContext,
   filePath: string,
   env: Record<string, string | undefined> = process.env,
-): void {
+): Promise<void> {
   if (!filePath || !isArtifactPath(filePath)) return;
   if (!normalizeTargetPath(context, filePath).startsWith(path.normalize(context.companionPath))) {
     return;
   }
-  const refusal = companionForkRefusal(env, context.companionPath);
+  const refusal = await companionForkRefusal(env, context.companionPath);
   if (refusal) throw new Error(refusal);
 }
 
-/** Throws when the tool call would write an artifact outside the companion. */
-export function guardToolInput(context: CompanionContext, tool: string, input: unknown): void {
+/** Rejects when the tool call would write an artifact outside the companion. */
+export async function guardToolInput(
+  context: CompanionContext,
+  tool: string,
+  input: unknown,
+): Promise<void> {
   const args = (input ?? {}) as Record<string, unknown>;
   const filePaths =
     tool === "write" || tool === "edit"
@@ -191,7 +195,8 @@ export function guardToolInput(context: CompanionContext, tool: string, input: u
     if (context.repositoryPath && filePath && shouldBlockArtifactWrite(context, filePath)) {
       throw new Error(buildArtifactError(context, filePath));
     }
-    refuseForkedCompanionWrite(context, filePath);
+    // oxlint-disable-next-line no-await-in-loop -- the first refusal wins
+    await refuseForkedCompanionWrite(context, filePath);
   }
 }
 
@@ -215,9 +220,9 @@ export async function registerCompanionHooks(
    */
   await repairCompanionGitOnce(context).catch(() => []);
 
-  await api.tool.hook("execute.before", (event) => {
-    guardToolInput(context, event.tool, event.input);
-  });
+  await api.tool.hook("execute.before", (event) =>
+    guardToolInput(context, event.tool, event.input),
+  );
 
   if (!context.repositoryPath || !context.reactDoctorEnabled) return;
 

@@ -30,12 +30,12 @@ export const PROJECTED_BANNER_FLAG = "--projected";
  * With `mate doctor` out of scope this is one of only two surfaces where a
  * drifted wrap becomes visible, so staleness is reported, never suppressed.
  */
-export function buildBanner(
+export async function buildBanner(
   env: HookEnv,
   cwd: string = process.cwd(),
   argv: readonly string[] = [],
   syncOptions: UnattendedSyncOptions = {},
-): BannerOutcome {
+): Promise<BannerOutcome> {
   if (argv.includes(PROJECTED_BANNER_FLAG) && hasLaunchEnvironment(env)) {
     return { exitCode: 0, stdout: "" };
   }
@@ -52,7 +52,9 @@ export function buildBanner(
    */
   const gitNotes = hasLaunchEnvironment(env)
     ? []
-    : unattendedSyncStalenessLines(syncCompanionUnattended(context.companionPath, syncOptions));
+    : unattendedSyncStalenessLines(
+        await syncCompanionUnattended(context.companionPath, syncOptions),
+      );
 
   const lines = [
     `mate v${env.MATE_VERSION || mateVersion()}`,
@@ -71,8 +73,8 @@ export function buildBanner(
 }
 
 // Plugin-shim entry.
-export function run(argv: readonly string[] = process.argv.slice(2)): number {
-  const outcome = buildBanner(process.env, process.cwd(), argv);
+export async function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+  const outcome = await buildBanner(process.env, process.cwd(), argv);
   if (outcome.stdout) process.stdout.write(outcome.stdout);
   return outcome.exitCode;
 }

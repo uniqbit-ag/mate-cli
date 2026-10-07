@@ -1,10 +1,12 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { gitEnvironment } from "../../runtime/companion-git";
 import { readProjectionFile } from "../../runtime/projection";
 import { repoLocalDirPath } from "../../runtime/repo-local";
-import { companionGitSyncDeps } from "./companion-git-sync";
 import type { GlobalConfigStore } from "./global-config-store";
 import { projectionEntries } from "./projection-entries";
 import {
@@ -26,6 +28,8 @@ import {
   type ProjectionScope,
 } from "./projection-types";
 import type { FrameworkConfig, LinkedRepository } from "./types";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * The owner of the Managed Projection: every path Mate places inside a Working
@@ -189,8 +193,7 @@ export type RuntimeDocumentsResult =
   | { kind: "failed"; document: string; error: Error };
 
 /**
- * Which of the given repo-relative paths Git already has in its index. Asked
- * through the same runner the companion sync uses rather than a second spawn.
+ * Which of the given repo-relative paths Git already has in its index.
  * Best-effort by construction: a directory that is no repository, a Git that is
  * not installed, and a `ls-files` that fails for any other reason all answer
  * "nothing tracked" — this feeds a warning, and a warning may not fail a wrap.
@@ -198,12 +201,13 @@ export type RuntimeDocumentsResult =
 async function trackedDocuments(repoPath: string, documentPaths: string[]): Promise<string[]> {
   if (documentPaths.length === 0) return [];
   try {
-    const result = await companionGitSyncDeps.runGit(
-      ["ls-files", "-z", "--", ...documentPaths],
-      path.resolve(repoPath),
-    );
-    if (result.status !== 0) return [];
-    return result.stdout.split("\0").filter(Boolean);
+    const { stdout } = await execFileAsync("git", ["ls-files", "-z", "--", ...documentPaths], {
+      cwd: path.resolve(repoPath),
+      encoding: "utf8",
+      env: gitEnvironment(),
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return stdout.split("\0").filter(Boolean);
   } catch {
     return [];
   }

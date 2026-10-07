@@ -5,8 +5,7 @@
  * reported rather than attempted.
  *
  * Lives under `runtime/` because the session-start hooks need it and may not
- * import `lib/orchestrator`. Synchronous for the same reason: the Claude hook
- * that calls it is synchronous.
+ * import `lib/orchestrator`.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -23,15 +22,13 @@ import {
 } from "./companion-git-state";
 import {
   companionForkState,
+  companionGit,
   describeGitFailure,
-  forkStateAgainst,
   GIT_QUERY_TIMEOUT_MS,
   isAuthenticationFailure,
   outputLines,
-  resolveUpstreamTargetSync,
-  runGitSync,
-  runPreferringSsh,
   type CompanionForkState,
+  type CompanionGit,
 } from "./companion-git";
 import { hasLaunchEnvironment } from "./env";
 import { FRAMEWORK_NAME } from "./framework";
@@ -55,9 +52,11 @@ export interface UnattendedSyncOutcome {
 
 export interface UnattendedSyncOptions {
   ttlMs?: number;
+  /** The operation's time budget, fallbacks included. */
   timeoutMs?: number;
   now?: Date;
   homeDir?: string;
+  /** Environment Git runs with. */
   env?: Record<string, string | undefined>;
 }
 
@@ -69,8 +68,12 @@ const UNFINISHED_GIT_PATHS = [
   "rebase-apply",
 ];
 
-function hasGitPath(companionPath: string, name: string, timeoutMs: number): boolean {
-  const gitPath = runGitSync(companionPath, ["rev-parse", "--git-path", name], timeoutMs);
+async function hasGitPath(
+  git: CompanionGit,
+  companionPath: string,
+  name: string,
+): Promise<boolean> {
+  const gitPath = await git.run(["rev-parse", "--git-path", name]);
   if (gitPath.status !== 0) return false;
   return fs.existsSync(path.resolve(companionPath, gitPath.stdout.trim()));
 }
@@ -94,15 +97,16 @@ function unfinished(
  * reaching this function at all is enough to be safe — no caller can widen the
  * operator's standing answer to "may Mate touch my Git".
  */
-export function syncCompanionUnattended(
+export async function syncCompanionUnattended(
   companionPath: string,
   options: UnattendedSyncOptions = {},
-): UnattendedSyncOutcome {
+): Promise<UnattendedSyncOutcome> {
   const {
     ttlMs = COMPANION_SYNC_TTL_MS,
     timeoutMs = COMPANION_SYNC_TIMEOUT_MS,
     now = new Date(),
     homeDir,
+    env,
   } = options;
 
   if (!companionPath) return notApplicable(companionPath);
@@ -111,18 +115,20 @@ export function syncCompanionUnattended(
     return { status: "fresh", changed: false, companionPath };
   }
 
-  const deadline = now.getTime() + timeoutMs;
-  const remaining = () => Math.max(1, deadline - Date.now());
+  const git = companionGit(companionPath, {
+    prompt: "never",
+    budgetMs: timeoutMs,
+    commandCapMs: GIT_QUERY_TIMEOUT_MS,
+    env,
+  });
 
-  const target = resolveUpstreamTargetSync(
-    companionPath,
-    Math.min(GIT_QUERY_TIMEOUT_MS, remaining()),
-  );
+  const target = await git.upstreamTarget();
   if (!target) return notApplicable(companionPath);
 
-  const inProgress = UNFINISHED_GIT_PATHS.filter((name) =>
-    hasGitPath(companionPath, name, Math.min(GIT_QUERY_TIMEOUT_MS, remaining())),
+  const present = await Promise.all(
+    UNFINISHED_GIT_PATHS.map((name) => hasGitPath(git, companionPath, name)),
   );
+  const inProgress = UNFINISHED_GIT_PATHS.filter((_, index) => present[index]);
   if (inProgress.length > 0) {
     return unfinished(
       companionPath,
@@ -131,11 +137,7 @@ export function syncCompanionUnattended(
     );
   }
 
-  const fetch = runPreferringSsh(
-    (args) => runGitSync(companionPath, args, remaining()),
-    ["fetch", "--no-progress", target.remote, target.branch],
-    (result) => result,
-  );
+  const fetch = await git.fetch(["--no-progress", target.remote, target.branch]);
   if (fetch.status !== 0) {
     if (isAuthenticationFailure(fetch)) {
       return unfinished(companionPath, `fetching ${target.ref} needs Git authentication`, homeDir);
@@ -147,11 +149,7 @@ export function syncCompanionUnattended(
     );
   }
 
-  const fork = forkStateAgainst(
-    companionPath,
-    target.ref,
-    Math.min(GIT_QUERY_TIMEOUT_MS, remaining()),
-  );
+  const fork = await git.forkState(target.ref);
   if (!fork) return notApplicable(companionPath);
 
   if (fork.behind === 0) {
@@ -166,17 +164,9 @@ export function syncCompanionUnattended(
     );
   }
 
-  const merge = runGitSync(
-    companionPath,
-    ["merge", "--ff-only", "--no-stat", "--no-progress", target.ref],
-    Math.min(GIT_QUERY_TIMEOUT_MS, remaining()),
-  );
+  const merge = await git.run(["merge", "--ff-only", "--no-stat", "--no-progress", target.ref]);
   if (merge.status !== 0) {
-    const dirty = runGitSync(
-      companionPath,
-      ["status", "--porcelain=v1", "--untracked-files=all"],
-      Math.min(GIT_QUERY_TIMEOUT_MS, remaining()),
-    );
+    const dirty = await git.run(["status", "--porcelain=v1", "--untracked-files=all"]);
     if (dirty.status === 0 && outputLines(dirty.stdout).length > 0) {
       return unfinished(
         companionPath,
@@ -240,11 +230,11 @@ export interface ForkGuardOptions {
  * every case in which the check could not be completed, because the guard must
  * never fail closed.
  */
-export function companionForkRefusal(
+export async function companionForkRefusal(
   env: Record<string, string | undefined>,
   companionPath: string,
   options: ForkGuardOptions = {},
-): string | null {
+): Promise<string | null> {
   if (!companionPath) return null;
   /**
    * A Managed Launch has already settled this session's Git question — by its
@@ -255,15 +245,15 @@ export function companionForkRefusal(
   /** The same consent gate the repair holds: Git handling off makes this inert. */
   if (!readCompanionPolicy(companionPath).gitAutoMode) return null;
 
-  const fork = cachedCompanionForkState(companionPath, options);
+  const fork = await cachedCompanionForkState(companionPath, options);
   if (!fork?.forked) return null;
   return forkRefusalMessage(companionPath, fork);
 }
 
-export function cachedCompanionForkState(
+export async function cachedCompanionForkState(
   companionPath: string,
   options: ForkGuardOptions = {},
-): CompanionForkState | null {
+): Promise<CompanionForkState | null> {
   const {
     ttlMs = FORK_VERDICT_TTL_MS,
     timeoutMs = GIT_QUERY_TIMEOUT_MS,
@@ -280,7 +270,7 @@ export function cachedCompanionForkState(
     };
   }
 
-  const fork = companionForkState(companionPath, timeoutMs);
+  const fork = await companionForkState(companionPath, timeoutMs);
   if (!fork) return null;
   recordForkVerdict(companionPath, { ahead: fork.ahead, behind: fork.behind }, now, homeDir);
   return fork;
