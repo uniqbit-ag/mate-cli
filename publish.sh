@@ -3,17 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Publish order matters: core and plugin must exist on the registry before the
-# CLI that pins them, so a partially failed publish never leaves a released
-# @uniqbit/mate referencing an unpublished package version.
+# Publish order matters: core must exist on the registry before the CLI that
+# pins it, so a partially failed publish never leaves a released @uniqbit/mate
+# referencing an unpublished package version.
 PACKAGE_NAMES=(
   "@uniqbit/mate-core"
-  "@uniqbit/mate-opencode-plugin"
   "@uniqbit/mate"
 )
 PACKAGE_DIRS=(
   "$ROOT_DIR/packages/mate-core"
-  "$ROOT_DIR/apps/mate-opencode-plugin"
   "$ROOT_DIR/apps/mate-cli"
 )
 

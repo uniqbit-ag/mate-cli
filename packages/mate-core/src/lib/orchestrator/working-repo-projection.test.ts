@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -11,13 +10,7 @@ import { getActiveDistribution, setActiveDistribution } from "../../distribution
 import { FRAMEWORK_NAME } from "../../framework";
 import { parseProjectionYaml, type ProjectionFile } from "../../runtime/projection";
 import { renderWorkingRuntimeDocuments } from "../../tools/setup";
-import {
-  OPENCODE_PLUGIN_PACKAGE_NAME,
-  getOpenCodeCacheDir,
-  getOpenCodePluginPackageReference,
-  opencodePluginCacheDeps,
-  warmOpenCodePluginCache,
-} from "../opencode-plugin-package";
+import { getOpenCodePluginRoot } from "../package-paths";
 import { GlobalConfigStore } from "./global-config-store";
 import { runtimeDocumentDeps } from "./projection-runtime-documents";
 import { firstFailure, type RenderedRuntimeDocument } from "./projection-types";
@@ -429,7 +422,7 @@ describe("the companion link", () => {
 
 /**
  * Every value these documents carry is pinned to the mate that wrote it — the
- * OpenCode plugin package's version above all. A repository is wrapped once and
+ * machine-local OpenCode plugin root above all. A repository is wrapped once and
  * launched for the rest of its life, so the launch scope renders them again
  * rather than leaving a working repository pointing at whichever release
  * happened to wrap it.
@@ -448,7 +441,11 @@ describe("the runtime documents under a launch", () => {
     repoPath: string;
     companionPath: string;
     /** One pass of a scope, as the mate at `version` would have run it. */
-    at(scope: "launch" | "wrap", version: string): Promise<Awaited<ReturnType<typeof project>>>;
+    at(
+      scope: "launch" | "wrap",
+      version: string,
+      assetRoots?: string[],
+    ): Promise<Awaited<ReturnType<typeof project>>>;
   }> {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
     tempRoots.push(root);
@@ -465,10 +462,10 @@ describe("the runtime documents under a launch", () => {
     return {
       repoPath,
       companionPath,
-      at: async (scope, version) => {
+      at: async (scope, version, assetRoots) => {
         setActiveDistribution({
           ...originalDistribution,
-          config: { ...originalDistribution.config, version },
+          config: { ...originalDistribution.config, version, assetRoots },
         });
         return project(scope, {
           repoPath,
@@ -498,20 +495,20 @@ describe("the runtime documents under a launch", () => {
     return result.outcomes.find((outcome) => outcome.id === id)?.state;
   }
 
-  test("a launch re-pins the plugin reference the wrap baked in", async () => {
+  test("a launch re-points the plugin root the wrap baked in", async () => {
     const { repoPath, at } = await makeWrappable("projection-launch-repin-");
+    const assets = await fs.mkdtemp(path.join(os.tmpdir(), "projection-launch-assets-"));
+    tempRoots.push(assets);
+    await fs.mkdir(path.join(assets, "opencode-plugin"));
     await at("wrap", "0.15.5");
-    expect((await readOpenCode(repoPath)).plugins).toEqual([
-      getOpenCodePluginPackageReference("0.15.5"),
-    ]);
+    const wrappedRoot = getOpenCodePluginRoot();
+    expect((await readOpenCode(repoPath)).plugins).toEqual([wrappedRoot]);
 
-    const launched = await at("launch", "0.16.0");
+    const launched = await at("launch", "0.16.0", [assets]);
 
     expect(stateOf(launched, "opencode-runtime-document")).toBe("written");
     /** One entry, not the old one with its successor beside it. */
-    expect((await readOpenCode(repoPath)).plugins).toEqual([
-      getOpenCodePluginPackageReference("0.16.0"),
-    ]);
+    expect((await readOpenCode(repoPath)).plugins).toEqual([path.join(assets, "opencode-plugin")]);
   });
 
   test("a launch at the version that wrapped rewrites nothing", async () => {
@@ -553,52 +550,6 @@ describe("the runtime documents under a launch", () => {
     expect(launched.permissions).toEqual(wrapped.permissions);
     expect(JSON.parse(await fs.readFile(settingsPath, "utf8"))).toEqual(settings);
     expect(await fs.readFile(localConfigPath, "utf8")).toBe(localConfig);
-  });
-
-  /**
-   * The pre-fetch and the projection have to name one version. An Unmanaged
-   * OpenCode session resolves the plugin the projected document names, and a
-   * version the cache never warmed sends it to the registry at startup — the
-   * launch that fails offline. Both derive from the running mate; this is the
-   * assertion that holds them to it.
-   */
-  test("pins the version the plugin cache pre-fetches", async () => {
-    const { repoPath, at } = await makeWrappable("projection-launch-warm-");
-    await at("launch", "0.16.0");
-    const cacheHome = await fs.mkdtemp(path.join(os.tmpdir(), "projection-launch-cache-"));
-    tempRoots.push(cacheHome);
-
-    const originalRunInstall = opencodePluginCacheDeps.runInstall;
-    opencodePluginCacheDeps.runInstall = ((cwd: string) => {
-      const manifest = path.join(
-        cwd,
-        "node_modules",
-        ...OPENCODE_PLUGIN_PACKAGE_NAME.split("/"),
-        "package.json",
-      );
-      fsSync.mkdirSync(path.dirname(manifest), { recursive: true });
-      fsSync.writeFileSync(manifest, "{}\n");
-      return { error: undefined, status: 0, stderr: "" };
-    }) as typeof opencodePluginCacheDeps.runInstall;
-    let warmed: Awaited<ReturnType<typeof warmOpenCodePluginCache>>;
-    try {
-      warmed = await warmOpenCodePluginCache(undefined, { XDG_CACHE_HOME: cacheHome });
-    } finally {
-      opencodePluginCacheDeps.runInstall = originalRunInstall;
-    }
-
-    expect(warmed.ok).toBe(true);
-    /** The spec directory the warm created is named by the projected reference. */
-    const pinned = (await readOpenCode(repoPath)).plugins![0]!;
-    const specDir = path.join(
-      getOpenCodeCacheDir({ XDG_CACHE_HOME: cacheHome }),
-      "packages",
-      pinned,
-    );
-    const manifest = JSON.parse(await fs.readFile(path.join(specDir, "package.json"), "utf8")) as {
-      dependencies: Record<string, string>;
-    };
-    expect(manifest.dependencies).toEqual({ [OPENCODE_PLUGIN_PACKAGE_NAME]: "0.16.0" });
   });
 
   /**

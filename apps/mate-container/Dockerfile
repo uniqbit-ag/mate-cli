@@ -175,8 +175,10 @@ RUN apt-get update \
 WORKDIR /opt/mate/tools
 COPY locks/global-tools.package.json ./package.json
 COPY locks/global-tools.package-lock.json ./package-lock.json
+# The Mate OpenCode plugin ships inside mate-core and is loaded by path.
 RUN npm ci --omit=dev --no-audit --no-fund \
- && test "$(node -p 'require("/opt/mate/tools/node_modules/@uniqbit/mate/package.json").version')" = "${MATE_VERSION}"
+ && test "$(node -p 'require("/opt/mate/tools/node_modules/@uniqbit/mate/package.json").version')" = "${MATE_VERSION}" \
+ && test -f /opt/mate/tools/node_modules/@uniqbit/mate-core/opencode-plugin/server.ts
 
 # --- the prebuilt companion-local workspace -------------------------------
 # Built here, outside any companions mount, so a freshly cloned companion can
@@ -201,7 +203,6 @@ RUN npm ci --omit=dev --no-audit --no-fund \
  && test -f node_modules/context-mode/.claude-plugin/plugin.json \
  && test -f node_modules/context-mode/hooks/hooks.json \
  && test -f node_modules/context-mode/skills/context-mode/SKILL.md \
- && test "$(node -p 'require("/opt/mate/prebuilt/node_modules/@uniqbit/mate-opencode-plugin/package.json").version')" = "${MATE_VERSION}" \
  && node -e "require('/opt/mate/prebuilt/node_modules/better-sqlite3')" \
  && node -e "require('/opt/mate/prebuilt/node_modules/context-mode/node_modules/better-sqlite3')"
 

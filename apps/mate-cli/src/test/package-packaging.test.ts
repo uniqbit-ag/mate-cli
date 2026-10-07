@@ -50,15 +50,13 @@ describe("published package", () => {
     await expect(fs.readFile(bootstrap, "utf8")).resolves.toContain("Install Bun now?");
   }, 30_000);
 
-  test("loads the thin CLI with matching packed core and plugin artifacts", async () => {
+  test("loads the thin CLI with the matching packed core, which bundles the OpenCode plugin", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-cli-package-smoke-"));
     tempRoots.push(root);
 
     const cliRoot = path.join(import.meta.dirname, "../..");
     const coreRoot = path.join(cliRoot, "..", "..", "packages", "mate-core");
-    const pluginRoot = path.join(cliRoot, "..", "mate-opencode-plugin");
     const coreTarball = await packInto(coreRoot, path.join(root, "core"));
-    const pluginTarball = await packInto(pluginRoot, path.join(root, "plugin"));
     const cliTarball = await packInto(cliRoot, path.join(root, "cli"));
 
     const project = path.join(root, "project");
@@ -74,7 +72,6 @@ describe("published package", () => {
           },
           overrides: {
             "@uniqbit/mate-core": `file:${coreTarball}`,
-            "@uniqbit/mate-opencode-plugin": `file:${pluginTarball}`,
           },
         },
         null,
@@ -95,6 +92,11 @@ describe("published package", () => {
     const installedMateRoot = path.join(project, "node_modules", "@uniqbit", "mate");
     const installedCoreRoot = path.join(project, "node_modules", "@uniqbit", "mate-core");
     const nestedCoreRoot = path.join(installedMateRoot, "node_modules", "@uniqbit", "mate-core");
+    /** No separate plugin package: the plugin ships inside mate-core. */
+    await expect(
+      fs.stat(path.join(project, "node_modules", "@uniqbit", "mate-opencode-plugin")),
+    ).rejects.toThrow();
+    await fs.access(path.join(installedCoreRoot, "opencode-plugin", "server.ts"));
     await fs.mkdir(path.dirname(nestedCoreRoot), { recursive: true });
     await fs.rename(installedCoreRoot, nestedCoreRoot);
 

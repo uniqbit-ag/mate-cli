@@ -24,7 +24,6 @@ import {
   stalePins,
   unpinned,
   withMateVersion,
-  withPrebuiltPluginVersion,
   withPublishedPackageVersions,
   withReleaseVersions,
   type NpmRunner,
@@ -92,13 +91,7 @@ export async function sync(argv: string[], deps: EntryDeps = defaultDeps): Promi
 
   const integrities = new Map([...packed].map(([name, { integrity }]) => [name, integrity]));
   const outputs = new Map<string, string>();
-  outputs.set(
-    inputsFile,
-    withPrebuiltPluginVersion(
-      withMateVersion(fs.readFileSync(inputsFile, "utf8"), version),
-      version,
-    ),
-  );
+  outputs.set(inputsFile, withMateVersion(fs.readFileSync(inputsFile, "utf8"), version));
   for (const { manifest, lock } of IMAGE_LOCKS) {
     const manifestFile = path.join(containerRoot, manifest);
     outputs.set(manifestFile, withReleaseVersions(fs.readFileSync(manifestFile, "utf8"), version));

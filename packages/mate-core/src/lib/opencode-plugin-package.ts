@@ -5,24 +5,18 @@ import path from "node:path";
 
 import { isPreinstalledPluginPath } from "./preinstalled-plugins";
 import { PUBLIC_NPM_REGISTRY } from "./public-npm";
-import { getCurrentVersion } from "./update-checker";
 
-export const OPENCODE_PLUGIN_PACKAGE_NAME = "@uniqbit/mate-opencode-plugin";
+/** The retired plugin package, bundled into mate-core as `opencode-plugin/`. */
+const OPENCODE_PLUGIN_PACKAGE_NAME = "@uniqbit/mate-opencode-plugin";
 
 /**
- * The plugin package reference configured for OpenCode. All public Mate
- * packages are released in lockstep with synchronized versions, so the pinned
- * plugin version is derived from the CLI's own version instead of a separate
- * compatibility range.
+ * Matches a reference to the retired plugin package: the published spec,
+ * a versioned spec, or a path bound to an installed copy. Only for stripping
+ * entries older releases wrote into committed config.
  */
-export function getOpenCodePluginPackageReference(version: string = getCurrentVersion()): string {
-  return `${OPENCODE_PLUGIN_PACKAGE_NAME}@${version}`;
-}
-
-/** Matches the published reference and a reference bound to an installed copy alike. */
-export function isMateOpenCodePluginReference(value: unknown): boolean {
+export function isLegacyMateOpenCodePluginReference(value: unknown): boolean {
   if (typeof value === "object" && value !== null && !Array.isArray(value) && "package" in value) {
-    return isMateOpenCodePluginReference(value.package);
+    return isLegacyMateOpenCodePluginReference(value.package);
   }
   if (typeof value !== "string") return false;
   if (
@@ -84,19 +78,4 @@ export async function warmOpenCodePackageCache(
   } catch (error) {
     return { ok: false, detail: (error as Error).message };
   }
-}
-
-/**
- * Pre-fetch the pinned plugin package into OpenCode's npm plugin environment
- * (`<cache>/packages/<spec>/`), mirroring OpenCode's own on-demand install
- * layout, so the first managed launch after a setup or update does not depend
- * on registry access. Best effort: failures are reported, never thrown.
- */
-export async function warmOpenCodePluginCache(
-  version: string = getCurrentVersion(),
-  env: NodeJS.ProcessEnv = process.env,
-  registry = PUBLIC_NPM_REGISTRY,
-): Promise<WarmPluginCacheResult> {
-  const reference = getOpenCodePluginPackageReference(version);
-  return warmOpenCodePackageCache(OPENCODE_PLUGIN_PACKAGE_NAME, reference, env, registry);
 }

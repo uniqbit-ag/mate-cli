@@ -1,13 +1,11 @@
 import path from "node:path";
 
 import type { Context } from "@opencode/plugin/promise/plugin";
-import {
-  COMPANION_POLICY_MARKER,
-  MATE_ENV,
-  type MateGuidanceFile,
-} from "@uniqbit/mate-core/runtime";
+import { MATE_ENV } from "../../src/runtime/env";
+import { COMPANION_POLICY_MARKER, type MateGuidanceFile } from "../../src/runtime/guidance";
 
-import { resolveOpenCodeGuidance, type CompanionContext } from "@uniqbit/mate-core/opencode";
+import type { CompanionContext } from "../../src/opencode/companion-policy";
+import { resolveOpenCodeGuidance } from "../../src/opencode/projected-guidance";
 
 function prependPathEntry(pathValue: string | undefined, entry: string): string {
   const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
@@ -121,23 +119,27 @@ function companionPathsResult(context: CompanionContext) {
 }
 
 /**
+ * A wrapped repository lists this plugin in its own project config, so a
+ * managed launch may load it twice; the marker keeps the second load inert.
+ */
+function hasCompanionPolicy(system: unknown[]): boolean {
+  return system.map(readSystemText).join("\n").includes(COMPANION_POLICY_MARKER);
+}
+
+/**
  * Collapses the whole system prompt into a single entry. OpenCode sends each
  * `system[]` element as its own system message, and some self-hosted chat
  * templates (e.g. Qwen served via vLLM) reject any system message that is not
  * the very first one.
  */
 function mergeCompanionSystem(system: unknown[], companion: string): string[] {
-  const texts = system.map(readSystemText);
-  /**
-   * A wrapped repository lists this plugin in its own project config, so a
-   * managed launch loads it twice; the marker keeps the second load inert.
-   */
-  if (texts.some((text) => text.includes(COMPANION_POLICY_MARKER))) return texts;
-  const merged = [...texts, companion]
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0)
-    .join("\n\n");
-  return merged.length > 0 ? [merged] : [];
+  if (hasCompanionPolicy(system)) return system.map(readSystemText);
+  const parts: string[] = [];
+  for (const text of [...system.map(readSystemText), companion]) {
+    const trimmed = text.trim();
+    if (trimmed.length > 0) parts.push(trimmed);
+  }
+  return parts.length > 0 ? [parts.join("\n\n")] : [];
 }
 
 /** Registers guidance, compaction context, shell env, and `companion_paths`. */
@@ -157,7 +159,7 @@ export async function registerCompanion(api: Context, context: CompanionContext)
   });
 
   await api.session.hook("compaction", (event) => {
-    if (event.system.some((part) => readSystemText(part).includes(COMPANION_POLICY_MARKER))) return;
+    if (hasCompanionPolicy(event.system)) return;
     event.system.push({ type: "text", text: companion } as never);
   });
 

@@ -7,7 +7,6 @@ import {
   IMAGE_LOCKS,
   withMateVersion,
   withPublishedPackageVersions,
-  withPrebuiltPluginVersion,
   withReleaseVersions,
 } from "./image-pins";
 
@@ -34,11 +33,16 @@ describe("the release tag's inputs pin its own published version", () => {
     expect(rewritten).toContain(`version: ${readImageInputs().opencode.version}`);
   });
 
-  test("keeps the prebuilt plugin bundle on the Mate release", () => {
-    const source = fs.readFileSync(path.join(CONTAINER_ROOT, "image-inputs.yaml"), "utf8");
-    const rewritten = withPrebuiltPluginVersion(source, "9.9.9");
-
-    expect(rewritten).toContain('"@uniqbit/mate-opencode-plugin": 9.9.9');
+  test("no image input, manifest, or lock pins the retired OpenCode plugin package", () => {
+    const files = [
+      "image-inputs.yaml",
+      ...IMAGE_LOCKS.flatMap(({ manifest, lock }) => [manifest, lock]),
+    ];
+    for (const file of files) {
+      expect(fs.readFileSync(path.join(CONTAINER_ROOT, file), "utf8")).not.toContain(
+        "@uniqbit/mate-opencode-plugin",
+      );
+    }
   });
 
   test("every Mate package in a lock manifest follows the release", () => {
@@ -46,7 +50,7 @@ describe("the release tag's inputs pin its own published version", () => {
       JSON.stringify({
         dependencies: {
           "@uniqbit/mate": "0.1.0",
-          "@uniqbit/mate-opencode-plugin": "0.1.0",
+          "@uniqbit/mate-core": "0.1.0",
           "@fission-ai/openspec": "1.13.1",
         },
       }),
@@ -54,7 +58,7 @@ describe("the release tag's inputs pin its own published version", () => {
     );
     const parsed = JSON.parse(rewritten) as { dependencies: Record<string, string> };
     expect(parsed.dependencies["@uniqbit/mate"]).toBe("9.9.9");
-    expect(parsed.dependencies["@uniqbit/mate-opencode-plugin"]).toBe("9.9.9");
+    expect(parsed.dependencies["@uniqbit/mate-core"]).toBe("9.9.9");
     // A third-party tool has its own version and is not dragged along.
     expect(parsed.dependencies["@fission-ai/openspec"]).toBe("1.13.1");
   });

@@ -9,11 +9,11 @@ import type { AdapterContext } from "../../lib/orchestrator/adapters/base";
 import { ClaudeAdapter } from "../../lib/orchestrator/adapters/claude";
 import { OpenCodeAdapter } from "../../lib/orchestrator/adapters/opencode";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
-import { getClaudePluginRoot, getWrapperBinPath } from "../../lib/package-paths";
 import {
-  getOpenCodePluginPackageReference,
-  OPENCODE_PLUGIN_PACKAGE_NAME,
-} from "../../lib/opencode-plugin-package";
+  getClaudePluginRoot,
+  getOpenCodePluginRoot,
+  getWrapperBinPath,
+} from "../../lib/package-paths";
 import { project } from "../../lib/orchestrator/working-repo-projection";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
 import { executeSetup, renderWorkingRuntimeDocuments } from "../setup";
@@ -281,7 +281,7 @@ async function collectEffectiveState(fixture: Fixture): Promise<unknown> {
     [await fs.realpath(root), "<root>"],
     [root, "<root>"],
     [getWrapperBinPath(), "<wrapper-bin>"],
-    [getOpenCodePluginPackageReference(), `${OPENCODE_PLUGIN_PACKAGE_NAME}@<version>`],
+    [getOpenCodePluginRoot(), "<opencode-plugin>"],
   ]);
 }
 
@@ -324,7 +324,7 @@ async function collectLaunchSurface(
     [fixture.root, "<root>"],
     [getClaudePluginRoot(), "<claude-plugin>"],
     [getWrapperBinPath(), "<wrapper-bin>"],
-    [getOpenCodePluginPackageReference(), `${OPENCODE_PLUGIN_PACKAGE_NAME}@<version>`],
+    [getOpenCodePluginRoot(), "<opencode-plugin>"],
   ]);
 }
 
@@ -346,7 +346,7 @@ async function collectWorkingTargetDocuments(
     [fixture.root, "<root>"],
     [getClaudePluginRoot(), "<claude-plugin>"],
     [getWrapperBinPath(), "<wrapper-bin>"],
-    [getOpenCodePluginPackageReference(), `${OPENCODE_PLUGIN_PACKAGE_NAME}@<version>`],
+    [getOpenCodePluginRoot(), "<opencode-plugin>"],
   ]);
 }
 

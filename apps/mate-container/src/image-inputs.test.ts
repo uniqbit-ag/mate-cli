@@ -31,20 +31,8 @@ describe("release-owned image inputs", () => {
   });
 
   test("carry every distribution-owned runtime package in the prebuilt workspace", () => {
-    // The two packages the agent loads at session start. A bundle missing
-    // either is rejected by preparation rather than installed around.
-    expect(Object.keys(inputs.prebuilt_workspace.packages).sort()).toEqual([
-      "@uniqbit/mate-opencode-plugin",
-      "context-mode",
-    ]);
-  });
-
-  test("pin the plugin to the same Mate version the image installs", () => {
-    // All public Mate packages release in lockstep; a bundle built against a
-    // different version would fail preparation inside the container instead.
-    expect(inputs.prebuilt_workspace.packages["@uniqbit/mate-opencode-plugin"]).toBe(
-      inputs.mate.version,
-    );
+    /** The Mate OpenCode plugin ships inside mate-core, so context-mode is the only one. */
+    expect(Object.keys(inputs.prebuilt_workspace.packages).sort()).toEqual(["context-mode"]);
   });
 
   test("install a Mate version at or above the recorded minimum", () => {

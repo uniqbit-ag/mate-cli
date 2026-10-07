@@ -574,8 +574,8 @@ describe("executeSetup", () => {
       await fs.access(path.join(root, ".agents", "skills", "openspec-explore", "SKILL.md"));
       await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
       const setupConfig = await fs.readFile(path.join(root, ".opencode", "opencode.json"), "utf8");
-      expect(setupConfig).toContain("@uniqbit/mate-opencode-plugin@");
-      expect(setupConfig).toContain('"plugins"');
+      /** Committed config: the plugin root reaches OpenCode through the launch overlay instead. */
+      expect(setupConfig).not.toContain("mate-opencode-plugin");
       await expect(fs.access(path.join(root, ".opencode", "tui.json"))).rejects.toThrow();
       // Guidance is delivered via the launch environment; setup writes no
       // guidance file and copies no plugin sources.
@@ -602,6 +602,50 @@ describe("executeSetup", () => {
         fs.access(path.join(root, ".agents", "skills", "mate-grill-me")),
       ).rejects.toThrow();
       await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
+    },
+    { timeout: 10000 },
+  );
+
+  test(
+    "sync and teardown strip legacy Mate plugin references and keep user plugins",
+    async () => {
+      const root = await makeTempDir("mate-opencode-legacy-refs-");
+      const globalConfigStore = new GlobalConfigStore(
+        path.join(root, "home", ".mate", "config.yaml"),
+      );
+      await installOpenSpecStub(root);
+      const configPath = path.join(root, ".opencode", "opencode.json");
+      const legacy = [
+        "@uniqbit/mate-opencode-plugin@0.18.0",
+        "@uniqbit/mate-opencode-plugin",
+        "/opt/acme/.mate/plugins/.local/node_modules/@uniqbit/mate-opencode-plugin",
+      ];
+      const writeLegacyConfig = async () => {
+        await fs.mkdir(path.dirname(configPath), { recursive: true });
+        await fs.writeFile(
+          configPath,
+          JSON.stringify({ plugins: [...legacy, "opencode-acme-plugin"], theme: "acme" }) + "\n",
+          "utf8",
+        );
+      };
+
+      await writeLegacyConfig();
+      await executeSetup(
+        { allowedAgents: ["opencode"], capabilities: [{ name: "openspec" }] },
+        { cwd: root, globalConfigStore },
+      );
+      expect(JSON.parse(await fs.readFile(configPath, "utf8")).plugins).toEqual([
+        "opencode-acme-plugin",
+      ]);
+
+      await writeLegacyConfig();
+      await executeSetup(
+        { allowedAgents: [], capabilities: [{ name: "openspec" }] },
+        { cwd: root, globalConfigStore },
+      );
+      const tornDown = JSON.parse(await fs.readFile(configPath, "utf8"));
+      expect(tornDown.plugins).toEqual(["opencode-acme-plugin"]);
+      expect(tornDown.theme).toBe("acme");
     },
     { timeout: 10000 },
   );
@@ -757,11 +801,8 @@ describe("executeSetup", () => {
       const mergedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
       expect(mergedConfig.plugins).toContain("./plugins/custom.ts");
       expect(
-        mergedConfig.plugins.filter((entry: string) =>
-          entry.startsWith("@uniqbit/mate-opencode-plugin@"),
-        ),
-      ).toHaveLength(1);
-      expect(mergedConfig.plugins).not.toContain("@uniqbit/mate-opencode-plugin@0.0.1");
+        mergedConfig.plugins.filter((entry: string) => entry.includes("mate-opencode-plugin")),
+      ).toEqual([]);
       await expect(fs.readFile(configPath, "utf8")).resolves.toContain('"./custom.md"');
       expect(mergedConfig.compaction).toEqual({
         auto: true,

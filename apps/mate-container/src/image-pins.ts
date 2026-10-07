@@ -11,10 +11,9 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-/** Publish order: core and plugin precede the CLI that pins them. */
+/** Publish order: core precedes the CLI that pins it. */
 export const RELEASE_PACKAGES = [
   { name: "@uniqbit/mate-core", dir: "packages/mate-core" },
-  { name: "@uniqbit/mate-opencode-plugin", dir: "apps/mate-opencode-plugin" },
   { name: "@uniqbit/mate", dir: "apps/mate-cli" },
 ] as const;
 
@@ -150,11 +149,6 @@ export function withMateVersion(source: string, version: string): string {
       return line;
     })
     .join("\n");
-}
-
-/** Keeps the prebuilt plugin bundle on the same release as the image. */
-export function withPrebuiltPluginVersion(source: string, version: string): string {
-  return source.replace(/^(    "@uniqbit\/mate-opencode-plugin": )[^\n]+$/m, `$1${version}`);
 }
 
 /** Every dependency in a lock manifest that tracks the Mate release version. */

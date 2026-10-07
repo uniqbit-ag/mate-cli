@@ -41,14 +41,14 @@ function parseFrontmatter(content: string): { name?: string; description?: strin
 async function findSkillFiles(directory: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(directory, { withFileTypes: true });
-    const files = entries
-      .filter((entry) => entry.isFile() && entry.name === "SKILL.md")
-      .map((entry) => path.join(directory, entry.name));
-    const nested = await Promise.all(
-      entries
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => findSkillFiles(path.join(directory, entry.name))),
-    );
+    const files: string[] = [];
+    const subdirectories: Promise<string[]>[] = [];
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isFile() && entry.name === "SKILL.md") files.push(entryPath);
+      else if (entry.isDirectory()) subdirectories.push(findSkillFiles(entryPath));
+    }
+    const nested = await Promise.all(subdirectories);
     return [...files, ...nested.flat()];
   } catch {
     return [];

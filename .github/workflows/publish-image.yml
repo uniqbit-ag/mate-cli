@@ -111,7 +111,6 @@ jobs:
           node apps/mate-container/scripts/wait-for-published-packages.mjs \
             "$PACKAGE_VERSION" \
             @uniqbit/mate-core \
-            @uniqbit/mate-opencode-plugin \
             @uniqbit/mate
 
       - name: Name the image

@@ -198,35 +198,24 @@ describe("binding a declared plugin reference to a preinstalled package", () => 
   });
 });
 
-describe("Mate's own OpenCode plugin binds the same way", () => {
-  test("a supplied installed copy is bound; without one the published reference is written", async () => {
+describe("Mate's own OpenCode plugin is not bound into the companion config", () => {
+  test("setup writes no Mate reference, even when a legacy installed copy is supplied", async () => {
     const { createOpenCodePlugin } = await import("./opencode");
-    const { OPENCODE_PLUGIN_PACKAGE_NAME } = await import("../../../lib/opencode-plugin-package");
-    const { getCurrentVersion } = await import("../../../lib/update-checker");
+    const legacyPackage = "@uniqbit/mate-opencode-plugin";
 
-    const withoutCopy = await makeCompanion();
-    await createOpenCodePlugin().apply?.(makeCtx(withoutCopy));
-    const published = JSON.parse(
-      await fs.readFile(path.join(withoutCopy, ".opencode", "opencode.json"), "utf8"),
-    ) as { plugins?: string[] };
-    expect(published.plugins).toContain(`${OPENCODE_PLUGIN_PACKAGE_NAME}@${getCurrentVersion()}`);
-
-    const withCopy = await makeCompanion();
-    const installed = getPreinstalledPluginDir(withCopy, OPENCODE_PLUGIN_PACKAGE_NAME);
+    const companion = await makeCompanion();
+    const installed = getPreinstalledPluginDir(companion, legacyPackage);
     await fs.mkdir(installed, { recursive: true });
-    await markSupplied(withCopy);
+    await markSupplied(companion);
     await fs.writeFile(
       path.join(installed, "package.json"),
-      JSON.stringify({ name: OPENCODE_PLUGIN_PACKAGE_NAME, version: getCurrentVersion() }),
+      JSON.stringify({ name: legacyPackage, version: "0.18.0" }),
       "utf8",
     );
 
-    await createOpenCodePlugin().apply?.(makeCtx(withCopy));
+    await createOpenCodePlugin().apply?.(makeCtx(companion));
 
-    const bound = JSON.parse(
-      await fs.readFile(path.join(withCopy, ".opencode", "opencode.json"), "utf8"),
-    ) as { plugins?: string[] };
-    expect(bound.plugins).toContain(installed);
-    expect(bound.plugins).not.toContain(`${OPENCODE_PLUGIN_PACKAGE_NAME}@${getCurrentVersion()}`);
+    const config = await fs.readFile(path.join(companion, ".opencode", "opencode.json"), "utf8");
+    expect(config).not.toContain("mate-opencode-plugin");
   });
 });

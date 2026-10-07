@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { MATE_ENV, renderProjectionEnv, renderProjectionYaml } from "@uniqbit/mate-core/runtime";
+import { MATE_ENV, renderProjectionEnv, renderProjectionYaml } from "../../src/runtime";
 
 const { default: MateOpenCodePlugin } = await import("./server");
 

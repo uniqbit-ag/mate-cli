@@ -12,8 +12,10 @@
     "src/",
     "wrappers/",
     "claude-plugin/",
+    "opencode-plugin/",
     "!src/**/*.test.ts",
-    "!src/**/*.test.tsx"
+    "!src/**/*.test.tsx",
+    "!opencode-plugin/**/*.test.ts"
   ],
   "type": "module",
   "exports": {
@@ -31,10 +33,10 @@
   "scripts": {
     "test": "CI=1 bun ../../test/run-isolated.ts",
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
-    "lint": "oxlint src/",
-    "lint:fix": "oxlint src/ --fix",
-    "format": "oxfmt src/ \"!**/*.generated.*\" \"!**/report-assets/**\"",
-    "format:check": "oxfmt src/ \"!**/*.generated.*\" \"!**/report-assets/**\" --check"
+    "lint": "oxlint src/ opencode-plugin/",
+    "lint:fix": "oxlint src/ opencode-plugin/ --fix",
+    "format": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\" \"!**/report-assets/**\"",
+    "format:check": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\" \"!**/report-assets/**\" --check"
   },
   "dependencies": {
     "@opencode/plugin": "^2.0.23",

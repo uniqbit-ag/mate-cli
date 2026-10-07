@@ -4,10 +4,10 @@
 # currently installed (restore the published one with
 # `npm install -g @uniqbit/mate@latest`).
 #
-# The CLI pins exact registry versions of @uniqbit/mate-core and
-# @uniqbit/mate-opencode-plugin, so this script rewires those pins to the
-# locally packed tarballs (file: dependencies) before packing the CLI. All
-# package.json edits are reverted on exit.
+# The CLI pins an exact registry version of @uniqbit/mate-core, which bundles
+# the OpenCode plugin, so this script rewires that pin to the locally packed
+# tarball (file: dependency) before packing the CLI. All package.json edits
+# are reverted on exit.
 #
 # Usage: ./pack-local.sh [n] [--no-install]
 #   n            local prerelease counter (default 0)
@@ -39,7 +39,6 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 CORE_PKG="$ROOT_DIR/packages/mate-core/package.json"
-PLUGIN_PKG="$ROOT_DIR/apps/mate-opencode-plugin/package.json"
 CLI_PKG="$ROOT_DIR/apps/mate-cli/package.json"
 
 BASE_VERSION="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version.split("-")[0]' "$CLI_PKG")"
@@ -49,19 +48,17 @@ OUT_DIR="$(mktemp -d -t mate-pack-local)"
 echo "Packing @uniqbit/mate@$VERSION into $OUT_DIR"
 
 cp "$CORE_PKG" "$OUT_DIR/core.package.json.bak"
-cp "$PLUGIN_PKG" "$OUT_DIR/plugin.package.json.bak"
 cp "$CLI_PKG" "$OUT_DIR/cli.package.json.bak"
 
 restore() {
   cp "$OUT_DIR/core.package.json.bak" "$CORE_PKG"
-  cp "$OUT_DIR/plugin.package.json.bak" "$PLUGIN_PKG"
   cp "$OUT_DIR/cli.package.json.bak" "$CLI_PKG"
 }
 trap restore EXIT
 
-node - "$VERSION" "$CORE_PKG" "$PLUGIN_PKG" "$CLI_PKG" "$OUT_DIR" <<'EOF'
+node - "$VERSION" "$CORE_PKG" "$CLI_PKG" "$OUT_DIR" <<'EOF'
 const fs = require("fs");
-const [version, corePath, pluginPath, cliPath, outDir] = process.argv.slice(2);
+const [version, corePath, cliPath, outDir] = process.argv.slice(2);
 
 const load = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 const save = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
@@ -70,16 +67,9 @@ const core = load(corePath);
 core.version = version;
 save(corePath, core);
 
-const plugin = load(pluginPath);
-plugin.version = version;
-plugin.dependencies["@uniqbit/mate-core"] = `file:${outDir}/uniqbit-mate-core-${version}.tgz`;
-save(pluginPath, plugin);
-
 const cli = load(cliPath);
 cli.version = version;
 cli.dependencies["@uniqbit/mate-core"] = `file:${outDir}/uniqbit-mate-core-${version}.tgz`;
-cli.dependencies["@uniqbit/mate-opencode-plugin"] =
-  `file:${outDir}/uniqbit-mate-opencode-plugin-${version}.tgz`;
 save(cliPath, cli);
 EOF
 
@@ -87,8 +77,6 @@ EOF
 # resolves them at install time.
 (cd "$ROOT_DIR/packages/mate-core" && CI=1 npm pack --pack-destination "$OUT_DIR" >/dev/null)
 echo "Packed @uniqbit/mate-core@$VERSION"
-(cd "$ROOT_DIR/apps/mate-opencode-plugin" && CI=1 npm pack --pack-destination "$OUT_DIR" >/dev/null)
-echo "Packed @uniqbit/mate-opencode-plugin@$VERSION"
 (cd "$ROOT_DIR/apps/mate-cli" && CI=1 npm pack --pack-destination "$OUT_DIR" >/dev/null)
 echo "Packed @uniqbit/mate@$VERSION"
 
@@ -106,33 +94,7 @@ fi
 echo "Installing globally (replaces the installed @uniqbit/mate)..."
 CI=1 npm install -g "$CLI_TARBALL"
 
-# Seed OpenCode's plugin cache. `mate sync` pins
-# @uniqbit/mate-opencode-plugin@<local version> in the global OpenCode config,
-# but neither OpenCode's on-demand install nor mate's prefetch can fetch an
-# unpublished version from npm — without this seed the plugin silently never
-# loads. OpenCode (>= 2.0) resolves <cache>/npm/<spec>/<generation>/, picking
-# the highest numeric (epoch-ms) generation, and skips install when its
-# node_modules/<name> exists; it then imports the package's ./server export.
-# Older OpenCode used <cache>/packages/<spec>/ directly, so seed both.
-OPENCODE_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
-OPENCODE_SPEC="@uniqbit/mate-opencode-plugin@$VERSION"
-OPENCODE_NPM_SPEC_DIR="$OPENCODE_CACHE_DIR/npm/$OPENCODE_SPEC"
-OPENCODE_SEED_DIR="$OPENCODE_NPM_SPEC_DIR/$(node -p 'Date.now()')"
-OPENCODE_LEGACY_SPEC_DIR="$OPENCODE_CACHE_DIR/packages/$OPENCODE_SPEC"
-rm -rf "$OPENCODE_NPM_SPEC_DIR" "$OPENCODE_LEGACY_SPEC_DIR"
-mkdir -p "$OPENCODE_SEED_DIR" "$(dirname "$OPENCODE_LEGACY_SPEC_DIR")"
-# package.json must exist before npm install: npm otherwise walks up to
-# ~/.cache/opencode/package.json and installs the plugin there.
-printf '{\n  "dependencies": {\n    "@uniqbit/mate-opencode-plugin": "%s"\n  }\n}\n' "$VERSION" \
-  > "$OPENCODE_SEED_DIR/package.json"
-(cd "$OPENCODE_SEED_DIR" && CI=1 npm install --no-audit --no-fund --no-save --silent \
-  "$OUT_DIR/uniqbit-mate-opencode-plugin-$VERSION.tgz")
-cp -a "$OPENCODE_SEED_DIR" "$OPENCODE_LEGACY_SPEC_DIR"
-echo "Seeded OpenCode plugin cache: $OPENCODE_SEED_DIR"
-echo "                              $OPENCODE_LEGACY_SPEC_DIR (legacy layout)"
-
 echo ""
 echo "Installed: mate $(mate --version)"
 echo "Try it:    mate sync --check   (read-only staleness report)"
 echo "Restore:   npm install -g @uniqbit/mate@latest"
-echo "           (then remove the seeded dirs above so OpenCode reinstalls from npm)"

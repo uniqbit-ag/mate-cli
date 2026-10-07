@@ -1,10 +1,6 @@
 import { spawnSync } from "node:child_process";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import {
-  OPENCODE_PLUGIN_PACKAGE_NAME,
-  warmOpenCodePluginCache,
-} from "../../lib/opencode-plugin-package";
 import { installPublicPackageSync, isPackageInstalledAtNpmGlobalRoot } from "../../lib/public-npm";
 import {
   fetchLatestVersion,
@@ -66,8 +62,6 @@ export const updateCommandDeps = {
   },
   spawnPostInstall: (executable: string, args: string[]): InstallResult =>
     spawnSync(executable, args, { stdio: "inherit" }) as InstallResult,
-  warmOpenCodePluginCache: (latest: string) =>
-    warmOpenCodePluginCache(latest, process.env, getUpdateConfig().registry),
 };
 
 /**
@@ -157,20 +151,6 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
 
   await updateCommandDeps.saveUpdateState(latest);
 
-  // The plugin package is released in lockstep with the CLI; pre-fetch the
-  // newly coordinated version into OpenCode's plugin environment so the next
-  // managed launch does not stall on a registry download. Best effort only.
-  const warmed = await updateCommandDeps.warmOpenCodePluginCache(latest);
-  if (!warmed.ok) {
-    process.stderr.write(
-      [
-        `${FRAMEWORK_NAME}: could not pre-fetch ${OPENCODE_PLUGIN_PACKAGE_NAME}@${latest} for OpenCode.`,
-        "The next managed OpenCode launch will download it (requires registry access).",
-        ...(warmed.detail ? [`Details: ${warmed.detail}`] : []),
-      ].join("\n") + "\n",
-    );
-  }
-
   const postInstall = updateCommandDeps.runPostInstall(skipConfirm);
   if (postInstall.status !== 0 || postInstall.error) {
     process.stderr.write(
@@ -182,4 +162,8 @@ export async function runUpdateCommand(argv: string[]): Promise<void> {
 
   console.log(`\nUpgraded to ${latest}.`);
   console.log("Post-update installation complete.");
+  /** Managed launches run standalone; only a long-lived service keeps the replaced plugin loaded. */
+  console.log(
+    "Restart any running OpenCode service to load the new plugin: `opencode service restart`.",
+  );
 }

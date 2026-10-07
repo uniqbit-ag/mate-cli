@@ -6,15 +6,15 @@ import path from "node:path";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import {
-  OPENCODE_PLUGIN_PACKAGE_NAME,
   getOpenCodeCacheDir,
-  getOpenCodePluginPackageReference,
-  isMateOpenCodePluginReference,
+  isLegacyMateOpenCodePluginReference,
   opencodePluginCacheDeps,
-  warmOpenCodePluginCache,
+  warmOpenCodePackageCache,
 } from "./opencode-plugin-package";
 import { PUBLIC_NPM_REGISTRY } from "./public-npm";
-import { getCurrentVersion } from "./update-checker";
+
+const ACME_PACKAGE = "@acme/opencode-plugin";
+const ACME_REFERENCE = `${ACME_PACKAGE}@1.2.3`;
 
 const tempRoots: string[] = [];
 const originalRunInstall = opencodePluginCacheDeps.runInstall;
@@ -30,24 +30,21 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-describe("getOpenCodePluginPackageReference", () => {
-  test("pins the plugin package to the coordinated CLI version", () => {
-    expect(getOpenCodePluginPackageReference()).toBe(
-      `${OPENCODE_PLUGIN_PACKAGE_NAME}@${getCurrentVersion()}`,
+describe("isLegacyMateOpenCodePluginReference", () => {
+  test("matches published, versioned and path-bound references to the retired package only", () => {
+    expect(isLegacyMateOpenCodePluginReference("@uniqbit/mate-opencode-plugin")).toBe(true);
+    expect(isLegacyMateOpenCodePluginReference("@uniqbit/mate-opencode-plugin@0.14.4")).toBe(true);
+    expect(
+      isLegacyMateOpenCodePluginReference(
+        "/opt/acme/.mate/plugins/.local/node_modules/@uniqbit/mate-opencode-plugin",
+      ),
+    ).toBe(true);
+    expect(isLegacyMateOpenCodePluginReference("@uniqbit/mate-opencode-plugin-fork@1.0.0")).toBe(
+      false,
     );
-    expect(getOpenCodePluginPackageReference("1.2.3-canary.4")).toBe(
-      "@uniqbit/mate-opencode-plugin@1.2.3-canary.4",
-    );
-  });
-});
-
-describe("isMateOpenCodePluginReference", () => {
-  test("matches the package root and pinned references only", () => {
-    expect(isMateOpenCodePluginReference("@uniqbit/mate-opencode-plugin")).toBe(true);
-    expect(isMateOpenCodePluginReference("@uniqbit/mate-opencode-plugin@0.14.4")).toBe(true);
-    expect(isMateOpenCodePluginReference("@uniqbit/mate-opencode-plugin-fork@1.0.0")).toBe(false);
-    expect(isMateOpenCodePluginReference("./plugins/mate-companion.ts")).toBe(false);
-    expect(isMateOpenCodePluginReference(42)).toBe(false);
+    expect(isLegacyMateOpenCodePluginReference("/opt/acme/mate-core/opencode-plugin")).toBe(false);
+    expect(isLegacyMateOpenCodePluginReference("./plugins/mate-companion.ts")).toBe(false);
+    expect(isLegacyMateOpenCodePluginReference(42)).toBe(false);
   });
 });
 
@@ -60,17 +57,16 @@ describe("getOpenCodeCacheDir", () => {
   });
 });
 
-describe("warmOpenCodePluginCache", () => {
+describe("warmOpenCodePackageCache", () => {
   test("prepares OpenCode's package spec directory and installs the pinned version", async () => {
     const cacheHome = await makeTempDir("mate-opencode-warm-");
-    const reference = getOpenCodePluginPackageReference("1.2.3");
-    const specDir = path.join(cacheHome, "opencode", "packages", reference);
+    const specDir = path.join(cacheHome, "opencode", "packages", ACME_REFERENCE);
 
     const runInstall = mock((cwd: string) => {
       const installedManifest = path.join(
         cwd,
         "node_modules",
-        ...OPENCODE_PLUGIN_PACKAGE_NAME.split("/"),
+        ...ACME_PACKAGE.split("/"),
         "package.json",
       );
       fsSync.mkdirSync(path.dirname(installedManifest), { recursive: true });
@@ -80,12 +76,17 @@ describe("warmOpenCodePluginCache", () => {
     opencodePluginCacheDeps.runInstall = runInstall;
 
     const registry = "https://npm.acme.test/";
-    const result = await warmOpenCodePluginCache("1.2.3", { XDG_CACHE_HOME: cacheHome }, registry);
+    const result = await warmOpenCodePackageCache(
+      ACME_PACKAGE,
+      ACME_REFERENCE,
+      { XDG_CACHE_HOME: cacheHome },
+      registry,
+    );
 
     expect(result.ok).toBe(true);
     expect(runInstall).toHaveBeenCalledWith(specDir, registry);
     const manifest = JSON.parse(await fs.readFile(path.join(specDir, "package.json"), "utf8"));
-    expect(manifest.dependencies).toEqual({ [OPENCODE_PLUGIN_PACKAGE_NAME]: "1.2.3" });
+    expect(manifest.dependencies).toEqual({ [ACME_PACKAGE]: "1.2.3" });
   });
 
   test("uses public npm by default", async () => {
@@ -93,7 +94,7 @@ describe("warmOpenCodePluginCache", () => {
     const runInstall = mock(() => ({ error: undefined, status: 1, stderr: "offline" }) as never);
     opencodePluginCacheDeps.runInstall = runInstall;
 
-    await warmOpenCodePluginCache("1.2.3", { XDG_CACHE_HOME: cacheHome });
+    await warmOpenCodePackageCache(ACME_PACKAGE, ACME_REFERENCE, { XDG_CACHE_HOME: cacheHome });
 
     expect(runInstall.mock.calls[0]?.[1]).toBe(PUBLIC_NPM_REGISTRY);
   });
@@ -104,7 +105,9 @@ describe("warmOpenCodePluginCache", () => {
       () => ({ error: undefined, status: 1, stderr: "E404 not found" }) as never,
     );
 
-    const result = await warmOpenCodePluginCache("1.2.3", { XDG_CACHE_HOME: cacheHome });
+    const result = await warmOpenCodePackageCache(ACME_PACKAGE, ACME_REFERENCE, {
+      XDG_CACHE_HOME: cacheHome,
+    });
 
     expect(result.ok).toBe(false);
     expect(result.detail).toContain("E404");
@@ -114,7 +117,7 @@ describe("warmOpenCodePluginCache", () => {
     const runInstall = mock(() => ({ error: undefined, status: 0, stderr: "" }) as never);
     opencodePluginCacheDeps.runInstall = runInstall;
 
-    const result = await warmOpenCodePluginCache("1.2.3", {
+    const result = await warmOpenCodePackageCache(ACME_PACKAGE, ACME_REFERENCE, {
       MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
       XDG_CACHE_HOME: "/nonexistent",
     });
