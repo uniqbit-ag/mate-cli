@@ -225,7 +225,11 @@ describe("runDoctorCommand", () => {
 
     try {
       const output = await captureStdout(() =>
-        runDoctorCommand([], { cwd: root, globalConfigStore, inspectPlugins: async () => ({ failures: [], capabilities: [] }) }),
+        runDoctorCommand([], {
+          cwd: root,
+          globalConfigStore,
+          inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+        }),
       );
 
       expect(output).not.toContain("Declared Plugins");
