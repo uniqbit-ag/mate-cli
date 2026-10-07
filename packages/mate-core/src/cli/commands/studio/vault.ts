@@ -841,11 +841,11 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     },
     subscribeTree(companionRoot, notifyTree) {
       let active = true;
-      let current: { root: string; notifyTree: (generation: number) => void } | null = null;
+      let subscribedRoot: string | null = null;
       void rootKey(companionRoot).then(
         (root) => {
           if (!active) return;
-          current = { root, notifyTree };
+          subscribedRoot = root;
           const set = treeSubscribers.get(root) ?? new Set();
           set.add(notifyTree);
           treeSubscribers.set(root, set);
@@ -857,10 +857,10 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
       );
       return () => {
         active = false;
-        if (!current) return;
-        const set = treeSubscribers.get(current.root);
-        set?.delete(current.notifyTree);
-        if (set?.size === 0) treeSubscribers.delete(current.root);
+        if (!subscribedRoot) return;
+        const set = treeSubscribers.get(subscribedRoot);
+        set?.delete(notifyTree);
+        if (set?.size === 0) treeSubscribers.delete(subscribedRoot);
       };
     },
     async refresh(companionRoot) {

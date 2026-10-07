@@ -16,7 +16,7 @@ const FILES_PER_FOLDER = 20;
 const FOLDERS_PER_LEVEL = 10;
 
 /** `area-N/group-N/note-N.md`: many folders, shallow depth, stable order. */
-export function fixturePaths(fileCount: number): string[] {
+function fixturePaths(fileCount: number): string[] {
   const paths: string[] = [];
   for (let index = 0; index < fileCount; index += 1) {
     const folder = Math.floor(index / FILES_PER_FOLDER);
@@ -56,7 +56,7 @@ export function fixtureTree(fileCount: number): VaultTreeNode[] {
   return roots;
 }
 
-export function writeFixture(directory: string, fileCount: number): void {
+function writeFixture(directory: string, fileCount: number): void {
   for (const relative of fixturePaths(fileCount)) {
     const absolute = path.join(directory, relative);
     fs.mkdirSync(path.dirname(absolute), { recursive: true });

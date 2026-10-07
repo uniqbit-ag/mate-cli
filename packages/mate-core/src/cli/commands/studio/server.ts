@@ -536,13 +536,17 @@ async function selectedCompanion(
   return resolveCompanion(await collectInventory(), digest);
 }
 
-function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: string): Response {
+/** Server-sent events: `subscribe` gets a send function and returns its unsubscribe. */
+function eventStream(
+  greeting: string,
+  subscribe: (send: (event: unknown) => void) => () => void,
+): Response {
   const encoder = new TextEncoder();
   let unsubscribe = () => {};
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(encoder.encode(": studio vault events\n\n"));
-      unsubscribe = vault.subscribe(companionPath, requestedPath, (event) => {
+      controller.enqueue(encoder.encode(`: ${greeting}\n\n`));
+      unsubscribe = subscribe((event) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
         } catch {
@@ -563,32 +567,17 @@ function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: 
   });
 }
 
+function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: string): Response {
+  return eventStream("studio vault events", (send) =>
+    vault.subscribe(companionPath, requestedPath, send),
+  );
+}
+
 /** Generations only: no paths and no file content leave through this stream. */
 function vaultChanges(vault: VaultManager, companionPath: string): Response {
-  const encoder = new TextEncoder();
-  let unsubscribe = () => {};
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(encoder.encode(": studio vault changes\n\n"));
-      unsubscribe = vault.subscribeTree(companionPath, (generation) => {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ generation })}\n\n`));
-        } catch {
-          unsubscribe();
-        }
-      });
-    },
-    cancel() {
-      unsubscribe();
-    },
-  });
-  return new Response(stream, {
-    headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-    },
-  });
+  return eventStream("studio vault changes", (send) =>
+    vault.subscribeTree(companionPath, (generation) => send({ generation })),
+  );
 }
 
 /**
