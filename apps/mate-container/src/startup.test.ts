@@ -486,7 +486,13 @@ describe("what startup hands the supervisor", () => {
       deps({ run }),
     );
     const order = calls.map((call) =>
-      call[1] === "companion" ? call[2] : call[0] === "bash" ? "setup" : call[2],
+      call[1] === "companion"
+        ? call[2]
+        : call[0] === "bash"
+          ? "setup"
+          : call[1] === "doctor"
+            ? "verify"
+            : call[2],
     );
     expect(order.indexOf("register")).toBeLessThan(order.indexOf("setup"));
     expect(order.indexOf("setup")).toBeLessThan(order.indexOf("verify"));
@@ -519,7 +525,7 @@ describe("what startup hands the supervisor", () => {
     }
     expect(message).toContain("401");
     expect(message).not.toContain("reg-tok");
-    expect(calls.some((call) => call.includes("verify") || call.includes("prepare"))).toBe(false);
+    expect(calls.some((call) => call.includes("doctor") || call.includes("prepare"))).toBe(false);
   });
 
   describe("startup-only tokens are redacted from every printed failure", () => {
@@ -531,7 +537,7 @@ describe("what startup hands the supervisor", () => {
     for (const [name, match] of [
       ["registration", "register"],
       ["restore", "setup.sh"],
-      ["verification", "plugin verify"],
+      ["verification", "doctor"],
       ["preparation", "prepare"],
     ] as const) {
       test(`${name} omits both tokens`, () => {
