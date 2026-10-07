@@ -6,16 +6,19 @@
     "commitArgs": ["-S"],
     "tagArgs": ["-s"],
     "requireCleanWorkingDir": true,
-    "requireUpstream": false
+    "requireUpstream": false,
+    "getLatestTagFromAllRefs": true
   },
   "npm": {
-    "publish": false
+    "publish": false,
+    "ignoreVersion": true
   },
   "github": {
     "release": false
   },
   "hooks": {
     "before:init": [
+      "git fetch --tags --quiet",
       "bun run typecheck"
     ],
     "after:bump": [
