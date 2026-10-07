@@ -96,7 +96,19 @@ describe("workflowPlan", () => {
     expect(step.alternatives?.[0]?.description).toContain("Best when:");
     expect(step.alternatives?.[1]?.description).toContain("Difference: adversarial");
     expect(step.alternatives?.[1]?.description).toContain("Best when:");
-    expect(step.prompt).toContain("<change-name>");
+    expect(step.prompt).toBe("/mate-interview-me or /mate-grill-me about <idea>");
+    expect(step.copyPrompt).toBe("/mate-interview-me or /mate-grill-me about");
+    expect(step.alternatives?.map((alternative) => alternative.prompt)).toEqual([
+      "/mate-interview-me about <idea>",
+      "/mate-grill-me about <idea>",
+    ]);
+    expect(step.alternatives?.map((alternative) => alternative.copyPrompt)).toEqual([
+      "/mate-interview-me about",
+      "/mate-grill-me about",
+    ]);
+    for (const prompt of [step.prompt, ...(step.alternatives ?? []).map((a) => a.prompt)]) {
+      expect(prompt).not.toContain("<change-name>");
+    }
   });
 
   it("leaves only the explicit skip path when no pre-explore skill is available", () => {
@@ -221,21 +233,14 @@ describe("workflowPlan", () => {
     expect(finish.why).toContain("only sanctioned completion");
   });
 
-  it("keeps the change placeholder in every prompt", () => {
+  it("keeps the change placeholder in every prompt from explore onward", () => {
     const plan = workflowPlan();
-    const steps = [
-      plan.start,
-      ...plan.branches.flatMap((branch) => branch.steps),
-      ...plan.shared,
-      plan.finish,
-    ];
+    const steps = [...plan.branches.flatMap((branch) => branch.steps), ...plan.shared, plan.finish];
     expect(steps.every((step) => step.prompt.includes("<change-name>"))).toBe(true);
     expect(steps.every((step) => !step.copyPrompt.includes("<change-name>"))).toBe(true);
-    expect(
-      plan.start.alternatives?.every(
-        (alternative) => !alternative.copyPrompt.includes("<change-name>"),
-      ),
-    ).toBe(true);
+    expect(plan.branches.every((branch) => branch.steps[0]?.prompt.includes("<change-name>"))).toBe(
+      true,
+    );
   });
 });
 
@@ -262,13 +267,13 @@ describe("Workflow", () => {
     expect(markup).toContain('class="workflow-console-command-label">Run</span>');
     expect(markup).toContain('class="workflow-console-command-label">Review</span>');
     expect(markup).not.toContain(
-      "<code>/mate-interview-me or /mate-grill-me for &lt;change-name&gt;</code>",
+      "<code>/mate-interview-me or /mate-grill-me about &lt;idea&gt;</code>",
     );
     expect(markup.indexOf('class="workflow-option-list"')).toBeLessThan(
       markup.indexOf('class="workflow-console-explanation"'),
     );
-    expect(markup).toContain("<code>/mate-interview-me for &lt;change-name&gt;</code>");
-    expect(markup).toContain("<code>/mate-grill-me for &lt;change-name&gt;</code>");
+    expect(markup).toContain("<code>/mate-interview-me about &lt;idea&gt;</code>");
+    expect(markup).toContain("<code>/mate-grill-me about &lt;idea&gt;</code>");
     expect(markup.match(/class="workflow-session-break"/g)).toHaveLength(3);
     expect(markup).toContain("The desired change, its scope, and the risk involved are clear.");
     expect(markup).not.toContain("intent = clear");

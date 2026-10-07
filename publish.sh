@@ -52,6 +52,11 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v bun >/dev/null 2>&1; then
+  echo "Error: bun is required but was not found in PATH." >&2
+  exit 1
+fi
+
 read_version() {
   node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).version' "$1/package.json"
 }
@@ -100,47 +105,28 @@ for NAME in "${PACKAGE_NAMES[@]}"; do
   npm pack --dry-run --workspace "$NAME"
 done
 
-# The image locks pin the integrity sync-image-inputs packed at the version
+# The image locks pin the integrity release preparation packed at the version
 # bump. A tree changed since then would publish a tarball the image can never
 # install, and a published version cannot be replaced — so nothing is published
-# unless every pin still matches. Packed and hashed the way sync-image-inputs
-# does; lifecycle output (prepack builds) goes to stderr so it cannot corrupt
-# anything read from stdout.
-LOCK_DIR="$ROOT_DIR/apps/mate-container/locks"
+# unless every pin still matches. Each package is packed exactly once, by the
+# same image-pin rule release preparation used, and that verified tarball is
+# the file published below.
+VERIFIED="$(bun "$ROOT_DIR/apps/mate-container/scripts/image-pins.ts" verify "$VERSION" "$PACK_DIR" "$ROOT_DIR")"
 PACKED_INTEGRITIES=()
-for NAME in "${PACKAGE_NAMES[@]}"; do
-  CI=1 npm pack --workspace "$NAME" --pack-destination "$PACK_DIR" --loglevel error >&2
-  PACKED_INTEGRITIES+=("$(node -e '
-    const crypto = require("crypto");
-    const fs = require("fs");
-    const path = require("path");
-    const [name, version, lockDir, packDir] = process.argv.slice(1);
-    const archive = path.join(packDir, `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`);
-    if (!fs.existsSync(archive)) {
-      console.error(`Error: npm pack did not create ${path.basename(archive)} for ${name}.`);
-      process.exit(1);
-    }
-    const packed = `sha512-${crypto.createHash("sha512").update(fs.readFileSync(archive)).digest("base64")}`;
-    let pins = 0;
-    const stale = [];
-    for (const file of fs.readdirSync(lockDir).filter((f) => f.endsWith(".package-lock.json")).sort()) {
-      const entry = JSON.parse(fs.readFileSync(path.join(lockDir, file), "utf8")).packages?.[`node_modules/${name}`];
-      if (!entry) continue;
-      pins += 1;
-      if (entry.version !== version || entry.integrity !== packed) stale.push(file);
-    }
-    if (pins === 0) {
-      console.error(`Error: no image lock in ${lockDir} pins ${name}.`);
-      process.exit(1);
-    }
-    if (stale.length > 0) {
-      console.error(`Error: ${name}@${version} would publish as ${packed}, but ${stale.join(", ")} pin another tarball.`);
-      console.error("The tagged tree does not pack to the tarball pinned at the version bump; nothing was published.");
-      process.exit(1);
-    }
-    process.stdout.write(packed);
-  ' "$NAME" "$VERSION" "$LOCK_DIR" "$PACK_DIR")")
-done
+PACKED_TARBALLS=()
+while IFS=$'\t' read -r NAME INTEGRITY TARBALL; do
+  EXPECTED="${PACKAGE_NAMES[${#PACKED_TARBALLS[@]}]:-}"
+  if [[ "$NAME" != "$EXPECTED" ]]; then
+    echo "Error: image-pins verify reported '$NAME' where '$EXPECTED' was expected; nothing was published." >&2
+    exit 1
+  fi
+  PACKED_INTEGRITIES+=("$INTEGRITY")
+  PACKED_TARBALLS+=("$TARBALL")
+done <<< "$VERIFIED"
+if [[ ${#PACKED_TARBALLS[@]} -ne ${#PACKAGE_NAMES[@]} ]]; then
+  echo "Error: image-pins verify reported ${#PACKED_TARBALLS[@]} of ${#PACKAGE_NAMES[@]} packages; nothing was published." >&2
+  exit 1
+fi
 
 # Prints the registry integrity of an exact version, or nothing when that
 # version does not exist. Any other registry failure stops the release.
@@ -174,7 +160,7 @@ for i in "${!PACKAGE_NAMES[@]}"; do
   fi
 
   echo "Publishing $NAME@$VERSION with tag: $TAG"
-  if ! npm publish --workspace "$NAME" --access public --tag "$TAG" --provenance --registry "$REGISTRY"; then
+  if ! npm publish "${PACKED_TARBALLS[$i]}" --access public --tag "$TAG" --provenance --registry "$REGISTRY"; then
     echo "Error: npm rejected $NAME@$VERSION. Check its trusted publisher on npmjs.com" >&2
     echo "(repository uniqbit-ag/mate-cli, workflow release.yml, environment npm-publish) and that the job has id-token: write." >&2
     exit 1
