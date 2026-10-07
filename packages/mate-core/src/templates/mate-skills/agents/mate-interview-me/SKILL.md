@@ -22,6 +22,11 @@ Once implementation has started, switching costs are real and the user may
 rationalize the wrong thing into "good enough." This skill closes the gap before
 it costs anything.
 
+This skill runs before `/openspec-explore`. It clarifies intent only: do not read
+or investigate the repository, and do not compare implementation options. When
+an answer would need repository evidence, record it in the handoff for explore
+instead of looking it up.
+
 ## When to Use
 
 Apply this skill when:
@@ -129,18 +134,39 @@ Stop only when you can predict the user's reaction to the next three questions.
 This is a checkable condition, not a feeling. If the user names a blocker before
 that point, stop and label the result unresolved rather than calling it confirmed.
 
+## Handoff to explore
+
+After the explicit yes, map the confirmed restatement into this block:
+
+```text
+PRE-EXPLORE HANDOFF (interview)
+Confirmed:   <Outcome, User, Why now, Success, Constraint, Out of scope>
+Unresolved:  <open questions, or "none">
+Assumptions: <points explore should verify against the repository, or "none">
+Next: /openspec-explore
+```
+
+Confirmed points are settled; explore should not ask them again. Then tell the
+user the next step is `/openspec-explore`; do not invoke it. The user starts it
+in this conversation.
+
+If the session stopped on a blocker, still emit the block. Put only explicitly
+confirmed fields under Confirmed, list the blocker first under Unresolved, and
+do not present the result as confirmed.
+
 ## Output
 
 The deliverable is a confirmed statement of intent: the restatement above plus
-an explicit yes. Specs, plans, and task lists are downstream and do not belong in
-this skill. A blocked session returns its partial intent, blocker, and unresolved
-questions instead.
+an explicit yes, followed by the pre-explore handoff. Specs, plans, and task
+lists are downstream and do not belong in this skill. A blocked session returns
+its partial intent, blocker, and unresolved questions in the handoff instead.
 
 ## Mate Boundary
 
 This is a conversational-only skill. Do not create or modify code, context files,
 ADRs, OpenSpec artifacts, intent documents, or any other files. Do not claim that
-a file was written, and do not invoke another skill.
+a file was written, and do not invoke another skill. The only skill this skill
+names is `/openspec-explore`, as the user's next step.
 
 ## Verification
 
@@ -157,3 +183,7 @@ Before stopping, check that:
   of scope.
 - The user explicitly confirmed the restatement, or the result is clearly marked
   unresolved because of a blocker.
+- The session ended with the `PRE-EXPLORE HANDOFF` block and named
+  `/openspec-explore` as the next step without invoking it.
+- No repository investigation was done; evidence needs went to Unresolved or
+  Assumptions.

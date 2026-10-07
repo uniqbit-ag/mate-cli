@@ -206,6 +206,65 @@ describe("bundled Mate pre-explore skills", () => {
     }
   });
 
+  test("ends both pre-explore modes with an explore handoff in both source trees", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      for (const name of ["mate-interview-me", "mate-grill-me"]) {
+        const source = await readSkillFrom(root, name);
+        for (const marker of [
+          "PRE-EXPLORE HANDOFF",
+          "Confirmed:",
+          "Unresolved:",
+          "Assumptions:",
+          "/openspec-explore",
+          "runs before `/openspec-explore`",
+          "do not invoke it",
+        ]) {
+          expect(source).toContain(marker);
+        }
+      }
+
+      const grilling = await readSkillFrom(root, "mate-grilling");
+      expect(grilling).not.toContain("openspec-explore");
+      expect(grilling).not.toContain("PRE-EXPLORE HANDOFF");
+    }
+  });
+
+  test("limits interview mode's skill references to the explore pointer", async () => {
+    const body = stripFrontmatter(await readSkill("mate-interview-me"));
+    expect(new Set(body.match(/(?<!\w)\/[a-z][a-z0-9]*(?:-[a-z0-9]+)+/g))).toEqual(
+      new Set(["/openspec-explore"]),
+    );
+    expect(new Set(body.match(/\b(?:mate|openspec)-[a-z0-9-]*[a-z0-9]/g))).toEqual(
+      new Set(["openspec-explore"]),
+    );
+  });
+
+  test("keeps composed helpers model-loadable and entry skills user-triggered", async () => {
+    const composedBy: Record<string, string[]> = {
+      "mate-grilling": ["`mate-grill-me`", "`mate-grill-with-docs`"],
+      "mate-domain-modeling": ["`mate-grill-with-docs`"],
+    };
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      for (const [name, composers] of Object.entries(composedBy)) {
+        const frontmatter = parseFrontmatter(await readSkillFrom(root, name));
+        expect(frontmatter["user-invocable"]).toBe(false);
+        expect(frontmatter).not.toHaveProperty("disable-model-invocation");
+        const description = String(frontmatter.description);
+        expect(description).toContain("Loaded by");
+        expect(description).toContain("do not start on your own");
+        for (const composer of composers) {
+          expect(description).toContain(composer);
+        }
+      }
+
+      for (const name of ["mate-interview-me", "mate-grill-me", "mate-grill-with-docs"]) {
+        const frontmatter = parseFrontmatter(await readSkillFrom(root, name));
+        expect(frontmatter["disable-model-invocation"]).toBe(true);
+        expect(frontmatter).not.toHaveProperty("user-invocable");
+      }
+    }
+  });
+
   test("keeps the two pre-explore choices conversational-only", async () => {
     for (const name of ["mate-interview-me", "mate-grill-me", "mate-grilling"]) {
       const source = await readSkill(name);

@@ -1,7 +1,7 @@
 ---
 name: mate-grilling
-description: Relentlessly sharpen a plan through dependency-ordered design-tree rounds.
-disable-model-invocation: true
+description: Relentlessly sharpen a plan through dependency-ordered design-tree rounds. Loaded by `mate-grill-me` and `mate-grill-with-docs`; do not start on your own.
+user-invocable: false
 metadata:
   credits:
     skill: grilling
@@ -34,14 +34,16 @@ Recommended: <your recommended answer and its trade-off>
 5. Record the accepted decision in the next hypothesis, close resolved nodes,
    and continue with the next unblocked frontier.
 
-Finding facts is the agent's job, not the user's. Use the available environment,
-tools, or a sub-agent to resolve factual prerequisites instead of asking the user
-for facts the agent can look up.
+Finding facts is the agent's job, not the user's. Look up only the facts that
+block a design decision, using the available environment, tools, or a sub-agent,
+instead of asking the user for them. When a question would need mapping large
+parts of the repository, do not investigate it; record it as an assumption or an
+unresolved question.
 
 End when the frontier is empty and the user confirms shared understanding. If the
 user names a blocker, stop and report the design as incomplete rather than
-presenting it as settled. Return the decisions, unresolved questions, assumptions,
-and a compact next-step summary.
+presenting it as settled. Return the accepted decisions, unresolved questions,
+and assumptions to the invoking skill, which decides the next step.
 
 ## Guardrails
 

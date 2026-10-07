@@ -131,6 +131,13 @@ async function createPublishFixture(
   await fs.mkdir(binDir);
   await fs.mkdir(registryDir);
   await fs.copyFile(publishScriptPath, scriptPath);
+  for (const file of [
+    "apps/mate-container/scripts/image-pins.ts",
+    "apps/mate-container/src/image-pins.ts",
+  ]) {
+    await fs.mkdir(path.dirname(path.join(tempDir, file)), { recursive: true });
+    await fs.copyFile(path.join(repoRoot, file), path.join(tempDir, file));
+  }
 
   const workspacePackages: Array<["core" | "plugin" | "cli", string, string]> = [
     ["core", "packages/mate-core", "@uniqbit/mate-core"],
@@ -179,17 +186,22 @@ async function createPublishFixture(
       '  echo "npm error code E404" >&2',
       "  exit 1",
       "fi",
-      'workspace=""; dest=""; prev=""',
+      'if [ "$1" = publish ]; then',
+      '  fail=$(printf "%s" "${FAKE_PUBLISH_FAIL_FOR:-}" | sed "s/^@//; s#/#-#")',
+      '  if [ -n "$fail" ] && [ "$(basename "$2")" = "$fail-$FAKE_PACK_VERSION.tgz" ]; then',
+      '    echo "npm error code E404" >&2',
+      "    exit 1",
+      "  fi",
+      "  exit 0",
+      "fi",
+      'dest=""; prev=""',
       'for arg in "$@"; do',
-      '  case "$prev" in --workspace) workspace="$arg" ;; --pack-destination) dest="$arg" ;; esac',
+      '  if [ "$prev" = --pack-destination ]; then dest="$arg"; fi',
       '  prev="$arg"',
       "done",
-      'if [ "$1" = publish ] && [ "$workspace" = "${FAKE_PUBLISH_FAIL_FOR:-}" ]; then',
-      '  echo "npm error code E404" >&2',
-      "  exit 1",
-      "fi",
       'if [ -n "$dest" ]; then',
-      '  file=$(printf "%s" "$workspace" | sed "s/^@//; s#/#-#")',
+      '  name=$(sed -n \'s/.*"name":"\\([^"]*\\)".*/\\1/p\' package.json)',
+      '  file=$(printf "%s" "$name" | sed "s/^@//; s#/#-#")',
       '  printf "%s" "$FAKE_PACK_CONTENT" > "$dest/$file-$FAKE_PACK_VERSION.tgz"',
       "fi",
       "",
@@ -240,6 +252,11 @@ function runPublish(fixture: PublishFixture, tag: string, options: PublishOption
 async function publishCalls(fixture: PublishFixture): Promise<string[]> {
   const calls = await fs.readFile(fixture.callsPath, "utf8").catch(() => "");
   return calls.split("\n").filter((line) => line.startsWith("publish "));
+}
+
+/** Tarball file names handed to `npm publish`, in call order. */
+async function publishedTarballs(fixture: PublishFixture): Promise<string[]> {
+  return (await publishCalls(fixture)).map((line) => path.basename(line.split(" ")[1]!));
 }
 
 afterEach(async () => {
@@ -345,6 +362,15 @@ describe("stable release-it config", () => {
 
     expect(stableConfig.plugins?.["@release-it/conventional-changelog"]).toBeDefined();
     expect(canaryConfig.plugins?.["@release-it/conventional-changelog"]).toBeUndefined();
+  });
+
+  test("bumps breaking changes as minor until 1.0.0", async () => {
+    const config = JSON.parse(await fs.readFile(stableReleaseConfigPath, "utf8")) as ReleaseConfig;
+    const changelog = config.plugins?.["@release-it/conventional-changelog"] as {
+      preset?: { preMajor?: boolean };
+    };
+
+    expect(changelog.preset?.preMajor).toBe(true);
   });
 
   test("removes GitLab CI configuration", async () => {
@@ -500,18 +526,30 @@ describe("publish.sh", () => {
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-core");
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-opencode-plugin");
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate");
-      for (const name of ["@uniqbit/mate-core", "@uniqbit/mate-opencode-plugin", "@uniqbit/mate"]) {
-        expect(calls).toContain(
-          `publish --workspace ${name} --access public --tag ${tag} --provenance --registry https://registry.npmjs.org/`,
+      for (const line of await publishCalls(fixture)) {
+        expect(line).toMatch(
+          new RegExp(
+            `^publish \\S+\\.tgz --access public --tag ${tag} --provenance --registry https://registry\\.npmjs\\.org/$`,
+          ),
         );
       }
 
       // Core and plugin must publish before the CLI that pins them.
-      expect((await publishCalls(fixture)).map((line) => line.split(" ")[2])).toEqual([
-        "@uniqbit/mate-core",
-        "@uniqbit/mate-opencode-plugin",
-        "@uniqbit/mate",
+      expect(await publishedTarballs(fixture)).toEqual([
+        `uniqbit-mate-core-${version}.tgz`,
+        `uniqbit-mate-opencode-plugin-${version}.tgz`,
+        `uniqbit-mate-${version}.tgz`,
       ]);
+
+      // The verified tarball is what is published: one pack per package, all before any publish.
+      const lines = calls.split("\n");
+      const packs = lines.flatMap((line, index) =>
+        line.startsWith("pack --pack-destination") ? [index] : [],
+      );
+      expect(packs).toHaveLength(3);
+      const firstPublish = lines.findIndex((line) => line.startsWith("publish "));
+      expect(Math.max(...packs)).toBeLessThan(firstPublish);
+      expect(calls).not.toContain("publish --workspace");
     }
   });
 
@@ -616,9 +654,9 @@ describe("publish.sh", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Skipping @uniqbit/mate-core@1.2.3");
-    expect((await publishCalls(fixture)).map((line) => line.split(" ")[2])).toEqual([
-      "@uniqbit/mate-opencode-plugin",
-      "@uniqbit/mate",
+    expect(await publishedTarballs(fixture)).toEqual([
+      "uniqbit-mate-opencode-plugin-1.2.3.tgz",
+      "uniqbit-mate-1.2.3.tgz",
     ]);
   });
 
@@ -632,9 +670,7 @@ describe("publish.sh", () => {
     expect(result.stderr).toContain(
       `@uniqbit/mate-opencode-plugin@1.2.3 is already published as ${packIntegrity("acme-other")}`,
     );
-    expect((await publishCalls(fixture)).map((line) => line.split(" ")[2])).toEqual([
-      "@uniqbit/mate-core",
-    ]);
+    expect(await publishedTarballs(fixture)).toEqual(["uniqbit-mate-core-1.2.3.tgz"]);
   });
 
   test("names the trusted publisher when npm rejects a publication", async () => {
@@ -643,9 +679,7 @@ describe("publish.sh", () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("trusted publisher");
-    expect((await publishCalls(fixture)).map((line) => line.split(" ")[2])).toEqual([
-      "@uniqbit/mate-core",
-    ]);
+    expect(await publishedTarballs(fixture)).toEqual(["uniqbit-mate-core-1.2.3.tgz"]);
   });
 
   test("does not repeat release preparation checks or request the image", async () => {

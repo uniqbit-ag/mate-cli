@@ -13,19 +13,21 @@ export {
 } from "./companion-guidance";
 export {
   companionForkState,
+  companionGit,
+  companionGitDeps,
   describeGitFailure,
-  forkStateAgainst,
   gitEnvironment,
   GIT_QUERY_TIMEOUT_MS,
   isAuthenticationFailure,
   outputLines,
-  resolveUpstreamTargetSync,
-  resolveUpstreamTargetWith,
-  runGitSync,
   stripGitProgress,
-  upstreamTargetSteps,
   type CompanionForkState,
+  type CompanionGit,
+  type CompanionGitOptions,
+  type GitPromptIntent,
   type GitResult,
+  type GitTransport,
+  type NetworkGitResult,
   type UpstreamTarget,
 } from "./companion-git";
 export {

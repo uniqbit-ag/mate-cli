@@ -2,12 +2,17 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { gitEnvironment } from "../../runtime/companion-git";
 import { getActiveDistribution } from "../../distribution";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { pathIsDirectory } from "../../lib/orchestrator/repo-local-registry";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
+import {
+  verifyDeclaredPlugins,
+  type PluginVerificationFailure,
+} from "../../tools/setup/dynamic-plugins/verify";
 import { getRequiredPluginDrift } from "../../tools/setup/policy";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
 import { writeJsonStdout } from "../write-json-stdout";
@@ -19,6 +24,7 @@ interface DoctorDeps {
   pathValue?: string;
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
   gitHead?: (memberPath: string) => string | null;
+  verifyPlugins?: (companionPath: string) => Promise<PluginVerificationFailure[]>;
 }
 
 export type DoctorKind = "core" | "working" | "companion" | "hub";
@@ -51,6 +57,7 @@ export interface DoctorReport {
   capabilities?: string[];
   toolInstallations?: DoctorToolInstallation[];
   requiredPluginDrift?: Array<{ pluginId: string; kind: string; reason: string }>;
+  pluginFailures?: PluginVerificationFailure[];
   engineRequirement?: { range: string; ok: boolean; detail: string };
   hub?: { members: DoctorHubMember[] };
   resolutionFailures: Array<{ companionPath: string; message: string }>;
@@ -74,6 +81,7 @@ function defaultGitHead(memberPath: string): string | null {
   try {
     return execFileSync("git", ["-C", memberPath, "rev-parse", "HEAD"], {
       stdio: ["ignore", "pipe", "ignore"],
+      env: gitEnvironment(),
     })
       .toString()
       .trim();
@@ -237,6 +245,10 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     report.engineRequirement = collectEngineRequirement(root.config);
   }
 
+  if (root.rootPath && root.config) {
+    report.pluginFailures = await (deps.verifyPlugins ?? verifyDeclaredPlugins)(root.rootPath);
+  }
+
   return report;
 }
 
@@ -329,6 +341,15 @@ function renderHumanReport(report: DoctorReport): void {
       ),
     );
   }
+  if (report.pluginFailures && report.pluginFailures.length > 0) {
+    printSection(
+      "Declared Plugins",
+      renderTable(
+        ["Plugin", "Issue"],
+        report.pluginFailures.map((failure) => [failure.package, failure.reason]),
+      ),
+    );
+  }
   if (report.engineRequirement) {
     printSection("Version Requirement", report.engineRequirement.detail);
   }
@@ -350,13 +371,18 @@ function renderHumanReport(report: DoctorReport): void {
  * working repository), `companion`, `hub`, or `core` (not linked) — with
  * kind-specific diagnostics: policy and capabilities for working repos,
  * capabilities and tool checks for companions, member health for hubs.
+ * Declared plugins are verified strictly (allowed by `MATE_ALLOWED_PLUGINS`,
+ * installed, loadable); any failure is named on stderr and exits non-zero.
  * `--json` emits the same report as one JSON document.
  */
 export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {}): Promise<void> {
   const report = await collectDoctorReport(deps);
-  if (argv.includes("--json")) {
-    await writeJsonStdout(report);
-    return;
+  if (argv.includes("--json")) await writeJsonStdout(report);
+  else renderHumanReport(report);
+
+  const failures = report.pluginFailures ?? [];
+  for (const failure of failures) {
+    process.stderr.write(`${FRAMEWORK_NAME}: plugin ${failure.package}: ${failure.reason}\n`);
   }
-  renderHumanReport(report);
+  if (failures.length > 0) process.exitCode = 1;
 }

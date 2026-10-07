@@ -2159,8 +2159,8 @@ describe("mate CLI e2e", () => {
     );
   }
 
-  test("the deprecated launch alias starts in a TTY and consumes --yes", async () => {
-    const scenario = await createScenario("mate-cli-e2e-launch-alias-tty-");
+  test("a direct launch starts in a TTY and consumes --yes", async () => {
+    const scenario = await createScenario("mate-cli-e2e-launch-tty-");
     const capturePath = await writeAdapterStub(scenario, "claude");
     initWorkingRepoGit(scenario);
 
@@ -2176,7 +2176,7 @@ describe("mate CLI e2e", () => {
 
     const result = await runMateInTty(scenario, {
       cwd: scenario.working,
-      args: ["launch", "claude", "--", "--yes", "--print", "hello"],
+      args: ["claude", "--", "--yes", "--print", "hello"],
       inputChunks: [],
       env: { MATE_E2E_CAPTURE_PATH: capturePath },
     });

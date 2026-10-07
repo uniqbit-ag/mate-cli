@@ -119,8 +119,12 @@ function managedEnv(fixture: Fixture): HookEnv {
   };
 }
 
-function writeVerdict(fixture: Fixture, target: string, env: HookEnv): HookOutcome {
-  return evaluate({ tool_name: "Write", tool_input: { file_path: target } }, env, fixture.repo);
+async function writeVerdict(fixture: Fixture, target: string, env: HookEnv): Promise<HookOutcome> {
+  return await evaluate(
+    { tool_name: "Write", tool_input: { file_path: target } },
+    env,
+    fixture.repo,
+  );
 }
 
 beforeEach(() => {
@@ -134,12 +138,12 @@ afterEach(() => {
 });
 
 describe("the Claude guard and a forked companion", () => {
-  test("denies an artifact write, naming the fork and the recovery command", () => {
+  test("denies an artifact write, naming the fork and the recovery command", async () => {
     const fixture = makeFixture();
     forkHistory(fixture);
     process.env.HOME = fixture.home;
 
-    const outcome = writeVerdict(
+    const outcome = await writeVerdict(
       fixture,
       path.join(fixture.companion, ARTIFACT),
       unmanagedEnv(fixture),
@@ -150,60 +154,72 @@ describe("the Claude guard and a forked companion", () => {
     expect(outcome.stderr).toContain(COMPANION_SYNC_COMMAND);
   });
 
-  test("allows the write when the companion is only ahead", () => {
+  test("allows the write when the companion is only ahead", async () => {
     const fixture = makeFixture();
     aheadOnly(fixture);
     process.env.HOME = fixture.home;
 
     expect(
-      writeVerdict(fixture, path.join(fixture.companion, ARTIFACT), unmanagedEnv(fixture)).exitCode,
+      (await writeVerdict(fixture, path.join(fixture.companion, ARTIFACT), unmanagedEnv(fixture)))
+        .exitCode,
     ).toBe(0);
   });
 
-  test("allows the write when the companion is only behind", () => {
+  test("allows the write when the companion is only behind", async () => {
     const fixture = makeFixture();
     behindOnly(fixture);
     process.env.HOME = fixture.home;
 
     expect(
-      writeVerdict(fixture, path.join(fixture.companion, ARTIFACT), unmanagedEnv(fixture)).exitCode,
-    ).toBe(0);
-  });
-
-  test("allows a non-artifact write while the history has forked", () => {
-    const fixture = makeFixture();
-    forkHistory(fixture);
-    process.env.HOME = fixture.home;
-
-    expect(
-      writeVerdict(fixture, path.join(fixture.companion, "src", "index.ts"), unmanagedEnv(fixture))
+      (await writeVerdict(fixture, path.join(fixture.companion, ARTIFACT), unmanagedEnv(fixture)))
         .exitCode,
     ).toBe(0);
   });
 
-  test("allows the write in a managed session, so a launch's Git decision stands", () => {
+  test("allows a non-artifact write while the history has forked", async () => {
     const fixture = makeFixture();
     forkHistory(fixture);
     process.env.HOME = fixture.home;
 
     expect(
-      writeVerdict(fixture, path.join(fixture.companion, ARTIFACT), managedEnv(fixture)).exitCode,
+      (
+        await writeVerdict(
+          fixture,
+          path.join(fixture.companion, "src", "index.ts"),
+          unmanagedEnv(fixture),
+        )
+      ).exitCode,
     ).toBe(0);
   });
 
-  test("keeps the working-repository path refusal's message when both reasons apply", () => {
+  test("allows the write in a managed session, so a launch's Git decision stands", async () => {
     const fixture = makeFixture();
     forkHistory(fixture);
     process.env.HOME = fixture.home;
 
-    const outcome = writeVerdict(fixture, path.join(fixture.repo, ARTIFACT), unmanagedEnv(fixture));
+    expect(
+      (await writeVerdict(fixture, path.join(fixture.companion, ARTIFACT), managedEnv(fixture)))
+        .exitCode,
+    ).toBe(0);
+  });
+
+  test("keeps the working-repository path refusal's message when both reasons apply", async () => {
+    const fixture = makeFixture();
+    forkHistory(fixture);
+    process.env.HOME = fixture.home;
+
+    const outcome = await writeVerdict(
+      fixture,
+      path.join(fixture.repo, ARTIFACT),
+      unmanagedEnv(fixture),
+    );
 
     expect(outcome.exitCode).toBe(2);
     expect(outcome.stderr).toContain("artifact writes must go to the companion framework path");
     expect(outcome.stderr).not.toContain("forked");
   });
 
-  test("falls through to its existing verdict when no upstream ref is present locally", () => {
+  test("falls through to its existing verdict when no upstream ref is present locally", async () => {
     const fixture = makeFixture();
     aheadOnly(fixture);
     git(fixture.companion, "branch", "--unset-upstream");
@@ -212,16 +228,17 @@ describe("the Claude guard and a forked companion", () => {
     process.env.HOME = fixture.home;
 
     expect(
-      writeVerdict(fixture, path.join(fixture.companion, ARTIFACT), unmanagedEnv(fixture)).exitCode,
+      (await writeVerdict(fixture, path.join(fixture.companion, ARTIFACT), unmanagedEnv(fixture)))
+        .exitCode,
     ).toBe(0);
   });
 
-  test("refuses a Bash redirect into the companion while the history has forked", () => {
+  test("refuses a Bash redirect into the companion while the history has forked", async () => {
     const fixture = makeFixture();
     forkHistory(fixture);
     process.env.HOME = fixture.home;
 
-    const outcome = evaluate(
+    const outcome = await evaluate(
       {
         tool_name: "Bash",
         tool_input: { command: `echo hi > ${path.join(fixture.companion, ARTIFACT)}` },
@@ -234,18 +251,18 @@ describe("the Claude guard and a forked companion", () => {
     expect(outcome.stderr).toContain("forked");
   });
 
-  test("computes the verdict at most once per interval rather than per write", () => {
+  test("computes the verdict at most once per interval rather than per write", async () => {
     const fixture = makeFixture();
     forkHistory(fixture);
     process.env.HOME = fixture.home;
     const target = path.join(fixture.companion, ARTIFACT);
 
-    expect(writeVerdict(fixture, target, unmanagedEnv(fixture)).exitCode).toBe(2);
+    expect((await writeVerdict(fixture, target, unmanagedEnv(fixture))).exitCode).toBe(2);
 
     // Repaired on disk, but the cached verdict still answers until the
     // interval elapses — which is what keeps repeated writes off Git.
     git(fixture.companion, "reset", "-q", "--hard", "origin/main");
-    expect(writeVerdict(fixture, target, unmanagedEnv(fixture)).exitCode).toBe(2);
+    expect((await writeVerdict(fixture, target, unmanagedEnv(fixture))).exitCode).toBe(2);
   });
 });
 
@@ -255,17 +272,18 @@ describe("both runtimes return the same verdict", () => {
     ["ahead only", aheadOnly],
     ["behind only", behindOnly],
   ] as const) {
-    test(`${name}`, () => {
+    test(`${name}`, async () => {
       const fixture = makeFixture();
       prepare(fixture);
       process.env.HOME = fixture.home;
       const target = path.join(fixture.companion, ARTIFACT);
 
-      const claudeRefused = writeVerdict(fixture, target, unmanagedEnv(fixture)).exitCode === 2;
+      const claudeRefused =
+        (await writeVerdict(fixture, target, unmanagedEnv(fixture))).exitCode === 2;
 
       let openCodeRefused = false;
       try {
-        refuseForkedCompanionWrite(
+        await refuseForkedCompanionWrite(
           readContext(unmanagedEnv(fixture), fixture.repo),
           target,
           unmanagedEnv(fixture),
@@ -278,35 +296,35 @@ describe("both runtimes return the same verdict", () => {
     });
   }
 
-  test("the middleware permits a managed session with a forked history", () => {
+  test("the middleware permits a managed session with a forked history", async () => {
     const fixture = makeFixture();
     forkHistory(fixture);
     process.env.HOME = fixture.home;
 
-    expect(() =>
+    await expect(
       refuseForkedCompanionWrite(
         readContext(managedEnv(fixture), fixture.repo),
         path.join(fixture.companion, ARTIFACT),
         managedEnv(fixture),
       ),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
   });
 
-  test("the middleware permits a non-artifact write while the history has forked", () => {
+  test("the middleware permits a non-artifact write while the history has forked", async () => {
     const fixture = makeFixture();
     forkHistory(fixture);
     process.env.HOME = fixture.home;
 
-    expect(() =>
+    await expect(
       refuseForkedCompanionWrite(
         readContext(unmanagedEnv(fixture), fixture.repo),
         path.join(fixture.companion, "src", "index.ts"),
         unmanagedEnv(fixture),
       ),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
   });
 
-  test("the middleware falls through when the check cannot complete", () => {
+  test("the middleware falls through when the check cannot complete", async () => {
     const fixture = makeFixture();
     forkHistory(fixture);
     git(fixture.companion, "update-ref", "-d", "refs/remotes/origin/main");
@@ -314,12 +332,12 @@ describe("both runtimes return the same verdict", () => {
     git(fixture.companion, "remote", "remove", "origin");
     process.env.HOME = fixture.home;
 
-    expect(() =>
+    await expect(
       refuseForkedCompanionWrite(
         readContext(unmanagedEnv(fixture), fixture.repo),
         path.join(fixture.companion, ARTIFACT),
         unmanagedEnv(fixture),
       ),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
   });
 });

@@ -3,12 +3,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { gitEnvironment } from "../../../runtime/companion-git";
+
 export class TrackedOutputError extends Error {}
 
 export type StagedProjection = (stagingPath: string) => Promise<void>;
 
 function git(cwd: string, args: string[]): string {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  const result = spawnSync("git", args, { cwd, encoding: "utf8", env: gitEnvironment() });
   if (result.error || result.status !== 0) {
     throw new TrackedOutputError(
       `git ${args[0]} failed in ${cwd}: ${result.error?.message ?? result.stderr?.trim() ?? result.status}`,

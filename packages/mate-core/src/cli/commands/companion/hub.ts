@@ -58,7 +58,7 @@ async function runHubInit(argv: string[]): Promise<void> {
 async function runHubAdd(argv: string[]): Promise<void> {
   const sourceArg =
     positionalArgs(argv)[0] ?? flagValue(argv, "url") ?? flagValue(argv, "companion");
-  const source = discoverHubSource(sourceArg ?? (await selectRegisteredCompanion()));
+  const source = await discoverHubSource(sourceArg ?? (await selectRegisteredCompanion()));
   const ref = flagValue(argv, "ref");
   if (ref && source.kind === "git") source.ref = ref;
   const member = await addHubMember(process.cwd(), source, {

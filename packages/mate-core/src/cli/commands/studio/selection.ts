@@ -30,6 +30,9 @@ export const STUDIO_PARAMS: readonly string[] = [
 /** Filled into a prompt when no change is named, so a prompt is never half-written. */
 export const CHANGE_PLACEHOLDER = "<change-name>";
 
+/** Filled into pre-explore prompts, which run before any change exists. */
+export const IDEA_PLACEHOLDER = "<idea>";
+
 const DIGEST_LENGTH = 10;
 
 interface SelectionBase {

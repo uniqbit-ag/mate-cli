@@ -24,8 +24,8 @@ function withProcessExitStub<T>(fn: () => Promise<T>): Promise<{ error: unknown 
     });
 }
 
-function mockSpawnSync(opts: { status: number; stderr?: string; stdout?: string }) {
-  return mock(() => ({
+function mockClone(opts: { status: number; stderr?: string; stdout?: string }) {
+  return mock(async (_url: string, _destination: string) => ({
     status: opts.status,
     stderr: opts.stderr ?? "",
     stdout: opts.stdout ?? "",
@@ -130,7 +130,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
     const registerRepository = mock(async (repository: LinkedRepository) => repository);
     const runSetup = mock(async () => {});
     const installCompanion = mock(async () => {});
-    const spawn = mockSpawnSync({ status: 0 });
+    const clone = mockClone({ status: 0 });
 
     try {
       await runCompanionLinkCommandWithDeps([], {
@@ -144,8 +144,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
           throw new Error("ENOENT");
         },
         mkdir: async () => {},
-        spawnSync: spawn,
-        rm: async () => {},
+        cloneCompanion: clone,
         inspectSetupPreflight: async () => ({ kind: "unrecognized" }),
         runSetupFlowAtPath: runSetup,
         installCompanion,
@@ -161,10 +160,9 @@ describe("runCompanionLinkCommandWithDeps", () => {
       path.join(process.env.HOME!, ".mate", "companions"),
       "test-companion",
     );
-    expect(spawn).toHaveBeenCalledWith(
-      "git",
-      ["clone", "git@github.com:user/test-companion.git", expectedCompanionPath],
-      expect.any(Object),
+    expect(clone).toHaveBeenCalledWith(
+      "https://github.com/user/test-companion.git",
+      expectedCompanionPath,
     );
     expect(runSetup).toHaveBeenCalledWith(expectedCompanionPath);
     expect(installCompanion).toHaveBeenCalledWith(expectedCompanionPath);
@@ -183,109 +181,13 @@ describe("runCompanionLinkCommandWithDeps", () => {
     );
   });
 
-  test("tries GitHub SSH before falling back to the pasted HTTPS URL", async () => {
-    const originalIsTTY = process.stdin.isTTY;
-    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
-
-    const logs: string[] = [];
-    const originalLog = console.log;
-    console.log = (msg?: unknown) => logs.push(String(msg ?? ""));
-
-    const registerRepository = mock(async (repository: LinkedRepository) => repository);
-    const runSetup = mock(async () => {});
-    const spawn = mockSpawnSync({ status: 0 });
-
-    try {
-      await runCompanionLinkCommandWithDeps([], {
-        selectCompanionLinkInputs: async () => ({
-          source: "git",
-          gitUrl: "https://github.com/user/test-companion.git",
-        }),
-        extractRepoName: () => "test-companion",
-        resolveCompanion: async () => null,
-        stat: async () => {
-          throw new Error("ENOENT");
-        },
-        mkdir: async () => {},
-        spawnSync: spawn,
-        rm: async () => {},
-        inspectSetupPreflight: async () => ({ kind: "unrecognized" }),
-        runSetupFlowAtPath: runSetup,
-        installCompanion: async () => {},
-        registerRepository,
-        registerCompanion: async () => {},
-      });
-    } finally {
-      Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
-      console.log = originalLog;
-    }
-
-    const expectedCompanionPath = path.join(
-      path.join(process.env.HOME!, ".mate", "companions"),
-      "test-companion",
-    );
-    expect(spawn).toHaveBeenCalledWith(
-      "git",
-      ["clone", "git@github.com:user/test-companion.git", expectedCompanionPath],
-      expect.any(Object),
-    );
-    expect(spawn).toHaveBeenCalledTimes(1);
-    expect(logs.join("\n")).toContain("Source: git");
-  });
-
-  test("tries SSH before HTTPS for non-GitHub repository URLs", async () => {
-    const originalIsTTY = process.stdin.isTTY;
-    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
-    const originalLog = console.log;
-    console.log = () => {};
-
-    const spawn = mockSpawnSync({ status: 0 });
-
-    try {
-      await runCompanionLinkCommandWithDeps([], {
-        selectCompanionLinkInputs: async () => ({
-          source: "git",
-          gitUrl: "https://git.example.test:22222/example-org/example-group/acme-companion.git",
-        }),
-        resolveCompanion: async () => null,
-        stat: async () => {
-          throw new Error("ENOENT");
-        },
-        mkdir: async () => {},
-        spawnSync: spawn,
-        rm: async () => {},
-        inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
-        installCompanion: async () => {},
-        registerRepository: async (repository) => repository,
-        registerCompanion: async () => {},
-      });
-    } finally {
-      Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
-      console.log = originalLog;
-    }
-
-    const expectedCompanionPath = path.join(
-      path.join(process.env.HOME!, ".mate", "companions"),
-      "acme-companion",
-    );
-    expect(spawn).toHaveBeenCalledWith(
-      "git",
-      [
-        "clone",
-        "ssh://git@git.example.test:22222/example-org/example-group/acme-companion.git",
-        expectedCompanionPath,
-      ],
-      expect.any(Object),
-    );
-  });
-
   test("uses the repository name from an explicit ssh URL", async () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
     const originalLog = console.log;
     console.log = () => {};
 
-    const spawn = mockSpawnSync({ status: 0 });
+    const clone = mockClone({ status: 0 });
 
     try {
       await runCompanionLinkCommandWithDeps([], {
@@ -298,8 +200,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
           throw new Error("ENOENT");
         },
         mkdir: async () => {},
-        spawnSync: spawn,
-        rm: async () => {},
+        cloneCompanion: clone,
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         installCompanion: async () => {},
         registerRepository: async (repository) => repository,
@@ -314,14 +215,9 @@ describe("runCompanionLinkCommandWithDeps", () => {
       path.join(process.env.HOME!, ".mate", "companions"),
       "acme-companion",
     );
-    expect(spawn).toHaveBeenCalledWith(
-      "git",
-      [
-        "clone",
-        "ssh://git@git.example.test:22222/example-org/example-group/acme-companion.git",
-        expectedCompanionPath,
-      ],
-      expect.any(Object),
+    expect(clone).toHaveBeenCalledWith(
+      "ssh://git@git.example.test:22222/example-org/example-group/acme-companion.git",
+      expectedCompanionPath,
     );
   });
 
@@ -335,7 +231,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
 
     const registerRepository = mock(async (repository: LinkedRepository) => repository);
     const runSetup = mock(async () => {});
-    const spawn = mockSpawnSync({ status: 0 });
+    const clone = mockClone({ status: 0 });
 
     try {
       await runCompanionLinkCommandWithDeps([], {
@@ -351,8 +247,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
               candidatePath.endsWith(path.join(".mate", "companions", "test-companion")),
           }) as Awaited<ReturnType<typeof fs.stat>>,
         mkdir: async () => {},
-        spawnSync: spawn,
-        rm: async () => {},
+        cloneCompanion: clone,
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         runSetupFlowAtPath: runSetup,
         installCompanion: async () => {},
@@ -368,7 +263,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
       path.join(process.env.HOME!, ".mate", "companions"),
       "test-companion",
     );
-    expect(spawn).not.toHaveBeenCalled();
+    expect(clone).not.toHaveBeenCalled();
     expect(runSetup).not.toHaveBeenCalled();
     expect(registerRepository).toHaveBeenCalledWith(
       expect.objectContaining({ path: path.resolve(process.cwd()) }),
@@ -380,54 +275,43 @@ describe("runCompanionLinkCommandWithDeps", () => {
     expect(logs.join("\n")).toContain(`Companion: ${expectedCompanionPath}`);
   });
 
-  test("falls back to the pasted HTTPS URL when the GitHub SSH clone fails", async () => {
+  test("reports a failed clone and registers nothing", async () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
-
-    const originalLog = console.log;
-    console.log = () => {};
-
-    const spawn = mock((command: string, args: string[]) => ({
-      status: args[1] === "git@github.com:user/test-companion.git" ? 128 : 0,
-      stderr: args[1] === "git@github.com:user/test-companion.git" ? "ssh failed" : "",
-      stdout: "",
-    }));
-    const rm = mock(async () => {});
+    const originalStderrWrite = process.stderr.write;
+    const stderr: string[] = [];
+    process.stderr.write = ((chunk: string) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    const registerRepository = mock(async (repository: LinkedRepository) => repository);
 
     try {
-      await runCompanionLinkCommandWithDeps([], {
-        selectCompanionLinkInputs: async () => ({
-          source: "git",
-          gitUrl: "https://github.com/user/test-companion.git",
+      const { error } = await withProcessExitStub(() =>
+        runCompanionLinkCommandWithDeps([], {
+          selectCompanionLinkInputs: async () => ({
+            source: "git",
+            gitUrl: "https://example.test/acme/acme-companion.git",
+          }),
+          resolveCompanion: async () => null,
+          stat: async () => {
+            throw new Error("ENOENT");
+          },
+          mkdir: async () => {},
+          cloneCompanion: mockClone({ status: 128, stderr: "fatal: repository not found" }),
+          registerRepository,
+          registerCompanion: async () => {},
         }),
-        extractRepoName: () => "test-companion",
-        resolveCompanion: async () => null,
-        stat: async () => {
-          throw new Error("ENOENT");
-        },
-        mkdir: async () => {},
-        spawnSync: spawn as never,
-        rm,
-        inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
-        runSetupFlowAtPath: mock(async () => {}),
-        installCompanion: async () => {},
-        registerRepository: async (repository) => repository,
-        registerCompanion: async () => {},
-      });
+      );
+      expect(String(error)).toContain("EXIT:1");
     } finally {
       Object.defineProperty(process.stdin, "isTTY", { value: originalIsTTY, configurable: true });
-      console.log = originalLog;
+      process.stderr.write = originalStderrWrite;
     }
 
-    const expectedCompanionPath = path.join(
-      path.join(process.env.HOME!, ".mate", "companions"),
-      "test-companion",
-    );
-    expect(spawn.mock.calls.map((call) => call[1])).toEqual([
-      ["clone", "git@github.com:user/test-companion.git", expectedCompanionPath],
-      ["clone", "https://github.com/user/test-companion.git", expectedCompanionPath],
-    ]);
-    expect(rm).toHaveBeenCalledTimes(1);
+    expect(stderr.join("")).toContain("failed to clone companion repository");
+    expect(stderr.join("")).toContain("repository not found");
+    expect(registerRepository).not.toHaveBeenCalled();
   });
 
   test("links an existing companion and succeeds without touching the editor", async () => {
@@ -444,7 +328,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
       "companions",
       "local-companion",
     );
-    const spawn = mockSpawnSync({ status: 0 });
+    const clone = mockClone({ status: 0 });
     const runSetup = mock(async () => {});
     let selectedOptions: { existingCompanions?: string[] } | undefined;
 
@@ -460,7 +344,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
         resolveCompanion: async () => null,
         listCompanions: async () => [localCompanionPath],
         stat: async () => ({ isDirectory: () => true }) as Awaited<ReturnType<typeof fs.stat>>,
-        spawnSync: spawn,
+        cloneCompanion: clone,
         inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
         runSetupFlowAtPath: runSetup,
         installCompanion: async () => {},
@@ -472,7 +356,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
       console.log = originalLog;
     }
 
-    expect(spawn).not.toHaveBeenCalled();
+    expect(clone).not.toHaveBeenCalled();
     expect(runSetup).not.toHaveBeenCalled();
     expect(logs.join("\n")).toContain(`Companion: ${path.resolve(localCompanionPath)}`);
     expect(logs.join("\n")).toContain("Source: git");

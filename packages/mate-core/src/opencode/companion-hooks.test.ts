@@ -130,9 +130,9 @@ describe("OpenCode companion hooks without a launch", () => {
 
     const context = readContext(noLaunchEnvironment(), repo);
     expect(context.companionPath).toBe(companion);
-    expect(() =>
+    await expect(
       guardToolInput(context, "write", { filePath: path.join(repo, "design.md") }),
-    ).toThrow("artifact writes must go to the companion framework path");
+    ).rejects.toThrow("artifact writes must go to the companion framework path");
   });
 
   test("resolves no companion when neither the environment nor a projection does", async () => {
@@ -179,37 +179,37 @@ describe("OpenCode companion hooks", () => {
     const { api, hooks } = fakeApi(repo);
     await registerCompanionHooks(api, context);
 
-    expect(() =>
+    await expect(
       hooks.get("tool.execute.before")!({
         tool: "write",
         sessionID: "s",
         input: { filePath: path.join(repo, "spec.md") },
       }),
-    ).toThrow("guardrail");
+    ).rejects.toThrow("guardrail");
   });
 
   test("blocks artifact writes and allows source writes", async () => {
     const { repo, companion } = await setupRepoFixture("mate-opencode-before-");
     const context = await launchContext(companion, repo);
 
-    expect(() =>
+    await expect(
       guardToolInput(context, "write", { filePath: path.join(repo, "spec.md") }),
-    ).toThrow("guardrail");
-    expect(() =>
+    ).rejects.toThrow("guardrail");
+    await expect(
       guardToolInput(context, "write", { filePath: path.join(repo, "src", "main.ts") }),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
   });
 
   test("blocks artifact paths in apply_patch", async () => {
     const { repo, companion } = await setupRepoFixture("mate-opencode-patch-");
     const context = await launchContext(companion, repo);
 
-    expect(() =>
+    await expect(
       guardToolInput(context, "apply_patch", { patchText: "*** Add File: spec.md\ncontent" }),
-    ).toThrow("guardrail");
-    expect(() =>
+    ).rejects.toThrow("guardrail");
+    await expect(
       guardToolInput(context, "apply_patch", { patchText: "*** Add File: src/main.ts\ncontent" }),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
   });
 
   test("allows gitignored artifact writes", async () => {
@@ -217,19 +217,19 @@ describe("OpenCode companion hooks", () => {
     await fs.writeFile(path.join(repo, ".gitignore"), "local-notes.md\n", "utf8");
     const context = await launchContext(companion, repo);
 
-    expect(() =>
+    await expect(
       guardToolInput(context, "write", { filePath: path.join(repo, "local-notes.md") }),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
   });
 
   test("ignores tools that write nothing", async () => {
     const { repo, companion } = await setupRepoFixture("mate-opencode-read-");
     const context = await launchContext(companion, repo);
 
-    expect(() =>
+    await expect(
       guardToolInput(context, "read", { filePath: path.join(repo, "spec.md") }),
-    ).not.toThrow();
-    expect(() => guardToolInput(context, "bash", undefined)).not.toThrow();
+    ).resolves.toBeUndefined();
+    await expect(guardToolInput(context, "bash", undefined)).resolves.toBeUndefined();
   });
 });
 

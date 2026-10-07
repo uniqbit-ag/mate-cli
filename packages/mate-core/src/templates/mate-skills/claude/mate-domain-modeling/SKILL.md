@@ -1,7 +1,7 @@
 ---
 name: mate-domain-modeling
-description: Build a project domain model using Mate context-map scope and Companion Repository artifacts.
-disable-model-invocation: true
+description: Build a project domain model using Mate context-map scope and Companion Repository artifacts. Loaded by `mate-grill-with-docs`; do not start on your own.
+user-invocable: false
 metadata:
   credits:
     skill: domain-modeling

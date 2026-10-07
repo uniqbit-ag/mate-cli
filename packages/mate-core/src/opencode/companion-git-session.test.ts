@@ -13,6 +13,7 @@ import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { repairCompanionGitOnce, resetCompanionGitRepairGuard } from "./companion-hooks";
 import { readContext, type CompanionContext } from "./companion-policy";
 import { resolveOpenCodeGuidance } from "./projected-guidance";
+import { makeSshStub, stubSshUrl } from "../../../../test/ssh-stub";
 
 const tempRoots: string[] = [];
 const REGISTRY_CONTENT = "companions: []\n";
@@ -120,6 +121,35 @@ afterEach(() => {
 });
 
 describe("the OpenCode plugin repairs the companion at session start", () => {
+  test("keeps the event loop responsive during a slow fetch", async () => {
+    const fixture = makeFixture();
+    process.env.HOME = fixture.home;
+    git(
+      fixture.companion,
+      "remote",
+      "set-url",
+      "origin",
+      stubSshUrl(path.join(fixture.root, "remote.git")),
+    );
+    const stubEnv = makeSshStub(fixture.root).env("delay");
+    const keys = ["GIT_SSH_COMMAND", "GIT_SSH_VARIANT", "MATE_TEST_SSH_MODE", "MATE_TEST_SSH_LOG"];
+    const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    for (const key of keys) process.env[key] = stubEnv[key];
+    let ticks = 0;
+    const ticker = setInterval(() => ticks++, 50);
+    try {
+      const notes = await repairCompanionGitOnce(context(fixture), {});
+      expect(notes.join("\n")).toContain("unfinished");
+    } finally {
+      clearInterval(ticker);
+      for (const key of keys) {
+        if (saved[key] === undefined) delete process.env[key];
+        else process.env[key] = saved[key];
+      }
+    }
+    expect(ticks).toBeGreaterThanOrEqual(5);
+  });
+
   test("runs the unattended synchronization in an unmanaged session", async () => {
     const fixture = makeFixture();
     process.env.HOME = fixture.home;

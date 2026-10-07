@@ -181,7 +181,7 @@ export async function runFinishEngine(
         await git.fetch();
       } catch (err) {
         // Post-commit failure: retain the commit, do not roll back.
-        fail("sync-remote", `mate: fetch failed: ${String(err)}`);
+        fail("sync-remote", `mate: fetch failed (commit retained locally): ${String(err)}`);
         return result;
       }
       const rebase = await git.rebaseOntoUpstream();

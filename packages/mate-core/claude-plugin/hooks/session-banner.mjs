@@ -5,4 +5,4 @@
 import "./ts-loader.mjs";
 
 const { run } = await import("../../src/hooks/session-banner.ts");
-process.exitCode = run();
+process.exitCode = await run();

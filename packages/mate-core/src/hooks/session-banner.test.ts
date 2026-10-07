@@ -56,8 +56,8 @@ afterEach(() => {
 });
 
 describe("session-banner hook module", () => {
-  test("emits a systemMessage banner with repo and artifact paths", () => {
-    const result = buildBanner({
+  test("emits a systemMessage banner with repo and artifact paths", async () => {
+    const result = await buildBanner({
       MATE_REPO_PATH: "/work/acme",
       MATE_ARTIFACT_PATH: "/companions/acme-companion",
       MATE_VERSION: "1.2.3",
@@ -70,12 +70,12 @@ describe("session-banner hook module", () => {
     expect(message).toContain("/companions/acme-companion");
   });
 
-  test("a managed session reports no staleness", () => {
+  test("a managed session reports no staleness", async () => {
     const repoRoot = makeTempDir("banner-managed-");
     wrapRepo(repoRoot, path.join(repoRoot, "projected"), "written-by-another-mate");
 
     const message = bannerMessage(
-      buildBanner(
+      await buildBanner(
         { MATE_REPO_PATH: repoRoot, MATE_ARTIFACT_PATH: "/companions/launched" },
         repoRoot,
       ),
@@ -85,71 +85,71 @@ describe("session-banner hook module", () => {
     expect(message).not.toContain("mate wrap");
   });
 
-  test("falls back to the running install's version", () => {
-    const result = buildBanner({
+  test("falls back to the running install's version", async () => {
+    const result = await buildBanner({
       MATE_REPO_PATH: "/work/acme",
       MATE_ARTIFACT_PATH: "/companions/acme-companion",
     });
     expect(bannerMessage(result)).toContain(`mate v${mateVersion()}`);
   });
 
-  test("resolves the projected paths when the environment is empty", () => {
+  test("resolves the projected paths when the environment is empty", async () => {
     const repoRoot = makeTempDir("banner-wrapped-");
     const companion = path.join(repoRoot, "companion");
     fs.mkdirSync(companion, { recursive: true });
     wrapRepo(repoRoot, companion, currentStamp());
 
-    const message = bannerMessage(buildBanner({}, repoRoot));
+    const message = bannerMessage(await buildBanner({}, repoRoot));
 
     expect(message).toContain(repoRoot);
     expect(message).toContain(companion);
     expect(message).not.toContain("mate wrap");
   });
 
-  test("reports a stale stamp alongside the resolved paths", () => {
+  test("reports a stale stamp alongside the resolved paths", async () => {
     const repoRoot = makeTempDir("banner-stale-");
     const companion = path.join(repoRoot, "companion");
     fs.mkdirSync(companion, { recursive: true });
     wrapRepo(repoRoot, companion, "written-by-another-mate");
 
-    const message = bannerMessage(buildBanner({}, repoRoot));
+    const message = bannerMessage(await buildBanner({}, repoRoot));
 
     expect(message).toContain(companion);
     expect(message).toContain("mate wrap");
   });
 
-  test("reports a missing companion", () => {
+  test("reports a missing companion", async () => {
     const repoRoot = makeTempDir("banner-gone-");
     const companion = path.join(repoRoot, "removed");
     wrapRepo(repoRoot, companion, currentStamp());
 
-    const message = bannerMessage(buildBanner({}, repoRoot));
+    const message = bannerMessage(await buildBanner({}, repoRoot));
 
     expect(message).toContain(companion);
     expect(message).toContain("mate wrap");
   });
 
-  test("stays silent when no context resolves", () => {
+  test("stays silent when no context resolves", async () => {
     const bare = makeTempDir("banner-unwrapped-");
 
-    expect(buildBanner({}, bare)).toEqual({ exitCode: 0, stdout: "" });
-    expect(buildBanner({ MATE_REPO_PATH: "/work/acme" }, bare)).toEqual({
+    expect(await buildBanner({}, bare)).toEqual({ exitCode: 0, stdout: "" });
+    expect(await buildBanner({ MATE_REPO_PATH: "/work/acme" }, bare)).toEqual({
       exitCode: 0,
       stdout: "",
     });
-    expect(buildBanner({ MATE_ARTIFACT_PATH: "/companions/x" }, bare)).toEqual({
+    expect(await buildBanner({ MATE_ARTIFACT_PATH: "/companions/x" }, bare)).toEqual({
       exitCode: 0,
       stdout: "",
     });
   });
 
-  test("stays silent when the projection is unparseable", () => {
+  test("stays silent when the projection is unparseable", async () => {
     const repoRoot = makeTempDir("banner-truncated-");
     wrapRepo(repoRoot, path.join(repoRoot, "companion"), currentStamp());
     const yamlPath = projectionYamlPath(repoRoot);
     fs.writeFileSync(yamlPath, fs.readFileSync(yamlPath, "utf8").slice(0, 45), "utf8");
 
-    expect(buildBanner({}, repoRoot)).toEqual({ exitCode: 0, stdout: "" });
+    expect(await buildBanner({}, repoRoot)).toEqual({ exitCode: 0, stdout: "" });
   });
 
   /**
@@ -158,8 +158,8 @@ describe("session-banner hook module", () => {
    * wrap carried is flagged, and defers rather than doubling the banner.
    */
   describe(`the ${PROJECTED_BANNER_FLAG} copy a wrap carries`, () => {
-    test("defers to the launch's own copy under a Mate environment", () => {
-      const result = buildBanner(
+    test("defers to the launch's own copy under a Mate environment", async () => {
+      const result = await buildBanner(
         { MATE_REPO_PATH: "/work/acme", MATE_ARTIFACT_PATH: "/companions/acme-companion" },
         "/work/acme",
         [PROJECTED_BANNER_FLAG],
@@ -168,21 +168,21 @@ describe("session-banner hook module", () => {
       expect(result).toEqual({ exitCode: 0, stdout: "" });
     });
 
-    test("prints in a session Mate did not launch", () => {
+    test("prints in a session Mate did not launch", async () => {
       const repoRoot = makeTempDir("banner-projected-");
       const companion = path.join(repoRoot, "companion");
       fs.mkdirSync(companion, { recursive: true });
       wrapRepo(repoRoot, companion, currentStamp());
 
-      const message = bannerMessage(buildBanner({}, repoRoot, [PROJECTED_BANNER_FLAG]));
+      const message = bannerMessage(await buildBanner({}, repoRoot, [PROJECTED_BANNER_FLAG]));
 
       expect(message).toContain(repoRoot);
       expect(message).toContain(companion);
     });
 
     /** The plugin's own copy is unflagged, so a launch never silences it. */
-    test("leaves the unflagged copy printing under the same environment", () => {
-      const result = buildBanner(
+    test("leaves the unflagged copy printing under the same environment", async () => {
+      const result = await buildBanner(
         { MATE_REPO_PATH: "/work/acme", MATE_ARTIFACT_PATH: "/companions/acme-companion" },
         "/work/acme",
       );

@@ -35,15 +35,17 @@ function unwrappedWorkingRepository(): string {
   return root;
 }
 
-function expectEveryArtifactInert(cwd: string): void {
+async function expectEveryArtifactInert(cwd: string): Promise<void> {
   expect(
-    evaluate(
-      { tool_name: "Write", tool_input: { file_path: path.join(cwd, "design.md") } },
-      {},
-      cwd,
+    (
+      await evaluate(
+        { tool_name: "Write", tool_input: { file_path: path.join(cwd, "design.md") } },
+        {},
+        cwd,
+      )
     ).exitCode,
   ).toBe(0);
-  expect(buildBanner({}, cwd)).toEqual({ exitCode: 0, stdout: "" });
+  expect(await buildBanner({}, cwd)).toEqual({ exitCode: 0, stdout: "" });
 
   const context = readContext({}, cwd);
   expect(context.companionPath).toBe("");
@@ -55,7 +57,7 @@ afterEach(() => {
 });
 
 describe("unmanaged session guardrail", () => {
-  test("a companion repository resolves no projection", () => {
+  test("a companion repository resolves no projection", async () => {
     const companion = companionRepository();
     writeProjectionPair(companion, {
       stamp: "deadbeef",
@@ -71,13 +73,13 @@ describe("unmanaged session guardrail", () => {
     });
 
     expect(resolveProjection(companion)).toBeNull();
-    expectEveryArtifactInert(companion);
+    await expectEveryArtifactInert(companion);
   });
 
-  test("an unwrapped Working Repository leaves every companion artifact inert", () => {
+  test("an unwrapped Working Repository leaves every companion artifact inert", async () => {
     const repo = unwrappedWorkingRepository();
 
     expect(resolveProjection(repo)).toBeNull();
-    expectEveryArtifactInert(repo);
+    await expectEveryArtifactInert(repo);
   });
 });

@@ -1,4 +1,4 @@
-import { CHANGE_PLACEHOLDER } from "../../selection";
+import { CHANGE_PLACEHOLDER, IDEA_PLACEHOLDER } from "../../selection";
 
 export type WorkflowStepKind = "skill" | "review" | "completion" | "optional";
 export type WorkflowStepBadge = "optional" | "skill" | "openspec" | "human-in-loop";
@@ -56,11 +56,12 @@ function stepPrompt(
   includeChange = true,
 ): string {
   const changeNote = includeChange ? ` for ${CHANGE_PLACEHOLDER}` : " for";
+  const ideaNote = includeChange ? ` about ${IDEA_PLACEHOLDER}` : " about";
   const schemaNote = profile && profile !== "mate-v1" ? ` (use schema: ${profile})` : "";
 
   switch (step.id) {
     case "pre-explore":
-      return `/mate-interview-me or /mate-grill-me${changeNote}`;
+      return `/mate-interview-me or /mate-grill-me${ideaNote}`;
     case "explore":
       return `/openspec-explore${schemaNote}${changeNote}`;
     case "proposal":
@@ -172,8 +173,8 @@ export function workflowPlan(
         name === "mate-interview-me"
           ? "Difference: guided, one-question-at-a-time clarification. Best when: the request is ambiguous and intent, constraints, or scope still need confirmation."
           : "Difference: adversarial, round-based review of the full design-tree frontier. Best when: the direction is mostly known but hidden assumptions, risks, and downstream impacts need surfacing.",
-      prompt: `/${name} for ${CHANGE_PLACEHOLDER}`,
-      copyPrompt: `/${name} for`,
+      prompt: `/${name} about ${IDEA_PLACEHOLDER}`,
+      copyPrompt: `/${name} about`,
     });
   }
   const start = optionalStep(

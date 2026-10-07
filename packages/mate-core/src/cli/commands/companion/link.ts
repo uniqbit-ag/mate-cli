@@ -1,6 +1,5 @@
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 
 import { FRAMEWORK_NAME } from "../../../framework";
@@ -19,17 +18,16 @@ import { runSetupFlowAtPath } from "../setup";
 import { runInstallCommand } from "../install";
 import type { CompanionSource, LinkedRepository } from "../../../lib/orchestrator/types";
 import { invalidateInstallState } from "../../../lib/install";
-import { toSshUrl } from "../../../runtime/companion-git";
+import { companionGit, describeGitFailure, type GitResult } from "../../../runtime/companion-git";
 
 interface CompanionLinkCommandDeps {
   selectCompanionLinkInputs?: (
     options: CompanionLinkWizardOptions,
   ) => Promise<CompanionLinkInputs | null>;
   extractRepoName?: (url: string) => string | null;
-  spawnSync?: typeof spawnSync;
+  cloneCompanion?: (url: string, destination: string) => Promise<GitResult>;
   mkdir?: typeof fs.mkdir;
   stat?: typeof fs.stat;
-  rm?: typeof fs.rm;
   listCompanions?: () => Promise<string[]>;
   registerCompanion?: (companionPath: string) => Promise<void>;
   resolveCompanion?: (cwd: string) => ReturnType<CompanionResolver["resolve"]>;
@@ -80,10 +78,12 @@ export async function runCompanionLinkCommandWithDeps(
 
   const selectInputs = deps.selectCompanionLinkInputs ?? selectCompanionLinkInputs;
   const extractName = deps.extractRepoName ?? extractRepoName;
-  const spawn = deps.spawnSync ?? spawnSync;
+  const cloneCompanion =
+    deps.cloneCompanion ??
+    ((url: string, destination: string) =>
+      companionGit(path.dirname(destination), { prompt: "if-terminal" }).clone(url, destination));
   const mkdir = deps.mkdir ?? fs.mkdir;
   const stat = deps.stat ?? fs.stat;
-  const rm = deps.rm ?? fs.rm;
   const listCompanions =
     deps.listCompanions ??
     (() => {
@@ -149,44 +149,14 @@ export async function runCompanionLinkCommandWithDeps(
     const existingTarget = await stat(companionPath).catch(() => null);
     if (!existingTarget?.isDirectory()) {
       await mkdir(companionsDir, { recursive: true });
-      const sshUrl = toSshUrl(gitUrl);
-      const cloneUrls = sshUrl && sshUrl !== gitUrl ? [sshUrl, gitUrl] : [gitUrl];
-      let cloneResult:
-        | {
-            status: number | null;
-            stderr?: string | Buffer;
-            stdout?: string | Buffer;
-          }
-        | undefined;
-      const cloneErrors: string[] = [];
-
-      for (const cloneUrl of cloneUrls) {
-        cloneResult = spawn("git", ["clone", cloneUrl, companionPath], {
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        if (cloneResult.status === 0) {
-          break;
-        }
-
-        cloneErrors.push(
-          String(cloneResult.stderr || cloneResult.stdout || `Clone failed for ${cloneUrl}`),
+      const clone = await cloneCompanion(gitUrl, companionPath);
+      if (clone.status !== 0) {
+        const detail = describeGitFailure(clone);
+        exitWithError(
+          `mate: failed to clone companion repository:\n${
+            detail === "unknown Git error" ? "review the Git or SSH diagnostics above" : detail
+          }`,
         );
-        try {
-          await rm(companionPath, { recursive: true, force: true });
-        } catch {
-          // Ignore cleanup errors after a failed clone.
-        }
-      }
-
-      if (!cloneResult || cloneResult.status !== 0) {
-        try {
-          await rm(companionPath, { recursive: true, force: true });
-        } catch {
-          // Ignore cleanup errors after a failed clone.
-        }
-        const output = cloneErrors.join("\n\n");
-        exitWithError(`mate: failed to clone companion repository:\n${output}`);
       }
     }
     companionPaths = [companionPath];

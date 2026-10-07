@@ -31,7 +31,8 @@
       "header": "# Changelog",
       "infile": "CHANGELOG.md",
       "preset": {
-        "name": "conventionalcommits"
+        "name": "conventionalcommits",
+        "preMajor": true
       }
     }
   }

@@ -2,14 +2,14 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 
+import { CONTAINER_ROOT, readImageInputs } from "./image-inputs";
 import {
-  LOCK_MANIFESTS,
+  IMAGE_LOCKS,
   withMateVersion,
   withPublishedPackageVersions,
   withPrebuiltPluginVersion,
   withReleaseVersions,
-} from "../scripts/sync-image-inputs";
-import { CONTAINER_ROOT, readImageInputs } from "./image-inputs";
+} from "./image-pins";
 
 const WORKSPACE_ROOT = path.resolve(CONTAINER_ROOT, "..", "..");
 
@@ -97,8 +97,9 @@ describe("the release tag's inputs pin its own published version", () => {
   });
 
   test("both lock manifests are kept in step with the release", () => {
-    for (const manifest of LOCK_MANIFESTS) {
+    for (const { manifest, lock } of IMAGE_LOCKS) {
       expect(fs.existsSync(path.join(CONTAINER_ROOT, manifest))).toBe(true);
+      expect(fs.existsSync(path.join(CONTAINER_ROOT, lock))).toBe(true);
     }
   });
 });
