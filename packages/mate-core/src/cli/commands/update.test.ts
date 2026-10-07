@@ -49,7 +49,6 @@ beforeEach(() => {
   updateCommandDeps.installLatest = mock(() => ({ status: 0, error: undefined }) as never);
   updateCommandDeps.saveUpdateState = mock(async () => {});
   updateCommandDeps.runPostInstall = mock(() => ({ status: 0, error: undefined }) as never);
-  updateCommandDeps.warmOpenCodePluginCache = mock(async () => ({ ok: true }));
 });
 
 afterEach(() => {
@@ -169,7 +168,6 @@ describe("runUpdateCommand", () => {
 
     expect(updateCommandDeps.installLatest).toHaveBeenCalledWith("0.16.0-canary.1");
     expect(updateCommandDeps.saveUpdateState).toHaveBeenCalledWith("0.16.0-canary.1");
-    expect(updateCommandDeps.warmOpenCodePluginCache).toHaveBeenCalledWith("0.16.0-canary.1");
   });
 
   test("runs post-update install from the compiled production entrypoint", () => {
@@ -232,24 +230,7 @@ describe("runUpdateCommand", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  test("warms the OpenCode plugin cache for the coordinated plugin version", async () => {
-    const logs = captureLogs();
-
-    try {
-      await runUpdateCommand(["--yes"]);
-    } finally {
-      logs.restore();
-    }
-
-    expect(updateCommandDeps.warmOpenCodePluginCache).toHaveBeenCalledWith("9.9.9");
-    expect(process.exitCode).toBe(0);
-  });
-
-  test("warns without failing when the plugin cache pre-fetch is unavailable", async () => {
-    updateCommandDeps.warmOpenCodePluginCache = mock(async () => ({
-      ok: false,
-      detail: "registry unreachable",
-    }));
+  test("does no OpenCode plugin cache work and hints at restarting OpenCode services", async () => {
     const logs = captureLogs();
     const stderr = captureStderr();
 
@@ -260,10 +241,11 @@ describe("runUpdateCommand", () => {
       stderr.restore();
     }
 
-    const warning = stderr.chunks.join("");
-    expect(warning).toContain("could not pre-fetch @uniqbit/mate-opencode-plugin@9.9.9");
-    expect(warning).toContain("registry unreachable");
-    expect(logs.chunks.join("\n")).toContain("Upgraded to 9.9.9.");
+    expect("warmOpenCodePluginCache" in updateCommandDeps).toBe(false);
+    expect(stderr.chunks.join("")).not.toContain("pre-fetch");
+    const output = logs.chunks.join("\n");
+    expect(output).toContain("Upgraded to 9.9.9.");
+    expect(output).toContain("opencode service restart");
     expect(process.exitCode).toBe(0);
   });
 

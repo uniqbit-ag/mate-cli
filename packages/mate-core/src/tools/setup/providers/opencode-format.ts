@@ -245,6 +245,10 @@ function mergeConfig(target: Record<string, unknown>, source: Record<string, unk
       target[key] = [...targetValue, ...sourceValue];
       continue;
     }
+    if (key === "plugins" && Array.isArray(targetValue) && Array.isArray(sourceValue)) {
+      target[key] = [...new Set([...targetValue, ...sourceValue])];
+      continue;
+    }
     if (isRecord(targetValue) && isRecord(sourceValue)) {
       mergeConfig(targetValue, sourceValue);
       continue;

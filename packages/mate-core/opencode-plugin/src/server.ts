@@ -1,5 +1,6 @@
 import { Plugin } from "@opencode/plugin";
-import { readContext, registerCompanionHooks } from "@uniqbit/mate-core/opencode";
+import { registerCompanionHooks } from "../../src/opencode/companion-hooks";
+import { readContext } from "../../src/opencode/companion-policy";
 
 import { registerCompanionAccess } from "./add-dir";
 import { registerCompanion } from "./companion";

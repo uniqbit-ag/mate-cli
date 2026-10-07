@@ -58,7 +58,7 @@ function lock(rootDependencies: string[], pinned: string[], version: string): st
 }
 
 /** A workspace at `version` whose image locks still pin `0.1.0`. */
-function workspace(version: string, options: { pinPlugin?: boolean } = {}): string {
+function workspace(version: string, options: { pinCore?: boolean } = {}): string {
   const root = tempDir();
   for (const { name, dir } of RELEASE_PACKAGES) {
     fs.mkdirSync(path.join(root, dir), { recursive: true });
@@ -71,13 +71,10 @@ function workspace(version: string, options: { pinPlugin?: boolean } = {}): stri
     path.join(container, "image-inputs.yaml"),
   );
 
-  const plugin = options.pinPlugin === false ? [] : ["@uniqbit/mate-opencode-plugin"];
+  const core = options.pinCore === false ? [] : ["@uniqbit/mate-core"];
   const pins = [
-    {
-      root: ["@uniqbit/mate"],
-      pinned: ["@uniqbit/mate", "@uniqbit/mate-core", ...plugin],
-    },
-    { root: [], pinned: ["@uniqbit/mate-core", ...plugin] },
+    { root: ["@uniqbit/mate"], pinned: ["@uniqbit/mate", ...core] },
+    { root: [], pinned: core },
   ];
   IMAGE_LOCKS.forEach(({ manifest, lock: lockFile }, index) => {
     fs.writeFileSync(
@@ -162,22 +159,22 @@ describe("image-pins sync then verify", () => {
   });
 
   test("sync refuses a release package no image lock pins and writes nothing", async () => {
-    const root = workspace("1.2.3", { pinPlugin: false });
+    const root = workspace("1.2.3", { pinCore: false });
     const before = snapshot(root);
     const prepared = deps();
 
     expect(await sync(["1.2.3", root], prepared.entryDeps)).not.toBe(0);
-    expect(prepared.output.stderr).toContain("@uniqbit/mate-opencode-plugin");
+    expect(prepared.output.stderr).toContain("@uniqbit/mate-core");
     expect(prepared.output.staged).toEqual([]);
     expect(snapshot(root)).toEqual(before);
   });
 
   test("verify refuses a release package no image lock pins", async () => {
-    const root = workspace("1.2.3", { pinPlugin: false });
+    const root = workspace("1.2.3", { pinCore: false });
     const published = deps();
 
     expect(await verify(["1.2.3", tempDir(), root], published.entryDeps)).not.toBe(0);
-    expect(published.output.stderr).toContain("no image lock pins @uniqbit/mate-opencode-plugin");
+    expect(published.output.stderr).toContain("no image lock pins @uniqbit/mate-core");
     expect(published.output.stdout).toBe("");
   });
 });

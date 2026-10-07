@@ -3,12 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
-import {
-  OPENCODE_PLUGIN_PACKAGE_NAME,
-  getOpenCodePluginPackageReference,
-  isMateOpenCodePluginReference,
-  warmOpenCodePluginCache,
-} from "../../../lib/opencode-plugin-package";
+import { isLegacyMateOpenCodePluginReference } from "../../../lib/opencode-plugin-package";
 import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
 import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
 import { reconcileSharedSkillTree } from "./agents-skill-root";
@@ -21,7 +16,6 @@ import {
 import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "../plugin";
 import { surfaceRoot } from "../surface-target";
 import { resolvePreinstalledPluginReference } from "../../../lib/preinstalled-plugins";
-import { getCurrentVersion } from "../../../lib/update-checker";
 import { pruneEmptyAncestors } from "../utils";
 import {
   getOpenCodePluginReferences,
@@ -115,23 +109,15 @@ function isLegacyMatePluginConfigEntry(entry: unknown): boolean {
   return typeof entry === "string" && LEGACY_PLUGIN_CONFIG_ENTRY_PATTERN.test(entry);
 }
 
-/** Current package references and legacy copied-file references alike. */
+/** Legacy package references (published or path-bound) and copied-file references alike. */
 function isMatePluginEntry(entry: unknown): boolean {
-  return isMateOpenCodePluginReference(entry) || isLegacyMatePluginConfigEntry(entry);
+  return isLegacyMateOpenCodePluginReference(entry) || isLegacyMatePluginConfigEntry(entry);
 }
 
 /**
- * Replace any Mate plugin entry (stale package pins and legacy copied-file
- * references) with the current pinned package reference while preserving
- * every unrelated plugin entry.
+ * The committed config carries no Mate entry: the bundled plugin root is
+ * machine-local and reaches OpenCode through the launch overlay instead.
  */
-function ensureMatePluginReference(config: OpenCodeConfig, pluginReference: string): void {
-  const preserved = getOpenCodePluginReferences(config).filter(
-    (entry) => !isMatePluginEntry(entry),
-  );
-  setOpenCodePluginReferences(config, [...preserved, pluginReference]);
-}
-
 function stripMatePluginReference(config: OpenCodeConfig): void {
   if (!Array.isArray(config.plugin) && !Array.isArray(config.plugins)) return;
 
@@ -141,11 +127,7 @@ function stripMatePluginReference(config: OpenCodeConfig): void {
   setOpenCodePluginReferences(config, preserved);
 }
 
-async function syncOpenCodeConfigFile(
-  srcPath: string,
-  destPath: string,
-  pluginReference: string,
-): Promise<void> {
+async function syncOpenCodeConfigFile(srcPath: string, destPath: string): Promise<void> {
   const defaults = normalizeOpenCodeConfig(
     JSON.parse(await fs.readFile(srcPath, "utf8")) as Record<string, unknown>,
   );
@@ -163,7 +145,7 @@ async function syncOpenCodeConfigFile(
   }
 
   mergeConfigDefaults(existing, defaults);
-  ensureMatePluginReference(existing, pluginReference);
+  stripMatePluginReference(existing);
   await writeOpenCodeConfig(destPath, existing);
 }
 
@@ -293,51 +275,14 @@ async function removeLegacyRuntimeFiles(dest: string): Promise<void> {
   }
 }
 
-async function warmPluginCacheForSetup(pluginReference: string): Promise<void> {
-  const warmed = await warmOpenCodePluginCache();
-  if (warmed.ok) return;
-
-  process.stderr.write(
-    [
-      `${FRAMEWORK_NAME}: could not pre-fetch ${pluginReference} into OpenCode's plugin environment.`,
-      "The first managed OpenCode launch will download it, which requires registry access.",
-      `Re-run \`${FRAMEWORK_NAME} companion setup\` with network access to warm the cache ahead of time.`,
-      ...(warmed.detail ? [`Details: ${warmed.detail}`] : []),
-    ].join("\n") + "\n",
-  );
-}
-
-async function syncOpenCodeRuntimeFiles(
-  src: string,
-  companionPath: string,
-  mode: SetupContext["mode"],
-): Promise<void> {
+async function syncOpenCodeRuntimeFiles(src: string, companionPath: string): Promise<void> {
   const dest = path.join(companionPath, ".opencode");
   await fs.mkdir(dest, { recursive: true });
 
-  // Mate's own plugin binds to an installed copy the same way a Capability's
-  // does: the Runtime Surface writes the reference, so it is what changes it.
-  const pluginReference =
-    (await resolvePreinstalledPluginReference(
-      companionPath,
-      OPENCODE_PLUGIN_PACKAGE_NAME,
-      getCurrentVersion(),
-    )) ?? getOpenCodePluginPackageReference();
-
-  await syncOpenCodeConfigFile(
-    path.join(src, "opencode.json"),
-    path.join(dest, "opencode.json"),
-    pluginReference,
-  );
+  await syncOpenCodeConfigFile(path.join(src, "opencode.json"), path.join(dest, "opencode.json"));
   await removeMatePluginFromLegacyTuiConfig(dest);
   await removeLegacyRuntimeFiles(dest);
   await removeLegacyTuiDependencies(dest);
-
-  // Warm OpenCode's plugin package cache only during interactive setup; the
-  // lightweight launch-time sync path must not install dependencies.
-  if (mode === "setup") {
-    await warmPluginCacheForSetup(pluginReference);
-  }
 }
 
 async function configureOpenCodeGuidance(companionPath: string): Promise<void> {
@@ -644,7 +589,6 @@ export function createOpenCodePlugin(): ProviderPlugin {
       await syncOpenCodeRuntimeFiles(
         path.join(getSetupProvidersRoot(), "opencode"),
         ctx.companionPath,
-        ctx.mode,
       );
       await configureOpenCodeGuidance(ctx.companionPath);
     },

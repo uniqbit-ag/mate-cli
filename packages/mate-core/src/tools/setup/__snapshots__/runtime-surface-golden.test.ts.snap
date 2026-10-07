@@ -243,9 +243,6 @@ exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -348,6 +345,9 @@ exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -371,7 +371,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -472,9 +472,6 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -634,6 +631,9 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -731,7 +731,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -1044,9 +1044,6 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
         },
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -1125,6 +1122,9 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -1148,7 +1148,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -1295,9 +1295,6 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
         },
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -1430,6 +1427,9 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -1545,7 +1545,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -1798,7 +1798,6 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       },
     },
     "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -1871,6 +1870,9 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -1894,7 +1896,7 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -1973,7 +1975,6 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       },
     },
     "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -2094,6 +2095,9 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -2189,7 +2193,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -2446,9 +2450,6 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -2522,6 +2523,9 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -2545,7 +2549,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -2646,9 +2650,6 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -2768,6 +2769,9 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -2864,7 +2868,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -3137,9 +3141,6 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -3231,6 +3232,9 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -3254,7 +3258,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -3356,9 +3360,6 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -3498,6 +3499,9 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -3607,7 +3611,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -3838,7 +3842,6 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
       },
     },
     "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
       "context-mode@1.0.169",
     ],
     "references": {
@@ -4027,6 +4030,9 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           "resource": "<root>/companion/**",
         },
       ],
+      "plugins": [
+        "<opencode-plugin>",
+      ],
       "references": {
         "mate": "<root>/companion",
       },
@@ -4167,7 +4173,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
         ],
         "kind": "list",
         "values": [
-          "@uniqbit/mate-opencode-plugin@<version>",
+          "<opencode-plugin>",
         ],
       },
       {
@@ -4252,9 +4258,6 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -4312,9 +4315,6 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -4373,9 +4373,6 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -4433,9 +4430,6 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },
@@ -4493,9 +4487,6 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
         "tokens": 15000,
       },
     },
-    "plugins": [
-      "@uniqbit/mate-opencode-plugin@<version>",
-    ],
     "references": {
       "mate": "..",
     },

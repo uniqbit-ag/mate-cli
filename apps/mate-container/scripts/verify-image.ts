@@ -208,15 +208,28 @@ export function runChecks(
   const prebuilt = probe(
     [
       'node -e \'const p=require("/opt/mate/prebuilt/node_modules/context-mode/package.json");' +
-        'const q=require("/opt/mate/prebuilt/node_modules/@uniqbit/mate-opencode-plugin/package.json");' +
-        "console.log(p.version, q.version)'",
+        "console.log(p.version)'",
     ],
     { network: false },
   );
   add(
     "the prebuilt workspace holds installed packages",
-    prebuilt.status === 0 && prebuilt.stdout.includes(expected.mateVersion),
+    prebuilt.status === 0 && prebuilt.stdout.trim().length > 0,
     prebuilt.stdout.trim() || prebuilt.stderr.trim(),
+  );
+
+  // The Mate OpenCode plugin ships inside the installed mate-core.
+  const bundledPlugin = probe(
+    [
+      "test -f /opt/mate/tools/node_modules/@uniqbit/mate-core/opencode-plugin/server.ts",
+      "&& echo ok",
+    ],
+    { network: false },
+  );
+  add(
+    "the installed mate-core bundles the OpenCode plugin",
+    bundledPlugin.stdout.includes("ok"),
+    bundledPlugin.stderr.trim(),
   );
 
   const assets = probe(

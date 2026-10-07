@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import { LaunchPreflightError } from "../types";
 import { buildProjection } from "../projection-record";
@@ -17,16 +17,17 @@ import { repoLocalRegistryPath } from "../../../runtime/repo-local";
 import { renderCompanionExternalDirectoryPermissions } from "../../../tools/setup/providers/opencode";
 import { getContextModePackageRoot } from "../../context-mode-package";
 import {
-  getOpenCodePluginPackageReference,
-  OPENCODE_PLUGIN_PACKAGE_NAME,
-} from "../../opencode-plugin-package";
-import { getPreinstalledPluginDir } from "../../preinstalled-plugins";
-import {
   getClaudePluginRoot,
+  getOpenCodePluginRoot,
   getReactDoctorBinPath,
   getWrapperBinPath,
   validateClaudePluginAssets,
 } from "../../package-paths";
+import {
+  getActiveDistribution,
+  resetActiveDistribution,
+  setActiveDistribution,
+} from "../../../distribution";
 import { ClaudeAdapter } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
 import type { AdapterContext } from "./base";
@@ -81,14 +82,12 @@ async function wrappedRepository(prefix: string) {
   return { repoRoot, repository, companionPath };
 }
 
-async function writeOpenCodeRuntime(
-  companionPath: string,
-  pluginReference: string = getOpenCodePluginPackageReference(),
-): Promise<void> {
+/** The companion config carries no Mate plugin reference; the launch overlay supplies the plugin root. */
+async function writeOpenCodeRuntime(companionPath: string, plugins: string[] = []): Promise<void> {
   await fs.mkdir(path.join(companionPath, ".opencode"), { recursive: true });
   await fs.writeFile(
     path.join(companionPath, ".opencode", "opencode.json"),
-    JSON.stringify({ plugins: [pluginReference] }, null, 2) + "\n",
+    JSON.stringify(plugins.length > 0 ? { plugins } : {}, null, 2) + "\n",
     "utf8",
   );
 }
@@ -182,84 +181,47 @@ describe("LaunchAdapter.prepareLaunch", () => {
     ).rejects.toThrow(/OpenCode companion runtime is incomplete/);
   });
 
-  test("fails OpenCode launch validation when the plugin package reference is missing or stale", async () => {
-    const missingPath = await makeTempDir("mate-opencode-missing-plugin-ref-");
-    await writeOpenCodeRuntime(missingPath);
-    await fs.writeFile(path.join(missingPath, ".opencode", "opencode.json"), "{}\n", "utf8");
+  test("passes preflight without a Mate plugin reference in the companion config", async () => {
+    const companionPath = await makeTempDir("mate-opencode-no-plugin-ref-");
+    await writeOpenCodeRuntime(companionPath, ["opencode-acme-plugin"]);
 
     await expect(
-      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({
-        ...makeContext(),
-        companionPath: missingPath,
-      }),
-    ).rejects.toThrow(/Missing Mate plugin package reference in .opencode\/opencode\.json/);
-
-    const stalePath = await makeTempDir("mate-opencode-stale-plugin-ref-");
-    await writeOpenCodeRuntime(stalePath, "@uniqbit/mate-opencode-plugin@0.0.1");
-
-    await expect(
-      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({
-        ...makeContext(),
-        companionPath: stalePath,
-      }),
-    ).rejects.toThrow(/Stale Mate plugin package reference/);
-    await expect(
-      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({
-        ...makeContext(),
-        companionPath: stalePath,
-      }),
-    ).rejects.toThrow(/Expected Mate plugin package: @uniqbit\/mate-opencode-plugin@/);
+      new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
+    ).resolves.toBeUndefined();
   });
 
-  // A distribution that supplies an installed workspace binds the plugin by
-  // path, and setup writes that binding itself. A launch that accepted only the
-  // published spec would refuse exactly those deployments.
-  describe("a plugin reference bound to a preinstalled copy", () => {
-    const expectedVersion = getOpenCodePluginPackageReference().slice(
-      OPENCODE_PLUGIN_PACKAGE_NAME.length + 1,
-    );
+  test("fails preflight on an unparseable companion config with setup repair guidance", async () => {
+    const companionPath = await makeTempDir("mate-opencode-unreadable-");
+    await writeOpenCodeRuntime(companionPath);
+    await fs.writeFile(path.join(companionPath, ".opencode", "opencode.json"), "{ not json\n");
 
-    async function withBoundPlugin(
-      prefix: string,
-      installedVersion: string | null,
-    ): Promise<string> {
-      const companionPath = await makeTempDir(prefix);
-      const packageRoot = getPreinstalledPluginDir(companionPath, OPENCODE_PLUGIN_PACKAGE_NAME);
-      await fs.mkdir(packageRoot, { recursive: true });
-      if (installedVersion !== null) {
-        await fs.writeFile(
-          path.join(packageRoot, "package.json"),
-          JSON.stringify({ name: OPENCODE_PLUGIN_PACKAGE_NAME, version: installedVersion }),
-          "utf8",
-        );
-      }
-      await writeOpenCodeRuntime(companionPath, packageRoot);
-      return companionPath;
+    const launch = new OpenCodeAdapter(OPENCODE_V2).validateLaunch({
+      ...makeContext(),
+      companionPath,
+    });
+    await expect(launch).rejects.toThrow(/Unreadable OpenCode configuration/);
+    await expect(launch).rejects.toThrow(/mate companion setup/);
+  });
+
+  test("fails preflight naming the missing bundled plugin entry and asking for a reinstall", async () => {
+    const companionPath = await makeTempDir("mate-opencode-broken-plugin-");
+    await writeOpenCodeRuntime(companionPath);
+    const assetRoot = await makeTempDir("acme-assets-");
+    await fs.mkdir(path.join(assetRoot, "opencode-plugin"));
+    await fs.writeFile(path.join(assetRoot, "opencode-plugin", "server.ts"), "", "utf8");
+    const { config, registry } = getActiveDistribution();
+    setActiveDistribution({ config: { ...config, assetRoots: [assetRoot] }, registry });
+
+    try {
+      const launch = new OpenCodeAdapter(OPENCODE_V2).validateLaunch({
+        ...makeContext(),
+        companionPath,
+      });
+      await expect(launch).rejects.toThrow(LaunchPreflightError);
+      await expect(launch).rejects.toThrow(/opencode-plugin[\s\S]*tui\.tsx[\s\S]*[Rr]einstall/);
+    } finally {
+      resetActiveDistribution();
     }
-
-    test("passes when the copy it points at is the expected version", async () => {
-      const companionPath = await withBoundPlugin("mate-opencode-bound-ok-", expectedVersion);
-
-      await expect(
-        new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
-      ).resolves.toBeUndefined();
-    });
-
-    test("is still caught when stale, and names the version actually installed", async () => {
-      const companionPath = await withBoundPlugin("mate-opencode-bound-stale-", "0.0.1");
-
-      await expect(
-        new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
-      ).rejects.toThrow(/which is 0\.0\.1 rather than /);
-    });
-
-    test("reports a binding to a copy that is not installed at all", async () => {
-      const companionPath = await withBoundPlugin("mate-opencode-bound-absent-", null);
-
-      await expect(
-        new OpenCodeAdapter(OPENCODE_V2).validateLaunch({ ...makeContext(), companionPath }),
-      ).rejects.toThrow(/which is not installed rather than /);
-    });
   });
 
   test("leaves context-mode package validation to the capability plugin", async () => {
@@ -270,7 +232,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
     await expect(new OpenCodeAdapter(OPENCODE_V2).validateLaunch(context)).resolves.toBeUndefined();
     await fs.writeFile(
       path.join(companionPath, ".opencode", "opencode.json"),
-      JSON.stringify({ plugins: [getOpenCodePluginPackageReference(), "context-mode@0.0.1"] }),
+      JSON.stringify({ plugins: ["context-mode@0.0.1"] }),
     );
     await expect(new OpenCodeAdapter(OPENCODE_V2).validateLaunch(context)).resolves.toBeUndefined();
   });
@@ -619,6 +581,7 @@ describe("Adapter base-URL rewriting is gone", () => {
       { action: "external_directory", resource: "/tmp/companion/**", effect: "allow" },
     ]);
     expect(config.skills).toEqual(["/tmp/companion/.agents/skills"]);
+    expect(config.plugins).toEqual([getOpenCodePluginRoot()]);
   });
 
   test("OpenCodeAdapter merges the mate reference and permissions with inherited OPENCODE_CONFIG_CONTENT", async () => {
@@ -629,6 +592,7 @@ describe("Adapter base-URL rewriting is gone", () => {
         permission: { external_directory: { "../docs/**": "allow" } },
         references: { docs: "../docs" },
         skills: { paths: ["../team-skills"] },
+        plugins: ["opencode-acme-plugin", getOpenCodePluginRoot()],
       }),
       () => new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(makeContext(), []),
     );
@@ -643,6 +607,7 @@ describe("Adapter base-URL rewriting is gone", () => {
     expect(config.references.mate).toBe("/tmp/companion");
     expect(config.skills).toEqual(["../team-skills", "/tmp/companion/.agents/skills"]);
     expect(config.model).toBe("anthropic/test");
+    expect(config.plugins).toEqual(["opencode-acme-plugin", getOpenCodePluginRoot()]);
   });
 
   test("OpenCodeAdapter contributes no provider baseURL while still projecting the companion", async () => {

@@ -7,14 +7,8 @@ const path = await import("node:path");
 import { MATE_ENV } from "../../../runtime/env";
 import { validateGuidanceData, type MateGuidanceFile } from "../../../runtime/guidance";
 
+import { getOpenCodePluginRoot, validateOpenCodePluginAssets } from "../../package-paths";
 import {
-  getOpenCodePluginPackageReference,
-  isMateOpenCodePluginReference,
-  OPENCODE_PLUGIN_PACKAGE_NAME,
-} from "../../opencode-plugin-package";
-import { installedVersionAt, isPreinstalledPluginPath } from "../../preinstalled-plugins";
-import {
-  getOpenCodePluginReferences,
   mergeOpenCodeConfigContent,
   readOpenCodeConfig,
 } from "../../../tools/setup/providers/opencode-format";
@@ -86,6 +80,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
       OPENCODE_CONFIG_CONTENT: mergeOpenCodeConfigContent(
         {
           permissions: renderCompanionExternalDirectoryPermissions(context.companionPath),
+          plugins: [getOpenCodePluginRoot()],
           references: {
             mate: context.companionPath,
           },
@@ -130,75 +125,41 @@ export class OpenCodeAdapter extends LaunchAdapter {
       );
     }
 
-    const expectedPluginReference = getOpenCodePluginPackageReference();
-    const errors: string[] = [
-      ...(await this.validatePluginReference(
-        context,
-        path.join(".opencode", "opencode.json"),
-        expectedPluginReference,
-      )),
+    /** Asset errors carry their own reinstall hint; only companion errors are repaired by setup. */
+    const assetErrors = this.validatePluginAssets();
+    const companionErrors = [
+      ...(await this.validateConfigReadable(context)),
       ...this.validateGuidance(context),
     ];
-    if (errors.length > 0) {
-      throw new LaunchPreflightError(
-        [
-          "OpenCode companion runtime is invalid.",
-          ...errors.map((error) => `- ${error}`),
-          `Expected Mate plugin package: ${expectedPluginReference}`,
-          "Repair the companion runtime by re-running `mate companion setup` in the companion repository or `mate opencode` from the working repository.",
-        ].join("\n"),
+    const errors = [...assetErrors, ...companionErrors];
+    if (errors.length === 0) return;
+
+    const lines = [
+      "OpenCode companion runtime is invalid.",
+      ...errors.map((error) => `- ${error}`),
+    ];
+    if (companionErrors.length > 0) {
+      lines.push(
+        "Repair the companion runtime by re-running `mate companion setup` in the companion repository or `mate opencode` from the working repository.",
       );
     }
+    throw new LaunchPreflightError(lines.join("\n"));
   }
 
-  private async validatePluginReference(
-    context: AdapterContext,
-    configFile: string,
-    expectedPluginReference: string,
-  ): Promise<string[]> {
-    const configPath = path.join(context.companionPath, configFile);
+  /** Launch-time sync leaves unparseable user config untouched; OpenCode would fail on it at startup. */
+  private async validateConfigReadable(context: AdapterContext): Promise<string[]> {
+    const configPath = path.join(context.companionPath, ".opencode", "opencode.json");
+    const { present } = await readOpenCodeConfig(configPath);
+    return present ? [] : [`Unreadable OpenCode configuration: ${configPath}`];
+  }
 
-    const { present, config } = await readOpenCodeConfig(configPath);
-    if (!present) {
-      return [`Unreadable OpenCode configuration: ${configPath}`];
-    }
-
-    const mateReferences = getOpenCodePluginReferences(config).filter(
-      isMateOpenCodePluginReference,
-    ) as string[];
-
-    if (mateReferences.includes(expectedPluginReference)) {
+  private validatePluginAssets(): string[] {
+    try {
+      validateOpenCodePluginAssets();
       return [];
+    } catch (error) {
+      return [(error as Error).message];
     }
-
-    // Setup writes one of two spellings, and both are current: the published
-    // spec on an ordinary workstation, and an absolute path into the
-    // machine-local workspace where the distribution supplied an installed
-    // copy. Comparing only against the spec would refuse the launch on exactly
-    // the deployments preinstalled binding exists for.
-    //
-    // A bound reference carries its version in the package it points at rather
-    // than in the string, so staleness is read off disk. It is still caught,
-    // and now names the version actually installed.
-    const expectedVersion = expectedPluginReference.slice(OPENCODE_PLUGIN_PACKAGE_NAME.length + 1);
-    const bound = mateReferences.find((reference) =>
-      isPreinstalledPluginPath(reference, OPENCODE_PLUGIN_PACKAGE_NAME),
-    );
-    if (bound !== undefined) {
-      const version = await installedVersionAt(bound);
-      if (version === expectedVersion) return [];
-      return [
-        `Stale Mate plugin package reference in ${configFile}: it points at ${bound}, which is ${version ?? "not installed"} rather than ${expectedVersion}.`,
-      ];
-    }
-
-    if (mateReferences.length > 0) {
-      return [
-        `Stale Mate plugin package reference in ${configFile}: found ${mateReferences.join(", ")}.`,
-      ];
-    }
-
-    return [`Missing Mate plugin package reference in ${configFile}.`];
   }
 
   // Self-check the guidance payload this launch is about to inject so a

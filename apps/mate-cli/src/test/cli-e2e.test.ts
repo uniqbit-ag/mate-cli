@@ -908,7 +908,7 @@ describe("mate CLI e2e", () => {
     expect(config).not.toContain("name: react-doctor");
   });
 
-  test("setup deploys the OpenCode companion plugin into the companion runtime", async () => {
+  test("setup writes no Mate plugin reference into the committed companion config", async () => {
     const scenario = await createScenario("mate-cli-e2e-opencode-setup-plugin-");
 
     const result = await setupCompanion(scenario, [], {
@@ -921,11 +921,7 @@ describe("mate CLI e2e", () => {
     const opencodeConfig = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".opencode", "opencode.json"), "utf8"),
     );
-    expect(
-      opencodeConfig.plugins.filter((entry: string) =>
-        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
-      ),
-    ).toHaveLength(1);
+    expect(JSON.stringify(opencodeConfig)).not.toContain("mate-opencode-plugin");
     await expect(
       fs.access(path.join(scenario.companion, ".opencode", "tui.json")),
     ).rejects.toThrow();
@@ -2216,17 +2212,24 @@ describe("mate CLI e2e", () => {
     });
 
     expect(result.exitCode, `${result.stdout}\n${result.stderr}`).toBe(0);
-    const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
-    expect(
-      repairedConfig.plugins.filter((entry: string) =>
-        entry.startsWith("@uniqbit/mate-opencode-plugin@"),
-      ),
-    ).toHaveLength(1);
+    const repairedConfig = await fs.readFile(configPath, "utf8");
+    expect(repairedConfig).not.toContain("mate-opencode-plugin");
     await expect(
       fs.access(path.join(scenario.companion, ".opencode", "tui.json")),
     ).rejects.toThrow();
     await expect(fs.access(legacyGuidancePath)).rejects.toThrow();
-    const invocation = await readJson<{ env: { MATE_GUIDANCE_JSON: string | null } }>(capturePath);
+    const invocation = await readJson<{
+      env: { MATE_GUIDANCE_JSON: string | null; OPENCODE_CONFIG_CONTENT: string | null };
+    }>(capturePath);
+    /** The machine-local plugin root reaches OpenCode only through the launch overlay. */
+    const overlayPlugins = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT ?? "{}").plugins as
+      | string[]
+      | undefined;
+    const pluginRoots = (overlayPlugins ?? []).filter((entry) =>
+      entry.endsWith("/opencode-plugin"),
+    );
+    expect(pluginRoots).toHaveLength(1);
+    await fs.access(path.join(pluginRoots[0]!, "server.ts"));
     const guidance = JSON.parse(invocation.env.MATE_GUIDANCE_JSON ?? "{}");
     expect(guidance.version).toBe(1);
     expect(guidance.companionGuidance).toContain("<companion-policy ");

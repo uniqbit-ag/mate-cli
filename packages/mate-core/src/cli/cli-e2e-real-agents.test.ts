@@ -7,16 +7,6 @@ import path from "node:path";
 
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
-import {
-  isMateOpenCodePluginReference,
-  OPENCODE_PLUGIN_PACKAGE_NAME,
-} from "../lib/opencode-plugin-package";
-import {
-  getLocalWorkspaceDir,
-  getPreinstalledPluginDir,
-  PREBUILT_BUNDLE_MARKER,
-} from "../lib/preinstalled-plugins";
-
 // Local-only, opt-in verification that mate's companion-guidance injection ends
 // up EXACTLY ONCE in the system prompt that the REAL `claude` and `opencode`
 // binaries send to the model API. Unlike cli-e2e.test.ts's launch tests (which
@@ -32,10 +22,6 @@ import {
 // real `claude`/`opencode` binary isn't resolvable on PATH locally.
 
 const APP_ROOT = path.resolve(import.meta.dirname, "../../../../apps/mate-cli");
-const OPENCODE_PLUGIN_ROOT = path.resolve(
-  import.meta.dirname,
-  "../../../../apps/mate-opencode-plugin",
-);
 const E2E_TMP_ROOT = path.join(os.tmpdir(), "mate-cli-e2e");
 const tempRoots: string[] = [];
 
@@ -403,27 +389,6 @@ async function setupCompanion(
   });
 }
 
-/**
- * Binds the companion's Mate plugin to the workspace's own plugin source, so the
- * launch exercises the code under test instead of the last published release.
- * Runs after setup, whose plugin install rewrites the local workspace; the bundle
- * marker is what lets every later projection keep the installed-copy binding.
- */
-async function bindLocalOpenCodePlugin(scenario: E2EScenario): Promise<void> {
-  const workspace = getLocalWorkspaceDir(scenario.companion);
-  const installed = getPreinstalledPluginDir(scenario.companion, OPENCODE_PLUGIN_PACKAGE_NAME);
-  await fs.mkdir(path.dirname(installed), { recursive: true });
-  await fs.symlink(OPENCODE_PLUGIN_ROOT, installed, "dir");
-  await fs.writeFile(path.join(workspace, PREBUILT_BUNDLE_MARKER), "{}\n", "utf8");
-
-  const configPath = path.join(scenario.companion, ".opencode", "opencode.json");
-  const config = JSON.parse(await fs.readFile(configPath, "utf8")) as { plugins?: unknown[] };
-  config.plugins = (config.plugins ?? []).map((entry) =>
-    isMateOpenCodePluginReference(entry) ? installed : entry,
-  );
-  await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-}
-
 async function linkRepository(scenario: E2EScenario): Promise<CliRunResult> {
   const linkResult = await runMateInTty(scenario, {
     cwd: scenario.working,
@@ -669,7 +634,6 @@ describe.skipIf(!runRealAgentTests || !hasOpenCode)(
       try {
         const setupSelections = { allowedAgents: ["opencode"] };
         expect((await setupCompanion(scenario, setupSelections.allowedAgents)).exitCode).toBe(0);
-        await bindLocalOpenCodePlugin(scenario);
         expect((await linkRepository(scenario)).exitCode).toBe(0);
 
         // Pin the provider/model explicitly: opencode silently falls back to its

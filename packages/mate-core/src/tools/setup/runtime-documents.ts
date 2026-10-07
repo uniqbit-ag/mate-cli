@@ -7,7 +7,7 @@ import type {
   ManagedRegion,
   RenderedRuntimeDocument,
 } from "../../lib/orchestrator/projection-types";
-import { getOpenCodePluginPackageReference } from "../../lib/opencode-plugin-package";
+import { getOpenCodePluginRoot } from "../../lib/package-paths";
 import type { CapabilityContributionInput, SetupContext } from "./plugin";
 import {
   mateBannerHookGroups,
@@ -45,15 +45,14 @@ function document(documentPath: string, regions: ManagedRegion[]): RenderedRunti
 }
 
 /**
- * The Mate plugin reference is what makes an Unmanaged OpenCode session load
- * the companion guidance at all: OpenCode has no config channel for a generated
+ * The Mate plugin root is what makes an Unmanaged OpenCode session load the
+ * companion guidance at all: OpenCode has no config channel for a generated
  * system prompt, so the plugin is the only injection point, and a bare session
- * loads no companion config to find it in.
+ * has no launch overlay to find it in. The root is machine-local, which this
+ * git-excluded document tolerates and a committed config would not.
  *
- * A managed launch does load the plugin twice — its `OPENCODE_CONFIG_DIR` names
- * the companion, whose config carries the same reference. That is inert rather
- * than doubled: the plugin skips its own emission when the companion-policy
- * marker is already in the prompt.
+ * A managed launch lists the same root in its `OPENCODE_CONFIG_CONTENT`
+ * overlay; OpenCode dedupes identical plugin paths across config sources.
  */
 
 /**
@@ -153,7 +152,7 @@ export function renderDocumentsForTarget(
         {
           at: ["plugins"],
           kind: "list",
-          values: [getOpenCodePluginPackageReference()],
+          values: [getOpenCodePluginRoot()],
         },
         {
           at: ["mcp", "servers"],

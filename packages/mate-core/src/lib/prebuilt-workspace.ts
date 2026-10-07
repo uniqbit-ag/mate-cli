@@ -3,8 +3,6 @@ import path from "node:path";
 
 import semver from "semver";
 
-import { OPENCODE_PLUGIN_PACKAGE_NAME } from "./opencode-plugin-package";
-import { getCurrentVersion } from "./update-checker";
 import {
   CONTEXT_MODE_NODE_REQUIREMENT,
   CONTEXT_MODE_PACKAGE_NAME,
@@ -20,7 +18,6 @@ import { getLocalWorkspaceDir } from "./preinstalled-plugins";
 function getDistributionLocalDependencies(): Record<string, string> {
   return {
     [CONTEXT_MODE_PACKAGE_NAME]: CONTEXT_MODE_VERSION,
-    [OPENCODE_PLUGIN_PACKAGE_NAME]: getCurrentVersion(),
   };
 }
 

@@ -290,8 +290,8 @@ The pushed tag starts `release.yml`:
    and, for stable versions, that the tagged commit is on `main`.
 2. `publish` runs `publish.sh` in the `npm-publish` environment. It checks
    synchronized versions, tag/version/channel agreement, and that every packed
-   tarball matches the image-lock pins, then publishes `@uniqbit/mate-core`,
-   `@uniqbit/mate-opencode-plugin`, and `@uniqbit/mate` via npm Trusted
+   tarball matches the image-lock pins, then publishes `@uniqbit/mate-core`
+   (which bundles the OpenCode plugin) and `@uniqbit/mate` via npm Trusted
    Publishing with provenance.
 3. `image` requests `publish-image.yml` best-effort; a failure prints the
    manual retry command and does not fail the release.

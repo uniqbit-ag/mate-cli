@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { extractPatchPaths, readContext } from "@uniqbit/mate-core/opencode";
+import { extractPatchPaths, readContext } from "../../src/opencode";
 
 import { registerCompanion } from "./companion";
 

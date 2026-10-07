@@ -114,8 +114,8 @@ describe("unpinned release packages", () => {
   test("a package no image lock pins is named", () => {
     const locks = new Map([[GLOBAL_LOCK, lockSource({ "@uniqbit/mate": pin })]]);
 
-    expect(unpinned(locks, ["@uniqbit/mate", "@uniqbit/mate-opencode-plugin"])).toEqual([
-      "@uniqbit/mate-opencode-plugin",
+    expect(unpinned(locks, ["@uniqbit/mate", "@uniqbit/mate-core"])).toEqual([
+      "@uniqbit/mate-core",
     ]);
   });
 
@@ -197,9 +197,9 @@ describe("packing the release packages", () => {
 
     expect(() =>
       packRelease("1.2.3", root, tempDir(), {
-        runNpm: fakeNpm([], { skip: "@uniqbit/mate-opencode-plugin" }),
+        runNpm: fakeNpm([], { skip: "@uniqbit/mate-core" }),
       }),
-    ).toThrow("uniqbit-mate-opencode-plugin-1.2.3.tgz");
+    ).toThrow("uniqbit-mate-core-1.2.3.tgz");
   });
 
   test("fails naming the package npm could not pack", () => {

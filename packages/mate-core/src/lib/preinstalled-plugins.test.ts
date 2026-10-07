@@ -10,10 +10,6 @@ import {
   isContextModePackageReference,
 } from "./context-mode-package";
 import {
-  OPENCODE_PLUGIN_PACKAGE_NAME,
-  isMateOpenCodePluginReference,
-} from "./opencode-plugin-package";
-import {
   PREBUILT_BUNDLE_MARKER,
   PreinstalledPluginMismatchError,
   getLocalWorkspaceDir,
@@ -75,13 +71,13 @@ describe("resolvePreinstalledPluginReference", () => {
 
   test("binds each supported capability plugin the same way", async () => {
     const companionPath = await makeCompanion();
-    const dir = await installCopy(companionPath, OPENCODE_PLUGIN_PACKAGE_NAME, {
+    const dir = await installCopy(companionPath, "@acme/opencode-plugin", {
       version: "9.9.9",
     });
 
     const reference = await resolvePreinstalledPluginReference(
       companionPath,
-      OPENCODE_PLUGIN_PACKAGE_NAME,
+      "@acme/opencode-plugin",
       "9.9.9",
     );
 
@@ -177,16 +173,6 @@ describe("a bound reference stays recognisable as Mate-managed", () => {
       ),
     ).toBe(true);
     expect(isContextModePackageReference("/srv/acme/node_modules/other-plugin")).toBe(false);
-  });
-
-  test("the Mate plugin's predicate matches the published reference and an installed path", () => {
-    expect(isMateOpenCodePluginReference(`${OPENCODE_PLUGIN_PACKAGE_NAME}@1.2.3`)).toBe(true);
-    expect(
-      isMateOpenCodePluginReference(
-        `/srv/acme/.mate/plugins/.local/node_modules/${OPENCODE_PLUGIN_PACKAGE_NAME}`,
-      ),
-    ).toBe(true);
-    expect(isMateOpenCodePluginReference("@acme/other-plugin@1.0.0")).toBe(false);
   });
 });
 

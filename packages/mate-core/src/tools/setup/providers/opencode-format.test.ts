@@ -160,6 +160,24 @@ describe("mergeOpenCodeConfigContent", () => {
     });
   });
 
+  test("concatenates plugins with the inherited list and drops duplicates", () => {
+    const env = {
+      OPENCODE_CONFIG_CONTENT: JSON.stringify({
+        plugins: ["opencode-acme-plugin", "/opt/acme/opencode-plugin"],
+      }),
+    } as NodeJS.ProcessEnv;
+
+    const merged = JSON.parse(
+      mergeOpenCodeConfigContent({ plugins: ["/opt/acme/opencode-plugin", "/opt/mate"] }, env),
+    );
+
+    expect(merged.plugins).toEqual([
+      "opencode-acme-plugin",
+      "/opt/acme/opencode-plugin",
+      "/opt/mate",
+    ]);
+  });
+
   test("ignores invalid inherited content and skips already-present skill paths", () => {
     const env = { OPENCODE_CONFIG_CONTENT: "not json" } as NodeJS.ProcessEnv;
     expect(

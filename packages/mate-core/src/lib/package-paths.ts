@@ -55,6 +55,38 @@ export function validateClaudePluginAssets(pluginRoot = getClaudePluginRoot()): 
   }
 }
 
+/**
+ * Resolved bundled OpenCode plugin root: a distribution asset root that ships
+ * `opencode-plugin/` wins over core's bundled default. Machine-local, so it
+ * reaches OpenCode only through the launch overlay and the git-excluded
+ * projection, never a committed config.
+ */
+export function getOpenCodePluginRoot(): string {
+  for (const root of getActiveDistribution().config.assetRoots ?? []) {
+    const candidate = path.join(root, "opencode-plugin");
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return path.resolve(import.meta.dirname, "../../opencode-plugin");
+}
+
+/** Root entries OpenCode resolves for a plugin referenced by directory path. */
+const OPENCODE_PLUGIN_ENTRIES = ["server.ts", "tui.tsx"] as const;
+
+/**
+ * Verify the bundled OpenCode plugin entries exist. Throws naming the missing
+ * entries; `companion setup` cannot restore package files, so the fix is a reinstall.
+ */
+export function validateOpenCodePluginAssets(pluginRoot = getOpenCodePluginRoot()): void {
+  const missing = OPENCODE_PLUGIN_ENTRIES.filter(
+    (entry) => !fs.existsSync(path.join(pluginRoot, entry)),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `bundled OpenCode plugin at ${pluginRoot} is missing: ${missing.join(", ")}. Reinstall Mate to restore it.`,
+    );
+  }
+}
+
 export function getReactDoctorBinPath(): string {
   try {
     const entryPath = require.resolve("react-doctor");
