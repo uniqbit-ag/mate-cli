@@ -344,6 +344,92 @@ describe("defaultAgentFor", () => {
     ).toEqual({});
   });
 
+  describe("audiences", () => {
+    const withAudiences = (base: string | null, audienceAgent: string | null) =>
+      [
+        "allowedAgents: [claude]",
+        ...(base ? ["studio:", "  terminal:", `    agent: ${base}`] : []),
+        "audiences:",
+        "  ba:",
+        ...(audienceAgent
+          ? ["    studio:", "      terminal:", `        agent: ${audienceAgent}`]
+          : ["    plugins: []"]),
+        "",
+      ].join("\n");
+    const definitions = [".claude/agents/developer.md", ".claude/agents/business-analyst.md"];
+
+    test("the active audience's agent overrides base", async () => {
+      const root = companion(withAudiences("developer", "business-analyst"), definitions);
+      expect(await defaultAgentFor(root, "claude", { MATE_AUDIENCE: "ba" })).toEqual({
+        agentArgs: ["--agent", "business-analyst"],
+      });
+    });
+
+    test("an audience without an agent inherits base", async () => {
+      const root = companion(withAudiences("developer", null), definitions);
+      expect(await defaultAgentFor(root, "claude", { MATE_AUDIENCE: "ba" })).toEqual({
+        agentArgs: ["--agent", "developer"],
+      });
+    });
+
+    test("no audience uses base", async () => {
+      const root = companion(withAudiences("developer", "business-analyst"), definitions);
+      expect(await defaultAgentFor(root, "claude", {})).toEqual({
+        agentArgs: ["--agent", "developer"],
+      });
+    });
+
+    test("no audience and no base agent starts plain", async () => {
+      const root = companion(withAudiences(null, "business-analyst"), definitions);
+      expect(await defaultAgentFor(root, "claude", {})).toEqual({});
+    });
+
+    test("an unknown audience uses the base agent", async () => {
+      const root = companion(withAudiences("developer", "business-analyst"), definitions);
+      expect(await defaultAgentFor(root, "claude", { MATE_AUDIENCE: "qa" })).toEqual({
+        agentArgs: ["--agent", "developer"],
+      });
+    });
+
+    test("an audience agent without a definition falls back to a plain session with a notice", async () => {
+      const root = companion(withAudiences("developer", "business-analyst"), [
+        ".claude/agents/developer.md",
+      ]);
+      const outcome = await defaultAgentFor(root, "claude", { MATE_AUDIENCE: "ba" });
+      expect(outcome.agentArgs).toBeUndefined();
+      expect(outcome.notice).toContain("business-analyst");
+    });
+
+    test("an unsafe audience agent is rejected by config validation, never used", async () => {
+      const root = companion(withAudiences("developer", "'$(touch x)'"), definitions);
+      const outcome = await defaultAgentFor(root, "claude", { MATE_AUDIENCE: "ba" });
+      expect(outcome.agentArgs).toBeUndefined();
+    });
+
+    test("the resolver never forwards a browser-chosen audience", async () => {
+      const seen: unknown[][] = [];
+      const resolve = createLaunchResolver({
+        collectInventory: async () => ({
+          companions: [{ path: ACME, health: "ready" as const, pairings: [] }],
+        }),
+        launchCompanion: ACME,
+        launchableAgents: async () => ["claude"],
+        defaultAgent: async (...args: unknown[]) => {
+          seen.push(args);
+          return {};
+        },
+      });
+      await resolve("claude", null, {
+        action: "x",
+        subject: "y",
+        audience: "ba",
+        args: ["--audience", "ba"],
+      } as never).catch(() => undefined);
+      await resolve("claude", null);
+      expect(seen.every((args) => args.length === 2)).toBe(true);
+    });
+  });
+
   test("the resolver carries the outcome and ignores the browser", async () => {
     const resolve = createLaunchResolver({
       collectInventory: async () => ({

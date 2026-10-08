@@ -163,6 +163,24 @@ missing.
   session starts plain and the terminal says why. The name comes only from the
   companion; the page cannot choose it. Without the key, launches are unchanged.
 
+  A companion that declares audiences can override the persona per audience:
+
+  ```yaml
+  studio:
+    terminal:
+      agent: developer
+  audiences:
+    ba:
+      studio:
+        terminal:
+          agent: business-analyst
+  ```
+
+  The default agent is the one for the audience Studio runs with
+  (`MATE_AUDIENCE`), falling back to the base `studio.terminal.agent` when that
+  audience sets none, when no audience is set, or when the audience is not
+  declared. The page cannot choose an audience either.
+
 - **One viewer.** A session has one attached tab. Reloading the tab reattaches
   it; any other tab holding the cookie can attach, taking it over, and the
   previous tab is told so and does not reconnect by itself. After a lost

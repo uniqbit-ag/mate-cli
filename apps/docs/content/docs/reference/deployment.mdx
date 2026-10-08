@@ -109,6 +109,7 @@ the setting and the value; it is never quietly replaced by a default.
 | `MATE_COMPANIONS_DIR`        | The directory holding the Companion Repositories the container serves.                                                                                                                                                                                            | `/companions`              | no                               |
 | `MATE_COMPANION_REPOS`       | Git locations to check out into the companions directory when nothing is present at their destination. One per line or comma-separated, each `url` or `url=directory`.                                                                                            | —                          | no                               |
 | `MATE_COMPANION`             | Which discovered companion agent sessions run against, by directory name or absolute path.                                                                                                                                                                        | —                          | only when more than one is found |
+| `MATE_AUDIENCE`              | The audience of the selected companion this container serves, as declared under `audiences:` in its `framework.yaml`. Unset: the base configuration only. One container serves one audience; an audience the companion does not declare stops startup.            | —                          | no                               |
 | `MATE_STUDIO_PORT`           | The port Studio is served on.                                                                                                                                                                                                                                     | `4097`                     | no                               |
 | `MATE_STUDIO_HOST`           | The interface Studio binds.                                                                                                                                                                                                                                       | `0.0.0.0`                  | no                               |
 | `MATE_STUDIO_WRITABLE`       | Whether Studio's save path is reachable.                                                                                                                                                                                                                          | `true`                     | no                               |
@@ -226,6 +227,76 @@ deleted whether the restore succeeds or fails. A `.mate/plugins/.npmrc` in the
 companion that sets a registry is refused. Container administrators can still
 read a running container's startup environment; use a short-lived read-only
 token.
+
+### Serving one audience of a companion
+
+One companion can serve several audiences — developers and business analysts,
+say — from one `framework.yaml`. The base configuration is what everyone gets;
+each named audience adds plugins and may override Studio's default agent:
+
+```yaml
+plugins:
+  - package: "@acme/mate-remote-discovery"
+    version: 1.0.0
+studio:
+  terminal:
+    agent: developer
+audiences:
+  ba:
+    plugins:
+      - package: "@acme/mate-business-analyst"
+        version: 1.0.0
+    studio:
+      terminal:
+        agent: business-analyst
+```
+
+`MATE_AUDIENCE` selects the audience; unset means the base configuration alone,
+exactly as before. Run one container per audience, from the same companion:
+
+```yaml
+services:
+  mate-dev:
+    image: ghcr.io/uniqbit-ag/mate-cli/mate-appliance:latest
+    environment:
+      MATE_COMPANION: acme
+  mate-ba:
+    image: ghcr.io/uniqbit-ag/mate-cli/mate-appliance:latest
+    environment:
+      MATE_COMPANION: acme
+      MATE_AUDIENCE: ba
+```
+
+- **Plugins add, the agent overrides.** The effective plugins are the base list
+  followed by the audience's, each with its own `policy` and `config`. The
+  effective default agent is the audience's `studio.terminal.agent`, else the
+  base one. Hydration, strict startup verification and Studio use only the
+  effective set, so a plugin of an inactive audience is never loaded and its
+  missing credential never blocks startup.
+- **One lockfile.** The plugin manifest and committed lockfile cover the base and
+  every audience, so `mate install` writes the same files whatever
+  `MATE_AUDIENCE` is and a frozen restore works for any audience. Packages of
+  inactive audiences are installed but never loaded.
+- **Validation.** Audience names are lowercase letters, digits and hyphens (up
+  to 64, starting with a letter). An audience may contain only `plugins` and
+  `studio.terminal.agent`. A package may not be declared in both base and an
+  audience, or twice in one audience; two audiences may share a package only at
+  the same version. A hub may not declare audiences.
+- **An undeclared audience stops startup**, naming the requested and the
+  declared ones, before setup or Studio run. `mate install` and `mate doctor`
+  fail the same way; ordinary commands warn once and use the base alone.
+  `mate doctor --json` reports `audiences: { declared, active }`.
+- **Older Mate versions ignore `audiences:`** and refuse a frozen install whose
+  manifest holds audience packages. Set an `engines.mate` floor in
+  `framework.yaml` for a companion that uses audiences, so the engine guard names
+  the version needed.
+
+Startup carries the audience to the plugin restore, strict verification,
+Studio and every agent session it starts, whether it was set in the
+environment or the configuration file. It is never written into the companion.
+Switching `MATE_AUDIENCE` on one checkout leaves files the previous audience's
+plugins generated, such as agent definitions; give each audience its own
+checkout.
 
 ### An unsupported selection is refused by name
 
@@ -351,7 +422,9 @@ versions, so nothing is installed when one starts.
 - **A companion can set its persona.** `studio.terminal.agent` in the
   companion's `framework.yaml` selects an agent for every session when its
   definition exists, such as one a plugin wrote to `.claude/agents/`; otherwise
-  the session starts plain and says so. See [the Studio
+  the session starts plain and says so. The audience being served
+  (`MATE_AUDIENCE`) may override it with its own
+  `audiences.<name>.studio.terminal.agent`. See [the Studio
   reference](/mate-cli/reference/studio#agent-terminal).
 - **Sessions outlive their tab.** Closing or reloading the tab, or losing the
   network, detaches the session; the agent keeps running for the detach window

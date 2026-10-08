@@ -7,7 +7,14 @@ import { CompanionResolver } from "../../../lib/orchestrator/companion-resolver"
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import type { Plugin } from "../plugin";
 import type { PluginRegistry } from "../registry";
-import { readDeclarations, validateDeclaration } from "./declarations";
+import {
+  describeUnknownAudience,
+  effectivePluginDeclarations,
+  readAudienceSelection,
+  readFrameworkRaw,
+  resolveAudience,
+} from "./audiences";
+import { validateDeclaration } from "./declarations";
 import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
 
 // Packages already registered in this process; re-hydration (e.g. right after
@@ -62,9 +69,9 @@ function activateDeclaredPlugin(plugin: Plugin): Plugin {
 }
 
 /**
- * Registers the companion's declared plugins into the active registry —
- * compiled-in plugins first (they are already registered), declared order
- * after. Runs before cap-command detection on every invocation. No-op
+ * Registers the companion's effective plugins (base plus the active
+ * `MATE_AUDIENCE`) into the active registry — compiled-in plugins first
+ * (they are already registered), declared order after. Runs before cap-command detection on every invocation. No-op
  * without a companion or `plugins:` entries; all diagnostics go to stderr;
  * never throws.
  */
@@ -77,7 +84,12 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
       deps.companionPath ?? (await resolveCompanionQuietly(deps.cwd ?? process.cwd(), env));
     if (!companionPath) return;
 
-    const entries = await readDeclarations(companionPath);
+    const raw = await readFrameworkRaw(companionPath);
+    const audience = resolveAudience(raw, readAudienceSelection(env));
+    if (!audience.ok) {
+      warn(`${describeUnknownAudience(audience)}; applying the base configuration only`);
+    }
+    const entries = effectivePluginDeclarations(raw, audience.ok ? audience.active : null);
     if (entries.length === 0) return;
 
     const registry = deps.registry ?? getActiveDistribution().registry;

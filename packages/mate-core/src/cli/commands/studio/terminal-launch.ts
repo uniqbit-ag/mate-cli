@@ -3,6 +3,10 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { ConfigStore, mergeWithDefaults } from "../../../lib/orchestrator/config-store";
+import {
+  effectiveStudioAgent,
+  readAudienceSelection,
+} from "../../../tools/setup/dynamic-plugins/audiences";
 import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 import { findAction, promptArgs, skillInstalledFor, SUBJECT_PATTERN } from "./actions";
 import { collectSkillInventory, type StudioSkillInventory } from "./mate-inventory";
@@ -45,18 +49,24 @@ export interface DefaultAgentOutcome {
 }
 
 /**
- * The companion's `studio.terminal.agent` for one provider. Never throws and
- * never echoes the configured value into the notice.
+ * The companion's effective default agent for one provider: the active
+ * audience's `studio.terminal.agent` (Studio's own `MATE_AUDIENCE`, never the
+ * browser's), else the base one. Never throws and never echoes the configured
+ * value into the notice.
  */
 export async function defaultAgentFor(
   companionPath: string,
   agent: TerminalAgent,
+  env: Record<string, string | undefined> = process.env,
 ): Promise<DefaultAgentOutcome> {
   const configPath = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
   if (!fs.existsSync(configPath)) return {};
   let name: unknown;
   try {
-    name = (await new ConfigStore(configPath).load()).studio?.terminal?.agent;
+    name = effectiveStudioAgent(
+      await new ConfigStore(configPath).load(),
+      readAudienceSelection(env),
+    );
   } catch {
     return {};
   }
