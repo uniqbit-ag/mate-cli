@@ -4,10 +4,14 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { ConfigStore, mergeWithDefaults } from "../../../lib/orchestrator/config-store";
 import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
+import { findAction, promptArgs, skillInstalledFor, SUBJECT_PATTERN } from "./actions";
+import { collectSkillInventory, type StudioSkillInventory } from "./mate-inventory";
+import { listSpecs } from "./openspec-cli";
 import { resolveCompanion } from "./selection";
 import {
   agentInstalled,
   TERMINAL_AGENTS,
+  type TerminalAction,
   type TerminalAgent,
   type TerminalLaunchResolution,
 } from "./terminal";
@@ -77,6 +81,14 @@ export interface LaunchResolverOptions {
   launchCompanion?: string | null;
   launchableAgents?: (companionPath: string) => Promise<TerminalAgent[]>;
   defaultAgent?: (companionPath: string, agent: TerminalAgent) => Promise<DefaultAgentOutcome>;
+  skillInventory?: (companionPath: string) => Promise<StudioSkillInventory>;
+  /** Whether the companion has a canonical spec for this capability, read at launch. */
+  specExists?: (companionPath: string, capability: string) => Promise<boolean>;
+}
+
+async function specInCompanion(companionPath: string, capability: string): Promise<boolean> {
+  const result = await listSpecs(companionPath);
+  return result.ok && (result.value.specs ?? []).some((spec) => spec.id === capability);
 }
 
 /** The companion a launch targets: the pinned one, else the page's, both read from the current inventory. */
@@ -94,10 +106,16 @@ export async function effectiveLaunchCompanion(
 /** Revalidates at launch time; the rendered page and its digest are never trusted. */
 export function createLaunchResolver(
   options: LaunchResolverOptions,
-): (agent: string, digest: string | null) => Promise<TerminalLaunchResolution> {
+): (
+  agent: string,
+  digest: string | null,
+  action?: TerminalAction,
+) => Promise<TerminalLaunchResolution> {
   const agents = options.launchableAgents ?? launchableAgents;
   const defaultAgent = options.defaultAgent ?? defaultAgentFor;
-  return async (agent, digest) => {
+  const skills = options.skillInventory ?? collectSkillInventory;
+  const specExists = options.specExists ?? specInCompanion;
+  return async (agent, digest, request) => {
     const companion = await effectiveLaunchCompanion(
       await options.collectInventory(),
       options.launchCompanion,
@@ -113,9 +131,26 @@ export function createLaunchResolver(
     if (!(await agents(companion.path)).includes(agent as TerminalAgent)) {
       return { reason: `${agent} is not allowed by this companion or is not installed` };
     }
-    return {
+    const launch = {
       companionPath: companion.path,
       ...(await defaultAgent(companion.path, agent as TerminalAgent)),
     };
+    if (!request) return launch;
+
+    const action = findAction(request.action);
+    if (!action) return { reason: "the requested action is not registered" };
+    const subject = request.subject;
+    if (typeof subject !== "string" || !SUBJECT_PATTERN.test(subject)) {
+      return { reason: "the action subject is not a valid spec name" };
+    }
+    if (!skillInstalledFor(await skills(companion.path), action.skill, agent as TerminalAgent)) {
+      return {
+        reason: `the ${action.skill} skill is not installed for ${agent} in this companion`,
+      };
+    }
+    if (!(await specExists(companion.path, subject))) {
+      return { reason: `this companion has no spec named ${subject}` };
+    }
+    return { ...launch, promptArgs: promptArgs(action, agent as TerminalAgent, subject) };
   };
 }

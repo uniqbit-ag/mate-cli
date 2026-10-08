@@ -204,6 +204,35 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
     });
   });
 
+  /* Delegated: a spec row's controls need no per-node wiring. */
+  var AGENT_ORDER = ["claude", "opencode"];
+  function copyPromptFor(node) {
+    var viewed = document.documentElement.getAttribute("data-agent-viewed");
+    var order = viewed ? [viewed].concat(AGENT_ORDER) : AGENT_ORDER;
+    for (var index = 0; index < order.length; index += 1) {
+      var text = node.getAttribute("data-prompt-" + order[index]);
+      if (text) return text;
+    }
+    return null;
+  }
+  if (typeof document.addEventListener === "function") document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (!target || typeof target.closest !== "function") return;
+    var run = target.closest("[data-studio-action]");
+    if (run) {
+      var agents = (run.getAttribute("data-studio-agents") || "").split(" ").filter(Boolean);
+      document.dispatchEvent(new CustomEvent("studio:terminal-action", {
+        detail: { action: run.getAttribute("data-studio-action"), subject: run.getAttribute("data-studio-subject"), agents: agents },
+      }));
+      return;
+    }
+    var prompt = target.closest("[data-studio-copy-prompt]");
+    if (prompt) {
+      var text = copyPromptFor(prompt);
+      if (text) copy(text, "prompt");
+    }
+  });
+
   var savePromise = null;
   function editor() { return document.getElementById("vault-editor"); }
   function status(message) {

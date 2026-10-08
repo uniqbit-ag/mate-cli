@@ -179,11 +179,19 @@ export interface TerminalSessionInfo {
   startedAt: number;
 }
 
+/** A registered action and its subject; the client names them, the server builds the prompt. */
+export interface TerminalAction {
+  action: unknown;
+  subject: unknown;
+}
+
 export type TerminalLaunchResolution =
   | {
       companionPath: string;
       /** Extra argv entries for the managed launch; set only by companion configuration. */
       agentArgs?: string[];
+      /** The registry's first-turn prompt, appended after `agentArgs`; never from the client. */
+      promptArgs?: string[];
       /** Written to the terminal before the agent starts. */
       notice?: string;
     }
@@ -195,6 +203,7 @@ export interface TerminalRegistryOptions {
   resolveLaunch: (
     agent: string,
     companionDigest: string | null,
+    action?: TerminalAction,
   ) => Promise<TerminalLaunchResolution>;
   /** The Mate invocation prefix, e.g. `[bun, cli.mjs]`. */
   mateCommand: string[];
@@ -385,7 +394,13 @@ export class TerminalRegistry {
     const viewer = connection.viewer;
     if (this.stopping) return send(viewer, { type: "error", reason: "Studio is stopping" });
     if (connection.session) {
-      return send(viewer, { type: "error", reason: "this connection already views a session" });
+      return send(viewer, {
+        type: "error",
+        reason:
+          message.action === undefined && message.subject === undefined
+            ? "this connection already views a session"
+            : "end the current session first",
+      });
     }
     const size = this.dimensions(message);
     if (!size) return send(viewer, { type: "error", reason: "terminal size out of range" });
@@ -394,7 +409,11 @@ export class TerminalRegistry {
     }
     const agent = message.agent as TerminalAgent;
     const digest = typeof message.companion === "string" ? message.companion : null;
-    const resolved = await this.options.resolveLaunch(agent, digest);
+    const action =
+      message.action === undefined && message.subject === undefined
+        ? undefined
+        : { action: message.action, subject: message.subject };
+    const resolved = await this.options.resolveLaunch(agent, digest, action);
     if ("reason" in resolved) return send(viewer, { type: "error", reason: resolved.reason });
     if (connection.session || !this.connections.has(connection)) return;
 
@@ -419,7 +438,7 @@ export class TerminalRegistry {
     agent: TerminalAgent,
     companionPath: string,
     size: { cols: number; rows: number },
-    extras: { agentArgs?: string[]; notice?: string } = {},
+    extras: { agentArgs?: string[]; promptArgs?: string[]; notice?: string } = {},
   ): Session {
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(this.options.env ?? process.env)) {
@@ -446,6 +465,7 @@ export class TerminalRegistry {
       "--yes",
       ...(this.options.noGit ? ["--no-git"] : []),
       ...(extras.agentArgs ?? []),
+      ...(extras.promptArgs ?? []),
     ];
 
     const session = {

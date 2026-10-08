@@ -1,6 +1,6 @@
 ---
 name: mate-show-me
-description: Explain the current topic or the applied change in a browser-rendered Mate report. Use only when the user explicitly invokes the skill to see how something works, what a change did, or wants a diagram, call tree, or rendered diff of the current work.
+description: Explain the current topic, the applied change, or a named spec capability in a browser-rendered Mate report. Use only when the user explicitly invokes the skill to see how something works, what a change did, what a spec capability specifies, or wants a diagram, call tree, or rendered diff of the current work.
 disable-model-invocation: true
 allowed-tools: Bash(git:*), Bash(mate:*)
 license: MIT
@@ -18,6 +18,12 @@ metadata:
 # Mate Show Me
 
 Explain the current topic visually in a browser-rendered Mate report. Skip the preamble, keep prose brief, and pick the smallest report view that makes the key point clear.
+
+## Subject
+
+- With no argument, explain the current topic or the applied change, as described below.
+- With an argument naming a spec capability (`$ARGUMENTS`, for example `acme-capability`), explain that capability instead: read its canonical spec under `openspec/specs/` in the Companion Repository and report its purpose, its requirements, and the flow or structure they establish. Name the capability in the report `metadata`, include a `diagram` section, and omit the `diff` section.
+- When the named capability has no canonical spec, say so, suggest close capability names from `openspec/specs/`, and write nothing: no report, no file.
 
 ## Mate Workflow
 

@@ -1,8 +1,10 @@
 /** @jsxImportSource hono/jsx */
 
+import { SUBJECT_PATTERN, type SpecActionOffer } from "../../actions";
 import type { StudioCompanionPayload, StudioSpec } from "../../payload";
 import { Warnings } from "../warnings";
 
+const NO_ACTIONS: SpecActionOffer[] = [];
 const UNASSIGNED_AREA = "unassigned";
 
 /** A spec binds one Area or several, so it appears under each of them. */
@@ -27,19 +29,70 @@ function specStatus(spec: StudioSpec): { label: string; invalid: boolean } {
 
 interface SpecsProps {
   payload: StudioCompanionPayload;
+  /** Skill actions offered on each spec row; none by default. */
+  actions?: SpecActionOffer[];
 }
 
 /** Its own view: an Area map is read on its own, not alongside the changes. */
-export function Specs({ payload }: SpecsProps) {
+export function Specs({ payload, actions = NO_ACTIONS }: SpecsProps) {
   return (
     <>
-      <SpecsByArea specs={payload.specs} />
+      <SpecsByArea specs={payload.specs} actions={actions} />
       <Warnings warnings={payload.warnings} />
     </>
   );
 }
 
-function SpecsByArea({ specs }: { specs: StudioSpec[] }) {
+function SpecActions({ capability, actions }: { capability: string; actions: SpecActionOffer[] }) {
+  if (!SUBJECT_PATTERN.test(capability)) return null;
+  return (
+    <span className="spec-actions">
+      {actions.map(({ action, runAgents, copyAgents }) => (
+        <>
+          {runAgents.length > 0 ? (
+            <button
+              type="button"
+              className="button spec-action"
+              data-studio-action={action.id}
+              data-studio-subject={capability}
+              data-studio-agents={runAgents.join(" ")}
+            >
+              {action.label}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="runway-step-copy spec-copy"
+            aria-label="Copy prompt"
+            title="Copy prompt"
+            data-studio-copy-prompt={action.id}
+            data-prompt-claude={
+              copyAgents.includes("claude") ? action.prompts.claude(capability) : undefined
+            }
+            data-prompt-opencode={
+              copyAgents.includes("opencode") ? action.prompts.opencode(capability) : undefined
+            }
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" />
+              <path d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H3.5A1.5 1.5 0 0 0 2 3v5.5A1.5 1.5 0 0 0 3.5 10H4" />
+            </svg>
+          </button>
+        </>
+      ))}
+    </span>
+  );
+}
+
+function SpecsByArea({ specs, actions }: { specs: StudioSpec[]; actions: SpecActionOffer[] }) {
   const groups = groupSpecsByArea(specs);
 
   return (
@@ -81,12 +134,15 @@ function SpecsByArea({ specs }: { specs: StudioSpec[] }) {
                           </span>
                         </div>
                       </div>
-                      <span
-                        className={
-                          status.invalid ? "spec-status spec-status-invalid" : "spec-status"
-                        }
-                      >
-                        {status.label}
+                      <span className="spec-card-end">
+                        <SpecActions capability={spec.capability} actions={actions} />
+                        <span
+                          className={
+                            status.invalid ? "spec-status spec-status-invalid" : "spec-status"
+                          }
+                        >
+                          {status.label}
+                        </span>
                       </span>
                     </div>
                   );
