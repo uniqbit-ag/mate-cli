@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.18.2](https://github.com/uniqbit-ag/mate-cli/compare/0.18.1...0.18.2) (2026-10-08)
+
+### Bug Fixes
+
+- **container:** bump appliance pins, install OpenCode 2.x from npm ([acba211](https://github.com/uniqbit-ag/mate-cli/commit/acba21151dfe23d8e7cc11c87d5e2f3942d304fe))
+
 ## [0.18.1](https://github.com/uniqbit-ag/mate-cli/compare/0.18.0...0.18.1) (2026-10-08)
 
 ## [0.18.1-canary.5](https://github.com/uniqbit-ag/mate-cli/compare/0.18.0...0.18.1) (2026-10-08)

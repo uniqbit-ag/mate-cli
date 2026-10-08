@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate-core",
-  "version": "0.18.1",
+  "version": "0.18.2",
   "description": "Core framework and plugin APIs for Mate.",
   "license": "MIT",
   "repository": {
