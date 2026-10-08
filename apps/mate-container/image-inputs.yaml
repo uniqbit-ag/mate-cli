@@ -67,7 +67,7 @@ os_packages:
 # minimum rather than equal to it.
 # ---------------------------------------------------------------------------
 mate:
-  version: 0.18.1-canary.5
+  version: 0.18.1
   minimum_compatible: 0.17.0-canary.5
   registry: https://registry.npmjs.org/
 

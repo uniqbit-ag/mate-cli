@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.18.1](https://github.com/uniqbit-ag/mate-cli/compare/0.18.0...0.18.1) (2026-10-08)
+
+## [0.18.1-canary.5](https://github.com/uniqbit-ag/mate-cli/compare/0.18.0...0.18.1) (2026-10-08)
+
+### Features
+
+- **studio:** host agent-published reports in Studio ([ca763cb](https://github.com/uniqbit-ag/mate-cli/commit/ca763cb7c3b474122b0c195005dd226da3897309))
+- **studio:** launch skill actions from the Specs view ([a1e8589](https://github.com/uniqbit-ag/mate-cli/commit/a1e8589dbd37a94fd3ac6d8a714fa7350d70b166))
+- **studio:** use a copy icon button for spec prompts ([2513609](https://github.com/uniqbit-ag/mate-cli/commit/25136098f6aa11575269b8d83eef23d0a65cc097))
+
+### Bug Fixes
+
+- **studio:** keep the vault tree cost independent of repository size ([a03d37e](https://github.com/uniqbit-ag/mate-cli/commit/a03d37e9344594a497fdf7600c9b2ced9bc6682e))
+
+## [0.18.1-canary.4](https://github.com/uniqbit-ag/mate-cli/compare/0.18.0...0.18.1) (2026-10-07)
+
+## [0.18.1-canary.3](https://github.com/uniqbit-ag/mate-cli/compare/0.18.0...0.18.1) (2026-10-07)
+
+### ⚠ BREAKING CHANGES
+
+- **container:** appliance plugin allowlists are removed.
+
+### Features
+
+- **container:** accept capabilities provided by verified allowlisted plugins ([eee76ed](https://github.com/uniqbit-ag/mate-cli/commit/eee76edd03ea6273ebff154b1851f31ee3b9e50b))
+- **container:** generate plugin files into the checkout at startup instead of checking drift ([f0effa2](https://github.com/uniqbit-ag/mate-cli/commit/f0effa23743977d0c31a8d69acb0ba30b097f9f9))
+- **container:** restore companion plugins at startup, drop the plugin allowlist ([09b17b0](https://github.com/uniqbit-ag/mate-cli/commit/09b17b0417e3f85e4209f9cb59627b9889dfe866))
+- **container:** warn on plugin-generated file drift instead of refusing to start ([0293bfa](https://github.com/uniqbit-ag/mate-cli/commit/0293bfa5793900ec5b8bc5a5c570bed4b00c1706))
+- **studio:** apply a companion-configured default agent to terminal sessions ([257d208](https://github.com/uniqbit-ag/mate-cli/commit/257d20810f28c757871b60345fb4d32f69ef5145))
+
+### Bug Fixes
+
+- **container:** redact both startup tokens on every child error path ([c9b57a8](https://github.com/uniqbit-ag/mate-cli/commit/c9b57a813a80fb38ada8a36b63db147694f21b44))
+
+## [0.18.1-canary.2](https://github.com/uniqbit-ag/mate-cli/compare/0.18.0...0.18.1) (2026-10-07)
+
+### ⚠ BREAKING CHANGES
+
+- `mate plugin verify` removed (use `mate doctor`); deprecated `mate launch <agent>` alias and top-level `hub` gate removed.
+
+### Features
+
+- adjusted git architecture flow ([ac02df2](https://github.com/uniqbit-ag/mate-cli/commit/ac02df255a783cde952ea9cb0c9aa46172ad8b1b))
+- extract image-pins module, idea placeholder for pre-explore steps ([6705bb8](https://github.com/uniqbit-ag/mate-cli/commit/6705bb8e81e80da83f403f0410c419da3a4d6857))
+
+### Code Refactoring
+
+- fold plugin verify into doctor, drop launch alias ([4615be0](https://github.com/uniqbit-ag/mate-cli/commit/4615be0bec3eabe4222b190262f80f6f183a148f))
+
+## [0.18.1-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.18.0...0.18.1) (2026-10-06)
+
+### ⚠ BREAKING CHANGES
+
+- local releases no longer publish to npm.
+
+### Features
+
+- prefer SSH for HTTPS companion remotes with HTTPS fallback ([8859f52](https://github.com/uniqbit-ag/mate-cli/commit/8859f52e1886bf47d684a7d55605ef09352a2492))
+- publish signed releases from CI with npm provenance ([bfacd61](https://github.com/uniqbit-ag/mate-cli/commit/bfacd61edd6fb9be56dc1df15b3eaa09f8bfea5e))
+
 ## [0.18.0](https://github.com/uniqbit-ag/mate-cli/compare/0.17.1...0.18.0) (2026-10-06)
 
 ### Bug Fixes
