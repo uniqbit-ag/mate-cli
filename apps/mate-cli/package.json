@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate",
-  "version": "0.18.1-canary.4",
+  "version": "0.18.1-canary.5",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -36,7 +36,7 @@
     "format:check": "oxfmt src/ --check"
   },
   "dependencies": {
-    "@uniqbit/mate-core": "0.18.1-canary.4",
+    "@uniqbit/mate-core": "0.18.1-canary.5",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
