@@ -303,7 +303,8 @@ describe("bundled Mate pre-explore skills", () => {
         "Explanation only",
         "Never write or edit source code",
         "mate report --input",
-        "Never hand-write an HTML file, never start a server",
+        "Deliver only through `mate report --input`",
+        "open Studio → Reports",
         "Browser Report Required",
         "exactly one payload",
         "git diff` in the Working Repository",
@@ -313,6 +314,13 @@ describe("bundled Mate pre-explore skills", () => {
         "Never commit, push, or create a pull request",
       ]) {
         expect(source).toContain(marker);
+      }
+      for (const stale of [
+        "never open a browser by any other means",
+        "writes it into the operating system temporary directory",
+        "`mate report` is the only browser surface",
+      ]) {
+        expect(source).not.toContain(stale);
       }
     }
   });

@@ -730,3 +730,41 @@ describe("terminal view", () => {
     expect(markup).toContain("sessionStorage");
   });
 });
+
+describe("hosted reports view", () => {
+  const reports = page({
+    ...selected,
+    selection: { ...selected.selection, view: "reports" },
+  });
+
+  it("renders a sandboxed frame without same-origin, an open-in-new-tab action and an empty note", () => {
+    const markup = renderStudioDocument(reports);
+    expect(markup).toContain('sandbox="allow-scripts allow-modals"');
+    expect(markup).not.toContain("allow-same-origin");
+    expect(markup).toContain("Open in new tab");
+    expect(markup).toContain("No hosted reports yet.");
+    expect(markup).toContain('id="reports-item-template"');
+    expect(markup).toContain("<h1>Reports</h1>");
+  });
+
+  it("offers an addressable Reports view with a badge that starts hidden", () => {
+    const markup = renderStudioDocument(selected);
+    const form = viewForm(markup, "reports");
+    expect(form).toContain('name="view" value="reports"');
+    expect(form).toMatch(/id="reports-badge"[^>]*hidden/);
+  });
+
+  it("names the shown companion's report channel on the shell, and none without one", () => {
+    const shell = renderStudioDocument(selected);
+    expect(shell).toContain(`data-reports-url="/api/reports?companion=${digest}"`);
+    expect(shell).toContain(
+      `data-reports-events-url="/api/vault/changes?companion=${digest}&amp;scope=reports"`,
+    );
+    expect(shell).toContain('data-reports-view-url="/?');
+    expect(shell).toContain("view=reports");
+    expect(shell).toContain('id="reports-toast"');
+
+    const none = renderStudioDocument(page());
+    expect(none).not.toContain(`data-reports-events-url="`);
+  });
+});

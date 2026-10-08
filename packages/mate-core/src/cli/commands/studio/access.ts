@@ -86,6 +86,12 @@ export function tokensEqual(candidate: string, expected: string): boolean {
   return timingSafeEqual(digest(candidate), digest(expected));
 }
 
+/** The `Authorization: Bearer` credential, or `null`; callers compare it with `tokensEqual`. */
+export function readBearer(request: Request): string | null {
+  const match = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") ?? "");
+  return match ? match[1]! : null;
+}
+
 function readCookie(request: Request, name: string): string | null {
   const header = request.headers.get("cookie");
   if (!header) return null;
