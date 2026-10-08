@@ -88,9 +88,11 @@ describe("no moving references", () => {
     }
   });
 
-  test("the OpenCode installer is checked before it is run, and pins its version", () => {
-    expect(inputs.opencode.installer_sha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(inputs.opencode.version_argument).toContain("--version");
+  test("OpenCode is the exact version's npm platform tarball, at a major Mate supports", () => {
+    expect(Number(inputs.opencode.version.split(".")[0])).toBeGreaterThanOrEqual(2);
+    for (const artifact of Object.values(inputs.opencode.artifacts)) {
+      expect(artifact.file).toEndWith(`-${inputs.opencode.version}.tgz`);
+    }
   });
 
   test("a tool with no checked artifact resolves through a lockfile instead", () => {
