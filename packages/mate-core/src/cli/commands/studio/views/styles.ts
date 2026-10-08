@@ -288,6 +288,7 @@ ul.plain li:last-child { border-bottom: 0; }
 .spec-card-row strong { overflow: hidden; font-family: var(--mono); font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
 .spec-card-meta { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .7rem; }
 .spec-card-end { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.spec-copy { display: inline-flex; align-items: center; align-self: center; padding: 4px 6px; }
 .spec-actions { display: inline-flex; gap: 6px; }
 .spec-action { padding: 3px 7px; font-size: .68rem; }
 html[data-agent-viewed] [data-studio-action] { display: none; }

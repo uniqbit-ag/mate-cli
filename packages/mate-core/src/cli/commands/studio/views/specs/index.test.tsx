@@ -77,7 +77,7 @@ describe("groupSpecsByArea", () => {
     const render = (actions: SpecActionOffer[]) =>
       String(<Specs payload={payload({ specs })} actions={actions} />);
 
-    it("renders Show me and Copy prompt when a terminal and an agent qualify", () => {
+    it("renders Show me and a copy icon button when a terminal and an agent qualify", () => {
       const markup = render([
         { action: show, runAgents: ["claude", "opencode"], copyAgents: ["claude", "opencode"] },
       ]);
@@ -85,6 +85,8 @@ describe("groupSpecsByArea", () => {
       expect(markup).toContain('data-studio-subject="acme-login"');
       expect(markup).toContain('data-studio-agents="claude opencode"');
       expect(markup).toContain("Show me");
+      expect(markup).toContain('aria-label="Copy prompt"');
+      expect(markup).toContain("<svg");
       expect(markup).toContain('data-prompt-claude="/mate-show-me acme-login"');
       expect(markup).toContain("Use the mate-show-me skill on spec acme-login.");
     });
