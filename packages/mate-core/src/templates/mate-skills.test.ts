@@ -158,6 +158,17 @@ describe("bundled Mate pre-explore skills", () => {
     expect(metadata).toMatchObject({ author: "mate", version: "1.0" });
   });
 
+  test("show-me explains a named spec capability and handles an unknown one", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = await readSkillFrom(root, "mate-show-me");
+      expect(source).toContain("## Subject");
+      expect(source).toContain("$ARGUMENTS");
+      expect(source).toContain("omit the `diff` section");
+      expect(source).toContain("no canonical spec");
+      expect(source).toContain("disable-model-invocation: true");
+    }
+  });
+
   test("has a prefixed frontmatter name for every bundled tree", async () => {
     for (const name of skillNames) {
       const source = await readSkill(name);

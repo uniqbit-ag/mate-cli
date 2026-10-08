@@ -20,6 +20,7 @@ import { CompanionError } from "./error";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
 import type { VaultTreeNode } from "../vault";
 import { Reports } from "./reports/index";
+import { specActionOffers } from "../actions";
 import { Specs } from "./specs/index";
 import { SelectionFields } from "./selection-fields";
 import { STUDIO_STYLES } from "./styles";
@@ -156,7 +157,15 @@ function Content({ page }: { page: StudioPage }) {
   if (page.selection.view === "workflow") {
     return <Workflow payload={page.payload} />;
   }
-  if (page.selection.view === "specs") return <Specs payload={page.payload} />;
+  if (page.selection.view === "specs") {
+    const { payload } = page;
+    return (
+      <Specs
+        payload={payload}
+        actions={specActionOffers(payload.companionPath, payload.skillInventory, page.terminal)}
+      />
+    );
+  }
   if (page.selection.view === "skills") return <Skills skills={page.payload.skillInventory} />;
   return <Dashboard payload={page.payload} />;
 }

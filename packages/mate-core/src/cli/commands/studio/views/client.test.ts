@@ -636,3 +636,101 @@ describe("studio browser code", () => {
     expect(STUDIO_CLIENT_SCRIPT).not.toMatch(/innerHTML|outerHTML|createElement/);
   });
 });
+
+describe("spec skill actions in the page client", () => {
+  function run(viewed: string | null) {
+    let click: ((event: unknown) => void) | undefined;
+    const dispatched: { type: string; detail: unknown }[] = [];
+    const copied: string[] = [];
+    const documentStub = {
+      documentElement: {
+        setAttribute: () => {},
+        removeAttribute: () => {},
+        getAttribute: (name: string) => (name === "data-agent-viewed" ? viewed : null),
+      },
+      getElementById: () => ({
+        textContent: "",
+        setAttribute: () => {},
+        removeAttribute: () => {},
+        addEventListener: () => {},
+      }),
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener: (event: string, handler: (event: unknown) => void) => {
+        if (event === "click") click = handler;
+      },
+      dispatchEvent: (event: { type: string; detail: unknown }) => void dispatched.push(event),
+    };
+    class FakeEvent {
+      constructor(
+        public type: string,
+        init: { detail: unknown },
+      ) {
+        this.detail = init.detail;
+      }
+      detail: unknown;
+    }
+    new Function(
+      "document",
+      "localStorage",
+      "navigator",
+      "setTimeout",
+      "clearTimeout",
+      "CustomEvent",
+      STUDIO_CLIENT_SCRIPT,
+    )(
+      documentStub,
+      { getItem: () => null, setItem: () => {} },
+      { clipboard: { writeText: async (text: string) => void copied.push(text) } },
+      () => 0,
+      () => {},
+      FakeEvent,
+    );
+    const node = (selector: string, attributes: Record<string, string>) => ({
+      closest: (query: string) =>
+        query === selector ? { getAttribute: (n: string) => attributes[n] ?? null } : null,
+    });
+    return {
+      dispatched,
+      copied,
+      clickRun: () =>
+        click?.({
+          target: node("[data-studio-action]", {
+            "data-studio-action": "show-me",
+            "data-studio-subject": "acme-login",
+            "data-studio-agents": "claude opencode",
+          }),
+        }),
+      clickCopy: () =>
+        click?.({
+          target: node("[data-studio-copy-prompt]", {
+            "data-prompt-claude": "/mate-show-me acme-login",
+            "data-prompt-opencode": "Use the mate-show-me skill on spec acme-login.",
+          }),
+        }),
+    };
+  }
+
+  it("dispatches studio:terminal-action only on a run click", () => {
+    const page = run(null);
+    page.clickRun();
+    expect(page.dispatched).toHaveLength(1);
+    expect(page.dispatched[0]).toMatchObject({
+      type: "studio:terminal-action",
+      detail: { action: "show-me", subject: "acme-login", agents: ["claude", "opencode"] },
+    });
+    page.clickCopy();
+    expect(page.dispatched).toHaveLength(1);
+  });
+
+  it("copies the viewed agent's prompt, else Claude's", async () => {
+    const opencode = run("opencode");
+    opencode.clickCopy();
+    const claude = run(null);
+    claude.clickCopy();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(opencode.copied).toEqual(["Use the mate-show-me skill on spec acme-login."]);
+    expect(claude.copied).toEqual(["/mate-show-me acme-login"]);
+  });
+});

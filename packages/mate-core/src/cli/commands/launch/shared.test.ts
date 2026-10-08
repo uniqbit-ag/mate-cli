@@ -71,6 +71,18 @@ describe("parseLaunchArgs", () => {
     });
   });
 
+  test("forwards a seeded first prompt after the reserved tokens", () => {
+    expect(
+      parseLaunchArgs(["--", "--companion", "--yes", "--agent", "lead", "/mate-show-me acme"]),
+    ).toEqual({
+      agentArgs: ["--agent", "lead", "/mate-show-me acme"],
+      scope: "companion",
+    });
+    expect(
+      parseLaunchArgs(["--", "--companion", "--yes", "--prompt", "Use the skill on acme."]),
+    ).toEqual({ agentArgs: ["--prompt", "Use the skill on acme."], scope: "companion" });
+  });
+
   test("does not consume --no-git as a launch option before the separator", () => {
     expect(parseLaunchArgs(["--no-git"])).toBeNull();
     expect(process.exitCode).toBe(1);

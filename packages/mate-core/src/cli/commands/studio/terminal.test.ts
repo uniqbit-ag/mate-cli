@@ -664,3 +664,91 @@ describe("report credential", () => {
     expect(r.registry.reportCompanion(b!)).toBeNull();
   });
 });
+
+describe("skill actions", () => {
+  const ACTION = { ...START, action: "show-me", subject: "acme-capability" };
+
+  test("appends the resolver's prompt args after agentArgs and ignores client prompt text", async () => {
+    const r = registry({
+      resolveLaunch: async (_agent, _digest, action) => ({
+        companionPath: ACME,
+        agentArgs: ["--agent", "lead"],
+        promptArgs: [`/mate-show-me ${String(action?.subject)}`],
+      }),
+    });
+    const v = viewer();
+    const connection = r.registry.connect(v);
+    await connection.message(
+      JSON.stringify({ ...ACTION, prompt: "rm -rf", args: ["--evil"], promptArgs: ["x"] }),
+    );
+    expect(r.spawned[0]!.request.argv).toEqual([
+      "bun",
+      "cli.mjs",
+      "claude",
+      "--",
+      "--companion",
+      "--yes",
+      "--agent",
+      "lead",
+      "/mate-show-me acme-capability",
+    ]);
+  });
+
+  test("a refused action starts no process and shows the reason", async () => {
+    const r = registry({ resolveLaunch: async () => ({ reason: "no such skill" }) });
+    const v = viewer();
+    await r.registry.connect(v).message(JSON.stringify(ACTION));
+    expect(r.spawned).toHaveLength(0);
+    expect(v.messages).toContainEqual({ type: "error", reason: "no such skill" });
+  });
+
+  test("a connection viewing a session is refused and the session untouched", async () => {
+    const r = registry();
+    const { v, connection } = await started(r);
+    await connection.message(JSON.stringify(ACTION));
+    expect(v.messages.at(-1)).toEqual({ type: "error", reason: "end the current session first" });
+    expect(r.spawned).toHaveLength(1);
+    expect(r.spawned[0]!.written).toEqual([]);
+  });
+
+  test("a detached session is neither attached nor written to", async () => {
+    const r = registry();
+    const first = await started(r);
+    first.connection.closed();
+    const second = viewer();
+    await r.registry.connect(second).message(JSON.stringify(ACTION));
+    expect(r.spawned).toHaveLength(2);
+    expect(r.spawned[0]!.written).toEqual([]);
+  });
+});
+
+describe("createLaunchResolver actions", () => {
+  const base = {
+    collectInventory: async () => ({
+      companions: [{ path: ACME, health: "ready" as const, pairings: [] }],
+    }),
+    launchableAgents: async () => ["claude" as const, "opencode" as const],
+    skillInventory: async () => ({ claude: ["mate-show-me"], opencode: [], agents: [] }),
+    specExists: async (_path: string, capability: string) => capability === "acme-capability",
+  };
+  const { companionDigest } = require("./selection") as typeof import("./selection");
+  const digest = companionDigest(ACME);
+
+  test("returns the registry prompt for a valid action", async () => {
+    const resolve = createLaunchResolver(base);
+    expect(
+      await resolve("claude", digest, { action: "show-me", subject: "acme-capability" }),
+    ).toEqual({ companionPath: ACME, promptArgs: ["/mate-show-me acme-capability"] });
+  });
+
+  test("refuses an unregistered action, unsafe or unknown subject, and a missing skill", async () => {
+    const resolve = createLaunchResolver(base);
+    const reason = async (action: unknown, subject: unknown, agent = "claude") =>
+      "reason" in (await resolve(agent, digest, { action, subject }));
+    expect(await reason("nope", "acme-capability")).toBe(true);
+    expect(await reason("show-me", "--evil")).toBe(true);
+    expect(await reason("show-me", 7)).toBe(true);
+    expect(await reason("show-me", "other-capability")).toBe(true);
+    expect(await reason("show-me", "acme-capability", "opencode")).toBe(true);
+  });
+});

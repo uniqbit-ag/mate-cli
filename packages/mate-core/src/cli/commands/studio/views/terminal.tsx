@@ -103,6 +103,13 @@ export function TerminalSidebar({ terminal }: { terminal: StudioTerminalPage }) 
               Reconnect
             </button>
           </div>
+          <div
+            className="terminal-choice"
+            id="terminal-action-choice"
+            role="group"
+            aria-label="Choose an agent"
+            hidden
+          />
           <p className="terminal-status" id="terminal-status" role="status">
             Connecting…
           </p>
@@ -288,6 +295,16 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
   function status(text) { if (statusNode) statusNode.textContent = text; }
   function state(name) { panel.setAttribute("data-terminal-state", name); }
   function currentSession() { return load(${JSON.stringify(TERMINAL_SESSION_KEY)}); }
+  var root = document.documentElement;
+  var choice = document.getElementById("terminal-action-choice");
+  var AGENT_LABELS = ${JSON.stringify(AGENT_LABELS)};
+  /** Which agent this connection views, or "pending" until a stored session reattaches; the page hides run buttons while set. */
+  function viewing(agent) {
+    if (agent) root.setAttribute("data-agent-viewed", agent);
+    else root.removeAttribute("data-agent-viewed");
+    if (agent && choice) choice.hidden = true;
+  }
+  if (currentSession()) viewing("pending");
   function size() { return { cols: term.cols, rows: term.rows }; }
   function send(message) {
     if (ws && ws.readyState === 1) { ws.send(JSON.stringify(message)); return true; }
@@ -317,28 +334,34 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
       try { message = JSON.parse(event.data); } catch (error) { return; }
       if (message.type === "ready") {
         store(${JSON.stringify(TERMINAL_SESSION_KEY)}, message.sessionId);
+        viewing(message.agent);
         term.reset();
         state("connected");
         status("Connected to " + message.agent + " in " + message.companionPath + ".");
         term.focus();
       } else if (message.type === "exit") {
         store(${JSON.stringify(TERMINAL_SESSION_KEY)}, null);
+        viewing(null);
         state("detached");
         status("The agent exited with status " + message.status + ".");
       } else if (message.type === "ended") {
         store(${JSON.stringify(TERMINAL_SESSION_KEY)}, null);
+        viewing(null);
         state("detached");
         status("The session ended" + (message.reason ? ": " + message.reason : "") + ".");
       } else if (message.type === "detached") {
+        viewing(null);
         state("detached");
         status("Detached (" + message.reason + "); the agent keeps running.");
       } else if (message.type === "takenOver") {
+        viewing(null);
         takenOver = true;
         state("detached");
         status("Another tab took over this session.");
         if (reconnectButton) reconnectButton.hidden = false;
       } else if (message.type === "gone") {
         store(${JSON.stringify(TERMINAL_SESSION_KEY)}, null);
+        viewing(null);
         state("detached");
         status("That session no longer exists.");
       } else if (message.type === "error") {
@@ -371,12 +394,47 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
     send({ type: "resize", cols: next.cols, rows: next.rows });
   });
 
+  /** \`task\` carries a registered action and subject; the server builds the prompt from them. */
+  function startAgent(agent, task) {
+    var dims = size();
+    var message = { type: "start", agent: agent, companion: companion, tabId: tabId, cols: dims.cols, rows: dims.rows };
+    if (task) { message.action = task.action; message.subject = task.subject; }
+    if (!send(message)) { pending = message; connect(); }
+  }
   Array.prototype.forEach.call(document.querySelectorAll("[data-terminal-start]"), function (button) {
-    button.addEventListener("click", function () {
-      var dims = size();
-      var message = { type: "start", agent: button.getAttribute("data-terminal-start"), companion: companion, tabId: tabId, cols: dims.cols, rows: dims.rows };
-      if (!send(message)) { pending = message; connect(); }
+    button.addEventListener("click", function () { startAgent(button.getAttribute("data-terminal-start")); });
+  });
+
+  /** The sidebar script owns collapse and drawer state, so reveal the terminal through its controls. */
+  function revealTerminal() {
+    var expand = document.getElementById("terminal-expand");
+    if (root.hasAttribute("data-terminal-collapsed") && expand) expand.click();
+    var opener = document.getElementById("terminal-drawer-open");
+    if (opener && !panel.hasAttribute("data-drawer-open") && getComputedStyle(opener).display !== "none") opener.click();
+  }
+  function showChoice(agents, task) {
+    if (!choice) return;
+    while (choice.firstChild) choice.removeChild(choice.firstChild);
+    var label = document.createElement("span");
+    label.textContent = "Run " + task.action + " with:";
+    choice.appendChild(label);
+    agents.forEach(function (agent) {
+      choice.appendChild(button(AGENT_LABELS[agent], function () {
+        choice.hidden = true;
+        startAgent(agent, task);
+      }));
     });
+    choice.appendChild(button("Cancel", function () { choice.hidden = true; }));
+    choice.hidden = false;
+  }
+  document.addEventListener("studio:terminal-action", function (event) {
+    var task = event.detail || {};
+    var agents = (task.agents || []).filter(function (agent) { return AGENT_LABELS[agent]; });
+    if (!agents.length) return;
+    revealTerminal();
+    if (root.hasAttribute("data-agent-viewed")) { status("End the current session first."); return; }
+    if (agents.length === 1) startAgent(agents[0], task);
+    else showChoice(agents, task);
   });
   if (reconnectButton) reconnectButton.addEventListener("click", function () { attempts = 0; connect(); });
 
