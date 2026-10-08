@@ -86,6 +86,7 @@ function config(overrides: Partial<ApplianceConfig> = {}): ApplianceConfig {
     companionsDir: root,
     companionRepos: [],
     companion: null,
+    audience: null,
     studioPort: 4097,
     studioHost: "0.0.0.0",
     studioWritable: true,
@@ -414,7 +415,9 @@ describe("what startup hands the supervisor", () => {
       studioAllowedHosts: ["studio.acme.test", "localhost:8080"],
       studioPublicOrigin: "https://studio.acme.test",
       gitSync: false,
+      audience: "ba",
     });
+    expect(rendered).toContain("MATE_PLAN_AUDIENCE='ba'");
     expect(rendered).toContain("MATE_PLAN_COMPANION='/companions/acme'");
     expect(rendered).not.toContain("AGENT_PORT");
     expect(rendered).toContain("MATE_PLAN_STUDIO_TERMINAL='1'");
@@ -437,7 +440,9 @@ describe("what startup hands the supervisor", () => {
       studioAllowedHosts: [],
       studioPublicOrigin: null,
       gitSync: false,
+      audience: null,
     });
+    expect(rendered).toContain("MATE_PLAN_AUDIENCE=''");
     expect(rendered).toContain(`MATE_PLAN_COMPANION='/companions/it'\\''s'`);
   });
 
@@ -730,5 +735,96 @@ describe("what startup hands the supervisor", () => {
         return entry.isDirectory() ? walk(full) : [fs.readFileSync(full, "utf8")];
       });
     expect(walk(companion).some((contents) => contents.includes("secret"))).toBe(false);
+  });
+});
+
+const AUDIENCE_FRAMEWORK = `${FRAMEWORK}audiences:
+  ba:
+    plugins: []
+  qa:
+    plugins: []
+`;
+
+describe("serving one audience", () => {
+  test("a declared audience is served, logged and carried in the plan", () => {
+    makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
+    const lines: string[] = [];
+
+    const plan = prepareStartup(config({ audience: "ba" }), deps({ log: (l) => lines.push(l) }));
+
+    expect(plan.audience).toBe("ba");
+    expect(lines).toContain("serving audience ba");
+    expect(renderPlan(plan)).toContain("MATE_PLAN_AUDIENCE='ba'");
+  });
+
+  test("an undeclared audience stops before setup, naming it and the declared ones", () => {
+    makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
+    const { run, calls } = recorder();
+
+    expect(() =>
+      prepareStartup(
+        config({
+          audience: "dev",
+          pluginRegistry: { scope: "@acme", url: "https://registry.acme.test/", token: "tok" },
+        }),
+        deps({ run }),
+      ),
+    ).toThrow(/"dev".*ba, qa/s);
+
+    expect(calls.some((call) => call.includes("doctor") || call.join(" ").includes("setup"))).toBe(
+      false,
+    );
+  });
+
+  test("an audience on a companion that declares none is undeclared", () => {
+    makeCompanion(path.join(root, "acme"));
+
+    expect(() => prepareStartup(config({ audience: "ba" }), deps())).toThrow(/"ba".*none/s);
+  });
+
+  test("no audience leaves startup, the plan and the child environments as before", () => {
+    makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
+    const { run, envs } = recorder();
+    const lines: string[] = [];
+
+    const plan = prepareStartup(
+      config({
+        pluginRegistry: { scope: "@acme", url: "https://registry.acme.test/", token: "tok" },
+      }),
+      deps({ run, log: (l) => lines.push(l) }),
+    );
+
+    expect(plan.audience).toBeNull();
+    expect(renderPlan(plan)).toContain("MATE_PLAN_AUDIENCE=''");
+    expect(lines.some((line) => line.includes("audience"))).toBe(false);
+    expect(envs.every((env) => !env || !("MATE_AUDIENCE" in env))).toBe(true);
+  });
+
+  test("the audience reaches the setup script and the strict verification run", () => {
+    makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
+    const { run, calls, envs } = recorder();
+
+    prepareStartup(
+      config({
+        audience: "ba",
+        pluginRegistry: { scope: "@acme", url: "https://registry.acme.test/", token: "tok" },
+      }),
+      deps({ run }),
+    );
+
+    const setup = calls.findIndex((call) => call[0] === "bash");
+    const verify = calls.findIndex((call) => call.includes("doctor"));
+    expect(envs[setup]?.MATE_AUDIENCE).toBe("ba");
+    expect(envs[verify]).toEqual({ MATE_AUDIENCE: "ba" });
+  });
+
+  test("the audience is never written into the companion", () => {
+    const companion = makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
+
+    prepareStartup(config({ audience: "ba" }), deps());
+
+    expect(fs.readFileSync(path.join(companion, ".mate", "config", "framework.yaml"), "utf8")).toBe(
+      AUDIENCE_FRAMEWORK,
+    );
   });
 });

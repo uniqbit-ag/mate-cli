@@ -141,6 +141,111 @@ function validatePluginDeclarations(config: FrameworkConfig): void {
   }
 }
 
+export const AUDIENCE_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
+
+const AUDIENCE_KEYS = ["plugins", "studio"] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validateAudiencePlugins(audience: string, plugins: unknown): Map<string, string> {
+  if (!Array.isArray(plugins)) {
+    throw new ConfigError(`audience "${audience}": plugins must be a list.`);
+  }
+  const versions = new Map<string, string>();
+  for (const entry of plugins) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.package !== "string" ||
+      typeof entry.version !== "string"
+    ) {
+      throw new ConfigError(
+        `audience "${audience}": plugins entry must have string package and version: ${JSON.stringify(entry)}`,
+      );
+    }
+    if (
+      entry.policy !== undefined &&
+      !PLUGIN_DECLARATION_POLICIES.includes(entry.policy as never)
+    ) {
+      throw new ConfigError(
+        `audience "${audience}": plugins entry "${entry.package}": policy "${String(entry.policy)}" is not allowed for declared plugins (allowed: ${PLUGIN_DECLARATION_POLICIES.join(", ")}).`,
+      );
+    }
+    if (versions.has(entry.package)) {
+      throw new ConfigError(
+        `audience "${audience}": package "${entry.package}" is declared more than once.`,
+      );
+    }
+    versions.set(entry.package, entry.version);
+  }
+  return versions;
+}
+
+/**
+ * Validates the optional `audiences` mapping. Only companions may declare
+ * audiences; names are safe identifiers and keys form a closed set so typos
+ * fail instead of silently doing nothing.
+ */
+function validateAudiences(config: FrameworkConfig): void {
+  const audiences = config.audiences as unknown;
+  if (audiences === undefined) return;
+  if (config.type === "hub") {
+    throw new ConfigError('Only companions may declare audiences; a "hub" framework may not.');
+  }
+  if (!isRecord(audiences)) {
+    throw new ConfigError("audiences must be a mapping of audience name to configuration.");
+  }
+
+  const basePackages = new Set((config.plugins ?? []).map((plugin) => plugin.package));
+  const seen = new Map<string, { audience: string; version: string }>();
+
+  for (const [name, audience] of Object.entries(audiences)) {
+    if (!AUDIENCE_NAME_PATTERN.test(name)) {
+      throw new ConfigError(
+        `Invalid audience name "${name}": must match ${AUDIENCE_NAME_PATTERN.source}.`,
+      );
+    }
+    if (!isRecord(audience)) {
+      throw new ConfigError(`audience "${name}" must be a mapping.`);
+    }
+    for (const key of Object.keys(audience)) {
+      if (!AUDIENCE_KEYS.includes(key as never)) {
+        throw new ConfigError(
+          `audience "${name}": unknown key "${key}" (allowed: ${AUDIENCE_KEYS.join(", ")}).`,
+        );
+      }
+    }
+
+    if (audience.plugins !== undefined) {
+      for (const [pkg, version] of validateAudiencePlugins(name, audience.plugins)) {
+        if (basePackages.has(pkg)) {
+          throw new ConfigError(
+            `audience "${name}": package "${pkg}" is also declared in base plugins.`,
+          );
+        }
+        const other = seen.get(pkg);
+        if (other && other.version !== version) {
+          throw new ConfigError(
+            `package "${pkg}" has conflicting versions in audiences "${other.audience}" (${other.version}) and "${name}" (${version}).`,
+          );
+        }
+        seen.set(pkg, other ?? { audience: name, version });
+      }
+    }
+
+    if (audience.studio !== undefined) {
+      const agent =
+        isRecord(audience.studio) && isRecord(audience.studio.terminal)
+          ? audience.studio.terminal.agent
+          : undefined;
+      if (agent !== undefined && typeof agent !== "string") {
+        throw new ConfigError(`audience "${name}": studio.terminal.agent must be a string.`);
+      }
+    }
+  }
+}
+
 export class ConfigStore extends YamlFileStore<FrameworkConfig> {
   constructor(configPath = process.env.MATE_CONFIG ?? defaultConfigPath()) {
     super(path.resolve(configPath));
@@ -150,6 +255,7 @@ export class ConfigStore extends YamlFileStore<FrameworkConfig> {
     const merged = mergeWithDefaults(migrateProfilesToAllowedAgents(await super.load()));
     validateHubConfig(merged);
     validatePluginDeclarations(merged);
+    validateAudiences(merged);
     return merged;
   }
 

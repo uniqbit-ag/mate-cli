@@ -618,3 +618,88 @@ describe("runDoctorCommand", () => {
     expect(output).not.toContain("engines.mate");
   });
 });
+
+describe("doctor audiences", () => {
+  const config: FrameworkConfig = {
+    allowedAgents: ["claude"],
+    packageManagers: [],
+    capabilities: [],
+    audiences: {
+      ba: { plugins: [{ package: "@acme/analyst", version: "1.0.0" }] },
+      qa: { studio: { terminal: { agent: "tester" } } },
+    },
+  };
+
+  async function run(env: Record<string, string | undefined>, argv: string[] = ["--json"]) {
+    const root = await makeTempDir("doctor-audiences-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath, config);
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+    process.exitCode = 0;
+    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const output = await captureStdout(() =>
+        runDoctorCommand(argv, { cwd: repoPath, globalConfigStore, env }),
+      );
+      return {
+        output,
+        exitCode: process.exitCode,
+        stderr: stderr.mock.calls.map((c) => String(c[0])).join(""),
+      };
+    } finally {
+      stderr.mockRestore();
+      process.exitCode = 0;
+    }
+  }
+
+  test("JSON names the active and declared audiences", async () => {
+    const { output } = await run({ MATE_AUDIENCE: "ba" });
+    expect(JSON.parse(output).audiences).toEqual({ declared: ["ba", "qa"], active: "ba" });
+  });
+
+  test("JSON reports no active audience when none is selected", async () => {
+    const { output, exitCode } = await run({});
+    expect(JSON.parse(output).audiences).toEqual({ declared: ["ba", "qa"], active: null });
+    expect(exitCode).not.toBe(1);
+  });
+
+  test("an unknown audience is an error naming it and exits non-zero", async () => {
+    const { output, exitCode, stderr } = await run({ MATE_AUDIENCE: "dev" });
+    expect(JSON.parse(output).audiences).toEqual({ declared: ["ba", "qa"], active: null });
+    expect(stderr).toContain('"dev"');
+    expect(stderr).toContain("ba, qa");
+    expect(exitCode).toBe(1);
+  });
+
+  test("plugin checks cover the effective set only", async () => {
+    const inactive = JSON.parse((await run({})).output);
+    expect(inactive.pluginFailures).toEqual([]);
+    const active = JSON.parse((await run({ MATE_AUDIENCE: "ba" })).output);
+    expect(active.pluginFailures.map((f: { package: string }) => f.package)).toEqual([
+      "@acme/analyst",
+    ]);
+  });
+
+  test("the text report lists declared and active audiences", async () => {
+    const { output } = await run({ MATE_AUDIENCE: "ba" }, []);
+    expect(output).toContain("Audiences");
+    expect(output).toContain("ba, qa");
+  });
+
+  test("a companion without audiences reports none and is unchanged", async () => {
+    const root = await makeTempDir("doctor-no-audiences-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath);
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand(["--json"], { cwd: repoPath, globalConfigStore, env: {} }),
+    );
+
+    expect(JSON.parse(output).audiences).toBeUndefined();
+  });
+});

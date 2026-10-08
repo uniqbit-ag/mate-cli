@@ -289,6 +289,218 @@ describe("plugins parsing", () => {
   });
 });
 
+describe("audiences parsing", () => {
+  async function loadYaml(prefix: string, lines: string[]): Promise<FrameworkConfig> {
+    const root = await makeTempDir(prefix);
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(configPath, ["allowedAgents: []", ...lines, ""].join("\n"), "utf8");
+    return new ConfigStore(configPath).load();
+  }
+
+  test("an audience adds plugins and a default agent", async () => {
+    const config = await loadYaml("config-store-audiences-ok-", [
+      "audiences:",
+      "  ba:",
+      "    plugins:",
+      '      - package: "@acme/analyst"',
+      '        version: "1.0.0"',
+      "        policy: default",
+      "    studio:",
+      "      terminal:",
+      "        agent: business-analyst",
+    ]);
+
+    expect(config.audiences?.ba?.plugins).toEqual([
+      { package: "@acme/analyst", version: "1.0.0", policy: "default" },
+    ]);
+    expect(config.audiences?.ba?.studio?.terminal?.agent).toBe("business-analyst");
+  });
+
+  test("no audiences key leaves audiences undefined", async () => {
+    const config = await loadYaml("config-store-audiences-none-", []);
+    expect(config.audiences).toBeUndefined();
+  });
+
+  test("the audiences block survives load and save verbatim", async () => {
+    const root = await makeTempDir("config-store-audiences-roundtrip-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      [
+        "allowedAgents: []",
+        "plugins:",
+        '  - package: "@acme/base"',
+        '    version: "1.0.0"',
+        "audiences:",
+        "  ba:",
+        "    plugins:",
+        '      - package: "@acme/analyst"',
+        '        version: "1.0.0"',
+        "    studio:",
+        "      terminal:",
+        "        agent: business-analyst",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const store = new ConfigStore(configPath);
+    const loaded = await store.load();
+    await store.save(loaded);
+    const reloaded = await store.load();
+
+    expect(reloaded.audiences).toEqual(loaded.audiences);
+    expect(reloaded.plugins).toEqual([{ package: "@acme/base", version: "1.0.0" }]);
+    expect(await fs.readFile(configPath, "utf8")).toContain("audiences:");
+  });
+
+  test("legacy profiles migration leaves audiences untouched", async () => {
+    const config = await loadYaml("config-store-audiences-profiles-", [
+      "profiles:",
+      "  default:",
+      "    allowedAgents:",
+      "      - claude",
+      "audiences:",
+      "  ba:",
+      "    studio:",
+      "      terminal:",
+      "        agent: business-analyst",
+    ]);
+
+    expect(config.audiences?.ba?.studio?.terminal?.agent).toBe("business-analyst");
+  });
+
+  test.each([
+    {
+      name: "a non-mapping audiences value",
+      lines: ["audiences:", "  - ba"],
+      error: /audiences.*mapping/,
+    },
+    {
+      name: "an unsafe audience name",
+      lines: ["audiences:", '  "BA Team":', "    plugins: []"],
+      error: /audience name "BA Team"/,
+    },
+    {
+      name: "a non-mapping audience",
+      lines: ["audiences:", "  ba: nope"],
+      error: /audience "ba".*mapping/,
+    },
+    {
+      name: "an unknown audience key",
+      lines: ["audiences:", "  ba:", "    plugin: []"],
+      error: /audience "ba".*"plugin"/,
+    },
+    {
+      name: "a non-array plugins value",
+      lines: ["audiences:", "  ba:", "    plugins: nope"],
+      error: /audience "ba".*plugins/,
+    },
+    {
+      name: "a malformed plugin entry",
+      lines: ["audiences:", "  ba:", "    plugins:", "      - package: 1"],
+      error: /audience "ba".*plugins/,
+    },
+    {
+      name: "a disallowed plugin policy",
+      lines: [
+        "audiences:",
+        "  ba:",
+        "    plugins:",
+        '      - package: "@acme/analyst"',
+        '        version: "1.0.0"',
+        "        policy: required",
+      ],
+      error: /audience "ba".*"@acme\/analyst".*required/,
+    },
+    {
+      name: "a non-string studio agent",
+      lines: ["audiences:", "  ba:", "    studio:", "      terminal:", "        agent: 7"],
+      error: /audience "ba".*studio\.terminal\.agent/,
+    },
+  ])("rejects $name", async ({ lines, error }) => {
+    await expect(loadYaml("config-store-audiences-bad-", lines)).rejects.toThrow(error);
+  });
+
+  test("rejects a package declared in base and an audience", async () => {
+    await expect(
+      loadYaml("config-store-audiences-dup-base-", [
+        "plugins:",
+        '  - package: "@acme/analyst"',
+        '    version: "1.0.0"',
+        "audiences:",
+        "  ba:",
+        "    plugins:",
+        '      - package: "@acme/analyst"',
+        '        version: "1.0.0"',
+      ]),
+    ).rejects.toThrow(/"ba".*"@acme\/analyst"/);
+  });
+
+  test("rejects a package declared twice in one audience", async () => {
+    await expect(
+      loadYaml("config-store-audiences-dup-self-", [
+        "audiences:",
+        "  ba:",
+        "    plugins:",
+        '      - package: "@acme/analyst"',
+        '        version: "1.0.0"',
+        '      - package: "@acme/analyst"',
+        '        version: "1.0.0"',
+      ]),
+    ).rejects.toThrow(/"ba".*"@acme\/analyst"/);
+  });
+
+  test("allows one package in two audiences at the same version", async () => {
+    const config = await loadYaml("config-store-audiences-shared-", [
+      "audiences:",
+      "  ba:",
+      "    plugins:",
+      '      - package: "@acme/analyst"',
+      '        version: "1.0.0"',
+      "        config:",
+      "          mode: ba",
+      "  qa:",
+      "    plugins:",
+      '      - package: "@acme/analyst"',
+      '        version: "1.0.0"',
+      "        config:",
+      "          mode: qa",
+    ]);
+
+    expect(Object.keys(config.audiences ?? {})).toEqual(["ba", "qa"]);
+  });
+
+  test("rejects one package at different versions in two audiences", async () => {
+    await expect(
+      loadYaml("config-store-audiences-version-", [
+        "audiences:",
+        "  ba:",
+        "    plugins:",
+        '      - package: "@acme/analyst"',
+        '        version: "1.0.0"',
+        "  qa:",
+        "    plugins:",
+        '      - package: "@acme/analyst"',
+        '        version: "2.0.0"',
+      ]),
+    ).rejects.toThrow(/"@acme\/analyst".*"ba".*"qa"/);
+  });
+
+  test("rejects audiences on a hub root", async () => {
+    await expect(
+      loadYaml("config-store-audiences-hub-", [
+        "type: hub",
+        "hub:",
+        "  companions: []",
+        "audiences:",
+        "  ba:",
+        "    plugins: []",
+      ]),
+    ).rejects.toThrow(/only companions may declare audiences/i);
+  });
+});
+
 describe("legacy profiles migration", () => {
   test("collapses profiles.default.allowedAgents into flat allowedAgents on load", async () => {
     const root = await makeTempDir("config-store-legacy-profiles-");

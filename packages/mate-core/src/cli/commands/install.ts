@@ -9,6 +9,12 @@ import {
   resolveInstallContext,
 } from "../../lib/install";
 import { renderInstallExecution } from "../install-plan";
+import {
+  describeUnknownAudience,
+  installPluginDeclarations,
+  readAudienceSelection,
+  resolveAudience,
+} from "../../tools/setup/dynamic-plugins/audiences";
 import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
 import {
   installDeclaredPlugins,
@@ -69,19 +75,31 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
     process.exitCode = 1;
     return false;
   }
+  if (context.kind === "companion") {
+    const audience = resolveAudience(context.config, readAudienceSelection(process.env));
+    if (!audience.ok) {
+      process.stderr.write(`${FRAMEWORK_NAME}: ${describeUnknownAudience(audience)}\n`);
+      process.exitCode = 1;
+      return false;
+    }
+  }
+  const declarations =
+    context.kind === "companion" || context.kind === "hub"
+      ? installPluginDeclarations(context.config)
+      : [];
   // Root-declared plugins (companion or hub) install first and hydrate into
   // the registry before the plan is built, so one run goes install → load →
   // plan and their own install requirements are part of the plan.
   if (
     (context.kind === "companion" || context.kind === "hub") &&
     context.companionPath &&
-    context.config.plugins?.length
+    declarations.length
   ) {
     let results: PluginInstallResult[];
     try {
       results = frozen
-        ? await installDeclaredPluginsFrozen(context.companionPath, context.config.plugins)
-        : await installDeclaredPlugins(context.companionPath, context.config.plugins);
+        ? await installDeclaredPluginsFrozen(context.companionPath, declarations)
+        : await installDeclaredPlugins(context.companionPath, declarations);
     } catch (error) {
       if (!(error instanceof FrozenInstallError)) throw error;
       process.stderr.write(`${FRAMEWORK_NAME}: frozen plugin install refused: ${error.message}\n`);
