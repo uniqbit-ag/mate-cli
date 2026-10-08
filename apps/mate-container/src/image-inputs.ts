@@ -39,9 +39,6 @@ export interface ImageInputs {
   mate: { version: string; minimum_compatible: string; registry: string };
   opencode: {
     version: string;
-    installer_url: string;
-    installer_sha256: string;
-    version_argument: string;
     release_base_url: string;
     artifacts: Record<string, CheckedArtifact>;
   };

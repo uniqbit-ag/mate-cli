@@ -33,7 +33,7 @@ export function buildArgs(
     MATE_VERSION: mateVersion,
 
     OPENCODE_VERSION: opencode.version,
-    OPENCODE_INSTALLER_SHA256: opencode.installer_sha256,
+    OPENCODE_RELEASE_BASE_URL: opencode.release_base_url,
     OPENCODE_SHA256_AMD64: opencode.artifacts.amd64!.sha256,
     OPENCODE_SHA256_ARM64: opencode.artifacts.arm64!.sha256,
 

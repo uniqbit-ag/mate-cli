@@ -56,7 +56,7 @@ withContainer("a download whose digest does not match fails the build", () => {
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
 COPY fetch-verified.sh /usr/local/bin/fetch-verified
 RUN chmod +x /usr/local/bin/fetch-verified
-RUN fetch-verified "${inputs.opencode.installer_url}" "${wrongDigest}" /tmp/installer.sh
+RUN fetch-verified "${inputs.opencode.release_base_url}/${inputs.opencode.artifacts.arm64!.file}" "${wrongDigest}" /tmp/opencode.tgz
 `,
         scratch,
       );

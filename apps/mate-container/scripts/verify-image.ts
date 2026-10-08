@@ -176,7 +176,7 @@ export function runChecks(
   const opencode = probe(["opencode", "--version"], { network: false });
   add(
     "the agent command is present at the pinned version",
-    opencode.stdout.trim() === expected.opencodeVersion,
+    opencode.stdout.trim().replace(/^opencode v/, "") === expected.opencodeVersion,
     `opencode --version reported "${opencode.stdout.trim()}", expected "${expected.opencodeVersion}"`,
   );
 
