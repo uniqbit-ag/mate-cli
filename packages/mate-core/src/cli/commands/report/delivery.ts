@@ -77,3 +77,53 @@ export function openReportInBrowser(
     });
   });
 }
+
+export const STUDIO_PUBLISH_TIMEOUT_MS = 3_000;
+
+export interface StudioPublishDeps {
+  env?: NodeJS.ProcessEnv;
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+}
+
+export interface HostedReport {
+  id: string;
+  /** Present only when Studio has a configured public origin. */
+  url?: string;
+}
+
+/**
+ * Publishes to the Studio that spawned this process; `null` outside one. Errors
+ * never carry the credential or the loopback endpoint.
+ */
+export async function publishReportToStudio(
+  title: string,
+  html: string,
+  deps: StudioPublishDeps = {},
+): Promise<HostedReport | null> {
+  const env = deps.env ?? process.env;
+  const endpoint = env.MATE_STUDIO_REPORT_URL;
+  const token = env.MATE_STUDIO_REPORT_TOKEN;
+  if (!endpoint || !token) return null;
+
+  let response: Response;
+  try {
+    response = await (deps.fetch ?? fetch)(new URL("/api/reports", endpoint), {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ title, html }),
+      signal: AbortSignal.timeout(deps.timeoutMs ?? STUDIO_PUBLISH_TIMEOUT_MS),
+    });
+  } catch {
+    throw new Error("Studio did not answer in time");
+  }
+  if (!response.ok) throw new Error(`Studio refused the report (HTTP ${response.status})`);
+  let body: { id?: unknown; url?: unknown };
+  try {
+    body = (await response.json()) as typeof body;
+  } catch {
+    throw new Error("Studio answered with an unreadable response");
+  }
+  if (typeof body.id !== "string") throw new Error("Studio answered with an unreadable response");
+  return { id: body.id, ...(typeof body.url === "string" ? { url: body.url } : {}) };
+}

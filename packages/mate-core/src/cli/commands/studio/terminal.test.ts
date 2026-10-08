@@ -611,3 +611,56 @@ describe.if(posix)("real pseudo-terminal", () => {
     await r.stopAll();
   });
 });
+
+describe("report credential", () => {
+  const reportEnv = (r: ReturnType<typeof registry>, index = 0) => r.spawned[index]!.request.env;
+
+  test("injects the bound-port URL and a credential, never the operator token", async () => {
+    const r = registry({
+      reportUrl: () => "http://127.0.0.1:4321",
+      env: {
+        PATH: "/usr/bin",
+        MATE_STUDIO_TOKEN: "operator",
+        MATE_STUDIO_REPORT_URL: "http://stale",
+        MATE_STUDIO_REPORT_TOKEN: "stale",
+      },
+    });
+    await started(r);
+    const env = reportEnv(r);
+    expect(env.MATE_STUDIO_REPORT_URL).toBe("http://127.0.0.1:4321");
+    expect(env.MATE_STUDIO_REPORT_TOKEN).not.toBe("stale");
+    expect(env.MATE_STUDIO_REPORT_TOKEN!.length).toBeGreaterThanOrEqual(32);
+    expect(env.MATE_STUDIO_TOKEN).toBeUndefined();
+    expect(Object.values(env)).not.toContain("operator");
+    await r.registry.stopAll();
+  });
+
+  test("resolves the URL at spawn time, and omits both vars without one", async () => {
+    let port: string | null = null;
+    const r = registry({ reportUrl: () => port });
+    await started(r);
+    expect(reportEnv(r).MATE_STUDIO_REPORT_URL).toBeUndefined();
+    expect(reportEnv(r).MATE_STUDIO_REPORT_TOKEN).toBeUndefined();
+    port = "http://127.0.0.1:9";
+    await started(r);
+    expect(reportEnv(r, 1).MATE_STUDIO_REPORT_URL).toBe("http://127.0.0.1:9");
+    await r.registry.stopAll();
+  });
+
+  test("each session has its own credential, revoked when it ends", async () => {
+    const r = registry({ reportUrl: () => "http://127.0.0.1:1" });
+    const first = await started(r);
+    await started(r);
+    const [a, b] = [reportEnv(r, 0), reportEnv(r, 1)].map((env) => env.MATE_STUDIO_REPORT_TOKEN!);
+    expect(a).not.toBe(b);
+    expect(r.registry.reportCompanion(a!)).toBe(ACME);
+    expect(r.registry.reportCompanion("unknown")).toBeNull();
+
+    await r.registry.end(first.sessionId);
+    expect(r.registry.reportCompanion(a!)).toBeNull();
+    expect(r.registry.reportCompanion(b!)).toBe(ACME);
+
+    await r.registry.stopAll();
+    expect(r.registry.reportCompanion(b!)).toBeNull();
+  });
+});

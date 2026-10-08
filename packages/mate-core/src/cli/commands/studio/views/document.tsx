@@ -11,7 +11,7 @@ import {
   switchView,
   toHref,
 } from "../selection";
-import { VAULT_CHANGES_ROUTE, VAULT_DIR_ROUTE, VAULT_FILTER_ROUTE } from "../routes";
+import { REPORTS_ROUTE, VAULT_CHANGES_ROUTE, VAULT_DIR_ROUTE, VAULT_FILTER_ROUTE } from "../routes";
 import { STUDIO_CLIENT_SCRIPT, STUDIO_PREPAINT_SCRIPT } from "./client";
 import { CompanionPicker } from "./companion-picker";
 import { CompanionSelector } from "./companion-selector";
@@ -19,6 +19,7 @@ import { Dashboard } from "./dashboard/index";
 import { CompanionError } from "./error";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
 import type { VaultTreeNode } from "../vault";
+import { Reports } from "./reports/index";
 import { Specs } from "./specs/index";
 import { SelectionFields } from "./selection-fields";
 import { STUDIO_STYLES } from "./styles";
@@ -55,6 +56,10 @@ const VIEW_DETAILS = {
   vault: {
     eyebrow: "Companion files",
     title: "Vault",
+  },
+  reports: {
+    eyebrow: "Agent output",
+    title: "Reports",
   },
 } as const;
 
@@ -100,6 +105,7 @@ function StudioShell({ page }: { page: StudioPage }) {
         className="shell"
         data-companion={page.companion ? companionDigest(page.companion.path) : undefined}
         data-terminal={page.terminal ? "" : undefined}
+        {...reportAttributes(page)}
       >
         <Sidebar page={page} />
         <main className="main">
@@ -110,8 +116,25 @@ function StudioShell({ page }: { page: StudioPage }) {
       </div>
       {page.terminal ? <TerminalDrawerButton /> : null}
       <div className="toast" id="studio-toast" data-shown="false" />
+      <div className="toast toast-report" id="reports-toast" data-shown="false" role="status">
+        <span id="reports-toast-title" />
+        <a id="reports-toast-open">Open</a>
+      </div>
     </>
   );
+}
+
+/** What the page client needs to follow the shown companion's reports; nothing without one. */
+function reportAttributes(page: StudioPage): Record<string, string> {
+  if (!page.companion) return {};
+  const digest = companionDigest(page.companion.path);
+  const query = new URLSearchParams({ companion: digest });
+  const events = new URLSearchParams({ companion: digest, scope: "reports" });
+  return {
+    "data-reports-url": `${REPORTS_ROUTE}?${query}`,
+    "data-reports-events-url": `${VAULT_CHANGES_ROUTE}?${events}`,
+    "data-reports-view-url": toHref(switchView(page.selection, "reports"), "/"),
+  };
 }
 
 function Content({ page }: { page: StudioPage }) {
@@ -122,6 +145,7 @@ function Content({ page }: { page: StudioPage }) {
     return <CompanionError companionPath={page.error.companionPath} reason={page.error.reason} />;
   }
   if (page.selection.view === "vault") return <Vault page={page} selection={page.selection} />;
+  if (page.selection.view === "reports") return <Reports />;
   if (!page.payload) {
     return (
       <section className="panel">
@@ -186,6 +210,7 @@ const VIEW_NAV: readonly (readonly [StudioView, string])[] = [
   ["specs", "Specs"],
   ["workflow", "Workflow"],
   ["skills", "Skills"],
+  ["reports", "Reports"],
 ];
 
 /**
@@ -202,6 +227,11 @@ function ViewNav({ selection }: { selection: StudioSelection }) {
             <SelectionFields selection={switchView(selection, view)} />
             <button type="submit" aria-pressed={selection.view === view}>
               <span>{label}</span>
+              {view === "reports" ? (
+                <span id="reports-badge" className="nav-badge" hidden>
+                  new
+                </span>
+              ) : null}
             </button>
           </form>
         ))}

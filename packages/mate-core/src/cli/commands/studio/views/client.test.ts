@@ -478,7 +478,9 @@ describe("studio browser code", () => {
     });
     expect(run.streamed).toEqual(["/api/vault/changes?companion=abc"]);
     const send = (generation: number) =>
-      run.sources[0]!.onmessage!({ data: JSON.stringify({ generation }) });
+      run.sources[0]!.onmessage!({
+        data: JSON.stringify({ type: "vault-tree-changed", generation }),
+      });
     send(2);
     expect(run.stale.hidden).toBe(true);
     send(4);
@@ -504,7 +506,9 @@ describe("studio browser code", () => {
       tree: new FakeElement({ "data-vault-slot": "tree", "data-vault-generation": "1" }),
       fails: true,
     });
-    run.sources[0]!.onmessage!({ data: JSON.stringify({ generation: 2 }) });
+    run.sources[0]!.onmessage!({
+      data: JSON.stringify({ type: "vault-tree-changed", generation: 2 }),
+    });
     run.refresh.listeners.submit!({ preventDefault: () => {} });
     await settle();
     await settle();
@@ -522,7 +526,9 @@ describe("studio browser code", () => {
         new FakeElement({ "data-vault-slot": "tree", "data-vault-generation": "1" }),
       ]),
     });
-    run.sources[0]!.onmessage!({ data: JSON.stringify({ generation: 2 }) });
+    run.sources[0]!.onmessage!({
+      data: JSON.stringify({ type: "vault-tree-changed", generation: 2 }),
+    });
     expect(run.stale.hidden).toBe(true);
     await settle();
     await settle();

@@ -295,6 +295,36 @@ describe("LaunchAdapter.prepareLaunch", () => {
     }
   });
 
+  test("passes the Studio report endpoint and credential through a companion-scoped launch", async () => {
+    const previous = {
+      url: process.env.MATE_STUDIO_REPORT_URL,
+      token: process.env.MATE_STUDIO_REPORT_TOKEN,
+    };
+    process.env.MATE_STUDIO_REPORT_URL = "http://127.0.0.1:4321";
+    process.env.MATE_STUDIO_REPORT_TOKEN = "session-credential";
+
+    try {
+      const scoped = {
+        ...makeContext([{ name: "openspec" }]),
+        repository: undefined,
+        launchWorkingDirectory: "/tmp/companion",
+      };
+      for (const context of [scoped, makeContext([{ name: "openspec" }])]) {
+        const launch = await new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(context, []);
+        expect(launch.env.MATE_STUDIO_REPORT_URL).toBe("http://127.0.0.1:4321");
+        expect(launch.env.MATE_STUDIO_REPORT_TOKEN).toBe("session-credential");
+      }
+    } finally {
+      for (const [key, value] of [
+        ["MATE_STUDIO_REPORT_URL", previous.url],
+        ["MATE_STUDIO_REPORT_TOKEN", previous.token],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   test("propagates real capabilities into companionGuidance, matching the Claude provider", async () => {
     const adapter = new OpenCodeAdapter(OPENCODE_V2);
 

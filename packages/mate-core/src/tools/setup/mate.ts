@@ -89,7 +89,7 @@ A report carrying a mermaid payload inlines the diagram runtime; a report withou
 2. Run \`mate report --input <file-or->\`.
 3. Add \`--json\` when the caller needs normalized JSON instead of browser delivery.
 
-The default path writes self-contained HTML to a unique OS temporary directory and opens it in the default browser. The report includes a visible "Print / Save as PDF" control that calls the browser's native print dialog. If HTML delivery fails, the CLI warns on stderr and emits the complete report document as JSON on stdout.
+The CLI chooses the delivery surface; deliver only through \`mate report\`, never a hand-written file, server, or browser launch. Inside a Studio terminal it hosts the report in Studio and prints a full link only when Studio has a public address, otherwise it tells the operator to open Studio → Reports; relay that output. Elsewhere, or when Studio is unreachable, it writes self-contained HTML to a unique OS temporary directory and opens it in the default browser. The report includes a visible "Print / Save as PDF" control that calls the browser's native print dialog. If HTML delivery fails, the CLI warns on stderr and emits the complete report document as JSON on stdout.
 
 The built-in \`mate report\` path collects Mate usage data and adapts it to the same contract and renderer.
 `;

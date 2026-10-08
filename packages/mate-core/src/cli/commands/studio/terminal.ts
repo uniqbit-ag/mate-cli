@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+
+import { tokensEqual } from "./access";
 
 export const TERMINAL_AGENTS = ["claude", "opencode"] as const;
 export type TerminalAgent = (typeof TERMINAL_AGENTS)[number];
@@ -197,6 +199,8 @@ export interface TerminalRegistryOptions {
   /** The Mate invocation prefix, e.g. `[bun, cli.mjs]`. */
   mateCommand: string[];
   noGit?: boolean;
+  /** Loopback origin of this server, read at spawn: the port is known only after bind. */
+  reportUrl?: () => string | null;
   env?: NodeJS.ProcessEnv;
   spawn?: TerminalSpawn;
   signalGroup?: (pid: number, signal: NodeJS.Signals) => void;
@@ -209,6 +213,8 @@ interface Session {
   agent: TerminalAgent;
   companionPath: string;
   startedAt: number;
+  /** In memory only; valid while the session is registered. */
+  reportToken: string;
   process: TerminalProcess;
   ring: RingBuffer;
   viewer: TerminalViewer | null;
@@ -271,6 +277,15 @@ export class TerminalRegistry {
       attached: session.viewer !== null,
       startedAt: session.startedAt,
     }));
+  }
+
+  /** The companion of the live session holding this publish credential, else `null`. */
+  reportCompanion(token: string): string | null {
+    let found: string | null = null;
+    for (const session of this.sessions.values()) {
+      if (!session.ending && tokensEqual(token, session.reportToken)) found = session.companionPath;
+    }
+    return found;
   }
 
   connect(viewer: TerminalViewer): TerminalConnection {
@@ -413,6 +428,14 @@ export class TerminalRegistry {
     delete env.MATE_REPO_PATH;
     delete env.MATE_REPO_ID;
     delete env.MATE_STUDIO_TOKEN;
+    delete env.MATE_STUDIO_REPORT_URL;
+    delete env.MATE_STUDIO_REPORT_TOKEN;
+    const reportToken = randomBytes(32).toString("base64url");
+    const reportUrl = this.options.reportUrl?.() ?? null;
+    if (reportUrl) {
+      env.MATE_STUDIO_REPORT_URL = reportUrl;
+      env.MATE_STUDIO_REPORT_TOKEN = reportToken;
+    }
     env.MATE_ARTIFACT_PATH = companionPath;
     env.TERM = "xterm-256color";
     const argv = [
@@ -430,6 +453,7 @@ export class TerminalRegistry {
       agent,
       companionPath,
       startedAt: this.now(),
+      reportToken,
       ring: new RingBuffer(this.limits.ringBytes),
       viewer: null,
       detachedAt: null,

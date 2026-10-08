@@ -591,7 +591,7 @@ describe("createStudioFetch", () => {
           .join("")
           .split("\n")
           .find((line) => line.startsWith("data:"))!;
-        expect(JSON.parse(data.slice(5))).toEqual({ generation: 0 });
+        expect(JSON.parse(data.slice(5))).toEqual({ type: "vault-tree-changed", generation: 0 });
         await reader.cancel();
         const unselected = (await handler(new Request("http://localhost/api/vault/changes")))!;
         expect(unselected.status).toBe(400);

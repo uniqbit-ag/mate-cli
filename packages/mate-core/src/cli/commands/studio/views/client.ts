@@ -1,3 +1,4 @@
+import { REPORT_VIEW_PREFIX } from "../routes";
 import { COMPANION_DIGEST_PATTERN, COMPANION_PARAM } from "../selection";
 
 export const THEME_STORAGE_KEY = "mate-studio-theme";
@@ -486,7 +487,7 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
     changes.onmessage = function (message) {
       var event;
       try { event = JSON.parse(message.data); } catch (error) { return; }
-      if (typeof event.generation !== "number") return;
+      if (!event || event.type !== "vault-tree-changed" || typeof event.generation !== "number") return;
       if (latestGeneration === null || event.generation > latestGeneration) latestGeneration = event.generation;
       showStale();
     };
@@ -539,7 +540,86 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
       failVaultSlots("The files could not be listed: " + failure(error));
     });
   }
+  /** Hosted reports: the list, the sandboxed frame, and the toast and badge for a new arrival. */
+  function wireReports() {
+    var shell = document.querySelector("[data-reports-events-url]");
+    if (!shell || typeof EventSource === "undefined") return;
+    var current = shell.getAttribute("data-companion");
+    var listUrl = shell.getAttribute("data-reports-url");
+    var viewUrl = shell.getAttribute("data-reports-view-url");
+    var list = document.getElementById("reports-list");
+    var frame = document.getElementById("reports-frame");
+    var open = document.getElementById("reports-open");
+    var empty = document.getElementById("reports-empty");
+    var template = document.getElementById("reports-item-template");
+    var badge = document.getElementById("reports-badge");
+    var toast = document.getElementById("reports-toast");
+    var toastTitle = document.getElementById("reports-toast-title");
+    var toastOpen = document.getElementById("reports-toast-open");
+    var shown = null;
+    var toastTimeout;
+    function reportHash() {
+      var match = /(?:^|[#&])report=([0-9a-f]{32})/.exec(location.hash || "");
+      return match ? match[1] : null;
+    }
+    function show(id) {
+      if (!frame) return;
+      shown = id;
+      var src = ${JSON.stringify(REPORT_VIEW_PREFIX)} + id;
+      frame.src = src;
+      frame.hidden = false;
+      if (open) { open.href = src; open.hidden = false; }
+      if (list) list.querySelectorAll("button[data-report-id]").forEach(function (button) {
+        button.setAttribute("aria-pressed", button.getAttribute("data-report-id") === id ? "true" : "false");
+      });
+      try { history.replaceState(null, "", "#report=" + id); } catch (error) { /* the address is a convenience */ }
+    }
+    function render(reports) {
+      if (!list || !template || !template.content.firstElementChild) return;
+      list.replaceChildren();
+      if (empty) empty.hidden = reports.length > 0;
+      reports.forEach(function (report) {
+        var item = template.content.firstElementChild.cloneNode(true);
+        var button = item.querySelector("button");
+        button.setAttribute("data-report-id", report.id);
+        button.setAttribute("aria-pressed", report.id === shown ? "true" : "false");
+        item.querySelector("[data-report-title]").textContent = report.title;
+        item.querySelector("[data-report-time]").textContent = new Date(report.createdAt).toLocaleString();
+        button.addEventListener("click", function () { show(report.id); });
+        list.append(item);
+      });
+      if (reports.length === 0 || reports.some(function (report) { return report.id === shown; })) return;
+      var named = reportHash();
+      show(reports.some(function (report) { return report.id === named; }) ? named : reports[0].id);
+    }
+    function refreshList() {
+      if (!list || !listUrl) return;
+      fetch(listUrl, { headers: { accept: "application/json" } }).then(function (response) {
+        if (!response.ok) throw new Error("status " + response.status);
+        return response.json();
+      }).then(function (body) { render(body.reports || []); }).catch(function () { /* the next event or reconnect retries */ });
+    }
+    function announceReport(event) {
+      if (badge) badge.hidden = false;
+      if (!toast || !toastTitle) return;
+      toastTitle.textContent = "New report: " + event.title;
+      if (toastOpen && viewUrl) toastOpen.href = viewUrl + "#report=" + event.id;
+      toast.setAttribute("data-shown", "true");
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(function () { toast.setAttribute("data-shown", "false"); }, 10000);
+    }
+    var events = new EventSource(shell.getAttribute("data-reports-events-url"));
+    events.onopen = refreshList;
+    events.onmessage = function (message) {
+      var event;
+      try { event = JSON.parse(message.data); } catch (error) { return; }
+      if (!event || event.type !== "report-published" || event.companion !== current) return;
+      if (list) refreshList();
+      else announceReport(event);
+    };
+  }
   wireNavigation();
   wireVault();
   wireVaultBrowser();
+  wireReports();
 })();`;
