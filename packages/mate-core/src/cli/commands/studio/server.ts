@@ -1,14 +1,27 @@
 import {
   createStudioAccess,
   exchangeStudioToken,
+  normalizeOrigin,
+  readBearer,
   studioAddress,
   type StudioAccess,
   type StudioInvocation,
 } from "./access";
+import { MERMAID_RUNTIME_URL } from "../report/renderer";
 import { collectStudioInventory, type StudioInventory } from "./inventory";
 import { assembleCompanionPayload, type StudioCompanionResponse } from "./payload";
-import { STUDIO_HOSTNAME } from "./routes";
+import { createReportStore, isReportId, REPORT_LIMITS, type ReportStore } from "./reports";
 import {
+  REPORTS_ROUTE,
+  REPORT_VIEW_PREFIX,
+  STUDIO_HOSTNAME,
+  VAULT_CHANGES_ROUTE,
+  VAULT_DIR_ROUTE,
+  VAULT_FILTER_ROUTE,
+} from "./routes";
+import {
+  COMPANION_DIGEST_PATTERN,
+  COMPANION_PARAM,
   companionDigest,
   parse,
   parseVaultSelection,
@@ -92,6 +105,7 @@ export interface StudioServerDeps {
   serve?: (options: StudioServeOptions) => StudioBoundServer;
   snapshots?: StudioSnapshotCache;
   vault?: VaultManager;
+  reports?: ReportStore;
   terminal?: Partial<TerminalRegistryOptions>;
   launchableAgents?: typeof launchableAgents;
 }
@@ -127,6 +141,16 @@ async function renderStudioDocument(page: StudioPage): Promise<string> {
 async function renderVaultView(page: StudioPage): Promise<string> {
   const views = await import("./views/document");
   return views.renderVaultView(page);
+}
+
+async function renderVaultChildren(page: StudioPage): Promise<string | null> {
+  const views = await import("./views/document");
+  return views.renderVaultChildren(page);
+}
+
+async function renderVaultMatches(page: StudioPage, query: string): Promise<string> {
+  const views = await import("./views/document");
+  return views.renderVaultMatches(page, query);
 }
 
 /** Keep the CLI entry free of eager Studio view imports. */
@@ -166,6 +190,60 @@ function refused(reason: string, status: number): Response {
   });
 }
 
+/**
+ * Sent with every hosted report: opaque origin, no Studio cookie or storage, and
+ * no connections beyond the one pinned, integrity-checked diagram runtime.
+ */
+const REPORT_CSP = [
+  "sandbox allow-scripts allow-modals",
+  "default-src 'none'",
+  `script-src 'unsafe-inline' ${MERMAID_RUNTIME_URL}`,
+  "style-src 'unsafe-inline'",
+  "img-src data:",
+  "font-src data:",
+  "connect-src 'none'",
+].join("; ");
+
+/** Page-facing report announcement; carries no path and no content. */
+interface ReportPublishedEvent {
+  type: "report-published";
+  /** Digest of the companion the report belongs to. */
+  companion: string;
+  id: string;
+  title: string;
+  createdAt: number;
+}
+
+/**
+ * The body as text, or `null` over `limit`. An oversized body is drained unparsed
+ * and unbuffered (up to a hard bound): answering before the client finished
+ * sending wedges its keep-alive connection.
+ */
+async function readCapped(request: Request, limit: number): Promise<string | null> {
+  if (!request.body) return "";
+  const declared = Number(request.headers.get("content-length"));
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let over = Number.isFinite(declared) && declared > limit;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) over = true;
+    if (over) {
+      chunks.length = 0;
+      if (size > limit * 4) {
+        await reader.cancel();
+        break;
+      }
+    } else {
+      chunks.push(value);
+    }
+  }
+  return over ? null : Buffer.concat(chunks).toString("utf8");
+}
+
 const TOKEN_REASON =
   "Studio's access token is required; open the address Studio printed when it started";
 
@@ -187,6 +265,10 @@ export interface StudioFetchOptions extends Pick<
   "writable" | "launchCompanion" | "noGit" | "detachMinutes"
 > {
   access?: StudioAccess;
+  /** Loopback origin the terminal's processes publish to; read at spawn. */
+  reportOrigin?: () => string | null;
+  /** The only origin an absolute report URL is built from. */
+  publicOrigin?: string | null;
   /** Enables the terminal; the invocation sets its default detach window. */
   terminal?: boolean;
 }
@@ -219,6 +301,10 @@ export function createStudioFetch(
       hostname: STUDIO_HOSTNAME,
       port: () => 80,
     });
+  const reports = deps.reports ?? createReportStore();
+  void reports.cleanup().catch(() => {});
+  const publicOrigin = options.publicOrigin ? normalizeOrigin(options.publicOrigin) : null;
+  const reportListeners = new Map<string, Set<(event: ReportPublishedEvent) => void>>();
   const launchCompanion = options.launchCompanion ?? null;
   const agentsFor = deps.launchableAgents ?? launchableAgents;
   const terminal = options.terminal
@@ -231,9 +317,54 @@ export function createStudioFetch(
         }),
         mateCommand: process.argv.slice(0, 2),
         noGit: options.noGit === true,
+        reportUrl: options.reportOrigin,
         ...deps.terminal,
       })
     : null;
+
+  /** Stores a report for the live terminal session holding the bearer credential. */
+  const publishReport = async (request: Request): Promise<Response> => {
+    const token = readBearer(request);
+    const companionPath = token ? (terminal?.reportCompanion(token) ?? null) : null;
+    if (!companionPath) return refused("a live Studio session's credential is required", 401);
+    const raw = await readCapped(request, REPORT_LIMITS.uploadBytes);
+    if (raw === null) return json({ reason: "the report exceeds the size limit" }, 413);
+    let body: { title?: unknown; html?: unknown };
+    try {
+      body = JSON.parse(raw) as typeof body;
+    } catch {
+      return json({ reason: "publishing requires a JSON body" }, 400);
+    }
+    if (
+      !body ||
+      typeof body !== "object" ||
+      typeof body.title !== "string" ||
+      typeof body.html !== "string" ||
+      !body.html
+    ) {
+      return json({ reason: "a report needs a string title and html" }, 400);
+    }
+    const digest = companionDigest(companionPath);
+    const stored = await reports.publish(digest, {
+      title: body.title.slice(0, 200),
+      html: body.html,
+    });
+    for (const notify of reportListeners.get(digest) ?? []) {
+      notify({
+        type: "report-published",
+        companion: digest,
+        id: stored.id,
+        title: stored.title,
+        createdAt: stored.createdAt,
+      });
+    }
+    const path = `${REPORT_VIEW_PREFIX}${stored.id}`;
+    return json({
+      id: stored.id,
+      path,
+      ...(publicOrigin ? { url: `${publicOrigin}${path}` } : {}),
+    });
+  };
 
   const handler = async (
     request: Request,
@@ -245,6 +376,10 @@ export function createStudioFetch(
 
     const exchanged = exchangeStudioToken(request, access, acceptedOrigin);
     if (exchanged) return exchanged;
+
+    if (url.pathname === REPORTS_ROUTE && request.method === "POST") {
+      return publishReport(request);
+    }
 
     const isSave = url.pathname === "/api/vault/save";
     const isEnd = url.pathname === "/api/terminal/sessions/end";
@@ -273,6 +408,31 @@ export function createStudioFetch(
         return respond(new Response(page.body, { status: 401, headers: page.headers }));
       }
       return respond(refused(TOKEN_REASON, 401));
+    }
+
+    if (url.pathname === REPORTS_ROUTE) {
+      const digest = url.searchParams.get(COMPANION_PARAM) ?? "";
+      if (!COMPANION_DIGEST_PATTERN.test(digest)) {
+        return respond(json({ reason: "no registered companion was selected" }, 400));
+      }
+      return respond(json({ reports: await reports.list(digest) }));
+    }
+
+    if (url.pathname.startsWith(REPORT_VIEW_PREFIX)) {
+      const id = url.pathname.slice(REPORT_VIEW_PREFIX.length);
+      const stored = isReportId(id) ? await reports.read(id) : null;
+      if (stored === null) return respond(new Response("not found", { status: 404 }));
+      return respond(
+        new Response(stored, {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store",
+            "content-security-policy": REPORT_CSP,
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+          },
+        }),
+      );
     }
 
     if (url.pathname.startsWith("/studio/terminal/") && terminal) {
@@ -364,6 +524,74 @@ export function createStudioFetch(
           }),
           { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
         ),
+      );
+    }
+
+    if (url.pathname === VAULT_DIR_ROUTE || url.pathname === VAULT_FILTER_ROUTE) {
+      const selection = parseVaultSelection(url);
+      const selected = await selectedCompanion(selection.companionDigest, inventory);
+      if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
+      let listed;
+      try {
+        listed = await vault.tree(selected.path);
+      } catch (error) {
+        return respond(
+          json({ reason: error instanceof Error ? error.message : String(error) }, 400),
+        );
+      }
+      const page: StudioPage = {
+        inventory: await inventory(),
+        selection,
+        companion: selected,
+        payload: null,
+        error: null,
+        collectedAt: null,
+        writable,
+        vault: {
+          tree: listed.tree,
+          open: null,
+          refusal: null,
+          incoming: null,
+          overwritten: null,
+          watching: listed.watching,
+          warning: listed.warning,
+          generation: listed.generation,
+        },
+        terminal: null,
+      };
+      const headers = {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "x-vault-generation": String(listed.generation),
+      };
+      if (url.pathname === VAULT_FILTER_ROUTE) {
+        const matches = await renderVaultMatches(page, url.searchParams.get("q") ?? "");
+        return respond(new Response(matches, { headers }));
+      }
+      const children = await renderVaultChildren(page);
+      if (children === null) {
+        return respond(json({ reason: "that folder is not in the listed tree" }, 404));
+      }
+      return respond(new Response(children, { headers }));
+    }
+
+    if (url.pathname === VAULT_CHANGES_ROUTE) {
+      const selection = parseVaultSelection(url);
+      const selected = await selectedCompanion(selection.companionDigest, inventory);
+      if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
+      server?.timeout?.(request, 0);
+      const reportsOnly = url.searchParams.get("scope") === "reports";
+      return respond(
+        changeStream(vault, selected.path, reportsOnly, (notify) => {
+          const digest = companionDigest(selected.path);
+          const set = reportListeners.get(digest) ?? new Set();
+          set.add(notify);
+          reportListeners.set(digest, set);
+          return () => {
+            set.delete(notify);
+            if (set.size === 0) reportListeners.delete(digest);
+          };
+        }),
       );
     }
 
@@ -465,13 +693,17 @@ async function selectedCompanion(
   return resolveCompanion(await collectInventory(), digest);
 }
 
-function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: string): Response {
+/** Server-sent events: `subscribe` gets a send function and returns its unsubscribe. */
+function eventStream(
+  greeting: string,
+  subscribe: (send: (event: unknown) => void) => () => void,
+): Response {
   const encoder = new TextEncoder();
   let unsubscribe = () => {};
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(encoder.encode(": studio vault events\n\n"));
-      unsubscribe = vault.subscribe(companionPath, requestedPath, (event) => {
+      controller.enqueue(encoder.encode(`: ${greeting}\n\n`));
+      unsubscribe = subscribe((event) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
         } catch {
@@ -489,6 +721,37 @@ function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: 
       "cache-control": "no-cache",
       connection: "keep-alive",
     },
+  });
+}
+
+function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: string): Response {
+  return eventStream("studio vault events", (send) =>
+    vault.subscribe(companionPath, requestedPath, send),
+  );
+}
+
+/**
+ * Typed events for one companion: `vault-tree-changed` (a generation) and
+ * `report-published`. No paths and no file content leave through this stream.
+ * `reportsOnly` skips the vault subscription, which starts a watcher and listing.
+ */
+function changeStream(
+  vault: VaultManager,
+  companionPath: string,
+  reportsOnly: boolean,
+  subscribeReports: (notify: (event: ReportPublishedEvent) => void) => () => void,
+): Response {
+  return eventStream("studio changes", (send) => {
+    const stopReports = subscribeReports(send);
+    const stopTree = reportsOnly
+      ? () => {}
+      : vault.subscribeTree(companionPath, (generation) =>
+          send({ type: "vault-tree-changed", generation }),
+        );
+    return () => {
+      stopReports();
+      stopTree();
+    };
   });
 }
 
@@ -563,6 +826,17 @@ function bunServe(options: StudioServeOptions): StudioBoundServer {
   return runtime.serve(options);
 }
 
+/** Where a process on this host reaches the server: loopback for wildcard binds. */
+function reportOrigin(hostname: string, port: number): string {
+  const wildcard = hostname === "0.0.0.0" || hostname === "::" || hostname === "[::]";
+  const host = wildcard
+    ? "127.0.0.1"
+    : hostname.includes(":") && !hostname.startsWith("[")
+      ? `[${hostname}]`
+      : hostname;
+  return `http://${host}:${port}`;
+}
+
 /**
  * A bind failure propagates: the caller reports it and exits rather than
  * opening a browser at a URL nothing answers.
@@ -587,6 +861,8 @@ export function startStudioServer(
   const fetchHandler = createStudioFetch(deps, {
     writable: options.writable,
     access,
+    publicOrigin: options.publicOrigin,
+    reportOrigin: () => reportOrigin(hostname, boundPort),
     terminal: options.terminal === true,
     detachMinutes: options.detachMinutes,
     launchCompanion: options.launchCompanion,

@@ -11,6 +11,7 @@ import {
   switchView,
   toHref,
 } from "../selection";
+import { REPORTS_ROUTE, VAULT_CHANGES_ROUTE, VAULT_DIR_ROUTE, VAULT_FILTER_ROUTE } from "../routes";
 import { STUDIO_CLIENT_SCRIPT, STUDIO_PREPAINT_SCRIPT } from "./client";
 import { CompanionPicker } from "./companion-picker";
 import { CompanionSelector } from "./companion-selector";
@@ -18,6 +19,8 @@ import { Dashboard } from "./dashboard/index";
 import { CompanionError } from "./error";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
 import type { VaultTreeNode } from "../vault";
+import { Reports } from "./reports/index";
+import { specActionOffers } from "../actions";
 import { Specs } from "./specs/index";
 import { SelectionFields } from "./selection-fields";
 import { STUDIO_STYLES } from "./styles";
@@ -54,6 +57,10 @@ const VIEW_DETAILS = {
   vault: {
     eyebrow: "Companion files",
     title: "Vault",
+  },
+  reports: {
+    eyebrow: "Agent output",
+    title: "Reports",
   },
 } as const;
 
@@ -99,6 +106,7 @@ function StudioShell({ page }: { page: StudioPage }) {
         className="shell"
         data-companion={page.companion ? companionDigest(page.companion.path) : undefined}
         data-terminal={page.terminal ? "" : undefined}
+        {...reportAttributes(page)}
       >
         <Sidebar page={page} />
         <main className="main">
@@ -109,8 +117,25 @@ function StudioShell({ page }: { page: StudioPage }) {
       </div>
       {page.terminal ? <TerminalDrawerButton /> : null}
       <div className="toast" id="studio-toast" data-shown="false" />
+      <div className="toast toast-report" id="reports-toast" data-shown="false" role="status">
+        <span id="reports-toast-title" />
+        <a id="reports-toast-open">Open</a>
+      </div>
     </>
   );
+}
+
+/** What the page client needs to follow the shown companion's reports; nothing without one. */
+function reportAttributes(page: StudioPage): Record<string, string> {
+  if (!page.companion) return {};
+  const digest = companionDigest(page.companion.path);
+  const query = new URLSearchParams({ companion: digest });
+  const events = new URLSearchParams({ companion: digest, scope: "reports" });
+  return {
+    "data-reports-url": `${REPORTS_ROUTE}?${query}`,
+    "data-reports-events-url": `${VAULT_CHANGES_ROUTE}?${events}`,
+    "data-reports-view-url": toHref(switchView(page.selection, "reports"), "/"),
+  };
 }
 
 function Content({ page }: { page: StudioPage }) {
@@ -121,6 +146,7 @@ function Content({ page }: { page: StudioPage }) {
     return <CompanionError companionPath={page.error.companionPath} reason={page.error.reason} />;
   }
   if (page.selection.view === "vault") return <Vault page={page} selection={page.selection} />;
+  if (page.selection.view === "reports") return <Reports />;
   if (!page.payload) {
     return (
       <section className="panel">
@@ -131,7 +157,15 @@ function Content({ page }: { page: StudioPage }) {
   if (page.selection.view === "workflow") {
     return <Workflow payload={page.payload} />;
   }
-  if (page.selection.view === "specs") return <Specs payload={page.payload} />;
+  if (page.selection.view === "specs") {
+    const { payload } = page;
+    return (
+      <Specs
+        payload={payload}
+        actions={specActionOffers(payload.companionPath, payload.skillInventory, page.terminal)}
+      />
+    );
+  }
   if (page.selection.view === "skills") return <Skills skills={page.payload.skillInventory} />;
   return <Dashboard payload={page.payload} />;
 }
@@ -185,6 +219,7 @@ const VIEW_NAV: readonly (readonly [StudioView, string])[] = [
   ["specs", "Specs"],
   ["workflow", "Workflow"],
   ["skills", "Skills"],
+  ["reports", "Reports"],
 ];
 
 /**
@@ -201,6 +236,11 @@ function ViewNav({ selection }: { selection: StudioSelection }) {
             <SelectionFields selection={switchView(selection, view)} />
             <button type="submit" aria-pressed={selection.view === view}>
               <span>{label}</span>
+              {view === "reports" ? (
+                <span id="reports-badge" className="nav-badge" hidden>
+                  new
+                </span>
+              ) : null}
             </button>
           </form>
         ))}
@@ -266,6 +306,83 @@ export function renderVaultView(page: StudioPage): string {
   );
 }
 
+/** A folder's entries, for a folder the page did not expand; `null` when the listed tree lacks it. */
+export function renderVaultChildren(page: StudioPage): string | null {
+  const { selection, vault } = page;
+  if (!vault?.tree || selection.view !== "vault" || !selection.openDir) return null;
+  const folder = findDirectory(vault.tree, selection.openDir);
+  if (!folder) return null;
+  const nobody = new Set<string>();
+  return String(
+    <>
+      {(folder.children ?? []).toSorted(byKindThenName).map((child) => (
+        <VaultNode key={child.path} node={child} selection={selection} expanded={nobody} />
+      ))}
+    </>,
+  );
+}
+
+/** Most matches a filter shows; the rest are counted, not rendered. */
+export const VAULT_FILTER_LIMIT = 200;
+
+function matchingFiles(
+  tree: VaultTreeNode[],
+  needle: string,
+): { shown: VaultTreeNode[]; total: number } {
+  const shown: VaultTreeNode[] = [];
+  let total = 0;
+  const stack = [...tree].reverse();
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (node.kind === "directory") {
+      for (let index = (node.children?.length ?? 0) - 1; index >= 0; index -= 1) {
+        stack.push(node.children![index]!);
+      }
+    } else if (segments(node.path).join("/").toLowerCase().includes(needle)) {
+      total += 1;
+      if (shown.length < VAULT_FILTER_LIMIT) shown.push(node);
+    }
+  }
+  return { shown, total };
+}
+
+/** Name-filter results over the whole listed tree, bounded; never touches the disk. */
+export function renderVaultMatches(page: StudioPage, query: string): string {
+  const { selection, vault } = page;
+  const needle = query.trim().toLowerCase();
+  if (!vault?.tree || selection.view !== "vault" || !needle) return "";
+  const { shown, total } = matchingFiles(vault.tree, needle);
+  return String(
+    <>
+      {shown.length === 0 ? (
+        <p className="empty">No files match.</p>
+      ) : (
+        <nav className="vault-tree vault-results" aria-label="Matching files">
+          {shown.map((node) => (
+            <VaultFileLink
+              key={node.path}
+              node={node}
+              selection={selection}
+              label={segments(node.path).join("/")}
+            />
+          ))}
+        </nav>
+      )}
+      {total > shown.length ? (
+        <p className="note" data-vault-more>
+          {total - shown.length} more match{total - shown.length === 1 ? "" : "es"}; refine the
+          filter.
+        </p>
+      ) : null}
+    </>,
+  );
+}
+
+/** The selection a read-only vault route is addressed by: no one-shot refresh. */
+function plain(selection: StudioVaultSelection): StudioVaultSelection {
+  return { ...selection, refresh: false };
+}
+
 function segments(relative: string): string[] {
   return relative.split(/[\\/]/).filter(Boolean);
 }
@@ -326,11 +443,19 @@ function Vault({ page, selection }: { page: StudioPage; selection: StudioVaultSe
       className="vault-layout"
       data-vault-layout
       data-vault-view={vault.tree === null ? toHref(selection, "/api/vault/view") : undefined}
+      data-vault-refresh-url={toHref(refresh(selection), "/api/vault/view")}
+      data-vault-filter-url={toHref(plain(selection), VAULT_FILTER_ROUTE)}
+      data-vault-changes-url={toHref(plain(selection), VAULT_CHANGES_ROUTE)}
     >
       <aside className="panel vault-tree-panel" id="vault-tree-panel" aria-label="Files">
         <div className="vault-tree-head">
           <strong>Files</strong>
+          <RefreshTree selection={selection} />
         </div>
+        <p id="vault-stale" className="note vault-warning" role="status" hidden>
+          Files changed — refresh tree.
+        </p>
+        <p id="vault-refresh-status" className="note vault-warning" role="status" hidden />
         <input
           type="search"
           id="vault-filter"
@@ -339,6 +464,7 @@ function Vault({ page, selection }: { page: StudioPage; selection: StudioVaultSe
           aria-label="Go to file"
           hidden
         />
+        <div id="vault-filter-results" data-vault-filter-results hidden />
         <VaultTreeSlot vault={vault} selection={selection} />
       </aside>
       <div className="vault-main">
@@ -362,9 +488,10 @@ function Vault({ page, selection }: { page: StudioPage; selection: StudioVaultSe
   );
 }
 
+/** The refresh that keeps the tree and filter data current; without script it is a plain reload. */
 function RefreshTree({ selection }: { selection: StudioVaultSelection }) {
   return (
-    <form method="get" action="/" data-studio-navigation>
+    <form method="get" action="/" data-studio-navigation data-vault-refresh>
       <SelectionFields selection={refresh(selection)} />
       <button type="submit">Refresh tree</button>
     </form>
@@ -382,7 +509,6 @@ function VaultTreeSlot({
     return (
       <div data-vault-slot="tree">
         <p className="note vault-warning">The files could not be listed: {vault.failure}</p>
-        <RefreshTree selection={selection} />
       </div>
     );
   }
@@ -395,11 +521,12 @@ function VaultTreeSlot({
   }
   const expanded = expandedPaths(selection);
   return (
-    <div data-vault-slot="tree">
+    <div data-vault-slot="tree" data-vault-generation={vault.generation ?? undefined}>
       {vault.warning ? (
         <p className="note vault-warning">{vault.warning}. The tree may be out of date.</p>
-      ) : null}
-      {!vault.watching ? <RefreshTree selection={selection} /> : null}
+      ) : vault.watching ? null : (
+        <p className="note vault-warning">The tree may be out of date.</p>
+      )}
       {vault.tree.length === 0 ? (
         <p className="empty">This companion has no markdown files.</p>
       ) : (
@@ -431,6 +558,9 @@ function VaultNode({
         open={open}
         data-vault-dir={key}
         data-vault-expanded={open ? "" : undefined}
+        data-vault-children-url={
+          open ? undefined : toHref(openFolder(selection, key), VAULT_DIR_ROUTE)
+        }
       >
         <summary
           aria-current={
@@ -442,27 +572,45 @@ function VaultNode({
           <span>{node.name}</span>
         </summary>
         <div className="vault-children">
-          {(node.children ?? []).toSorted(byKindThenName).map((child) => (
-            <VaultNode key={child.path} node={child} selection={selection} expanded={expanded} />
-          ))}
+          {open
+            ? (node.children ?? [])
+                .toSorted(byKindThenName)
+                .map((child) => (
+                  <VaultNode
+                    key={child.path}
+                    node={child}
+                    selection={selection}
+                    expanded={expanded}
+                  />
+                ))
+            : null}
         </div>
       </details>
     );
   }
+  return <VaultFileLink node={node} selection={selection} label={node.name} />;
+}
+
+/** A plain link: no form, no hidden fields, no handler of its own. */
+function VaultFileLink({
+  node,
+  selection,
+  label,
+}: {
+  node: VaultTreeNode;
+  selection: StudioVaultSelection;
+  label: string;
+}) {
   return (
-    <form
-      method="get"
-      action="/"
+    <a
       className="vault-file"
-      data-studio-navigation
-      data-vault-entry={key}
+      href={toHref(openFile(selection, node.path))}
+      data-vault-entry={segments(node.path).join("/")}
+      aria-current={selection.openPath === node.path ? "page" : undefined}
     >
-      <SelectionFields selection={openFile(selection, node.path)} />
-      <button type="submit" aria-current={selection.openPath === node.path ? "page" : undefined}>
-        <FileIcon />
-        <span>{node.name}</span>
-      </button>
-    </form>
+      <FileIcon />
+      <span>{label}</span>
+    </a>
   );
 }
 

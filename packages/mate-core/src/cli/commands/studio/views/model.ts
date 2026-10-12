@@ -41,6 +41,8 @@ export interface StudioVaultPage {
   overwritten: VaultFile | null;
   watching: boolean;
   warning: string | null;
+  /** The listing generation `tree` was taken at; absent while the tree is deferred. */
+  generation?: number | null;
 }
 
 /**

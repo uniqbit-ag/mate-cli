@@ -1,5 +1,5 @@
 # Release-critical files: changes need review from a maintainer.
-/.github/workflows/release.yml @timosg
-/.github/allowed_signers @timosg
-/.github/CODEOWNERS @timosg
-/publish.sh @timosg
+/.github/workflows/release.yml @timosg @exilhanseat
+/.github/allowed_signers @timosg @exilhanseat
+/.github/CODEOWNERS @timosg @exilhanseat
+/publish.sh @timosg @exilhanseat

@@ -15,7 +15,8 @@ import type {
  * Pinned and integrity-checked, so a CDN cannot serve other code. Offline, the
  * script fails to load and each diagram stays readable as its escaped source.
  */
-const MERMAID_RUNTIME_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js";
+export const MERMAID_RUNTIME_URL =
+  "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js";
 const MERMAID_RUNTIME_INTEGRITY =
   "sha384-xzghz1GQ5u9HCpVskeDPqMsdogD1yvuMQbEK53+wi+G70+6J1AG0L2cfi9PHjDWI";
 

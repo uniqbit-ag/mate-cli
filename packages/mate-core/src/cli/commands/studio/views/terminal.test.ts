@@ -5,6 +5,7 @@ import {
   STUDIO_TERMINAL_SCRIPT,
   STUDIO_TERMINAL_SIDEBAR_SCRIPT,
   TERMINAL_COLLAPSED_KEY,
+  TERMINAL_SESSION_KEY,
   TERMINAL_WIDTH_KEY,
 } from "./terminal";
 
@@ -21,11 +22,16 @@ function element() {
     listeners,
     setAttribute: (name: string, value: string) => void attributes.set(name, value),
     removeAttribute: (name: string) => void attributes.delete(name),
+    click: () => void listeners.get("click")?.(),
     hasAttribute: (name: string) => attributes.has(name),
     getAttribute: (name: string) => attributes.get(name) ?? null,
     addEventListener: (event: string, handler: Handler) => void listeners.set(event, handler),
     fire: (event: string, payload?: unknown) => listeners.get(event)?.(payload),
     focus: () => {},
+    firstChild: null as unknown,
+    appendChild: () => {},
+    removeChild: () => {},
+    hidden: false,
     setPointerCapture: () => {},
     releasePointerCapture: () => {},
     hasPointerCapture: () => true,
@@ -183,10 +189,17 @@ describe("terminal sidebar script", () => {
 });
 
 /** Runs the terminal client against stubbed xterm.js, observer, and socket. */
-function runTerminal() {
+function runTerminal(options: { session?: string; collapsed?: boolean } = {}) {
   const nodes: Record<string, ReturnType<typeof element>> = {
     "studio-terminal-panel": element(),
+    "terminal-expand": element(),
+    "terminal-drawer-open": element(),
+    "terminal-action-choice": element(),
   };
+  const root = element();
+  if (options.collapsed) root.setAttribute("data-terminal-collapsed", "");
+  const documentListeners = new Map<string, Handler>();
+  const sockets: { onmessage?: (event: { data: string }) => void }[] = [];
   const mount = { ...element(), clientWidth: 0, clientHeight: 0 };
   const calls = { open: 0, fit: 0 };
   const sent: unknown[] = [];
@@ -203,6 +216,9 @@ function runTerminal() {
       calls.open += 1;
     }
     onData() {}
+    reset() {}
+    focus() {}
+    write() {}
     onResize(handler: typeof resizeHandler) {
       resizeHandler = handler;
     }
@@ -217,6 +233,10 @@ function runTerminal() {
   }
   class WebSocket {
     readyState = 1;
+    onmessage?: (event: { data: string }) => void;
+    constructor() {
+      sockets.push(this);
+    }
     send(message: string) {
       sent.push(JSON.parse(message));
     }
@@ -248,9 +268,11 @@ function runTerminal() {
     STUDIO_TERMINAL_SCRIPT,
   )(
     {
-      documentElement: {},
+      documentElement: root,
       getElementById: (id: string) => (id === "studio-terminal" ? mount : (nodes[id] ?? null)),
       querySelectorAll: () => [],
+      createElement: () => element(),
+      addEventListener: (event: string, handler: Handler) => documentListeners.set(event, handler),
     },
     Terminal,
     addon("FitAddon"),
@@ -260,7 +282,7 @@ function runTerminal() {
     ResizeObserver,
     (callback: () => void) => frames.push(callback),
     WebSocket,
-    storage({}),
+    storage(options.session ? { [TERMINAL_SESSION_KEY]: options.session } : {}),
     () => new Promise(noop),
     noop,
     () => ({ getPropertyValue: () => "" }),
@@ -271,6 +293,10 @@ function runTerminal() {
     mount,
     calls,
     sent,
+    root,
+    nodes,
+    message: (message: unknown) => sockets[0]?.onmessage?.({ data: JSON.stringify(message) }),
+    action: (detail: unknown) => documentListeners.get("studio:terminal-action")?.({ detail }),
     observed: () => observed,
     observe: () => observerCallback?.(),
     frames,
@@ -317,5 +343,70 @@ describe("terminal fitting", () => {
     expect(run.sent.filter((message) => (message as { type: string }).type === "resize")).toEqual([
       { type: "resize", cols: 100, rows: 30 },
     ]);
+  });
+});
+
+describe("terminal skill actions", () => {
+  const starts = (run: ReturnType<typeof runTerminal>) =>
+    run.sent.filter((message) => (message as { type: string }).type === "start");
+
+  it("starts the sole eligible agent with the action and subject", () => {
+    const run = runTerminal();
+    run.action({ action: "show-me", subject: "acme-login", agents: ["opencode"] });
+    expect(starts(run)).toEqual([
+      expect.objectContaining({
+        type: "start",
+        agent: "opencode",
+        action: "show-me",
+        subject: "acme-login",
+      }),
+    ]);
+  });
+
+  it("asks before starting when two agents qualify", () => {
+    const run = runTerminal();
+    run.action({ action: "show-me", subject: "acme-login", agents: ["claude", "opencode"] });
+    expect(starts(run)).toEqual([]);
+    expect(run.nodes["terminal-action-choice"]!.hidden).toBe(false);
+  });
+
+  it("ignores unknown agents", () => {
+    const run = runTerminal();
+    run.action({ action: "show-me", subject: "acme-login", agents: ["rm"] });
+    expect(starts(run)).toEqual([]);
+  });
+
+  it("expands a collapsed sidebar and opens the drawer", () => {
+    const run = runTerminal({ collapsed: true });
+    let expanded = 0;
+    let drawer = 0;
+    run.nodes["terminal-expand"]!.listeners.set("click", () => void expanded++);
+    run.nodes["terminal-drawer-open"]!.listeners.set("click", () => void drawer++);
+    run.action({ action: "show-me", subject: "acme-login", agents: ["claude"] });
+    expect(expanded).toBe(1);
+    expect(drawer).toBe(1);
+  });
+
+  it("marks the page while this connection views a session and clears it after", () => {
+    const run = runTerminal();
+    expect(run.root.hasAttribute("data-agent-viewed")).toBe(false);
+    run.message({ type: "ready", sessionId: "s1", agent: "claude", companionPath: "/c" });
+    expect(run.root.getAttribute("data-agent-viewed")).toBe("claude");
+    run.message({ type: "ended" });
+    expect(run.root.hasAttribute("data-agent-viewed")).toBe(false);
+  });
+
+  it("marks the page pending on reload with a stored session, until it is gone", () => {
+    const run = runTerminal({ session: "s1" });
+    expect(run.root.getAttribute("data-agent-viewed")).toBe("pending");
+    run.message({ type: "gone", sessionId: "s1" });
+    expect(run.root.hasAttribute("data-agent-viewed")).toBe(false);
+  });
+
+  it("refuses an action while a session is viewed, sending no start", () => {
+    const run = runTerminal();
+    run.message({ type: "ready", sessionId: "s1", agent: "claude", companionPath: "/c" });
+    run.action({ action: "show-me", subject: "acme-login", agents: ["claude"] });
+    expect(starts(run)).toEqual([]);
   });
 });

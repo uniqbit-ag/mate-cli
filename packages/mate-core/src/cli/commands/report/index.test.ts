@@ -31,6 +31,7 @@ const makeSpawn =
     ({ stdout, status, error: null }) as ReturnType<typeof spawnSync>;
 
 const makeDelivery = () => ({
+  publishReportToStudio: async () => null,
   writeTemporaryReport: async () => "/tmp/mate-report/report.html",
   openReportInBrowser: async () => {},
 });
@@ -331,5 +332,83 @@ describe("runReportCommand", () => {
     });
 
     expect(await fs.readFile(reportPath, "utf8")).toBe("keep this report");
+  });
+
+  describe("inside a Studio session", () => {
+    const run = async (publish: () => Promise<{ id: string; url?: string } | null>) => {
+      const logSpy = spyOn(console, "log").mockImplementation(() => {});
+      const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+      let written = 0;
+      let opened = 0;
+      await runReportCommand(["--input", "r.json"], {
+        ensureUnambiguousCompanion: async () => true,
+        readInput: async () => structuredDocument,
+        publishReportToStudio: publish,
+        writeTemporaryReport: async () => {
+          written += 1;
+          return "/tmp/mate-report/report.html";
+        },
+        openReportInBrowser: async () => {
+          opened += 1;
+        },
+      });
+      const out = { logs: logSpy.mock.calls.map(String), warns: warnSpy.mock.calls.map(String) };
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+      return { ...out, written, opened };
+    };
+
+    test("prints the public URL Studio supplied and skips the temp file and browser", async () => {
+      const result = await run(async () => ({
+        id: "abc",
+        url: "https://studio.acme.test/studio/reports/abc",
+      }));
+      expect(result.logs).toEqual([
+        "Report hosted in Studio: https://studio.acme.test/studio/reports/abc",
+      ]);
+      expect([result.written, result.opened]).toEqual([0, 0]);
+    });
+
+    test("points to Studio Reports with the id when no public origin exists", async () => {
+      const result = await run(async () => ({ id: "abc" }));
+      expect(result.logs).toEqual(["Report hosted in Studio: open Studio → Reports (report abc)"]);
+      expect(result.logs.join()).not.toContain("/tmp/");
+      expect(result.logs.join()).not.toContain("127.0.0.1");
+    });
+
+    test("falls back to the temp file and browser with a warning when Studio refuses", async () => {
+      const result = await run(async () => {
+        throw new Error("Studio refused the report (HTTP 401)");
+      });
+      expect(result.warns.join()).toContain("Studio refused the report (HTTP 401)");
+      expect([result.written, result.opened]).toEqual([1, 1]);
+      expect(result.logs.join()).toContain("Report opened from");
+    });
+
+    test("falls back when Studio is unreachable", async () => {
+      const result = await run(async () => {
+        throw new Error("Studio did not answer in time");
+      });
+      expect(result.warns.join()).toContain("did not answer");
+      expect([result.written, result.opened]).toEqual([1, 1]);
+    });
+
+    test("outside Studio (no hosting) uses the temp file and browser", async () => {
+      const result = await run(async () => null);
+      expect([result.written, result.opened]).toEqual([1, 1]);
+    });
+
+    test("--json never publishes", async () => {
+      const logSpy = spyOn(console, "log").mockImplementation(() => {});
+      await runReportCommand(["--input", "r.json", "--json"], {
+        ensureUnambiguousCompanion: async () => true,
+        readInput: async () => structuredDocument,
+        publishReportToStudio: async () => {
+          throw new Error("JSON mode must not publish");
+        },
+      });
+      expect(() => JSON.parse(String(logSpy.mock.calls[0]?.[0]))).not.toThrow();
+      logSpy.mockRestore();
+    });
   });
 });

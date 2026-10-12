@@ -11,7 +11,7 @@ import {
 import type { CollectorDeps } from "./collector";
 import { reportDataToDocument } from "./adapter";
 import { parseReportDocument, type ReportValidationError } from "./contract";
-import { openReportInBrowser, writeTemporaryReport } from "./delivery";
+import { openReportInBrowser, publishReportToStudio, writeTemporaryReport } from "./delivery";
 import { renderHTML, renderJSON } from "./renderer";
 import type { ReportData, ReportDocument, ReportOptions } from "./types";
 
@@ -20,6 +20,7 @@ interface ReportCommandDeps extends CollectorDeps {
   resolveFrameworkContext?: typeof resolveFrameworkContext;
   writeTemporaryReport?: typeof writeTemporaryReport;
   openReportInBrowser?: typeof openReportInBrowser;
+  publishReportToStudio?: typeof publishReportToStudio;
   readInput?: (input: string) => Promise<string>;
 }
 
@@ -196,11 +197,28 @@ export async function runReportCommand(
     return;
   }
 
+  const html = renderHTML(reportDocument);
+  try {
+    const hosted = await (deps.publishReportToStudio ?? publishReportToStudio)(
+      reportDocument.title,
+      html,
+    );
+    if (hosted) {
+      console.log(
+        hosted.url
+          ? `Report hosted in Studio: ${hosted.url}`
+          : `Report hosted in Studio: open Studio → Reports (report ${hosted.id})`,
+      );
+      return;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`Unable to host the report in Studio: ${message}; opening it locally instead`);
+  }
+
   let reportPath: string | undefined;
   try {
-    reportPath = await (deps.writeTemporaryReport ?? writeTemporaryReport)(
-      renderHTML(reportDocument),
-    );
+    reportPath = await (deps.writeTemporaryReport ?? writeTemporaryReport)(html);
     await (deps.openReportInBrowser ?? openReportInBrowser)(reportPath);
     console.log(`Report opened from ${reportPath}`);
   } catch (error) {

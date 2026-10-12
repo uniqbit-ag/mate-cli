@@ -1,6 +1,6 @@
 ---
 name: mate-show-me
-description: Explain the current topic or the applied change in a browser-rendered Mate report. Use only when the user explicitly invokes the skill to see how something works, what a change did, or wants a diagram, call tree, or rendered diff of the current work.
+description: Explain the current topic, the applied change, or a named spec capability in a browser-rendered Mate report. Use only when the user explicitly invokes the skill to see how something works, what a change did, what a spec capability specifies, or wants a diagram, call tree, or rendered diff of the current work.
 disable-model-invocation: true
 allowed-tools: Bash(git:*), Bash(mate:*)
 license: MIT
@@ -19,9 +19,15 @@ metadata:
 
 Explain the current topic visually in a browser-rendered Mate report. Skip the preamble, keep prose brief, and pick the smallest report view that makes the key point clear.
 
+## Subject
+
+- With no argument, explain the current topic or the applied change, as described below.
+- With an argument naming a spec capability (`$ARGUMENTS`, for example `acme-capability`), explain that capability instead: read its canonical spec under `openspec/specs/` in the Companion Repository and report its purpose, its requirements, and the flow or structure they establish. Name the capability in the report `metadata`, include a `diagram` section, and omit the `diff` section.
+- When the named capability has no canonical spec, say so, suggest close capability names from `openspec/specs/`, and write nothing: no report, no file.
+
 ## Mate Workflow
 
-- Explanation only. Never write or edit source code, tests, documentation, OpenSpec artifacts, context files, or ADRs. The only file this skill produces is the report document handed to `mate report --input`, which the CLI writes into the operating system temporary directory.
+- Explanation only. Never write or edit source code, tests, documentation, OpenSpec artifacts, context files, or ADRs. The only file this skill produces is the report document handed to `mate report --input`; the CLI hosts or opens the rendered report.
 - Draw from the repositories, not from memory. Every diagram and every diff line comes from the inspected repository state, never from recollection of the conversation. Use the available code-graph tools before broad source scans.
 - Code lives in the Working Repository; the Companion Repository holds only artifacts. Run `git diff` in the Working Repository.
 - Never put an absolute local path, home directory, username, machine name, temporary report path, Companion Repository path, or raw path-valued environment variable in the report. Use repository-relative paths or neutral labels such as `Working Repository` and `Companion Repository`.
@@ -29,7 +35,7 @@ Explain the current topic visually in a browser-rendered Mate report. Skip the p
 
 ## Browser Report Required
 
-Always assemble and open a Mate report, even when a small inline sketch would be sufficient. Do not answer with an inline-only visual or paste the complete diagram or diff into the conversation. The final response should briefly state what the browser report shows without repeating its temporary file path.
+Always assemble and open a Mate report, even when a small inline sketch would be sufficient. Do not answer with an inline-only visual or paste the complete diagram or diff into the conversation. The final response should briefly state what the report shows, relaying the link or Studio instruction `mate report` printed, without repeating any temporary file path.
 
 ## Report Contents
 
@@ -85,9 +91,9 @@ src/
 
 ## Browser Delivery
 
-The report is mandatory. Prefer `mate report --input <temporary-json-file>` without `--json` so the CLI reads the complete document reliably, writes self-contained HTML, and opens it in the default browser. The CLI also supports `mate report --input -` when JSON is piped to stdin; if stdin delivery reports empty or truncated JSON, switch to a temporary JSON file rather than retrying the same transport. If validation fails, fix the report document and retry; do not fall back to an inline explanation or JSON-only delivery.
+The report is mandatory. Prefer `mate report --input <temporary-json-file>` without `--json` so the CLI reads the complete document reliably and renders self-contained HTML. The CLI chooses the surface: inside a Studio terminal it hosts the report in Studio, elsewhere it opens it in the default browser. The CLI also supports `mate report --input -` when JSON is piped to stdin; if stdin delivery reports empty or truncated JSON, switch to a temporary JSON file rather than retrying the same transport. If validation fails, fix the report document and retry; do not fall back to an inline explanation or JSON-only delivery.
 
-Never hand-write an HTML file, never start a server, and never open a browser by any other means. `mate report` is the only browser surface.
+Deliver only through `mate report --input`. Never hand-write an HTML file, start a server, or open a browser yourself. Relay what the CLI prints: a full link when it prints one, otherwise its instruction to open Studio → Reports. Do not invent a link, and do not repeat any loopback address or credential.
 
 ## Assembling The Report
 

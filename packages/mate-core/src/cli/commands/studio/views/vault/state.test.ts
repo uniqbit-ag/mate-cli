@@ -14,6 +14,7 @@ const selection: StudioVaultSelection = {
 
 const listed: VaultTreeResult = {
   tree: [{ name: "note.md", path: "note.md", kind: "file" }],
+  generation: 3,
   watching: true,
   warning: "watch unavailable",
 };
@@ -33,6 +34,7 @@ function memoryVault(
       throw new Error("unused");
     },
     subscribe: () => () => {},
+    subscribeTree: () => () => {},
     refresh: async () => listed,
     deactivate: () => {},
     stop: () => {},
@@ -53,6 +55,7 @@ describe("vaultState", () => {
       watching: true,
       warning: "watch unavailable",
       failure: null,
+      generation: 3,
     });
   });
 

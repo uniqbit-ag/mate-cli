@@ -47,6 +47,6 @@ describe("the context7 capability", () => {
   });
 
   test("keeps the appliance image version exact", () => {
-    expect(CONTEXT7_MCP_VERSION).toBe("4.1.1");
+    expect(CONTEXT7_MCP_VERSION).toBe("4.2.0");
   });
 });

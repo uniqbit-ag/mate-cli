@@ -16,8 +16,8 @@
 # Pins. Kept in sync with image-inputs.yaml, which is the release-owned source
 # and which the workflow reads to pass these in.
 # ---------------------------------------------------------------------------
-ARG NODE_IMAGE=node@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe
-ARG BUN_IMAGE=oven/bun@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f
+ARG NODE_IMAGE=node@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+ARG BUN_IMAGE=oven/bun@sha256:4f6e31d1a54d6a3dd312daef655fc998101b5043d52e12592ac293ef04b9bc73
 
 # ===========================================================================
 # Stage: bun — the runtime the published `mate` command bootstraps into.
@@ -41,7 +41,7 @@ FROM ${NODE_IMAGE} AS fetch
 ARG TARGETARCH
 
 ARG OPENCODE_VERSION
-ARG OPENCODE_INSTALLER_SHA256
+ARG OPENCODE_RELEASE_BASE_URL
 ARG OPENCODE_SHA256_AMD64
 ARG OPENCODE_SHA256_ARM64
 ARG CLAUDE_VERSION
@@ -121,21 +121,20 @@ RUN case "${TARGETARCH}" in \
  && /out/bin/tokensave --version
 
 # --- OpenCode -------------------------------------------------------------
-# The installer is checked before it is run, and run with `--version`, which
-# installs that exact version rather than the current one. The artifact it
-# downloads is checked too, which also pins away the installer's own
-# CPU-feature "baseline" variant selection: a baseline artifact fails the
-# digest check rather than producing a different image per build host.
+# 2.x ships only as npm platform packages. The exact version's tarball is
+# fetched from the registry and checked; no installer or package manager runs.
+# Naming the plain package also pins away the installer's CPU-feature
+# "baseline" variant selection.
 RUN case "${TARGETARCH}" in \
-      amd64) OC_FILE=opencode-linux-x64.tar.gz; OC_SHA="${OPENCODE_SHA256_AMD64}" ;; \
-      arm64) OC_FILE=opencode-linux-arm64.tar.gz; OC_SHA="${OPENCODE_SHA256_ARM64}" ;; \
+      amd64) OC_PKG=cli-linux-x64; OC_SHA="${OPENCODE_SHA256_AMD64}" ;; \
+      arm64) OC_PKG=cli-linux-arm64; OC_SHA="${OPENCODE_SHA256_ARM64}" ;; \
       *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
     esac \
- && fetch-verified "https://opencode.ai/install" "${OPENCODE_INSTALLER_SHA256}" /fetch/opencode-install.sh \
- && fetch-verified "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/${OC_FILE}" "${OC_SHA}" /fetch/opencode.tar.gz \
- && HOME=/fetch/ochome bash /fetch/opencode-install.sh --version "${OPENCODE_VERSION}" \
- && cp "/fetch/ochome/.opencode/bin/opencode" /out/bin/opencode \
- && test "$(/out/bin/opencode --version)" = "${OPENCODE_VERSION}"
+ && fetch-verified "${OPENCODE_RELEASE_BASE_URL}/@opencode/${OC_PKG}/-/${OC_PKG}-${OPENCODE_VERSION}.tgz" "${OC_SHA}" /fetch/opencode.tgz \
+ && mkdir -p /fetch/opencode && tar -xzf /fetch/opencode.tgz -C /fetch/opencode \
+ && cp /fetch/opencode/package/bin/opencode /out/bin/opencode \
+ && chmod 0755 /out/bin/opencode \
+ && test "$(/out/bin/opencode --version | sed 's/^opencode v//')" = "${OPENCODE_VERSION}"
 
 # --- Claude Code ----------------------------------------------------------
 # The native release binary for the exact version, checked against the digest
@@ -338,7 +337,7 @@ RUN set -e \
  && command -v opencode \
  && command -v claude \
  && command -v xdg-open \
- && test "$(opencode --version)" = "${OPENCODE_VERSION}" \
+ && test "$(opencode --version | sed 's/^opencode v//')" = "${OPENCODE_VERSION}" \
  && claude --version | grep -q "^${CLAUDE_VERSION} " \
  && bun -e 'if (typeof Bun.Terminal !== "function") { console.error("this Bun has no native pseudo-terminal; the agent terminal needs 1.3.5 or later"); process.exit(1); }' \
  && MATE_UPDATE_POLICY=pinned mate --version | tail -1 | grep -qx "${MATE_VERSION}" \

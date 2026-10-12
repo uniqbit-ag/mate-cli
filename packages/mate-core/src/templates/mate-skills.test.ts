@@ -158,6 +158,17 @@ describe("bundled Mate pre-explore skills", () => {
     expect(metadata).toMatchObject({ author: "mate", version: "1.0" });
   });
 
+  test("show-me explains a named spec capability and handles an unknown one", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = await readSkillFrom(root, "mate-show-me");
+      expect(source).toContain("## Subject");
+      expect(source).toContain("$ARGUMENTS");
+      expect(source).toContain("omit the `diff` section");
+      expect(source).toContain("no canonical spec");
+      expect(source).toContain("disable-model-invocation: true");
+    }
+  });
+
   test("has a prefixed frontmatter name for every bundled tree", async () => {
     for (const name of skillNames) {
       const source = await readSkill(name);
@@ -303,7 +314,8 @@ describe("bundled Mate pre-explore skills", () => {
         "Explanation only",
         "Never write or edit source code",
         "mate report --input",
-        "Never hand-write an HTML file, never start a server",
+        "Deliver only through `mate report --input`",
+        "open Studio → Reports",
         "Browser Report Required",
         "exactly one payload",
         "git diff` in the Working Repository",
@@ -313,6 +325,13 @@ describe("bundled Mate pre-explore skills", () => {
         "Never commit, push, or create a pull request",
       ]) {
         expect(source).toContain(marker);
+      }
+      for (const stale of [
+        "never open a browser by any other means",
+        "writes it into the operating system temporary directory",
+        "`mate report` is the only browser surface",
+      ]) {
+        expect(source).not.toContain(stale);
       }
     }
   });

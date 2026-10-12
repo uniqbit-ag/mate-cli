@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+
+import { tokensEqual } from "./access";
 
 export const TERMINAL_AGENTS = ["claude", "opencode"] as const;
 export type TerminalAgent = (typeof TERMINAL_AGENTS)[number];
@@ -177,11 +179,19 @@ export interface TerminalSessionInfo {
   startedAt: number;
 }
 
+/** A registered action and its subject; the client names them, the server builds the prompt. */
+export interface TerminalAction {
+  action: unknown;
+  subject: unknown;
+}
+
 export type TerminalLaunchResolution =
   | {
       companionPath: string;
       /** Extra argv entries for the managed launch; set only by companion configuration. */
       agentArgs?: string[];
+      /** The registry's first-turn prompt, appended after `agentArgs`; never from the client. */
+      promptArgs?: string[];
       /** Written to the terminal before the agent starts. */
       notice?: string;
     }
@@ -193,10 +203,13 @@ export interface TerminalRegistryOptions {
   resolveLaunch: (
     agent: string,
     companionDigest: string | null,
+    action?: TerminalAction,
   ) => Promise<TerminalLaunchResolution>;
   /** The Mate invocation prefix, e.g. `[bun, cli.mjs]`. */
   mateCommand: string[];
   noGit?: boolean;
+  /** Loopback origin of this server, read at spawn: the port is known only after bind. */
+  reportUrl?: () => string | null;
   env?: NodeJS.ProcessEnv;
   spawn?: TerminalSpawn;
   signalGroup?: (pid: number, signal: NodeJS.Signals) => void;
@@ -209,6 +222,8 @@ interface Session {
   agent: TerminalAgent;
   companionPath: string;
   startedAt: number;
+  /** In memory only; valid while the session is registered. */
+  reportToken: string;
   process: TerminalProcess;
   ring: RingBuffer;
   viewer: TerminalViewer | null;
@@ -271,6 +286,15 @@ export class TerminalRegistry {
       attached: session.viewer !== null,
       startedAt: session.startedAt,
     }));
+  }
+
+  /** The companion of the live session holding this publish credential, else `null`. */
+  reportCompanion(token: string): string | null {
+    let found: string | null = null;
+    for (const session of this.sessions.values()) {
+      if (!session.ending && tokensEqual(token, session.reportToken)) found = session.companionPath;
+    }
+    return found;
   }
 
   connect(viewer: TerminalViewer): TerminalConnection {
@@ -370,7 +394,13 @@ export class TerminalRegistry {
     const viewer = connection.viewer;
     if (this.stopping) return send(viewer, { type: "error", reason: "Studio is stopping" });
     if (connection.session) {
-      return send(viewer, { type: "error", reason: "this connection already views a session" });
+      return send(viewer, {
+        type: "error",
+        reason:
+          message.action === undefined && message.subject === undefined
+            ? "this connection already views a session"
+            : "end the current session first",
+      });
     }
     const size = this.dimensions(message);
     if (!size) return send(viewer, { type: "error", reason: "terminal size out of range" });
@@ -379,7 +409,11 @@ export class TerminalRegistry {
     }
     const agent = message.agent as TerminalAgent;
     const digest = typeof message.companion === "string" ? message.companion : null;
-    const resolved = await this.options.resolveLaunch(agent, digest);
+    const action =
+      message.action === undefined && message.subject === undefined
+        ? undefined
+        : { action: message.action, subject: message.subject };
+    const resolved = await this.options.resolveLaunch(agent, digest, action);
     if ("reason" in resolved) return send(viewer, { type: "error", reason: resolved.reason });
     if (connection.session || !this.connections.has(connection)) return;
 
@@ -404,7 +438,7 @@ export class TerminalRegistry {
     agent: TerminalAgent,
     companionPath: string,
     size: { cols: number; rows: number },
-    extras: { agentArgs?: string[]; notice?: string } = {},
+    extras: { agentArgs?: string[]; promptArgs?: string[]; notice?: string } = {},
   ): Session {
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(this.options.env ?? process.env)) {
@@ -413,6 +447,14 @@ export class TerminalRegistry {
     delete env.MATE_REPO_PATH;
     delete env.MATE_REPO_ID;
     delete env.MATE_STUDIO_TOKEN;
+    delete env.MATE_STUDIO_REPORT_URL;
+    delete env.MATE_STUDIO_REPORT_TOKEN;
+    const reportToken = randomBytes(32).toString("base64url");
+    const reportUrl = this.options.reportUrl?.() ?? null;
+    if (reportUrl) {
+      env.MATE_STUDIO_REPORT_URL = reportUrl;
+      env.MATE_STUDIO_REPORT_TOKEN = reportToken;
+    }
     env.MATE_ARTIFACT_PATH = companionPath;
     env.TERM = "xterm-256color";
     const argv = [
@@ -423,6 +465,7 @@ export class TerminalRegistry {
       "--yes",
       ...(this.options.noGit ? ["--no-git"] : []),
       ...(extras.agentArgs ?? []),
+      ...(extras.promptArgs ?? []),
     ];
 
     const session = {
@@ -430,6 +473,7 @@ export class TerminalRegistry {
       agent,
       companionPath,
       startedAt: this.now(),
+      reportToken,
       ring: new RingBuffer(this.limits.ringBytes),
       viewer: null,
       detachedAt: null,
