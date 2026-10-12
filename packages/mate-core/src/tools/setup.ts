@@ -34,9 +34,9 @@ import {
   buildSetupInstallationPlan,
   executeSetupInstallationPlan,
   renderRuntimeDocuments,
+  type RenderedRuntimeDocuments,
   type SetupInstallationOutcome,
 } from "./setup/engine";
-import type { RenderedRuntimeDocument } from "../lib/orchestrator/projection-types";
 
 export interface SetupInput {
   allowedAgents?: string[];
@@ -75,7 +75,7 @@ export async function renderWorkingRuntimeDocuments(
   config: FrameworkConfig,
   repoPath: string,
   plugins: PluginRegistration[] = getActiveDistribution().registry.getAll(),
-): Promise<RenderedRuntimeDocument[]> {
+): Promise<RenderedRuntimeDocuments> {
   const plan = buildSetupInstallationPlan(config, plugins);
   const ctx: SetupContext = {
     companionPath,

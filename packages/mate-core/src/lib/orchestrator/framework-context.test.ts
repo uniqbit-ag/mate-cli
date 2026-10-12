@@ -13,7 +13,8 @@ import {
   type ProjectionFile,
 } from "../../runtime/projection";
 import { fileExists } from "../fs-utils";
-import { getReactDoctorBinPath, getWrapperBinPath } from "../package-paths";
+import { runtimeWrapperBinPath } from "../../runtime/runtime-directory";
+import { getReactDoctorBinPath } from "../package-paths";
 import {
   resolveForCapability,
   resolveForLaunch,
@@ -486,7 +487,7 @@ describe("durable projection refresh", () => {
       companionPath,
       repositoryPath: repoPath,
       repositoryId: "app",
-      wrapperBinPath: getWrapperBinPath(),
+      wrapperBinPath: runtimeWrapperBinPath(),
       reactDoctorBinPath: getReactDoctorBinPath(),
       graphifyOut: path.join(companionPath, ".graphify", "app", "graphify-out"),
     });

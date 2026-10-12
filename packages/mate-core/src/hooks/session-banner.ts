@@ -44,16 +44,19 @@ export async function buildBanner(
   if (!context.repositoryPath || !context.companionPath) return { exitCode: 0, stdout: "" };
 
   /**
-   * Session start is the only moment at which the companion may move without
-   * invalidating a read the session has already taken, so the repair happens
-   * here and nowhere later. The launch-environment check comes first, so a
-   * Managed Session pays nothing at all — not the freshness read, not the
-   * policy read; and the consent gate is the operation's own.
+   * Repaired before the session reads the companion, so its first reads are
+   * current. The companion can still move later — a plain OpenCode session's
+   * background sync fast-forwards it — but a fast-forward never overwrites a
+   * local edit, so the worst case is a stale read of an upstream change. Only
+   * tries the companion lock: a held lock means another sync is already on it,
+   * and a session start must not stall behind it. The launch-environment check
+   * comes first, so a Managed Session pays nothing at all — not the freshness
+   * read, not the policy read; and the consent gate is the operation's own.
    */
   const gitNotes = hasLaunchEnvironment(env)
     ? []
     : unattendedSyncStalenessLines(
-        await syncCompanionUnattended(context.companionPath, syncOptions),
+        await syncCompanionUnattended(context.companionPath, { lock: "try", ...syncOptions }),
       );
 
   const lines = [

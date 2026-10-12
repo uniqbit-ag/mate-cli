@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { MATE_ENV } from "../../../runtime/env-names";
+import { getWrapperBinPath } from "../../package-paths";
 import { buildProjection, companionEnvironment, projectionEnvironment } from "../projection-record";
 import type { CapabilityConfig, GitModeProfile, LinkedRepository } from "../types";
 
@@ -67,7 +68,9 @@ export abstract class LaunchAdapter {
   environment(context: AdapterContext): NodeJS.ProcessEnv {
     const reactDoctorEnabled = context.capabilities.some((c) => c.name === "react-doctor");
     const projection = context.repository
-      ? projectionEnvironment(buildProjection(context.companionPath, context.repository))
+      ? projectionEnvironment(
+          buildProjection(context.companionPath, context.repository, getWrapperBinPath()),
+        )
       : companionEnvironment(context.companionPath);
     const env: NodeJS.ProcessEnv = {
       ...process.env,

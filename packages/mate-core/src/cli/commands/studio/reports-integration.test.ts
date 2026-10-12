@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { reportDataToDocument } from "../report/adapter";
 import { runReportCommand } from "../report/index";
+import { MERMAID_RUNTIME_URL } from "../report/renderer";
 import { REPORT_DOCUMENT_VERSION, type ReportData } from "../report/types";
 import { createReportStore, REPORT_LIMITS } from "./reports";
 import { companionDigest } from "./selection";
@@ -127,11 +128,13 @@ describe("Studio terminal session running `mate report --input`", () => {
       });
       const html = await served.text();
       expect(served.status).toBe(200);
-      expect(Buffer.byteLength(html)).toBeGreaterThan(5_000_000);
       expect(Buffer.byteLength(html)).toBeLessThan(REPORT_LIMITS.uploadBytes);
+      expect(html).toContain(`<script id="mermaid-runtime" src="${MERMAID_RUNTIME_URL}"`);
       expect(html).toContain("flowchart LR");
       expect(html).toContain('onclick="window.print()"');
-      expect(served.headers.get("content-security-policy")).toContain("allow-modals");
+      const csp = served.headers.get("content-security-policy")!;
+      expect(csp).toContain("allow-modals");
+      expect(csp).toContain(`script-src 'unsafe-inline' ${MERMAID_RUNTIME_URL}`);
     } finally {
       await session.server.stop();
     }

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import type { Context } from "@opencode/plugin/promise/plugin";
@@ -6,14 +7,36 @@ import { COMPANION_POLICY_MARKER, type MateGuidanceFile } from "../../src/runtim
 
 import type { CompanionContext } from "../../src/opencode/companion-policy";
 import { resolveOpenCodeGuidance } from "../../src/opencode/projected-guidance";
+import {
+  runtimeDirectoryPath,
+  runtimeMateBin,
+  runtimeWrapperBinPath,
+} from "../../src/runtime/runtime-directory";
 
 function prependPathEntry(pathValue: string | undefined, entry: string): string {
   const entries = (pathValue ?? "").split(path.delimiter).filter(Boolean);
   return [entry, ...entries.filter((value) => value !== entry)].join(path.delimiter);
 }
 
-function resolveWrapperBinPath(): string {
-  return process.env.MATE_WRAPPER_BIN_PATH ?? "$MATE_WRAPPER_BIN_PATH";
+/**
+ * The launch environment first, then the runtime directory every `mate` run
+ * keeps current. `null` when neither exists: guidance naming an unresolved
+ * placeholder would send the model to a path that is not there.
+ */
+function resolveWrapperBinPath(): string | null {
+  if (process.env.MATE_WRAPPER_BIN_PATH) return process.env.MATE_WRAPPER_BIN_PATH;
+  const runtime = runtimeWrapperBinPath();
+  return fs.existsSync(runtime) ? runtime : null;
+}
+
+/** The runtime-directory launcher for the Mate CLI; `null` until a `mate` run wrote it. */
+export function resolveMateBin(): string | null {
+  const launcher = runtimeMateBin();
+  return fs.existsSync(launcher) ? launcher : null;
+}
+
+export function missingRuntimeDirectoryMessage(): string {
+  return `Mate runtime directory ${runtimeDirectoryPath()} is missing; run \`mate\` once to repair it.`;
 }
 
 function buildStartupError(details: string[]): Error {
@@ -37,8 +60,11 @@ function loadGuidance(directory: string): MateGuidanceFile | null {
   return guidance;
 }
 
-function materializeCompanionGuidance(guidance: string, context: CompanionContext): string {
-  const wrapperBinPath = resolveWrapperBinPath();
+function materializeCompanionGuidance(
+  guidance: string,
+  context: CompanionContext,
+  wrapperBinPath: string,
+): string {
   return guidance
     .replaceAll("$MATE_REPO_PATH", context.repositoryPath)
     .replaceAll("$MATE_ARTIFACT_PATH", context.companionPath)
@@ -46,8 +72,12 @@ function materializeCompanionGuidance(guidance: string, context: CompanionContex
     .replaceAll("$MATE_REPO_ID", context.repositoryId);
 }
 
-function buildSystemPrompt(context: CompanionContext, guidance: MateGuidanceFile): string[] {
-  const lines = [materializeCompanionGuidance(guidance.companionGuidance, context)];
+function buildSystemPrompt(
+  context: CompanionContext,
+  guidance: MateGuidanceFile,
+  wrapperBinPath: string,
+): string[] {
+  const lines = [materializeCompanionGuidance(guidance.companionGuidance, context, wrapperBinPath)];
 
   if (guidance.codebaseExplorationGuidance.trim()) {
     lines.push("", guidance.codebaseExplorationGuidance);
@@ -70,8 +100,8 @@ function readSystemText(part: unknown): string {
 function applyCompanionShellEnv(
   context: CompanionContext,
   env: Record<string, string | undefined>,
+  wrapperBinPath: string,
 ): void {
-  const wrapperBinPath = resolveWrapperBinPath();
   env.MATE_NAME = context.frameworkName;
   env.MATE_VERSION = process.env.MATE_VERSION ?? "unknown";
   env.MATE_ARTIFACT_PATH = context.companionPath;
@@ -95,8 +125,7 @@ function applyCompanionShellEnv(
   env.PATH = prependPathEntry(process.env.PATH, wrapperBinPath);
 }
 
-function companionPathsResult(context: CompanionContext) {
-  const wrapperBinPath = resolveWrapperBinPath();
+function companionPathsResult(context: CompanionContext, wrapperBinPath: string) {
   return {
     content: JSON.stringify(
       {
@@ -146,8 +175,14 @@ function mergeCompanionSystem(system: unknown[], companion: string): string[] {
 export async function registerCompanion(api: Context, context: CompanionContext): Promise<void> {
   const guidance = loadGuidance(api.location.directory);
   if (!guidance) return;
+  /** Reported, not thrown: the guardrails registered before this must stay live. */
+  const wrapperBinPath = resolveWrapperBinPath();
+  if (!wrapperBinPath) {
+    console.error(`mate: ${missingRuntimeDirectoryMessage()}`);
+    return;
+  }
 
-  const companion = buildSystemPrompt(context, guidance).join("\n");
+  const companion = buildSystemPrompt(context, guidance, wrapperBinPath).join("\n");
 
   await api.session.hook("context", (event) => {
     const merged = mergeCompanionSystem(event.system, companion);
@@ -164,7 +199,7 @@ export async function registerCompanion(api: Context, context: CompanionContext)
   });
 
   await api.shell.hook("create.before", (event) => {
-    applyCompanionShellEnv(context, event.env);
+    applyCompanionShellEnv(context, event.env, wrapperBinPath);
   });
 
   await api.tool.transform((editor) => {
@@ -173,7 +208,7 @@ export async function registerCompanion(api: Context, context: CompanionContext)
       description: `Return active ${context.frameworkName} companion framework and working repository paths.`,
       input: { type: "object", properties: {}, additionalProperties: false },
       async execute() {
-        return companionPathsResult(context);
+        return companionPathsResult(context, wrapperBinPath);
       },
     });
   });

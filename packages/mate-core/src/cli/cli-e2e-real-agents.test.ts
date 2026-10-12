@@ -7,6 +7,9 @@ import path from "node:path";
 
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
+import { readCompanionGitRecord } from "../runtime/companion-git-state";
+import { makeSshStub, stubSshUrl } from "../../../../test/ssh-stub";
+
 // Local-only, opt-in verification that mate's companion-guidance injection ends
 // up EXACTLY ONCE in the system prompt that the REAL `claude` and `opencode`
 // binaries send to the model API. Unlike cli-e2e.test.ts's launch tests (which
@@ -366,6 +369,7 @@ async function writeGraphifyStub(scenario: E2EScenario): Promise<void> {
 async function setupCompanion(
   scenario: E2EScenario,
   allowedAgents: string[],
+  extraArgs: string[] = [],
 ): Promise<CliRunResult> {
   await writeUvStub(scenario);
   await writeRtkStub(scenario);
@@ -384,6 +388,7 @@ async function setupCompanion(
       "graphify",
       "--capability",
       "context-mode",
+      ...extraArgs,
     ],
     input: "y\n",
   });
@@ -416,11 +421,36 @@ function initWorkingRepoGit(scenario: E2EScenario): void {
   spawnSync("git", ["init", "-q"], { cwd: scenario.working, stdio: "ignore" });
 }
 
+function runGit(cwd: string, args: string[]): void {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+}
+
+/** The companion as committed, pushed to a bare origin, and a second clone to push from. */
+function gitBackedCompanion(scenario: E2EScenario): { remote: string; upstream: string } {
+  const remote = path.join(scenario.root, "companion-origin.git");
+  const upstream = path.join(scenario.root, "companion-upstream");
+  runGit(scenario.root, ["init", "--bare", "-q", "--initial-branch=main", remote]);
+  runGit(scenario.companion, ["init", "-q", "--initial-branch=main"]);
+  for (const cwd of [scenario.companion]) {
+    runGit(cwd, ["config", "user.email", "mate-e2e@example.com"]);
+    runGit(cwd, ["config", "user.name", "Mate E2E"]);
+  }
+  runGit(scenario.companion, ["add", "."]);
+  runGit(scenario.companion, ["commit", "-qm", "initial companion state"]);
+  runGit(scenario.companion, ["remote", "add", "origin", remote]);
+  runGit(scenario.companion, ["push", "-q", "-u", "origin", "main"]);
+  runGit(scenario.root, ["clone", "-q", remote, upstream]);
+  runGit(upstream, ["config", "user.email", "mate-e2e@example.com"]);
+  runGit(upstream, ["config", "user.name", "Mate E2E"]);
+  return { remote, upstream };
+}
+
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-// ---- mock model server ----
+/** Mock model server. */
 
 interface CapturedRequest {
   url: string;
@@ -681,6 +711,249 @@ describe.skipIf(!runRealAgentTests || !hasOpenCode)(
       } finally {
         await mock.close();
       }
+    });
+  },
+);
+
+/** Plain OpenCode in a wrapped repository. */
+
+interface OpenCodeService {
+  query(resource: string, directory: string): Promise<unknown>;
+  stop(): Promise<void>;
+}
+
+/** The scenario's empty Mate environment, as a session the operator starts would see it. */
+function plainEnv(scenario: E2EScenario): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    HOME: scenario.home,
+    PATH: `${scenario.bin}:${process.env.PATH ?? ""}`,
+    MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
+  };
+  for (const name of Object.keys(env)) {
+    if (name.startsWith("MATE_") && name !== "MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH") {
+      delete env[name];
+    }
+    if (name.startsWith("OPENCODE_") || name.startsWith("XDG_")) delete env[name];
+  }
+  return env;
+}
+
+/** A private `opencode serve` started outside the repository, like the shared background service. */
+async function startOpenCodeService(
+  scenario: E2EScenario,
+  env: NodeJS.ProcessEnv = {},
+): Promise<OpenCodeService> {
+  const port = 47_000 + Math.floor(Math.random() * 2_000);
+  const child = spawn("opencode", ["serve", "--port", String(port)], {
+    cwd: scenario.root,
+    env: { ...plainEnv(scenario), ...env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const password = await new Promise<string>((resolve, reject) => {
+    let output = "";
+    const timer = setTimeout(() => reject(new Error(`opencode serve: ${output}`)), 20_000);
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString();
+      const match = output.match(/server password (\S+)/);
+      if (match) {
+        clearTimeout(timer);
+        resolve(match[1]!);
+      }
+    });
+  });
+  const auth = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`;
+  return {
+    async query(resource, directory) {
+      const url = `http://127.0.0.1:${port}/api/${resource}?location%5Bdirectory%5D=${encodeURIComponent(directory)}`;
+      const response = await fetch(url, { headers: { Authorization: auth } });
+      return response.json();
+    },
+    async stop() {
+      child.kill();
+      await new Promise((resolve) => child.once("close", resolve));
+    },
+  };
+}
+
+async function waitFor<T>(probe: () => Promise<T | undefined>, timeoutMs = 30_000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    // oxlint-disable-next-line no-await-in-loop -- polling is the point
+    const value = await probe().catch(() => undefined);
+    if (value !== undefined) return value;
+    if (Date.now() > deadline) throw new Error("timed out waiting for OpenCode");
+    // oxlint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+async function writeGlobalOpenCodeConfig(scenario: E2EScenario): Promise<string> {
+  const globalDir = path.join(scenario.home, ".config", "opencode");
+  await fs.mkdir(path.join(globalDir, "commands"), { recursive: true });
+  await fs.writeFile(
+    path.join(globalDir, "commands", "acme-review.md"),
+    "---\ndescription: acme review\n---\nreview\n",
+  );
+  await fs.writeFile(
+    path.join(globalDir, "opencode.json"),
+    JSON.stringify({ instructions: ["ACME-GLOBAL-MARKER"] }),
+  );
+  return globalDir;
+}
+
+function names(response: unknown): string[] {
+  const data = (response as { data?: Array<{ name?: string; id?: string }> }).data ?? [];
+  return data.map((entry) => entry.name ?? entry.id ?? "");
+}
+
+describe.skipIf(!runRealAgentTests || !hasOpenCode)(
+  "real opencode — plain session in a wrapped repository",
+  () => {
+    test("a shared service started elsewhere loads global config, companion content and prepares", async () => {
+      const scenario = await createScenario("mate-cli-e2e-plain-opencode-");
+      initWorkingRepoGit(scenario);
+      expect((await setupCompanion(scenario, ["opencode"])).exitCode).toBe(0);
+      expect((await linkRepository(scenario)).exitCode).toBe(0);
+      await writeGlobalOpenCodeConfig(scenario);
+      await fs.mkdir(path.join(scenario.companion, ".opencode", "commands"), { recursive: true });
+      await fs.writeFile(
+        path.join(scenario.companion, ".opencode", "commands", "acme-wrapped.md"),
+        "---\ndescription: acme wrapped\n---\nwrapped\n",
+      );
+      const wrap = await runMate(scenario, { cwd: scenario.working, args: ["wrap"] });
+      expect(wrap.exitCode).toBe(0);
+      /** Not copied by the wrap: only the plugin's prepare can deliver it. */
+      await fs.writeFile(
+        path.join(scenario.companion, ".opencode", "commands", "acme-late.md"),
+        "---\ndescription: acme late\n---\nlate\n",
+      );
+
+      const service = await startOpenCodeService(scenario);
+      try {
+        const commands = await waitFor(async () => {
+          const listed = names(await service.query("command", scenario.working));
+          return listed.includes("acme-late") ? listed : undefined;
+        });
+        expect(commands).toContain("acme-review");
+        expect(commands).toContain("acme-wrapped");
+
+        const skills = names(await service.query("skill", scenario.working));
+        /** A copied companion skill and one from the companion's `.agents/skills` path. */
+        expect(skills).toContain("graphify");
+        expect(skills).toContain("mate-grill-me");
+
+        const sources = (await service.query("config", scenario.working)) as Array<{
+          type: string;
+          path: string;
+        }>;
+        expect(sources.map((source) => source.path)).toContain(
+          path.join(scenario.home, ".config", "opencode"),
+        );
+
+        const mcp = (await service.query("mcp", scenario.working)) as {
+          data?: Array<{ name: string; status: { status: string } }>;
+        };
+        for (const server of mcp.data ?? []) {
+          expect(server.status.status).not.toBe("disabled");
+        }
+      } finally {
+        await service.stop();
+      }
+    });
+
+    test("setup returns after the local phase while the remote is still unreachable", async () => {
+      const scenario = await createScenario("mate-cli-e2e-plain-opencode-offline-");
+      initWorkingRepoGit(scenario);
+      expect((await setupCompanion(scenario, ["opencode"], ["--git-mode", "auto"])).exitCode).toBe(
+        0,
+      );
+      expect((await linkRepository(scenario)).exitCode).toBe(0);
+      const { remote } = gitBackedCompanion(scenario);
+      /** A remote that hangs: only the background sync may wait on it. */
+      runGit(scenario.companion, ["remote", "set-url", "origin", stubSshUrl(remote)]);
+      const ssh = makeSshStub(scenario.root).env("slow");
+      const sshEnv = Object.fromEntries(
+        Object.entries(ssh).filter(([name]) => /^(GIT_|MATE_TEST_SSH_)/.test(name)),
+      );
+      expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(0);
+      await fs.mkdir(path.join(scenario.companion, ".opencode", "commands"), { recursive: true });
+      await fs.writeFile(
+        path.join(scenario.companion, ".opencode", "commands", "acme-late.md"),
+        "---\ndescription: acme late\n---\nlate\n",
+      );
+
+      const service = await startOpenCodeService(scenario, sshEnv);
+      try {
+        await waitFor(async () =>
+          names(await service.query("command", scenario.working)).includes("acme-late")
+            ? true
+            : undefined,
+        );
+        /** The local phase is in, and the fetch has not even given up yet. */
+        expect(readCompanionGitRecord(scenario.companion, scenario.home).unfinishedReason).toBe(
+          undefined,
+        );
+
+        const reason = await waitFor(
+          async () => readCompanionGitRecord(scenario.companion, scenario.home).unfinishedReason,
+          45_000,
+        );
+        expect(reason).toContain("fetch");
+      } finally {
+        await service.stop();
+      }
+    }, 90_000);
+
+    test("a background sync delivers an upstream command to the running session", async () => {
+      const scenario = await createScenario("mate-cli-e2e-plain-opencode-sync-");
+      initWorkingRepoGit(scenario);
+      expect((await setupCompanion(scenario, ["opencode"], ["--git-mode", "auto"])).exitCode).toBe(
+        0,
+      );
+      expect((await linkRepository(scenario)).exitCode).toBe(0);
+      const { upstream } = gitBackedCompanion(scenario);
+      expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(0);
+      /** Upstream only: the awaited local phase cannot see it, only the sync can. */
+      await fs.mkdir(path.join(upstream, ".opencode", "commands"), { recursive: true });
+      await fs.writeFile(
+        path.join(upstream, ".opencode", "commands", "acme-upstream.md"),
+        "---\ndescription: acme upstream\n---\nupstream\n",
+      );
+      runGit(upstream, ["add", ".opencode/commands/acme-upstream.md"]);
+      runGit(upstream, ["commit", "-qm", "acme upstream command"]);
+      runGit(upstream, ["push", "-q"]);
+
+      const service = await startOpenCodeService(scenario);
+      try {
+        await waitFor(async () =>
+          names(await service.query("command", scenario.working)).includes("acme-upstream")
+            ? true
+            : undefined,
+        );
+        await expect(
+          fs.access(path.join(scenario.working, ".opencode", "commands", "acme-upstream.md")),
+        ).resolves.toBeNull();
+      } finally {
+        await service.stop();
+      }
+    }, 90_000);
+
+    test("mate opencode keeps the global OpenCode config", async () => {
+      const scenario = await createScenario("mate-cli-e2e-global-opencode-");
+      initWorkingRepoGit(scenario);
+      expect((await setupCompanion(scenario, ["opencode"])).exitCode).toBe(0);
+      expect((await linkRepository(scenario)).exitCode).toBe(0);
+      const globalDir = await writeGlobalOpenCodeConfig(scenario);
+
+      const result = await runMate(scenario, {
+        cwd: scenario.working,
+        args: ["opencode", "debug", "paths"],
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain(globalDir);
+      expect(result.stdout).not.toContain(path.join(scenario.companion, ".opencode"));
     });
   },
 );

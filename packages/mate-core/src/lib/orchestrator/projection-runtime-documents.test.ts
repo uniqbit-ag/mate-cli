@@ -9,15 +9,20 @@ import {
   OPENCODE_CONFIG_DOCUMENT,
   CLAUDE_SETTINGS_DOCUMENT,
   placeRuntimeDocument,
-  recordedRuntimeDocuments,
   removeRuntimeDocument,
   runtimeDocumentDeps,
-  runtimeDocumentPresent,
 } from "./projection-runtime-documents";
-import type { RenderedRuntimeDocument } from "./projection-types";
 import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
 import type { LinkedRepository } from "./types";
 import { repoLocalDirPath } from "../../runtime/repo-local";
+import {
+  copies,
+  documents,
+  readManifest,
+  updateManifest,
+  withCopies,
+  type RenderedRuntimeDocument,
+} from "../../runtime/runtime-document-manifest";
 import {
   isWorkingRepositoryWrapped,
   project,
@@ -310,6 +315,101 @@ describe("placing a runtime document twice", () => {
  * longer wanted. Treating it as a no-op leaves a disabled MCP server declared
  * in the user's own `~/.claude.json` for good.
  */
+/** A companion key the repository may already set: it yields to the repository at placement. */
+function yieldingDocument(key: string, value: unknown): RenderedRuntimeDocument[] {
+  return [
+    {
+      path: OPENCODE_CONFIG_DOCUMENT,
+      regions: [
+        { at: ["plugins"], kind: "list", values: ["acme-plugin"] },
+        { at: [key], kind: "value", value, yields: true },
+      ],
+    },
+  ];
+}
+
+describe("a yielding region", () => {
+  test("a key the repository sets is left alone and not recorded", async () => {
+    const repoPath = await makeRepo("runtime-document-yield-repo-");
+    const target = path.join(repoPath, ".opencode", "opencode.json");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, `${JSON.stringify({ tool_output: "repo" }, null, 2)}\n`);
+
+    await placeRuntimeDocument(
+      repoPath,
+      OPENCODE_CONFIG_DOCUMENT,
+      yieldingDocument("tool_output", "acme"),
+    );
+
+    expect(JSON.parse(await fs.readFile(target, "utf8"))).toEqual({
+      tool_output: "repo",
+      plugins: ["acme-plugin"],
+    });
+    expect((await readManifest(repoPath)).documents[OPENCODE_CONFIG_DOCUMENT]).toEqual([
+      { at: ["plugins"], kind: "list", values: ["acme-plugin"] },
+    ]);
+    await expect(
+      placeRuntimeDocument(
+        repoPath,
+        OPENCODE_CONFIG_DOCUMENT,
+        yieldingDocument("tool_output", "acme"),
+      ),
+    ).resolves.toBe("current");
+  });
+
+  test("Mate's own earlier value is refreshed", async () => {
+    const repoPath = await makeRepo("runtime-document-yield-refresh-");
+    const target = path.join(repoPath, ".opencode", "opencode.json");
+    await placeRuntimeDocument(
+      repoPath,
+      OPENCODE_CONFIG_DOCUMENT,
+      yieldingDocument("compaction", { auto: true }),
+    );
+
+    await expect(
+      placeRuntimeDocument(
+        repoPath,
+        OPENCODE_CONFIG_DOCUMENT,
+        yieldingDocument("compaction", { auto: false }),
+      ),
+    ).resolves.toBe("written");
+
+    expect(JSON.parse(await fs.readFile(target, "utf8")).compaction).toEqual({ auto: false });
+    expect((await readManifest(repoPath)).documents[OPENCODE_CONFIG_DOCUMENT]).toContainEqual({
+      at: ["compaction"],
+      kind: "value",
+      value: { auto: false },
+      yields: true,
+    });
+  });
+
+  test("a value a human changed after the wrap wins and its record is dropped", async () => {
+    const repoPath = await makeRepo("runtime-document-yield-human-");
+    const target = path.join(repoPath, ".opencode", "opencode.json");
+    await placeRuntimeDocument(
+      repoPath,
+      OPENCODE_CONFIG_DOCUMENT,
+      yieldingDocument("compaction", { auto: true }),
+    );
+    const edited = {
+      ...JSON.parse(await fs.readFile(target, "utf8")),
+      compaction: { auto: "mine" },
+    };
+    await fs.writeFile(target, `${JSON.stringify(edited, null, 2)}\n`);
+
+    await placeRuntimeDocument(
+      repoPath,
+      OPENCODE_CONFIG_DOCUMENT,
+      yieldingDocument("compaction", { auto: false }),
+    );
+
+    expect(JSON.parse(await fs.readFile(target, "utf8")).compaction).toEqual({ auto: "mine" });
+    expect((await readManifest(repoPath)).documents[OPENCODE_CONFIG_DOCUMENT]).toEqual([
+      { at: ["plugins"], kind: "list", values: ["acme-plugin"] },
+    ]);
+  });
+});
+
 describe("a document the current render no longer produces", () => {
   /** What an enabled tokensave contributes: one server under the repo's project. */
   function tokensaveLocalConfig(repoPath: string): RenderedRuntimeDocument[] {
@@ -359,7 +459,9 @@ describe("a document the current render no longer produces", () => {
         (outcome) => outcome.id === "claude-local-mcp-document",
       );
       expect(withdrawn?.state).toBe("written");
-      expect(await runtimeDocumentPresent(repoPath, CLAUDE_LOCAL_CONFIG_DOCUMENT)).toBe(false);
+      expect(documents(await readManifest(repoPath)).includes(CLAUDE_LOCAL_CONFIG_DOCUMENT)).toBe(
+        false,
+      );
       /** The user's file is theirs: emptied of Mate's keys, never deleted. */
       expect(await fs.readFile(target, "utf8")).toBe(before);
     } finally {
@@ -381,7 +483,7 @@ describe("a document the current render no longer produces", () => {
     expect(state).toBe("written");
     expect(await exists(target)).toBe(false);
     expect(await exists(path.join(repoPath, ".opencode"))).toBe(false);
-    expect(await runtimeDocumentPresent(repoPath, OPENCODE_CONFIG_DOCUMENT)).toBe(false);
+    expect(documents(await readManifest(repoPath)).includes(OPENCODE_CONFIG_DOCUMENT)).toBe(false);
   });
 
   test("a second withdrawal is current rather than a repeated removal", async () => {
@@ -416,7 +518,7 @@ describe("a document the current render no longer produces", () => {
 
     expect(state).toBe("skipped");
     expect(await exists(target)).toBe(true);
-    expect(await runtimeDocumentPresent(repoPath, OPENCODE_CONFIG_DOCUMENT)).toBe(true);
+    expect(documents(await readManifest(repoPath)).includes(OPENCODE_CONFIG_DOCUMENT)).toBe(true);
   });
 });
 
@@ -446,7 +548,7 @@ describe("a target that does not parse", () => {
     ).rejects.toThrow(/not valid JSON/);
 
     expect(await fs.readFile(target, "utf8")).toBe(torn);
-    expect(await runtimeDocumentPresent(repoPath, OPENCODE_CONFIG_DOCUMENT)).toBe(false);
+    expect(documents(await readManifest(repoPath)).includes(OPENCODE_CONFIG_DOCUMENT)).toBe(false);
   });
 
   test("removing refuses, leaves the document, and keeps the regions recorded", async () => {
@@ -465,7 +567,7 @@ describe("a target that does not parse", () => {
 
     expect(await fs.readFile(target, "utf8")).toBe(torn);
     /** Still Mate's to withdraw, so a later cleanup reaches the same regions. */
-    expect(await runtimeDocumentPresent(repoPath, OPENCODE_CONFIG_DOCUMENT)).toBe(true);
+    expect(documents(await readManifest(repoPath)).includes(OPENCODE_CONFIG_DOCUMENT)).toBe(true);
   });
 
   test("the user's own ~/.claude.json survives a wrap that read it mid-write", async () => {
@@ -543,8 +645,8 @@ describe("a launch beside a wrap", () => {
       result.outcomes.find((outcome) => outcome.id === "opencode-runtime-document")?.state,
     ).toBe("skipped");
     expect(await exists(path.join(repoPath, ".opencode", "opencode.json"))).toBe(false);
-    expect(await recordedRuntimeDocuments(repoPath)).toEqual([]);
-    expect(await recordedRuntimeDocuments(repoPath)).toEqual([]);
+    expect(documents(await readManifest(repoPath))).toEqual([]);
+    expect(documents(await readManifest(repoPath))).toEqual([]);
   });
 
   test("a wrap is what makes the repository wrapped", async () => {
@@ -558,7 +660,91 @@ describe("a launch beside a wrap", () => {
       runtimeDocuments: openCodeDocument("@uniqbit/mate-opencode-plugin@0.15.5"),
     });
 
-    expect(await isWorkingRepositoryWrapped(repoPath)).toBe(true);
+    expect(await isWorkingRepositoryWrapped(repoPath, "opencode")).toBe(true);
+    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(false);
+  });
+});
+
+describe("wrap state per Agent Runtime", () => {
+  async function writeManifest(repoPath: string, manifest: unknown): Promise<void> {
+    await fs.mkdir(repoLocalDirPath(repoPath), { recursive: true });
+    await fs.writeFile(
+      path.join(repoLocalDirPath(repoPath), "runtime-documents.json"),
+      JSON.stringify(manifest),
+    );
+  }
+
+  test("a document placed for one runtime does not wrap the other", async () => {
+    const repoPath = await makeRepo("per-runtime-");
+    await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, claudeDocument("/acme"));
+
+    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(true);
+    expect(await isWorkingRepositoryWrapped(repoPath, "opencode")).toBe(false);
+    expect(documents(await readManifest(repoPath), "claude")).toEqual([CLAUDE_SETTINGS_DOCUMENT]);
+    expect(documents(await readManifest(repoPath), "opencode")).toEqual([]);
+  });
+
+  test("records the runtime beside each placed document", async () => {
+    const repoPath = await makeRepo("per-runtime-tag-");
+    await placeRuntimeDocument(repoPath, OPENCODE_CONFIG_DOCUMENT, openCodeDocument("/acme"));
+
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(repoLocalDirPath(repoPath), "runtime-documents.json"), "utf8"),
+    );
+    expect(manifest.runtimes).toEqual({ [OPENCODE_CONFIG_DOCUMENT]: "opencode" });
+    expect(Array.isArray(manifest.documents[OPENCODE_CONFIG_DOCUMENT])).toBe(true);
+  });
+
+  test("an untagged legacy manifest is attributed by path", async () => {
+    const repoPath = await makeRepo("per-runtime-legacy-");
+    const regions = [{ at: ["plugins"], kind: "list", values: ["/acme"] }];
+    await writeManifest(repoPath, {
+      documents: {
+        [OPENCODE_CONFIG_DOCUMENT]: regions,
+        [CLAUDE_SETTINGS_DOCUMENT]: regions,
+        [CLAUDE_LOCAL_CONFIG_DOCUMENT]: regions,
+        ".mcp.json": regions,
+      },
+    });
+
+    expect(documents(await readManifest(repoPath), "opencode")).toEqual([OPENCODE_CONFIG_DOCUMENT]);
+    expect(documents(await readManifest(repoPath), "claude").sort()).toEqual(
+      [CLAUDE_SETTINGS_DOCUMENT, CLAUDE_LOCAL_CONFIG_DOCUMENT, ".mcp.json"].sort(),
+    );
+  });
+
+  test("an owned companion copy alone wraps its runtime", async () => {
+    const repoPath = await makeRepo("per-runtime-copy-");
+    await updateManifest(repoPath, (manifest) =>
+      withCopies(manifest, "opencode", {
+        ".opencode/commands/acme.md": { runtime: "opencode", sha256: "abc" },
+      }),
+    );
+
+    expect(await isWorkingRepositoryWrapped(repoPath, "opencode")).toBe(true);
+    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(false);
+    expect(copies(await readManifest(repoPath))).toEqual({
+      ".opencode/commands/acme.md": { runtime: "opencode", sha256: "abc" },
+    });
+  });
+
+  test("copy records survive a document placement and vice versa", async () => {
+    const repoPath = await makeRepo("per-runtime-both-");
+    await updateManifest(repoPath, (manifest) =>
+      withCopies(manifest, "opencode", {
+        ".opencode/commands/acme.md": { runtime: "opencode", sha256: "abc" },
+      }),
+    );
+    await placeRuntimeDocument(repoPath, OPENCODE_CONFIG_DOCUMENT, openCodeDocument("/acme"));
+    await removeRuntimeDocument(repoPath, OPENCODE_CONFIG_DOCUMENT);
+
+    expect(Object.keys(copies(await readManifest(repoPath)))).toEqual([
+      ".opencode/commands/acme.md",
+    ]);
+    await updateManifest(repoPath, (manifest) => withCopies(manifest, "opencode", {}));
+    expect(await exists(path.join(repoLocalDirPath(repoPath), "runtime-documents.json"))).toBe(
+      false,
+    );
   });
 });
 
@@ -596,7 +782,7 @@ describe("unwrapping a working repository", () => {
       const result = await unwrapWorkingRuntimeDocuments(repoPath);
 
       expect(result.kind).toBe("unwrapped");
-      expect(await recordedRuntimeDocuments(repoPath)).toEqual([]);
+      expect(documents(await readManifest(repoPath))).toEqual([]);
       /** The documents are gone... */
       expect(await exists(path.join(repoPath, ".opencode", "opencode.json"))).toBe(false);
       expect(JSON.parse(await fs.readFile(path.join(homePath, ".claude.json"), "utf8"))).toEqual(
@@ -625,7 +811,7 @@ describe("unwrapping a working repository", () => {
       openCodeDocument("@uniqbit/mate-opencode-plugin@0.15.5"),
     );
     await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, claudeDocument("/plugin"));
-    expect(await recordedRuntimeDocuments(repoPath)).toHaveLength(2);
+    expect(documents(await readManifest(repoPath))).toHaveLength(2);
 
     const result = await unwrapWorkingRuntimeDocuments(repoPath);
 
@@ -634,8 +820,8 @@ describe("unwrapping a working repository", () => {
       OPENCODE_CONFIG_DOCUMENT,
       CLAUDE_SETTINGS_DOCUMENT,
     ]);
-    expect(await recordedRuntimeDocuments(repoPath)).toEqual([]);
-    expect(await recordedRuntimeDocuments(repoPath)).toEqual([]);
+    expect(documents(await readManifest(repoPath))).toEqual([]);
+    expect(documents(await readManifest(repoPath))).toEqual([]);
     expect(await isWorkingRepositoryWrapped(repoPath)).toBe(false);
     expect(await exists(path.join(repoPath, ".opencode", "opencode.json"))).toBe(false);
     expect(await exists(path.join(repoPath, ".claude", "settings.local.json"))).toBe(false);
@@ -660,7 +846,7 @@ describe("unwrapping a working repository", () => {
     /** The healthy destination is withdrawn and gone from the record... */
     expect(await exists(path.join(repoPath, ".opencode", "opencode.json"))).toBe(false);
     /** ...and the one that failed is still recorded, so it is not lost. */
-    expect(await recordedRuntimeDocuments(repoPath)).toEqual([CLAUDE_SETTINGS_DOCUMENT]);
+    expect(documents(await readManifest(repoPath))).toEqual([CLAUDE_SETTINGS_DOCUMENT]);
   });
 
   test("an unwrapped repository reports absent rather than failing", async () => {
@@ -672,6 +858,7 @@ describe("unwrapping a working repository", () => {
     expect(await unwrapWorkingRuntimeDocuments(repoPath)).toEqual({
       kind: "absent",
       documents: [],
+      copies: [],
     });
   });
 
@@ -686,7 +873,11 @@ describe("unwrapping a working repository", () => {
 
     const result = await unwrapWorkingRuntimeDocuments(repoPath);
 
-    expect(result).toEqual({ kind: "unwrapped", documents: [OPENCODE_CONFIG_DOCUMENT] });
+    expect(result).toEqual({
+      kind: "unwrapped",
+      documents: [OPENCODE_CONFIG_DOCUMENT],
+      copies: [],
+    });
     expect(await exists(path.join(repoPath, ".opencode", "opencode.json"))).toBe(false);
   });
 });

@@ -16,6 +16,7 @@ import * as claudeCmd from "./commands/launch/claude";
 import * as opencodeCmd from "./commands/launch/opencode";
 import * as pluginCmd from "./commands/plugin/plugin";
 import * as reportCmd from "./commands/report";
+import * as sessionCmd from "./commands/session/prepare";
 import * as studioCmd from "./commands/studio";
 import * as updateCmd from "./commands/update";
 import * as workingCmd from "./commands/working/working";
@@ -40,6 +41,7 @@ const BUILT_IN_COMMANDS = [
   "working",
   "wrap",
   "unwrap",
+  "session",
 ];
 
 describe("command gating", () => {
@@ -62,6 +64,7 @@ describe("command gating", () => {
       spyOn(hubCmd, "runHubCommand").mockImplementation(record("hub")),
       spyOn(configCmd, "runConfigCommand").mockImplementation(record("config")),
       spyOn(reportCmd, "runReportCommand").mockImplementation(record("report")),
+      spyOn(sessionCmd, "runSessionCommand").mockImplementation(record("session")),
       spyOn(studioCmd, "runStudioCommand").mockImplementation(record("studio")),
       spyOn(claudeCmd, "runLaunchClaudeCommand").mockImplementation(record("claude")),
       spyOn(opencodeCmd, "runLaunchOpenCodeCommand").mockImplementation(record("opencode")),
@@ -84,6 +87,8 @@ describe("command gating", () => {
   afterEach(() => {
     while (spies.length > 0) spies.pop()?.mockRestore();
     resetActiveDistribution();
+    /** A refused command sets it; left behind, it fails the run with every test passing. */
+    process.exitCode = 0;
   });
 
   function rootContextFor(kind: RootKind): RootContext {
@@ -96,7 +101,12 @@ describe("command gating", () => {
   }
 
   function recordingDeps(
-    overrides: { companion?: boolean; installOk?: boolean; rootKind?: RootKind } = {},
+    overrides: {
+      companion?: boolean;
+      installOk?: boolean;
+      rootKind?: RootKind;
+      runtimeDirectoryFails?: boolean;
+    } = {},
   ) {
     const gateCalls: string[] = [];
     const deps: MainDeps = {
@@ -117,6 +127,10 @@ describe("command gating", () => {
       resolveRootContext: async () => {
         gateCalls.push("root");
         return rootContextFor(overrides.rootKind ?? "core");
+      },
+      refreshRuntimeDirectory: async () => {
+        if (overrides.runtimeDirectoryFails) throw new Error("acme refresh failure");
+        return { changed: [] };
       },
     };
     return { gateCalls, deps };
@@ -143,6 +157,40 @@ describe("command gating", () => {
       expect([...dispatched].sort()).toEqual([...BUILT_IN_COMMANDS].sort());
       expect(errors.filter((line) => line.startsWith("Unknown command"))).toEqual([]);
     } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  test("a runtime directory failure warns and still dispatches ordinary commands", async () => {
+    const errors: string[] = [];
+    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.join(" "));
+    });
+    try {
+      const { deps } = recordingDeps({ runtimeDirectoryFails: true });
+      await main(["node", "mate", "doctor"], deps);
+      expect(dispatched).toEqual(["doctor"]);
+      expect(errors.some((line) => line.includes("warning") && line.includes("acme refresh"))).toBe(
+        true,
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  test("a runtime directory failure blocks wrap, opencode and session", async () => {
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    try {
+      for (const command of ["wrap", "opencode", "session"]) {
+        process.exitCode = 0;
+        const { deps } = recordingDeps({ runtimeDirectoryFails: true });
+        await main(["node", "mate", command, "prepare"], deps);
+        expect(process.exitCode).toBe(1);
+      }
+      expect(dispatched).toEqual([]);
+    } finally {
+      process.exitCode = previousExitCode;
       errorSpy.mockRestore();
     }
   });
@@ -549,6 +597,28 @@ describe("command gating", () => {
       logSpy.mockRestore();
     }
   });
+});
+
+test("--version still refreshes the runtime links", async () => {
+  const logSpy = spyOn(console, "log").mockImplementation(() => {});
+  let refreshed = 0;
+  try {
+    await main(["node", "mate", "--version"], {
+      ensureUnambiguousCompanion: async () => true,
+      inspectInstallPreflight: async () => ({ ok: true }),
+      hydrateDynamicPlugins: async () => {},
+      resolveRootContext: async () => {
+        throw new Error("not reached");
+      },
+      refreshRuntimeDirectory: async () => {
+        refreshed += 1;
+        return { changed: [] };
+      },
+    });
+    expect(refreshed).toBe(1);
+  } finally {
+    logSpy.mockRestore();
+  }
 });
 
 describe("plugin CLI commands", () => {

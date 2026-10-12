@@ -1,6 +1,9 @@
 import { FRAMEWORK_NAME } from "../../framework";
+import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repo-local-registry";
 import { unwrapWorkingRuntimeDocuments } from "../../lib/orchestrator/working-repo-projection";
+import { withCompanionLock } from "../../runtime/companion-lock";
+import { readProjectionFile } from "../../runtime/projection";
 
 export interface UnwrapCommandDependencies {
   findRepoLocalLinkedRepository?: typeof findRepoLocalLinkedRepository;
@@ -48,7 +51,24 @@ export async function runUnwrapCommand(
     return;
   }
 
-  const result = await unwrap(repository.path);
+  /**
+   * Under the lock of the companion the projection names, so a prepare or sync
+   * for it cannot rewrite the manifest mid-withdrawal. No companion, no lock:
+   * unwrapping must still work when the companion is gone.
+   */
+  const companionPath = readProjectionFile(repository.path)?.projection.companionPath;
+  const locked = companionPath
+    ? await withCompanionLock(companionPath, attendedLockOptions(companionPath), () =>
+        unwrap(repository.path),
+      )
+    : { acquired: true as const, value: await unwrap(repository.path) };
+  if (!locked.acquired) {
+    console.error(`${FRAMEWORK_NAME}: another companion synchronization is still running.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const result = locked.value;
   if (result.kind === "failed") {
     console.error(
       `${FRAMEWORK_NAME}: failed to withdraw ${result.document} for ${repository.id}: ${result.error.message}`,
@@ -66,5 +86,8 @@ export async function runUnwrapCommand(
   for (const document of result.documents) {
     console.log(`  Withdrawn: ${document}`);
   }
-  console.log(`\`${FRAMEWORK_NAME} claude\` and \`${FRAMEWORK_NAME} opencode\` work here again.`);
+  if (result.copies.length > 0) {
+    console.log(`  Withdrawn: ${result.copies.length} companion copies under .opencode/`);
+  }
+  console.log(`\`${FRAMEWORK_NAME} claude\` works here again.`);
 }

@@ -81,7 +81,7 @@ A \`diff\` section carries a unified diff patch as produced by \`git diff\`. The
 { "id": "changes", "title": "Changes", "type": "diff", "patch": "diff --git a/src/acme.ts b/src/acme.ts\\n..." }
 \`\`\`
 
-A report carrying a mermaid payload inlines the diagram runtime; a report without one does not. Either way the page stays a single self-contained file that makes no network request.
+A report carrying a mermaid payload loads the pinned, integrity-checked diagram runtime from a CDN; a report without one does not. Offline, each diagram stays readable as its source. Otherwise the page stays a single self-contained file.
 
 ## Invocation
 

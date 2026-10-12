@@ -5,6 +5,7 @@ import path from "node:path";
 import { persistedCompanionGitStalenessLines } from "../runtime/companion-sync";
 import { resolveCompanionRuntime, type CompanionRuntimeContext } from "../runtime/env";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
+import { readSessionNotes } from "./session-notes";
 
 export type CompanionContext = CompanionRuntimeContext & {
   agentsMd: string;
@@ -189,14 +190,29 @@ export function readContext(
     }
   }
 
-  return {
-    ...context,
-    agentsMd,
-    stalenessLines: projection
-      ? [
-          ...projectionStalenessLines(projection, projectionFreshness(projection)),
-          ...persistedCompanionGitStalenessLines(context.companionPath),
-        ]
-      : [],
-  };
+  return { ...context, agentsMd, stalenessLines: stalenessLinesFor(context, projection) };
+}
+
+function stalenessLinesFor(
+  context: CompanionRuntimeContext,
+  projection: ReturnType<typeof resolveCompanionRuntime>["projection"],
+): string[] {
+  if (!projection) return [];
+  /** A sync note repeats the persisted Git line it came from. */
+  return [
+    ...new Set([
+      ...projectionStalenessLines(projection, projectionFreshness(projection)),
+      ...persistedCompanionGitStalenessLines(context.companionPath, undefined, "opencode"),
+      ...(context.repositoryPath ? readSessionNotes(context.repositoryPath) : []),
+    ]),
+  ];
+}
+
+/** The session state alone, cheap enough for the TUI to poll: no `AGENTS.md` read, no Git. */
+export function readStalenessLines(
+  env: Record<string, string | undefined> = process.env,
+  cwd: string = process.cwd(),
+): string[] {
+  const { context, projection } = resolveCompanionRuntime(env, cwd);
+  return stalenessLinesFor(context, projection);
 }

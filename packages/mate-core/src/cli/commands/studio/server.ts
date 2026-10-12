@@ -7,6 +7,7 @@ import {
   type StudioAccess,
   type StudioInvocation,
 } from "./access";
+import { MERMAID_RUNTIME_URL } from "../report/renderer";
 import { collectStudioInventory, type StudioInventory } from "./inventory";
 import { assembleCompanionPayload, type StudioCompanionResponse } from "./payload";
 import { createReportStore, isReportId, REPORT_LIMITS, type ReportStore } from "./reports";
@@ -189,11 +190,14 @@ function refused(reason: string, status: number): Response {
   });
 }
 
-/** Sent with every hosted report: opaque origin, no connections, no Studio cookie or storage. */
+/**
+ * Sent with every hosted report: opaque origin, no Studio cookie or storage, and
+ * no connections beyond the one pinned, integrity-checked diagram runtime.
+ */
 const REPORT_CSP = [
   "sandbox allow-scripts allow-modals",
   "default-src 'none'",
-  "script-src 'unsafe-inline'",
+  `script-src 'unsafe-inline' ${MERMAID_RUNTIME_URL}`,
   "style-src 'unsafe-inline'",
   "img-src data:",
   "font-src data:",

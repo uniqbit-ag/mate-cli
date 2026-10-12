@@ -12,6 +12,8 @@ import {
   type UpstreamTarget,
 } from "../../runtime/companion-git";
 import { recordCompanionSync } from "../../runtime/companion-git-state";
+import { withCompanionLock, type CompanionLockOptions } from "../../runtime/companion-lock";
+import { FRAMEWORK_NAME } from "../../framework";
 import { LaunchPreflightError } from "./types";
 
 type GitCommandResult = GitResult;
@@ -427,10 +429,35 @@ export class CompanionGitSync {
   }
 }
 
+/**
+ * An attended operation waits for whoever holds the companion lock, however
+ * long: the holder may be an operator answering a merge conflict. The line
+ * explains the pause; a crashed holder frees the lock by itself.
+ */
+export function attendedLockOptions(companionPath: string): CompanionLockOptions {
+  return {
+    timeoutMs: Number.POSITIVE_INFINITY,
+    onWait: () =>
+      console.error(
+        `${FRAMEWORK_NAME}: waiting for another companion sync to finish (${companionPath})…`,
+      ),
+  };
+}
+
+/** Serialized with every other synchronization of this companion. */
 export async function syncCompanionGit(
   companionPath: string,
   workingRepoPath?: string,
   interactiveGit = false,
 ): Promise<CompanionGitSyncResult> {
-  return new CompanionGitSync().sync(companionPath, workingRepoPath, interactiveGit);
+  const locked = await withCompanionLock(companionPath, attendedLockOptions(companionPath), () =>
+    new CompanionGitSync().sync(companionPath, workingRepoPath, interactiveGit),
+  );
+  if (!locked.acquired) {
+    throw new CompanionGitSyncError(
+      companionPath,
+      "Another companion synchronization is still running.",
+    );
+  }
+  return locked.value;
 }

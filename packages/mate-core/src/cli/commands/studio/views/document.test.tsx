@@ -365,7 +365,7 @@ describe("renderStudioDocument", () => {
         const target = parse(new URL(href!.replaceAll("&amp;", "&"), "http://localhost:1/"));
         expect(target).toEqual(openFile(current, entry!));
       }
-      for (const { attrs, body, fields } of vaultForms) {
+      for (const { body, fields } of vaultForms) {
         const target = submitted(fields);
         if (body.includes("Refresh tree")) expect(target).toEqual({ ...current, refresh: true });
         else {

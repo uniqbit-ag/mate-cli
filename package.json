@@ -19,11 +19,12 @@
     "typecheck": "bun run --filter @uniqbit/mate typecheck",
     "lint": "bunx oxlint apps packages --no-error-on-unmatched-pattern",
     "lint:fix": "bunx oxlint apps packages --fix --no-error-on-unmatched-pattern",
-    "format": "oxfmt apps packages \"!**/*.generated.*\" \"!**/report-assets/**\" --no-error-on-unmatched-pattern",
-    "format:check": "oxfmt apps packages \"!**/*.generated.*\" \"!**/report-assets/**\" --check --no-error-on-unmatched-pattern"
+    "format": "oxfmt apps packages \"!**/*.generated.*\" --no-error-on-unmatched-pattern",
+    "format:check": "oxfmt apps packages \"!**/*.generated.*\" --check --no-error-on-unmatched-pattern"
   },
   "devDependencies": {
-    "oxfmt": "^0.72.0"
+    "oxfmt": "^0.72.0",
+    "oxlint": "^1.87.0"
   },
   "engines": {
     "node": ">=24"

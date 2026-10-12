@@ -1,8 +1,8 @@
 // oxlint-disable no-await-in-loop
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
-import type { RenderedRuntimeDocument } from "../../lib/orchestrator/projection-types";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
+import type { RenderedRuntimeDocument } from "../../runtime/runtime-document-manifest";
 import { collectHostingProviders, ContextServiceMediator } from "./context-services";
 import type {
   CapabilityContributionInput,
@@ -13,7 +13,7 @@ import type {
 } from "./plugin";
 import { reconcileClaudeContributions } from "./providers/claude";
 import { reconcileOpenCodeContributions } from "./providers/opencode";
-import { renderDocumentsForTarget } from "./runtime-documents";
+import { mergeCompanionOpenCodeConfig, renderDocumentsForTarget } from "./runtime-documents";
 import { normalizeRegistration, type NormalizedRegistration } from "./registry";
 
 export interface SetupInstallationPlanAction {
@@ -252,6 +252,12 @@ async function reconcileCapabilityContributions(
   }
 }
 
+/** What a render returns: its warnings are data for the caller, never printed here. */
+export interface RenderedRuntimeDocuments {
+  documents: RenderedRuntimeDocument[];
+  warnings: string[];
+}
+
 /**
  * The same declarations, rendered rather than written: a working-target pass
  * produces the documents and the Projection Root places them, so no Runtime
@@ -261,7 +267,12 @@ export async function renderRuntimeDocuments(
   ctx: SetupContext,
   registrations: PluginRegistration[],
   plan: SetupInstallationPlan,
-): Promise<RenderedRuntimeDocument[]> {
+): Promise<RenderedRuntimeDocuments> {
   const plugins = registrations.map((entry) => normalizeRegistration(entry).plugin);
-  return renderDocumentsForTarget(ctx, await collectContributionInputs(ctx, plugins, plan));
+  const documents = renderDocumentsForTarget(
+    ctx,
+    await collectContributionInputs(ctx, plugins, plan),
+  );
+  if (ctx.target !== "working") return { documents, warnings: [] };
+  return mergeCompanionOpenCodeConfig(ctx.companionPath, documents);
 }

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs2 from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -10,7 +11,10 @@ import { resolveForLaunch } from "../../lib/orchestrator/framework-context";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
-import { project } from "../../lib/orchestrator/working-repo-projection";
+import {
+  isWorkingRepositoryWrapped,
+  project,
+} from "../../lib/orchestrator/working-repo-projection";
 import type { LinkedRepository } from "../../lib/orchestrator/types";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
 import { parseWrapArgs, runWrapCommand } from "./wrap";
@@ -148,6 +152,38 @@ describe("runWrapCommand", () => {
     await expect(fs.readFile(custom, "utf8")).resolves.toBe("user skill\n");
   });
 
+  test("copies the companion .opencode folder and warns about a shadowed file", async () => {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-opencode-copies-");
+    const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(path.join(configDir, "framework.yaml"), "allowedAgents:\n  - opencode\n");
+    for (const name of ["acme", "acme-shadowed"]) {
+      await fs.mkdir(path.join(companionPath, ".opencode", "commands"), { recursive: true });
+      await fs.writeFile(
+        path.join(companionPath, ".opencode", "commands", `${name}.md`),
+        `${name}\n`,
+      );
+    }
+    const own = path.join(repoPath, ".opencode", "commands", "acme-shadowed.md");
+    await fs.mkdir(path.dirname(own), { recursive: true });
+    await fs.writeFile(own, "repo\n");
+    const { out, err, restore } = capture();
+
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      restore();
+    }
+
+    expect(process.exitCode).toBeFalsy();
+    expect(await fs.readFile(path.join(repoPath, ".opencode", "commands", "acme.md"), "utf8")).toBe(
+      "acme\n",
+    );
+    expect(await fs.readFile(own, "utf8")).toBe("repo\n");
+    expect(out.join("\n")).toContain("Copies:    1 written");
+    expect(err.join("\n")).toContain("acme-shadowed.md");
+  });
+
   test("reports an unchanged Projection Root as already wrapped", async () => {
     const { repoPath } = await makeLinkedRepo("wrap-idempotent-");
     await runWrapCommand([], repoPath);
@@ -229,6 +265,77 @@ describe("runWrapCommand", () => {
     expect(await fs.readFile(yamlPath(repoPath), "utf8")).toBe(before);
   });
 
+  test("a failed projection pair still writes the runtime documents and exits non-zero", async () => {
+    const { repoPath } = await makeLinkedRepo("wrap-pair-failure-");
+    await fs.mkdir(path.join(yamlPath(repoPath), "blocked"), { recursive: true });
+    const { err, restore } = capture();
+
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      restore();
+    }
+
+    expect(process.exitCode).toBe(1);
+    expect(err.join("\n")).toContain("failed to write the projection for app");
+    expect(await fs.exists(envPath(repoPath))).toBe(false);
+    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(true);
+  });
+
+  test("warns about a tracked runtime document when it writes it, and only then", async () => {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-tracked-");
+    execFileSync("git", ["init", "-q"], { cwd: repoPath });
+    await fs.mkdir(path.join(repoPath, ".claude"), { recursive: true });
+    await fs.writeFile(path.join(repoPath, ".claude", "settings.local.json"), "{}\n");
+    execFileSync("git", ["add", "--force", ".claude/settings.local.json"], { cwd: repoPath });
+
+    const first = capture();
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      first.restore();
+    }
+    const second = capture();
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      second.restore();
+    }
+
+    expect(process.exitCode).toBeFalsy();
+    expect(first.err.join("\n")).toContain(
+      `${FRAMEWORK_NAME}: warning: .claude/settings.local.json is tracked by Git in app;`,
+    );
+    expect(first.err.join("\n")).toContain("git rm --cached .claude/settings.local.json");
+    expect(
+      await fs.readFile(path.join(repoPath, ".claude", "settings.local.json"), "utf8"),
+    ).toContain(companionPath);
+    expect(second.err.join("\n")).not.toContain("is tracked by Git");
+  });
+
+  test("prints the pass's warnings and changed paths without knowing their entry", async () => {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-injected-");
+    const { out, err, restore } = capture();
+
+    try {
+      await runWrapCommand([], repoPath, {
+        runWrapPass: async () => ({
+          kind: "written",
+          projectionRoot: projectionDir(repoPath),
+          companionPath,
+          documents: [],
+          changed: { written: ["a", "b"], removed: ["c"] },
+          warnings: ["acme needs attention"],
+        }),
+      });
+    } finally {
+      restore();
+    }
+
+    expect(out.join("\n")).toContain("Copies:    2 written, 1 withdrawn under .opencode/");
+    expect(err).toContain(`${FRAMEWORK_NAME}: warning: acme needs attention`);
+  });
+
   test("writes what a launch resolution writes", async () => {
     const { repoPath, store } = await makeLinkedRepo("wrap-equivalence-");
     await runWrapCommand([], repoPath);
@@ -305,7 +412,7 @@ describe("runWrapCommand", () => {
     }
 
     const printed = out.join("\n");
-    expect(printed).toContain(`${FRAMEWORK_NAME} claude`);
+    expect(printed).toContain(`\`${FRAMEWORK_NAME} claude\` does not run in a Claude-wrapped`);
     expect(printed).toContain(`${FRAMEWORK_NAME} unwrap`);
   });
 

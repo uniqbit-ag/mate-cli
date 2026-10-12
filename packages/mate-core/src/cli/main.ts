@@ -16,6 +16,7 @@ import { runLaunchClaudeCommand } from "./commands/launch/claude";
 import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
 import { runPluginCommand } from "./commands/plugin/plugin";
 import { runReportCommand } from "./commands/report";
+import { runSessionCommand } from "./commands/session/prepare";
 import { runStudioCommand } from "./commands/studio";
 import { runUpdateCommand } from "./commands/update";
 import { runUnwrapCommand } from "./commands/unwrap";
@@ -33,6 +34,7 @@ import {
   ensureUnambiguousCompanion,
   type CompanionSelectionOptions,
 } from "./commands/shared/companion-selection";
+import { ensureRuntimeDirectory, refreshRuntimeDirectory } from "../lib/runtime-directory-refresh";
 import { hydrateDynamicPlugins } from "../tools/setup/dynamic-plugins/hydrate";
 import { findPluginCliCommand } from "./plugin-commands";
 import { usage } from "./usage";
@@ -60,6 +62,7 @@ export interface MainDeps {
   repairInstallState?: typeof repairInstallState;
   hydrateDynamicPlugins: typeof hydrateDynamicPlugins;
   resolveRootContext: typeof resolveRootContext;
+  refreshRuntimeDirectory?: typeof refreshRuntimeDirectory;
 }
 
 const mainDeps: MainDeps = {
@@ -68,10 +71,16 @@ const mainDeps: MainDeps = {
   repairInstallState,
   hydrateDynamicPlugins,
   resolveRootContext,
+  refreshRuntimeDirectory,
 };
 
 export async function main(argv = process.argv, deps: MainDeps = mainDeps): Promise<void> {
   const [, , command, subcommand, ...rest] = argv;
+
+  if (!(await ensureRuntimeDirectory(command, deps.refreshRuntimeDirectory))) {
+    process.exitCode = 1;
+    return;
+  }
 
   if (command === "-v" || command === "--version") {
     console.log(getActiveDistribution().config.version);
@@ -292,6 +301,14 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
       await runWrapCommand(wrapArgs);
       return;
     }
+    case "session":
+      /**
+       * Spawned by the OpenCode plugin for a bare session: no update prompt,
+       * no companion picker, no install repair may block it.
+       */
+      if (!(await gate({}))) return;
+      await runSessionCommand(subcommand, rest);
+      return;
     case "unwrap":
       // A recovery path: it withdraws what a wrap placed, so it must never be
       // gated on a companion or an installation it does not consult.

@@ -10,7 +10,6 @@ export const REPORT_LIMITS = {
   reports: 20,
   bytes: 50 * 1024 * 1024,
   ageMs: 7 * 24 * 60 * 60 * 1000,
-  /** The bundled inlined Mermaid runtime alone is about 5.3 MiB. */
   uploadBytes: 10 * 1024 * 1024,
 };
 

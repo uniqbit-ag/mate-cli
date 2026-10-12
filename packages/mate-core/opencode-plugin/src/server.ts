@@ -1,9 +1,39 @@
 import { Plugin } from "@opencode/plugin";
-import { registerCompanionHooks } from "../../src/opencode/companion-hooks";
+import type { Context } from "@opencode/plugin/promise/plugin";
+import {
+  registerCompanionHooks,
+  repositoryWrappedForOpenCode,
+} from "../../src/opencode/companion-hooks";
 import { readContext } from "../../src/opencode/companion-policy";
+import { registerSessionPrepare, spawnPrepareRunner } from "../../src/opencode/session-prepare";
+import { hasLaunchEnvironment } from "../../src/runtime/env";
+import { mateDeclaredOpenCodeMcpServers } from "../../src/runtime/runtime-document-manifest";
 
 import { registerCompanionAccess } from "./add-dir";
-import { registerCompanion } from "./companion";
+import { missingRuntimeDirectoryMessage, registerCompanion, resolveMateBin } from "./companion";
+
+/**
+ * Only a location in a repository wrapped for OpenCode prepares, and only
+ * without a launch environment: `mate opencode` has already prepared the
+ * session it starts.
+ */
+async function registerPrepare(api: Context, companionPath: string) {
+  if (hasLaunchEnvironment(process.env)) return undefined;
+  const repoRoot = repositoryWrappedForOpenCode(api.location.directory);
+  if (!repoRoot) return undefined;
+  const mateBin = resolveMateBin();
+  if (!mateBin) {
+    console.error(`mate: ${missingRuntimeDirectoryMessage()}`);
+    return undefined;
+  }
+  return registerSessionPrepare(api, {
+    directory: api.location.directory,
+    repoPath: repoRoot,
+    companionPath,
+    mateServers: mateDeclaredOpenCodeMcpServers(repoRoot),
+    run: spawnPrepareRunner(mateBin, repoRoot),
+  });
+}
 
 /**
  * Mate OpenCode server plugin (OpenCode 2.x). Loaded through the package's
@@ -19,7 +49,12 @@ export const MateOpenCodePlugin = Plugin.define({
     await registerCompanionAccess(api, context.companionPath);
     const cleanup = await registerCompanionHooks(api, context);
     await registerCompanion(api, context);
-    return cleanup;
+    /** Last: the guardrails above are live while the local phase holds `setup`. */
+    const prepareCleanup = await registerPrepare(api, context.companionPath);
+    return async () => {
+      await prepareCleanup?.();
+      await cleanup?.();
+    };
   },
 });
 

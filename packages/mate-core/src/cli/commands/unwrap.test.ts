@@ -101,7 +101,7 @@ describe("runUnwrapCommand", () => {
     } finally {
       wrapped.restore();
     }
-    expect(await isWorkingRepositoryWrapped(repoPath)).toBe(true);
+    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(true);
     expect(await fs.realpath(path.join(repoPath, ".claude", "skills", "acme"))).toBe(
       await fs.realpath(skill),
     );
@@ -116,7 +116,7 @@ describe("runUnwrapCommand", () => {
     expect(process.exitCode ?? 0).toBe(0);
     expect(unwrapped.out.join("\n")).toContain("Unwrapped app");
     expect(unwrapped.out.join("\n")).toContain(`${FRAMEWORK_NAME} claude`);
-    expect(await isWorkingRepositoryWrapped(repoPath)).toBe(false);
+    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(false);
     await expect(fs.access(path.join(repoPath, ".claude", "skills", "acme"))).rejects.toThrow();
     await expect(fs.readFile(path.join(skill, "SKILL.md"), "utf8")).resolves.toBe("acme skill\n");
     await expect(fs.readFile(custom, "utf8")).resolves.toBe("user skill\n");

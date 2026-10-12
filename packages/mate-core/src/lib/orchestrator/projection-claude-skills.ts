@@ -2,9 +2,21 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { readProjectionFile } from "../../runtime/projection";
+import {
+  links,
+  readManifest,
+  updateManifest,
+  withLinks,
+  type LinkRecord,
+} from "../../runtime/runtime-document-manifest";
 import { pruneEmptyAncestors } from "../../tools/setup/utils";
 
 const CLAUDE_SKILLS_PATH = path.join(".claude", "skills");
+
+/** The manifest key of a skill link: repo-relative, POSIX separators. */
+function recordKey(name: string): string {
+  return `.claude/skills/${name}`;
+}
 
 async function skillNames(root: string): Promise<string[]> {
   const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
@@ -26,12 +38,6 @@ async function skillNames(root: string): Promise<string[]> {
 async function linkTarget(link: string): Promise<string | null> {
   const target = await fs.readlink(link).catch(() => null);
   return target === null ? null : path.resolve(path.dirname(link), target);
-}
-
-async function isManagedSkillLink(link: string, roots: string[]): Promise<boolean> {
-  const target = await linkTarget(link);
-  if (target === null) return false;
-  return roots.some((root) => path.dirname(target) === root);
 }
 
 async function registeredSkillRoots(
@@ -56,6 +62,11 @@ async function createSkillLink(target: string, link: string): Promise<void> {
   await fs.symlink(target, link, process.platform === "win32" ? "junction" : "dir");
 }
 
+/**
+ * Recorded link: Mate's while it resolves to its recorded target. Unrecorded:
+ * adopted only when it resolves into a registered, current or projected
+ * companion. Records follow the filesystem, so a partial failure re-adopts.
+ */
 export async function reconcileWorkingRepoClaudeSkillLinks(
   repoPath: string,
   companionPath: string | null,
@@ -65,23 +76,30 @@ export async function reconcileWorkingRepoClaudeSkillLinks(
   const currentRoot = companionPath ? path.resolve(companionPath, CLAUDE_SKILLS_PATH) : null;
   const roots = await registeredSkillRoots(repoPath, companionPath, registeredCompanionPaths);
   const targetRoot = path.join(path.resolve(repoPath), CLAUDE_SKILLS_PATH);
+  const recorded = links(await readManifest(repoPath), "claude");
   const existing = await fs.readdir(targetRoot, { withFileTypes: true }).catch(() => []);
   const sourceNames: Set<string> =
     currentRoot && enabled ? new Set(await skillNames(currentRoot)) : new Set<string>();
+  const records: Record<string, LinkRecord> = {};
   let changed = false;
 
   for (const entry of existing) {
     if (!entry.isSymbolicLink()) continue;
     const link = path.join(targetRoot, entry.name);
-    if (!(await isManagedSkillLink(link, roots))) continue;
-
     const target = await linkTarget(link);
+    if (target === null) continue;
+    const record = recorded[recordKey(entry.name)];
+    const owned = record
+      ? record.target === target
+      : roots.some((root) => path.dirname(target) === root);
+    if (!owned) continue;
+
     if (
       currentRoot &&
-      enabled &&
       target === path.join(currentRoot, entry.name) &&
       sourceNames.has(entry.name)
     ) {
+      records[recordKey(entry.name)] = { runtime: "claude", target };
       continue;
     }
 
@@ -89,13 +107,15 @@ export async function reconcileWorkingRepoClaudeSkillLinks(
     changed = true;
   }
 
-  if (currentRoot && enabled && sourceNames.size > 0) {
+  if (currentRoot && sourceNames.size > 0) {
     await fs.mkdir(targetRoot, { recursive: true });
     for (const name of sourceNames) {
       const link = path.join(targetRoot, name);
       const existingLink = await fs.lstat(link).catch(() => null);
       if (existingLink) continue;
-      await createSkillLink(path.join(currentRoot, name), link);
+      const target = path.join(currentRoot, name);
+      await createSkillLink(target, link);
+      records[recordKey(name)] = { runtime: "claude", target };
       changed = true;
     }
   }
@@ -103,7 +123,20 @@ export async function reconcileWorkingRepoClaudeSkillLinks(
   if (changed || !enabled) {
     await pruneEmptyAncestors(targetRoot, path.resolve(repoPath));
   }
+  if (JSON.stringify(sortedEntries(records)) !== JSON.stringify(sortedEntries(recorded))) {
+    await updateManifest(repoPath, (manifest) => withLinks(manifest, "claude", records));
+    changed = true;
+  }
   return changed ? "written" : "current";
+}
+
+function sortedEntries(records: Record<string, LinkRecord>): [string, LinkRecord][] {
+  return Object.entries(records)
+    .map(([key, record]): [string, LinkRecord] => [
+      key,
+      { runtime: record.runtime, target: record.target },
+    ])
+    .toSorted(([a], [b]) => a.localeCompare(b));
 }
 
 export async function removeWorkingRepoClaudeSkillLinks(

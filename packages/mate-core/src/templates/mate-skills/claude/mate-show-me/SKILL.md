@@ -137,7 +137,7 @@ If the document fails contract validation, report the diagnostic and correct the
 - Use Mermaid whenever the user asks for a diagram or the subject has meaningful control flow, sequencing, lifecycle, or relationships. A `text` payload is a deliberate fallback, not the default for runtime flows.
 - Pick the diagram type that matches the question: `classDiagram` for structure, `sequenceDiagram` for interaction between components, `stateDiagram-v2` for lifecycles, `flowchart TD` for control flow and call trees.
 - Keep labels short enough to read at report width. A label that needs a sentence belongs in the neighbouring `text` section.
-- Do not use ELK-only layouts or math labels. The report inlines the self-contained mermaid bundle, which may not carry those chunks.
+- Do not use ELK-only layouts or math labels. The report loads the single-file mermaid build from a CDN, which does not carry those chunks.
 - Pair each Mermaid visual with a short neighbouring `text` section that calls out the ownership boundary or invariant the reader should notice.
 - Prefer the `text` payload for pseudocode, shallow file trees, or cases where a picture would genuinely obscure the point.
 

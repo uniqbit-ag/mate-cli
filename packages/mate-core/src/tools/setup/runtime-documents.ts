@@ -1,13 +1,14 @@
+import path from "node:path";
+
+import { runtimeOpenCodePluginRoot } from "../../runtime/runtime-directory";
 import {
   CLAUDE_LOCAL_CONFIG_DOCUMENT,
   CLAUDE_SETTINGS_DOCUMENT,
   OPENCODE_CONFIG_DOCUMENT,
-} from "../../lib/orchestrator/projection-runtime-documents";
-import type {
-  ManagedRegion,
-  RenderedRuntimeDocument,
-} from "../../lib/orchestrator/projection-types";
-import { getOpenCodePluginRoot } from "../../lib/package-paths";
+  OPENCODE_MCP_SERVERS_AT,
+  type ManagedRegion,
+  type RenderedRuntimeDocument,
+} from "../../runtime/runtime-document-manifest";
 import type { CapabilityContributionInput, SetupContext } from "./plugin";
 import {
   mateBannerHookGroups,
@@ -22,6 +23,7 @@ import {
   renderCompanionExternalDirectoryPermissions,
   renderManagedOpenCodeMcpServers,
 } from "./providers/opencode";
+import { isRecord, readOpenCodeConfig } from "./providers/opencode-format";
 import { projectionRepoRoot } from "./surface-target";
 
 /**
@@ -47,12 +49,10 @@ function document(documentPath: string, regions: ManagedRegion[]): RenderedRunti
 /**
  * The Mate plugin root is what makes an Unmanaged OpenCode session load the
  * companion guidance at all: OpenCode has no config channel for a generated
- * system prompt, so the plugin is the only injection point, and a bare session
- * has no launch overlay to find it in. The root is machine-local, which this
- * git-excluded document tolerates and a committed config would not.
- *
- * A managed launch lists the same root in its `OPENCODE_CONFIG_CONTENT`
- * overlay; OpenCode dedupes identical plugin paths across config sources.
+ * system prompt, so the plugin is the only injection point. It is named through
+ * the runtime directory, so a reinstall does not strand a wrapped repository.
+ * The managed launch carries no overlay of its own, so this document is the one
+ * place every OpenCode session in the repository loads it from.
  */
 
 /**
@@ -152,10 +152,10 @@ export function renderDocumentsForTarget(
         {
           at: ["plugins"],
           kind: "list",
-          values: [getOpenCodePluginRoot()],
+          values: [runtimeOpenCodePluginRoot()],
         },
         {
-          at: ["mcp", "servers"],
+          at: [...OPENCODE_MCP_SERVERS_AT],
           kind: "map",
           entries: renderManagedOpenCodeMcpServers(inputs),
         },
@@ -164,8 +164,125 @@ export function renderDocumentsForTarget(
           kind: "list",
           values: renderCompanionExternalDirectoryPermissions(ctx.companionPath),
         },
+        {
+          at: ["skills"],
+          kind: "list",
+          values: [path.join(ctx.companionPath, ".agents", "skills")],
+        },
+        { at: ["references"], kind: "map", entries: { mate: ctx.companionPath } },
       ]),
     );
   }
   return documents;
+}
+
+/** Keys Mate renders its own regions for; the companion's values join those regions. */
+const MATE_OPENCODE_KEYS = new Set(["plugins", "permissions", "skills", "mcp", "references"]);
+
+function relativePathValues(value: unknown, at: string[]): string[] {
+  if (typeof value === "string") {
+    return value.startsWith("./") || value.startsWith("../") ? [at.join(".")] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((entry, index) => relativePathValues(entry, [...at, String(index)]));
+  }
+  if (isRecord(value)) {
+    return Object.entries(value).flatMap(([key, entry]) => relativePathValues(entry, [...at, key]));
+  }
+  return [];
+}
+
+/** Replaces the region at `at` with what `merge` builds from it, or appends one. */
+function upsertRegion(
+  regions: ManagedRegion[],
+  at: string[],
+  merge: (found: ManagedRegion | undefined) => ManagedRegion,
+): void {
+  const key = JSON.stringify(at);
+  const index = regions.findIndex((region) => JSON.stringify(region.at) === key);
+  if (index === -1) regions.push(merge(undefined));
+  else regions[index] = merge(regions[index]);
+}
+
+/** Mate's own values stay; companion values it does not already list go first. */
+function mergeListRegion(regions: ManagedRegion[], at: string[], extra: unknown[]): void {
+  upsertRegion(regions, at, (found) => {
+    const own = found?.kind === "list" ? found.values : [];
+    const seen = new Set(own.map((value) => JSON.stringify(value)));
+    const values = [...extra.filter((value) => !seen.has(JSON.stringify(value))), ...own];
+    return { at, kind: "list", values };
+  });
+}
+
+/** Mate's own entries win over companion entries of the same name. */
+function mergeMapRegion(
+  regions: ManagedRegion[],
+  at: string[],
+  extra: Record<string, unknown>,
+): void {
+  upsertRegion(regions, at, (found) => {
+    const own = found?.kind === "map" ? found.entries : {};
+    return { at, kind: "map", entries: { ...extra, ...own } };
+  });
+}
+
+/** Relative reference paths resolved against the companion's `.opencode/`. */
+function resolveReferences(
+  references: Record<string, unknown>,
+  companionDir: string,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(references).map(([name, reference]) => [
+      name,
+      typeof reference === "string" && !path.isAbsolute(reference)
+        ? path.resolve(companionDir, reference)
+        : reference,
+    ]),
+  );
+}
+
+/**
+ * Folds the companion's `.opencode/opencode.json` into the wrapped document.
+ * Mate's regions beat companion values; other top-level keys yield to the
+ * repository's. `references` resolve against the companion's `.opencode/`;
+ * other relative paths are reported, not rewritten.
+ */
+export async function mergeCompanionOpenCodeConfig(
+  companionPath: string,
+  documents: RenderedRuntimeDocument[],
+): Promise<{ documents: RenderedRuntimeDocument[]; warnings: string[] }> {
+  const index = documents.findIndex((document) => document.path === OPENCODE_CONFIG_DOCUMENT);
+  const companionConfigPath = path.join(companionPath, ".opencode", "opencode.json");
+  const companion = index === -1 ? null : await readOpenCodeConfig(companionConfigPath);
+  if (!companion?.present) return { documents, warnings: [] };
+
+  const regions = [...documents[index]!.regions] as ManagedRegion[];
+  const warnings: string[] = [];
+
+  const companionDir = path.dirname(companionConfigPath);
+  for (const [key, value] of Object.entries(companion.config)) {
+    if (key === "$schema") continue;
+    if (key === "references" && isRecord(value)) {
+      mergeMapRegion(regions, ["references"], resolveReferences(value, companionDir));
+      continue;
+    }
+    for (const at of relativePathValues(value, [key])) {
+      warnings.push(
+        `${companionConfigPath}: ${at} is a relative path, which resolves against the working repository once merged into ${OPENCODE_CONFIG_DOCUMENT}; use an absolute path.`,
+      );
+    }
+    if (MATE_OPENCODE_KEYS.has(key)) {
+      if (key === "mcp" && isRecord(value) && isRecord(value.servers)) {
+        mergeMapRegion(regions, [...OPENCODE_MCP_SERVERS_AT], value.servers);
+      } else if (Array.isArray(value)) {
+        mergeListRegion(regions, [key], value);
+      }
+      continue;
+    }
+    regions.push({ at: [key], kind: "value", value, yields: true });
+  }
+
+  const next = [...documents];
+  next[index] = { path: OPENCODE_CONFIG_DOCUMENT, regions };
+  return { documents: next, warnings };
 }

@@ -1,5 +1,6 @@
 import type { GlobalConfigStore } from "./global-config-store";
 import type { ProjectionFile } from "../../runtime/projection";
+import type { RenderedRuntimeDocument, WrapRuntime } from "../../runtime/runtime-document-manifest";
 import type { CompanionSource, FrameworkConfig, LinkedRepository } from "./types";
 
 /**
@@ -32,38 +33,8 @@ export type ProjectionEntryId =
   | "claude-runtime-document"
   | "claude-local-mcp-document"
   | "mcp-runtime-document"
-  | "opencode-runtime-document";
-
-/**
- * A region of a runtime document that Mate maintains. JSON carries no comment
- * syntax, so the region is recorded rather than marked in the file: `list`
- * appends values not already there, `map` sets entries by key, `value` sets one
- * key — and removal takes back exactly those, leaving anything a human added.
- *
- * `stripPrefix` is the one exception to "removal takes back exactly what was
- * written": it deletes keys Mate never wrote, and removal does not restore
- * them. It exists for keys an older Mate wrote and a current one must not
- * leave behind, so a re-wrap heals a repository an old version configured.
- */
-export type ManagedRegion =
-  | { readonly at: string[]; readonly kind: "list"; readonly values: unknown[] }
-  | {
-      readonly at: string[];
-      readonly kind: "map";
-      readonly entries: Record<string, unknown>;
-      readonly stripPrefix?: string;
-    }
-  | { readonly at: string[]; readonly kind: "value"; readonly value: unknown };
-
-/**
- * What a Runtime Surface hands the Projection Root: the managed content of one
- * document, without a destination. The surface renders; the entry places.
- */
-export interface RenderedRuntimeDocument {
-  /** Repo-relative with POSIX separators, or `~/`-prefixed for a user-global target. */
-  readonly path: string;
-  readonly regions: readonly ManagedRegion[];
-}
+  | "opencode-runtime-document"
+  | "opencode-companion-copies";
 
 export interface ProjectionInput {
   repoPath: string;
@@ -75,6 +46,8 @@ export interface ProjectionInput {
   globalConfigStore?: GlobalConfigStore;
   /** Rendered by the active Runtime Surfaces; placed by the `wrap` scope's entries. */
   runtimeDocuments?: readonly RenderedRuntimeDocument[];
+  /** Restricts runtime-tagged entries to these runtimes; every runtime when absent. */
+  runtimes?: readonly WrapRuntime[];
 }
 
 export interface ProjectionRemovalInput {
@@ -85,6 +58,23 @@ export interface ProjectionRemovalInput {
 
 export type ProjectionWriteState = "written" | "current" | "skipped";
 export type ProjectionRemoveState = "removed" | "absent" | "retained" | "covered";
+
+/** Repo-relative paths an entry maintaining several files wrote or withdrew. */
+export interface ProjectionChangedPaths {
+  written: string[];
+  removed: string[];
+}
+
+/**
+ * What a write may return instead of a bare state, when it has something to
+ * tell the operator. The entry reports; it never prints — the caller presents
+ * warnings and changed paths without knowing which entry produced them.
+ */
+export interface ProjectionWriteReport {
+  state: ProjectionWriteState;
+  warnings?: string[];
+  changed?: ProjectionChangedPaths;
+}
 
 /**
  * Every entry names its inverse. `self` removes its own path, `entry` is covered
@@ -105,8 +95,10 @@ export interface ProjectionEntry {
   /** Repo-relative, POSIX separators. An entry spanning siblings names its primary. */
   readonly path: string;
   readonly scopes: readonly ProjectionScope[];
+  /** Set on entries that belong to one Agent Runtime; see {@link ProjectionInput.runtimes}. */
+  readonly runtime?: WrapRuntime;
   /** `skipped` when an input this entry needs was not supplied. */
-  write(input: ProjectionInput): Promise<ProjectionWriteState>;
+  write(input: ProjectionInput): Promise<ProjectionWriteState | ProjectionWriteReport>;
   /**
    * Whether a failed write is reported without failing the operation that
    * triggered the projection. Only for an entry something else already covers:
@@ -132,6 +124,10 @@ export interface ProjectionEntryOutcome {
   state: ProjectionWriteState | ProjectionRemoveState | "failed";
   error?: Error;
   degradable?: boolean;
+  /** Present only when the entry had something to say. */
+  warnings?: string[];
+  /** Present only when the entry wrote or withdrew paths it reports one by one. */
+  changed?: ProjectionChangedPaths;
 }
 
 export interface ProjectionResult {
@@ -162,4 +158,11 @@ export interface ProjectionDescription {
 /** A degradable entry's failure is reported in the outcomes and nowhere else. */
 export function firstFailure(outcomes: ProjectionEntryOutcome[]): ProjectionEntryOutcome | null {
   return outcomes.find((outcome) => outcome.state === "failed" && !outcome.degradable) ?? null;
+}
+
+/** Names the failed entry: "the projection" alone would not say what to fix. */
+export function entryFailureMessage(outcome: ProjectionEntryOutcome, repositoryId: string): string {
+  const reason = outcome.error?.message ?? "projection failed";
+  const target = outcome.id === "projection-pair" ? "the projection" : outcome.path;
+  return `failed to write ${target} for ${repositoryId}: ${reason}`;
 }

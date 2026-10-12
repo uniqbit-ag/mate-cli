@@ -18,11 +18,13 @@ import {
   cachedCompanionForkState,
   companionForkRefusal,
   COMPANION_SYNC_COMMAND,
+  OPENCODE_LAUNCH_COMMAND,
   COMPANION_SYNC_TIMEOUT_MS,
   persistedCompanionGitStalenessLines,
   syncCompanionUnattended,
   unattendedSyncStalenessLines,
 } from "./companion-sync";
+import { companionLockPath } from "./companion-lock";
 import { emptyCompanionPolicy } from "./policy";
 import { makeSshStub, stubSshUrl } from "../../../../test/ssh-stub";
 
@@ -239,6 +241,55 @@ describe("the consent gate", () => {
     expect(
       (await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home })).status,
     ).toBe("not-applicable");
+  });
+});
+
+describe("the companion lock", () => {
+  function holdLock(fixture: Fixture): string {
+    const lockPath = companionLockPath(fixture.companion, fixture.home);
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, String(process.pid));
+    return lockPath;
+  }
+
+  test("a try-only sync skips a held lock at once, running no Git", async () => {
+    const fixture = makeFixture();
+    commitUpstream(fixture, "remote");
+    holdLock(fixture);
+    const before = git(fixture.companion, "rev-parse", "origin/main");
+
+    const outcome = await syncCompanionUnattended(fixture.companion, {
+      homeDir: fixture.home,
+      lock: "try",
+    });
+
+    expect(outcome).toMatchObject({ status: "busy", changed: false });
+    expect(unattendedSyncStalenessLines(outcome)).toEqual([]);
+    /** No fetch ran: the remote-tracking ref still names the old commit. */
+    expect(git(fixture.companion, "rev-parse", "origin/main")).toBe(before);
+    expect(
+      readCompanionGitRecord(fixture.companion, fixture.home).unfinishedReason,
+    ).toBeUndefined();
+  });
+
+  test("a waiting sync runs once the holder releases the lock", async () => {
+    const fixture = makeFixture();
+    commitUpstream(fixture, "remote");
+    const lockPath = holdLock(fixture);
+    setTimeout(() => fs.rmSync(lockPath, { force: true }), 300);
+
+    const outcome = await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+
+    expect(outcome).toMatchObject({ status: "complete", changed: true });
+    expect(fs.existsSync(lockPath)).toBe(false);
+  });
+
+  test("taking the lock leaves the companion clean", async () => {
+    const fixture = makeFixture();
+
+    await syncCompanionUnattended(fixture.companion, { homeDir: fixture.home });
+
+    expect(git(fixture.companion, "status", "--porcelain=v1", "--untracked-files=all")).toBe("");
   });
 });
 
@@ -557,6 +608,21 @@ describe("operator-facing staleness lines", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("history has diverged");
     expect(lines[0]).toContain(COMPANION_SYNC_COMMAND);
+  });
+
+  test("point an OpenCode operator at the managed launch instead", () => {
+    const lines = unattendedSyncStalenessLines(
+      {
+        status: "unfinished",
+        changed: false,
+        companionPath: "/tmp/acme-companion",
+        reason: "history has diverged from origin/main",
+      },
+      "opencode",
+    );
+    expect(lines).toEqual([
+      `Companion not updated: history has diverged from origin/main. Restart with \`${OPENCODE_LAUNCH_COMMAND}\` to fix it.`,
+    ]);
   });
 
   test("are empty for every other outcome", async () => {

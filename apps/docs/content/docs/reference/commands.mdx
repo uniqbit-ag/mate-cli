@@ -12,6 +12,7 @@ description: Current Mate CLI commands and their execution contexts.
 | `mate companion list [--json]`                  | Linked context          | List linked repositories.                                                  |
 | `mate companion open`                           | Linked context          | Add the working repository and companion to the preferred editor.          |
 | `mate companion tui`                            | Linked context, TTY     | Open a shell in the resolved companion.                                    |
+| `mate companion sync`                           | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
 | `mate companion register [path]`                | Any                     | Register an already-configured companion without reconfiguring it.         |
 | `mate companion prepare --from <bundle> [path]` | Any                     | Prepare machine-local dependencies from a fully installed prebuilt bundle. |
 
@@ -49,6 +50,8 @@ Section IDs must be unique and dynamic values are limited to JSON scalar values.
 
 Use `--json` with either path for normalized JSON output. Otherwise Mate writes
 self-contained HTML to a temporary file and opens it in the default browser.
+A report with a `mermaid` diagram loads the pinned Mermaid runtime from
+jsDelivr; offline, each diagram shows as its source text.
 The HTML includes a browser-native `Print / Save as PDF` control; selecting
 `Save as PDF` in the print dialog creates the PDF. No PDF runtime or server is
 required.
@@ -108,6 +111,81 @@ All other arguments after the separator are forwarded to the agent.
 
 Confirmation is shown only when standard input is a TTY. Non-interactive
 launches proceed without a prompt.
+
+### OpenCode: Wrap, Prepare, Launch
+
+`mate opencode` from a Working Repository syncs the companion with Git, wraps the
+repository for OpenCode when that wrap is missing or out of date, re-projects the
+companion copies and runs the capability preflight, then starts plain `opencode`.
+`mate claude` runs the same preparation, with the Claude projection instead of the
+wrap. At a terminal the companion Git sync is interactive, and a sync that still
+fails stops the launch. When another companion sync is running, the launch says so
+and waits for it. It sets no `OPENCODE_CONFIG_DIR`, so your global OpenCode
+configuration (`~/.config/opencode`) applies as usual; an `OPENCODE_CONFIG_DIR` or
+`OPENCODE_CONFIG_CONTENT` you set yourself is passed through. With `-- --no-git`
+only the local preparation runs.
+
+Because the wrap carries everything, plain `opencode` in a wrapped repository is
+equivalent: before the session starts, the Mate plugin re-projects the companion
+copies and runs the capability preflight, waiting at most 30 seconds, and enables
+Mate's MCP servers once that is done. It never waits on the network: the companion
+Git sync then runs in the background, fast-forward only, on every session start.
+Changes it brings in are re-projected into the running session. It cannot prompt, so
+a diverged history, a local edit the update would overwrite, or an unreachable
+remote is reported as a warning to restart with `mate opencode`, whose attended sync
+can resolve it, and the session keeps running on the current companion. This also
+holds when OpenCode's shared background service was started from another directory.
+
+## Wrapping
+
+```sh
+mate wrap [--companion PATH]
+mate unwrap
+```
+
+`mate wrap` makes sessions you start yourself (`claude`, `opencode`) load the
+companion. For OpenCode it writes `.opencode/opencode.json` regions (Mate plugin,
+companion skills, `references.mate`, permissions, MCP servers, and settings from the
+companion's own `.opencode/opencode.json` that your repository does not set) and
+copies the companion's `.opencode/` files (commands, agents, skills, plugins, tools)
+into your repository's `.opencode/` as regular, git-excluded files. Mate records
+every copy it owns:
+
+- a file your repository already has at the same path wins; Mate warns and leaves it;
+- an owned copy you edited locally is replaced on the next re-projection, with a
+  warning naming the companion file to edit instead;
+- a file removed from the companion is withdrawn from your repository.
+
+Paths into the Mate installation go through `~/.mate/runtime/`, which every `mate`
+run keeps pointing at the installed version, so a wrapped repository survives a
+reinstall or Node switch. Installing or upgrading does not create that directory;
+the first `mate` run does. Until then, plain `opencode` in a wrapped repository starts
+without the companion guidance and reports the missing directory, so run `mate` once
+after upgrading. If you uninstalled Mate, run `mate unwrap` (or `mate` once after
+reinstalling).
+
+`mate claude` does not run in a repository wrapped for Claude; `mate opencode`
+always runs. `mate unwrap` withdraws the documents and the owned copies and keeps
+the repository link.
+
+## Session Preparation
+
+```sh
+mate session prepare --repo <dir> [--json] [--sync]
+```
+
+Runs what a managed launch prepares, without starting an agent. Without `--sync` it
+touches no remote: it syncs and self-heals companion files, re-projects the OpenCode
+documents and copies, and runs the capability preflight. When another companion sync
+holds the lock, it skips at once. With `--sync` it first fetches and fast-forwards
+the companion, then runs that local preparation only when the companion moved. A
+diverged history, an overlapping local edit or an unreachable remote is a warning
+to restart with `mate opencode`, not a failure. Every companion sync (managed
+launches, `mate companion sync`, session-start repairs and this command) is
+serialized through one lock per companion under `~/.mate/locks/`. The command
+refuses a repository that is not wrapped for OpenCode and names `mate wrap`.
+`--json` prints each step's outcome and the warnings. The OpenCode plugin calls
+this for you.
 
 ### Exit Status And Signals
 

@@ -12,6 +12,7 @@ import * as editor from "./editor";
 import { FrameworkLauncher, launcherDeps } from "./launcher";
 import type { LaunchContext } from "./framework-context";
 import type { ProjectionInput, ProjectionResult } from "./projection-types";
+import { sessionPrepareDeps } from "./session-prepare";
 import { LaunchPreflightError, type CapabilityConfig, type LaunchRequest } from "./types";
 
 class TestAdapter extends LaunchAdapter {
@@ -71,7 +72,7 @@ function projectedNothing(): ProjectionResult {
 }
 
 /** Every launch refreshes the Projection Root; tests not about it stub it out. */
-const originalRefreshProjectionRoot = launcherDeps.refreshProjectionRoot;
+const originalRefreshProjectionRoot = sessionPrepareDeps.refreshProjectionRoot;
 const refreshProjectionRoot = mock(async () => ({ kind: "current" }) as never);
 
 /**
@@ -79,20 +80,23 @@ const refreshProjectionRoot = mock(async () => ({ kind: "current" }) as never);
  * than left to read the real `/tmp/repo`, so the suite cannot be decided by a
  * directory that happens to exist on the machine running it.
  */
-const originalIsWrapped = launcherDeps.isWrapped;
+const originalIsWrapped = sessionPrepareDeps.isWrapped;
 const isWrapped = mock(async () => false);
+const originalIsInteractiveTerminal = sessionPrepareDeps.isInteractiveTerminal;
 
 beforeEach(() => {
   refreshProjectionRoot.mockClear();
-  launcherDeps.refreshProjectionRoot = refreshProjectionRoot;
+  sessionPrepareDeps.refreshProjectionRoot = refreshProjectionRoot;
   isWrapped.mockClear();
   isWrapped.mockResolvedValue(false);
-  launcherDeps.isWrapped = isWrapped;
+  sessionPrepareDeps.isWrapped = isWrapped;
+  sessionPrepareDeps.isInteractiveTerminal = () => false;
 });
 
 afterEach(() => {
-  launcherDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
-  launcherDeps.isWrapped = originalIsWrapped;
+  sessionPrepareDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
+  sessionPrepareDeps.isWrapped = originalIsWrapped;
+  sessionPrepareDeps.isInteractiveTerminal = originalIsInteractiveTerminal;
   resetActiveDistribution();
   mock.restore();
 });
@@ -132,12 +136,12 @@ describe("FrameworkLauncher", () => {
     const syncCompanionFiles = mock(async () => {});
     const projectWorkingRepo = mock(async () => projectedNothing());
 
-    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
-    launcherDeps.syncCompanionGit = syncCompanionGit;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
-    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
+    sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
+    sessionPrepareDeps.projectLaunch = projectWorkingRepo;
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
@@ -152,9 +156,9 @@ describe("FrameworkLauncher", () => {
         companionPath: "/tmp/companion",
       });
     } finally {
-      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+      sessionPrepareDeps.syncCompanionGit = originalSyncCompanionGit;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.projectLaunch = originalProjectWorkingRepo;
     }
 
     expect(syncCompanionFiles).not.toHaveBeenCalled();
@@ -187,17 +191,17 @@ describe("FrameworkLauncher", () => {
       events.push("repo-settings");
       return projectedNothing();
     });
-    launcherDeps.refreshProjectionRoot = mock(async () => {
+    sessionPrepareDeps.refreshProjectionRoot = mock(async () => {
       events.push("projection");
       return { kind: "current" } as never;
     });
 
-    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
-    launcherDeps.syncCompanionGit = syncCompanionGit;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
-    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
+    sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
+    sessionPrepareDeps.projectLaunch = projectWorkingRepo;
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
@@ -205,6 +209,7 @@ describe("FrameworkLauncher", () => {
     });
 
     try {
+      sessionPrepareDeps.isInteractiveTerminal = () => true;
       const prepared = await launcher.prepare(makeRequest({ interactiveGit: true }));
 
       expect(syncCompanionGit).toHaveBeenCalledTimes(1);
@@ -228,9 +233,9 @@ describe("FrameworkLauncher", () => {
         stderr: "",
       });
     } finally {
-      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+      sessionPrepareDeps.syncCompanionGit = originalSyncCompanionGit;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.projectLaunch = originalProjectWorkingRepo;
     }
 
     expect(adapter.run).toHaveBeenCalledTimes(1);
@@ -244,16 +249,16 @@ describe("FrameworkLauncher", () => {
     ]);
     const syncCompanionGit = mock(async () => {});
     const syncCompanionFiles = mock(async () => {});
-    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    launcherDeps.syncCompanionGit = syncCompanionGit;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
 
     try {
       await launcher.prepare(makeRequest({ scope: "companion" }));
     } finally {
-      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.syncCompanionGit = originalSyncCompanionGit;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
     }
 
     expect(isWrapped).not.toHaveBeenCalled();
@@ -288,10 +293,10 @@ describe("FrameworkLauncher", () => {
     const projectWorkingRepo = mock(async (_input: ProjectionInput) => projectedNothing());
     const syncCompanionFiles = mock(async () => {});
 
-    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    launcherDeps.projectWorkingRepo = projectWorkingRepo;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    sessionPrepareDeps.projectLaunch = projectWorkingRepo;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
@@ -301,8 +306,8 @@ describe("FrameworkLauncher", () => {
     try {
       await launcher.prepare(makeRequest());
     } finally {
-      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.projectLaunch = originalProjectWorkingRepo;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
     }
 
     const input = projectWorkingRepo.mock.calls[0]?.[0];
@@ -381,10 +386,10 @@ describe("FrameworkLauncher", () => {
     const { launcher, adapter } = createLauncher();
     const syncCompanionGit = mock(async () => {});
     const syncCompanionFiles = mock(async () => {});
-    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    launcherDeps.syncCompanionGit = syncCompanionGit;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
@@ -396,8 +401,8 @@ describe("FrameworkLauncher", () => {
       expect(syncCompanionFiles).toHaveBeenCalledTimes(1);
       await prepared.execute();
     } finally {
-      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.syncCompanionGit = originalSyncCompanionGit;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
     }
 
     expect(adapter.run).toHaveBeenCalledTimes(1);
@@ -413,10 +418,10 @@ describe("FrameworkLauncher", () => {
       throw new Error("sync failed");
     });
     const syncCompanionFiles = mock(async () => {});
-    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    launcherDeps.syncCompanionGit = syncCompanionGit;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
@@ -425,8 +430,8 @@ describe("FrameworkLauncher", () => {
     try {
       await expect(launcher.prepare(makeRequest())).rejects.toThrow("sync failed");
     } finally {
-      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.syncCompanionGit = originalSyncCompanionGit;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
     }
 
     expect(syncCompanionFiles).not.toHaveBeenCalled();
@@ -443,10 +448,10 @@ describe("FrameworkLauncher", () => {
     );
     const syncCompanionGit = mock(async () => {});
     const syncCompanionFiles = mock(async () => {});
-    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    launcherDeps.syncCompanionGit = syncCompanionGit;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
@@ -458,8 +463,8 @@ describe("FrameworkLauncher", () => {
       expect(syncCompanionFiles).toHaveBeenCalledTimes(1);
       await prepared.execute();
     } finally {
-      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.syncCompanionGit = originalSyncCompanionGit;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
     }
 
     expect(adapter.run).toHaveBeenCalledTimes(1);
@@ -481,10 +486,10 @@ describe("FrameworkLauncher", () => {
         const { launcher, adapter } = createLauncher();
         const syncCompanionFiles = mock(async () => {});
         const projectWorkingRepo = mock(async () => projectedNothing());
-        const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-        const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
-        launcherDeps.syncCompanionFiles = syncCompanionFiles;
-        launcherDeps.projectWorkingRepo = projectWorkingRepo;
+        const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+        const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
+        sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
+        sessionPrepareDeps.projectLaunch = projectWorkingRepo;
 
         spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
           id: "repo",
@@ -502,8 +507,8 @@ describe("FrameworkLauncher", () => {
           for (const key of Object.keys(vars)) {
             delete process.env[key];
           }
-          launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-          launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+          sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
+          sessionPrepareDeps.projectLaunch = originalProjectWorkingRepo;
         }
 
         expect(adapter.run).toHaveBeenCalledTimes(1);
@@ -520,13 +525,13 @@ describe("FrameworkLauncher", () => {
     await fs.writeFile(blocker, "", "utf8");
 
     const { launcher, adapter } = createLauncher();
-    launcherDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
+    sessionPrepareDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
     const syncCompanionFiles = mock(async () => {});
     const projectWorkingRepo = mock(async () => projectedNothing());
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
-    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
+    sessionPrepareDeps.projectLaunch = projectWorkingRepo;
     const warn = spyOn(console, "error").mockImplementation(() => {});
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
@@ -540,8 +545,8 @@ describe("FrameworkLauncher", () => {
       expect(warn.mock.calls.flat().join("\n")).toContain("acme");
     } finally {
       warn.mockRestore();
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.projectLaunch = originalProjectWorkingRepo;
       await fs.rm(root, { recursive: true, force: true });
     }
   });
@@ -555,8 +560,8 @@ describe("FrameworkLauncher", () => {
 
     const { launcher, adapter } = createLauncher();
     const syncCompanionFiles = mock(async () => {});
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "acme",
@@ -570,7 +575,7 @@ describe("FrameworkLauncher", () => {
       expect((failure as Error).message).toContain("acme");
       expect(adapter.validateLaunch).not.toHaveBeenCalled();
     } finally {
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
       await fs.chmod(claudeDir, 0o755);
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -592,10 +597,10 @@ describe("FrameworkLauncher", () => {
         },
       ],
     }));
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
-    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
+    sessionPrepareDeps.projectLaunch = projectWorkingRepo;
     const warn = spyOn(console, "error").mockImplementation(() => {});
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
@@ -609,8 +614,8 @@ describe("FrameworkLauncher", () => {
       expect(warn.mock.calls.flat().join("\n")).toContain("EPERM: operation not permitted");
     } finally {
       warn.mockRestore();
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.projectLaunch = originalProjectWorkingRepo;
     }
   });
 });
@@ -628,12 +633,12 @@ describe("launching in a wrapped working repository", () => {
     const syncCompanionFiles = mock(async () => {});
     const projectWorkingRepo = mock(async () => projectedNothing());
 
-    const originalSyncCompanionGit = launcherDeps.syncCompanionGit;
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
-    launcherDeps.syncCompanionGit = syncCompanionGit;
-    launcherDeps.syncCompanionFiles = syncCompanionFiles;
-    launcherDeps.projectWorkingRepo = projectWorkingRepo;
+    const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
+    sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
+    sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
+    sessionPrepareDeps.projectLaunch = projectWorkingRepo;
     isWrapped.mockResolvedValue(true);
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
@@ -647,9 +652,9 @@ describe("launching in a wrapped working repository", () => {
         /repo is wrapped[\s\S]*mate unwrap/,
       );
     } finally {
-      launcherDeps.syncCompanionGit = originalSyncCompanionGit;
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+      sessionPrepareDeps.syncCompanionGit = originalSyncCompanionGit;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.projectLaunch = originalProjectWorkingRepo;
     }
 
     /**
@@ -668,10 +673,10 @@ describe("launching in a wrapped working repository", () => {
 
   test("an unwrapped repository still launches", async () => {
     const { launcher, adapter } = createLauncher();
-    const originalSyncCompanionFiles = launcherDeps.syncCompanionFiles;
-    const originalProjectWorkingRepo = launcherDeps.projectWorkingRepo;
-    launcherDeps.syncCompanionFiles = mock(async () => {});
-    launcherDeps.projectWorkingRepo = mock(async () => projectedNothing());
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
+    sessionPrepareDeps.syncCompanionFiles = mock(async () => {});
+    sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
@@ -681,11 +686,151 @@ describe("launching in a wrapped working repository", () => {
     try {
       await (await launcher.prepare(makeRequest())).execute();
     } finally {
-      launcherDeps.syncCompanionFiles = originalSyncCompanionFiles;
-      launcherDeps.projectWorkingRepo = originalProjectWorkingRepo;
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.projectLaunch = originalProjectWorkingRepo;
     }
 
-    expect(isWrapped).toHaveBeenCalledWith("/tmp/repo");
+    expect(isWrapped).toHaveBeenCalledWith("/tmp/repo", "claude");
+    expect(adapter.run).toHaveBeenCalled();
+  });
+});
+
+describe("a managed OpenCode launch", () => {
+  const original = { prepareSession: launcherDeps.prepareSession };
+  const order: string[] = [];
+
+  function openCodeLauncher(options: { current?: boolean; ok?: boolean } = {}) {
+    const adapter = new TestAdapter();
+    const { launcher } = createLauncher(adapter);
+    (launcher as unknown as { adapters: Map<string, LaunchAdapter> }).adapters = new Map([
+      ["opencode", adapter],
+    ]);
+    (launcher as unknown as { resolveConfig(): Promise<LaunchContext> }).resolveConfig = async () =>
+      ({
+        companionPath: "/tmp/companion",
+        launchWorkingDirectory: "/tmp/repo",
+        repositoryId: "repo",
+        configStore: {
+          load: async () => ({ allowedAgents: ["opencode"], capabilities: [], git: "auto" }),
+        },
+        workingRepoStore: {},
+      }) as LaunchContext;
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+    });
+    launcherDeps.prepareSession = mock(
+      async (input: { mode: "attended"; runtime: "opencode"; skipGit?: boolean }) => {
+        order.push(`prepare:${input.runtime}:${input.mode}${input.skipGit ? ":no-git" : ""}`);
+        return {
+          ok: options.ok ?? true,
+          mode: input.mode,
+          runtime: input.runtime,
+          repositoryId: "repo",
+          companionPath: "/tmp/companion",
+          steps: [
+            {
+              step: "working-target" as const,
+              outcome: "ok" as const,
+              detail: options.current ? "current" : "updated (wrote .opencode/opencode.json)",
+            },
+            {
+              step: "preflight" as const,
+              outcome: options.ok === false ? ("failed" as const) : ("ok" as const),
+              detail: "acme",
+            },
+          ],
+          warnings: [],
+        };
+      },
+    );
+    return { launcher, adapter };
+  }
+
+  beforeEach(() => {
+    order.length = 0;
+  });
+
+  afterEach(() => {
+    Object.assign(launcherDeps, original);
+  });
+
+  test("prepares in one pass, reporting a wrap it wrote, then runs", async () => {
+    const { launcher, adapter } = openCodeLauncher();
+    const errors = spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await (await launcher.prepare(makeRequest({ tool: "opencode", args: [] }))).execute();
+
+    const lines = errors.mock.calls.map((call) => String(call[0]).trimEnd());
+    errors.mockRestore();
+    expect(order).toEqual(["prepare:opencode:attended"]);
+    expect(lines).toContain(
+      "mate: wrapped repo for OpenCode: updated (wrote .opencode/opencode.json)",
+    );
+    expect(adapter.run).toHaveBeenCalled();
+  });
+
+  test("a current wrap is not reported", async () => {
+    const { launcher } = openCodeLauncher({ current: true });
+    const errors = spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await launcher.prepare(makeRequest({ tool: "opencode", args: [] }));
+
+    const lines = errors.mock.calls.map((call) => String(call[0]).trimEnd());
+    errors.mockRestore();
+    expect(order).toEqual(["prepare:opencode:attended"]);
+    expect(lines.some((line) => line.includes("wrapped"))).toBe(false);
+  });
+
+  test("is never refused in a wrapped repository", async () => {
+    const { launcher, adapter } = openCodeLauncher({ current: true });
+    isWrapped.mockResolvedValue(true);
+
+    await (await launcher.prepare(makeRequest({ tool: "opencode", args: [] }))).execute();
+
+    expect(adapter.run).toHaveBeenCalled();
+  });
+
+  test("--no-git skips only the Git sync of the attended prepare", async () => {
+    const { launcher } = openCodeLauncher({ current: true });
+
+    await launcher.prepare(makeRequest({ tool: "opencode", args: [], skipGit: true }));
+
+    expect(order).toEqual(["prepare:opencode:attended:no-git"]);
+  });
+
+  test("a failed prepare step fails the launch before OpenCode runs", async () => {
+    const { launcher, adapter } = openCodeLauncher({ current: true, ok: false });
+
+    await expect(launcher.prepare(makeRequest({ tool: "opencode", args: [] }))).rejects.toThrow(
+      /preflight: acme/,
+    );
+    expect(adapter.run).not.toHaveBeenCalled();
+  });
+});
+
+describe("the wrapped-repository refusal is scoped to Claude", () => {
+  test("an OpenCode-only wrap does not refuse mate claude", async () => {
+    const { launcher, adapter } = createLauncher();
+    const originalFiles = sessionPrepareDeps.syncCompanionFiles;
+    const originalProject = sessionPrepareDeps.projectLaunch;
+    sessionPrepareDeps.syncCompanionFiles = mock(async () => {});
+    sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
+    isWrapped.mockImplementation(
+      (async (_repo: string, runtime: string) => runtime === "opencode") as never,
+    );
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "repo",
+      path: "/tmp/repo",
+    });
+
+    try {
+      await (await launcher.prepare(makeRequest())).execute();
+    } finally {
+      sessionPrepareDeps.syncCompanionFiles = originalFiles;
+      sessionPrepareDeps.projectLaunch = originalProject;
+    }
+
     expect(adapter.run).toHaveBeenCalled();
   });
 });

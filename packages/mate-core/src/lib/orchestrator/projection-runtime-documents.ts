@@ -1,44 +1,38 @@
-import crypto from "node:crypto";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
-import { repoLocalDirPath } from "../../runtime/repo-local";
+import { FRAMEWORK_NAME } from "../../framework";
+import { gitEnvironment } from "../../runtime/companion-git";
+import {
+  documentRegions,
+  readManifest,
+  updateManifest,
+  withDocument,
+  withoutDocuments,
+  type ManagedRegion,
+  type RenderedRuntimeDocument,
+} from "../../runtime/runtime-document-manifest";
+import { writeAtomic } from "../../runtime/write-atomic";
 import { pruneEmptyAncestors } from "../../tools/setup/utils";
-import type { ManagedRegion, RenderedRuntimeDocument } from "./projection-types";
+
+export {
+  CLAUDE_LOCAL_CONFIG_DOCUMENT,
+  CLAUDE_MCP_DOCUMENT,
+  CLAUDE_SETTINGS_DOCUMENT,
+  OPENCODE_CONFIG_DOCUMENT,
+} from "../../runtime/runtime-document-manifest";
 
 /**
  * Places the documents an Agent Runtime discovers by its own upward walk from
  * the current directory. A Runtime Surface renders one as a value; this module
  * writes it, records the regions it wrote at the Projection Root, and removes
  * exactly those again — which is what makes a working-target document swept by
- * `mate working cleanup` without cleanup holding a list of them.
+ * `mate working cleanup` without cleanup holding a list of them. The manifest
+ * — format, I/O and queries — belongs to `runtime/runtime-document-manifest`.
  */
-
-const MANIFEST_FILE = "runtime-documents.json";
-
-/**
- * The three destinations, repo-relative with POSIX separators. Declared here
- * rather than beside the renderers so the entry catalogue names a destination
- * without reaching into an Agent Runtime's Runtime Surface.
- */
-export const CLAUDE_SETTINGS_DOCUMENT = ".claude/settings.local.json";
-export const CLAUDE_MCP_DOCUMENT = ".mcp.json";
-export const OPENCODE_CONFIG_DOCUMENT = ".opencode/opencode.json";
-
-/**
- * The one destination outside the Working Repository. Claude Code has no
- * project file that declares a pre-approved MCP server: `.mcp.json` servers sit
- * "pending approval" until a human accepts them in a session, and the settings
- * document can only enable a server `.mcp.json` already declares. Local scope —
- * `projects[<repo>].mcpServers` in the user's `~/.claude.json`, what
- * `claude mcp add --scope local` writes — is the only channel that is live on
- * first use.
- *
- * Written `~`-prefixed rather than resolved so the manifest recording it stays
- * machine-independent, and so an external target is identifiable as one.
- */
-export const CLAUDE_LOCAL_CONFIG_DOCUMENT = "~/.claude.json";
 
 /**
  * A document Mate does not own the surroundings of. Mate's regions are stripped
@@ -50,6 +44,38 @@ export function isExternalDocument(documentPath: string): boolean {
   return documentPath.startsWith("~/");
 }
 
+const execFileAsync = promisify(execFile);
+
+/** Whether Git tracks the repo-relative path; any `ls-files` failure reads as untracked. */
+async function gitTracks(repoPath: string, relativePath: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("git", ["ls-files", "-z", "--", relativePath], {
+      cwd: path.resolve(repoPath),
+      encoding: "utf8",
+      env: gitEnvironment(),
+    });
+    return stdout.split("\0").includes(relativePath);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Excludes don't hide tracked files, so regions with machine-absolute paths
+ * would land in a committed document: warn, still write. Best-effort: any
+ * `ls-files` failure reads as "not tracked".
+ */
+export async function trackedDocumentWarnings(
+  repoPath: string,
+  documentPath: string,
+  repositoryId: string,
+): Promise<string[]> {
+  if (!(await gitTracks(repoPath, documentPath))) return [];
+  return [
+    `${documentPath} is tracked by Git in ${repositoryId}; ${FRAMEWORK_NAME} writes machine-absolute companion paths into it, so committing it would push this machine's paths to everyone else on the repository. Untrack it with \`git rm --cached ${documentPath}\` if those paths should stay local.`,
+  ];
+}
+
 /**
  * Injectable so a test never writes to the real `~/.claude.json`. An external
  * target is the one destination outside a temporary fixture, so it is also the
@@ -58,14 +84,6 @@ export function isExternalDocument(documentPath: string): boolean {
 export const runtimeDocumentDeps = {
   homeDir: (): string => os.homedir(),
 };
-
-interface Manifest {
-  documents: Record<string, ManagedRegion[]>;
-}
-
-function manifestPath(repoPath: string): string {
-  return path.join(repoLocalDirPath(repoPath), MANIFEST_FILE);
-}
 
 function documentPathIn(repoPath: string, documentPath: string): string {
   if (isExternalDocument(documentPath)) {
@@ -97,26 +115,9 @@ async function readRaw(filePath: string): Promise<string | null> {
   }
 }
 
-function parseObject(raw: string | null): Record<string, unknown> {
-  if (raw === null) return {};
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (isRecord(parsed)) return parsed;
-  } catch {
-    /* unparseable — start from an empty object */
-  }
-  return {};
-}
-
 /**
- * The same read for a document Mate does not own, where an unparseable one is
- * refused rather than treated as empty. `parseObject`'s fallback is right for
- * the manifest — Mate wrote it and can rebuild it — and ruinous here: a torn
- * read of `~/.claude.json` would be written back as the handful of keys Mate
- * contributes, taking Claude Code's auth, every project's history and its MCP
- * approvals with it, silently and without a backup. Throwing leaves the file
- * as it was and hands the entry catch in `project()` a failed outcome to
- * report, which is the answer an operator can act on.
+ * Unparseable throws, never reads as empty: writing back a torn
+ * `~/.claude.json` would wipe the user's auth and history.
  */
 function parseDocument(raw: string | null, target: string): Record<string, unknown> {
   if (raw === null) return {};
@@ -128,40 +129,6 @@ function parseDocument(raw: string | null, target: string): Record<string, unkno
   }
   if (!isRecord(parsed)) throw new Error(`${target} is not a JSON object; refusing to rewrite it`);
   return parsed;
-}
-
-/**
- * Writes via a sibling temp file + `fs.rename()` so an interrupted write cannot
- * leave a half-written document behind. A reader racing this one — a Claude
- * Code session holding `~/.claude.json` open — observes the old file or the new
- * one, never a truncated one.
- */
-async function writeAtomic(target: string, contents: string): Promise<void> {
-  const tempPath = `${target}.${crypto.randomUUID()}.tmp`;
-  try {
-    await fs.writeFile(tempPath, contents, "utf8");
-    await fs.rename(tempPath, target);
-  } catch (error) {
-    await fs.rm(tempPath, { force: true }).catch(() => {});
-    throw error;
-  }
-}
-
-async function readManifest(repoPath: string): Promise<Manifest> {
-  const parsed = parseObject(await readRaw(manifestPath(repoPath)));
-  return {
-    documents: isRecord(parsed.documents) ? (parsed.documents as Manifest["documents"]) : {},
-  };
-}
-
-async function writeManifest(repoPath: string, manifest: Manifest): Promise<void> {
-  const target = manifestPath(repoPath);
-  if (Object.keys(manifest.documents).length === 0) {
-    await fs.unlink(target).catch(() => {});
-    return;
-  }
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await writeAtomic(target, serialize(manifest));
 }
 
 /** The container holding a region's final key, created on demand when writing. */
@@ -183,6 +150,11 @@ function containerFor(
     node = created;
   }
   return node;
+}
+
+function keyPresent(document: Record<string, unknown>, at: string[]): boolean {
+  const container = containerFor(document, at, false);
+  return container !== null && Object.hasOwn(container, at.at(-1)!);
 }
 
 function applyRegion(document: Record<string, unknown>, region: ManagedRegion): void {
@@ -295,19 +267,22 @@ export async function placeRuntimeDocument(
   const raw = await readRaw(target);
   const document = parseDocument(raw, target);
 
-  const manifest = await readManifest(repoPath);
-  for (const region of manifest.documents[documentPath] ?? []) revertRegion(document, region);
-  for (const region of rendered.regions) applyRegion(document, region);
+  const prior = documentRegions(await readManifest(repoPath), documentPath);
+  for (const region of prior ?? []) revertRegion(document, region);
+  /** After the revert, a key still present is the human's: a yielding region gives way to it. */
+  const applied = rendered.regions.filter(
+    (region) => !(region.kind === "value" && region.yields && keyPresent(document, region.at)),
+  );
+  for (const region of applied) applyRegion(document, region);
   const next = serialize(document);
 
-  const regions = [...rendered.regions] as ManagedRegion[];
-  const recorded = JSON.stringify(manifest.documents[documentPath]) === JSON.stringify(regions);
+  const recorded = JSON.stringify(prior) === JSON.stringify(applied);
   if (next === raw && recorded) return "current";
 
+  /** The file first: a failed write leaves the manifest naming what is really there. */
   await fs.mkdir(path.dirname(target), { recursive: true });
   await writeAtomic(target, next);
-  manifest.documents[documentPath] = regions;
-  await writeManifest(repoPath, manifest);
+  await updateManifest(repoPath, (manifest) => withDocument(manifest, documentPath, applied));
   return "written";
 }
 
@@ -319,13 +294,11 @@ export async function removeRuntimeDocument(
   repoPath: string,
   documentPath: string,
 ): Promise<"removed" | "absent"> {
-  const manifest = await readManifest(repoPath);
-  const regions = manifest.documents[documentPath];
+  const regions = documentRegions(await readManifest(repoPath), documentPath);
   if (!regions) return "absent";
 
   await revertDocumentOnDisk(repoPath, documentPath, regions);
-  delete manifest.documents[documentPath];
-  await writeManifest(repoPath, manifest);
+  await updateManifest(repoPath, (manifest) => withoutDocuments(manifest, [documentPath]));
   return "removed";
 }
 
@@ -358,10 +331,10 @@ async function revertDocumentOnDisk(
 }
 
 /**
- * Withdraws several destinations against a single read and a single write of the
- * manifest. `removeRuntimeDocument` per destination cannot be run concurrently —
- * each rewrites the whole manifest, so the last write restores the keys the
- * others removed — and running it sequentially rewrites the manifest once per
+ * Withdraws several destinations against a single manifest update.
+ * `removeRuntimeDocument` per destination cannot be run concurrently — each
+ * rewrites the whole manifest, so the last write restores the keys the others
+ * removed — and running it sequentially rewrites the manifest once per
  * document. Reverting the files together and recording the outcome once is both
  * safe and one write.
  *
@@ -375,13 +348,13 @@ export async function removeRuntimeDocuments(
   documentPaths: readonly string[],
 ): Promise<{ removed: string[]; absent: string[]; error?: { document: string; error: Error } }> {
   const manifest = await readManifest(repoPath);
-  const recorded = documentPaths.filter((candidate) => manifest.documents[candidate] !== undefined);
-  const absent = documentPaths.filter((candidate) => manifest.documents[candidate] === undefined);
+  const recorded = documentPaths.filter((candidate) => documentRegions(manifest, candidate));
+  const absent = documentPaths.filter((candidate) => !documentRegions(manifest, candidate));
   if (recorded.length === 0) return { removed: [], absent };
 
   const settled = await Promise.allSettled(
     recorded.map((documentPath) =>
-      revertDocumentOnDisk(repoPath, documentPath, manifest.documents[documentPath]!),
+      revertDocumentOnDisk(repoPath, documentPath, documentRegions(manifest, documentPath)!),
     ),
   );
 
@@ -396,29 +369,9 @@ export async function removeRuntimeDocuments(
       };
       continue;
     }
-    delete manifest.documents[documentPath];
     removed.push(documentPath);
   }
 
-  await writeManifest(repoPath, manifest);
+  await updateManifest(repoPath, (current) => withoutDocuments(current, removed));
   return { removed, absent, ...(failure ? { error: failure } : {}) };
-}
-
-/**
- * Every destination the manifest records, in the order it recorded them. This
- * is what makes a Working Repository "wrapped": the manifest is written only by
- * a pass that placed a runtime document, and `mate wrap` is the only pass that
- * places one. Reported as data so neither the launch refusal nor `mate unwrap`
- * holds a list of destinations that the entry catalogue could outgrow.
- */
-export async function recordedRuntimeDocuments(repoPath: string): Promise<string[]> {
-  return Object.keys((await readManifest(repoPath)).documents);
-}
-
-/** Present when Mate recorded regions for it, not merely when the file exists. */
-export async function runtimeDocumentPresent(
-  repoPath: string,
-  documentPath: string,
-): Promise<boolean> {
-  return (await readManifest(repoPath)).documents[documentPath] !== undefined;
 }

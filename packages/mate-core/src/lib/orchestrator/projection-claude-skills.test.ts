@@ -5,6 +5,12 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  links,
+  manifestPath,
+  readManifest,
+  wrappedFor,
+} from "../../runtime/runtime-document-manifest";
+import {
   reconcileWorkingRepoClaudeSkillLinks,
   removeWorkingRepoClaudeSkillLinks,
 } from "./projection-claude-skills";
@@ -34,6 +40,13 @@ async function makeFixture(prefix: string): Promise<{ repoPath: string; companio
     recursive: true,
   });
   return { repoPath, companionPath };
+}
+
+async function addCompanion(root: string, name: string, skill: string): Promise<string> {
+  const companionPath = path.join(root, name);
+  await fs.mkdir(path.join(companionPath, ".claude", "skills", skill), { recursive: true });
+  await fs.writeFile(path.join(companionPath, ".claude", "skills", skill, "SKILL.md"), "s\n");
+  return companionPath;
 }
 
 describe("Claude working-repository skill links", () => {
@@ -126,5 +139,93 @@ describe("Claude working-repository skill links", () => {
     );
     await expect(fs.access(path.join(repoPath, ".claude", "skills", "acme"))).rejects.toThrow();
     await expect(fs.readFile(path.join(custom, "SKILL.md"), "utf8")).resolves.toBe("user skill\n");
+  });
+
+  test("records each link it creates with its target", async () => {
+    const { repoPath, companionPath } = await makeFixture("claude-skill-record-");
+
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true);
+
+    const manifest = await readManifest(repoPath);
+    expect(links(manifest, "claude")).toEqual({
+      ".claude/skills/acme": {
+        runtime: "claude",
+        target: path.join(companionPath, ".claude", "skills", "acme"),
+      },
+    });
+    expect(wrappedFor(manifest, "claude")).toBe(true);
+  });
+
+  test("re-pinning replaces a same-name recorded link without a registry", async () => {
+    const { repoPath, companionPath } = await makeFixture("claude-skill-same-name-");
+    const acmeB = await addCompanion(path.dirname(companionPath), "acme-b", "acme");
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true);
+
+    await expect(reconcileWorkingRepoClaudeSkillLinks(repoPath, acmeB, true)).resolves.toBe(
+      "written",
+    );
+
+    const target = path.join(acmeB, ".claude", "skills", "acme");
+    expect(await fs.realpath(path.join(repoPath, ".claude", "skills", "acme"))).toBe(
+      await fs.realpath(target),
+    );
+    expect(links(await readManifest(repoPath), "claude")).toEqual({
+      ".claude/skills/acme": { runtime: "claude", target },
+    });
+  });
+
+  test("re-pinning away from an unregistered companion removes its recorded link", async () => {
+    const { repoPath, companionPath } = await makeFixture("claude-skill-unregistered-");
+    const acmeB = await addCompanion(path.dirname(companionPath), "acme-b", "other");
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true);
+
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, acmeB, true);
+
+    await expect(fs.lstat(path.join(repoPath, ".claude", "skills", "acme"))).rejects.toThrow();
+    expect(Object.keys(links(await readManifest(repoPath)))).toEqual([".claude/skills/other"]);
+  });
+
+  test("a repointed link is left in place and its record dropped", async () => {
+    const { repoPath, companionPath } = await makeFixture("claude-skill-repointed-");
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true);
+    const link = path.join(repoPath, ".claude", "skills", "acme");
+    const mine = path.join(path.dirname(companionPath), "mine");
+    await fs.mkdir(mine, { recursive: true });
+    await fs.unlink(link);
+    await fs.symlink(mine, link, directoryLinkType);
+
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true);
+    expect(await fs.realpath(link)).toBe(await fs.realpath(mine));
+    expect(links(await readManifest(repoPath))).toEqual({});
+
+    await removeWorkingRepoClaudeSkillLinks(repoPath, [companionPath]);
+    expect(await fs.realpath(link)).toBe(await fs.realpath(mine));
+  });
+
+  test("adopts and records a link an earlier release created", async () => {
+    const { repoPath, companionPath } = await makeFixture("claude-skill-adopt-");
+    const otherRoot = await addCompanion(path.dirname(companionPath), "registered", "legacy");
+    const skillsRoot = path.join(repoPath, ".claude", "skills");
+    await fs.mkdir(skillsRoot, { recursive: true });
+    await fs.symlink(
+      path.join(otherRoot, ".claude", "skills", "legacy"),
+      path.join(skillsRoot, "legacy"),
+      directoryLinkType,
+    );
+
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true, [otherRoot]);
+
+    await expect(fs.lstat(path.join(skillsRoot, "legacy"))).rejects.toThrow();
+    expect(Object.keys(links(await readManifest(repoPath)))).toEqual([".claude/skills/acme"]);
+  });
+
+  test("removal withdraws recorded links without a registry and deletes the manifest", async () => {
+    const { repoPath, companionPath } = await makeFixture("claude-skill-remove-record-");
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, companionPath, true);
+
+    await expect(removeWorkingRepoClaudeSkillLinks(repoPath)).resolves.toBe("removed");
+
+    await expect(fs.lstat(path.join(repoPath, ".claude", "skills", "acme"))).rejects.toThrow();
+    await expect(fs.access(manifestPath(repoPath))).rejects.toThrow();
   });
 });

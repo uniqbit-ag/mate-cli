@@ -124,7 +124,7 @@ describe("the projection target", () => {
     const { repoPath, companionPath } = await makeFixture("mate-target-render-");
     const before = { working: await tree(repoPath), companion: await tree(companionPath) };
 
-    const documents = await renderWorkingRuntimeDocuments(companionPath, config, repoPath);
+    const { documents } = await renderWorkingRuntimeDocuments(companionPath, config, repoPath);
 
     expect(documents.length).toBeGreaterThan(0);
     expect(await tree(repoPath)).toEqual(before.working);
@@ -141,7 +141,7 @@ describe("the projection target", () => {
   test("names the Companion Repository inside every rendered value, never the working one", async () => {
     const { repoPath, companionPath } = await makeFixture("mate-target-paths-");
 
-    const documents = await renderWorkingRuntimeDocuments(companionPath, config, repoPath);
+    const { documents } = await renderWorkingRuntimeDocuments(companionPath, config, repoPath);
     const values = JSON.stringify(
       documents.map((document) => ({
         ...document,
@@ -160,7 +160,7 @@ describe("the projection target", () => {
   test("addresses the local MCP region by the working repository path", async () => {
     const { repoPath, companionPath } = await makeFixture("mate-target-local-mcp-");
 
-    const documents = await renderWorkingRuntimeDocuments(companionPath, config, repoPath);
+    const { documents } = await renderWorkingRuntimeDocuments(companionPath, config, repoPath);
     const local = documents.find((document) => document.path === CLAUDE_LOCAL_CONFIG_DOCUMENT);
 
     expect(local?.regions).toHaveLength(1);

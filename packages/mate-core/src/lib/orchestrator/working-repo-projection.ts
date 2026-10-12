@@ -1,22 +1,21 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { gitEnvironment } from "../../runtime/companion-git";
 import { readProjectionFile } from "../../runtime/projection";
+import { GlobalConfigStore } from "./global-config-store";
 import { repoLocalDirPath } from "../../runtime/repo-local";
-import type { GlobalConfigStore } from "./global-config-store";
 import { projectionEntries } from "./projection-entries";
 import {
-  isExternalDocument,
-  recordedRuntimeDocuments,
-  removeRuntimeDocuments,
-} from "./projection-runtime-documents";
+  copies as recordedCopies,
+  documents as recordedDocuments,
+  readManifest,
+  wrappedFor,
+  type WrapRuntime,
+} from "../../runtime/runtime-document-manifest";
+import { removeRuntimeDocuments } from "./projection-runtime-documents";
 import {
   firstFailure,
-  type RenderedRuntimeDocument,
   type ProjectionDescription,
   type ProjectionEntry,
   type ProjectionEntryOutcome,
@@ -26,10 +25,10 @@ import {
   type ProjectionRemovalResult,
   type ProjectionResult,
   type ProjectionScope,
+  type ProjectionWriteReport,
+  type ProjectionWriteState,
 } from "./projection-types";
-import type { FrameworkConfig, LinkedRepository } from "./types";
-
-const execFileAsync = promisify(execFile);
+import type { LinkedRepository } from "./types";
 
 /**
  * The owner of the Managed Projection: every path Mate places inside a Working
@@ -63,6 +62,21 @@ function outcome(
   };
 }
 
+/** One outcome shape for both forms a write may return; empty reports are omitted. */
+function writeOutcome(
+  entry: ProjectionEntry,
+  written: ProjectionWriteState | ProjectionWriteReport,
+): ProjectionEntryOutcome {
+  if (typeof written === "string") return outcome(entry, written);
+  const { state, warnings = [], changed } = written;
+  const anyChanged = changed && (changed.written.length > 0 || changed.removed.length > 0);
+  return {
+    ...outcome(entry, state),
+    ...(warnings.length > 0 ? { warnings } : {}),
+    ...(anyChanged ? { changed } : {}),
+  };
+}
+
 /**
  * Writes the entries the scope declares, in catalogue order so the managed
  * exclude block precedes anything it covers. Best-effort per entry: one failure
@@ -74,11 +88,13 @@ export async function project(
   input: ProjectionInput,
 ): Promise<ProjectionResult> {
   const outcomes: ProjectionEntryOutcome[] = [];
+  const runtimes = input.runtimes ? new Set(input.runtimes) : null;
   for (const entry of projectionEntries()) {
     if (!entry.scopes.includes(scope)) continue;
+    if (entry.runtime && runtimes && !runtimes.has(entry.runtime)) continue;
     try {
       // oxlint-disable-next-line no-await-in-loop -- catalogue order is the contract
-      outcomes.push(outcome(entry, await entry.write(input)));
+      outcomes.push(writeOutcome(entry, await entry.write(input))); // react-doctor-disable-line react-doctor/async-await-in-loop
     } catch (error) {
       outcomes.push(outcome(entry, "failed", toError(error)));
     }
@@ -93,7 +109,7 @@ export async function project(
  */
 export async function unproject(input: ProjectionRemovalInput): Promise<ProjectionRemovalResult> {
   const outcomes: ProjectionEntryOutcome[] = [];
-  for (const entry of [...projectionEntries()].reverse()) {
+  for (const entry of projectionEntries().toReversed()) {
     const { removal } = entry;
     if (removal.by === "entry") {
       outcomes.push(outcome(entry, "covered"));
@@ -113,39 +129,42 @@ export async function unproject(input: ProjectionRemovalInput): Promise<Projecti
   return { root: repoLocalDirPath(input.repoPath), outcomes };
 }
 
-/** Removes entries that wrap owns but an unwrap must withdraw independently. */
+/**
+ * Removes entries that wrap owns but an unwrap must withdraw independently.
+ * Sequential: several of them rewrite the manifest, and concurrent rewrites
+ * would restore each other's withdrawn records.
+ */
 async function removeWorkingRepositoryUnwrapEntries(
   repoPath: string,
+  registeredCompanionPaths: string[],
 ): Promise<ProjectionEntryOutcome[]> {
-  const entries = projectionEntries().filter(
-    (entry) => entry.removeOnUnwrap && entry.removal.by === "self",
-  );
-  return Promise.all(
-    entries.map(async (entry) => {
-      const removal = entry.removal;
-      if (removal.by !== "self") return outcome(entry, "failed", new Error("invalid removal"));
-      try {
-        return outcome(entry, await removal.remove({ repoPath }));
-      } catch (error) {
-        return outcome(entry, "failed", toError(error));
-      }
-    }),
-  );
+  const outcomes: ProjectionEntryOutcome[] = [];
+  for (const entry of projectionEntries()) {
+    const removal = entry.removal;
+    if (!entry.removeOnUnwrap || removal.by !== "self") continue;
+    try {
+      // oxlint-disable-next-line no-await-in-loop -- each removal rewrites the manifest
+      outcomes.push(outcome(entry, await removal.remove({ repoPath, registeredCompanionPaths }))); // react-doctor-disable-line react-doctor/async-await-in-loop
+    } catch (error) {
+      outcomes.push(outcome(entry, "failed", toError(error)));
+    }
+  }
+  return outcomes;
 }
 
 /** Reads and reports; writes nothing. Freshness is a verdict above this module. */
 export async function describe(repoPath: string): Promise<ProjectionDescription> {
-  const entries: ProjectionEntryPresence[] = [];
-  for (const entry of projectionEntries()) {
-    const present = entry.present
-      ? // oxlint-disable-next-line no-await-in-loop -- reported in catalogue order
-        await entry.present(repoPath)
-      : await fs
-          .access(path.join(path.resolve(repoPath), entry.path))
-          .then(() => true)
-          .catch(() => false);
-    entries.push({ id: entry.id, path: entry.path, kind: entry.kind, present });
-  }
+  const entries: ProjectionEntryPresence[] = await Promise.all(
+    projectionEntries().map(async (entry) => {
+      const present = await (entry.present
+        ? entry.present(repoPath)
+        : fs
+            .access(path.join(path.resolve(repoPath), entry.path))
+            .then(() => true)
+            .catch(() => false));
+      return { id: entry.id, path: entry.path, kind: entry.kind, present };
+    }),
+  );
   return {
     root: repoLocalDirPath(repoPath),
     entries,
@@ -184,122 +203,25 @@ export async function projectWorkingRepository(
 }
 
 /**
- * The rendered runtime documents, placed. Reported per document because the
- * operator asked for these by name: a failure has to say which one failed while
- * the projection already written stays where it is.
- */
-export type RuntimeDocumentsResult =
-  | { kind: "written" | "current"; documents: string[] }
-  | { kind: "failed"; document: string; error: Error };
-
-/**
- * Which of the given repo-relative paths Git already has in its index.
- * Best-effort by construction: a directory that is no repository, a Git that is
- * not installed, and a `ls-files` that fails for any other reason all answer
- * "nothing tracked" — this feeds a warning, and a warning may not fail a wrap.
- */
-async function trackedDocuments(repoPath: string, documentPaths: string[]): Promise<string[]> {
-  if (documentPaths.length === 0) return [];
-  try {
-    const { stdout } = await execFileAsync("git", ["ls-files", "-z", "--", ...documentPaths], {
-      cwd: path.resolve(repoPath),
-      encoding: "utf8",
-      env: gitEnvironment(),
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    return stdout.split("\0").filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * The managed exclude block only hides a file Git does not already track, so a
- * repository that commits one of these documents keeps it in the index and the
- * regions land in a tracked file. Those regions carry machine-absolute
- * companion paths — keys naming directories under this user's home — so a
- * routine `git add -A` pushes one machine's layout to everyone else. Warn and
- * write anyway: refusing would silently drop the projection the repository was
- * wrapped for.
- *
- * Asked here rather than while rendering because the render also runs on every
- * launch; the wrap pass is the one that is a deliberate act, so this is the
- * scope where saying it once is information rather than noise.
- */
-async function warnAboutTrackedDocuments(
-  repository: LinkedRepository,
-  runtimeDocuments: readonly RenderedRuntimeDocument[],
-): Promise<void> {
-  const tracked = await trackedDocuments(
-    repository.path,
-    runtimeDocuments
-      .map((document) => document.path)
-      .filter((documentPath) => !isExternalDocument(documentPath)),
-  );
-  for (const documentPath of tracked) {
-    console.error(
-      `${FRAMEWORK_NAME}: warning: ${documentPath} is tracked by Git in ${repository.id}; ${FRAMEWORK_NAME} writes machine-absolute companion paths into it, so committing it would push this machine's paths to everyone else on the repository.`,
-    );
-    console.error(
-      `Untrack it with \`git rm --cached ${documentPath}\` if those paths should stay local.`,
-    );
-  }
-}
-
-export async function projectWorkingRuntimeDocuments(
-  companionPath: string,
-  repository: LinkedRepository,
-  config: FrameworkConfig,
-  runtimeDocuments: readonly RenderedRuntimeDocument[],
-  globalConfigStore?: GlobalConfigStore,
-): Promise<RuntimeDocumentsResult> {
-  await warnAboutTrackedDocuments(repository, runtimeDocuments);
-  const result = await project("wrap", {
-    repoPath: repository.path,
-    companionPath: path.resolve(companionPath),
-    repository,
-    config,
-    runtimeDocuments,
-    globalConfigStore,
-  });
-
-  const failure = firstFailure(result.outcomes);
-  if (failure) {
-    return {
-      kind: "failed",
-      document: failure.path,
-      error: failure.error ?? new Error("runtime document write failed"),
-    };
-  }
-
-  /** The destinations the caller handed over; the rest of the pass is scaffolding. */
-  const destinations = new Set(
-    runtimeDocuments.map((document) => document.path.split("/").join(path.sep)),
-  );
-  const outcomes = result.outcomes.filter((outcome) => destinations.has(outcome.path));
-  return {
-    kind: outcomes.some((outcome) => outcome.state === "written") ? "written" : "current",
-    documents: [...new Set(outcomes.map((outcome) => outcome.path))],
-  };
-}
-
-/**
  * Whether `mate wrap` configured this Working Repository. Asked of the runtime
  * document manifest rather than of the Projection Root, because the root is not
  * evidence of a wrap: a launch and every Capability command write the
  * projection pair too. The manifest is written only by a pass that placed a
  * runtime document, and wrapping is the only pass that places one.
  */
-export async function isWorkingRepositoryWrapped(repoPath: string): Promise<boolean> {
-  return (await recordedRuntimeDocuments(repoPath)).length > 0;
+export async function isWorkingRepositoryWrapped(
+  repoPath: string,
+  runtime: WrapRuntime,
+): Promise<boolean> {
+  return wrappedFor(await readManifest(repoPath), runtime);
 }
 
 export type UnwrapResult =
-  | { kind: "unwrapped" | "absent"; documents: string[] }
+  | { kind: "unwrapped" | "absent"; documents: string[]; copies: string[] }
   | { kind: "failed"; document: string; error: Error };
 
 /**
- * The inverse of {@link projectWorkingRuntimeDocuments}: runtime documents and
+ * The inverse of a wrap's runtime documents: runtime documents and
  * projected Claude skill links are withdrawn while the Projection Root, the
  * Repository Link and the companion link are left exactly as they were. That
  * asymmetry with `mate working cleanup` is the point — cleanup removes Mate's
@@ -311,10 +233,15 @@ export type UnwrapResult =
  * Driven by the manifest, so it withdraws whatever the wrap that ran recorded,
  * including a destination this release no longer renders.
  */
-export async function unwrapWorkingRuntimeDocuments(repoPath: string): Promise<UnwrapResult> {
-  const documents = await recordedRuntimeDocuments(repoPath);
+export async function unwrapWorkingRuntimeDocuments(
+  repoPath: string,
+  globalConfigStore: GlobalConfigStore = new GlobalConfigStore(),
+): Promise<UnwrapResult> {
+  const manifest = await readManifest(repoPath);
+  const documents = recordedDocuments(manifest);
+  const copies = Object.keys(recordedCopies(manifest));
   const removeWrapEntries = async (): Promise<ProjectionEntryOutcome[]> =>
-    removeWorkingRepositoryUnwrapEntries(repoPath);
+    removeWorkingRepositoryUnwrapEntries(repoPath, await globalConfigStore.list());
   if (documents.length === 0) {
     const outcomes = await removeWrapEntries();
     const failure = firstFailure(outcomes);
@@ -326,8 +253,8 @@ export async function unwrapWorkingRuntimeDocuments(repoPath: string): Promise<U
       };
     }
     return outcomes.some((entry) => entry.state === "removed")
-      ? { kind: "unwrapped", documents: [] }
-      : { kind: "absent", documents: [] };
+      ? { kind: "unwrapped", documents: [], copies }
+      : { kind: "absent", documents: [], copies: [] };
   }
 
   /**
@@ -349,7 +276,7 @@ export async function unwrapWorkingRuntimeDocuments(repoPath: string): Promise<U
       error: failure.error ?? new Error("wrap entry removal failed"),
     };
   }
-  return { kind: "unwrapped", documents: removed };
+  return { kind: "unwrapped", documents: removed, copies };
 }
 
 /**
