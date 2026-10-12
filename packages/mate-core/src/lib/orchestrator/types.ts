@@ -127,9 +127,12 @@ export interface StudioTerminalConfig {
 
 /**
  * A named slice of a companion's configuration, activated by `MATE_AUDIENCE`.
- * Plugins add to the base list; `studio.terminal.agent` overrides the base.
+ * Plugins and capabilities add to the base lists; `studio.terminal.agent`
+ * overrides the base. Capabilities here name what a declared plugin provides,
+ * never a built-in one, so what `install` writes does not depend on the audience.
  */
 export interface AudienceConfig {
+  capabilities?: CapabilityConfig[];
   plugins?: PluginDeclaration[];
   studio?: { terminal?: StudioTerminalConfig };
 }

@@ -232,7 +232,8 @@ token.
 
 One companion can serve several audiences — developers and business analysts,
 say — from one `framework.yaml`. The base configuration is what everyone gets;
-each named audience adds plugins and may override Studio's default agent:
+each named audience adds plugins and the capabilities they provide, and may
+override Studio's default agent:
 
 ```yaml
 plugins:
@@ -243,6 +244,8 @@ studio:
     agent: developer
 audiences:
   ba:
+    capabilities:
+      - name: mate-business-analyst
     plugins:
       - package: "@acme/mate-business-analyst"
         version: 1.0.0
@@ -267,8 +270,8 @@ services:
       MATE_AUDIENCE: ba
 ```
 
-- **Plugins add, the agent overrides.** The effective plugins are the base list
-  followed by the audience's, each with its own `policy` and `config`. The
+- **Plugins and capabilities add, the agent overrides.** The effective plugins are
+  the base list followed by the audience's, each with its own `policy` and `config`. The
   effective default agent is the audience's `studio.terminal.agent`, else the
   base one. Hydration, strict startup verification and Studio use only the
   effective set, so a plugin of an inactive audience is never loaded and its
@@ -277,9 +280,17 @@ services:
   every audience, so `mate install` writes the same files whatever
   `MATE_AUDIENCE` is and a frozen restore works for any audience. Packages of
   inactive audiences are installed but never loaded.
+- **Capabilities follow the audience.** Declare a capability a plugin provides
+  under the audience that loads that plugin, not in the base list: with no
+  audience (or another one) the plugin is not loaded, so a base declaration
+  could not be satisfied and startup would stop. The effective capabilities are
+  the base list plus the active audience's. Built-in capabilities such as
+  `openspec` or `tokensave` stay in the base list, because they change what
+  `mate install` writes.
 - **Validation.** Audience names are lowercase letters, digits and hyphens (up
-  to 64, starting with a letter). An audience may contain only `plugins` and
-  `studio.terminal.agent`. A package may not be declared in both base and an
+  to 64, starting with a letter). An audience may contain only `capabilities`,
+  `plugins` and `studio.terminal.agent`. A capability may not be built in, or
+  declared in both base and an audience, or twice in one audience. A package may not be declared in both base and an
   audience, or twice in one audience; two audiences may share a package only at
   the same version. A hub may not declare audiences.
 - **An undeclared audience stops startup**, naming the requested and the

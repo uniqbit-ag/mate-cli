@@ -63,7 +63,21 @@ export interface CompanionSelections {
   capabilities: string[];
 }
 
-export function readCompanionSelections(companionPath: string): CompanionSelections {
+function capabilityNames(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .map((entry) =>
+          typeof entry === "string" ? entry : String((entry as { name?: unknown })?.name ?? ""),
+        )
+        .filter((name) => name !== "")
+    : [];
+}
+
+/** Base selections plus the capabilities of `audience`, when one is served. */
+export function readCompanionSelections(
+  companionPath: string,
+  audience: string | null = null,
+): CompanionSelections {
   const file = path.join(companionPath, ".mate", "config", "framework.yaml");
   let parsed: unknown;
   try {
@@ -74,16 +88,19 @@ export function readCompanionSelections(companionPath: string): CompanionSelecti
   const config = (parsed ?? {}) as {
     packageManagers?: unknown;
     capabilities?: unknown;
+    audiences?: Record<string, { capabilities?: unknown } | null> | null;
   };
   const packageManagers = Array.isArray(config.packageManagers)
     ? config.packageManagers.map((entry) => String(entry))
     : ["bun"];
-  const capabilities = Array.isArray(config.capabilities)
-    ? config.capabilities.map((entry) =>
-        typeof entry === "string" ? entry : String((entry as { name?: unknown })?.name ?? ""),
-      )
-    : [];
-  return { packageManagers, capabilities: capabilities.filter((name) => name !== "") };
+  const audienceCapabilities =
+    audience !== null && config.audiences && Object.hasOwn(config.audiences, audience)
+      ? capabilityNames(config.audiences[audience]?.capabilities)
+      : [];
+  return {
+    packageManagers,
+    capabilities: [...capabilityNames(config.capabilities), ...audienceCapabilities],
+  };
 }
 
 /** Audience names declared under the companion's `audiences:` key, read raw like its selections. */
@@ -346,7 +363,11 @@ export function prepareStartup(
   }
   const pluginCapabilities = parsePluginCapabilities(verifyResult.stdout);
 
-  assertRequirementsCarried(readCompanionSelections(companion), deps.onPath, pluginCapabilities);
+  assertRequirementsCarried(
+    readCompanionSelections(companion, config.audience),
+    deps.onPath,
+    pluginCapabilities,
+  );
 
   const prepared = deps.run(deps.mate, [
     "companion",

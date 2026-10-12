@@ -1,7 +1,10 @@
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { getDefaultSetupSelections } from "./setup-compatibilities";
+import {
+  getDefaultSetupSelections,
+  listSetupCapabilityCompatibilities,
+} from "./setup-compatibilities";
 import { YamlFileStore } from "./yaml-file-store";
 import { ConfigError, type FrameworkConfig } from "./types";
 
@@ -143,7 +146,7 @@ function validatePluginDeclarations(config: FrameworkConfig): void {
 
 export const AUDIENCE_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 
-const AUDIENCE_KEYS = ["plugins", "studio"] as const;
+const AUDIENCE_KEYS = ["capabilities", "plugins", "studio"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -182,6 +185,43 @@ function validateAudiencePlugins(audience: string, plugins: unknown): Map<string
   return versions;
 }
 
+function validateAudienceCapabilities(
+  audience: string,
+  capabilities: unknown,
+  baseNames: ReadonlySet<string>,
+): void {
+  if (!Array.isArray(capabilities)) {
+    throw new ConfigError(`audience "${audience}": capabilities must be a list.`);
+  }
+  const builtin = new Set(
+    listSetupCapabilityCompatibilities().map((entry) => entry.capability.name),
+  );
+  const seen = new Set<string>();
+  for (const entry of capabilities) {
+    if (!isRecord(entry) || typeof entry.name !== "string" || entry.name === "") {
+      throw new ConfigError(
+        `audience "${audience}": capabilities entry must have a string name: ${JSON.stringify(entry)}`,
+      );
+    }
+    if (builtin.has(entry.name)) {
+      throw new ConfigError(
+        `audience "${audience}": capability "${entry.name}" is built in; declare it in the base capabilities.`,
+      );
+    }
+    if (baseNames.has(entry.name)) {
+      throw new ConfigError(
+        `audience "${audience}": capability "${entry.name}" is also declared in base capabilities.`,
+      );
+    }
+    if (seen.has(entry.name)) {
+      throw new ConfigError(
+        `audience "${audience}": capability "${entry.name}" is declared more than once.`,
+      );
+    }
+    seen.add(entry.name);
+  }
+}
+
 /**
  * Validates the optional `audiences` mapping. Only companions may declare
  * audiences; names are safe identifiers and keys form a closed set so typos
@@ -198,6 +238,7 @@ function validateAudiences(config: FrameworkConfig): void {
   }
 
   const basePackages = new Set((config.plugins ?? []).map((plugin) => plugin.package));
+  const baseCapabilities = new Set((config.capabilities ?? []).map((entry) => entry.name));
   const seen = new Map<string, { audience: string; version: string }>();
 
   for (const [name, audience] of Object.entries(audiences)) {
@@ -215,6 +256,10 @@ function validateAudiences(config: FrameworkConfig): void {
           `audience "${name}": unknown key "${key}" (allowed: ${AUDIENCE_KEYS.join(", ")}).`,
         );
       }
+    }
+
+    if (audience.capabilities !== undefined) {
+      validateAudienceCapabilities(name, audience.capabilities, baseCapabilities);
     }
 
     if (audience.plugins !== undefined) {

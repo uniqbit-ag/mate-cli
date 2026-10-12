@@ -414,12 +414,61 @@ describe("audiences parsing", () => {
       error: /audience "ba".*"@acme\/analyst".*required/,
     },
     {
+      name: "a non-array capabilities value",
+      lines: ["audiences:", "  ba:", "    capabilities: nope"],
+      error: /audience "ba".*capabilities must be a list/,
+    },
+    {
+      name: "a capability without a name",
+      lines: ["audiences:", "  ba:", "    capabilities:", "      - {}"],
+      error: /audience "ba".*capabilities entry/,
+    },
+    {
+      name: "a built-in capability",
+      lines: ["audiences:", "  ba:", "    capabilities:", "      - name: openspec"],
+      error: /audience "ba".*"openspec".*built in/,
+    },
+    {
+      name: "a capability declared twice in one audience",
+      lines: [
+        "audiences:",
+        "  ba:",
+        "    capabilities:",
+        "      - name: acme-reader",
+        "      - name: acme-reader",
+      ],
+      error: /audience "ba".*"acme-reader".*more than once/,
+    },
+    {
       name: "a non-string studio agent",
       lines: ["audiences:", "  ba:", "    studio:", "      terminal:", "        agent: 7"],
       error: /audience "ba".*studio\.terminal\.agent/,
     },
   ])("rejects $name", async ({ lines, error }) => {
     await expect(loadYaml("config-store-audiences-bad-", lines)).rejects.toThrow(error);
+  });
+
+  test("rejects a capability declared in base and an audience", async () => {
+    await expect(
+      loadYaml("config-store-audiences-cap-base-", [
+        "capabilities:",
+        "  - name: acme-reader",
+        "audiences:",
+        "  ba:",
+        "    capabilities:",
+        "      - name: acme-reader",
+      ]),
+    ).rejects.toThrow(/"ba".*"acme-reader".*base/);
+  });
+
+  test("an audience may declare plugin-provided capabilities", async () => {
+    const config = await loadYaml("config-store-audiences-cap-ok-", [
+      "audiences:",
+      "  ba:",
+      "    capabilities:",
+      "      - name: acme-reader",
+    ]);
+    expect(config.audiences?.ba?.capabilities).toEqual([{ name: "acme-reader" }]);
   });
 
   test("rejects a package declared in base and an audience", async () => {

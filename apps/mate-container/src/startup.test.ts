@@ -646,6 +646,30 @@ describe("what startup hands the supervisor", () => {
     expect(() => prepareStartup(config(), deps({ run }))).not.toThrow();
   });
 
+  describe("capabilities declared by an audience", () => {
+    const AUDIENCE_FRAMEWORK = `${FRAMEWORK}audiences:\n  ba:\n    capabilities:\n      - name: acme-reader\n`;
+
+    test("are not required when no audience is served", () => {
+      makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
+      const { run } = recorder({});
+      expect(() => prepareStartup(config(), deps({ run }))).not.toThrow();
+    });
+
+    test("are required, and a verified plugin satisfies them, under that audience", () => {
+      makeCompanion(path.join(root, "acme"), AUDIENCE_FRAMEWORK);
+      const none = recorder({});
+      expect(() => prepareStartup(config({ audience: "ba" }), deps({ run: none.run }))).toThrow(
+        /capability "acme-reader"/,
+      );
+      const provided = recorder({
+        doctor: { status: 0, stdout: '{"pluginCapabilities":["acme-reader"]}\n', stderr: "" },
+      });
+      expect(() =>
+        prepareStartup(config({ audience: "ba" }), deps({ run: provided.run })),
+      ).not.toThrow();
+    });
+  });
+
   test("a plugin cannot vouch for a different capability name", () => {
     makeCompanion(
       path.join(root, "acme"),
