@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { accessSync, constants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -1974,7 +1975,8 @@ describe("mate CLI e2e", () => {
         expect(invocation.argv).toContain("--mode");
         expect(invocation.argv).toContain("chat");
         expect(invocation.argv).not.toContain("--yes");
-        expect(invocation.env.OPENCODE_CONFIG_DIR).toBe(path.join(scenario.companion, ".opencode"));
+        /** OpenCode 2.x treats a config dir as a replacement for the global one. */
+        expect(invocation.env.OPENCODE_CONFIG_DIR ?? null).toBeNull();
       },
     },
   ]) {
@@ -2221,11 +2223,12 @@ describe("mate CLI e2e", () => {
     const invocation = await readJson<{
       env: { MATE_GUIDANCE_JSON: string | null; OPENCODE_CONFIG_CONTENT: string | null };
     }>(capturePath);
-    /** The machine-local plugin root reaches OpenCode only through the launch overlay. */
-    const overlayPlugins = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT ?? "{}").plugins as
-      | string[]
-      | undefined;
-    const pluginRoots = (overlayPlugins ?? []).filter((entry) =>
+    /** The plugin root reaches OpenCode through the wrapped document, via the runtime link. */
+    expect(invocation.env.OPENCODE_CONFIG_CONTENT ?? null).toBeNull();
+    const wrapped = JSON.parse(
+      await fs.readFile(path.join(scenario.working, ".opencode", "opencode.json"), "utf8"),
+    ) as { plugins?: string[] };
+    const pluginRoots = (wrapped.plugins ?? []).filter((entry) =>
       entry.endsWith("/opencode-plugin"),
     );
     expect(pluginRoots).toHaveLength(1);
@@ -2306,6 +2309,69 @@ describe("mate CLI e2e", () => {
     expect(bypassInvocation.argv).toContain("--mode");
     expect(bypassInvocation.argv).toContain("chat");
     expect(bypassInvocation.argv).not.toContain("--no-git");
+  }, 30000);
+
+  test("mate claude waits for a held companion sync, then synchronizes", async () => {
+    const scenario = await createScenario("mate-cli-e2e-launch-lock-wait-");
+    const capturePath = await writeAdapterStub(scenario, "claude");
+    expect(
+      (
+        await setupCompanion(scenario, ["--git-mode", "auto"], {
+          allowedAgents: ["claude"],
+          capabilities: ["openspec"],
+        })
+      ).exitCode,
+    ).toBe(0);
+    expect(
+      (await runMate(scenario, { cwd: scenario.companion, args: ["install", "--yes"] })).exitCode,
+    ).toBe(0);
+    const remote = await initCompanionGit(scenario);
+    const upstream = path.join(scenario.root, "companion-upstream");
+    runGit(scenario.root, ["clone", "-q", remote, upstream]);
+    runGit(upstream, ["config", "user.email", "mate-e2e@example.com"]);
+    runGit(upstream, ["config", "user.name", "Mate E2E"]);
+    await fs.writeFile(path.join(upstream, ".mate", "origin-marker"), "from origin\n");
+    runGit(upstream, ["add", ".mate/origin-marker"]);
+    runGit(upstream, ["commit", "-qm", "origin marker"]);
+    runGit(upstream, ["push", "-q"]);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+    /** A background sync in flight: a live holder's lock, released after a while. */
+    const holder = spawn("sleep", ["30"], { stdio: "ignore" });
+    const lockPath = path.join(
+      scenario.home,
+      ".mate",
+      "locks",
+      `${createHash("sha256").update(scenario.companion).digest("hex").slice(0, 32)}.lock`,
+    );
+    await fs.mkdir(path.dirname(lockPath), { recursive: true });
+    await fs.writeFile(lockPath, String(holder.pid));
+    const HELD_MS = 1_500;
+    const release = setTimeout(() => {
+      void fs.rm(lockPath, { force: true });
+      holder.kill();
+    }, HELD_MS);
+
+    try {
+      const started = Date.now();
+      const result = await runMate(scenario, {
+        cwd: scenario.working,
+        args: ["claude", "--print", "hello"],
+        input: "y\n",
+        env: { MATE_E2E_CAPTURE_PATH: capturePath },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(HELD_MS);
+      expect(result.stderr).toContain("waiting for another companion sync to finish");
+      expect(
+        await fs.readFile(path.join(scenario.companion, ".mate", "origin-marker"), "utf8"),
+      ).toBe("from origin\n");
+      await expect(fs.access(lockPath)).rejects.toThrow();
+    } finally {
+      clearTimeout(release);
+      holder.kill();
+    }
   }, 30000);
 
   test("launch fails early when the OpenCode companion runtime remains invalid", async () => {

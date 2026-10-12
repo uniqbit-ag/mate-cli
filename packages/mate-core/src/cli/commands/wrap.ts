@@ -1,38 +1,33 @@
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { ConfigStore, mergeWithDefaults } from "../../lib/orchestrator/config-store";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repo-local-registry";
-import {
-  projectWorkingRepository,
-  projectWorkingRuntimeDocuments,
-} from "../../lib/orchestrator/working-repo-projection";
-import { renderWorkingRuntimeDocuments } from "../../tools/setup";
+import type { ProjectionChangedPaths } from "../../lib/orchestrator/projection-types";
+import { documentRuntime } from "../../runtime/runtime-document-manifest";
+import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
+import { runWrapPass, type WrapPassResult } from "../../lib/orchestrator/wrap-pass";
+import { withCompanionLock } from "../../runtime/companion-lock";
 import { launchAmbiguityDeps } from "./shared/companion-selection";
 
 export interface WrapCommandDependencies {
   findRepoLocalLinkedRepository?: typeof findRepoLocalLinkedRepository;
-  projectWorkingRepository?: typeof projectWorkingRepository;
-  projectWorkingRuntimeDocuments?: typeof projectWorkingRuntimeDocuments;
-  renderWorkingRuntimeDocuments?: typeof renderWorkingRuntimeDocuments;
+  runWrapPass?: typeof runWrapPass;
   resolveLinkedCompanions?: typeof launchAmbiguityDeps.resolveLinkedCompanions;
 }
 
 export const wrapCommandDeps: Required<WrapCommandDependencies> = {
   findRepoLocalLinkedRepository,
-  projectWorkingRepository,
-  projectWorkingRuntimeDocuments,
-  renderWorkingRuntimeDocuments,
+  runWrapPass,
   resolveLinkedCompanions: (cwd: string) => launchAmbiguityDeps.resolveLinkedCompanions(cwd),
 };
 
-/** The companion's own selection, read from files: wrapping runs no setup pass. */
-async function readCompanionConfig(companionPath: string) {
-  return mergeWithDefaults(
-    await new ConfigStore(
-      path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-    ).load(),
-  );
+/** Counts rather than names: a companion folder can hold dozens of files. */
+function reportChangedPaths(changed: ProjectionChangedPaths): void {
+  if (changed.written.length > 0 || changed.removed.length > 0) {
+    console.log(
+      `  Copies:    ${changed.written.length} written, ${changed.removed.length} withdrawn under .opencode/`,
+    );
+  }
 }
 
 /**
@@ -76,11 +71,7 @@ export async function runWrapCommand(
 ): Promise<void> {
   const findRepository =
     deps.findRepoLocalLinkedRepository ?? wrapCommandDeps.findRepoLocalLinkedRepository;
-  const project = deps.projectWorkingRepository ?? wrapCommandDeps.projectWorkingRepository;
-  const projectDocuments =
-    deps.projectWorkingRuntimeDocuments ?? wrapCommandDeps.projectWorkingRuntimeDocuments;
-  const renderDocuments =
-    deps.renderWorkingRuntimeDocuments ?? wrapCommandDeps.renderWorkingRuntimeDocuments;
+  const wrap = deps.runWrapPass ?? wrapCommandDeps.runWrapPass;
   const resolveLinked = deps.resolveLinkedCompanions ?? wrapCommandDeps.resolveLinkedCompanions;
 
   const parsed = parseWrapArgs(argv);
@@ -105,8 +96,8 @@ export async function runWrapCommand(
    * here — a single Linked Companion needs no answer to have been recorded.
    */
   const companionPath =
-    (parsed.companion && path.resolve(parsed.companion)) ??
-    process.env.MATE_ARTIFACT_PATH ??
+    (parsed.companion && path.resolve(parsed.companion)) ||
+    process.env.MATE_ARTIFACT_PATH ||
     (await resolveLinked(cwd))[0]?.companionPath;
   if (!companionPath) {
     console.error(`${FRAMEWORK_NAME}: no registered companion links ${repository.id}.`);
@@ -115,50 +106,45 @@ export async function runWrapCommand(
     return;
   }
 
-  const result = await project(companionPath, repository);
-  if (result.kind === "failed") {
-    console.error(
-      `${FRAMEWORK_NAME}: failed to write the projection for ${repository.id}: ${result.error.message}`,
-    );
-    process.exitCode = 1;
-    return;
-  }
-
-  /**
-   * After the projection, never instead of it: a runtime document that cannot
-   * be written fails the command while the projection already written stays.
-   */
-  const config = await readCompanionConfig(result.companionPath);
-  const documents = await projectDocuments(
-    result.companionPath,
-    repository,
-    config,
-    await renderDocuments(result.companionPath, config, repository.path),
+  /** Serialized with Session Prepare and every sync, which rewrite the same manifest. */
+  const locked = await withCompanionLock(companionPath, attendedLockOptions(companionPath), () =>
+    wrap(companionPath, repository),
   );
-  if (documents.kind === "failed") {
-    console.error(
-      `${FRAMEWORK_NAME}: failed to reconcile ${documents.document} for ${repository.id}: ${documents.error.message}`,
-    );
+  const result: WrapPassResult = locked.acquired
+    ? locked.value
+    : { kind: "failed", message: "another companion synchronization is still running." };
+  if (result.kind === "failed") {
+    console.error(`${FRAMEWORK_NAME}: ${result.message}`);
     process.exitCode = 1;
     return;
   }
 
-  const changed = result.kind === "written" || documents.kind === "written";
   console.log(
-    changed
+    result.kind === "written"
       ? `Wrapped ${repository.id} at ${result.projectionRoot}`
       : `Already wrapped: ${result.projectionRoot}`,
   );
   console.log(`  Companion: ${result.companionPath}`);
-  for (const document of documents.documents) {
+  for (const document of result.documents) {
     console.log(`  Runtime:   ${document}`);
   }
+  for (const warning of result.warnings) {
+    console.error(`${FRAMEWORK_NAME}: warning: ${warning}`);
+  }
+  reportChangedPaths(result.changed);
   /**
    * Said at the moment the mode is switched, not left to be discovered at the
-   * next launch: wrapping makes `mate claude` and `mate opencode` refuse here,
-   * and the operator has no other way to learn that from a successful command.
+   * next launch: a Claude wrap makes `mate claude` refuse here, and the operator
+   * has no other way to learn that from a successful command. `mate opencode`
+   * keeps working, because its launch is itself a wrap.
    */
+  /** `documents` are OS paths; the runtime is read from the POSIX manifest key. */
+  const claudeWrapped = result.documents.some(
+    (document) => documentRuntime(document.split(path.sep).join("/")) === "claude",
+  );
   console.log(
-    `Start sessions yourself now: \`claude\` or \`opencode\`. \`${FRAMEWORK_NAME} claude\` and \`${FRAMEWORK_NAME} opencode\` do not run in a wrapped repository — \`${FRAMEWORK_NAME} unwrap\` reverses this.`,
+    claudeWrapped
+      ? `Start Claude sessions yourself now: \`claude\`. \`${FRAMEWORK_NAME} claude\` does not run in a Claude-wrapped repository — \`${FRAMEWORK_NAME} unwrap\` reverses this. \`opencode\` and \`${FRAMEWORK_NAME} opencode\` both work here.`
+      : `Start sessions yourself now: \`opencode\`, or \`${FRAMEWORK_NAME} opencode\`. \`${FRAMEWORK_NAME} unwrap\` reverses this.`,
   );
 }

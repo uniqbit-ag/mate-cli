@@ -14,6 +14,7 @@ import {
   getOpenCodePluginRoot,
   getWrapperBinPath,
 } from "../../lib/package-paths";
+import { runtimeOpenCodePluginRoot } from "../../runtime/runtime-directory";
 import { project } from "../../lib/orchestrator/working-repo-projection";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
 import { executeSetup, renderWorkingRuntimeDocuments } from "../setup";
@@ -282,6 +283,7 @@ async function collectEffectiveState(fixture: Fixture): Promise<unknown> {
     [root, "<root>"],
     [getWrapperBinPath(), "<wrapper-bin>"],
     [getOpenCodePluginRoot(), "<opencode-plugin>"],
+    [runtimeOpenCodePluginRoot(), "<runtime-opencode-plugin>"],
   ]);
 }
 
@@ -325,6 +327,7 @@ async function collectLaunchSurface(
     [getClaudePluginRoot(), "<claude-plugin>"],
     [getWrapperBinPath(), "<wrapper-bin>"],
     [getOpenCodePluginRoot(), "<opencode-plugin>"],
+    [runtimeOpenCodePluginRoot(), "<runtime-opencode-plugin>"],
   ]);
 }
 
@@ -336,7 +339,7 @@ async function collectWorkingTargetDocuments(
   fixture: Fixture,
   config: FrameworkConfig,
 ): Promise<unknown> {
-  const documents = await renderWorkingRuntimeDocuments(
+  const { documents } = await renderWorkingRuntimeDocuments(
     fixture.companionPath,
     config,
     path.join(fixture.root, "working"),
@@ -347,6 +350,7 @@ async function collectWorkingTargetDocuments(
     [getClaudePluginRoot(), "<claude-plugin>"],
     [getWrapperBinPath(), "<wrapper-bin>"],
     [getOpenCodePluginRoot(), "<opencode-plugin>"],
+    [runtimeOpenCodePluginRoot(), "<runtime-opencode-plugin>"],
   ]);
 }
 

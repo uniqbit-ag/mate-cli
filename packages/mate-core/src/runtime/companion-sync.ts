@@ -30,6 +30,7 @@ import {
   type CompanionForkState,
   type CompanionGit,
 } from "./companion-git";
+import { withCompanionLock } from "./companion-lock";
 import { hasLaunchEnvironment } from "./env";
 import { FRAMEWORK_NAME } from "./framework";
 import { readCompanionPolicy } from "./policy";
@@ -37,10 +38,17 @@ import { readCompanionPolicy } from "./policy";
 /** The one command that finishes what the unattended half declines to do. */
 export const COMPANION_SYNC_COMMAND = `${FRAMEWORK_NAME} companion sync`;
 
+/** OpenCode's recovery is the managed launch: it runs the sync at a terminal that can answer Git. */
+export const OPENCODE_LAUNCH_COMMAND = `${FRAMEWORK_NAME} opencode`;
+
+/** Which runtime's operator reads the note; it decides the recovery named. */
+export type StalenessAudience = "claude" | "opencode";
+
 /** A cold link costs this once; the recorded completion then suppresses retries. */
 export const COMPANION_SYNC_TIMEOUT_MS = 20_000;
 
-export type UnattendedSyncStatus = "not-applicable" | "fresh" | "complete" | "unfinished";
+/** `busy`: another operation held the companion lock; nothing ran and nothing is owed. */
+export type UnattendedSyncStatus = "not-applicable" | "fresh" | "busy" | "complete" | "unfinished";
 
 export interface UnattendedSyncOutcome {
   status: UnattendedSyncStatus;
@@ -58,6 +66,12 @@ export interface UnattendedSyncOptions {
   homeDir?: string;
   /** Environment Git runs with. */
   env?: Record<string, string | undefined>;
+  /**
+   * `wait` (the default) queues behind another holder of the companion lock,
+   * within the time budget; `try` skips at once, for a hook that must not
+   * stall a session start.
+   */
+  lock?: "wait" | "try";
 }
 
 const UNFINISHED_GIT_PATHS = [
@@ -115,6 +129,24 @@ export async function syncCompanionUnattended(
     return { status: "fresh", changed: false, companionPath };
   }
 
+  const locked = await withCompanionLock(
+    companionPath,
+    { homeDir, wait: options.lock !== "try", timeoutMs },
+    () => syncHoldingLock(companionPath, { timeoutMs, now, homeDir, env }),
+  );
+  return locked.acquired ? locked.value : { status: "busy", changed: false, companionPath };
+}
+
+async function syncHoldingLock(
+  companionPath: string,
+  options: {
+    timeoutMs: number;
+    now: Date;
+    homeDir?: string;
+    env?: Record<string, string | undefined>;
+  },
+): Promise<UnattendedSyncOutcome> {
+  const { timeoutMs, now, homeDir, env } = options;
   const git = companionGit(companionPath, {
     prompt: "never",
     budgetMs: timeoutMs,
@@ -191,10 +223,19 @@ export async function syncCompanionUnattended(
  * answer a credential prompt and no way to tell a fast-forward from a
  * conflicted rebase.
  */
-export function unattendedSyncStalenessLines(outcome: UnattendedSyncOutcome): string[] {
+export function unattendedSyncStalenessLines(
+  outcome: UnattendedSyncOutcome,
+  audience: StalenessAudience = "claude",
+): string[] {
   if (outcome.status !== "unfinished") return [];
+  const reason = outcome.reason ?? "unknown reason";
+  if (audience === "opencode") {
+    return [
+      `Companion not updated: ${reason}. Restart with \`${OPENCODE_LAUNCH_COMMAND}\` to fix it.`,
+    ];
+  }
   return [
-    `companion Git synchronization unfinished: ${outcome.reason ?? "unknown reason"} — run \`${COMPANION_SYNC_COMMAND}\``,
+    `companion Git synchronization unfinished: ${reason} — run \`${COMPANION_SYNC_COMMAND}\``,
   ];
 }
 
@@ -205,16 +246,15 @@ export function unattendedSyncStalenessLines(outcome: UnattendedSyncOutcome): st
 export function persistedCompanionGitStalenessLines(
   companionPath: string,
   homeDir?: string,
+  audience: StalenessAudience = "claude",
 ): string[] {
   if (!companionPath) return [];
   const reason = readCompanionGitRecord(companionPath, homeDir).unfinishedReason;
   if (!reason) return [];
-  return unattendedSyncStalenessLines({
-    status: "unfinished",
-    changed: false,
-    companionPath,
-    reason,
-  });
+  return unattendedSyncStalenessLines(
+    { status: "unfinished", changed: false, companionPath, reason },
+    audience,
+  );
 }
 
 export interface ForkGuardOptions {

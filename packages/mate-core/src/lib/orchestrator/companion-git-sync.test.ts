@@ -3,9 +3,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { CompanionGitSync, CompanionGitSyncError, describeGitFailure } from "./companion-git-sync";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import {
+  CompanionGitSync,
+  CompanionGitSyncError,
+  describeGitFailure,
+  syncCompanionGit,
+} from "./companion-git-sync";
 import { companionGitDeps } from "../../runtime/companion-git";
+import { companionLockPath } from "../../runtime/companion-lock";
 import { makeSshStub, stubSshUrl } from "../../../../../test/ssh-stub";
 
 const tempRoots: string[] = [];
@@ -468,5 +474,41 @@ describe("CompanionGitSync", () => {
     await expect(new CompanionGitSync().sync(companion)).rejects.toBeInstanceOf(
       CompanionGitSyncError,
     );
+  });
+});
+
+describe("syncCompanionGit", () => {
+  async function holdLock(companion: string): Promise<string> {
+    const lockPath = companionLockPath(companion);
+    await fs.mkdir(path.dirname(lockPath), { recursive: true });
+    await fs.writeFile(lockPath, String(process.pid));
+    return lockPath;
+  }
+
+  test("waits for a held companion lock, says so once, then synchronizes", async () => {
+    const { companion, upstream } = await makeRepository();
+    await fs.appendFile(path.join(upstream, "notes.md"), "remote\n");
+    git(upstream, "commit", "-aqm", "remote");
+    git(upstream, "push", "-q");
+    const lockPath = await holdLock(companion);
+    const errors = spyOn(console, "error").mockImplementation(() => {});
+    let released = false;
+    setTimeout(() => {
+      released = true;
+      void fs.rm(lockPath, { force: true });
+    }, 300);
+
+    try {
+      const result = await syncCompanionGit(companion);
+
+      expect(released).toBe(true);
+      expect(result.changed).toBe(true);
+      const lines = errors.mock.calls.map((call) => String(call[0]));
+      expect(lines.filter((line) => line.includes("waiting"))).toHaveLength(1);
+      expect(lines.join("\n")).toContain(companion);
+    } finally {
+      errors.mockRestore();
+    }
+    await expect(fs.access(lockPath)).rejects.toThrow();
   });
 });

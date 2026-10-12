@@ -159,3 +159,12 @@ export class ConfigStore extends YamlFileStore<FrameworkConfig> {
     return config;
   }
 }
+
+/** The companion's own selection, read from files: wrapping runs no setup pass. */
+export async function readCompanionConfig(companionPath: string): Promise<FrameworkConfig> {
+  return mergeWithDefaults(
+    await new ConfigStore(
+      path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
+    ).load(),
+  );
+}

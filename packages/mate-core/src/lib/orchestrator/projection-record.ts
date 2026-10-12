@@ -10,6 +10,7 @@ import {
   GRAPHIFY_OUTPUT_SUBDIR,
   GRAPHIFY_STORE_SEGMENT,
 } from "../../tools/setup/capabilities/graphify";
+import { runtimeWrapperBinPath } from "../../runtime/runtime-directory";
 import { getReactDoctorBinPath, getWrapperBinPath } from "../package-paths";
 import type { LinkedRepository } from "./types";
 
@@ -25,17 +26,22 @@ const COMPANION_GRAPHIFY_REPOSITORY_ID = "__companion__";
  * Both bin paths and `GRAPHIFY_OUT` are unconditional: a path exists whether or
  * not its Capability is enabled, and enablement is a predicate, read live from
  * the companion rather than cached here.
+ *
+ * The persisted record names the runtime directory so it survives a reinstall;
+ * a launch passes the live install path, since its runtime-directory refresh
+ * may only have warned.
  */
 export function buildProjection(
   companionPath: string,
   repository: LinkedRepository,
+  wrapperBinPath: string = runtimeWrapperBinPath(),
 ): MateProjection {
   return {
     version,
     companionPath,
     repositoryPath: repository.path,
     repositoryId: repository.id,
-    wrapperBinPath: getWrapperBinPath(),
+    wrapperBinPath,
     reactDoctorBinPath: getReactDoctorBinPath(),
     graphifyOut: path.join(
       companionPath,

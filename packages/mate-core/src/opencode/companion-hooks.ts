@@ -11,6 +11,8 @@ import {
 } from "../runtime/companion-sync";
 import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
+import { resolveProjection } from "../runtime/projection";
+import { readManifestSync, wrappedFor } from "../runtime/runtime-document-manifest";
 import {
   buildArtifactError,
   extractPatchPaths,
@@ -119,6 +121,15 @@ export function createReactDoctorScanner(
   };
 }
 
+/** The Working Repository above `directory`, when it is wrapped for OpenCode. */
+export function repositoryWrappedForOpenCode(directory: string): string | undefined {
+  const projection = resolveProjection(directory);
+  if (!projection || !wrappedFor(readManifestSync(projection.repoRoot), "opencode")) {
+    return undefined;
+  }
+  return projection.repoRoot;
+}
+
 /**
  * Keyed by companion so a double-loaded plugin repairs at most once per
  * session, which is the guarantee the spec asks for.
@@ -126,14 +137,17 @@ export function createReactDoctorScanner(
 const repairedCompanions = new Set<string>();
 
 /**
- * Session start is the only point at which the companion may move without
- * invalidating a read the session has already taken. The launch-environment
- * gate comes first so a Managed Session does no Git work at all; the consent
- * gate is the operation's own.
+ * A fetch at session start, for a location Session Prepare does not serve.
+ * In a repository wrapped for OpenCode the plugin's background sync performs
+ * the same unattended operation, so this one steps aside. Elsewhere it only
+ * tries the companion lock: a held lock means another sync is already on it.
+ * The launch-environment gate comes first so a Managed Session does no Git
+ * work at all; the consent gate is the operation's own.
  */
 export async function repairCompanionGitOnce(
   context: CompanionContext,
   env: Record<string, string | undefined> = process.env,
+  directory?: string,
 ): Promise<string[]> {
   if (
     !context.companionPath ||
@@ -141,6 +155,7 @@ export async function repairCompanionGitOnce(
       (env[MATE_ENV.repositoryPath] !== undefined || env[MATE_ENV.gitAutoMode] !== "1"))
   )
     return [];
+  if (directory && repositoryWrappedForOpenCode(directory)) return [];
   if (repairedCompanions.has(context.companionPath)) return [];
   repairedCompanions.add(context.companionPath);
 
@@ -149,7 +164,10 @@ export async function repairCompanionGitOnce(
    * unattended. The V2 server API has no toast; the notes reach the operator
    * through the persisted record and the TUI's staleness lines.
    */
-  return unattendedSyncStalenessLines(await syncCompanionUnattended(context.companionPath));
+  return unattendedSyncStalenessLines(
+    await syncCompanionUnattended(context.companionPath, { lock: "try" }),
+    "opencode",
+  );
 }
 
 /** Test seam: the once-per-session guard is process-wide by design. */
@@ -218,7 +236,7 @@ export async function registerCompanionHooks(
    * Anything escaping the repair would cost the session every guardrail
    * below to save a synchronization that is optional by design.
    */
-  await repairCompanionGitOnce(context).catch(() => []);
+  await repairCompanionGitOnce(context, process.env, api.location.directory).catch(() => []);
 
   await api.tool.hook("execute.before", (event) =>
     guardToolInput(context, event.tool, event.input),

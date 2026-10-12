@@ -13,6 +13,11 @@ import {
   repoLocalDirPath,
   repoLocalRegistryPath,
 } from "../../runtime/repo-local";
+import {
+  documentRuntime,
+  documents as recordedDocuments,
+  readManifest,
+} from "../../runtime/runtime-document-manifest";
 import { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "../../tools/setup/capabilities/tokensave-shared";
 import {
   ensureWorkingRepoLocalExcludes,
@@ -26,6 +31,12 @@ import {
   reconcileWorkingRepoClaudeSkillLinks,
   removeWorkingRepoClaudeSkillLinks,
 } from "./projection-claude-skills";
+import {
+  companionCopiesPresent,
+  reconcileCompanionCopies,
+  removeCompanionCopies,
+  withdrawCompanionCopies,
+} from "./projection-opencode-copies";
 import { buildProjection } from "./projection-record";
 import {
   CLAUDE_WORKING_SETTINGS_PATH,
@@ -41,16 +52,22 @@ import {
   CLAUDE_MCP_DOCUMENT,
   CLAUDE_SETTINGS_DOCUMENT,
   OPENCODE_CONFIG_DOCUMENT,
+  isExternalDocument,
   placeRuntimeDocument,
   removeRuntimeDocument,
-  runtimeDocumentPresent,
+  trackedDocumentWarnings,
 } from "./projection-runtime-documents";
 import {
   upsertRepoLocalCompanionPointer,
   upsertRepoLocalLinkedRepository,
   writeRepoLocalFrameworkConfig,
 } from "./repo-local-store";
-import type { ProjectionEntry, ProjectionInput } from "./projection-types";
+import type {
+  ProjectionEntry,
+  ProjectionInput,
+  ProjectionWriteReport,
+  ProjectionWriteState,
+} from "./projection-types";
 
 const WORKSPACE_DOCUMENT_FILE = "workspace.code-workspace";
 
@@ -66,6 +83,11 @@ async function pathExists(candidatePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Present when Mate recorded regions for it, not merely when the file exists. */
+async function runtimeDocumentRecorded(repoPath: string, documentPath: string): Promise<boolean> {
+  return recordedDocuments(await readManifest(repoPath)).includes(documentPath);
 }
 
 async function writeProjectionPairEntry(input: ProjectionInput): Promise<"written" | "current"> {
@@ -94,6 +116,26 @@ async function writeProjectionPairEntry(input: ProjectionInput): Promise<"writte
     projection: buildProjection(resolvedCompanionPath, repository!),
   });
   return "written";
+}
+
+/**
+ * Places one rendered document and, when this pass wrote Mate's regions into a
+ * file inside the repository, asks Git whether it tracks that file. Only a
+ * write is worth the question: an unchanged document was reported when it was
+ * written, and a removal puts no companion path into it.
+ */
+async function writeRuntimeDocumentEntry(
+  input: ProjectionInput,
+  documentPath: string,
+): Promise<ProjectionWriteState | ProjectionWriteReport> {
+  const state = await placeRuntimeDocument(input.repoPath, documentPath, input.runtimeDocuments);
+  const rendered = input.runtimeDocuments?.some((document) => document.path === documentPath);
+  if (state !== "written" || !rendered || isExternalDocument(documentPath)) return state;
+  const repositoryId = input.repository?.id ?? path.basename(path.resolve(input.repoPath));
+  return {
+    state,
+    warnings: await trackedDocumentWarnings(input.repoPath, documentPath, repositoryId),
+  };
 }
 
 function tokensaveEnabled(input: ProjectionInput): boolean {
@@ -198,7 +240,7 @@ function buildEntries(): readonly ProjectionEntry[] {
       id: "projection-pair",
       kind: "owned",
       path: path.join(localDir, PROJECTION_YAML_FILE),
-      scopes: ["session"],
+      scopes: ["session", "wrap"],
       write: async (input) =>
         input.companionPath && input.repository ? writeProjectionPairEntry(input) : "skipped",
       removal: { by: "entry", entry: "projection-root" },
@@ -208,6 +250,7 @@ function buildEntries(): readonly ProjectionEntry[] {
       kind: "merged",
       path: path.join(".claude", "skills"),
       scopes: ["wrap"],
+      runtime: "claude",
       removeOnUnwrap: true,
       write: async (input) => {
         if (!input.config) return "skipped";
@@ -236,7 +279,7 @@ function buildEntries(): readonly ProjectionEntry[] {
       id: "capability-excludes",
       kind: "merged",
       path: path.join(".git", "info", "exclude"),
-      scopes: ["launch"],
+      scopes: ["launch", "wrap"],
       write: async (input) => {
         if (!input.config) return "skipped";
         return (await reconcileWorkingRepoCapabilityExcludes(
@@ -259,6 +302,7 @@ function buildEntries(): readonly ProjectionEntry[] {
       kind: "merged",
       path: CLAUDE_WORKING_SETTINGS_PATH,
       scopes: ["launch", "wrap"],
+      runtime: "claude",
       write: async (input) =>
         input.companionPath
           ? syncWorkingRepoClaudeAdditionalDirectories(
@@ -276,14 +320,14 @@ function buildEntries(): readonly ProjectionEntry[] {
     },
     /**
      * Removal-only: Mate never writes this block, an external installer does.
-     * Its `write` is the same strip, so a launch heals a repository the
-     * installer touched without waiting for a cleanup.
+     * Its `write` is the same strip, so a launch or a wrap heals a repository
+     * the installer touched without waiting for a cleanup.
      */
     {
       id: "legacy-tokensave-claude-md",
       kind: "merged",
       path: LEGACY_TOKENSAVE_CLAUDE_MD_PATH,
-      scopes: ["launch"],
+      scopes: ["launch", "wrap"],
       write: async (input) =>
         (await stripTokensaveClaudeMdAppend(input.repoPath)) === "removed" ? "written" : "current",
       removal: { by: "self", remove: (input) => stripTokensaveClaudeMdAppend(input.repoPath) },
@@ -336,6 +380,7 @@ function buildEntries(): readonly ProjectionEntry[] {
       kind: "merged",
       path: CLAUDE_MCP_DOCUMENT,
       scopes: ["launch", "wrap"],
+      runtime: "claude",
       write: async (input) =>
         (await removeRuntimeDocument(input.repoPath, CLAUDE_MCP_DOCUMENT)) === "removed"
           ? "written"
@@ -344,7 +389,7 @@ function buildEntries(): readonly ProjectionEntry[] {
         by: "self",
         remove: (input) => removeRuntimeDocument(input.repoPath, CLAUDE_MCP_DOCUMENT),
       },
-      present: (repoPath) => runtimeDocumentPresent(repoPath, CLAUDE_MCP_DOCUMENT),
+      present: (repoPath) => runtimeDocumentRecorded(repoPath, CLAUDE_MCP_DOCUMENT),
     },
     ...(
       [
@@ -357,15 +402,37 @@ function buildEntries(): readonly ProjectionEntry[] {
       kind: "merged" as const,
       path: documentPath.split("/").join(path.sep),
       scopes: ["launch", "wrap"] as const,
-      write: (input: ProjectionInput) =>
-        placeRuntimeDocument(input.repoPath, documentPath, input.runtimeDocuments),
+      runtime: documentRuntime(documentPath),
+      write: (input: ProjectionInput) => writeRuntimeDocumentEntry(input, documentPath),
       removal: {
         by: "self" as const,
         remove: (input: { repoPath: string }) =>
           removeRuntimeDocument(input.repoPath, documentPath),
       },
-      present: (repoPath: string) => runtimeDocumentPresent(repoPath, documentPath),
+      present: (repoPath: string) => runtimeDocumentRecorded(repoPath, documentPath),
     })),
+    /**
+     * After the OpenCode document, so its copies arrive once the document that
+     * loads them is in place. A companion that dropped OpenCode has the copies
+     * an earlier wrap made withdrawn; the outcome names each copy written or
+     * withdrawn and warns about shadowed and locally edited ones.
+     */
+    {
+      id: "opencode-companion-copies",
+      kind: "merged",
+      path: ".opencode",
+      scopes: ["wrap"],
+      runtime: "opencode",
+      removeOnUnwrap: true,
+      write: async (input) => {
+        if (!input.config || !input.companionPath) return "skipped";
+        return (input.config.allowedAgents?.includes("opencode") ?? false)
+          ? reconcileCompanionCopies(input.repoPath, input.companionPath)
+          : withdrawCompanionCopies(input.repoPath);
+      },
+      removal: { by: "self", remove: (input) => removeCompanionCopies(input.repoPath) },
+      present: companionCopiesPresent,
+    },
   ];
 }
 

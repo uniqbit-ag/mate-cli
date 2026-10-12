@@ -14,11 +14,9 @@ import {
 } from "../../../runtime/projection";
 import { readCompanionRuntimeContext } from "../../../runtime/env";
 import { repoLocalRegistryPath } from "../../../runtime/repo-local";
-import { renderCompanionExternalDirectoryPermissions } from "../../../tools/setup/providers/opencode";
 import { getContextModePackageRoot } from "../../context-mode-package";
 import {
   getClaudePluginRoot,
-  getOpenCodePluginRoot,
   getReactDoctorBinPath,
   getWrapperBinPath,
   validateClaudePluginAssets,
@@ -65,8 +63,9 @@ function makeContext(capabilities: AdapterContext["capabilities"] = []): Adapter
   };
 }
 
+/** A launch materializes the record with the live install path, not the runtime directory. */
 function projectionOf(context: AdapterContext) {
-  return buildProjection(context.companionPath, context.repository);
+  return buildProjection(context.companionPath, context.repository, getWrapperBinPath());
 }
 
 /** A Working Repository the session scope has actually written a projection into. */
@@ -444,16 +443,13 @@ describe("launch environment and the projection agree", () => {
     expect(disabled.env.GRAPHIFY_OUT).toBe(resolveProjection(repoRoot)?.graphifyOut);
   });
 
-  test("grants the same companion directories a projected OpenCode document would", async () => {
-    const context = makeContext();
+  /** Migrated: the grants now reach every session through the wrapped document only. */
+  test("leaves the companion directory grants to the wrapped OpenCode document", async () => {
     const launch = await withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
-      new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(context, []),
+      new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(makeContext(), []),
     );
 
-    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.permissions).toEqual(
-      renderCompanionExternalDirectoryPermissions(context.companionPath),
-    );
+    expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeUndefined();
   });
 
   test("the launch environment outranks the projection for every reader", async () => {
@@ -568,49 +564,39 @@ describe("Adapter base-URL rewriting is gone", () => {
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
 
-  test("OpenCodeAdapter injects the mate reference through OPENCODE_CONFIG_CONTENT", async () => {
-    const launch = await withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
-      new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(makeContext(), []),
+  /**
+   * Migrated from the launch overlay: references, permissions, skills and the
+   * plugin root are asserted on the wrapped document in
+   * `tools/setup/runtime-documents.test.ts`.
+   */
+  test("OpenCodeAdapter sets neither OPENCODE_CONFIG_DIR nor a config overlay", async () => {
+    const launch = await withEnv("OPENCODE_CONFIG_DIR", undefined, () =>
+      withEnv("OPENCODE_CONFIG_CONTENT", undefined, () =>
+        new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(makeContext(), []),
+      ),
     );
 
-    expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeDefined();
-    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.references.mate).toBe("/tmp/companion");
-    expect(config.permissions).toEqual([
-      { action: "external_directory", resource: "/tmp/companion", effect: "allow" },
-      { action: "external_directory", resource: "/tmp/companion/**", effect: "allow" },
-    ]);
-    expect(config.skills).toEqual(["/tmp/companion/.agents/skills"]);
-    expect(config.plugins).toEqual([getOpenCodePluginRoot()]);
+    expect(launch.env.OPENCODE_CONFIG_DIR).toBeUndefined();
+    expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeUndefined();
+    expect(launch.env.MATE_GUIDANCE_JSON).toBeDefined();
   });
 
-  test("OpenCodeAdapter merges the mate reference and permissions with inherited OPENCODE_CONFIG_CONTENT", async () => {
-    const launch = await withEnv(
-      "OPENCODE_CONFIG_CONTENT",
-      JSON.stringify({
-        model: "anthropic/test",
-        permission: { external_directory: { "../docs/**": "allow" } },
-        references: { docs: "../docs" },
-        skills: { paths: ["../team-skills"] },
-        plugins: ["opencode-acme-plugin", getOpenCodePluginRoot()],
-      }),
-      () => new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(makeContext(), []),
+  test("OpenCodeAdapter passes an inherited config dir and overlay through unchanged", async () => {
+    const inherited = JSON.stringify({
+      model: "anthropic/test",
+      plugins: ["opencode-acme-plugin"],
+    });
+    const launch = await withEnv("OPENCODE_CONFIG_DIR", "/home/acme/.config/acme", () =>
+      withEnv("OPENCODE_CONFIG_CONTENT", inherited, () =>
+        new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(makeContext(), []),
+      ),
     );
 
-    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.permissions).toEqual([
-      { action: "external_directory", resource: "../docs/**", effect: "allow" },
-      { action: "external_directory", resource: "/tmp/companion", effect: "allow" },
-      { action: "external_directory", resource: "/tmp/companion/**", effect: "allow" },
-    ]);
-    expect(config.references.docs).toBe("../docs");
-    expect(config.references.mate).toBe("/tmp/companion");
-    expect(config.skills).toEqual(["../team-skills", "/tmp/companion/.agents/skills"]);
-    expect(config.model).toBe("anthropic/test");
-    expect(config.plugins).toEqual(["opencode-acme-plugin", getOpenCodePluginRoot()]);
+    expect(launch.env.OPENCODE_CONFIG_DIR).toBe("/home/acme/.config/acme");
+    expect(launch.env.OPENCODE_CONFIG_CONTENT).toBe(inherited);
   });
 
-  test("OpenCodeAdapter contributes no provider baseURL while still projecting the companion", async () => {
+  test("OpenCodeAdapter contributes no provider baseURL", async () => {
     const companionPath = await makeTempDir("mate-opencode-companion-");
     await fs.mkdir(path.join(companionPath, ".opencode", "plugins"), { recursive: true });
     await fs.writeFile(path.join(companionPath, ".opencode", "opencode.json"), "{}\n", "utf8");
@@ -640,14 +626,7 @@ describe("Adapter base-URL rewriting is gone", () => {
 
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(launch.env.OPENAI_BASE_URL).toBeUndefined();
-    expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeDefined();
-    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.references.mate).toBe(companionPath);
-    expect(config.permissions).toEqual([
-      { action: "external_directory", resource: companionPath, effect: "allow" },
-      { action: "external_directory", resource: `${companionPath}/**`, effect: "allow" },
-    ]);
-    expect(config.provider).toBeUndefined();
+    expect(launch.env.OPENCODE_CONFIG_CONTENT).toBeUndefined();
   });
 
   test("injects no custom Anthropic headers, whichever companion is launched", async () => {
@@ -676,11 +655,5 @@ describe("Adapter base-URL rewriting is gone", () => {
 
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(launch.env.OPENAI_BASE_URL).toBeUndefined();
-    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT!);
-    expect(config.references.mate).toBe("/tmp/companion");
-    expect(config.permissions).toEqual([
-      { action: "external_directory", resource: "/tmp/companion", effect: "allow" },
-      { action: "external_directory", resource: "/tmp/companion/**", effect: "allow" },
-    ]);
   });
 });

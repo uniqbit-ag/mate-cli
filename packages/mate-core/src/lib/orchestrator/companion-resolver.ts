@@ -88,7 +88,10 @@ export class CompanionResolver {
 
     if (matches.length === 1) {
       const store = new RepoLocalRegistryStore(repoLocalRegistryPath(resolvedCwd));
+      /** `repository` too: wrap and unwrap resolve the Repository Link from it. */
       await store.save({
+        ...(await store.load().catch(() => ({}))),
+        repository: { id: matches[0]!.repositoryId, path: resolvedCwd },
         companions: [{ path: matches[0]!.companionPath, repositoryId: matches[0]!.repositoryId }],
       });
     }
@@ -158,7 +161,7 @@ export class CompanionResolver {
 
     if (changed) {
       const store = new RepoLocalRegistryStore(found.registryPath);
-      await store.save({ companions: survivors });
+      await store.save({ ...(await store.load()), companions: survivors });
     }
 
     if (validMatches.length === 0) return null;

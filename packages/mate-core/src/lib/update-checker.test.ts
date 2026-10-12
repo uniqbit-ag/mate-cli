@@ -9,6 +9,7 @@ import {
   getCurrentVersion,
   getUpdateChannel,
   isCanaryVersion,
+  isLocalVersion,
   isNewer,
   scheduleBackgroundCheck,
   showUpdateBannerIfAvailable,
@@ -93,6 +94,17 @@ describe("isCanaryVersion", () => {
 
   test("treats a stable version as non-canary", () => {
     expect(isCanaryVersion("0.11.0")).toBe(false);
+  });
+});
+
+describe("isLocalVersion", () => {
+  test("detects a local test build version", () => {
+    expect(isLocalVersion("0.18.1-local.3")).toBe(true);
+  });
+
+  test("treats canary and stable versions as non-local", () => {
+    expect(isLocalVersion("0.18.1-canary.2")).toBe(false);
+    expect(isLocalVersion("0.18.1")).toBe(false);
   });
 });
 
@@ -403,6 +415,22 @@ describe("update helpers", () => {
     } finally {
       setActiveDistribution(previous);
     }
+  });
+
+  test("enforceUpdateIfRequired does not block a local test build", async () => {
+    const previous = getActiveDistribution();
+    setActiveDistribution({
+      ...previous,
+      config: { ...previous.config, version: "0.18.1-local.1", update: { enforce: true } },
+    });
+    const store = createStore({ lastChecked: "", latestVersion: "999.0.0" });
+
+    try {
+      await expect(enforceUpdateIfRequired(store as never)).resolves.toBe(false);
+    } finally {
+      setActiveDistribution(previous);
+    }
+    expect(store.load).not.toHaveBeenCalled();
   });
 
   test("enforceUpdateIfRequired never blocks on state-load failures", async () => {

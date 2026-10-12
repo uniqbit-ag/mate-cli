@@ -7,12 +7,8 @@ const path = await import("node:path");
 import { MATE_ENV } from "../../../runtime/env";
 import { validateGuidanceData, type MateGuidanceFile } from "../../../runtime/guidance";
 
-import { getOpenCodePluginRoot, validateOpenCodePluginAssets } from "../../package-paths";
-import {
-  mergeOpenCodeConfigContent,
-  readOpenCodeConfig,
-} from "../../../tools/setup/providers/opencode-format";
-import { renderCompanionExternalDirectoryPermissions } from "../../../tools/setup/providers/opencode";
+import { validateOpenCodePluginAssets } from "../../package-paths";
+import { readOpenCodeConfig } from "../../../tools/setup/providers/opencode-format";
 import { buildOpenCodeGuidance } from "../opencode-guidance";
 import { LaunchPreflightError } from "../types";
 import { type AdapterContext, LaunchAdapter } from "./base";
@@ -74,20 +70,14 @@ export class OpenCodeAdapter extends LaunchAdapter {
     return hostsServer && !choosesServer ? [command, STANDALONE_FLAG, ...rest] : [command, ...rest];
   }
 
+  /**
+   * No `OPENCODE_CONFIG_DIR` and no config overlay: OpenCode 2.x treats the
+   * config dir as a replacement for the user's global one, and everything the
+   * overlay carried now lives in the wrapped `.opencode/opencode.json`. An
+   * inherited `OPENCODE_CONFIG_DIR` or `OPENCODE_CONFIG_CONTENT` passes through.
+   */
   extendEnvironment(context: AdapterContext): NodeJS.ProcessEnv {
     return {
-      OPENCODE_CONFIG_DIR: path.join(context.companionPath, ".opencode"),
-      OPENCODE_CONFIG_CONTENT: mergeOpenCodeConfigContent(
-        {
-          permissions: renderCompanionExternalDirectoryPermissions(context.companionPath),
-          plugins: [getOpenCodePluginRoot()],
-          references: {
-            mate: context.companionPath,
-          },
-        },
-        process.env,
-        { appendSkillPaths: [path.join(context.companionPath, ".agents", "skills")] },
-      ),
       // Built fresh per launch from the live capability config; always set so
       // a stale value inherited from an outer Mate session can never leak in.
       [MATE_ENV.guidanceJson]: JSON.stringify(this.buildGuidance(context)),

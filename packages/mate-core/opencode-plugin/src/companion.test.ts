@@ -2,9 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { extractPatchPaths, readContext } from "../../src/opencode";
+import { runtimeDirectoryPath, runtimeWrapperBinPath } from "../../src/runtime/runtime-directory";
 
 import { registerCompanion } from "./companion";
 
@@ -177,6 +178,7 @@ describe("OpenCode companion registration", () => {
         MATE_REPO_ID: "app",
         MATE_POLICY_JSON: "{}",
         MATE_GIT_AUTO_MODE: "0",
+        MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
       },
       async () => {
         const { system } = await register(repo);
@@ -204,6 +206,7 @@ describe("OpenCode companion registration", () => {
         MATE_REPO_ID: "app",
         MATE_POLICY_JSON: "{}",
         MATE_GIT_AUTO_MODE: "0",
+        MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
       },
       async () => {
         const { hooks } = await register(repo);
@@ -238,6 +241,7 @@ describe("OpenCode companion registration", () => {
         MATE_REPO_ID: "app",
         MATE_POLICY_JSON: "{}",
         MATE_GIT_AUTO_MODE: "0",
+        MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
       },
       async () => {
         const [prompt] = await (await register(repo)).system("base");
@@ -265,6 +269,7 @@ describe("OpenCode companion registration", () => {
         MATE_REPO_ID: "app",
         MATE_POLICY_JSON: "{}",
         MATE_GIT_AUTO_MODE: "0",
+        MATE_WRAPPER_BIN_PATH: "/package/wrappers/bin",
       },
       async () => {
         const [prompt] = await (await register(repo)).system("base");
@@ -292,5 +297,59 @@ more content
   test("extractPatchPaths returns empty array for patch without markers", () => {
     const patchText = "--- a/foo.txt\n+++ b/foo.txt\n@@ -1 +1 @@\n";
     expect(extractPatchPaths(patchText)).toEqual([]);
+  });
+});
+
+describe("wrapper path without a launch environment", () => {
+  const launchEnv = (companion: string, repo: string) => ({
+    MATE_ARTIFACT_PATH: companion,
+    MATE_REPO_PATH: repo,
+    MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+    MATE_REPO_ID: "acme",
+    MATE_POLICY_JSON: "{}",
+    MATE_WRAPPER_BIN_PATH: undefined,
+    PATH: "/usr/bin",
+  });
+
+  afterEach(async () => {
+    await fs.rm(runtimeDirectoryPath(), { recursive: true, force: true });
+  });
+
+  test("uses the runtime directory in guidance and in spawned shells", async () => {
+    const root = await makeTempDir("mate-opencode-runtime-");
+    const repo = path.join(root, "repo");
+    await fs.mkdir(repo, { recursive: true });
+    await fs.mkdir(runtimeWrapperBinPath(), { recursive: true });
+
+    await withEnv(launchEnv(path.join(root, "companion"), repo), async () => {
+      const { hooks, system } = await register(repo);
+      const shell = { env: {} as Record<string, string> };
+      await hooks.get("shell.create.before")!(shell);
+      const [prompt] = await system("base");
+
+      expect(shell.env.MATE_WRAPPER_BIN_PATH).toBe(runtimeWrapperBinPath());
+      expect(prompt).toContain(path.join(runtimeWrapperBinPath(), "openspec"));
+      expect(prompt).not.toContain("$MATE_WRAPPER_BIN_PATH");
+    });
+  });
+
+  test("a missing runtime directory is reported and no guidance is registered", async () => {
+    const root = await makeTempDir("mate-opencode-no-runtime-");
+    const repo = path.join(root, "repo");
+    await fs.mkdir(repo, { recursive: true });
+    const errors: string[] = [];
+    const spy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.join(" "));
+    });
+
+    try {
+      await withEnv(launchEnv(path.join(root, "companion"), repo), async () => {
+        const { hooks } = await register(repo);
+        expect(hooks.has("session.context")).toBe(false);
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(errors.join("\n")).toContain("run `mate` once");
   });
 });

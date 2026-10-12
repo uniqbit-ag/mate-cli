@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { recordCompanionSyncUnfinished } from "../runtime/companion-git-state";
 import { MATE_ENV } from "../runtime/env-names";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
@@ -56,8 +57,15 @@ async function inUnmanagedSession<T>(cwd: string, fn: () => Promise<T>): Promise
   }
 }
 
-function fakeApi(): { api: MateTuiApi; claims: MateSlotClaim[] } {
+function fakeApi(): {
+  api: MateTuiApi;
+  claims: MateSlotClaim[];
+  toasts: string[];
+  store: Record<string, object>;
+} {
   const claims: MateSlotClaim[] = [];
+  const toasts: string[] = [];
+  const store: Record<string, object> = {};
   const api: MateTuiApi = {
     theme: { text: { muted: "#808080" } },
     ui: {
@@ -65,9 +73,17 @@ function fakeApi(): { api: MateTuiApi; claims: MateSlotClaim[] } {
         claims.push(claim);
         return () => {};
       },
+      toast: { show: ({ message }) => toasts.push(message) },
+    },
+    storage: {
+      memory<Value extends object>(key: string, options: { readonly initial: Value }) {
+        store[key] ??= structuredClone(options.initial);
+        const value = store[key] as Value;
+        return [value, (mutation: (draft: Value) => void) => mutation(value)] as const;
+      },
     },
   };
-  return { api, claims };
+  return { api, claims, toasts, store };
 }
 
 describe("Mate OpenCode TUI plugin", () => {
@@ -92,6 +108,47 @@ describe("Mate OpenCode TUI plugin", () => {
       { append: "sidebar.content" },
     ]);
     for (const claim of claims) expect(typeof claim.render).toBe("function");
+  });
+
+  test("polls the session lines and raises a new one as a toast", async () => {
+    const { repo, companion } = await wrappedRepo();
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "mate-tui-home-"));
+    tempRoots.push(home);
+    const previousHome = process.env.HOME;
+    process.env.HOME = home;
+    const { default: tuiPlugin } = await import("./tui");
+    const { api, toasts, store } = fakeApi();
+    const ticks: Array<() => void> = [];
+    const setInterval = spyOn(globalThis, "setInterval").mockImplementation(((tick: () => void) => {
+      ticks.push(tick);
+      return { unref() {} };
+    }) as never);
+    const clearInterval = spyOn(globalThis, "clearInterval").mockImplementation(() => {});
+
+    try {
+      await inUnmanagedSession(repo, async () => {
+        const cleanup = await tuiPlugin.setup(api);
+        const before = [...(store["mate-session-notes"] as { lines: string[] }).lines];
+        recordCompanionSyncUnfinished(companion, "acme unreachable");
+        ticks[0]?.();
+        const after = (store["mate-session-notes"] as { lines: string[] }).lines;
+
+        expect(after.length).toBe(before.length + 1);
+        expect(after.join("\n")).toContain("acme unreachable");
+        expect(toasts).toHaveLength(1);
+        expect(toasts[0]).toContain("mate opencode");
+
+        ticks[0]?.();
+        expect(toasts).toHaveLength(1);
+        cleanup?.();
+        expect(clearInterval).toHaveBeenCalled();
+      });
+    } finally {
+      setInterval.mockRestore();
+      clearInterval.mockRestore();
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+    }
   });
 
   test("claims nothing when neither the environment nor a projection resolves", async () => {

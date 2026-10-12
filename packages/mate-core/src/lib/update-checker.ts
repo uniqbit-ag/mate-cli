@@ -99,6 +99,11 @@ export function isCanaryVersion(version: string = getCurrentVersion()): boolean 
   return version.includes("-canary");
 }
 
+/** Versions packed by `pack-local.sh` (`x.y.z-local.n`) are local test builds. */
+export function isLocalVersion(version: string = getCurrentVersion()): boolean {
+  return version.includes("-local");
+}
+
 export type UpdateChannel = "latest" | "canary";
 
 export function getUpdateChannel(version: string = getCurrentVersion()): UpdateChannel {
@@ -134,6 +139,7 @@ export async function showUpdateBannerIfAvailable(store: UpdateStateStore): Prom
 export async function enforceUpdateIfRequired(store: UpdateStateStore): Promise<boolean> {
   if (isPinnedDeployment()) return false;
   if (!getUpdateConfig().enforce) return false;
+  if (isLocalVersion()) return false;
   try {
     const state = await store.load();
     if (!state.latestVersion) return false;

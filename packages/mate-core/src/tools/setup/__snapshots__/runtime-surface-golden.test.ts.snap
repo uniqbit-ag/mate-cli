@@ -332,30 +332,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -371,7 +348,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -391,6 +368,49 @@ exports[`runtime surface golden fixtures setup graphify × opencode 3`] = `
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -618,30 +638,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -731,7 +728,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -751,6 +748,49 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -1109,30 +1149,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -1148,7 +1165,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -1185,6 +1202,49 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 3`] = `
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -1414,30 +1474,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -1545,7 +1582,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -1582,6 +1619,49 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -1857,30 +1937,7 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -1896,7 +1953,8 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "context-mode@1.0.169",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -1916,6 +1974,49 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 3`] = `
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -2082,30 +2183,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -2193,7 +2271,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "context-mode@1.0.169",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -2213,6 +2292,49 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -2510,30 +2632,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -2549,7 +2648,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -2569,6 +2668,49 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 3`] = `
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -2756,30 +2898,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -2868,7 +2987,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -2888,6 +3007,49 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -2954,7 +3116,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
-    "mate-show-me/SKILL.md": "7ccd84f967cf",
+    "mate-show-me/SKILL.md": "0533817fe2fc",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
@@ -3165,7 +3327,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
-    "mate-show-me/SKILL.md": "7ccd84f967cf",
+    "mate-show-me/SKILL.md": "0533817fe2fc",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
     "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
     "openspec-archive-change/SKILL.md": "ad2463670c0f",
@@ -3219,30 +3381,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -3258,7 +3397,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 3`] = `
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -3278,6 +3417,49 @@ exports[`runtime surface golden fixtures setup openspec × opencode 3`] = `
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -3344,7 +3526,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
-    "mate-show-me/SKILL.md": "7ccd84f967cf",
+    "mate-show-me/SKILL.md": "0533817fe2fc",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
@@ -3384,7 +3566,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
-    "mate-show-me/SKILL.md": "7ccd84f967cf",
+    "mate-show-me/SKILL.md": "0533817fe2fc",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
     "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
     "openspec-archive-change/SKILL.md": "ad2463670c0f",
@@ -3486,30 +3668,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -3611,7 +3770,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -3631,6 +3790,49 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -3811,7 +4013,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
-    "mate-show-me/SKILL.md": "7ccd84f967cf",
+    "mate-show-me/SKILL.md": "0533817fe2fc",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
@@ -3889,7 +4091,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "fa73daee9951",
-    "mate-show-me/SKILL.md": "7ccd84f967cf",
+    "mate-show-me/SKILL.md": "0533817fe2fc",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
     "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
     "openspec-archive-change/SKILL.md": "ad2463670c0f",
@@ -4017,30 +4219,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       "errors": [],
       "version": 1,
     },
-    "OPENCODE_CONFIG_CONTENT": {
-      "permissions": [
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion",
-        },
-        {
-          "action": "external_directory",
-          "effect": "allow",
-          "resource": "<root>/companion/**",
-        },
-      ],
-      "plugins": [
-        "<opencode-plugin>",
-      ],
-      "references": {
-        "mate": "<root>/companion",
-      },
-      "skills": [
-        "<root>/companion/.agents/skills",
-      ],
-    },
-    "OPENCODE_CONFIG_DIR": "<root>/companion/.opencode",
+    "OPENCODE_CONFIG_CONTENT": {},
   },
 }
 `;
@@ -4173,7 +4352,8 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
         ],
         "kind": "list",
         "values": [
-          "<opencode-plugin>",
+          "context-mode@1.0.169",
+          "<runtime-opencode-plugin>",
         ],
       },
       {
@@ -4210,6 +4390,49 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
             "resource": "<root>/companion/**",
           },
         ],
+      },
+      {
+        "at": [
+          "skills",
+        ],
+        "kind": "list",
+        "values": [
+          "<root>/companion/.agents/skills",
+        ],
+      },
+      {
+        "at": [
+          "references",
+        ],
+        "entries": {
+          "mate": "<root>/companion",
+        },
+        "kind": "map",
+      },
+      {
+        "at": [
+          "compaction",
+        ],
+        "kind": "value",
+        "value": {
+          "auto": true,
+          "buffer": 20000,
+          "keep": {
+            "tokens": 15000,
+          },
+        },
+        "yields": true,
+      },
+      {
+        "at": [
+          "tool_output",
+        ],
+        "kind": "value",
+        "value": {
+          "max_bytes": 40000,
+          "max_lines": 1000,
+        },
+        "yields": true,
       },
     ],
   },
@@ -4588,7 +4811,7 @@ User notes.
 "# mate managed: start
 /.mate/
 /.claude/
-/.opencode/
+/.opencode/opencode.json
 /.agents/
 /.mcp.json
 # mate managed: end
@@ -4634,7 +4857,7 @@ User notes.
 "# mate managed: start
 /.mate/
 /.claude/
-/.opencode/
+/.opencode/opencode.json
 /.agents/
 /.mcp.json
 # mate managed: end

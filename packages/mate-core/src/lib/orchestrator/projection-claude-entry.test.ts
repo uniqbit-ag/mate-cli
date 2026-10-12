@@ -42,7 +42,7 @@ describe("the launch scope of the Managed Projection", () => {
     const excludePath = path.join(workingRepoPath, ".git", "info", "exclude");
     const exclude = await fs.readFile(excludePath, "utf8");
     expect(exclude).toContain("/.claude/\n");
-    expect(exclude).toContain("/.opencode/\n");
+    expect(exclude).toContain("/.opencode/opencode.json\n");
     expect(exclude).toContain("/.agents/\n");
 
     await ensureWorkingRepoLocalExcludes(workingRepoPath);

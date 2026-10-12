@@ -36,7 +36,8 @@ mate claude
 mate opencode
 ```
 
-Agent launches are intentionally not valid from the companion root. This keeps
+Agent launches from the companion root require the explicit
+`mate opencode -- --companion` (or `mate claude -- --companion`) scope. This keeps
 the repository being edited explicit.
 
 ## Link Metadata
@@ -55,6 +56,11 @@ change.
 
 Mate searches upward from the current directory for this registry, so commands
 can run from a subdirectory of the working repository.
+
+`mate opencode` and `mate wrap` also write into the working repository: Mate's
+regions in `.opencode/opencode.json` and copies of the companion's `.opencode/`
+files, all git-excluded. `mate unwrap` withdraws them and keeps the link. See
+[Wrapping](/mate-cli/reference/commands#wrapping).
 
 ## Resolution Order
 

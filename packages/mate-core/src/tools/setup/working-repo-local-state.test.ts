@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 
 import {
   ensureWorkingRepoLocalExcludes,
+  reconcileWorkingRepoCopyExcludes,
   removeWorkingRepoLocalExcludes,
 } from "./working-repo-local-state";
 
@@ -46,9 +47,35 @@ describe("working repository local excludes", () => {
     expect(first).not.toContain(".claude/settings.local.json");
     expect(first.match(/# mate managed: start/g)).toHaveLength(1);
     expect(first.match(/# mate managed: end/g)).toHaveLength(1);
-    for (const entry of ["/.mate/", "/.claude/", "/.opencode/", "/.agents/"]) {
+    for (const entry of ["/.mate/", "/.claude/", "/.opencode/opencode.json", "/.agents/"]) {
       expect(first.split("\n").filter((line) => line === entry)).toHaveLength(1);
     }
+  });
+
+  test("keeps the repository's own .opencode files visible to Git", async () => {
+    const repoPath = await makeRepo("mate-working-excludes-opencode-");
+    await ensureWorkingRepoLocalExcludes(repoPath);
+    await fs.mkdir(path.join(repoPath, ".opencode", "commands"), { recursive: true });
+    await fs.writeFile(path.join(repoPath, ".opencode", "commands", "acme.md"), "acme\n");
+    await fs.writeFile(path.join(repoPath, ".opencode", "opencode.json"), "{}\n");
+
+    const status = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+      cwd: repoPath,
+      encoding: "utf8",
+    });
+    expect(status).toContain(".opencode/commands/acme.md");
+    expect(status).not.toContain("opencode.json");
+  });
+
+  test("leaves a block that follows the managed one where it is", async () => {
+    const repoPath = await makeRepo("mate-working-excludes-order-");
+    await ensureWorkingRepoLocalExcludes(repoPath);
+    await reconcileWorkingRepoCopyExcludes(repoPath, [".opencode/commands/acme.md"]);
+
+    expect(await ensureWorkingRepoLocalExcludes(repoPath)).toBe(false);
+    expect(await reconcileWorkingRepoCopyExcludes(repoPath, [".opencode/commands/acme.md"])).toBe(
+      false,
+    );
   });
 
   test("preserves equivalent user rules outside the managed block", async () => {

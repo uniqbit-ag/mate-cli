@@ -10,10 +10,12 @@ import { getActiveDistribution, setActiveDistribution } from "../../distribution
 import { FRAMEWORK_NAME } from "../../framework";
 import { parseProjectionYaml, type ProjectionFile } from "../../runtime/projection";
 import { renderWorkingRuntimeDocuments } from "../../tools/setup";
-import { getOpenCodePluginRoot } from "../package-paths";
+import { runtimeOpenCodePluginRoot } from "../../runtime/runtime-directory";
+import { projectionEntries } from "./projection-entries";
 import { GlobalConfigStore } from "./global-config-store";
 import { runtimeDocumentDeps } from "./projection-runtime-documents";
-import { firstFailure, type RenderedRuntimeDocument } from "./projection-types";
+import { firstFailure } from "./projection-types";
+import type { RenderedRuntimeDocument } from "../../runtime/runtime-document-manifest";
 import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
 import type { LinkedRepository } from "./types";
 import {
@@ -21,7 +23,6 @@ import {
   project,
   projectWorkingRepository,
   projectWorkingRepositoryBestEffort,
-  projectWorkingRuntimeDocuments,
   unproject,
 } from "./working-repo-projection";
 
@@ -241,7 +242,8 @@ describe("the projection round-trip", () => {
       repository,
       config,
       globalConfigStore: store,
-      runtimeDocuments: await renderWorkingRuntimeDocuments(companionPath, config, repoPath),
+      runtimeDocuments: (await renderWorkingRuntimeDocuments(companionPath, config, repoPath))
+        .documents,
     });
   }
 
@@ -394,7 +396,8 @@ describe("the companion link", () => {
       repository,
       config,
       globalConfigStore: store,
-      runtimeDocuments: await renderWorkingRuntimeDocuments(companionPath, config, repoPath),
+      runtimeDocuments: (await renderWorkingRuntimeDocuments(companionPath, config, repoPath))
+        .documents,
     });
 
     const states = new Map(result.outcomes.map((outcome) => [outcome.id, outcome.state]));
@@ -473,7 +476,8 @@ describe("the runtime documents under a launch", () => {
           repository,
           config,
           globalConfigStore: store,
-          runtimeDocuments: await renderWorkingRuntimeDocuments(companionPath, config, repoPath),
+          runtimeDocuments: (await renderWorkingRuntimeDocuments(companionPath, config, repoPath))
+            .documents,
         });
       },
     };
@@ -495,20 +499,18 @@ describe("the runtime documents under a launch", () => {
     return result.outcomes.find((outcome) => outcome.id === id)?.state;
   }
 
-  test("a launch re-points the plugin root the wrap baked in", async () => {
+  test("the wrapped plugin root is the runtime link, so a new install changes nothing", async () => {
     const { repoPath, at } = await makeWrappable("projection-launch-repin-");
     const assets = await fs.mkdtemp(path.join(os.tmpdir(), "projection-launch-assets-"));
     tempRoots.push(assets);
     await fs.mkdir(path.join(assets, "opencode-plugin"));
     await at("wrap", "0.15.5");
-    const wrappedRoot = getOpenCodePluginRoot();
-    expect((await readOpenCode(repoPath)).plugins).toEqual([wrappedRoot]);
+    expect((await readOpenCode(repoPath)).plugins).toEqual([runtimeOpenCodePluginRoot()]);
 
     const launched = await at("launch", "0.16.0", [assets]);
 
-    expect(stateOf(launched, "opencode-runtime-document")).toBe("written");
-    /** One entry, not the old one with its successor beside it. */
-    expect((await readOpenCode(repoPath)).plugins).toEqual([path.join(assets, "opencode-plugin")]);
+    expect(stateOf(launched, "opencode-runtime-document")).toBe("current");
+    expect((await readOpenCode(repoPath)).plugins).toEqual([runtimeOpenCodePluginRoot()]);
   });
 
   test("a launch at the version that wrapped rewrites nothing", async () => {
@@ -694,7 +696,7 @@ describe("a tracked runtime document", () => {
     return { repoPath, companionPath, repository: { id: "acme", path: repoPath } };
   }
 
-  async function collectWarnings(run: () => Promise<void>): Promise<string[]> {
+  async function collectStderr(run: () => Promise<void>): Promise<string[]> {
     const lines: string[] = [];
     const original = console.error;
     console.error = (...args: unknown[]) => void lines.push(args.map(String).join(" "));
@@ -706,34 +708,61 @@ describe("a tracked runtime document", () => {
     return lines;
   }
 
-  test("warns on the wrap pass and still writes the document", async () => {
+  async function wrap(
+    repoPath: string,
+    companionPath: string,
+    repository: LinkedRepository,
+  ): Promise<{ warnings: string[]; state?: string; stderr: string[] }> {
+    let result: Awaited<ReturnType<typeof project>> | undefined;
+    const stderr = await collectStderr(async () => {
+      result = await project("wrap", {
+        repoPath,
+        companionPath,
+        repository,
+        config,
+        runtimes: ["opencode"],
+        runtimeDocuments: [document],
+      });
+    });
+    const outcome = result?.outcomes.find((entry) => entry.id === "opencode-runtime-document");
+    return { warnings: outcome?.warnings ?? [], state: outcome?.state, stderr };
+  }
+
+  test("warns in the outcome of the pass that writes it, and still writes it", async () => {
     const { repoPath, companionPath, repository } = await makeRepo("projection-tracked-", {
       track: true,
     });
 
-    let result: Awaited<ReturnType<typeof projectWorkingRuntimeDocuments>> | undefined;
-    const lines = await collectWarnings(async () => {
-      result = await projectWorkingRuntimeDocuments(companionPath, repository, config, [document]);
-    });
+    const { warnings, state, stderr } = await wrap(repoPath, companionPath, repository);
 
-    expect(result?.kind).toBe("written");
+    expect(state).toBe("written");
+    expect(stderr).toEqual([]);
     expect(await fs.readFile(path.join(repoPath, ".opencode", "opencode.json"), "utf8")).toContain(
       "@acme/plugin@1.0.0",
     );
-    expect(lines.join("\n")).toContain(
-      `${FRAMEWORK_NAME}: warning: .opencode/opencode.json is tracked by Git in acme;`,
-    );
-    expect(lines.join("\n")).toContain("git rm --cached .opencode/opencode.json");
+    expect(warnings.join("\n")).toContain(".opencode/opencode.json is tracked by Git in acme;");
+    expect(warnings.join("\n")).toContain("git rm --cached .opencode/opencode.json");
+  });
+
+  test("an unchanged tracked document does not warn again", async () => {
+    const { repoPath, companionPath, repository } = await makeRepo("projection-tracked-again-", {
+      track: true,
+    });
+    await wrap(repoPath, companionPath, repository);
+
+    const { warnings, state } = await wrap(repoPath, companionPath, repository);
+
+    expect(state).toBe("current");
+    expect(warnings).toEqual([]);
   });
 
   test("says nothing about a document Git does not track", async () => {
-    const { companionPath, repository } = await makeRepo("projection-untracked-");
+    const { repoPath, companionPath, repository } = await makeRepo("projection-untracked-");
 
-    const lines = await collectWarnings(async () => {
-      await projectWorkingRuntimeDocuments(companionPath, repository, config, [document]);
-    });
+    const { warnings, state } = await wrap(repoPath, companionPath, repository);
 
-    expect(lines).toEqual([]);
+    expect(state).toBe("written");
+    expect(warnings).toEqual([]);
   });
 
   test("a directory that is no Git repository writes without failing", async () => {
@@ -741,25 +770,23 @@ describe("a tracked runtime document", () => {
       git: false,
     });
 
-    let result: Awaited<ReturnType<typeof projectWorkingRuntimeDocuments>> | undefined;
-    const lines = await collectWarnings(async () => {
-      result = await projectWorkingRuntimeDocuments(companionPath, repository, config, [document]);
-    });
+    const { warnings, state, stderr } = await wrap(repoPath, companionPath, repository);
 
-    expect(lines).toEqual([]);
-    expect(result?.kind).toBe("written");
+    expect(warnings).toEqual([]);
+    expect(stderr).toEqual([]);
+    expect(state).toBe("written");
     expect(await fs.readFile(path.join(repoPath, ".opencode", "opencode.json"), "utf8")).toContain(
       "@acme/plugin@1.0.0",
     );
   });
 
-  /** The launch scope renders the same documents on every start; only wrap says it. */
-  test("the launch scope writes the same tracked document silently", async () => {
+  /** The launch scope renders the same documents on every start; it prints nothing. */
+  test("the launch scope writes the same tracked document without printing", async () => {
     const { repoPath, companionPath, repository } = await makeRepo("projection-launch-quiet-", {
       track: true,
     });
 
-    const lines = await collectWarnings(async () => {
+    const lines = await collectStderr(async () => {
       await project("launch", {
         repoPath,
         companionPath,
@@ -790,5 +817,197 @@ describe("the owner's dependencies", () => {
     expect(source).not.toContain("claude");
     expect(source).not.toContain("opencode");
     expect(source).not.toContain("providers/");
+  });
+});
+
+/**
+ * An OpenCode Session Prepare runs the wrap pass alone, so every entry the
+ * launch scope writes for OpenCode has to be in the wrap scope too.
+ */
+describe("one projection pass for OpenCode", () => {
+  test("the wrap scope covers every launch-scope entry that applies to OpenCode", () => {
+    const uncovered = projectionEntries()
+      .filter((entry) => entry.scopes.includes("launch"))
+      .filter((entry) => !entry.runtime || entry.runtime === "opencode")
+      .filter((entry) => !entry.scopes.includes("wrap"))
+      .map((entry) => entry.id);
+
+    expect(uncovered).toEqual([]);
+  });
+
+  test("a wrap pass writes a Capability's exclusion and strips the legacy CLAUDE.md append", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "projection-wrap-launch-"));
+    tempRoots.push(root);
+    const repoPath = path.join(root, "working");
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(path.join(repoPath, ".git", "info"), { recursive: true });
+    await fs.mkdir(companionPath, { recursive: true });
+    const repository: LinkedRepository = { id: "acme", path: repoPath };
+
+    const result = await project("wrap", {
+      repoPath,
+      companionPath,
+      repository,
+      config: { allowedAgents: ["opencode"], capabilities: [{ name: "tokensave" }] } as never,
+      runtimes: ["opencode"],
+    });
+
+    expect(firstFailure(result.outcomes)).toBeFalsy();
+    const ids = result.outcomes.map((outcome) => outcome.id);
+    expect(ids).toContain("capability-excludes");
+    expect(ids).toContain("legacy-tokensave-claude-md");
+    expect(await fs.readFile(path.join(repoPath, ".git", "info", "exclude"), "utf8")).toContain(
+      ".tokensave/",
+    );
+  });
+
+  test("the wrap scope declares the projection pair and the companion copies", () => {
+    const wrapIds = projectionEntries()
+      .filter((entry) => entry.scopes.includes("wrap"))
+      .map((entry) => entry.id);
+
+    expect(wrapIds).toContain("projection-pair");
+    expect(wrapIds).toContain("opencode-companion-copies");
+    expect(wrapIds.at(-1)).toBe("opencode-companion-copies");
+  });
+
+  test("an OpenCode-restricted wrap attempts no Claude entry and every untagged one", async () => {
+    const { repoPath, companionPath, repository } = await copiesFixture("projection-wrap-runtime-");
+    const result = await project("wrap", {
+      repoPath,
+      companionPath,
+      repository,
+      config: { allowedAgents: ["opencode"], capabilities: [] } as never,
+      runtimes: ["opencode"],
+      runtimeDocuments: [],
+    });
+
+    const ids = result.outcomes.map((outcome) => outcome.id);
+    const claudeIds = projectionEntries()
+      .filter((entry) => entry.runtime === "claude")
+      .map((entry) => entry.id);
+    const untagged = projectionEntries()
+      .filter((entry) => entry.scopes.includes("wrap") && !entry.runtime)
+      .map((entry) => entry.id);
+    expect(ids.filter((id) => claudeIds.includes(id))).toEqual([]);
+    expect(ids).toEqual(expect.arrayContaining(untagged));
+    expect(ids).toContain("projection-pair");
+  });
+});
+
+async function copiesFixture(
+  prefix: string,
+): Promise<{ repoPath: string; companionPath: string; repository: LinkedRepository }> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  tempRoots.push(root);
+  const repoPath = path.join(root, "working");
+  const companionPath = path.join(root, "companion");
+  await fs.mkdir(path.join(companionPath, ".opencode", "commands"), { recursive: true });
+  await fs.writeFile(path.join(companionPath, ".opencode", "commands", "acme.md"), "acme\n");
+  await fs.mkdir(repoPath, { recursive: true });
+  await execFileAsync("git", ["init", "-q", repoPath]);
+  return { repoPath, companionPath, repository: { id: "acme", path: repoPath } };
+}
+
+/** Every write reports the same outcome shape, whichever form the entry returned. */
+describe("wrap-scope outcomes", () => {
+  test("every wrap-scope entry's outcome has the normalized shape", async () => {
+    const { repoPath, companionPath, repository } = await copiesFixture("projection-shape-");
+    const config = { allowedAgents: ["claude", "opencode"], capabilities: [] };
+
+    const result = await project("wrap", {
+      repoPath,
+      companionPath,
+      repository,
+      config,
+      runtimeDocuments: (await renderWorkingRuntimeDocuments(companionPath, config, repoPath))
+        .documents,
+    });
+
+    const wrapIds = projectionEntries()
+      .filter((entry) => entry.scopes.includes("wrap"))
+      .map((entry) => entry.id);
+    expect(result.outcomes.map((outcome) => outcome.id)).toEqual(wrapIds);
+    for (const outcome of result.outcomes) {
+      expect(["written", "current", "skipped"]).toContain(outcome.state);
+      if (outcome.warnings !== undefined) {
+        expect(outcome.warnings.length).toBeGreaterThan(0);
+        for (const warning of outcome.warnings) expect(typeof warning).toBe("string");
+      }
+      if (outcome.changed !== undefined) {
+        expect(Array.isArray(outcome.changed.written)).toBe(true);
+        expect(Array.isArray(outcome.changed.removed)).toBe(true);
+        expect(outcome.changed.written.length + outcome.changed.removed.length).toBeGreaterThan(0);
+      }
+    }
+    const copies = result.outcomes.find((outcome) => outcome.id === "opencode-companion-copies");
+    expect(copies?.changed).toEqual({ written: [".opencode/commands/acme.md"], removed: [] });
+  });
+});
+
+describe("the companion copies entry", () => {
+  test("withdraws every owned copy once the companion drops OpenCode", async () => {
+    const { repoPath, companionPath, repository } = await copiesFixture("projection-copies-drop-");
+    await project("wrap", {
+      repoPath,
+      companionPath,
+      repository,
+      config: { allowedAgents: ["opencode"], capabilities: [] } as never,
+    });
+    expect(await fs.readFile(path.join(repoPath, ".git", "info", "exclude"), "utf8")).toContain(
+      "acme.md",
+    );
+
+    const result = await project("wrap", {
+      repoPath,
+      companionPath,
+      repository,
+      config: { allowedAgents: ["claude"], capabilities: [] } as never,
+    });
+
+    const copies = result.outcomes.find((outcome) => outcome.id === "opencode-companion-copies");
+    expect(copies?.state).toBe("written");
+    expect(copies?.changed).toEqual({ written: [], removed: [".opencode/commands/acme.md"] });
+    expect(
+      await fs.access(path.join(repoPath, ".opencode")).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
+    expect(await fs.readFile(path.join(repoPath, ".git", "info", "exclude"), "utf8")).not.toContain(
+      "acme.md",
+    );
+  });
+
+  test("reports a shadowed companion file as a warning in its outcome", async () => {
+    const { repoPath, companionPath, repository } = await copiesFixture(
+      "projection-copies-shadow-",
+    );
+    await fs.mkdir(path.join(repoPath, ".opencode", "commands"), { recursive: true });
+    await fs.writeFile(path.join(repoPath, ".opencode", "commands", "acme.md"), "repo\n");
+
+    const result = await project("wrap", {
+      repoPath,
+      companionPath,
+      repository,
+      config: { allowedAgents: ["opencode"], capabilities: [] } as never,
+    });
+
+    const warnings =
+      result.outcomes.find((outcome) => outcome.id === "opencode-companion-copies")?.warnings ?? [];
+    expect(warnings.join("\n")).toContain(".opencode/commands/acme.md");
+    expect(warnings.join("\n")).toContain(
+      path.join(companionPath, ".opencode", "commands", "acme.md"),
+    );
+  });
+
+  test("is skipped without a companion config", async () => {
+    const { repoPath, companionPath, repository } = await copiesFixture("projection-copies-skip-");
+
+    const result = await project("wrap", { repoPath, companionPath, repository });
+
+    expect(
+      result.outcomes.find((outcome) => outcome.id === "opencode-companion-copies")?.state,
+    ).toBe("skipped");
   });
 });

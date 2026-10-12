@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { COMPANION_SYNC_COMMAND } from "../runtime/companion-sync";
 import { recordCompanionSync } from "../runtime/companion-git-state";
+import { companionLockPath } from "../runtime/companion-lock";
 import { mateVersion } from "../runtime/install";
 import { computeProjectionStamp, writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
@@ -152,6 +153,23 @@ describe("SessionStart repairs the companion", () => {
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
+  });
+
+  test("skips at once, without a note, while another sync holds the companion lock", async () => {
+    const fixture = makeFixture();
+    commitUpstream(fixture, "remote");
+    commitCompanion(fixture, "local");
+    const lockPath = companionLockPath(fixture.companion, fixture.home);
+    fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+    fs.writeFileSync(lockPath, String(process.pid));
+    const before = git(fixture.companion, "rev-parse", "HEAD");
+
+    const started = Date.now();
+    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
+    expect(bannerMessage(outcome.stdout)).not.toContain(COMPANION_SYNC_COMMAND);
   });
 
   test("stays inert when no companion resolves", async () => {

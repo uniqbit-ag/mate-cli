@@ -90,6 +90,7 @@ mate opencode -- --continue
 When Git auto mode is enabled, Mate fetches the configured upstream and merges
 it before syncing managed companion files. Resolve unfinished operations or
 conflicts in the companion repository, then retry the launch.
+`mate companion sync` runs the same synchronization without launching an agent.
 
 To bypass synchronization for one launch:
 
@@ -101,6 +102,27 @@ mate opencode -- --no-git
 The switch must appear after the argument separator. Mate protects managed
 paths during conflict recovery, but unrelated conflicts still require manual
 resolution.
+
+## OpenCode Starts Without Companion Guidance
+
+Plain `opencode` in a wrapped repository loads Mate through `~/.mate/runtime/`.
+Installing or upgrading the package does not create it; any `mate` run does.
+Run `mate doctor` (or `mate opencode`) once after installing or upgrading. If
+Mate is uninstalled, run `mate unwrap` in the repository.
+
+## Warning: Restart With `mate opencode`
+
+A plain `opencode` session syncs the companion in the background, fast-forward
+only, and cannot prompt. A diverged history, a local edit the update would
+overwrite, or an unreachable remote leaves the session on the current companion
+with this warning. Restart with `mate opencode`; its attended sync can resolve
+it.
+
+## A Launch Waits For Another Sync
+
+Every companion sync holds one lock per companion under `~/.mate/locks/`. A
+launch waits for another running sync; session-start preparation skips instead.
+A lock left by a process that no longer runs is cleared automatically.
 
 ## Update Fails
 

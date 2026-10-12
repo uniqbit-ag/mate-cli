@@ -120,6 +120,7 @@ describe("CompanionResolver", () => {
 
       const goneCompanionPath = path.join(root, "companion-gone");
       await new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath)).save({
+        repository: { id: "app", path: repoPath },
         companions: [{ path: goneCompanionPath, repositoryId: "app" }],
       });
 
@@ -133,6 +134,7 @@ describe("CompanionResolver", () => {
 
       const rewritten = parse(await fs.readFile(repoLocalRegistryPath(repoPath), "utf8"));
       expect(rewritten.companions).toEqual([]);
+      expect(rewritten.repository).toEqual({ id: "app", path: repoPath });
 
       errorSpy.mockRestore();
     });
@@ -192,6 +194,7 @@ describe("CompanionResolver", () => {
       expect(healed.companions).toEqual([
         { path: path.resolve(companionPath), repositoryId: "app" },
       ]);
+      expect(healed.repository).toEqual({ id: "app", path: path.resolve(repoPath) });
     });
 
     test("falls back the same way when the repo-local file is corrupted", async () => {

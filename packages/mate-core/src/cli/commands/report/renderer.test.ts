@@ -282,10 +282,10 @@ const MULTI_FILE_PATCH = [
 ].join("\n");
 
 const withoutDiagramRuntime = (html: string): string =>
-  html.replace(/<script id="mermaid-runtime">[\s\S]*?<\/script>/, "");
+  html.replace(/<script id="mermaid-runtime"[^>]*><\/script>/, "");
 
 describe("renderHTML diagram sections", () => {
-  test("inlines the diagram runtime and escapes the mermaid payload", () => {
+  test("loads the pinned diagram runtime and escapes the mermaid payload", () => {
     const html = renderHTML(
       makeDocument([
         {
@@ -297,7 +297,9 @@ describe("renderHTML diagram sections", () => {
       ]),
     );
 
-    expect(html).toContain('<script id="mermaid-runtime">');
+    expect(html).toMatch(
+      /<script id="mermaid-runtime" src="https:\/\/cdn\.jsdelivr\.net\/npm\/mermaid@\d+\.\d+\.\d+\/dist\/mermaid\.min\.js" integrity="sha384-[A-Za-z0-9+\/=]+" crossorigin="anonymous"><\/script>/,
+    );
     expect(html).toContain('securityLevel: "strict"');
     expect(html).toContain("startOnLoad: true");
     expect(html).toContain('<div class="report-diagram"><pre class="mermaid">');
@@ -314,7 +316,7 @@ describe("renderHTML diagram sections", () => {
     );
 
     expect(html).not.toContain("mermaid-runtime");
-    expect(html).not.toContain("mermaid.initialize");
+    expect(html).not.toContain("initialize(");
   });
 
   test("preserves line breaks and leading whitespace in a text payload", () => {

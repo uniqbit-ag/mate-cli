@@ -5,8 +5,17 @@ import { resolveGitInfoExcludePath } from "./git-utils";
 
 const MANAGED_BLOCK_START = "# mate managed: start";
 const MANAGED_BLOCK_END = "# mate managed: end";
-/** `.mcp.json` is the one working-target document no directory entry covers. */
-const CORE_EXCLUDE_ENTRIES = ["/.mate/", "/.claude/", "/.opencode/", "/.agents/", "/.mcp.json"];
+/**
+ * Documents no directory entry covers. `.opencode/` is per file: the repository's
+ * own files there stay visible; copies get the copies block.
+ */
+const CORE_EXCLUDE_ENTRIES = [
+  "/.mate/",
+  "/.claude/",
+  "/.opencode/opencode.json",
+  "/.agents/",
+  "/.mcp.json",
+];
 const LEGACY_CORE_EXCLUDE_ENTRIES = new Set([".mate/", ".claude/settings.local.json"]);
 
 async function readExclude(excludePath: string): Promise<string> {
@@ -60,16 +69,43 @@ async function writeExclude(
   return true;
 }
 
+/** The first `startMarker`…`endMarker` pair, inclusive; `null` when either is missing. */
+function findBlock(
+  lines: string[],
+  startMarker: string,
+  endMarker: string,
+): { start: number; end: number } | null {
+  const start = lines.findIndex((line) => line.trim() === startMarker);
+  if (start === -1) return null;
+  const end = lines.findIndex((line, index) => index > start && line.trim() === endMarker);
+  return end === -1 ? null : { start, end };
+}
+
+function withoutLegacy(lines: string[]): string[] {
+  return withoutManagedBlocks(lines).filter(
+    (line) => !LEGACY_CORE_EXCLUDE_ENTRIES.has(line.trim()),
+  );
+}
+
 export async function ensureWorkingRepoLocalExcludes(repoPath: string): Promise<boolean> {
   const excludePath = await resolveGitInfoExcludePath(repoPath);
   if (!excludePath) return false;
   const existing = await readExclude(excludePath);
-  const lines = trimTrailingEmptyLines(
-    withoutManagedBlocks(contentLines(existing)).filter(
-      (line) => !LEGACY_CORE_EXCLUDE_ENTRIES.has(line.trim()),
-    ),
-  );
-  lines.push(MANAGED_BLOCK_START, ...CORE_EXCLUDE_ENTRIES, MANAGED_BLOCK_END);
+  const current = contentLines(existing);
+  const block = [MANAGED_BLOCK_START, ...CORE_EXCLUDE_ENTRIES, MANAGED_BLOCK_END];
+  /**
+   * Rewritten where it stands, not moved to the end: a block that follows it,
+   * like the companion copies', would otherwise trade places with it on every
+   * pass and turn an unchanged wrap into a write.
+   */
+  const managed = findBlock(current, MANAGED_BLOCK_START, MANAGED_BLOCK_END);
+  const lines = managed
+    ? trimTrailingEmptyLines([
+        ...withoutLegacy(current.slice(0, managed.start)),
+        ...block,
+        ...withoutLegacy(current.slice(managed.end + 1)),
+      ])
+    : [...trimTrailingEmptyLines(withoutLegacy(current)), ...block];
   return writeExclude(excludePath, existing, lines);
 }
 
@@ -114,10 +150,43 @@ export async function removeWorkingRepoLocalExcludes(repoPath: string): Promise<
   const excludePath = await resolveGitInfoExcludePath(repoPath);
   if (!excludePath) return false;
   const existing = await readExclude(excludePath);
-  const lines = trimTrailingEmptyLines(
-    withoutManagedBlocks(contentLines(existing)).filter(
-      (line) => !LEGACY_CORE_EXCLUDE_ENTRIES.has(line.trim()),
-    ),
-  );
+  const lines = trimTrailingEmptyLines(withoutLegacy(contentLines(existing)));
+  return writeExclude(excludePath, existing, lines);
+}
+
+const COPIES_BLOCK_START = "# mate managed copies: start";
+const COPIES_BLOCK_END = "# mate managed copies: end";
+
+/** A literal repo-relative path as an anchored exclude pattern. */
+function literalExcludeEntry(relativePath: string): string {
+  const escaped = relativePath.replace(/[\\*?[\]]/g, "\\$&");
+  return `/${escaped}`;
+}
+
+function withoutCopiesBlock(lines: string[]): string[] {
+  const block = findBlock(lines, COPIES_BLOCK_START, COPIES_BLOCK_END);
+  return block ? [...lines.slice(0, block.start), ...lines.slice(block.end + 1)] : lines;
+}
+
+/**
+ * One exclude line per owned companion copy, in a block of its own so the core
+ * block's rewrite leaves it alone. Per file rather than `/.opencode/`, so a file
+ * the repository adds there itself stays visible to Git.
+ */
+export async function reconcileWorkingRepoCopyExcludes(
+  repoPath: string,
+  relativePaths: readonly string[],
+): Promise<boolean> {
+  const excludePath = await resolveGitInfoExcludePath(repoPath);
+  if (!excludePath) return false;
+  const existing = await readExclude(excludePath);
+  const lines = trimTrailingEmptyLines(withoutCopiesBlock(contentLines(existing)));
+  if (relativePaths.length > 0) {
+    lines.push(
+      COPIES_BLOCK_START,
+      ...relativePaths.toSorted().map(literalExcludeEntry),
+      COPIES_BLOCK_END,
+    );
+  }
   return writeExclude(excludePath, existing, lines);
 }

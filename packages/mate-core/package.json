@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate-core",
-  "version": "0.18.1-canary.2",
+  "version": "0.18.2",
   "description": "Core framework and plugin APIs for Mate.",
   "license": "MIT",
   "repository": {
@@ -35,8 +35,8 @@
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
     "lint": "oxlint src/ opencode-plugin/",
     "lint:fix": "oxlint src/ opencode-plugin/ --fix",
-    "format": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\" \"!**/report-assets/**\"",
-    "format:check": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\" \"!**/report-assets/**\" --check"
+    "format": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\"",
+    "format:check": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\" --check"
   },
   "dependencies": {
     "@opencode/plugin": "^2.0.23",

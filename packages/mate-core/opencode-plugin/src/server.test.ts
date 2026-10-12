@@ -2,9 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { MATE_ENV, renderProjectionEnv, renderProjectionYaml } from "../../src/runtime";
+import { runtimeMateBin, runtimeWrapperBinPath } from "../../src/runtime/runtime-directory";
 
 const { default: MateOpenCodePlugin } = await import("./server");
 
@@ -95,6 +96,11 @@ async function wrappedRepo(companionPath: string): Promise<string> {
   await fs.writeFile(path.join(mateDir, "projection.env"), renderProjectionEnv(file), "utf8");
   return repoRoot;
 }
+
+/** What any `mate` run leaves behind; the plugin resolves wrapper paths through it. */
+beforeEach(async () => {
+  await fs.mkdir(runtimeWrapperBinPath(), { recursive: true });
+});
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
@@ -252,4 +258,108 @@ describe("Mate OpenCode server plugin", () => {
       },
     );
   });
+});
+
+describe("the session-prepare lifecycle", () => {
+  function withMcp(api: Record<string, unknown>) {
+    const calls: string[] = [];
+    Object.assign(api, {
+      mcp: {
+        transform: async () => {
+          calls.push("transform");
+          return { dispose: async () => {} };
+        },
+        reload: async () => {
+          calls.push("reload");
+        },
+      },
+    });
+    return calls;
+  }
+
+  test("a projected but not OpenCode-wrapped location registers no prepare or MCP gating", async () => {
+    const companion = await makeTempDir("mate-prepare-companion-");
+    const repo = await wrappedRepo(companion);
+    const { api } = fakeApi(repo);
+    const calls = withMcp(api as unknown as Record<string, unknown>);
+
+    await withEnv(NO_LAUNCH, async () => MateOpenCodePlugin.setup(api));
+
+    expect(calls).toEqual([]);
+  });
+
+  test("an OpenCode-wrapped location without a runtime launcher says to run mate", async () => {
+    const companion = await makeTempDir("mate-prepare-companion-");
+    const repo = await wrappedRepo(companion);
+    await fs.writeFile(
+      path.join(repo, ".mate", "runtime-documents.json"),
+      JSON.stringify({ documents: { ".opencode/opencode.json": [] } }),
+    );
+    const { api } = fakeApi(repo);
+    const calls = withMcp(api as unknown as Record<string, unknown>);
+    const errors: string[] = [];
+    const spy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.join(" "));
+    });
+
+    try {
+      await withEnv(NO_LAUNCH, async () => MateOpenCodePlugin.setup(api));
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(calls).toEqual([]);
+    expect(errors.join("\n")).toContain("run `mate` once");
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "registers the guardrails first, awaits the local prepare, then starts the sync",
+    async () => {
+      const companion = await makeTempDir("mate-prepare-companion-");
+      const repo = await wrappedRepo(companion);
+      await fs.writeFile(
+        path.join(repo, ".mate", "runtime-documents.json"),
+        JSON.stringify({
+          documents: {
+            ".opencode/opencode.json": [
+              { kind: "map", at: ["mcp", "servers"], entries: { tokensave: {} } },
+            ],
+          },
+        }),
+      );
+      const argsFile = path.join(companion, "prepare-args");
+      await fs.mkdir(path.dirname(runtimeMateBin()), { recursive: true });
+      await fs.writeFile(
+        runtimeMateBin(),
+        `#!/bin/sh\necho "$@" >> '${argsFile}'\necho '{"ok":true,"steps":[],"warnings":[]}'\n`,
+        { mode: 0o755 },
+      );
+      const { api, hooks } = fakeApi(repo);
+      const calls = withMcp(api as unknown as Record<string, unknown>);
+      let hooksAtGate = -1;
+      const mcp = (api as unknown as { mcp: { transform: (...args: unknown[]) => unknown } }).mcp;
+      const transform = mcp.transform;
+      mcp.transform = (...args: unknown[]) => {
+        hooksAtGate = hooks.size;
+        return transform(...args);
+      };
+
+      const cleanup = await withEnv(NO_LAUNCH, async () => MateOpenCodePlugin.setup(api));
+      await (cleanup as (() => Promise<void>) | undefined)?.();
+
+      expect(hooksAtGate).toBeGreaterThan(0);
+      expect(hooksAtGate).toBe(hooks.size);
+      expect(calls).toEqual(["transform", "reload"]);
+      const deadline = Date.now() + 5_000;
+      let lines: string[] = [];
+      while (lines.length < 2 && Date.now() < deadline) {
+        // oxlint-disable-next-line no-await-in-loop -- waits for the detached sync
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        // oxlint-disable-next-line no-await-in-loop
+        lines = (await fs.readFile(argsFile, "utf8").catch(() => "")).trim().split("\n");
+      }
+      expect(lines[0]).toEndWith("--json");
+      expect(lines[1]).toEndWith("--json --sync");
+    },
+  );
 });

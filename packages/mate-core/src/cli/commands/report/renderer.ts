@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { reportDataToDocument } from "./adapter";
 import { validateReportDocument } from "./contract";
 import { highlightInline, highlightStyleBlock } from "./highlight";
@@ -14,25 +11,17 @@ import type {
   ReportValue,
 } from "./types";
 
-const MERMAID_RUNTIME_PATH = join(
-  import.meta.dirname,
-  "../../../templates/report-assets/mermaid.min.js",
-);
+/**
+ * Pinned and integrity-checked, so a CDN cannot serve other code. Offline, the
+ * script fails to load and each diagram stays readable as its escaped source.
+ */
+const MERMAID_RUNTIME_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js";
+const MERMAID_RUNTIME_INTEGRITY =
+  "sha384-xzghz1GQ5u9HCpVskeDPqMsdogD1yvuMQbEK53+wi+G70+6J1AG0L2cfi9PHjDWI";
 
 const MERMAID_RUNTIME_ID = "mermaid-runtime";
 
 const CODE_BLOCK_SELECTOR = "pre.report-code";
-
-let mermaidRuntime: string | undefined;
-
-/** A literal `</script` inside the bundle would close the inline element, so it is neutralised. */
-function readMermaidRuntime(): string {
-  mermaidRuntime ??= readFileSync(MERMAID_RUNTIME_PATH, "utf8").replaceAll(
-    "</script",
-    String.raw`<\/script`,
-  );
-  return mermaidRuntime;
-}
 
 const carriesMermaid = (sections: ReportSection[]): boolean =>
   sections.some((section) => section.type === "diagram" && section.mermaid !== undefined);
@@ -384,7 +373,7 @@ export function renderHTML(input: RenderInput): string {
     ? `\n  <style>${highlightStyleBlock(CODE_BLOCK_SELECTOR)}${VISUAL_SECTION_CSS}</style>`
     : "";
   const diagramRuntime = carriesMermaid(data.sections)
-    ? `\n  <script id="${MERMAID_RUNTIME_ID}">${readMermaidRuntime()}</script>\n  <script>mermaid.initialize({ startOnLoad: true, securityLevel: "strict" });</script>`
+    ? `\n  <script id="${MERMAID_RUNTIME_ID}" src="${MERMAID_RUNTIME_URL}" integrity="${MERMAID_RUNTIME_INTEGRITY}" crossorigin="anonymous"></script>\n  <script>window.mermaid?.initialize({ startOnLoad: true, securityLevel: "strict" });</script>`
     : "";
 
   return `<!doctype html>
