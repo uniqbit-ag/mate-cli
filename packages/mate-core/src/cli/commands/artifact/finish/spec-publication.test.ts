@@ -178,6 +178,44 @@ describe("spec publication against real git", () => {
     expect(drift).toEqual({ ok: true, paths: [] });
   });
 
+  /** Porcelain collapses an untracked capability to its directory; drift names the file. */
+  test("narrows to a spec inside a new, untracked capability directory", async () => {
+    const root = await companion();
+    await write(root, "openspec/specs/backfilled-api/spec.md", "# backfilled-api\n");
+    await write(root, "openspec/specs/widget-api/spec.md", "# widget-api\n\nedited\n");
+
+    expect(await resolveDriftedSpecs(root, defaultGitOps(root))).toEqual({
+      ok: true,
+      paths: ["openspec/specs/backfilled-api/spec.md", "openspec/specs/widget-api/spec.md"],
+    });
+
+    const out: string[] = [];
+    await runArtifactPublishCommand(
+      ["--specs", "openspec/specs/backfilled-api/spec.md", "--no-push", "--json"],
+      deps(root, out),
+    );
+
+    const result = JSON.parse(out[0]) as { tag: string };
+    expect(result.tag).toBe("openspec/specs/2026-09-14-backfilled-api");
+    expect(gitOutput(root, ["show", "--name-only", "--pretty=", "HEAD"]).split("\n")).toEqual([
+      "openspec/specs/backfilled-api/spec.md",
+    ]);
+    expect(gitOutput(root, ["status", "--porcelain"])).toContain(
+      "openspec/specs/widget-api/spec.md",
+    );
+  });
+
+  test("a drifted path supplied with a trailing slash is not refused", async () => {
+    const root = await companion();
+    await write(root, "openspec/specs/backfilled-api/spec.md", "# backfilled-api\n");
+
+    expect(
+      await resolveDriftedSpecs(root, defaultGitOps(root), [
+        "openspec/specs/backfilled-api/spec.md/",
+      ]),
+    ).toEqual({ ok: true, paths: ["openspec/specs/backfilled-api/spec.md"] });
+  });
+
   test("publishing off the default branch is refused before any mutation", async () => {
     const root = await companion();
     await write(root, "openspec/specs/widget-api/spec.md", "# widget-api\n\nedited\n");

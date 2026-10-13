@@ -38,6 +38,12 @@ async function writeDeltaSpec(
   await fs.writeFile(path.join(dir, "spec.md"), "## ADDED Requirements\n", "utf8");
 }
 
+async function writeCanonicalSpec(companion: string, capability: string): Promise<void> {
+  const dir = path.join(companion, "openspec", "specs", capability);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "spec.md"), `# ${capability}\n`, "utf8");
+}
+
 const clean: string[] = [];
 
 afterEach(async () => {
@@ -351,6 +357,65 @@ describe("unattributed specs", () => {
       expect(readdir.mock.calls.filter((call) => String(call[0]) === specsDir).length).toBe(1);
     } finally {
       readdir.mockRestore();
+    }
+  });
+
+  /** Porcelain collapses an untracked capability directory; publish narrows by file. */
+  test("reports a new capability directory per spec file", async () => {
+    const companion = await makeCompanion([]);
+    await writeCanonicalSpec(companion, "widget-api");
+    const changed = ["openspec/specs/widget-api/"];
+
+    expect(
+      await unattributedSpecs(companion, changed, [], { "openspec/specs/widget-api/": "new" }),
+    ).toEqual([{ path: "openspec/specs/widget-api/spec.md", kind: "new", touchedByArchives: [] }]);
+  });
+
+  test("expands a fully untracked canonical spec tree into its spec files", async () => {
+    const companion = await makeCompanion([]);
+    await writeCanonicalSpec(companion, "zeta");
+    await writeCanonicalSpec(companion, "alpha");
+
+    for (const collapsed of ["openspec/specs/", "openspec/"]) {
+      expect(await unattributedSpecs(companion, [collapsed], [], { [collapsed]: "new" })).toEqual([
+        { path: "openspec/specs/alpha/spec.md", kind: "new", touchedByArchives: [] },
+        { path: "openspec/specs/zeta/spec.md", kind: "new", touchedByArchives: [] },
+      ]);
+    }
+  });
+
+  test("leaves an expanded spec to the pending change that claims its directory", async () => {
+    const companion = await makeCompanion([{ name: "2026-09-07-acme", kind: "dir" }]);
+    await writeDeltaSpec(companion, "2026-09-07-acme", "widget-api");
+    await writeCanonicalSpec(companion, "widget-api");
+    await writeCanonicalSpec(companion, "orphan");
+    const changed = [
+      "openspec/changes/archive/2026-09-07-acme/",
+      "openspec/specs/orphan/",
+      "openspec/specs/widget-api/",
+    ];
+
+    const archives = await discoverArchives(companion, changed);
+
+    expect(
+      (await unattributedSpecs(companion, changed, archives)).map((spec) => spec.path),
+    ).toEqual(["openspec/specs/orphan/spec.md"]);
+  });
+
+  test("expands an untracked spec directory from entry names, never from spec prose", async () => {
+    const companion = await makeCompanion([]);
+    await writeCanonicalSpec(companion, "widget-api");
+
+    const readFile = spyOn(fs, "readFile");
+    try {
+      expect(
+        (await unattributedSpecs(companion, ["openspec/specs/widget-api/"], [])).map(
+          (spec) => spec.path,
+        ),
+      ).toEqual(["openspec/specs/widget-api/spec.md"]);
+      expect(readFile.mock.calls).toEqual([]);
+    } finally {
+      readFile.mockRestore();
     }
   });
 

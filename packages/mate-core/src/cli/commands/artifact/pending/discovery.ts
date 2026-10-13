@@ -110,27 +110,31 @@ function changeKindFor(
 }
 
 /**
+ * Every file beneath `directory`, as POSIX paths under `relativeRoot`. Reads directory
+ * entry names only, never file contents. Throws when `directory` cannot be read.
+ */
+async function filesUnder(directory: string, relativeRoot: string): Promise<string[]> {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const entryRelative = path.posix.join(relativeRoot, entry.name);
+      if (entry.isDirectory()) return filesUnder(path.join(directory, entry.name), entryRelative);
+      return entry.isFile() ? [entryRelative] : [];
+    }),
+  );
+  return nested.flat();
+}
+
+/**
  * Canonical specs the change's delta specs applied to. Only directory entry names under
  * the archive's `specs/` tree are read — never any file contents — so archived prose
  * cannot influence discovery.
  */
 async function canonicalSpecsFor(companionPath: string, anchor: string): Promise<string[]> {
-  const collectDeltaSpecFiles = async (directory: string, relative = ""): Promise<string[]> => {
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    const nested = await Promise.all(
-      entries.map(async (entry) => {
-        const entryRelative = path.posix.join(relative, entry.name);
-        if (entry.isDirectory()) {
-          return collectDeltaSpecFiles(path.join(directory, entry.name), entryRelative);
-        }
-        return entry.isFile() ? [path.posix.join(SPECS_RELATIVE_DIR, entryRelative)] : [];
-      }),
-    );
-    return nested.flat();
-  };
   try {
-    const specs = await collectDeltaSpecFiles(
+    const specs = await filesUnder(
       path.join(companionPath, ARCHIVE_RELATIVE_DIR, anchor, "specs"),
+      SPECS_RELATIVE_DIR,
     );
     return specs.toSorted();
   } catch {
@@ -217,6 +221,32 @@ async function attributionIndex(
 }
 
 /**
+ * The canonical spec files behind one uncommitted path. Porcelain collapses an untracked
+ * directory to `dir/`, so a collapsed path at or above a capability directory is expanded
+ * into the files beneath it, every one of them new; publish narrows by file, never by
+ * directory. Expansion reads directory entry names only, so spec prose cannot influence
+ * discovery.
+ */
+async function specFilesFor(
+  companionPath: string,
+  worktreePath: string,
+  changeKinds: Readonly<Record<string, WorkingTreeChange>>,
+): Promise<Array<{ path: string; kind: WorkingTreeChange }>> {
+  if (!worktreePath.endsWith("/")) {
+    return [{ path: worktreePath, kind: changeKindFor(worktreePath, changeKinds) }];
+  }
+  const collapsed = withoutTrailingSlash(worktreePath);
+  const root = collapsed.startsWith(`${SPECS_RELATIVE_DIR}/`) ? collapsed : SPECS_RELATIVE_DIR;
+  try {
+    const files = await filesUnder(path.join(companionPath, root), root);
+    return files.map((file) => ({ path: file, kind: "new" as const }));
+  } catch {
+    // A collapsed ancestor such as `openspec/` need not contain a spec tree at all.
+    return [];
+  }
+}
+
+/**
  * Uncommitted canonical specs that no pending change accounts for, each attributed to
  * every archive whose delta specs name it. An attributed spec belongs to a change whose
  * archive is already committed and can be resumed by publishing that change by name; an
@@ -230,18 +260,27 @@ export async function unattributedSpecs(
   archives: ArchiveEntry[],
   changeKinds: Readonly<Record<string, WorkingTreeChange>> = {},
 ): Promise<UnattributedSpec[]> {
-  const claimed = new Set(pendingArchives(archives).flatMap((entry) => entry.uncommittedSpecs));
-  const specPaths = uncommittedPaths
-    .filter(
-      (worktreePath) => touches(worktreePath, SPECS_RELATIVE_DIR) && !claimed.has(worktreePath),
-    )
-    .toSorted();
+  const claimed = pendingArchives(archives).flatMap((entry) => entry.uncommittedSpecs);
+  const reported = await Promise.all(
+    uncommittedPaths.flatMap((worktreePath) =>
+      touches(worktreePath, SPECS_RELATIVE_DIR)
+        ? [specFilesFor(companionPath, worktreePath, changeKinds)]
+        : [],
+    ),
+  );
+  const driftKinds = new Map<string, WorkingTreeChange>();
+  for (const spec of reported.flat()) {
+    if (!claimed.some((claimedPath) => touches(claimedPath, spec.path))) {
+      driftKinds.set(spec.path, spec.kind);
+    }
+  }
+  const specPaths = [...driftKinds.keys()].toSorted();
   if (specPaths.length === 0) return [];
 
   const index = await attributionIndex(companionPath, archives);
   return specPaths.map((specPath) => ({
     path: specPath,
-    kind: changeKindFor(specPath, changeKinds),
+    kind: driftKinds.get(specPath) ?? "modified",
     touchedByArchives: index.flatMap(({ anchor, state, specs }) =>
       specs.some((spec) => touches(specPath, spec)) ? [{ anchor, state }] : [],
     ),

@@ -356,7 +356,7 @@ export async function resolveDriftedSpecs(
       message: `mate: not a canonical spec: ${outside.join(", ")}. Only specs under ${SPECS_RELATIVE_DIR}/ are spec publication targets.`,
     };
   }
-  const driftedPaths = new Set(drifted);
+  const driftedPaths = new Set(drifted.map(withoutTrailingSlash));
   const notDrifted = normalized.filter((candidate) => !driftedPaths.has(candidate));
   if (notDrifted.length > 0) {
     return {
