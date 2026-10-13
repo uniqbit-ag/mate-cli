@@ -48,13 +48,12 @@ export const MateOpenCodePlugin = Plugin.define({
     if (!context.companionPath) return;
 
     await registerCompanionAccess(api, context.companionPath);
-    const cleanup = await registerCompanionHooks(api, context);
+    await registerCompanionHooks(api, context);
     await registerCompanion(api, context);
     /** Last: the guardrails above are live while the local phase holds `setup`. */
     const prepareCleanup = await registerPrepare(api, context.companionPath);
     return async () => {
       await prepareCleanup?.();
-      await cleanup?.();
     };
   },
 });

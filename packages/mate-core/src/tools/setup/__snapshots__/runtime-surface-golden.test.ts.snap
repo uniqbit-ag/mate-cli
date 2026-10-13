@@ -2489,9 +2489,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
 <!-- MATE:COMPANION:END -->
 "
 ,
-  "claudeHooks": {
-    "react-doctor.sh": "a33e1b4ac810",
-  },
+  "claudeHooks": {},
   "claudeMcpConfig": {
     "mcpServers": {},
   },
@@ -2501,45 +2499,19 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
-    "hooks": {
-      "PostToolUse": [
-        {
-          "hooks": [
-            {
-              "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-              "timeout": 5,
-              "type": "command",
-            },
-          ],
-          "matcher": "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
-        },
-      ],
-      "Stop": [
-        {
-          "hooks": [
-            {
-              "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-              "timeout": 45,
-              "type": "command",
-            },
-          ],
-        },
-      ],
-    },
     "permissions": {
       "allow": [
+        "Bash(<react-doctor-bin>:*)",
         "Bash(mate:*)",
-        "Bash(npx react-doctor:*)",
-        "Bash(npx react-doctor@latest *)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
-        "Skill(react-doctor)",
+        "Skill(mate-react-doctor)",
       ],
     },
   },
   "claudeSkills": {
-    "react-doctor/SKILL.md": "df58b3490543",
-    "react-doctor/references/explain.md": "2382ea820f20",
+    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/references/explain.md": "86754a7e5436",
   },
   "opencodeConfig": null,
   "opencodePlugins": {},
@@ -2655,43 +2627,6 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
       },
       {
         "at": [
-          "hooks",
-          "PostToolUse",
-        ],
-        "kind": "list",
-        "values": [
-          {
-            "hooks": [
-              {
-                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-                "timeout": 5,
-                "type": "command",
-              },
-            ],
-            "matcher": "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
-          },
-        ],
-      },
-      {
-        "at": [
-          "hooks",
-          "Stop",
-        ],
-        "kind": "list",
-        "values": [
-          {
-            "hooks": [
-              {
-                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-                "timeout": 45,
-                "type": "command",
-              },
-            ],
-          },
-        ],
-      },
-      {
-        "at": [
           "env",
         ],
         "entries": {
@@ -2710,9 +2645,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
           "Bash(mate:*)",
           "Read(<root>/companion/**)",
           "Edit(<root>/companion/**)",
-          "Skill(react-doctor)",
-          "Bash(npx react-doctor:*)",
-          "Bash(npx react-doctor@latest *)",
+          "Skill(mate-react-doctor)",
+          "Bash(<react-doctor-bin>:*)",
         ],
       },
     ],
@@ -2760,8 +2694,8 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "react-doctor/SKILL.md": "df58b3490543",
-    "react-doctor/references/explain.md": "2382ea820f20",
+    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/references/explain.md": "86754a7e5436",
   },
 }
 `;
@@ -2907,9 +2841,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
 <!-- MATE:COMPANION:END -->
 "
 ,
-  "claudeHooks": {
-    "react-doctor.sh": "a33e1b4ac810",
-  },
+  "claudeHooks": {},
   "claudeMcpConfig": {
     "mcpServers": {},
   },
@@ -2919,45 +2851,19 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
-    "hooks": {
-      "PostToolUse": [
-        {
-          "hooks": [
-            {
-              "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-              "timeout": 5,
-              "type": "command",
-            },
-          ],
-          "matcher": "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
-        },
-      ],
-      "Stop": [
-        {
-          "hooks": [
-            {
-              "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-              "timeout": 45,
-              "type": "command",
-            },
-          ],
-        },
-      ],
-    },
     "permissions": {
       "allow": [
+        "Bash(<react-doctor-bin>:*)",
         "Bash(mate:*)",
-        "Bash(npx react-doctor:*)",
-        "Bash(npx react-doctor@latest *)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
-        "Skill(react-doctor)",
+        "Skill(mate-react-doctor)",
       ],
     },
   },
   "claudeSkills": {
-    "react-doctor/SKILL.md": "df58b3490543",
-    "react-doctor/references/explain.md": "2382ea820f20",
+    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/references/explain.md": "86754a7e5436",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -2980,8 +2886,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "react-doctor/SKILL.md": "df58b3490543",
-    "react-doctor/references/explain.md": "2382ea820f20",
+    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/references/explain.md": "86754a7e5436",
   },
 }
 `;
@@ -3134,43 +3040,6 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
       },
       {
         "at": [
-          "hooks",
-          "PostToolUse",
-        ],
-        "kind": "list",
-        "values": [
-          {
-            "hooks": [
-              {
-                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-                "timeout": 5,
-                "type": "command",
-              },
-            ],
-            "matcher": "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
-          },
-        ],
-      },
-      {
-        "at": [
-          "hooks",
-          "Stop",
-        ],
-        "kind": "list",
-        "values": [
-          {
-            "hooks": [
-              {
-                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-                "timeout": 45,
-                "type": "command",
-              },
-            ],
-          },
-        ],
-      },
-      {
-        "at": [
           "env",
         ],
         "entries": {
@@ -3189,9 +3058,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
           "Bash(mate:*)",
           "Read(<root>/companion/**)",
           "Edit(<root>/companion/**)",
-          "Skill(react-doctor)",
-          "Bash(npx react-doctor:*)",
-          "Bash(npx react-doctor@latest *)",
+          "Skill(mate-react-doctor)",
+          "Bash(<react-doctor-bin>:*)",
         ],
       },
     ],
@@ -4089,9 +3957,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
 <!-- mate:managed:context-mode:9561e6cf6059 end -->
 "
 ,
-  "claudeHooks": {
-    "react-doctor.sh": "a33e1b4ac810",
-  },
+  "claudeHooks": {},
   "claudeMcpConfig": {
     "mcpServers": {
       "tokensave": {
@@ -4109,18 +3975,6 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
     "hooks": {
-      "PostToolUse": [
-        {
-          "hooks": [
-            {
-              "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-              "timeout": 5,
-              "type": "command",
-            },
-          ],
-          "matcher": "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
-        },
-      ],
       "PreToolUse": [
         {
           "hooks": [
@@ -4156,15 +4010,6 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
             },
           ],
         },
-        {
-          "hooks": [
-            {
-              "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-              "timeout": 45,
-              "type": "command",
-            },
-          ],
-        },
       ],
       "UserPromptSubmit": [
         {
@@ -4182,14 +4027,13 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
     },
     "permissions": {
       "allow": [
+        "Bash(<react-doctor-bin>:*)",
         "Bash(<wrapper-bin>/graphify:*)",
         "Bash(<wrapper-bin>/openspec:*)",
         "Bash(graphify:*)",
         "Bash(mate cap graphify:*)",
         "Bash(mate cap graphify:*)",
         "Bash(mate:*)",
-        "Bash(npx react-doctor:*)",
-        "Bash(npx react-doctor@latest *)",
         "Bash(openspec:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
@@ -4202,13 +4046,13 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
         "Skill(mate-grilling)",
         "Skill(mate-interview-me)",
         "Skill(mate-openspec-backfill)",
+        "Skill(mate-react-doctor)",
         "Skill(mate-show-me)",
         "Skill(mate-simplify-code)",
         "Skill(openspec-apply-change)",
         "Skill(openspec-archive-change)",
         "Skill(openspec-explore)",
         "Skill(openspec-propose)",
-        "Skill(react-doctor)",
         "mcp__plugin_context-mode_context-mode__*",
         "mcp__tokensave__*",
       ],
@@ -4241,14 +4085,14 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "44c4d5e064dc",
+    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/references/explain.md": "86754a7e5436",
     "mate-show-me/SKILL.md": "7bda10cae936",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
     "openspec-explore/SKILL.md": "477fdec2cdb0",
     "openspec-propose/SKILL.md": "13e8a2d0d873",
-    "react-doctor/SKILL.md": "df58b3490543",
-    "react-doctor/references/explain.md": "2382ea820f20",
   },
   "opencodeConfig": {
     "$schema": "https://opencode.ai/config.json",
@@ -4319,14 +4163,14 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "44c4d5e064dc",
+    "mate-react-doctor/SKILL.md": "2ecf137679df",
+    "mate-react-doctor/references/explain.md": "86754a7e5436",
     "mate-show-me/SKILL.md": "7bda10cae936",
     "mate-simplify-code/SKILL.md": "6fff7fff920c",
     "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
     "openspec-archive-change/SKILL.md": "ad2463670c0f",
     "openspec-explore/SKILL.md": "214bba092ffa",
     "openspec-propose/SKILL.md": "c09159964f8e",
-    "react-doctor/SKILL.md": "df58b3490543",
-    "react-doctor/references/explain.md": "2382ea820f20",
   },
 }
 `;
@@ -4520,19 +4364,20 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
       {
         "at": [
           "hooks",
-          "PostToolUse",
+          "UserPromptSubmit",
         ],
         "kind": "list",
         "values": [
           {
             "hooks": [
               {
-                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-                "timeout": 5,
+                "args": [
+                  "hook-prompt-submit",
+                ],
+                "command": "<root>/bin/tokensave",
                 "type": "command",
               },
             ],
-            "matcher": "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
           },
         ],
       },
@@ -4546,37 +4391,8 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           {
             "hooks": [
               {
-                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
-                "timeout": 45,
-                "type": "command",
-              },
-            ],
-          },
-          {
-            "hooks": [
-              {
                 "args": [
                   "hook-stop",
-                ],
-                "command": "<root>/bin/tokensave",
-                "type": "command",
-              },
-            ],
-          },
-        ],
-      },
-      {
-        "at": [
-          "hooks",
-          "UserPromptSubmit",
-        ],
-        "kind": "list",
-        "values": [
-          {
-            "hooks": [
-              {
-                "args": [
-                  "hook-prompt-submit",
                 ],
                 "command": "<root>/bin/tokensave",
                 "type": "command",
@@ -4621,9 +4437,8 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           "Bash(openspec:*)",
           "Bash(mate cap graphify:*)",
           "Bash(<wrapper-bin>/openspec:*)",
-          "Skill(react-doctor)",
-          "Bash(npx react-doctor:*)",
-          "Bash(npx react-doctor@latest *)",
+          "Skill(mate-react-doctor)",
+          "Bash(<react-doctor-bin>:*)",
           "mcp__tokensave__*",
           "Skill(graphify)",
           "Bash(graphify:*)",

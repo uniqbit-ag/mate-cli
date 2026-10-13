@@ -173,7 +173,7 @@ export const BUILTIN_SETUP_COMPATIBILITIES: SetupCompatibility[] = [
     kind: "capability",
     capability: { name: "react-doctor" },
     label: "React Doctor",
-    description: "Install React Doctor skills and Claude post-edit scans.",
+    description: "Install the mate-react-doctor skill that verifies React changes during apply.",
     defaultSelected: true,
     templateRoot: "capabilities/react-doctor",
   },

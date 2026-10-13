@@ -5,12 +5,6 @@
  * test). Must not reach OpenTUI or Solid: the Mate TUI plugin lives on the
  * `./opencode/tui` subpath.
  */
-export {
-  createReactDoctorScanner,
-  guardToolInput,
-  registerCompanionHooks,
-  type CommandRunner,
-  type CompanionHooksOptions,
-} from "./companion-hooks";
+export { guardToolInput, registerCompanionHooks } from "./companion-hooks";
 export { resolveOpenCodeGuidance, type OpenCodeGuidanceResolution } from "./projected-guidance";
 export * from "./companion-policy";

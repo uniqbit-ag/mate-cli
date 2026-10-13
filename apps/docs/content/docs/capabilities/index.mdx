@@ -22,6 +22,7 @@ Mate's bundled process skills are adapted from open-source work by:
 
 - [Addy Osmani's `agent-skills`](https://github.com/addyosmani/agent-skills), including `mate-interview-me` and `mate-simplify-code`
 - [Matt Pocock's `skills`](https://github.com/mattpocock/skills), including `mate-domain-modeling`, `mate-grill-me`, `mate-grilling`, and `mate-grill-with-docs`
+- [Million's `react-doctor`](https://github.com/millionco/react-doctor), including `mate-react-doctor`
 
 These adaptations add Mate-specific workflow, policy, and companion integration
 while preserving credit to the original authors.
@@ -124,8 +125,20 @@ mate cap index --tokensave
 
 ### React Doctor
 
-React Doctor installs companion skills and Claude post-edit diagnostics. It is
-configured during setup and does not have a separate `mate cap` command.
+React Doctor installs the `mate-react-doctor` skill for Claude and OpenCode. It
+adds no hooks and never scans in the background: it runs only when the skill is
+invoked.
+
+With OpenSpec, the shared Mate conventions add a
+`[skill:mate-react-doctor]` verification task to the end of every Area whose
+tasks change React code. The apply phase works through that task, and before it
+reports a change complete, it runs the skill for any React Area that has no
+checked verification task. The skill scans the change's diff with Mate's pinned
+React Doctor binary, fixes regressions the change introduced, and reports what
+it could not fix. Outside an OpenSpec change, invoke the skill directly.
+
+React Doctor is configured during setup and does not have a separate `mate cap`
+command.
 
 ## Index Synchronization
 

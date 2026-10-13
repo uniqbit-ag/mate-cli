@@ -1,11 +1,12 @@
-import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { CLAUDE_HOOK_SRC, createReactDoctorPlugin } from "./react-doctor";
+import { getReactDoctorBinPath } from "../../../lib/package-paths";
+import type { SetupContext } from "../plugin";
+import { createReactDoctorPlugin } from "./react-doctor";
 
 const reactDoctorPlugin = createReactDoctorPlugin();
 
@@ -17,41 +18,40 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
-function runHook(
-  repo: string,
-  tempDir: string,
-  input: Record<string, unknown>,
-  env: Record<string, string> = {},
-) {
-  return spawnSync("sh", [CLAUDE_HOOK_SRC], {
-    encoding: "utf8",
-    input: JSON.stringify(input),
-    env: {
-      ...process.env,
-      CLAUDE_PROJECT_DIR: repo,
-      TMPDIR: tempDir,
-      MATE_REACT_DOCTOR_BIN_PATH: path.join(repo, "node_modules", ".bin", "react-doctor"),
-      ...env,
+function context(companionPath: string, enabled = true): SetupContext {
+  return {
+    companionPath,
+    config: {
+      allowedAgents: ["claude", "opencode"],
+      capabilities: enabled ? [{ name: "react-doctor" }] : [],
     },
-  });
+    mode: "setup",
+    activeProviders: ["claude", "opencode"],
+  };
 }
 
-async function setupHookFixture() {
-  const root = await makeTempDir("mate-react-doctor-hook-");
-  const repo = path.join(root, "repo");
-  const tempDir = path.join(root, "tmp");
-  const binDir = path.join(repo, "node_modules", ".bin");
-  const logPath = path.join(root, "react-doctor.log");
-  await fs.mkdir(binDir, { recursive: true });
-  await fs.mkdir(tempDir, { recursive: true });
-  const fakeDoctor = path.join(binDir, "react-doctor");
-  await fs.writeFile(
-    fakeDoctor,
-    '#!/bin/sh\nprintf \'cwd=%s args=%s\\n\' "$PWD" "$*" >> "$REACT_DOCTOR_TEST_LOG"\nprintf \'%s\\n\' "${REACT_DOCTOR_TEST_OUTPUT:-}"\nexit "${REACT_DOCTOR_TEST_EXIT:-0}"\n',
-    "utf8",
+async function exists(target: string): Promise<boolean> {
+  return fs.access(target).then(
+    () => true,
+    () => false,
   );
-  await fs.chmod(fakeDoctor, 0o755);
-  return { repo, tempDir, logPath, fakeDoctor };
+}
+
+/** Seeds every artifact an earlier, hook-based release could have left behind. */
+async function seedLegacyArtifacts(companionPath: string): Promise<string[]> {
+  const legacy = [
+    path.join(companionPath, ".claude", "skills", "react-doctor"),
+    path.join(companionPath, ".agents", "skills", "react-doctor"),
+    path.join(companionPath, ".opencode", "skills", "react-doctor"),
+  ];
+  for (const dir of legacy) {
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "SKILL.md"), "react-doctor\n", "utf8");
+  }
+  const hook = path.join(companionPath, ".claude", "hooks", "react-doctor.sh");
+  await fs.mkdir(path.dirname(hook), { recursive: true });
+  await fs.writeFile(hook, "#!/bin/sh\nexit 0\n", "utf8");
+  return [...legacy, hook];
 }
 
 afterEach(async () => {
@@ -59,251 +59,104 @@ afterEach(async () => {
 });
 
 describe("reactDoctorPlugin", () => {
-  test("coalesces edits into one bounded scan and skips repeated stops", async () => {
-    const { repo, tempDir, logPath } = await setupHookFixture();
-    const env = { REACT_DOCTOR_TEST_LOG: logPath };
-
-    runHook(repo, tempDir, {
-      hook_event_name: "PostToolUse",
-      session_id: "one",
-      tool_name: "Edit",
-    });
-    runHook(repo, tempDir, {
-      hook_event_name: "PostToolUse",
-      session_id: "one",
-      tool_name: "Write",
-    });
-    expect(runHook(repo, tempDir, { hook_event_name: "Stop", session_id: "two" }, env).status).toBe(
-      0,
-    );
-    expect(runHook(repo, tempDir, { hook_event_name: "Stop", session_id: "one" }, env).status).toBe(
-      0,
-    );
-    expect(runHook(repo, tempDir, { hook_event_name: "Stop", session_id: "one" }, env).status).toBe(
-      0,
+  test("contributes no hooks for any runtime", async () => {
+    const contributions = reactDoctorPlugin.getRuntimeContributions?.(
+      context(await makeTempDir("mate-react-doctor-hooks-")),
     );
 
-    const invocations = (await fs.readFile(logPath, "utf8")).trim().split("\n");
-    expect(invocations).toHaveLength(1);
-    expect(invocations[0]).toContain("--yes --verbose --scope changed --base HEAD");
-    expect(invocations[0]).toContain("--blocking warning --no-score --max-duration 30");
-    expect(invocations[0]).not.toContain("--no-dead-code");
-    expect(invocations[0]).not.toContain("--no-supply-chain");
+    expect(contributions?.claude?.hookGroups ?? []).toEqual([]);
+    expect(contributions?.opencode?.hookGroups ?? []).toEqual([]);
   });
 
-  test("returns findings once and scans a correction only after another edit", async () => {
-    const { repo, tempDir, logPath } = await setupHookFixture();
-    const env = {
-      REACT_DOCTOR_TEST_LOG: logPath,
-      REACT_DOCTOR_TEST_EXIT: "1",
-      REACT_DOCTOR_TEST_OUTPUT: "src/App.tsx:1 warning",
-    };
-
-    runHook(repo, tempDir, {
-      hook_event_name: "PostToolUse",
-      session_id: "one",
-      tool_name: "Edit",
-    });
-    const findings = runHook(repo, tempDir, { hook_event_name: "Stop", session_id: "one" }, env);
-    const noEditFollowUp = runHook(
-      repo,
-      tempDir,
-      { hook_event_name: "Stop", session_id: "one", stop_hook_active: true },
-      env,
-    );
-    runHook(repo, tempDir, {
-      hook_event_name: "PostToolUse",
-      session_id: "one",
-      tool_name: "Edit",
-    });
-    const correction = runHook(
-      repo,
-      tempDir,
-      { hook_event_name: "Stop", session_id: "one", stop_hook_active: true },
-      env,
+  test("ships the mate-react-doctor skill to Claude and the shared root", async () => {
+    const contributions = reactDoctorPlugin.getRuntimeContributions?.(
+      context(await makeTempDir("mate-react-doctor-skill-")),
     );
 
-    expect(JSON.parse(findings.stdout)).toEqual({
-      hookSpecificOutput: {
-        hookEventName: "Stop",
-        additionalContext: expect.stringContaining("src/App.tsx:1 warning"),
-      },
-    });
-    expect(noEditFollowUp.stdout).toBe("");
-    expect(correction.stdout).toContain("src/App.tsx:1 warning");
-    expect((await fs.readFile(logPath, "utf8")).trim().split("\n")).toHaveLength(2);
-  });
-
-  test("skips the stop scan when the edit was reverted", async () => {
-    const { repo, tempDir, logPath } = await setupHookFixture();
-    expect(spawnSync("git", ["init", "--quiet", repo]).status).toBe(0);
-    expect(spawnSync("git", ["-C", repo, "add", "."]).status).toBe(0);
-    expect(
-      spawnSync("git", [
-        "-C",
-        repo,
-        "-c",
-        "user.name=React Doctor Test",
-        "-c",
-        "user.email=react-doctor-test@example.com",
-        "commit",
-        "--quiet",
-        "-m",
-        "fixture",
-      ]).status,
-    ).toBe(0);
-
-    runHook(repo, tempDir, {
-      hook_event_name: "PostToolUse",
-      session_id: "one",
-      tool_name: "Edit",
-    });
-    const result = runHook(
-      repo,
-      tempDir,
-      { hook_event_name: "Stop", session_id: "one" },
-      {
-        REACT_DOCTOR_TEST_LOG: logPath,
-      },
-    );
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toBe("");
-    await expect(fs.access(logPath)).rejects.toThrow();
-  });
-
-  test("uses Claude's hook cwd when CLAUDE_PROJECT_DIR is unset", async () => {
-    const { repo, tempDir, logPath } = await setupHookFixture();
-    const env = { CLAUDE_PROJECT_DIR: "", REACT_DOCTOR_TEST_LOG: logPath };
-    const input = {
-      hook_event_name: "PostToolUse",
-      session_id: "one",
-      tool_name: "Edit",
-      cwd: repo,
-    };
-
-    runHook(repo, tempDir, input, env);
-    const result = runHook(repo, tempDir, { ...input, hook_event_name: "Stop" }, env);
-
-    expect(result.status).toBe(0);
-    expect(await fs.readFile(logPath, "utf8")).toContain(`cwd=${repo}`);
-  });
-
-  test("uses the Mate-owned React Doctor executable when provided", async () => {
-    const { repo, tempDir, logPath, fakeDoctor } = await setupHookFixture();
-    const mateBinDir = await makeTempDir("mate-react-doctor-runtime-");
-    const mateBin = path.join(mateBinDir, "react-doctor");
-    await fs.copyFile(fakeDoctor, mateBin);
-    await fs.chmod(mateBin, 0o755);
-    await fs.unlink(fakeDoctor);
-
-    const env = {
-      MATE_REACT_DOCTOR_BIN_PATH: mateBin,
-      REACT_DOCTOR_TEST_LOG: logPath,
-    };
-    runHook(repo, tempDir, {
-      hook_event_name: "PostToolUse",
-      session_id: "one",
-      tool_name: "Edit",
-    });
-    const result = runHook(repo, tempDir, { hook_event_name: "Stop", session_id: "one" }, env);
-
-    expect(result.status).toBe(0);
-    expect(await fs.readFile(logPath, "utf8")).toContain("--max-duration 30");
-  });
-
-  test("suppresses known non-lint failures", async () => {
-    const { repo, tempDir, logPath } = await setupHookFixture();
-    runHook(repo, tempDir, {
-      hook_event_name: "PostToolUse",
-      session_id: "one",
-      tool_name: "Edit",
-    });
-    const result = runHook(
-      repo,
-      tempDir,
-      { hook_event_name: "Stop", session_id: "one" },
-      {
-        REACT_DOCTOR_TEST_LOG: logPath,
-        REACT_DOCTOR_TEST_EXIT: "1",
-        REACT_DOCTOR_TEST_OUTPUT: "No React dependency found",
-      },
-    );
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toBe("");
-  });
-
-  test("apply keeps the shared-root skill and removes the legacy opencode copy", async () => {
-    const companionPath = await makeTempDir("mate-react-doctor-apply-");
-    const shared = path.join(companionPath, ".agents", "skills", "react-doctor");
-    const legacy = path.join(companionPath, ".opencode", "skills", "react-doctor");
-    for (const dir of [shared, legacy]) {
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(path.join(dir, "SKILL.md"), "react-doctor\n", "utf8");
+    for (const runtime of ["claude", "opencode"] as const) {
+      const trees = contributions?.[runtime]?.skillTrees ?? [];
+      expect(trees.map((tree) => tree.name)).toEqual(["mate-react-doctor"]);
+      const skill = await fs.readFile(path.join(trees[0].sourceDir, "SKILL.md"), "utf8");
+      expect(skill).toContain("name: mate-react-doctor");
+      expect(skill).toContain("credits:");
+      expect(skill).toContain("author: Million Software, Inc.");
+      expect(skill).toContain("MATE_REACT_DOCTOR_BIN_PATH");
+      expect(skill).not.toMatch(/npx react-doctor(@latest)? --/);
+      expect(skill.replace(/^metadata:[\s\S]*?^---$/m, "")).not.toContain("https://");
+      await expect(
+        fs.access(path.join(trees[0].sourceDir, "references", "explain.md")),
+      ).resolves.toBeNull();
     }
-
-    await reactDoctorPlugin.apply({
-      companionPath,
-      config: { allowedAgents: ["opencode"], capabilities: [{ name: "react-doctor" }] },
-      mode: "setup",
-      activeProviders: ["opencode"],
-    });
-
-    await expect(fs.access(path.join(shared, "SKILL.md"))).resolves.toBeNull();
-    await expect(fs.access(path.join(companionPath, ".opencode"))).rejects.toThrow();
   });
 
-  test("teardown removes a legacy opencode skill copy", async () => {
-    const companionPath = await makeTempDir("mate-react-doctor-legacy-teardown-");
-    const legacy = path.join(companionPath, ".opencode", "skills", "react-doctor");
-    await fs.mkdir(legacy, { recursive: true });
+  test("pre-seeds the skill and the pinned binary instead of npx", async () => {
+    const contributions = reactDoctorPlugin.getRuntimeContributions?.(
+      context(await makeTempDir("mate-react-doctor-perms-")),
+    );
 
-    await reactDoctorPlugin.teardown({
-      companionPath,
-      config: { allowedAgents: [], capabilities: [] },
-      mode: "setup",
-      activeProviders: [],
-    });
+    expect(contributions?.claude?.permissionEntries).toEqual([
+      "Skill(mate-react-doctor)",
+      `Bash(${getReactDoctorBinPath()}:*)`,
+    ]);
+  });
 
-    await expect(fs.access(legacy)).rejects.toThrow();
+  test("apply removes legacy hook and skill artifacts", async () => {
+    const companionPath = await makeTempDir("mate-react-doctor-apply-");
+    const legacy = await seedLegacyArtifacts(companionPath);
+
+    await reactDoctorPlugin.apply(context(companionPath));
+    await reactDoctorPlugin.forProvider?.claude?.apply?.(context(companionPath));
+
+    for (const target of legacy) expect(await exists(target)).toBe(false);
+    expect(await exists(path.join(companionPath, ".claude", "hooks"))).toBe(false);
+  });
+
+  test("teardown removes legacy hook and skill artifacts", async () => {
+    const companionPath = await makeTempDir("mate-react-doctor-teardown-");
+    const legacy = await seedLegacyArtifacts(companionPath);
+
+    await reactDoctorPlugin.teardown(context(companionPath, false));
+    await reactDoctorPlugin.forProvider?.claude?.teardown?.(context(companionPath, false));
+
+    for (const target of legacy) expect(await exists(target)).toBe(false);
+  });
+
+  test("cleanup is silent when nothing is present", async () => {
+    const companionPath = await makeTempDir("mate-react-doctor-empty-");
+
+    await reactDoctorPlugin.apply(context(companionPath));
+    await reactDoctorPlugin.forProvider?.claude?.apply?.(context(companionPath));
+    await reactDoctorPlugin.teardown(context(companionPath, false));
+    await reactDoctorPlugin.forProvider?.claude?.teardown?.(context(companionPath, false));
+
+    expect(await fs.readdir(companionPath)).toEqual([]);
+  });
+
+  test("cleanup keeps other hook files", async () => {
+    const companionPath = await makeTempDir("mate-react-doctor-other-hooks-");
+    await seedLegacyArtifacts(companionPath);
+    const other = path.join(companionPath, ".claude", "hooks", "user-hook.sh");
+    await fs.writeFile(other, "#!/bin/sh\n", "utf8");
+
+    await reactDoctorPlugin.forProvider?.claude?.apply?.(context(companionPath));
+
+    expect(await exists(other)).toBe(true);
   });
 
   test("teardown leaves companion Claude settings untouched", async () => {
     const companionPath = await makeTempDir("mate-react-doctor-claude-teardown-");
     const settingsPath = path.join(companionPath, ".claude", "settings.local.json");
     await fs.mkdir(path.dirname(settingsPath), { recursive: true });
-    await fs.writeFile(
-      settingsPath,
-      JSON.stringify(
-        {
-          hooks: {
-            Stop: [{ hooks: [{ type: "command", command: 'sh "/tmp/react-doctor.sh"' }] }],
-            PreToolUse: [{ matcher: "Write", hooks: [] }],
-          },
-        },
-        null,
-        2,
-      ) + "\n",
-      "utf8",
-    );
-
-    await reactDoctorPlugin.forProvider?.claude?.teardown?.({
-      companionPath,
-      config: {
-        allowedAgents: ["claude"],
-        capabilities: [{ name: "react-doctor" }],
+    const settings = {
+      hooks: {
+        Stop: [{ hooks: [{ type: "command", command: 'sh "/tmp/react-doctor.sh"' }] }],
+        PreToolUse: [{ matcher: "Write", hooks: [] }],
       },
-      stage: "setup",
-      activeProviders: [],
-    } as never);
-
-    const settings = JSON.parse(await fs.readFile(settingsPath, "utf8")) as {
-      hooks: Record<string, unknown>;
     };
-    expect(settings.hooks.Stop).toEqual([
-      { hooks: [{ type: "command", command: 'sh "/tmp/react-doctor.sh"' }] },
-    ]);
-    expect(settings.hooks.PreToolUse).toEqual([{ matcher: "Write", hooks: [] }]);
+    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
+
+    await reactDoctorPlugin.forProvider?.claude?.teardown?.(context(companionPath, false));
+
+    expect(JSON.parse(await fs.readFile(settingsPath, "utf8"))).toEqual(settings);
   });
 });

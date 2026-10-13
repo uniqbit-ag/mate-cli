@@ -1,5 +1,5 @@
 name: mate-minimal
-version: 2
+version: 3
 description: Mate's short OpenSpec workflow for one-Area, low-risk changes - specs → tasks
 artifacts:
   - id: specs
@@ -55,3 +55,4 @@ apply:
   instruction: |
     Read the delta specs and work through pending tasks only within the affected Areas. Mark complete as you go.
     Pause if you hit blockers or need clarification.
+    Before reporting the change complete, follow the verification rules in `openspec/mate-conventions.yaml`.

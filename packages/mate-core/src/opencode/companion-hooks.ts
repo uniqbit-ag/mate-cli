@@ -1,8 +1,6 @@
-import { spawn } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
 
-import type { Cleanup, Context } from "@opencode/plugin/promise/plugin";
+import type { Context } from "@opencode/plugin/promise/plugin";
 
 import {
   companionForkRefusal,
@@ -21,105 +19,6 @@ import {
   shouldBlockArtifactWrite,
   type CompanionContext,
 } from "./companion-policy";
-
-const REACT_DOCTOR_VERSION = "0.9.13";
-
-const REACT_DOCTOR_NON_LINT_FAILURES = [
-  /No React dependency found/i,
-  /Could not resolve config/i,
-  /is not a git repository/i,
-];
-
-const REACT_DOCTOR_EDIT_TOOLS = new Set(["write", "edit", "apply_patch"]);
-const REACT_DOCTOR_ARGS = [
-  "--yes",
-  "--verbose",
-  "--scope",
-  "changed",
-  "--base",
-  "HEAD",
-  "--blocking",
-  "warning",
-  "--no-score",
-  "--max-duration",
-  "30",
-];
-
-export type CommandResult = { exitCode: number | null; output: string };
-export type CommandRunner = (
-  command: string,
-  args: string[],
-  cwd: string,
-) => Promise<CommandResult>;
-type SessionPrompt = Pick<Context["session"], "prompt">;
-
-/** Combined stdout and stderr; rejects only when the process cannot be spawned. */
-export const runCommand: CommandRunner = (command, args, cwd) =>
-  new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let output = "";
-    child.stdout.setEncoding("utf8").on("data", (chunk: string) => (output += chunk));
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (output += chunk));
-    child.once("error", reject);
-    child.once("close", (exitCode) => resolve({ exitCode, output: output.trim() }));
-  });
-
-function reactDoctorCommand(repo: string): { command: string; args: string[] } {
-  const localBin = path.join(repo, "node_modules", ".bin", "react-doctor");
-  const mateBin = process.env.MATE_REACT_DOCTOR_BIN_PATH;
-  const doctorBin = mateBin && fs.existsSync(mateBin) ? mateBin : localBin;
-  return fs.existsSync(doctorBin)
-    ? { command: doctorBin, args: REACT_DOCTOR_ARGS }
-    : {
-        command: "npx",
-        args: ["--yes", `react-doctor@${REACT_DOCTOR_VERSION}`, ...REACT_DOCTOR_ARGS],
-      };
-}
-
-/**
- * Tracks edited sessions and scans each at most once per idle, never twice
- * concurrently for the same session.
- */
-export function createReactDoctorScanner(
-  context: CompanionContext,
-  session: SessionPrompt,
-  run: CommandRunner = runCommand,
-) {
-  const dirtySessions = new Set<string>();
-  const scansInFlight = new Set<string>();
-
-  return {
-    markEdited(tool: string, sessionID: string): void {
-      if (REACT_DOCTOR_EDIT_TOOLS.has(tool)) dirtySessions.add(sessionID);
-    },
-    async idle(sessionID: string): Promise<void> {
-      const repo = context.repositoryPath;
-      if (!repo || scansInFlight.has(sessionID) || !dirtySessions.delete(sessionID)) return;
-      scansInFlight.add(sessionID);
-      try {
-        const { command, args } = reactDoctorCommand(repo);
-        const { exitCode, output } = await run(command, args, repo);
-        if (exitCode === 0 || !output) return;
-        if (REACT_DOCTOR_NON_LINT_FAILURES.some((re) => re.test(output))) return;
-
-        await session
-          .prompt({
-            sessionID,
-            text:
-              "React Doctor found issues in the changed files. Review this output and fix " +
-              "the regressions before finishing. For confirmed issues that cannot be fixed " +
-              "now, create GitHub issues with the rule, file/line, confidence, impact, and " +
-              `proposed fix.\n\n${output}`,
-          } as never)
-          .catch(() => {});
-      } catch {
-        /** Never break the session because a diagnostic scan failed. */
-      } finally {
-        scansInFlight.delete(sessionID);
-      }
-    },
-  };
-}
 
 /** The Working Repository above `directory`, when it is wrapped for OpenCode. */
 export function repositoryWrappedForOpenCode(directory: string): string | undefined {
@@ -218,11 +117,6 @@ export async function guardToolInput(
   }
 }
 
-export type CompanionHooksOptions = {
-  /** Test seam for the React Doctor process. */
-  run?: CommandRunner;
-};
-
 /**
  * Registers the companion guardrails on an OpenCode V2 plugin context.
  * The caller resolves `context` and skips this when no companion resolved.
@@ -230,8 +124,7 @@ export type CompanionHooksOptions = {
 export async function registerCompanionHooks(
   api: Context,
   context: CompanionContext,
-  options: CompanionHooksOptions = {},
-): Promise<Cleanup | undefined> {
+): Promise<void> {
   /**
    * Anything escaping the repair would cost the session every guardrail
    * below to save a synchronization that is optional by design.
@@ -241,23 +134,4 @@ export async function registerCompanionHooks(
   await api.tool.hook("execute.before", (event) =>
     guardToolInput(context, event.tool, event.input),
   );
-
-  if (!context.repositoryPath || !context.reactDoctorEnabled) return;
-
-  const scanner = createReactDoctorScanner(context, api.session, options.run);
-  await api.tool.hook("execute.after", (event) => {
-    if (event.status === "completed") scanner.markEdited(event.tool, event.sessionID);
-  });
-
-  const controller = new AbortController();
-  void (async () => {
-    try {
-      for await (const event of api.event.subscribe({ signal: controller.signal })) {
-        if (event.type === "session.idle") await scanner.idle(event.data.sessionID);
-      }
-    } catch {
-      /** Plugin shutdown aborts the subscription; event delivery is best effort. */
-    }
-  })();
-  return () => controller.abort();
 }

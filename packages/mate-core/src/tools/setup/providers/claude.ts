@@ -89,6 +89,10 @@ function getBaseManagedPermissionEntries(companionPath: string): string[] {
 const LEGACY_MANAGED_PERMISSION_ENTRIES = [
   "Bash($MATE_COMPANION_BIN_PATH/openspec:*)",
   "Bash($MATE_COMPANION_BIN_PATH/graphify:*)",
+  // React Doctor's pre-seeds before it moved to the pinned mate-react-doctor skill.
+  "Skill(react-doctor)",
+  "Bash(npx react-doctor:*)",
+  "Bash(npx react-doctor@latest *)",
 ];
 
 function getAllManagedPermissionEntries(companionPath: string): Set<string> {

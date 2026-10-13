@@ -2068,16 +2068,23 @@ describe("mate CLI e2e", () => {
     // --plugin-dir), so settings carry only capability hooks.
     expect(hasCommand(first.hooks?.PreToolUse, "validate-artifact-path")).toBe(false);
     expect(hasCommand(first.hooks?.SessionStart, "mate-session-banner")).toBe(false);
-    expect(hasCommand(first.hooks?.Stop, "react-doctor.sh")).toBe(true);
+    // React Doctor runs only through the mate-react-doctor skill, so it
+    // contributes no hooks, only the skill and pinned-binary pre-seeds.
+    expect(hasCommand(first.hooks?.Stop, "react-doctor.sh")).toBe(false);
+    expect(hasCommand(first.hooks?.PostToolUse, "react-doctor.sh")).toBe(false);
     expect(first.permissions?.allow).toContain("Bash(openspec:*)");
-    expect(first.permissions?.allow).toContain("Bash(npx react-doctor:*)");
+    expect(first.permissions?.allow).toContain("Skill(mate-react-doctor)");
+    expect(first.permissions?.allow).not.toContain("Bash(npx react-doctor:*)");
+    expect(
+      first.permissions?.allow?.some((entry) => /^Bash\(.*react-doctor[^:]*:\*\)$/.test(entry)),
+    ).toBe(true);
 
     /** The launch wraps: Capability hooks and the prepare hook live in the repository. */
     const workingRepoSettings = JSON.parse(
       await fs.readFile(path.join(scenario.working, ".claude", "settings.local.json"), "utf8"),
     ) as ClaudeSettings & { permissions?: { additionalDirectories?: string[] } };
     expect(workingRepoSettings.permissions?.additionalDirectories).toEqual([scenario.companion]);
-    expect(hasCommand(workingRepoSettings.hooks?.Stop, "react-doctor.sh")).toBe(true);
+    expect(hasCommand(workingRepoSettings.hooks?.Stop, "react-doctor.sh")).toBe(false);
     expect(hasCommand(workingRepoSettings.hooks?.SessionStart, "session-prepare")).toBe(true);
 
     /** ...so the launch's derived settings omit the wrap-carried group. */
@@ -2085,7 +2092,7 @@ describe("mate CLI e2e", () => {
     const derived = JSON.parse(
       await fs.readFile(invocation.argv[invocation.argv.indexOf("--settings") + 1]!, "utf8"),
     ) as ClaudeSettings;
-    expect(hasCommand(derived.hooks?.Stop, "react-doctor.sh")).toBe(false);
+    expect(hasCommand(derived.hooks?.SessionStart, "session-prepare")).toBe(false);
 
     const exclude = await fs.readFile(
       path.join(scenario.working, ".git", "info", "exclude"),
