@@ -9,6 +9,8 @@ import { parse } from "yaml";
 import { FRAMEWORK_NAME } from "../../framework";
 import { companionRootedStore, CompanionStore } from "./companion-store";
 import { ConfigStore } from "./config-store";
+import { resolveFrameworkContext } from "./framework-context";
+import { GlobalConfigStore } from "./global-config-store";
 import { repoLocalRegistryPath } from "./repo-local-registry";
 import { ConfigError } from "./types";
 import { CompanionRegistryStore } from "./companion-registry-store";
@@ -225,5 +227,196 @@ describe("CompanionStore repo-local dual write", () => {
       writeSpy.mockRestore();
       errorSpy.mockRestore();
     }
+  });
+});
+
+describe("CompanionStore link persistence contract", () => {
+  test("writes the companion registry before the repo-local registry", async () => {
+    const root = await makeTempDir("companion-store-write-order-");
+    const { store, companionPath, repoPath } = await makeCompanionRootedStore(root);
+    const companionRegistry = path.join(
+      companionPath,
+      `.${FRAMEWORK_NAME}`,
+      "config",
+      "registry.yaml",
+    );
+    const destinations: string[] = [];
+    const realRename = fs.rename.bind(fs);
+    const renameSpy = spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      destinations.push(String(to));
+      return realRename(from, to);
+    });
+
+    try {
+      await store.registerRepository({ id: "app", path: repoPath });
+    } finally {
+      renameSpy.mockRestore();
+    }
+
+    const companionIndex = destinations.indexOf(companionRegistry);
+    const repoLocalIndex = destinations.indexOf(repoLocalRegistryPath(repoPath));
+    expect(companionIndex).toBeGreaterThanOrEqual(0);
+    expect(repoLocalIndex).toBeGreaterThan(companionIndex);
+  });
+
+  test("keeps the companion entry and prints the exact warning when the repo-local write fails", async () => {
+    const root = await makeTempDir("companion-store-repo-local-warning-");
+    const { store, repoPath } = await makeCompanionRootedStore(root);
+    const repoLocalDir = path.join(repoPath, `.${FRAMEWORK_NAME}`);
+    const realWriteFile = fs.writeFile.bind(fs);
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const writeSpy = spyOn(fs, "writeFile").mockImplementation(async (...args) => {
+      const [filePath] = args as [string, ...unknown[]];
+      if (typeof filePath === "string" && filePath.startsWith(repoLocalDir)) {
+        throw new Error("read-only filesystem");
+      }
+      return realWriteFile(...(args as Parameters<typeof fs.writeFile>));
+    });
+
+    try {
+      await store.registerRepository({ id: "app", path: repoPath });
+      expect(errorSpy).toHaveBeenCalledWith(
+        `mate: warning: failed to write repo-local registry for ${repoPath}: read-only filesystem`,
+      );
+    } finally {
+      writeSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    expect(await store.listRepositories()).toEqual([{ id: "app", path: repoPath }]);
+  });
+
+  test("rejects a non-directory path with the exact ConfigError text and writes neither file", async () => {
+    const root = await makeTempDir("companion-store-not-dir-");
+    const companionPath = path.join(root, "companion");
+    const repoPath = path.join(root, "file.txt");
+    await fs.writeFile(repoPath, "not a directory", "utf8");
+    const store = companionRootedStore(companionPath);
+
+    const linking = store.registerRepository({ id: "app", path: repoPath });
+
+    await expect(linking).rejects.toThrow(ConfigError);
+    await expect(linking).rejects.toThrow(
+      `Linked repository path must exist and be a directory: ${repoPath}`,
+    );
+    const companionRegistry = path.join(
+      companionPath,
+      `.${FRAMEWORK_NAME}`,
+      "config",
+      "registry.yaml",
+    );
+    expect(await fs.stat(companionRegistry).catch(() => null)).toBeNull();
+    expect(await fs.stat(repoLocalRegistryPath(repoPath)).catch(() => null)).toBeNull();
+  });
+
+  test("replaces a re-linked id in place and prunes dead entries in the same save", async () => {
+    const root = await makeTempDir("companion-store-upsert-in-place-");
+    const { store, repoPath, workingRepoStore } = await makeStore(root);
+    const otherPath = path.join(root, "other");
+    const movedPath = path.join(root, "moved");
+    await fs.mkdir(otherPath, { recursive: true });
+    await fs.mkdir(movedPath, { recursive: true });
+    await workingRepoStore.save({
+      repos: [
+        { id: "gone", path: path.join(root, "gone") },
+        { id: "app", path: repoPath },
+        { id: "other", path: otherPath },
+      ],
+    });
+
+    await store.registerRepository({ id: "app", path: movedPath });
+
+    const saved = parse(await fs.readFile(workingRepoStore.configPath, "utf8"));
+    expect(saved.repos).toEqual([
+      { id: "app", path: movedPath },
+      { id: "other", path: otherPath },
+    ]);
+  });
+
+  test("creates the companion registry file on the first-ever link", async () => {
+    const root = await makeTempDir("companion-store-first-link-");
+    const companionPath = path.join(root, "companion");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+
+    await companionRootedStore(companionPath).registerRepository({ id: "app", path: repoPath });
+
+    const companionRegistry = path.join(
+      companionPath,
+      `.${FRAMEWORK_NAME}`,
+      "config",
+      "registry.yaml",
+    );
+    expect(parse(await fs.readFile(companionRegistry, "utf8"))).toEqual({
+      repos: [{ id: "app", path: repoPath }],
+    });
+  });
+});
+
+describe("CompanionStore update read", () => {
+  test("removes a legacy activeRepoId from the file on disk when listing", async () => {
+    const root = await makeTempDir("companion-store-update-read-legacy-");
+    const { store, repoPath, workingRepoStore } = await makeStore(root);
+    await fs.writeFile(
+      workingRepoStore.configPath,
+      `activeRepoId: app\nrepos:\n  - id: app\n    path: ${repoPath}\n`,
+      "utf8",
+    );
+
+    expect(await store.listRepositories()).toEqual([{ id: "app", path: repoPath }]);
+
+    const onDisk = parse(await fs.readFile(workingRepoStore.configPath, "utf8"));
+    expect("activeRepoId" in onDisk).toBe(false);
+  });
+
+  test("removes a legacy activeRepoId from the file on disk when getting", async () => {
+    const root = await makeTempDir("companion-store-update-read-legacy-get-");
+    const { store, repoPath, workingRepoStore } = await makeStore(root);
+    await fs.writeFile(
+      workingRepoStore.configPath,
+      `activeRepoId: app\nrepos:\n  - id: app\n    path: ${repoPath}\n`,
+      "utf8",
+    );
+
+    expect(await store.getRepository("app")).toEqual({ id: "app", path: repoPath });
+
+    expect(await fs.readFile(workingRepoStore.configPath, "utf8")).not.toContain("activeRepoId");
+  });
+
+  test("throws ConfigError from get and list when the registry is missing", async () => {
+    const root = await makeTempDir("companion-store-update-read-missing-");
+    const store = companionRootedStore(path.join(root, "companion"));
+
+    await expect(store.getRepository("app")).rejects.toThrow(ConfigError);
+    await expect(store.listRepositories()).rejects.toThrow(ConfigError);
+  });
+});
+
+describe("CompanionStore built from a launch context", () => {
+  afterEach(() => {
+    delete process.env.MATE_ARTIFACT_PATH;
+  });
+
+  test("writes the repo-local pointer at the context's companionPath", async () => {
+    const root = await makeTempDir("companion-store-make-context-");
+    const companionPath = path.join(root, "companion");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(companionPath, { recursive: true });
+    await fs.mkdir(repoPath, { recursive: true });
+    process.env.MATE_ARTIFACT_PATH = companionPath;
+    const context = await resolveFrameworkContext(
+      root,
+      new GlobalConfigStore(path.join(root, "config.yaml")),
+    );
+
+    await new CompanionStore(context.configStore, context.workingRepoStore).registerRepository({
+      id: "app",
+      path: repoPath,
+    });
+
+    const registry = parse(await fs.readFile(repoLocalRegistryPath(repoPath), "utf8"));
+    expect(registry.companions).toEqual([
+      { path: context.companionPath, repositoryId: "app", source: "git" },
+    ]);
   });
 });

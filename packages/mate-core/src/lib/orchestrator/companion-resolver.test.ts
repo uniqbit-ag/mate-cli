@@ -282,3 +282,194 @@ describe("CompanionResolver", () => {
     });
   });
 });
+
+describe("CompanionResolver link contract", () => {
+  async function writeCompanionRegistry(
+    companionPath: string,
+    repos: Array<{ id: string; path: string }>,
+  ): Promise<void> {
+    await new CompanionRegistryStore(
+      path.join(companionPath, ".mate", "config", "registry.yaml"),
+    ).save({ repos });
+  }
+
+  test("prunes a stale pointer, keeps the live one with its source and other fields, and logs exactly", async () => {
+    const root = await makeTempDir("resolver-contract-stale-");
+    const repoPath = path.join(root, "project");
+    const liveCompanion = path.join(root, "companion-live");
+    const goneCompanion = path.join(root, "companion-gone");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(liveCompanion, { recursive: true });
+    const cache = {
+      repository: { id: "app", path: repoPath },
+      companions: [
+        { path: goneCompanion, repositoryId: "app", source: "existing" as const },
+        { path: liveCompanion, repositoryId: "app", source: "git" as const },
+      ],
+      extra: "kept",
+    };
+    await new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath)).save(cache);
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const result = await new CompanionResolver(
+        new GlobalConfigStore(path.join(root, "config.yaml")),
+      ).resolveWithDiagnostics(repoPath, { logFailures: true });
+
+      expect(result.match).toEqual({ companionPath: liveCompanion, repositoryId: "app" });
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        `mate: dropping stale repo-local companion pointer (no longer exists): ${goneCompanion}`,
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    const rewritten = parse(await fs.readFile(repoLocalRegistryPath(repoPath), "utf8"));
+    expect(rewritten).toEqual({
+      repository: { id: "app", path: repoPath },
+      companions: [{ path: liveCompanion, repositoryId: "app", source: "git" }],
+      extra: "kept",
+    });
+  });
+
+  test("still rewrites the file but prints nothing when logging is disabled", async () => {
+    const root = await makeTempDir("resolver-contract-stale-quiet-");
+    const repoPath = path.join(root, "project");
+    const liveCompanion = path.join(root, "companion-live");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(liveCompanion, { recursive: true });
+    await new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath)).save({
+      companions: [
+        { path: path.join(root, "companion-gone"), repositoryId: "app" },
+        { path: liveCompanion, repositoryId: "app" },
+      ],
+    });
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await new CompanionResolver(
+        new GlobalConfigStore(path.join(root, "config.yaml")),
+      ).resolveWithDiagnostics(repoPath);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    const rewritten = parse(await fs.readFile(repoLocalRegistryPath(repoPath), "utf8"));
+    expect(rewritten.companions).toEqual([{ path: liveCompanion, repositoryId: "app" }]);
+  });
+
+  test("walks up from a subdirectory to the nearest repo-local registry", async () => {
+    const root = await makeTempDir("resolver-contract-ancestor-");
+    const repoPath = path.join(root, "project");
+    const deepDir = path.join(repoPath, "src", "nested", "deeper");
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(deepDir, { recursive: true });
+    await fs.mkdir(companionPath, { recursive: true });
+    await new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath)).save({
+      companions: [{ path: companionPath, repositoryId: "app" }],
+    });
+
+    const result = await new CompanionResolver(
+      new GlobalConfigStore(path.join(root, "does-not-exist.yaml")),
+    ).resolve(deepDir);
+
+    expect(result).toEqual({ companionPath, repositoryId: "app" });
+  });
+
+  test("falls through to the companion scan when the cache has no companions array", async () => {
+    const root = await makeTempDir("resolver-contract-no-companions-");
+    const repoPath = path.join(root, "project");
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(repoPath)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(repoPath), "note: no companions here\n", "utf8");
+    await writeCompanionRegistry(companionPath, [{ id: "app", path: repoPath }]);
+    const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalStore.register(companionPath);
+
+    const result = await new CompanionResolver(globalStore).resolve(repoPath);
+
+    expect(result).toEqual({ companionPath, repositoryId: "app" });
+  });
+
+  test("a single fallback match replaces companions with one source-less pointer and writes nothing else", async () => {
+    const root = await makeTempDir("resolver-contract-self-heal-");
+    const repoPath = path.join(root, "project");
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(repoPath, { recursive: true });
+    const cache = { repository: { id: "old", path: "/elsewhere" }, companions: [], extra: "kept" };
+    await new RepoLocalRegistryStore(repoLocalRegistryPath(repoPath)).save(cache);
+    await writeCompanionRegistry(companionPath, [{ id: "app", path: repoPath }]);
+    const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalStore.register(companionPath);
+
+    const result = await new CompanionResolver(globalStore).resolve(repoPath);
+
+    expect(result).toEqual({ companionPath, repositoryId: "app" });
+    expect(parse(await fs.readFile(repoLocalRegistryPath(repoPath), "utf8"))).toEqual({
+      repository: { id: "app", path: repoPath },
+      companions: [{ path: companionPath, repositoryId: "app" }],
+      extra: "kept",
+    });
+    expect((await fs.readdir(repoPath)).sort()).toEqual([".mate"]);
+    expect(await fs.readdir(path.join(repoPath, ".mate"))).toEqual(["config"]);
+    expect(await fs.readdir(path.join(repoPath, ".mate", "config"))).toEqual(["registry.yaml"]);
+  });
+
+  test("multiple fallback matches return the first and write nothing", async () => {
+    const root = await makeTempDir("resolver-contract-ambiguous-");
+    const repoPath = path.join(root, "project");
+    const companionA = path.join(root, "companion-a");
+    const companionB = path.join(root, "companion-b");
+    await fs.mkdir(repoPath, { recursive: true });
+    await writeCompanionRegistry(companionA, [{ id: "from-a", path: repoPath }]);
+    await writeCompanionRegistry(companionB, [{ id: "from-b", path: repoPath }]);
+    const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalStore.register(companionA);
+    await globalStore.register(companionB);
+    const [first] = await globalStore.list();
+
+    const result = await new CompanionResolver(globalStore).resolveWithDiagnostics(repoPath);
+
+    expect(result.match?.companionPath).toBe(path.resolve(first!));
+    expect(await fs.readdir(repoPath)).toEqual([]);
+  });
+
+  test("skips unreadable companions silently and keeps scanning", async () => {
+    const root = await makeTempDir("resolver-contract-unreadable-");
+    const repoPath = path.join(root, "project");
+    const missingCompanion = path.join(root, "companion-missing");
+    const corruptCompanion = path.join(root, "companion-corrupt");
+    const goodCompanion = path.join(root, "companion-good");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(missingCompanion, { recursive: true });
+    await fs.mkdir(path.join(corruptCompanion, ".mate", "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(corruptCompanion, ".mate", "config", "registry.yaml"),
+      "repos: [unterminated",
+      "utf8",
+    );
+    await writeCompanionRegistry(goodCompanion, [{ id: "app", path: repoPath }]);
+    const globalStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalStore.register(missingCompanion);
+    await globalStore.register(corruptCompanion);
+    await globalStore.register(goodCompanion);
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const result = await new CompanionResolver(globalStore).resolveWithDiagnostics(repoPath, {
+        logFailures: true,
+      });
+      expect(result.match).toEqual({ companionPath: goodCompanion, repositoryId: "app" });
+      expect(result.failures).toEqual([]);
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+});

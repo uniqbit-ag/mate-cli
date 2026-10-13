@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { version } from "../../../package.json";
 import { FRAMEWORK_NAME } from "../../framework";
@@ -15,6 +15,7 @@ import {
 import { fileExists } from "../fs-utils";
 import { runtimeWrapperBinPath } from "../../runtime/runtime-directory";
 import { getReactDoctorBinPath } from "../package-paths";
+import { CompanionRegistryStore } from "./companion-registry-store";
 import {
   resolveForCapability,
   resolveForLaunch,
@@ -282,6 +283,39 @@ describe("resolveForLaunch", () => {
     const after = await fs.stat(registryPath);
 
     expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+
+  test("warns with the framework prefix and still launches when the backfill fails", async () => {
+    const root = await makeTempDir("launch-backfill-failure-");
+    const companionPath = path.join(root, "companion");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(companionPath, { recursive: true });
+    await fs.mkdir(repoPath, { recursive: true });
+
+    await writeRepoLocalRegistryEntry(
+      repoPath,
+      companionPath,
+      { id: "app", path: repoPath },
+      "git",
+    );
+
+    const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await store.register(companionPath);
+    const saveSpy = spyOn(CompanionRegistryStore.prototype, "save").mockRejectedValue(
+      new Error("disk full"),
+    );
+    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const ctx = await resolveForLaunch(repoPath, store);
+      expect(ctx.repositoryId).toBe("app");
+      expect(errorSpy).toHaveBeenCalledWith(
+        `${FRAMEWORK_NAME}: warning: failed to backfill companion registry for app: disk full`,
+      );
+    } finally {
+      saveSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
   });
 
   test("throws WorkingRepoRequiredError when cwd is a companion directory", async () => {
