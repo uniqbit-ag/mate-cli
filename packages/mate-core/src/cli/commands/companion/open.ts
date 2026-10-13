@@ -1,4 +1,4 @@
-import { CompanionStore } from "../../../lib/orchestrator/companion-store";
+import { CompanionStore } from "../../../lib/orchestrator/repository-link";
 import { resolveForLaunch } from "../../../lib/orchestrator/framework-context";
 import { injectEditorFolder, getPreferredEditorCli } from "../../../lib/orchestrator/editor";
 import { ensureUnambiguousCompanion } from "../launch/shared";
@@ -7,9 +7,9 @@ export const workspaceOpenCommandDeps = {
   ensureUnambiguousCompanion: () => ensureUnambiguousCompanion(),
   resolveLaunchContext: () => resolveForLaunch(process.cwd()),
   createStore: (
-    configStore: ConstructorParameters<typeof CompanionStore>[0],
+    companionPath: ConstructorParameters<typeof CompanionStore>[0],
     workingRepoStore: ConstructorParameters<typeof CompanionStore>[1],
-  ) => new CompanionStore(configStore, workingRepoStore),
+  ) => new CompanionStore(companionPath, workingRepoStore),
   getPreferredEditorCli: () => getPreferredEditorCli(),
   injectEditorFolder,
 };
@@ -35,13 +35,12 @@ export async function runWorkspaceOpenCommand(): Promise<void> {
     companionPath,
     repositoryId,
     repository: localRepository,
-    configStore,
     workingRepoStore,
   } = await workspaceOpenCommandDeps.resolveLaunchContext();
   const repository =
     localRepository ??
     (await workspaceOpenCommandDeps
-      .createStore(configStore, workingRepoStore)
+      .createStore(companionPath, workingRepoStore)
       .getRepository(repositoryId));
 
   if (!repository) {

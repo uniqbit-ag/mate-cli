@@ -15,7 +15,7 @@ import {
 } from "../../tools/setup/dynamic-plugins/install";
 import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
 import { applySetupCompatibilities } from "../../tools/setup";
-import { findRepoLocalRegistryFile } from "./repo-local-registry";
+import { findRepoLocalRegistryFile } from "./repository-link";
 import { companionGit, describeGitFailure, type CompanionGit } from "../../runtime/companion-git";
 
 export interface HubGitOptions {
@@ -319,6 +319,7 @@ export async function syncHub(
   const { config, store } = await assertHubRoot(hubPath);
   const results: HubSyncResult[] = [];
   for (const member of config.hub!.companions) {
+    // oxlint-disable-next-line no-await-in-loop -- members sync one at a time, in declared order
     const result = await syncHubMember(hubPath, member, options);
     results.push(result);
     if (result.materializedCommit && result.status === "updated") {

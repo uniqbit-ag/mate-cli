@@ -3,7 +3,7 @@ import React, { useEffect } from "react";
 import { SelectMenu, type SelectMenuItem } from "../lib/components/select-menu";
 import { WizardFooter } from "../lib/components/wizard-footer";
 import { WizardHeader } from "../lib/components/wizard-header";
-import type { CompanionMatch } from "../lib/orchestrator/companion-resolver";
+import type { CompanionMatch } from "../lib/orchestrator/repository-link";
 
 export interface CompanionSelectorOptions {
   stdin?: NodeJS.ReadStream;

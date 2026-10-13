@@ -12,7 +12,7 @@ import {
   removeRuntimeDocument,
   runtimeDocumentDeps,
 } from "./projection-runtime-documents";
-import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "./repository-link";
 import type { LinkedRepository } from "./types";
 import { repoLocalDirPath } from "../../runtime/repo-local";
 import {

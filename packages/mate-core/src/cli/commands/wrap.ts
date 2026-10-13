@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repo-local-registry";
+import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repository-link";
 import type { ProjectionChangedPaths } from "../../lib/orchestrator/projection-types";
 import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
 import { readCompanionConfig } from "../../lib/orchestrator/config-store";

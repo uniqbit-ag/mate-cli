@@ -4,7 +4,7 @@ import { accessSync } from "node:fs";
 import { getActiveDistribution } from "../../../distribution";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
-import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repo-local-registry";
+import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repository-link";
 import { ensureUnambiguousCompanion } from "../launch/shared";
 
 export function renderBanner(repoPath: string, companionPath: string): string {

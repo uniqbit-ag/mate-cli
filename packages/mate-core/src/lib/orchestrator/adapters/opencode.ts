@@ -10,8 +10,9 @@ import { validateGuidanceData, type MateGuidanceFile } from "../../../runtime/gu
 import { validateOpenCodePluginAssets } from "../../package-paths";
 import { readOpenCodeConfig } from "../../../tools/setup/providers/opencode-format";
 import { buildOpenCodeGuidance } from "../opencode-guidance";
+import type { PrepareResult } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
-import { type AdapterContext, LaunchAdapter } from "./base";
+import { type AdapterContext, LaunchAdapter, prepareFailure } from "./base";
 
 /** The Mate plugin is a V2 plugin; an older host rejects it at load time. */
 const MIN_OPENCODE_MAJOR = 2;
@@ -56,6 +57,13 @@ export class OpenCodeAdapter extends LaunchAdapter {
         `Mate requires OpenCode ${MIN_OPENCODE_MAJOR}.x or newer. Upgrade OpenCode and retry.`,
       ].join("\n"),
     );
+  }
+
+  /** A prepared repository reports its failure as one summary, as it always has. */
+  launchFailure(prepared: PrepareResult): unknown {
+    return prepared.repositoryId
+      ? new LaunchPreflightError(prepareFailure(prepared))
+      : super.launchFailure(prepared);
   }
 
   buildArgs(context: AdapterContext, args: string[]): string[] {

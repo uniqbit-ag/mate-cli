@@ -1,6 +1,6 @@
 import { FRAMEWORK_NAME } from "../../framework";
 import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
-import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repo-local-registry";
+import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repository-link";
 import { unwrapWorkingRuntimeDocuments } from "../../lib/orchestrator/working-repo-projection";
 import { withCompanionLock } from "../../runtime/companion-lock";
 import { readProjectionFile } from "../../runtime/projection";

@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
-import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repository-link";
 
 const APP_ROOT = path.resolve(import.meta.dirname, "../../../../../../apps/mate-cli");
 const WATCHDOG_MS = 30_000;

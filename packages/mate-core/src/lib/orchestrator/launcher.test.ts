@@ -13,31 +13,43 @@ import {
   withDocument,
 } from "../../runtime/runtime-document-manifest";
 import { wrapStateOf } from "../../runtime/wrap-state";
-import { LaunchAdapter, type AdapterContext } from "./adapters/base";
-import { CompanionStore } from "./companion-store";
+import type { AdapterContext, LaunchAdapter } from "./adapters/base";
+import { ClaudeAdapter, launchSettingsPath } from "./adapters/claude";
+import { OpenCodeAdapter } from "./adapters/opencode";
+import { CompanionStore } from "./repository-link";
 import * as editor from "./editor";
-import { FrameworkLauncher, launchSettingsPath, launcherDeps } from "./launcher";
+import { FrameworkLauncher, launcherDeps } from "./launcher";
 import type { LaunchContext } from "./framework-context";
 import type { ProjectionInput, ProjectionResult } from "./projection-types";
 import { sessionPrepareDeps } from "./session-prepare";
 import { LaunchPreflightError, type CapabilityConfig, type LaunchRequest } from "./types";
 
-class TestAdapter extends LaunchAdapter {
-  readonly toolName = "claude";
-  readonly validateLaunch = mock(async () => {});
-  readonly run = mock(async () => ({
+/**
+ * The real adapters, so each runtime's own share of a launch stays under test;
+ * only the checks against the install and the agent process are stubbed.
+ */
+class TestClaudeAdapter extends ClaudeAdapter {
+  readonly validateLaunch = mock(
+    async (..._args: Parameters<ClaudeAdapter["validateLaunch"]>) => {},
+  );
+  readonly run = mock(async (..._args: Parameters<ClaudeAdapter["run"]>) => ({
     exitCode: 0,
     stdout: "ok",
     stderr: "",
   }));
-
-  buildArgs(): string[] {
-    return [];
-  }
 }
 
-function createLauncher(
-  adapter = new TestAdapter(),
+class TestOpenCodeAdapter extends OpenCodeAdapter {
+  readonly validateLaunch = mock(async (_context: AdapterContext) => {});
+  readonly run = mock(async (_context: AdapterContext, _args: string[]) => ({
+    exitCode: 0,
+    stdout: "ok",
+    stderr: "",
+  }));
+}
+
+function createLauncher<A extends LaunchAdapter = TestClaudeAdapter>(
+  adapter: A = new TestClaudeAdapter() as unknown as A,
   capabilities: CapabilityConfig[] = [{ name: "tokensave" }],
   git?: "auto",
   plugins: CapabilityPlugin[] = [],
@@ -50,7 +62,7 @@ function createLauncher(
     adapters: Map<string, LaunchAdapter>;
     resolveConfig(): Promise<LaunchContext>;
   };
-  launcher.adapters = new Map([["claude", adapter]]);
+  launcher.adapters = new Map([[adapter.toolName, adapter]]);
   launcher.resolveConfig = async () =>
     ({
       companionPath: "/tmp/companion",
@@ -192,7 +204,7 @@ describe("FrameworkLauncher", () => {
 
   test("prepare runs setup before execute and defers adapter run until execute", async () => {
     const events: string[] = [];
-    const adapter = new TestAdapter();
+    const adapter = new TestClaudeAdapter();
     adapter.validateLaunch.mockImplementation(async () => {
       events.push("adapter");
     });
@@ -264,7 +276,7 @@ describe("FrameworkLauncher", () => {
   });
 
   test("companion scope skips repository work but keeps companion preflight", async () => {
-    const adapter = new TestAdapter();
+    const adapter = new TestClaudeAdapter();
     const capabilityPreflight = mock(async () => []);
     const { launcher } = createLauncher(adapter, [], "auto", [
       makeCapability("companion-capability", { preflight: capabilityPreflight }),
@@ -350,7 +362,7 @@ describe("FrameworkLauncher", () => {
       makeCapability("other-provider", { providerId: "opencode", preflight: otherProvider }),
       withoutPreflight,
     ];
-    const { launcher } = createLauncher(new TestAdapter(), [], undefined, plugins);
+    const { launcher } = createLauncher(new TestClaudeAdapter(), [], undefined, plugins);
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
       path: "/tmp/repo",
@@ -369,7 +381,7 @@ describe("FrameworkLauncher", () => {
   });
 
   test("aggregates capability diagnostics and blocks adapter validation", async () => {
-    const { launcher, adapter } = createLauncher(new TestAdapter(), [], undefined, [
+    const { launcher, adapter } = createLauncher(new TestClaudeAdapter(), [], undefined, [
       makeCapability("first", { preflight: async () => ["first issue", "second issue"] }),
       makeCapability("second", { preflight: async () => ["third issue"] }),
     ]);
@@ -386,7 +398,7 @@ describe("FrameworkLauncher", () => {
   });
 
   test("identifies capability and provider when a preflight hook throws", async () => {
-    const { launcher, adapter } = createLauncher(new TestAdapter(), [], undefined, [
+    const { launcher, adapter } = createLauncher(new TestClaudeAdapter(), [], undefined, [
       makeCapability("broken", {
         preflight: async () => {
           throw new Error("unexpected failure");
@@ -432,7 +444,7 @@ describe("FrameworkLauncher", () => {
 
   test("failed Git preflight prevents setup and adapter execution", async () => {
     const { launcher, adapter } = createLauncher(
-      new TestAdapter(),
+      new TestClaudeAdapter(),
       [{ name: "tokensave" }],
       "auto",
     );
@@ -464,7 +476,7 @@ describe("FrameworkLauncher", () => {
 
   test("skipGit bypasses only the Git preflight", async () => {
     const { launcher, adapter } = createLauncher(
-      new TestAdapter(),
+      new TestClaudeAdapter(),
       [{ name: "tokensave" }],
       "auto",
     );
@@ -738,11 +750,8 @@ describe("a managed OpenCode launch", () => {
   const order: string[] = [];
 
   function openCodeLauncher(options: { current?: boolean; ok?: boolean } = {}) {
-    const adapter = new TestAdapter();
+    const adapter = new TestOpenCodeAdapter();
     const { launcher } = createLauncher(adapter);
-    (launcher as unknown as { adapters: Map<string, LaunchAdapter> }).adapters = new Map([
-      ["opencode", adapter],
-    ]);
     (launcher as unknown as { resolveConfig(): Promise<LaunchContext> }).resolveConfig = async () =>
       ({
         companionPath: "/tmp/companion",
@@ -874,6 +883,7 @@ describe("an OpenCode-only wrap", () => {
   });
 });
 
+/** The Claude adapter plans the delivery; these pin where its plan sits in a launch. */
 describe("the Claude delivery plan at launch", () => {
   const tempRoots: string[] = [];
 
@@ -890,16 +900,12 @@ describe("the Claude delivery plan at launch", () => {
     const settingsPath = path.join(companionPath, ".claude", "settings.local.json");
     await fs.mkdir(path.dirname(settingsPath), { recursive: true });
     await fs.writeFile(settingsPath, JSON.stringify(settings), "utf8");
-    const { launcher, adapter } = createLauncher(new TestAdapter(), []);
+    const { launcher, adapter } = createLauncher(new TestClaudeAdapter(), []);
     const resolve = launcher.resolveConfig;
     launcher.resolveConfig = async () => ({ ...(await resolve()), companionPath });
     sessionPrepareDeps.syncCompanionFiles = mock(async () => {});
     sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
     return { launcher, adapter, companionPath, settingsPath };
-  }
-
-  function contextOf(adapter: TestAdapter): AdapterContext {
-    return adapter.validateLaunch.mock.calls[0]?.[0 as never] as unknown as AdapterContext;
   }
 
   const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
@@ -909,36 +915,7 @@ describe("the Claude delivery plan at launch", () => {
     sessionPrepareDeps.projectLaunch = originalProjectLaunch;
   });
 
-  test("a launch with a repository defers to its pass's wrap and writes the rest as settings", async () => {
-    const companionOnly = { hooks: [{ type: "command", command: "acme-companion" }] };
-    const { launcher, adapter, companionPath } = await launcherWithCompanion({
-      hooks: { Stop: [CARRIED, companionOnly] },
-      autoMemoryEnabled: false,
-    });
-    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
-      id: "repo",
-      path: "/tmp/repo",
-    });
-
-    await launcher.prepare(makeRequest());
-
-    const derived = launchSettingsPath(companionPath, "repo");
-    expect(derived).toBe(path.join(companionPath, ".claude", "state", "launch-settings.repo.json"));
-    expect(contextOf(adapter).claudeDelivery).toEqual({
-      plan: expect.objectContaining({
-        hooks: { owner: "wrap", launchSettingsExclude: [CARRIED] },
-        mcp: "wrap",
-        dirAccess: "wrap",
-      }),
-      settingsPath: derived,
-    });
-    expect(JSON.parse(await fs.readFile(derived, "utf8"))).toEqual({
-      hooks: { Stop: [companionOnly] },
-      autoMemoryEnabled: false,
-    });
-  });
-
-  test("a launch whose prepare left no Claude wrap fails preflight naming mate wrap", async () => {
+  test("a launch whose prepare left no Claude wrap fails before validation", async () => {
     const { launcher, adapter } = await launcherWithCompanion({});
     runWrapPass.mockImplementationOnce(
       async () =>
@@ -960,19 +937,36 @@ describe("the Claude delivery plan at launch", () => {
     expect(adapter.validateLaunch).not.toHaveBeenCalled();
   });
 
-  test("a companion-scoped launch passes the companion's own settings", async () => {
-    const { launcher, adapter, settingsPath } = await launcherWithCompanion({});
-
-    await launcher.prepare(makeRequest({ scope: "companion" }));
-
-    expect(contextOf(adapter).claudeDelivery).toEqual({
-      plan: expect.objectContaining({
-        hooks: { owner: "settings", launchSettingsExclude: [] },
-        mcp: "mcp-config",
-        dirAccess: "add-dir",
-        reconcile: "none",
-      }),
-      settingsPath,
+  /** One launcher serves every launch; nothing one prepare plans may leak into another. */
+  test("two prepares on one launcher each keep their own derived settings", async () => {
+    const { launcher, adapter, companionPath } = await launcherWithCompanion({
+      hooks: { Stop: [CARRIED] },
     });
+    const resolve = launcher.resolveConfig;
+    let repositoryId = "alpha";
+    launcher.resolveConfig = async () => ({ ...(await resolve()), repositoryId });
+    spyOn(CompanionStore.prototype, "getRepository").mockImplementation(async (id: string) => ({
+      id,
+      path: `/tmp/${id}`,
+    }));
+    const settingsArgs: string[] = [];
+    adapter.run.mockImplementation(async (context, args) => {
+      const built = adapter.buildArgs(context, args);
+      settingsArgs.push(built[built.indexOf("--settings") + 1]!);
+      return { exitCode: 0, stdout: "ok", stderr: "" };
+    });
+
+    const alpha = await launcher.prepare(makeRequest());
+    repositoryId = "beta";
+    const beta = await launcher.prepare(makeRequest());
+    await alpha.execute();
+    await beta.execute();
+
+    const alphaSettings = launchSettingsPath(companionPath, "alpha");
+    const betaSettings = launchSettingsPath(companionPath, "beta");
+    expect(settingsArgs).toEqual([alphaSettings, betaSettings]);
+    for (const derived of [alphaSettings, betaSettings]) {
+      expect(JSON.parse(await fs.readFile(derived, "utf8"))).toEqual({});
+    }
   });
 });

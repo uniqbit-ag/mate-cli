@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { GlobalConfigStore } from "./global-config-store";
-import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "./repository-link";
 import { inspectSetupPreflight, looksLikeWorkingRepo } from "./setup-preflight";
 
 const tempRoots: string[] = [];

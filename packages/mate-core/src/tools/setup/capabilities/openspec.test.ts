@@ -470,7 +470,7 @@ describe("createOpenspecPlugin", () => {
       const markers: Record<(typeof MATE_SKILLS)[number], string> = {
         "mate-artifact-publish": "artifact pending --json",
         "mate-create-report": "open Studio → Reports",
-        "mate-openspec-backfill": "backfill-spec-",
+        "mate-openspec-backfill": "Drifted specs",
         "mate-interview-me": "one-question-at-a-time",
         "mate-grill-me": "mate-grilling",
         "mate-grilling": "design tree",

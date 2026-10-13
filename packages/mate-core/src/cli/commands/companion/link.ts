@@ -10,10 +10,12 @@ import {
 } from "../../companion-link-wizard";
 import { extractRepoName } from "../artifact/extract-repo-name";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
-import { CompanionResolver } from "../../../lib/orchestrator/companion-resolver";
-import { companionRootedStore } from "../../../lib/orchestrator/companion-store";
+import {
+  CompanionResolver,
+  companionRootedStore,
+  findDescendantRepoLocalRegistries,
+} from "../../../lib/orchestrator/repository-link";
 import { inspectSetupPreflight } from "../../../lib/orchestrator/setup-preflight";
-import { findDescendantRepoLocalRegistries } from "../../../lib/orchestrator/repo-local-registry";
 import { runSetupFlowAtPath } from "../setup";
 import { runInstallCommand } from "../install";
 import type { CompanionSource, LinkedRepository } from "../../../lib/orchestrator/types";
@@ -164,14 +166,15 @@ export async function runCompanionLinkCommandWithDeps(
     if (!inputs.companionPaths?.length) {
       exitWithError("mate: no existing companion was selected.");
     }
-    companionPaths = [];
-    for (const rawCompanionPath of inputs.companionPaths) {
-      const resolvedCompanionPath = path.resolve(rawCompanionPath);
-      const existingTarget = await stat(resolvedCompanionPath).catch(() => null);
-      if (!existingTarget?.isDirectory()) {
-        exitWithError(`mate: existing companion must be a directory: ${resolvedCompanionPath}`);
-      }
-      companionPaths.push(resolvedCompanionPath);
+    companionPaths = inputs.companionPaths.map((rawCompanionPath) =>
+      path.resolve(rawCompanionPath),
+    );
+    const targets = await Promise.all(
+      companionPaths.map((companionPath) => stat(companionPath).catch(() => null)),
+    );
+    const notADirectory = companionPaths.find((_, index) => !targets[index]?.isDirectory());
+    if (notADirectory) {
+      exitWithError(`mate: existing companion must be a directory: ${notADirectory}`);
     }
   } else {
     const rawCompanionPath = inputs.localPath?.trim();
@@ -205,6 +208,7 @@ export async function runCompanionLinkCommandWithDeps(
   // Managed companions are git-backed; explicitly pasted paths retain local provenance.
   const persistedSource: CompanionSource = companionSource === "local" ? "local" : "git";
 
+  /* oxlint-disable no-await-in-loop -- each companion is set up, linked and installed in turn; a declined install stops the rest */
   for (const companionPath of companionPaths) {
     const preflight = await inspectPreflight(companionPath);
     if (companionSource === "git" && preflight.kind !== "existing-companion") {
@@ -216,6 +220,7 @@ export async function runCompanionLinkCommandWithDeps(
     await invalidateInstallState({ kind: "companion", companionPath });
     if ((await installCompanion(companionPath)) === false) return;
   }
+  /* oxlint-enable no-await-in-loop */
 
   let shadowedPaths: string[] = [];
   try {

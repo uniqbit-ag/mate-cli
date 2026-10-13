@@ -14,8 +14,11 @@ import {
 } from "../../../runtime/projection";
 import { readCompanionRuntimeContext } from "../../../runtime/env";
 import { repoLocalRegistryPath } from "../../../runtime/repo-local";
-import { planClaudeDelivery } from "../../../runtime/claude-delivery-plan";
-import { EMPTY_MANIFEST } from "../../../runtime/runtime-document-manifest";
+import {
+  CLAUDE_SETTINGS_DOCUMENT,
+  EMPTY_MANIFEST,
+  withDocument,
+} from "../../../runtime/runtime-document-manifest";
 import { wrapStateOf } from "../../../runtime/wrap-state";
 import { getContextModePackageRoot } from "../../context-mode-package";
 import {
@@ -29,9 +32,13 @@ import {
   resetActiveDistribution,
   setActiveDistribution,
 } from "../../../distribution";
-import { ClaudeAdapter } from "./claude";
+import {
+  getCompanionClaudeMcpConfigPath,
+  getCompanionClaudeSettingsPath,
+} from "../../../tools/setup/providers/claude";
+import { ClaudeAdapter, launchSettingsPath } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
-import type { AdapterContext, ClaudeDelivery } from "./base";
+import type { AdapterContext } from "./base";
 import { withEnv } from "../../../../test/helpers";
 
 const tempRoots: string[] = [];
@@ -53,14 +60,40 @@ async function withPath<T>(value: string, fn: () => Promise<T> | T): Promise<T> 
   }
 }
 
-const NO_WRAP = wrapStateOf(EMPTY_MANIFEST);
+const CLAUDE_WRAP = wrapStateOf(withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, []));
 
-/** What the launcher hands the adapter; the adapter only translates it. */
-function delivery(
-  kind: "managed-repo" | "managed-companion",
-  paths: Omit<ClaudeDelivery, "plan"> = {},
-): ClaudeDelivery {
-  return { plan: planClaudeDelivery(kind, NO_WRAP), ...paths };
+/** As a launch hands the context over: planned by the adapter after a prepare that wrapped for Claude. */
+function planClaude(context: AdapterContext) {
+  return new ClaudeAdapter().planLaunch(context, {
+    ok: true,
+    mode: "attended",
+    runtime: "claude",
+    runtimes: ["claude"],
+    repositoryId: context.repository?.id,
+    companionPath: context.companionPath,
+    steps: [],
+    warnings: [],
+    wrapState: CLAUDE_WRAP,
+  });
+}
+
+async function prepareClaudeLaunch(context: AdapterContext, args: string[]) {
+  return new ClaudeAdapter().prepareLaunch(await planClaude(context), args);
+}
+
+async function claudeArgs(context: AdapterContext, args: string[]) {
+  return new ClaudeAdapter().buildArgs(await planClaude(context), args);
+}
+
+/** A companion that holds the Claude settings and, when asked, the MCP config. */
+async function claudeCompanion(prefix: string, options: { mcpConfig?: boolean } = {}) {
+  const companionPath = await makeTempDir(prefix);
+  const settingsPath = getCompanionClaudeSettingsPath(companionPath);
+  await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+  await fs.writeFile(settingsPath, "{}\n", "utf8");
+  const mcpConfigPath = getCompanionClaudeMcpConfigPath(companionPath);
+  if (options.mcpConfig) await fs.writeFile(mcpConfigPath, "{}\n", "utf8");
+  return { companionPath, settingsPath, mcpConfigPath };
 }
 
 function makeContext(capabilities: AdapterContext["capabilities"] = []): AdapterContext {
@@ -73,7 +106,6 @@ function makeContext(capabilities: AdapterContext["capabilities"] = []): Adapter
     allowedAgents: ["claude", "opencode"],
     companionPath: "/tmp/companion",
     capabilities,
-    claudeDelivery: delivery("managed-repo"),
   };
 }
 
@@ -112,7 +144,7 @@ afterEach(async () => {
 describe("LaunchAdapter.prepareLaunch", () => {
   test("builds the Claude invocation without rewriting the model base URL", async () => {
     const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
-      new ClaudeAdapter().prepareLaunch(makeContext(), ["--print", "hello"]),
+      prepareClaudeLaunch(makeContext(), ["--print", "hello"]),
     );
 
     expect(launch.command).toBe("claude");
@@ -367,7 +399,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
 describe("graphify GRAPHIFY_OUT env injection", () => {
   test("injects companion GRAPHIFY_OUT when graphify capability is enabled", async () => {
     const launch = await withEnv("GRAPHIFY_OUT", undefined, () =>
-      new ClaudeAdapter().prepareLaunch(makeContext([{ name: "graphify" }]), []),
+      prepareClaudeLaunch(makeContext([{ name: "graphify" }]), []),
     );
 
     expect(launch.env.GRAPHIFY_OUT).toBe(
@@ -379,7 +411,7 @@ describe("graphify GRAPHIFY_OUT env injection", () => {
 
   test("sets GRAPHIFY_OUT when graphify capability is absent, matching the projection", async () => {
     const launch = await withEnv("GRAPHIFY_OUT", undefined, () =>
-      new ClaudeAdapter().prepareLaunch(makeContext(), []),
+      prepareClaudeLaunch(makeContext(), []),
     );
 
     expect(launch.env.GRAPHIFY_OUT).toBe(projectionOf(makeContext()).graphifyOut);
@@ -389,11 +421,8 @@ describe("graphify GRAPHIFY_OUT env injection", () => {
 
 describe("openspec capability env injection", () => {
   test("marks openspec enabled only when the capability is selected", async () => {
-    const enabled = await new ClaudeAdapter().prepareLaunch(
-      makeContext([{ name: "openspec" }]),
-      [],
-    );
-    const disabled = await new ClaudeAdapter().prepareLaunch(makeContext(), []);
+    const enabled = await prepareClaudeLaunch(makeContext([{ name: "openspec" }]), []);
+    const disabled = await prepareClaudeLaunch(makeContext(), []);
 
     expect(enabled.env.MATE_OPENSPEC_ENABLED).toBe("1");
     expect(disabled.env.MATE_OPENSPEC_ENABLED).toBe("0");
@@ -401,7 +430,7 @@ describe("openspec capability env injection", () => {
 
   test("carries the git auto mode state alongside the openspec flag", async () => {
     const context = { ...makeContext([{ name: "openspec" }]), git: "auto" as const };
-    const launch = await new ClaudeAdapter().prepareLaunch(context, []);
+    const launch = await prepareClaudeLaunch(context, []);
 
     expect(launch.env.MATE_OPENSPEC_ENABLED).toBe("1");
     expect(launch.env.MATE_GIT_AUTO_MODE).toBe("1");
@@ -409,7 +438,7 @@ describe("openspec capability env injection", () => {
 
   test("clears git auto mode when the launch bypasses synchronization", async () => {
     const context = { ...makeContext(), git: "auto" as const, skipGit: true };
-    const launch = await new ClaudeAdapter().prepareLaunch(context, []);
+    const launch = await prepareClaudeLaunch(context, []);
 
     expect(launch.env.MATE_GIT_AUTO_MODE).toBe("0");
   });
@@ -417,11 +446,8 @@ describe("openspec capability env injection", () => {
 
 describe("react-doctor capability env injection", () => {
   test("marks react-doctor enabled only when the capability is selected", async () => {
-    const enabled = await new ClaudeAdapter().prepareLaunch(
-      makeContext([{ name: "react-doctor" }]),
-      [],
-    );
-    const disabled = await new ClaudeAdapter().prepareLaunch(makeContext(), []);
+    const enabled = await prepareClaudeLaunch(makeContext([{ name: "react-doctor" }]), []);
+    const disabled = await prepareClaudeLaunch(makeContext(), []);
 
     expect(enabled.env.MATE_REACT_DOCTOR_ENABLED).toBe("1");
     expect(enabled.env.MATE_REACT_DOCTOR_BIN_PATH).toBe(getReactDoctorBinPath());
@@ -435,7 +461,7 @@ describe("react-doctor capability env injection", () => {
 describe("launch PATH injection", () => {
   test("prepends only the Mate wrapper dir when tokensave is enabled", async () => {
     const launch = await withEnv("PATH", "/usr/bin", () =>
-      new ClaudeAdapter().prepareLaunch(makeContext([{ name: "tokensave" }]), []),
+      prepareClaudeLaunch(makeContext([{ name: "tokensave" }]), []),
     );
 
     expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}/usr/bin`);
@@ -446,9 +472,7 @@ describe("launch PATH injection", () => {
   });
 
   test("PATH is unchanged when tokensave capability is absent", async () => {
-    const launch = await withEnv("PATH", "/usr/bin", () =>
-      new ClaudeAdapter().prepareLaunch(makeContext(), []),
-    );
+    const launch = await withEnv("PATH", "/usr/bin", () => prepareClaudeLaunch(makeContext(), []));
 
     expect(launch.env.PATH).toBe(`${getWrapperBinPath()}${path.delimiter}/usr/bin`);
   });
@@ -462,7 +486,7 @@ describe("launch PATH injection", () => {
 describe("launch environment and the projection agree", () => {
   test("materializes every projected field under its projection env name", async () => {
     const context = makeContext([{ name: "react-doctor" }]);
-    const launch = await new ClaudeAdapter().prepareLaunch(context, []);
+    const launch = await prepareClaudeLaunch(context, []);
     const projection = projectionOf(context);
 
     for (const field of PROJECTION_FIELDS) {
@@ -474,14 +498,11 @@ describe("launch environment and the projection agree", () => {
     const { repoRoot, repository, companionPath } =
       await wrappedRepository("mate-launch-graphify-");
 
-    const enabled = await new ClaudeAdapter().prepareLaunch(
+    const enabled = await prepareClaudeLaunch(
       { ...makeContext([{ name: "graphify" }]), repository, companionPath },
       [],
     );
-    const disabled = await new ClaudeAdapter().prepareLaunch(
-      { ...makeContext(), repository, companionPath },
-      [],
-    );
+    const disabled = await prepareClaudeLaunch({ ...makeContext(), repository, companionPath }, []);
 
     expect(enabled.env.GRAPHIFY_OUT).toBe(resolveProjection(repoRoot)?.graphifyOut);
     expect(disabled.env.GRAPHIFY_OUT).toBe(resolveProjection(repoRoot)?.graphifyOut);
@@ -501,7 +522,7 @@ describe("launch environment and the projection agree", () => {
       await wrappedRepository("mate-launch-outranks-");
     const launched = path.join(repoRoot, "launched-companion");
 
-    const launch = await new ClaudeAdapter().prepareLaunch(
+    const launch = await prepareClaudeLaunch(
       { ...makeContext(), repository, companionPath: launched },
       [],
     );
@@ -512,23 +533,19 @@ describe("launch environment and the projection agree", () => {
 });
 
 describe("Claude companion settings launch flags", () => {
-  test("adds --setting-sources and --settings for the settings file the launcher chose", () => {
-    const args = new ClaudeAdapter().buildArgs(
-      {
-        ...makeContext(),
-        claudeDelivery: delivery("managed-repo", { settingsPath: "/acme/s.json" }),
-      },
-      ["--print", "hello"],
-    );
+  test("adds --setting-sources and --settings for the settings file the plan chose", async () => {
+    const { companionPath } = await claudeCompanion("mate-claude-settings-flag-");
+
+    const args = await claudeArgs({ ...makeContext(), companionPath }, ["--print", "hello"]);
 
     expect(args[args.indexOf("--setting-sources") + 1]).toBe("user,project,local");
-    expect(args[args.indexOf("--settings") + 1]).toBe("/acme/s.json");
+    expect(args[args.indexOf("--settings") + 1]).toBe(launchSettingsPath(companionPath, "app"));
     // Passthrough args stay after the managed settings flags.
     expect(args.slice(-2)).toEqual(["--print", "hello"]);
   });
 
-  test("omits settings and MCP flags when the launcher chose no file", () => {
-    const args = new ClaudeAdapter().buildArgs(makeContext(), []);
+  test("omits settings and MCP flags when the companion holds no file", async () => {
+    const args = await claudeArgs(makeContext(), []);
 
     expect(args).not.toContain("--setting-sources");
     expect(args).not.toContain("--settings");
@@ -536,52 +553,44 @@ describe("Claude companion settings launch flags", () => {
     expect(args[0]).toBe("--append-system-prompt");
   });
 
-  test("ignores an MCP config path the plan does not route through --mcp-config", () => {
-    const args = new ClaudeAdapter().buildArgs(
-      {
-        ...makeContext(),
-        claudeDelivery: delivery("managed-repo", { mcpConfigPath: "/acme/companion/.mcp.json" }),
-      },
-      [],
-    );
+  test("ignores an MCP config the plan does not route through --mcp-config", async () => {
+    const { companionPath } = await claudeCompanion("mate-claude-mcp-flag-", { mcpConfig: true });
+
+    const args = await claudeArgs({ ...makeContext(), companionPath }, []);
 
     expect(args).not.toContain("--mcp-config");
   });
 
-  test("a companion-scoped plan passes the companion directly", () => {
+  test("a companion-scoped plan passes the companion directly", async () => {
     const { repository: _repository, ...companionScoped } = makeContext();
-    const companionPath = "/acme/companion";
+    const { companionPath, settingsPath, mcpConfigPath } = await claudeCompanion(
+      "mate-claude-companion-flags-",
+      { mcpConfig: true },
+    );
 
-    const args = new ClaudeAdapter().buildArgs(
-      {
-        ...companionScoped,
-        companionPath,
-        launchWorkingDirectory: companionPath,
-        claudeDelivery: delivery("managed-companion", {
-          settingsPath: "/acme/companion/settings.json",
-          mcpConfigPath: "/acme/companion/.mcp.json",
-        }),
-      },
+    const args = await claudeArgs(
+      { ...companionScoped, companionPath, launchWorkingDirectory: companionPath },
       ["--print", "hello"],
     );
 
     expect(args.slice(0, 2)).toEqual(["--add-dir", companionPath]);
-    expect(args[args.indexOf("--settings") + 1]).toBe("/acme/companion/settings.json");
-    expect(args[args.indexOf("--mcp-config") + 1]).toBe("/acme/companion/.mcp.json");
+    expect(args[args.indexOf("--settings") + 1]).toBe(settingsPath);
+    expect(args[args.indexOf("--mcp-config") + 1]).toBe(mcpConfigPath);
     /** Passthrough args stay after the managed flags. */
     expect(args.slice(-2)).toEqual(["--print", "hello"]);
   });
 
-  test("a managed-repo plan passes the deferred set and defers hooks, MCP and dir access", () => {
-    const companionPath = "/acme/companion";
+  test("a managed-repo plan passes the deferred set and defers hooks, MCP and dir access", async () => {
+    const { companionPath } = await claudeCompanion("mate-claude-managed-repo-flags-", {
+      mcpConfig: true,
+    });
     const context = {
       ...makeContext([{ name: "context-mode" }]),
       repository: { id: "acme", path: "/acme/repo" },
       companionPath,
-      claudeDelivery: delivery("managed-repo", { settingsPath: "/acme/derived.json" }),
     };
 
-    const args = new ClaudeAdapter().buildArgs(context, ["--print"]);
+    const args = await claudeArgs(context, ["--print"]);
 
     expect(args).toEqual([
       "--append-system-prompt",
@@ -589,7 +598,7 @@ describe("Claude companion settings launch flags", () => {
       "--setting-sources",
       "user,project,local",
       "--settings",
-      "/acme/derived.json",
+      launchSettingsPath(companionPath, "acme"),
       "--plugin-dir",
       getClaudePluginRoot(),
       "--plugin-dir",
@@ -598,14 +607,9 @@ describe("Claude companion settings launch flags", () => {
     ]);
   });
 
-  test("refuses to build a launch without the launcher's plan", () => {
-    const { claudeDelivery: _plan, ...unplanned } = makeContext();
-    expect(() => new ClaudeAdapter().buildArgs(unplanned, [])).toThrow(/delivery plan/);
-  });
-
   test("always loads the bundled mate plugin directory", async () => {
     const companionPath = await makeTempDir("mate-claude-plugin-flag-");
-    const args = new ClaudeAdapter().buildArgs({ ...makeContext(), companionPath }, []);
+    const args = await claudeArgs({ ...makeContext(), companionPath }, []);
 
     const pluginDirs = args.filter((_, index) => args[index - 1] === "--plugin-dir");
     expect(pluginDirs).toEqual([getClaudePluginRoot()]);
@@ -613,11 +617,11 @@ describe("Claude companion settings launch flags", () => {
 
   test("adds the local context-mode plugin directory only when enabled, alongside the mate plugin", async () => {
     const companionPath = await makeTempDir("mate-claude-context-mode-flag-");
-    const enabled = new ClaudeAdapter().buildArgs(
+    const enabled = await claudeArgs(
       { ...makeContext([{ name: "context-mode" }]), companionPath },
       [],
     );
-    const disabled = new ClaudeAdapter().buildArgs({ ...makeContext(), companionPath }, []);
+    const disabled = await claudeArgs({ ...makeContext(), companionPath }, []);
 
     const enabledPluginDirs = enabled.filter((_, index) => enabled[index - 1] === "--plugin-dir");
     expect(enabledPluginDirs).toEqual([
@@ -632,7 +636,9 @@ describe("Claude companion settings launch flags", () => {
 
   test("validates the bundled mate plugin assets", async () => {
     // The real bundled plugin is present, so a managed launch validates.
-    await expect(new ClaudeAdapter().validateLaunch(makeContext())).resolves.toBeUndefined();
+    await expect(
+      new ClaudeAdapter().validateLaunch(await planClaude(makeContext())),
+    ).resolves.toBeUndefined();
 
     // A broken installation fails naming the missing assets.
     const broken = await makeTempDir("mate-claude-plugin-broken-");
@@ -644,7 +650,7 @@ describe("Claude companion settings launch flags", () => {
 describe("Adapter base-URL rewriting is gone", () => {
   test("ClaudeAdapter sets no ANTHROPIC_BASE_URL of Mate's own", async () => {
     const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
-      new ClaudeAdapter().prepareLaunch(makeContext(), []),
+      prepareClaudeLaunch(makeContext(), []),
     );
 
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
@@ -717,13 +723,10 @@ describe("Adapter base-URL rewriting is gone", () => {
 
   test("injects no custom Anthropic headers, whichever companion is launched", async () => {
     const firstLaunch = await withEnv("ANTHROPIC_CUSTOM_HEADERS", undefined, () =>
-      new ClaudeAdapter().prepareLaunch(makeContext(), []),
+      prepareClaudeLaunch(makeContext(), []),
     );
     const secondLaunch = await withEnv("ANTHROPIC_CUSTOM_HEADERS", undefined, () =>
-      new ClaudeAdapter().prepareLaunch(
-        { ...makeContext(), companionPath: "/tmp/other-companion" },
-        [],
-      ),
+      prepareClaudeLaunch({ ...makeContext(), companionPath: "/tmp/other-companion" }, []),
     );
 
     expect(firstLaunch.env.ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();

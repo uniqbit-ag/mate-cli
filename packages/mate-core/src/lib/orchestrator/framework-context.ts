@@ -4,12 +4,13 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../framework";
 import { parse } from "yaml";
 import { CompanionRegistryStore } from "./companion-registry-store";
-import { CompanionResolver } from "./companion-resolver";
-import { companionRootedStore } from "./companion-store";
-import { readCompanionRegistry } from "./companion-registry-reader";
 import { ConfigStore } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
-import { findRepoLocalLinkedRepository } from "./repo-local-registry";
+import {
+  backfillCompanionRegistration,
+  CompanionResolver,
+  findRepoLocalLinkedRepository,
+} from "./repository-link";
 import { projectWorkingRepositoryBestEffort } from "./working-repo-projection";
 import {
   AmbiguousCompanionError,
@@ -255,31 +256,6 @@ export async function resolveForLaunch(
   }
 
   throw new WorkingRepoRequiredError();
-}
-
-/**
- * Self-heals repos linked before the companion-side registry write existed
- * (or whose companion registry was reset): backfills the companion-side
- * entry from the already-trusted repo-local pointer on every launch
- * resolution. Best-effort — never blocks a launch.
- */
-async function backfillCompanionRegistration(
-  companionPath: string,
-  repository: LinkedRepository,
-): Promise<void> {
-  try {
-    const { repos } = await readCompanionRegistry(companionPath).catch(() => ({ repos: [] }));
-    const existing = repos.find((repo) => repo.id === repository.id);
-    if (existing?.path === repository.path) return;
-
-    await companionRootedStore(companionPath).registerRepository(repository);
-  } catch (error) {
-    console.error(
-      `${FRAMEWORK_NAME}: warning: failed to backfill companion registry for ${repository.id}: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
 }
 
 // Resolves context for `mate cap` commands. Unlike resolveForLaunch, this allows

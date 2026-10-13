@@ -12,3 +12,5 @@ coverage/
 .venv/
 __pycache__/
 .vitest/
+
+.build/

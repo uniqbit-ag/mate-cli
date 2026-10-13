@@ -10,7 +10,7 @@ import { runWrapCommand } from "../../cli/commands/wrap";
 import { FRAMEWORK_NAME } from "../../framework";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
-import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import { refreshRuntimeDirectory } from "../../lib/runtime-directory-refresh";
 import { syncCompanionUnattended } from "../../runtime/companion-sync";
 import { MATE_ENV } from "../../runtime/env-names";

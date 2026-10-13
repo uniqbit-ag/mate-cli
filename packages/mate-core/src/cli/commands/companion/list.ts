@@ -1,4 +1,4 @@
-import { CompanionStore } from "../../../lib/orchestrator/companion-store";
+import { CompanionStore } from "../../../lib/orchestrator/repository-link";
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
 import { renderRepoListTable } from "../../repo-list-table";
 import { writeJsonStdout } from "../../write-json-stdout";
@@ -13,14 +13,13 @@ import { writeJsonStdout } from "../../write-json-stdout";
  * TTY (e.g. piped into another command).
  */
 export async function runCompanionListCommand(argv: string[] = []): Promise<void> {
-  const { configStore, workingRepoStore, repository, contextKind } = await resolveFrameworkContext(
-    process.cwd(),
-  );
+  const { companionPath, workingRepoStore, repository, contextKind } =
+    await resolveFrameworkContext(process.cwd());
   const repositories = repository
     ? [repository]
     : contextKind === "companion-root"
       ? []
-      : await new CompanionStore(configStore, workingRepoStore).listRepositories();
+      : await new CompanionStore(companionPath, workingRepoStore).listRepositories();
   const forceJson = argv.includes("--json");
 
   if (forceJson || !process.stdout.isTTY) {

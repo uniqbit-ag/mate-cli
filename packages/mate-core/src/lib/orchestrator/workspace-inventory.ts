@@ -1,7 +1,7 @@
 import path from "node:path";
 
-import { pathIsDirectory } from "./repo-local-registry";
-import { readCompanionRegistry } from "./companion-registry-reader";
+import { pathIsDirectory } from "../fs-utils";
+import { readCompanionRegistry } from "./repository-link";
 import { GlobalConfigStore } from "./global-config-store";
 import type { LinkedRepository } from "./types";
 

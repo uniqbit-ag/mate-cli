@@ -8,7 +8,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { FRAMEWORK_NAME } from "../framework";
 import { ConfigStore } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
-import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repository-link";
 import { project } from "../lib/orchestrator/working-repo-projection";
 import { TOKENSAVE_STORE_DIR, tokensaveDeps } from "./setup/capabilities/tokensave";
 import {

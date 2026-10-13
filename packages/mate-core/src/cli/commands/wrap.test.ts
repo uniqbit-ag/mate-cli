@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { FRAMEWORK_NAME } from "../../framework";
 import { resolveForLaunch } from "../../lib/orchestrator/framework-context";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
-import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
 import { project } from "../../lib/orchestrator/working-repo-projection";
 import type { WrapPassResult } from "../../lib/orchestrator/wrap-pass";
