@@ -41,9 +41,9 @@ describe("mate-v1 schema", () => {
 
     expect(parsed.name).toBe("mate-v1");
     expect(isValidSchemaVersion(parsed.version)).toBe(true);
-    expect(parsed.version).toBe(8);
+    expect(parsed.version).toBe(9);
 
-    const dottedVersion = parse(raw.replace("version: 8", "version: 8.1")) as {
+    const dottedVersion = parse(raw.replace("version: 9", "version: 9.1")) as {
       version?: unknown;
     };
     expect(isValidSchemaVersion(dottedVersion.version)).toBe(false);

@@ -8,7 +8,7 @@ import {
   getCompanionClaudeSettingsPath,
   syncCompanionClaudeSettings,
 } from "./claude";
-import { getWrapperBinPath } from "../../../lib/package-paths";
+import { getReactDoctorBinPath, getWrapperBinPath } from "../../../lib/package-paths";
 import { createContextModePlugin } from "../capabilities/context-mode";
 import { createGraphifyPlugin } from "../capabilities/graphify";
 import { createOpenspecPlugin } from "../capabilities/openspec";
@@ -156,7 +156,7 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.autoMemoryEnabled).toBe(false);
   });
 
-  test("adds react-doctor post hook when capability enabled", async () => {
+  test("adds no react-doctor hook when capability enabled", async () => {
     const companionPath = await makeTempDir("mate-companion-react-doctor-");
     await syncCompanionClaudeSettings(
       companionPath,
@@ -168,27 +168,7 @@ describe("syncCompanionClaudeSettings", () => {
     );
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.PostToolUse).toContainEqual({
-      matcher: "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
-      hooks: [
-        {
-          type: "command",
-          command: `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
-          timeout: 5,
-        },
-      ],
-    });
-    expect(settings.hooks?.Stop).toEqual([
-      {
-        hooks: [
-          {
-            type: "command",
-            command: `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
-            timeout: 45,
-          },
-        ],
-      },
-    ]);
+    expect(JSON.stringify(settings.hooks ?? {})).not.toContain("react-doctor");
   });
 
   test("does not write an openspec archive-finish hook even with git auto", async () => {
@@ -483,8 +463,9 @@ describe("syncCompanionClaudeSettings", () => {
     );
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.permissions?.allow).toContain("Bash(npx react-doctor:*)");
-    expect(settings.permissions?.allow).toContain("Skill(react-doctor)");
+    expect(settings.permissions?.allow).toContain("Skill(mate-react-doctor)");
+    expect(settings.permissions?.allow).toContain(`Bash(${getReactDoctorBinPath()}:*)`);
+    expect(settings.permissions?.allow).not.toContain("Bash(npx react-doctor:*)");
   });
 
   test("pre-seeds declared openspec permission allowances", async () => {
@@ -587,47 +568,57 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.permissions?.allow).toContain("Bash(ls:*)");
   });
 
-  test("reconciles react-doctor hook by capability without re-adding mate plugin hooks", async () => {
-    const companionPath = await makeTempDir("mate-companion-hook-reconcile-");
+  for (const enabled of [true, false]) {
+    test(`strips retired react-doctor hook groups and permissions (enabled: ${enabled})`, async () => {
+      const companionPath = await makeTempDir("mate-companion-react-doctor-legacy-");
+      const hookCommand = `sh "${companionPath}/.claude/hooks/react-doctor.sh"`;
+      const settingsPath = path.join(companionPath, ".claude", "settings.local.json");
+      await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+      await fs.writeFile(
+        settingsPath,
+        JSON.stringify({
+          hooks: {
+            PostToolUse: [
+              { matcher: "Write|Edit", hooks: [{ type: "command", command: hookCommand }] },
+              { matcher: "Bash", hooks: [{ type: "command", command: "echo user" }] },
+            ],
+            Stop: [{ hooks: [{ type: "command", command: hookCommand, timeout: 45 }] }],
+          },
+          permissions: {
+            allow: [
+              "Skill(react-doctor)",
+              "Bash(npx react-doctor:*)",
+              "Bash(npx react-doctor@latest *)",
+              "Bash(ls:*)",
+            ],
+          },
+        }),
+        "utf8",
+      );
 
-    await syncCompanionClaudeSettings(
-      companionPath,
-      {
-        allowedAgents: ["claude"],
-        capabilities: [{ name: "react-doctor" }],
-      },
-      reactDoctorContributions(companionPath, true),
-    );
-    let settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.Stop).toBeDefined();
-    expect(
-      hasPostToolHook(
-        settings,
-        "PostToolUse",
-        `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
-      ),
-    ).toBe(true);
-    expect(hasValidateHook(settings, companionPath)).toBe(false);
+      await syncCompanionClaudeSettings(
+        companionPath,
+        {
+          allowedAgents: ["claude"],
+          capabilities: enabled ? [{ name: "react-doctor" }] : [],
+        },
+        reactDoctorContributions(companionPath, enabled),
+      );
 
-    await syncCompanionClaudeSettings(
-      companionPath,
-      {
-        allowedAgents: ["claude"],
-        capabilities: [],
-      },
-      reactDoctorContributions(companionPath, false),
-    );
-    settings = await readCompanionSettings(companionPath);
-    expect(settings.hooks?.Stop).toBeUndefined();
-    expect(
-      hasPostToolHook(
-        settings,
-        "PostToolUse",
-        `sh "${companionPath}/.claude/hooks/react-doctor.sh"`,
-      ),
-    ).toBe(false);
-    expect(hasValidateHook(settings, companionPath)).toBe(false);
-  });
+      const settings = await readCompanionSettings(companionPath);
+      expect(JSON.stringify(settings.hooks ?? {})).not.toContain("react-doctor.sh");
+      expect(settings.hooks?.PostToolUse).toEqual([
+        { matcher: "Bash", hooks: [{ type: "command", command: "echo user" }] },
+      ]);
+      expect(settings.hooks?.Stop).toBeUndefined();
+      const allow = settings.permissions?.allow ?? [];
+      expect(allow).not.toContain("Skill(react-doctor)");
+      expect(allow).not.toContain("Bash(npx react-doctor:*)");
+      expect(allow).not.toContain("Bash(npx react-doctor@latest *)");
+      expect(allow).toContain("Bash(ls:*)");
+      expect(allow.includes("Skill(mate-react-doctor)")).toBe(enabled);
+    });
+  }
 });
 
 describe("Claude provider apply (mate hook migration)", () => {
@@ -642,7 +633,7 @@ describe("Claude provider apply (mate hook migration)", () => {
     ]) {
       await fs.writeFile(path.join(hooksDir, stale), "#!/bin/sh\nexit 0\n", "utf8");
     }
-    await fs.writeFile(path.join(hooksDir, "react-doctor.sh"), "#!/bin/sh\nexit 0\n", "utf8");
+    await fs.writeFile(path.join(hooksDir, "user-hook.sh"), "#!/bin/sh\nexit 0\n", "utf8");
 
     await createClaudePlugin().apply({
       companionPath,
@@ -658,8 +649,8 @@ describe("Claude provider apply (mate hook migration)", () => {
     ]) {
       await expect(fs.access(path.join(hooksDir, stale))).rejects.toThrow();
     }
-    // Capability hook files that remain settings-delivered are untouched.
-    await expect(fs.access(path.join(hooksDir, "react-doctor.sh"))).resolves.toBeNull();
+    // Hook files Mate does not own are untouched.
+    await expect(fs.access(path.join(hooksDir, "user-hook.sh"))).resolves.toBeNull();
   });
 
   test("prunes the emptied hooks directory on a fully migrated companion", async () => {

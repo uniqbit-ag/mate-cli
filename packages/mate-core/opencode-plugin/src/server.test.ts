@@ -164,7 +164,7 @@ describe("Mate OpenCode server plugin", () => {
     );
   });
 
-  test("returns a cleanup for the React Doctor subscription", async () => {
+  test("registers no post-edit hook with React Doctor enabled", async () => {
     const root = await makeTempDir("mate-opencode-react-doctor-");
     const companion = path.join(root, "companion");
     const repo = path.join(root, "repo");
@@ -185,7 +185,7 @@ describe("Mate OpenCode server plugin", () => {
         const { api, hooks } = fakeApi(repo);
         const cleanup = await MateOpenCodePlugin.setup(api);
 
-        expect(hooks.has("tool.execute.after")).toBe(true);
+        expect(hooks.has("tool.execute.after")).toBe(false);
         expect(cleanup).toBeFunction();
         await cleanup?.();
       },

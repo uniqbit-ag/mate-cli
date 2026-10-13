@@ -1,88 +1,72 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { getReactDoctorBinPath } from "../../../lib/package-paths";
 import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
-import { removeLegacyOpenCodeSkills } from "../providers/agents-skill-root";
+import { removeLegacyOpenCodeSkills, removeSharedSkills } from "../providers/agents-skill-root";
 import { pruneEmptyAncestors } from "../utils";
 
-const SKILL_NAME = "react-doctor";
+const SKILL_NAME = "mate-react-doctor";
+// The upstream skill earlier releases installed under its own name.
+const LEGACY_SKILL_NAME = "react-doctor";
 
 const SKILL_SRC = path.join(
   import.meta.dirname,
-  "../../../templates/capabilities/react-doctor/skill",
+  "../../../templates/capabilities/react-doctor/mate-react-doctor",
 );
-export const CLAUDE_HOOK_SRC = path.join(
-  import.meta.dirname,
-  "../../../templates/capabilities/react-doctor/claude/hooks/react-doctor.sh",
-);
+
+/** Removes the skill copies earlier releases installed under the upstream name. */
+async function removeLegacySkills(companionPath: string): Promise<void> {
+  const claudeSkillsDir = path.join(companionPath, ".claude", "skills");
+  await fs.rm(path.join(claudeSkillsDir, LEGACY_SKILL_NAME), { recursive: true, force: true });
+  await pruneEmptyAncestors(claudeSkillsDir, companionPath);
+  await removeSharedSkills(companionPath, [LEGACY_SKILL_NAME]);
+  await removeLegacyOpenCodeSkills(companionPath, [LEGACY_SKILL_NAME]);
+}
+
+/** Removes the post-edit hook script earlier releases copied into the companion. */
+async function removeLegacyHookScript(companionPath: string): Promise<void> {
+  const hooksDir = path.join(companionPath, ".claude", "hooks");
+  await fs.rm(path.join(hooksDir, "react-doctor.sh"), { force: true });
+  await pruneEmptyAncestors(hooksDir, companionPath);
+}
 
 export function createReactDoctorPlugin(): CapabilityPlugin {
   return {
     id: "react-doctor",
     kind: "capability",
     label: "React Doctor",
-    description: "Install React Doctor skills and Claude post-edit scans.",
+    description: "Install the mate-react-doctor skill that verifies React changes during apply.",
     defaultSelected: true,
     isEnabled: (config) => (config.capabilities ?? []).some((c) => c.name === "react-doctor"),
-    // Skills, session hooks, and permission pre-seeds are declared and
-    // reconciled by each runtime's Runtime Surface. Only the hook script file
-    // itself is copied imperatively below (script files are not a config
-    // format the surface owns).
-    getRuntimeContributions(ctx: SetupContext): RuntimeContributionsByRuntime {
-      const hookCommand = `sh "${ctx.companionPath}/.claude/hooks/react-doctor.sh"`;
+    // React Doctor runs only when an agent invokes the skill (the shared Mate
+    // verification rule adds it to OpenSpec task lists), so the capability
+    // contributes no hooks: just the skill and its permission pre-seeds.
+    getRuntimeContributions(): RuntimeContributionsByRuntime {
       const skillTrees = [{ name: SKILL_NAME, sourceDir: SKILL_SRC }];
       return {
         claude: {
-          hookGroups: [
-            // Record edits cheaply, then scan once when the edited turn finishes.
-            {
-              event: "PostToolUse",
-              marker: "react-doctor.sh",
-              group: {
-                matcher: "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
-                hooks: [{ type: "command", command: hookCommand, timeout: 5 }],
-              },
-            },
-            {
-              event: "Stop",
-              marker: "react-doctor.sh",
-              group: { hooks: [{ type: "command", command: hookCommand, timeout: 45 }] },
-            },
-          ],
-          permissionEntries: [
-            "Skill(react-doctor)",
-            "Bash(npx react-doctor:*)",
-            "Bash(npx react-doctor@latest *)",
-          ],
+          permissionEntries: [`Skill(${SKILL_NAME})`, `Bash(${getReactDoctorBinPath()}:*)`],
           skillTrees,
         },
         opencode: { skillTrees },
       };
     },
     async apply(ctx: SetupContext) {
-      await removeLegacyOpenCodeSkills(ctx.companionPath, [SKILL_NAME]);
+      await removeLegacySkills(ctx.companionPath);
     },
     async teardown(ctx: SetupContext) {
-      await removeLegacyOpenCodeSkills(ctx.companionPath, [SKILL_NAME]);
+      await removeLegacySkills(ctx.companionPath);
     },
+    // Cleanup only: stale hook groups are stripped by settings-sync through the
+    // `react-doctor.sh` managed marker; the script file itself is removed here.
     forProvider: {
       claude: {
         async apply(ctx: SetupContext) {
-          const hookDest = path.join(ctx.companionPath, ".claude", "hooks", "react-doctor.sh");
-          await fs.mkdir(path.dirname(hookDest), { recursive: true });
-          await fs.copyFile(CLAUDE_HOOK_SRC, hookDest);
-          await fs.chmod(hookDest, 0o755);
+          await removeLegacyHookScript(ctx.companionPath);
         },
         async teardown(ctx: SetupContext) {
-          try {
-            await fs.unlink(path.join(ctx.companionPath, ".claude", "hooks", "react-doctor.sh"));
-          } catch {
-            /* not present */
-          }
-          await pruneEmptyAncestors(
-            path.join(ctx.companionPath, ".claude", "hooks"),
-            ctx.companionPath,
-          );
+          await removeLegacyHookScript(ctx.companionPath);
         },
       },
     },

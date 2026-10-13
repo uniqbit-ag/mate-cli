@@ -34,7 +34,7 @@ describe("mate-minimal schema", () => {
     const schema = await readSchema();
 
     expect(schema.name).toBe("mate-minimal");
-    expect(schema.version).toBe(2);
+    expect(schema.version).toBe(3);
     expect(schema.artifacts.map((entry) => entry.id)).toEqual(["specs", "tasks"]);
     expect(artifact(schema, "specs").requires).toEqual([]);
     expect(artifact(schema, "tasks").requires).toEqual(["specs"]);

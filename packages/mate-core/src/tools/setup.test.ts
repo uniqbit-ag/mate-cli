@@ -319,7 +319,7 @@ describe("executeSetup", () => {
         { cwd: root, globalConfigStore },
       );
 
-      await fs.access(path.join(root, ".claude", "hooks", "react-doctor.sh"));
+      await fs.access(path.join(root, ".claude", "skills", "mate-react-doctor", "SKILL.md"));
       await expect(fs.access(path.join(root, ".mate", "bin", "openspec"))).rejects.toThrow();
 
       await executeSetup(
@@ -341,7 +341,7 @@ describe("executeSetup", () => {
   );
 
   test(
-    "setup deploys react-doctor skill to .claude and the shared .agents root",
+    "setup deploys mate-react-doctor skill to .claude and the shared .agents root",
     async () => {
       const root = await makeTempDir("mate-setup-skill-dirs-");
       const globalConfigStore = new GlobalConfigStore(
@@ -356,8 +356,8 @@ describe("executeSetup", () => {
         { cwd: root, globalConfigStore },
       );
 
-      await fs.access(path.join(root, ".claude", "skills", "react-doctor", "SKILL.md"));
-      await fs.access(path.join(root, ".agents", "skills", "react-doctor", "SKILL.md"));
+      await fs.access(path.join(root, ".claude", "skills", "mate-react-doctor", "SKILL.md"));
+      await fs.access(path.join(root, ".agents", "skills", "mate-react-doctor", "SKILL.md"));
       await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
     },
     { timeout: 30000 },
@@ -476,10 +476,10 @@ describe("executeSetup", () => {
       );
 
       await expect(
-        fs.access(path.join(root, ".claude", "skills", "react-doctor")),
+        fs.access(path.join(root, ".claude", "skills", "mate-react-doctor")),
       ).rejects.toThrow();
       await expect(
-        fs.access(path.join(root, ".agents", "skills", "react-doctor")),
+        fs.access(path.join(root, ".agents", "skills", "mate-react-doctor")),
       ).rejects.toThrow();
       await expect(
         fs.access(path.join(root, ".claude", "hooks", "react-doctor.sh")),
@@ -537,7 +537,7 @@ describe("executeSetup", () => {
         { cwd: root, globalConfigStore },
       );
 
-      await fs.access(path.join(root, ".claude", "skills", "react-doctor", "SKILL.md"));
+      await fs.access(path.join(root, ".claude", "skills", "mate-react-doctor", "SKILL.md"));
       await fs.access(path.join(root, ".claude", "skills", "openspec-explore", "SKILL.md"));
 
       await executeSetup(
@@ -570,7 +570,7 @@ describe("executeSetup", () => {
         { cwd: root, globalConfigStore },
       );
 
-      await fs.access(path.join(root, ".agents", "skills", "react-doctor", "SKILL.md"));
+      await fs.access(path.join(root, ".agents", "skills", "mate-react-doctor", "SKILL.md"));
       await fs.access(path.join(root, ".agents", "skills", "openspec-explore", "SKILL.md"));
       await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
       const setupConfig = await fs.readFile(path.join(root, ".opencode", "opencode.json"), "utf8");
@@ -593,7 +593,7 @@ describe("executeSetup", () => {
       );
 
       await expect(
-        fs.access(path.join(root, ".agents", "skills", "react-doctor")),
+        fs.access(path.join(root, ".agents", "skills", "mate-react-doctor")),
       ).rejects.toThrow();
       await expect(
         fs.access(path.join(root, ".agents", "skills", "openspec-explore")),
@@ -675,7 +675,7 @@ describe("executeSetup", () => {
       await executeSetup(config, { cwd: root, globalConfigStore });
 
       expect((await fs.readdir(legacyRoot)).toSorted()).toEqual(["acme-local"]);
-      for (const skill of ["openspec-explore", "mate-grill-me", "react-doctor"]) {
+      for (const skill of ["openspec-explore", "mate-grill-me", "mate-react-doctor"]) {
         await fs.access(path.join(root, ".agents", "skills", skill, "SKILL.md"));
       }
       await expect(fs.readFile(thirdParty, "utf8")).resolves.toBe("acme");

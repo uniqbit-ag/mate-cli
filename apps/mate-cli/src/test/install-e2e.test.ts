@@ -124,7 +124,7 @@ describe("install lifecycle CLI", () => {
     const result = await runMate(entry.root, entry.companion, ["install", "--yes"]);
     expect(result.status).toBe(0);
     expect(
-      await fs.stat(path.join(entry.companion, ".claude", "skills", "react-doctor")),
+      await fs.stat(path.join(entry.companion, ".claude", "skills", "mate-react-doctor")),
     ).toBeDefined();
     expect(
       await fs.stat(path.join(entry.companion, ".mate", "config", "framework.yaml")),

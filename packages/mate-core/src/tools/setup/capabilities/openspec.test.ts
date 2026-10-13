@@ -788,7 +788,7 @@ describe("createOpenspecPlugin", () => {
       path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml"),
       "utf8",
     );
-    expect(schema).toContain("version: 8");
+    expect(schema).toContain("version: 9");
     expect(schema).toContain("openspec/mate-conventions.yaml");
     expect(schema).toContain("id: proposal");
     await expect(

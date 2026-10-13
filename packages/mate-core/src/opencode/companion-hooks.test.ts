@@ -5,12 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
-import {
-  createReactDoctorScanner,
-  guardToolInput,
-  registerCompanionHooks,
-  type CommandResult,
-} from "./companion-hooks";
+import { guardToolInput, registerCompanionHooks } from "./companion-hooks";
 import { readContext, type CompanionContext } from "./companion-policy";
 import { MATE_ENV } from "../runtime/env-names";
 import { writeProjectionPair } from "../runtime/projection";
@@ -113,10 +108,6 @@ async function setupRepoFixture(prefix: string) {
   return { repo, companion };
 }
 
-function scanResult(exitCode: number, output = ""): Promise<CommandResult> {
-  return Promise.resolve({ exitCode, output });
-}
-
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
@@ -152,26 +143,16 @@ describe("OpenCode companion hooks without a launch", () => {
 });
 
 describe("OpenCode companion hooks", () => {
-  test("registers the guard, the edit tracker, and a cleanup with React Doctor enabled", async () => {
-    const { repo, companion } = await setupRepoFixture("mate-opencode-register-");
-    const context = await launchContext(companion, repo, { MATE_REACT_DOCTOR_ENABLED: "1" });
-    const { api, hooks } = fakeApi(repo);
+  for (const enabled of ["1", "0"]) {
+    test(`registers only the guard (MATE_REACT_DOCTOR_ENABLED=${enabled})`, async () => {
+      const { repo, companion } = await setupRepoFixture("mate-opencode-register-");
+      const context = await launchContext(companion, repo, { MATE_REACT_DOCTOR_ENABLED: enabled });
+      const { api, hooks } = fakeApi(repo);
 
-    const cleanup = await registerCompanionHooks(api, context);
-
-    expect([...hooks.keys()].sort()).toEqual(["tool.execute.after", "tool.execute.before"]);
-    expect(cleanup).toBeFunction();
-    cleanup?.();
-  });
-
-  test("registers no edit tracker with React Doctor disabled", async () => {
-    const { repo, companion } = await setupRepoFixture("mate-opencode-register-off-");
-    const context = await launchContext(companion, repo);
-    const { api, hooks } = fakeApi(repo);
-
-    expect(await registerCompanionHooks(api, context)).toBeUndefined();
-    expect([...hooks.keys()]).toEqual(["tool.execute.before"]);
-  });
+      expect(await registerCompanionHooks(api, context)).toBeUndefined();
+      expect([...hooks.keys()]).toEqual(["tool.execute.before"]);
+    });
+  }
 
   test("the registered guard rejects an artifact write", async () => {
     const { repo, companion } = await setupRepoFixture("mate-opencode-before-hook-");
@@ -230,116 +211,5 @@ describe("OpenCode companion hooks", () => {
       guardToolInput(context, "read", { filePath: path.join(repo, "spec.md") }),
     ).resolves.toBeUndefined();
     await expect(guardToolInput(context, "bash", undefined)).resolves.toBeUndefined();
-  });
-});
-
-describe("React Doctor scanner", () => {
-  async function scanner(prefix: string, result: () => Promise<CommandResult>) {
-    const { repo, companion } = await setupRepoFixture(prefix);
-    const context = await launchContext(companion, repo, { MATE_REACT_DOCTOR_ENABLED: "1" });
-    const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
-    const session = { prompt: mock(async (_input: unknown) => undefined) };
-    const run = async (command: string, args: string[], cwd: string) => {
-      calls.push({ command, args, cwd });
-      return result();
-    };
-    return { repo, calls, session, scan: createReactDoctorScanner(context, session as never, run) };
-  }
-
-  test("uses the Mate-owned React Doctor executable when no repo binary exists", async () => {
-    const mateBin = path.join(await makeTempDir("mate-opencode-react-doctor-bin-"), "react-doctor");
-    await fs.writeFile(mateBin, "#!/bin/sh\nexit 0\n", "utf8");
-    await fs.chmod(mateBin, 0o755);
-    const { calls, scan } = await scanner("mate-opencode-react-doctor-runtime-", () =>
-      scanResult(0),
-    );
-
-    await withEnv({ MATE_REACT_DOCTOR_BIN_PATH: mateBin }, async () => {
-      scan.markEdited("edit", "one");
-      await scan.idle("one");
-    });
-
-    expect(calls[0]?.command).toBe(mateBin);
-  });
-
-  test("runs one bounded scan only after an edit", async () => {
-    const { repo, calls, session, scan } = await scanner("mate-opencode-react-doctor-", () =>
-      scanResult(0),
-    );
-
-    await scan.idle("one");
-    scan.markEdited("read", "one");
-    await scan.idle("one");
-    scan.markEdited("edit", "one");
-    await scan.idle("two");
-    await scan.idle("one");
-    await scan.idle("one");
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.cwd).toBe(repo);
-    expect(calls[0]?.args).toEqual(
-      expect.arrayContaining([
-        "--yes",
-        "--scope",
-        "changed",
-        "--base",
-        "HEAD",
-        "--max-duration",
-        "30",
-      ]),
-    );
-    expect(session.prompt).not.toHaveBeenCalled();
-  });
-
-  test("sends findings to the edited session", async () => {
-    const { calls, session, scan } = await scanner("mate-opencode-react-findings-", () =>
-      scanResult(1, "src/App.tsx:1 warning"),
-    );
-
-    scan.markEdited("apply_patch", "session-a");
-    await scan.idle("session-a");
-
-    expect(session.prompt).toHaveBeenCalledWith({
-      sessionID: "session-a",
-      text: expect.stringContaining("src/App.tsx:1 warning"),
-    });
-
-    await scan.idle("session-a");
-    expect(calls).toHaveLength(1);
-  });
-
-  test("suppresses non-lint failures and command errors", async () => {
-    const nonLint = await scanner("mate-opencode-react-nonlint-", () =>
-      scanResult(1, "No React dependency found"),
-    );
-    nonLint.scan.markEdited("edit", "one");
-    await nonLint.scan.idle("one");
-    expect(nonLint.session.prompt).not.toHaveBeenCalled();
-
-    const failed = await scanner("mate-opencode-react-errors-", () =>
-      Promise.reject(new Error("spawn failed")),
-    );
-    failed.scan.markEdited("write", "two");
-    await expect(failed.scan.idle("two")).resolves.toBeUndefined();
-    expect(failed.session.prompt).not.toHaveBeenCalled();
-  });
-
-  test("deduplicates overlapping idle events per session without blocking another session", async () => {
-    let resolveScan!: (result: CommandResult) => void;
-    const pending = new Promise<CommandResult>((resolve) => {
-      resolveScan = resolve;
-    });
-    const { calls, scan } = await scanner("mate-opencode-react-concurrent-", () => pending);
-
-    scan.markEdited("write", "one");
-    scan.markEdited("write", "two");
-    const first = scan.idle("one");
-    scan.markEdited("write", "one");
-    await scan.idle("one");
-    const second = scan.idle("two");
-
-    expect(calls).toHaveLength(2);
-    resolveScan({ exitCode: 0, output: "" });
-    await Promise.all([first, second]);
   });
 });

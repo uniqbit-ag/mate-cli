@@ -15,6 +15,11 @@ rules: |
   - Every requirement MUST carry an Area marker whose values appear in the delta frontmatter. This survives archive, which copies requirement blocks but discards delta frontmatter.
   - A canonical spec uses flat frontmatter: type: spec, capability, scalar repository, areas list, and tags: [openspec/spec]. It MUST NOT retain a nested scopes list or delta-only change and delta tags.
   - To project a delta, all its scope entries MUST name the same repository. Emit that repository as the canonical scalar and distinct Areas as areas in their original order. If repositories differ, split the capability before archive.
+verification: |
+  Verification skills check a change before it is reported complete. They apply only when the skill is available in the current session; a skill that is not available adds no task and no step.
+  - mate-react-doctor: when writing tasks, end the task list of every Area whose tasks change React code (components, hooks, or other .tsx/.jsx modules) with one verification task, numbered like its neighbours, for example `- [ ] N.M Verify React changes with React Doctor [skill:mate-react-doctor]`. Areas whose tasks do not change React code get no verification task.
+  - During apply, a tagged verification task is worked like any other task by invoking its skill.
+  - Before reporting a change complete, check every Area that changed React code: if its tagged verification task is already checked, do nothing more; otherwise invoke the skill once for that Area.
 example_delta_frontmatter: |
   ---
   type: delta-spec

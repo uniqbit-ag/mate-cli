@@ -129,6 +129,35 @@ describe("the launch scope of the Managed Projection", () => {
     expect(after.hooks).toBeUndefined();
   });
 
+  test("strips the retired react-doctor hook even with the capability enabled", async () => {
+    const workingRepoPath = await makeTempDir("mate-claude-strip-react-doctor-");
+    const companionPath = await makeTempDir("mate-claude-strip-react-doctor-companion-");
+    const hookCommand = `sh "${companionPath}/.claude/hooks/react-doctor.sh"`;
+
+    await seedSettings(workingRepoPath, {
+      hooks: {
+        PostToolUse: [
+          { matcher: "Write|Edit", hooks: [{ type: "command", command: hookCommand }] },
+          { matcher: "Bash", hooks: [{ type: "command", command: "echo custom" }] },
+        ],
+        Stop: [{ hooks: [{ type: "command", command: hookCommand }] }],
+      },
+    });
+
+    await project("launch", {
+      repoPath: workingRepoPath,
+      companionPath,
+      config: { allowedAgents: ["claude"], capabilities: [{ name: "react-doctor" }] },
+    });
+
+    const after = JSON.parse(
+      await fs.readFile(path.join(workingRepoPath, ".claude", "settings.local.json"), "utf8"),
+    );
+    expect(after.hooks).toEqual({
+      PostToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo custom" }] }],
+    });
+  });
+
   test("strips the legacy archive-finish guard group and stays idempotent", async () => {
     const workingRepoPath = await makeTempDir("mate-claude-strip-finish-");
     const companionPath = await makeTempDir("mate-claude-strip-finish-companion-");

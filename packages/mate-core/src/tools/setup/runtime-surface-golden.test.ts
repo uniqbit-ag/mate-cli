@@ -18,6 +18,7 @@ import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import {
   getClaudePluginRoot,
   getOpenCodePluginRoot,
+  getReactDoctorBinPath,
   getWrapperBinPath,
 } from "../../lib/package-paths";
 import {
@@ -291,6 +292,7 @@ async function collectEffectiveState(fixture: Fixture): Promise<unknown> {
     [await fs.realpath(root), "<root>"],
     [root, "<root>"],
     [getWrapperBinPath(), "<wrapper-bin>"],
+    [getReactDoctorBinPath(), "<react-doctor-bin>"],
     [getOpenCodePluginRoot(), "<opencode-plugin>"],
     [runtimeOpenCodePluginRoot(), "<runtime-opencode-plugin>"],
     [runtimeClaudePluginRoot(), "<runtime-claude-plugin>"],
@@ -348,6 +350,7 @@ async function collectLaunchSurface(
     [fixture.root, "<root>"],
     [getClaudePluginRoot(), "<claude-plugin>"],
     [getWrapperBinPath(), "<wrapper-bin>"],
+    [getReactDoctorBinPath(), "<react-doctor-bin>"],
     [getOpenCodePluginRoot(), "<opencode-plugin>"],
     [runtimeOpenCodePluginRoot(), "<runtime-opencode-plugin>"],
     [runtimeClaudePluginRoot(), "<runtime-claude-plugin>"],
@@ -372,6 +375,7 @@ async function collectWorkingTargetDocuments(
     [fixture.root, "<root>"],
     [getClaudePluginRoot(), "<claude-plugin>"],
     [getWrapperBinPath(), "<wrapper-bin>"],
+    [getReactDoctorBinPath(), "<react-doctor-bin>"],
     [getOpenCodePluginRoot(), "<opencode-plugin>"],
     [runtimeOpenCodePluginRoot(), "<runtime-opencode-plugin>"],
     [runtimeClaudePluginRoot(), "<runtime-claude-plugin>"],

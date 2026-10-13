@@ -1,11 +1,14 @@
 # Explaining and configuring rules
 
 Explain React Doctor rules and edit `doctor.config.*` safely. Use this when a user
-wants to understand a rule or change which rules run — not for fixing diagnostics
-(that is the main `react-doctor` skill / `/doctor`).
+wants to understand a rule or change which rules run, not for fixing diagnostics
+(that is the main `mate-react-doctor` workflow).
 
 Triggers: "why did this rule fire", "I disagree with this rule", "turn this rule off",
 "stop flagging X", "too noisy", "disable design rules".
+
+In every command below, `<bin>` is the absolute path printed by
+`printf '%s\n' "$MATE_REACT_DOCTOR_BIN_PATH"`. Never substitute `npx react-doctor`.
 
 ## Workflow
 
@@ -13,7 +16,7 @@ Triggers: "why did this rule fire", "I disagree with this rule", "turn this rule
 2. Explain it before changing anything:
 
 ```bash
-npx react-doctor@latest rules explain react-doctor/no-array-index-as-key
+<bin> rules explain react-doctor/no-array-index-as-key
 ```
 
 3. Pick the narrowest control that matches the user's intent (see decision guide).
@@ -21,22 +24,22 @@ npx react-doctor@latest rules explain react-doctor/no-array-index-as-key
 5. Validate the change did what they wanted:
 
 ```bash
-npx react-doctor@latest --verbose --diff
+<bin> --verbose --scope changed --no-score
 ```
 
 ## Commands
 
 ```bash
-npx react-doctor@latest rules list                         # every rule + its effective severity
-npx react-doctor@latest rules list --configured            # only what your config changed
-npx react-doctor@latest rules list --category Performance   # filter by category
-npx react-doctor@latest rules explain <rule>               # why it matters + how to configure
-npx react-doctor@latest rules disable <rule>               # rule never runs
-npx react-doctor@latest rules enable <rule>                # turn back on at its recommended severity
-npx react-doctor@latest rules set <rule> warn              # off | warn | error
-npx react-doctor@latest rules category "React Native" off   # whole category
-npx react-doctor@latest rules ignore-tag design            # skip a rule family (design, test-noise, …)
-npx react-doctor@latest rules unignore-tag design
+<bin> rules list                         # every rule + its effective severity
+<bin> rules list --configured            # only what your config changed
+<bin> rules list --category Performance  # filter by category
+<bin> rules explain <rule>               # why it matters + how to configure
+<bin> rules disable <rule>               # rule never runs
+<bin> rules enable <rule>                # turn back on at its recommended severity
+<bin> rules set <rule> warn              # off | warn | error
+<bin> rules category "React Native" off  # whole category
+<bin> rules ignore-tag design            # skip a rule family (design, test-noise, …)
+<bin> rules unignore-tag design
 ```
 
 Rule references accept the full key (`react-doctor/no-danger`), the bare id (`no-danger`), or a legacy key (`react/no-danger`).
@@ -69,4 +72,4 @@ export default {
 
 ## Educating the user
 
-When explaining a rule, lead with the "Why it matters" guidance from `rules explain` and, when they want depth, the per-rule recipe at `https://www.react.doctor/prompts/rules/<plugin>/<rule>.md`. Only after they understand it should you offer to disable it — many "bad" rules are catching real issues.
+When explaining a rule, lead with the "Why it matters" guidance from `<bin> rules explain <rule>`. Only after they understand it should you offer to disable it — many "bad" rules are catching real issues.

@@ -1,5 +1,5 @@
 name: mate-v1
-version: 8
+version: 9
 description: Mate's complete OpenSpec workflow - proposal → specs → design → tasks
 artifacts:
   - id: proposal
@@ -242,3 +242,4 @@ apply:
   instruction: |
     Read context files and work through pending tasks only within the proposal's affected Areas. Mark complete as you go.
     Pause if you hit blockers or need clarification.
+    Before reporting the change complete, follow the verification rules in `openspec/mate-conventions.yaml`.
