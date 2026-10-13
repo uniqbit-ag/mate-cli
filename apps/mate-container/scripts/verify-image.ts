@@ -308,6 +308,15 @@ export function runChecks(
     `home owned by ${homeOwner}, /companions by ${companionsOwner}`,
   );
 
+  // The image pins the agent, so it must not download another into the
+  // persistent home.
+  const updater = probe(['test "$DISABLE_AUTOUPDATER" = 1 && echo ok'], { network: false });
+  add(
+    "the Claude auto-updater is disabled so the pinned version stays in force",
+    updater.stdout.includes("ok"),
+    updater.stderr.trim(),
+  );
+
   return checks;
 }
 
@@ -677,6 +686,102 @@ export function runOfflineStartup(runtime: string, image: string, companionsDir:
   return checks;
 }
 
+/**
+ * Logins and sessions live on a named home volume that outlives the container.
+ *
+ * The real entrypoint runs against that volume with no companion mounted: its
+ * home reconciliation precedes startup, so it has done its work by the time
+ * startup refuses to serve nothing, which keeps this far cheaper than a full
+ * offline start. Run twice on one volume, the second run is the recreation
+ * with the current image.
+ */
+export function runRetainedHomeVolume(runtime: string, image: string): Check[] {
+  const volume = `mate-verify-${Math.random().toString(36).slice(2, 10)}-home`;
+  const checks: Check[] = [];
+  const onVolume = (entrypoint: string, args: string[]) =>
+    spawnSync(
+      runtime,
+      [
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--volume",
+        `${volume}:/home/mate`,
+        "--env",
+        `MATE_STUDIO_TOKEN=${VERIFY_TOKEN}`,
+        ...(entrypoint === "bash"
+          ? ["--entrypoint", "bash", image, "-lc", args.join(" ")]
+          : [image]),
+      ],
+      { encoding: "utf8", timeout: 300_000 },
+    );
+
+  spawnSync(runtime, ["volume", "create", volume], { stdio: "ignore" });
+  try {
+    // A fresh volume, seeded from the image, then the entrypoint's own start.
+    const fresh = onVolume("entrypoint", []);
+    const freshState = onVolume("bash", [
+      "touch /home/mate/.write-probe && rm /home/mate/.write-probe",
+      "&& test -d /home/mate/.claude && test -d /home/mate/.config/opencode",
+      "&& test -f /home/mate/.claude/rules/tokensave.md",
+      "&& test -f /home/mate/.config/opencode/tokensave.md",
+      "&& echo ok",
+    ]);
+    checks.push({
+      name: "a fresh home volume starts usable offline",
+      ok: freshState.stdout.includes("ok") && !`${fresh.stderr}`.includes("TokenSave integration"),
+      detail: `${fresh.stderr.trim().slice(-500)}\n${freshState.stderr.trim()}`,
+    });
+
+    // Stale integration from an older image, login and session data of both
+    // agents, a leftover generated config, and a missing agent home.
+    const seeded = onVolume("bash", [
+      "echo stale > /home/mate/.claude/rules/tokensave.md",
+      "&& rm -rf /home/mate/.config/opencode",
+      `&& echo '{"oauthAccount":"claude-login"}' > /home/mate/.claude.json`,
+      "&& echo claude-credentials > /home/mate/.claude/.credentials.json",
+      "&& mkdir -p /home/mate/.local/share/opencode",
+      "&& echo opencode-login > /home/mate/.local/share/opencode/auth.json",
+      "&& echo opencode-session > /home/mate/.local/share/opencode/session.json",
+      "&& echo leftover > /home/mate/.mate-setup-npmrc.AbC123",
+      "&& echo ok",
+    ]);
+    const recreated = onVolume("entrypoint", []);
+    const after = onVolume("bash", [
+      "grep -q claude-login /home/mate/.claude.json",
+      '&& test "$(cat /home/mate/.claude/.credentials.json)" = claude-credentials',
+      '&& test "$(cat /home/mate/.local/share/opencode/auth.json)" = opencode-login',
+      '&& test "$(cat /home/mate/.local/share/opencode/session.json)" = opencode-session',
+      "&& echo data-ok;",
+      'test "$(cat /home/mate/.claude/rules/tokensave.md)" != stale',
+      "&& test -f /home/mate/.config/opencode/tokensave.md",
+      "&& echo integration-ok;",
+      "! test -e /home/mate/.mate-setup-npmrc.AbC123 && echo leftover-ok",
+    ]);
+    checks.push({
+      name: "a recreated container keeps both agents' login and session data",
+      ok: seeded.stdout.includes("ok") && after.stdout.includes("data-ok"),
+      detail: `${seeded.stderr.trim()}\n${after.stderr.trim()}`,
+    });
+    checks.push({
+      name: "a recreated container refreshes the image's integration in the retained home",
+      ok:
+        after.stdout.includes("integration-ok") &&
+        !recreated.stderr.includes("TokenSave integration"),
+      detail: recreated.stderr.trim().slice(-500),
+    });
+    checks.push({
+      name: "a recreated container removes a leftover generated registry config",
+      ok: after.stdout.includes("leftover-ok"),
+      detail: after.stdout.trim(),
+    });
+  } finally {
+    spawnSync(runtime, ["volume", "rm", "--force", volume], { stdio: "ignore" });
+  }
+  return checks;
+}
+
 /** Printed as each check lands, so a long verification is observable while it runs. */
 function report(checks: Check[]): Check[] {
   for (const check of checks) {
@@ -728,6 +833,8 @@ function main(argv: string[]): number {
       },
     ]),
   );
+
+  checks.push(...report(runRetainedHomeVolume(runtime, image)));
 
   if (!skipStartup) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-verify-"));

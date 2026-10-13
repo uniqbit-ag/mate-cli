@@ -360,6 +360,7 @@ ENV MATE_VERSION=${MATE_VERSION} \
     MATE_COMPANIONS_DIR=/companions \
     MATE_UPDATE_POLICY=pinned \
     MATE_CONTEXT7_MODE=preinstalled \
+    DISABLE_AUTOUPDATER=1 \
     HOME=/home/mate
 
 USER mate

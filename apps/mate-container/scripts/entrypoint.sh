@@ -19,6 +19,7 @@ fi
 STARTUP_SCRIPT="${MATE_STARTUP_SCRIPT:-/opt/mate/tools/startup/startup.ts}"
 BUN="${MATE_BUN:-bun}"
 MATE="${MATE_COMMAND:-mate}"
+TOKENSAVE="${MATE_TOKENSAVE_COMMAND:-tokensave}"
 
 # The appliance's version is a property of its image. Declared before the first
 # Mate invocation so registration, preparation, inspection, Studio, the agent
@@ -35,7 +36,26 @@ fail() { log "$*"; exit 1; }
 # leaves nothing running and the container never reports itself ready.
 # ---------------------------------------------------------------------------
 
-# Credentials never touch the filesystem: they are evaluated straight into this
+# The home is a persistent volume, so what an earlier start left in it is still
+# there. Generated startup configuration goes first, before anything below or
+# setup writes: an interrupted start can leave a scoped npm config behind. It
+# names the registry token rather than holding it, and goes on the next start.
+# Only that generated pattern is removed, never agent login or session data.
+HOME_DIR="${HOME:?mate-appliance: HOME is not set}"
+rm -f -- "$HOME_DIR"/.mate-setup-npmrc.*
+
+# A volume is seeded from the image once, so its image-provided integration
+# goes stale on an update. Re-applying TokenSave's is an offline, idempotent
+# config write that leaves logins and sessions alone. The agent homes come
+# first: the install fails on a missing one, as does capability initialisation.
+mkdir -p "$HOME_DIR/.claude" "$HOME_DIR/.config/opencode" \
+  || fail "the agent home directories could not be created under $HOME_DIR"
+for agent in claude opencode; do
+  "$TOKENSAVE" install --agent "$agent" --git-hook no --wildcard-permissions </dev/null >/dev/null \
+    || fail "the TokenSave integration for $agent could not be applied"
+done
+
+# Operator-supplied credentials never touch the filesystem: they are evaluated straight into this
 # shell's environment, inherited by Studio and the agent sessions it starts, and
 # gone when the container is. They come before the startup plan because that
 # plan runs Mate, which hydrates the companion's declared plugins, and a plugin
