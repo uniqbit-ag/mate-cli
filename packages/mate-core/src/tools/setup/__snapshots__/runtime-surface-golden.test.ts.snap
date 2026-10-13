@@ -77,8 +77,6 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -124,9 +122,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
   ],
@@ -151,7 +147,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
@@ -169,7 +165,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -177,7 +173,16 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
                 "type": "command",
               },
             ],
@@ -531,8 +536,6 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -578,9 +581,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
   ],
@@ -658,7 +659,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
@@ -676,7 +677,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -684,7 +685,16 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
                 "type": "command",
               },
             ],
@@ -891,8 +901,6 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
 exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -935,9 +943,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
   ],
@@ -962,11 +968,23 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
             "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+          {
+            "hooks": [
+              {
+                "args": [
+                  "hook-pre-tool-use",
+                ],
+                "command": "<root>/bin/tokensave",
+                "type": "command",
+              },
+            ],
+            "matcher": "Agent|Grep|Bash",
           },
         ],
       },
@@ -980,7 +998,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -988,7 +1006,56 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "args": [
+                  "hook-prompt-submit",
+                ],
+                "command": "<root>/bin/tokensave",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "args": [
+                  "hook-stop",
+                ],
+                "command": "<root>/bin/tokensave",
                 "type": "command",
               },
             ],
@@ -1373,8 +1440,6 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
 exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -1417,9 +1482,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
   ],
@@ -1494,11 +1557,23 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
             "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+          {
+            "hooks": [
+              {
+                "args": [
+                  "hook-pre-tool-use",
+                ],
+                "command": "<root>/bin/tokensave",
+                "type": "command",
+              },
+            ],
+            "matcher": "Agent|Grep|Bash",
           },
         ],
       },
@@ -1512,7 +1587,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -1520,7 +1595,56 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "args": [
+                  "hook-prompt-submit",
+                ],
+                "command": "<root>/bin/tokensave",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "args": [
+                  "hook-stop",
+                ],
+                "command": "<root>/bin/tokensave",
                 "type": "command",
               },
             ],
@@ -1714,8 +1838,6 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
 exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -1750,9 +1872,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
     "--plugin-dir",
@@ -1779,7 +1899,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
@@ -1797,7 +1917,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -1805,7 +1925,16 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
                 "type": "command",
               },
             ],
@@ -2096,8 +2225,6 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
 exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -2132,9 +2259,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
     "--plugin-dir",
@@ -2203,7 +2328,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
@@ -2221,7 +2346,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -2229,7 +2354,16 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
                 "type": "command",
               },
             ],
@@ -2418,8 +2552,6 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
 exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -2454,9 +2586,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
   ],
@@ -2481,7 +2611,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
@@ -2499,7 +2629,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -2507,7 +2637,53 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
+                "timeout": 5,
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
+                "timeout": 45,
                 "type": "command",
               },
             ],
@@ -2813,8 +2989,6 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
 exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -2849,9 +3023,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
   ],
@@ -2918,7 +3090,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
@@ -2936,7 +3108,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -2944,7 +3116,53 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
+                "timeout": 5,
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
+                "timeout": 45,
                 "type": "command",
               },
             ],
@@ -3134,8 +3352,6 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
 exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -3172,9 +3388,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
   ],
@@ -3199,7 +3413,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
@@ -3217,7 +3431,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -3225,7 +3439,16 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
                 "type": "command",
               },
             ],
@@ -3579,8 +3802,6 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
 exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -3617,9 +3838,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
   ],
@@ -3688,7 +3907,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
@@ -3706,7 +3925,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -3714,7 +3933,16 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
                 "type": "command",
               },
             ],
@@ -4106,8 +4334,6 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 exports[`runtime surface golden fixtures setup all capabilities × claude+opencode 2`] = `
 {
   "claudeArgs": [
-    "--add-dir",
-    "<root>/companion",
     "--append-system-prompt",
     
 "## MANDATORY RULES - NON-NEGOTIABLE
@@ -4155,9 +4381,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     "--setting-sources",
     "user,project,local",
     "--settings",
-    "<root>/companion/.claude/settings.local.json",
-    "--mcp-config",
-    "<root>/companion/.mcp.json",
+    "<root>/companion/.claude/state/launch-settings.app.json",
     "--plugin-dir",
     "<claude-plugin>",
     "--plugin-dir",
@@ -4239,11 +4463,23 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/validate-artifact-path.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/validate-artifact-path.mjs"",
                 "type": "command",
               },
             ],
             "matcher": "Write|Edit|MultiEdit|Bash",
+          },
+          {
+            "hooks": [
+              {
+                "args": [
+                  "hook-pre-tool-use",
+                ],
+                "command": "<root>/bin/tokensave",
+                "type": "command",
+              },
+            ],
+            "matcher": "Agent|Grep|Bash",
           },
         ],
       },
@@ -4257,7 +4493,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-banner.mjs" --projected",
+                "command": "node "<runtime-claude-plugin>/hooks/session-banner.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -4265,7 +4501,84 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           {
             "hooks": [
               {
-                "command": "node "<claude-plugin>/hooks/session-guidance.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-guidance.mjs"",
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "PostToolUse",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
+                "timeout": 5,
+                "type": "command",
+              },
+            ],
+            "matcher": "Write|Edit|MultiEdit|NotebookEdit|ApplyPatch",
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Stop",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "sh "<root>/companion/.claude/hooks/react-doctor.sh"",
+                "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+          {
+            "hooks": [
+              {
+                "args": [
+                  "hook-stop",
+                ],
+                "command": "<root>/bin/tokensave",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "UserPromptSubmit",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "args": [
+                  "hook-prompt-submit",
+                ],
+                "command": "<root>/bin/tokensave",
                 "type": "command",
               },
             ],

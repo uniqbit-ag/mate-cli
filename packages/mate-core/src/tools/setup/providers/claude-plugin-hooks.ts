@@ -3,7 +3,8 @@ import path from "node:path";
 
 import { PROJECTED_BANNER_FLAG } from "../../../hooks/session-banner";
 import { getClaudePluginRoot } from "../../../lib/package-paths";
-import type { ClaudeHookGroup } from "./claude-format";
+import { runtimeClaudePluginRoot } from "../../../runtime/runtime-directory";
+import { hookGroupKey, type ClaudeHookGroup } from "./claude-format";
 
 /**
  * The bundled Claude plugin's hook wiring, read as a value. A managed launch
@@ -17,11 +18,16 @@ import type { ClaudeHookGroup } from "./claude-format";
  * environment is present and so cannot double the prompt the launch already
  * appended; and the banner, whose carried copy is marked so it defers to the
  * launch's.
+ *
+ * The wiring is read from the installed plugin, but every command names
+ * `<mate home>/runtime/claude-plugin`, so a reinstall or Node switch does not
+ * strand a wrapped repository.
  */
 
 const GUARD_HOOK_SHIM = "validate-artifact-path.mjs";
 const GUIDANCE_HOOK_SHIM = "session-guidance.mjs";
 const BANNER_HOOK_SHIM = "session-banner.mjs";
+const PREPARE_HOOK_SHIM = "session-prepare.mjs";
 const PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}";
 
 interface PluginHookWiring {
@@ -50,26 +56,24 @@ function resolveCommands(group: ClaudeHookGroup, pluginRoot: string): ClaudeHook
   };
 }
 
-function runsShim(shim: string): (group: ClaudeHookGroup) => boolean {
-  return (group) => (group.hooks ?? []).some((hook) => (hook.command ?? "").includes(shim));
+function runsShim(group: ClaudeHookGroup, shim: string): boolean {
+  return (group.hooks ?? []).some((hook) => (hook.command ?? "").includes(shim));
 }
 
-function groupsFor(
-  event: string,
-  shim: string,
-  pluginRoot: string = getClaudePluginRoot(),
-): ClaudeHookGroup[] {
-  return (readPluginHookWiring(pluginRoot).hooks?.[event] ?? [])
-    .filter(runsShim(shim))
-    .map((group) => resolveCommands(group, pluginRoot));
+function groupsFor(event: string, shim: string, commandRoot: string): ClaudeHookGroup[] {
+  return (readPluginHookWiring(getClaudePluginRoot()).hooks?.[event] ?? []).flatMap((group) =>
+    runsShim(group, shim) ? [resolveCommands(group, commandRoot)] : [],
+  );
 }
 
 /**
  * The guard's `PreToolUse` groups with `${CLAUDE_PLUGIN_ROOT}` resolved against
- * the running installation, so the command works with no launch environment.
+ * the runtime link, so the command works with no launch environment.
  */
-export function mateGuardHookGroups(pluginRoot: string = getClaudePluginRoot()): ClaudeHookGroup[] {
-  return groupsFor("PreToolUse", GUARD_HOOK_SHIM, pluginRoot);
+export function mateGuardHookGroups(
+  commandRoot: string = runtimeClaudePluginRoot(),
+): ClaudeHookGroup[] {
+  return groupsFor("PreToolUse", GUARD_HOOK_SHIM, commandRoot);
 }
 
 /**
@@ -79,9 +83,9 @@ export function mateGuardHookGroups(pluginRoot: string = getClaudePluginRoot()):
  * flag.
  */
 export function mateGuidanceHookGroups(
-  pluginRoot: string = getClaudePluginRoot(),
+  commandRoot: string = runtimeClaudePluginRoot(),
 ): ClaudeHookGroup[] {
-  return groupsFor("SessionStart", GUIDANCE_HOOK_SHIM, pluginRoot);
+  return groupsFor("SessionStart", GUIDANCE_HOOK_SHIM, commandRoot);
 }
 
 /**
@@ -91,9 +95,9 @@ export function mateGuidanceHookGroups(
  * would print the banner twice.
  */
 export function mateBannerHookGroups(
-  pluginRoot: string = getClaudePluginRoot(),
+  commandRoot: string = runtimeClaudePluginRoot(),
 ): ClaudeHookGroup[] {
-  return groupsFor("SessionStart", BANNER_HOOK_SHIM, pluginRoot).map((group) => ({
+  return groupsFor("SessionStart", BANNER_HOOK_SHIM, commandRoot).map((group) => ({
     ...group,
     hooks: (group.hooks ?? []).map((hook) => ({
       ...hook,
@@ -103,15 +107,48 @@ export function mateBannerHookGroups(
 }
 
 /**
+ * The session-prepare `SessionStart` group, resolved the same way. Its declared
+ * `timeout` sits above the shim's own bound, so Claude Code never kills a
+ * prepare the shim has not given up on. Inert under a launch environment.
+ */
+export function mateSessionPrepareHookGroups(
+  commandRoot: string = runtimeClaudePluginRoot(),
+): ClaudeHookGroup[] {
+  return groupsFor("SessionStart", PREPARE_HOOK_SHIM, commandRoot);
+}
+
+function mateOwnHookGroups(commandRoot: string): ClaudeHookGroup[] {
+  return [
+    ...mateGuardHookGroups(commandRoot),
+    ...mateGuidanceHookGroups(commandRoot),
+    ...mateBannerHookGroups(commandRoot),
+    ...mateSessionPrepareHookGroups(commandRoot),
+  ];
+}
+
+const ownGroupKeys = new Map<string, ReadonlySet<string>>();
+
+/** Memoized per plugin-root pair; hooks are short-lived, so a refresh mid-process is not tracked. */
+function mateOwnHookGroupKeys(runtimeRoot: string, installRoot: string): ReadonlySet<string> {
+  const memoKey = `${runtimeRoot}\0${installRoot}`;
+  let keys = ownGroupKeys.get(memoKey);
+  if (!keys) {
+    keys = new Set(
+      [...mateOwnHookGroups(runtimeRoot), ...mateOwnHookGroups(installRoot)].map(hookGroupKey),
+    );
+    ownGroupKeys.set(memoKey, keys);
+  }
+  return keys;
+}
+
+/**
  * Whether a hook group is one the working target placed. It matches a managed
  * marker, so the entry that strips managed groups from a Working Repository has
- * to be told to leave these alone.
+ * to be told to leave these alone. Both the runtime-link form and the
+ * install-path form an older release wrote are recognized.
  */
 export function isMateGuardHookGroup(group: ClaudeHookGroup): boolean {
-  const own = new Set(
-    [...mateGuardHookGroups(), ...mateGuidanceHookGroups(), ...mateBannerHookGroups()].map(
-      (candidate) => JSON.stringify(candidate),
-    ),
+  return mateOwnHookGroupKeys(runtimeClaudePluginRoot(), getClaudePluginRoot()).has(
+    hookGroupKey(group),
   );
-  return own.has(JSON.stringify(group));
 }

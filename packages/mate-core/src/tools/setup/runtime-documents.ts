@@ -14,8 +14,10 @@ import {
   mateBannerHookGroups,
   mateGuardHookGroups,
   mateGuidanceHookGroups,
+  mateSessionPrepareHookGroups,
 } from "./providers/claude-plugin-hooks";
 import {
+  renderManagedClaudeHookGroups,
   renderManagedClaudeMcpServers,
   renderManagedClaudePermissionEntries,
 } from "./providers/claude";
@@ -56,31 +58,32 @@ function document(documentPath: string, regions: ManagedRegion[]): RenderedRunti
  */
 
 /**
- * Capability hook groups stay companion-only. A managed session loads this
- * document as its `local` source *alongside* the companion's, so anything here
- * that the launch also delivers runs twice; the guard, the guidance hook and
- * the banner are the contributions whose absence is a correctness hole and
- * whose double run is inert — the guard because its verdict depends only on the
- * tool input, the guidance hook because it yields nothing under a launch
- * environment, and the banner because the copy carried here is flagged
- * `--projected` and defers to the one the launch's own plugin prints.
- *
- * `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` is what a managed launch sets
- * beside `--add-dir`. Without it the companion directories this document
- * already permits are reachable but their `CLAUDE.md` is not loaded, so the
- * permission alone delivers no guidance.
+ * Loaded by a managed session beside the launch's plugin. Mate hooks here run
+ * twice there, inertly: guard is input-pure, guidance/prepare yield under a
+ * launch env, banner is `--projected`. Capability groups run once: the launch
+ * omits them from `--settings`. A launch passes no `--add-dir`; it relies on
+ * `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` for companion `CLAUDE.md`.
  */
 function claudeSettingsRegions(
   ctx: SetupContext,
   inputs: CapabilityContributionInput[],
 ): ManagedRegion[] {
+  const capabilityHooks = renderManagedClaudeHookGroups(inputs);
+  const mateHooks: Record<string, unknown[]> = {
+    PreToolUse: mateGuardHookGroups(),
+    SessionStart: [
+      ...mateBannerHookGroups(),
+      ...mateGuidanceHookGroups(),
+      ...mateSessionPrepareHookGroups(),
+    ],
+  };
+  const events = [...new Set([...Object.keys(mateHooks), ...Object.keys(capabilityHooks)])];
   return [
-    { at: ["hooks", "PreToolUse"], kind: "list", values: mateGuardHookGroups() },
-    {
-      at: ["hooks", "SessionStart"],
+    ...events.map((event): ManagedRegion => ({
+      at: ["hooks", event],
       kind: "list",
-      values: [...mateBannerHookGroups(), ...mateGuidanceHookGroups()],
-    },
+      values: [...(mateHooks[event] ?? []), ...(capabilityHooks[event] ?? [])],
+    })),
     /**
      * `stripPrefix` heals a repository an older Mate wrapped. That version wrote
      * the whole launch environment here, and Claude Code applies `env` to the

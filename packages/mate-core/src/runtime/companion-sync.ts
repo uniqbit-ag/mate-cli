@@ -41,6 +41,9 @@ export const COMPANION_SYNC_COMMAND = `${FRAMEWORK_NAME} companion sync`;
 /** OpenCode's recovery is the managed launch: it runs the sync at a terminal that can answer Git. */
 export const OPENCODE_LAUNCH_COMMAND = `${FRAMEWORK_NAME} opencode`;
 
+/** A Claude-wrapped repository's equivalent: the attended launch reconciles the wrap. */
+export const CLAUDE_LAUNCH_COMMAND = `${FRAMEWORK_NAME} claude`;
+
 /** Which runtime's operator reads the note; it decides the recovery named. */
 export type StalenessAudience = "claude" | "opencode";
 
@@ -229,14 +232,28 @@ export function unattendedSyncStalenessLines(
 ): string[] {
   if (outcome.status !== "unfinished") return [];
   const reason = outcome.reason ?? "unknown reason";
-  if (audience === "opencode") {
-    return [
-      `Companion not updated: ${reason}. Restart with \`${OPENCODE_LAUNCH_COMMAND}\` to fix it.`,
-    ];
-  }
+  if (audience === "opencode") return launchRecoveryStalenessLines(outcome, ["opencode"]);
   return [
     `companion Git synchronization unfinished: ${reason} — run \`${COMPANION_SYNC_COMMAND}\``,
   ];
+}
+
+/**
+ * The note for a session prepare, naming the managed launch of each wrapped
+ * runtime as the recovery: it runs the sync at a terminal that can answer Git.
+ */
+export function launchRecoveryStalenessLines(
+  outcome: UnattendedSyncOutcome,
+  runtimes: readonly StalenessAudience[],
+): string[] {
+  if (outcome.status !== "unfinished") return [];
+  const reason = outcome.reason ?? "unknown reason";
+  const wrapped = new Set(runtimes);
+  const launches = [
+    ...(wrapped.has("claude") ? [CLAUDE_LAUNCH_COMMAND] : []),
+    ...(wrapped.has("opencode") || wrapped.size === 0 ? [OPENCODE_LAUNCH_COMMAND] : []),
+  ].map((command) => `\`${command}\``);
+  return [`Companion not updated: ${reason}. Restart with ${launches.join(" or ")} to fix it.`];
 }
 
 /**

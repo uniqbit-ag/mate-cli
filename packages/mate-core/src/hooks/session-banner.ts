@@ -1,5 +1,6 @@
 // Show the active Mate companion paths in Claude Code, and repair the
 // companion's Git state before the session reads it.
+import { unmanagedClaudeDelivery } from "../runtime/claude-delivery-plan";
 import {
   syncCompanionUnattended,
   unattendedSyncStalenessLines,
@@ -52,12 +53,17 @@ export async function buildBanner(
    * and a session start must not stall behind it. The launch-environment check
    * comes first, so a Managed Session pays nothing at all — not the freshness
    * read, not the policy read; and the consent gate is the operation's own.
+   * Who owns it otherwise is the delivery plan's call, so a session start
+   * fetches once.
    */
-  const gitNotes = hasLaunchEnvironment(env)
-    ? []
-    : unattendedSyncStalenessLines(
+  const ownsGitSync =
+    !hasLaunchEnvironment(env) &&
+    unmanagedClaudeDelivery(projection?.repoRoot).gitSync === "banner";
+  const gitNotes = ownsGitSync
+    ? unattendedSyncStalenessLines(
         await syncCompanionUnattended(context.companionPath, { lock: "try", ...syncOptions }),
-      );
+      )
+    : [];
 
   const lines = [
     `mate v${env.MATE_VERSION || mateVersion()}`,

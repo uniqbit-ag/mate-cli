@@ -124,6 +124,8 @@ export interface ProjectionEntryOutcome {
   state: ProjectionWriteState | ProjectionRemoveState | "failed";
   error?: Error;
   degradable?: boolean;
+  /** The entry's runtime tag; absent for runtime-neutral entries. */
+  runtime?: WrapRuntime;
   /** Present only when the entry had something to say. */
   warnings?: string[];
   /** Present only when the entry wrote or withdrew paths it reports one by one. */

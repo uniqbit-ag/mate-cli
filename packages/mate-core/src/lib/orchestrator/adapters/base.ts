@@ -3,10 +3,18 @@ import os from "node:os";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
+import type { ClaudeDeliveryPlan } from "../../../runtime/claude-delivery-plan";
 import { MATE_ENV } from "../../../runtime/env-names";
 import { getWrapperBinPath } from "../../package-paths";
 import { buildProjection, companionEnvironment, projectionEnvironment } from "../projection-record";
 import type { CapabilityConfig, GitModeProfile, LinkedRepository } from "../types";
+
+/** The paths are present only where the plan names that channel and the file exists. */
+export interface ClaudeDelivery {
+  plan: ClaudeDeliveryPlan;
+  settingsPath?: string;
+  mcpConfigPath?: string;
+}
 
 export interface AdapterContext {
   repository?: LinkedRepository;
@@ -16,6 +24,8 @@ export interface AdapterContext {
   capabilities: CapabilityConfig[];
   git?: GitModeProfile;
   skipGit?: boolean;
+  /** Claude only: the launcher's delivery plan and the files it chose or wrote for it. */
+  claudeDelivery?: ClaudeDelivery;
 }
 
 export interface AdapterResult {

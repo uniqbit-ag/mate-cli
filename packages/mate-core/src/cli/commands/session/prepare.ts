@@ -3,8 +3,8 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repo-local-registry";
 import { prepareSession, type PrepareResult } from "../../../lib/orchestrator/session-prepare";
-import { isWorkingRepositoryWrapped } from "../../../lib/orchestrator/working-repo-projection";
 import { readProjectionFile } from "../../../runtime/projection";
+import { readWrapState, WRAP_RUNTIMES } from "../../../runtime/wrap-state";
 import { writeJsonStdout } from "../../write-json-stdout";
 import { launchAmbiguityDeps } from "../shared/companion-selection";
 
@@ -49,7 +49,6 @@ export function parseSessionPrepareArgs(
 
 export const sessionPrepareCommandDeps = {
   findRepoLocalLinkedRepository,
-  isWorkingRepositoryWrapped,
   prepareSession,
   resolveLinkedCompanions: launchAmbiguityDeps.resolveLinkedCompanions,
 };
@@ -63,7 +62,8 @@ async function resolveCompanionPath(repoPath: string): Promise<string | undefine
 function printHuman(result: PrepareResult): void {
   for (const step of result.steps) {
     const detail = step.detail ? ` — ${step.detail}` : "";
-    console.log(`  ${step.step}: ${step.outcome}${detail}`);
+    const runtimes = step.runtimes ? ` (${step.runtimes.join(", ")})` : "";
+    console.log(`  ${step.step}${runtimes}: ${step.outcome}${detail}`);
   }
   for (const warning of result.warnings) {
     console.error(`${FRAMEWORK_NAME}: warning: ${warning}`);
@@ -71,8 +71,8 @@ function printHuman(result: PrepareResult): void {
 }
 
 /**
- * `mate session prepare`: a launch's preparation for a repository wrapped for
- * OpenCode, without the launch. Without `--sync` it touches no remote; with it,
+ * `mate session prepare`: a launch's preparation for each runtime the
+ * repository is wrapped for, without the launch. Without `--sync` it touches no remote; with it,
  * it fast-forwards the companion and re-projects only when the companion moved.
  * Non-zero when the repository is not wrapped or a step failed; a Git conflict
  * or an offline remote is only a warning.
@@ -86,23 +86,24 @@ export async function runSessionPrepareCommand(
 
   const deps = sessionPrepareCommandDeps;
   const repository = await deps.findRepoLocalLinkedRepository(parsed.repo);
-  if (!repository || !(await deps.isWorkingRepositoryWrapped(repository.path, "opencode"))) {
-    return fail(
-      `${parsed.repo} is not wrapped for OpenCode. Run \`${FRAMEWORK_NAME} wrap\` there first.`,
-    );
+  const wrapped = repository ? (await readWrapState(repository.path)).runtimes : new Set();
+  const runtimes = WRAP_RUNTIMES.filter((runtime) => wrapped.has(runtime));
+  if (!repository || runtimes.length === 0) {
+    return fail(`${parsed.repo} is not wrapped. Run \`${FRAMEWORK_NAME} wrap\` there first.`);
   }
 
   const companionPath = await resolveCompanionPath(repository.path);
   if (!companionPath) return fail(`no companion is linked to ${repository.id}.`);
 
   const result = await deps.prepareSession({
-    runtime: "opencode",
+    runtime: runtimes[0]!,
+    runtimes,
     companionPath,
     repository,
     mode: parsed.sync ? "sync" : "local",
   });
-  /** The failure's own error is for an in-process caller; the JSON names it per step. */
-  const { failure: _failure, ...reported } = result;
+  /** The failure's own error and the wrap state are for an in-process caller; the JSON names steps. */
+  const { failure: _failure, wrapState: _wrapState, ...reported } = result;
   if (parsed.json) await writeJsonStdout(reported);
   else printHuman(result);
   if (!result.ok) process.exitCode = 1;

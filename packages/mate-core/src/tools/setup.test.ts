@@ -1535,9 +1535,7 @@ describe("applySetupCompatibilities — tokensave", () => {
       const companionSettings = JSON.parse(
         await fs.readFile(path.join(companionRoot, ".claude", "settings.local.json"), "utf8"),
       );
-      // MCP server lives in the companion .mcp.json (loaded via --mcp-config),
-      // not inline in settings.local.json, though the mcp permission entry is
-      // still pre-seeded.
+      /** MCP server in companion .mcp.json, not settings.local.json; its permission is still pre-seeded. */
       expect(companionSettings.mcpServers?.tokensave).toBeUndefined();
       expect(companionSettings.permissions?.allow ?? []).toContain("mcp__tokensave__*");
 

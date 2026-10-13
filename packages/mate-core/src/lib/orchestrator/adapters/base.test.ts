@@ -14,6 +14,9 @@ import {
 } from "../../../runtime/projection";
 import { readCompanionRuntimeContext } from "../../../runtime/env";
 import { repoLocalRegistryPath } from "../../../runtime/repo-local";
+import { planClaudeDelivery } from "../../../runtime/claude-delivery-plan";
+import { EMPTY_MANIFEST } from "../../../runtime/runtime-document-manifest";
+import { wrapStateOf } from "../../../runtime/wrap-state";
 import { getContextModePackageRoot } from "../../context-mode-package";
 import {
   getClaudePluginRoot,
@@ -28,7 +31,7 @@ import {
 } from "../../../distribution";
 import { ClaudeAdapter } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
-import type { AdapterContext } from "./base";
+import type { AdapterContext, ClaudeDelivery } from "./base";
 import { withEnv } from "../../../../test/helpers";
 
 const tempRoots: string[] = [];
@@ -50,6 +53,16 @@ async function withPath<T>(value: string, fn: () => Promise<T> | T): Promise<T> 
   }
 }
 
+const NO_WRAP = wrapStateOf(EMPTY_MANIFEST);
+
+/** What the launcher hands the adapter; the adapter only translates it. */
+function delivery(
+  kind: "managed-repo" | "managed-companion",
+  paths: Omit<ClaudeDelivery, "plan"> = {},
+): ClaudeDelivery {
+  return { plan: planClaudeDelivery(kind, NO_WRAP), ...paths };
+}
+
 function makeContext(capabilities: AdapterContext["capabilities"] = []): AdapterContext {
   return {
     repository: {
@@ -60,6 +73,7 @@ function makeContext(capabilities: AdapterContext["capabilities"] = []): Adapter
     allowedAgents: ["claude", "opencode"],
     companionPath: "/tmp/companion",
     capabilities,
+    claudeDelivery: delivery("managed-repo"),
   };
 }
 
@@ -102,7 +116,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
     );
 
     expect(launch.command).toBe("claude");
-    expect(launch.args[0]).toBe("--add-dir");
+    expect(launch.args[0]).toBe("--append-system-prompt");
     expect(launch.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("1");
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
@@ -498,53 +512,95 @@ describe("launch environment and the projection agree", () => {
 });
 
 describe("Claude companion settings launch flags", () => {
-  test("adds --setting-sources and --settings when companion settings exist", async () => {
-    const companionPath = await makeTempDir("mate-claude-settings-flags-");
-    const settingsPath = path.join(companionPath, ".claude", "settings.local.json");
-    await fs.mkdir(path.dirname(settingsPath), { recursive: true });
-    await fs.writeFile(settingsPath, "{}\n", "utf8");
+  test("adds --setting-sources and --settings for the settings file the launcher chose", () => {
+    const args = new ClaudeAdapter().buildArgs(
+      {
+        ...makeContext(),
+        claudeDelivery: delivery("managed-repo", { settingsPath: "/acme/s.json" }),
+      },
+      ["--print", "hello"],
+    );
 
-    const launch = await new ClaudeAdapter().prepareLaunch({ ...makeContext(), companionPath }, [
-      "--print",
-      "hello",
-    ]);
-
-    expect(launch.args).toContain("--setting-sources");
-    const sourcesIndex = launch.args.indexOf("--setting-sources");
-    expect(launch.args[sourcesIndex + 1]).toBe("user,project,local");
-    expect(launch.args).toContain("--settings");
-    const settingsIndex = launch.args.indexOf("--settings");
-    expect(launch.args[settingsIndex + 1]).toBe(settingsPath);
+    expect(args[args.indexOf("--setting-sources") + 1]).toBe("user,project,local");
+    expect(args[args.indexOf("--settings") + 1]).toBe("/acme/s.json");
     // Passthrough args stay after the managed settings flags.
-    expect(launch.args.slice(-2)).toEqual(["--print", "hello"]);
+    expect(args.slice(-2)).toEqual(["--print", "hello"]);
   });
 
-  test("omits settings flags when companion settings file is absent", async () => {
-    const companionPath = await makeTempDir("mate-claude-settings-none-");
+  test("omits settings and MCP flags when the launcher chose no file", () => {
+    const args = new ClaudeAdapter().buildArgs(makeContext(), []);
 
-    const launch = await new ClaudeAdapter().prepareLaunch({ ...makeContext(), companionPath }, []);
-
-    expect(launch.args).not.toContain("--setting-sources");
-    expect(launch.args).not.toContain("--settings");
-    expect(launch.args).not.toContain("--mcp-config");
-    expect(launch.args[0]).toBe("--add-dir");
+    expect(args).not.toContain("--setting-sources");
+    expect(args).not.toContain("--settings");
+    expect(args).not.toContain("--mcp-config");
+    expect(args[0]).toBe("--append-system-prompt");
   });
 
-  test("adds --mcp-config when companion .mcp.json exists", async () => {
-    const companionPath = await makeTempDir("mate-claude-mcp-flag-");
-    const mcpConfigPath = path.join(companionPath, ".mcp.json");
-    await fs.writeFile(mcpConfigPath, '{"mcpServers":{}}\n', "utf8");
+  test("ignores an MCP config path the plan does not route through --mcp-config", () => {
+    const args = new ClaudeAdapter().buildArgs(
+      {
+        ...makeContext(),
+        claudeDelivery: delivery("managed-repo", { mcpConfigPath: "/acme/companion/.mcp.json" }),
+      },
+      [],
+    );
 
-    const launch = await new ClaudeAdapter().prepareLaunch({ ...makeContext(), companionPath }, [
+    expect(args).not.toContain("--mcp-config");
+  });
+
+  test("a companion-scoped plan passes the companion directly", () => {
+    const { repository: _repository, ...companionScoped } = makeContext();
+    const companionPath = "/acme/companion";
+
+    const args = new ClaudeAdapter().buildArgs(
+      {
+        ...companionScoped,
+        companionPath,
+        launchWorkingDirectory: companionPath,
+        claudeDelivery: delivery("managed-companion", {
+          settingsPath: "/acme/companion/settings.json",
+          mcpConfigPath: "/acme/companion/.mcp.json",
+        }),
+      },
+      ["--print", "hello"],
+    );
+
+    expect(args.slice(0, 2)).toEqual(["--add-dir", companionPath]);
+    expect(args[args.indexOf("--settings") + 1]).toBe("/acme/companion/settings.json");
+    expect(args[args.indexOf("--mcp-config") + 1]).toBe("/acme/companion/.mcp.json");
+    /** Passthrough args stay after the managed flags. */
+    expect(args.slice(-2)).toEqual(["--print", "hello"]);
+  });
+
+  test("a managed-repo plan passes the deferred set and defers hooks, MCP and dir access", () => {
+    const companionPath = "/acme/companion";
+    const context = {
+      ...makeContext([{ name: "context-mode" }]),
+      repository: { id: "acme", path: "/acme/repo" },
+      companionPath,
+      claudeDelivery: delivery("managed-repo", { settingsPath: "/acme/derived.json" }),
+    };
+
+    const args = new ClaudeAdapter().buildArgs(context, ["--print"]);
+
+    expect(args).toEqual([
+      "--append-system-prompt",
+      args[1]!,
+      "--setting-sources",
+      "user,project,local",
+      "--settings",
+      "/acme/derived.json",
+      "--plugin-dir",
+      getClaudePluginRoot(),
+      "--plugin-dir",
+      getContextModePackageRoot(companionPath),
       "--print",
-      "hello",
     ]);
+  });
 
-    expect(launch.args).toContain("--mcp-config");
-    const mcpIndex = launch.args.indexOf("--mcp-config");
-    expect(launch.args[mcpIndex + 1]).toBe(mcpConfigPath);
-    // Passthrough args stay after the managed flags.
-    expect(launch.args.slice(-2)).toEqual(["--print", "hello"]);
+  test("refuses to build a launch without the launcher's plan", () => {
+    const { claudeDelivery: _plan, ...unplanned } = makeContext();
+    expect(() => new ClaudeAdapter().buildArgs(unplanned, [])).toThrow(/delivery plan/);
   });
 
   test("always loads the bundled mate plugin directory", async () => {

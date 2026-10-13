@@ -10,8 +10,6 @@ import {
   copies as recordedCopies,
   documents as recordedDocuments,
   readManifest,
-  wrappedFor,
-  type WrapRuntime,
 } from "../../runtime/runtime-document-manifest";
 import { removeRuntimeDocuments } from "./projection-runtime-documents";
 import {
@@ -59,6 +57,7 @@ function outcome(
     state,
     ...(error ? { error } : {}),
     ...(entry.degradable ? { degradable: true } : {}),
+    ...(entry.runtime ? { runtime: entry.runtime } : {}),
   };
 }
 
@@ -200,20 +199,6 @@ export async function projectWorkingRepository(
     projectionRoot: result.root,
     companionPath: resolvedCompanionPath,
   };
-}
-
-/**
- * Whether `mate wrap` configured this Working Repository. Asked of the runtime
- * document manifest rather than of the Projection Root, because the root is not
- * evidence of a wrap: a launch and every Capability command write the
- * projection pair too. The manifest is written only by a pass that placed a
- * runtime document, and wrapping is the only pass that places one.
- */
-export async function isWorkingRepositoryWrapped(
-  repoPath: string,
-  runtime: WrapRuntime,
-): Promise<boolean> {
-  return wrappedFor(await readManifest(repoPath), runtime);
 }
 
 export type UnwrapResult =

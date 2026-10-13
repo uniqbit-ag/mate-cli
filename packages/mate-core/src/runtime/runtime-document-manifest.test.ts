@@ -1,8 +1,4 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import {
   EMPTY_MANIFEST,
@@ -10,19 +6,14 @@ import {
   documentRuntime,
   documents,
   links,
-  manifestPath,
   parseManifest,
-  readManifestSync,
   recordedMapKeys,
   serializeManifest,
   withCopies,
   withDocument,
   withLinks,
   withoutDocuments,
-  wrappedFor,
   OPENCODE_CONFIG_DOCUMENT,
-  OPENCODE_MCP_SERVERS_AT,
-  mateDeclaredOpenCodeMcpServers,
   type ManagedRegion,
   type Manifest,
 } from "./runtime-document-manifest";
@@ -93,20 +84,6 @@ const FIXTURES = {
   }),
 };
 
-const tempRoots: string[] = [];
-
-afterEach(() => {
-  for (const root of tempRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
-});
-
-function repoWithManifest(contents: string): string {
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "mate-manifest-"));
-  tempRoots.push(repo);
-  fs.mkdirSync(path.dirname(manifestPath(repo)), { recursive: true });
-  fs.writeFileSync(manifestPath(repo), contents);
-  return repo;
-}
-
 describe("parseManifest", () => {
   test.each([
     ["null", null],
@@ -145,27 +122,6 @@ describe("documentRuntime", () => {
 });
 
 describe("queries", () => {
-  test("wrappedFor counts documents", () => {
-    const manifest = parseManifest(FIXTURES.documentsOnly);
-    expect(wrappedFor(manifest, "claude")).toBe(true);
-    expect(wrappedFor(manifest, "opencode")).toBe(true);
-    const claudeOnly = withoutDocuments(manifest, [OPENCODE_CONFIG_DOCUMENT]);
-    expect(wrappedFor(claudeOnly, "claude")).toBe(true);
-    expect(wrappedFor(claudeOnly, "opencode")).toBe(false);
-  });
-
-  test("wrappedFor counts copies alone", () => {
-    const manifest = parseManifest(FIXTURES.copiesOnly);
-    expect(wrappedFor(manifest, "opencode")).toBe(true);
-    expect(wrappedFor(manifest, "claude")).toBe(false);
-  });
-
-  test("wrappedFor counts links alone", () => {
-    const manifest = parseManifest(FIXTURES.linksOnly);
-    expect(wrappedFor(manifest, "claude")).toBe(true);
-    expect(wrappedFor(manifest, "opencode")).toBe(false);
-  });
-
   test("links filters by runtime", () => {
     const manifest = parseManifest(FIXTURES.documentsAndLinks);
     expect(links(manifest, "claude")).toEqual({
@@ -199,11 +155,6 @@ describe("queries", () => {
   ])("recordedMapKeys reads %s as no keys", (_, recorded) => {
     const manifest = parseManifest(json({ documents: recorded }));
     expect(recordedMapKeys(manifest, OPENCODE_CONFIG_DOCUMENT, ["mcp", "servers"])).toEqual([]);
-  });
-
-  test("wrappedFor is false for the empty manifest", () => {
-    expect(wrappedFor(EMPTY_MANIFEST, "claude")).toBe(false);
-    expect(wrappedFor(EMPTY_MANIFEST, "opencode")).toBe(false);
   });
 
   test("documents filters by the recorded runtime", () => {
@@ -327,37 +278,5 @@ describe("serializeManifest", () => {
       { ".opencode/command/a.md": { runtime: "opencode", sha256: "abc" } },
     );
     expect(serializeManifest(built)).toBe(FIXTURES.documentsAndCopies);
-  });
-});
-
-describe("readManifestSync", () => {
-  test("reads the manifest at the Projection Root", () => {
-    const repo = repoWithManifest(FIXTURES.documentsAndCopies);
-    expect(readManifestSync(repo)).toEqual(parseManifest(FIXTURES.documentsAndCopies));
-  });
-
-  test("reads an absent manifest as empty", () => {
-    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "mate-manifest-"));
-    tempRoots.push(repo);
-    expect(readManifestSync(repo)).toEqual(EMPTY_MANIFEST);
-  });
-});
-
-describe("mateDeclaredOpenCodeMcpServers", () => {
-  test("lists the servers in the region at the shared address", () => {
-    expect(OPENCODE_MCP_SERVERS_AT).toEqual(["mcp", "servers"]);
-    const repo = repoWithManifest(FIXTURES.documentsOnly);
-    expect(mateDeclaredOpenCodeMcpServers(repo)).toEqual(["tokensave"]);
-  });
-
-  test("lists nothing for a malformed hand-edited region instead of throwing", () => {
-    const repo = repoWithManifest(
-      json({ documents: { [OPENCODE_CONFIG_DOCUMENT]: [{ at: "mcp", kind: "map", entries: 1 }] } }),
-    );
-    expect(mateDeclaredOpenCodeMcpServers(repo)).toEqual([]);
-  });
-
-  test("lists nothing when the wrap declared no OpenCode servers", () => {
-    expect(mateDeclaredOpenCodeMcpServers(repoWithManifest(FIXTURES.copiesOnly))).toEqual([]);
   });
 });

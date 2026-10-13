@@ -4,12 +4,14 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { manifestPath } from "../../runtime/runtime-document-manifest";
 import type { ClaudeSettings } from "../../tools/setup/providers/claude-format";
 import {
   ensureWorkingRepoLocalExcludes,
   reconcileWorkingRepoCapabilityExcludes,
 } from "../../tools/setup/working-repo-local-state";
 import { GlobalConfigStore } from "./global-config-store";
+import { syncWorkingRepoClaudeAdditionalDirectories } from "./projection-claude-entry";
 import { project } from "./working-repo-projection";
 
 const tempRoots: string[] = [];
@@ -293,5 +295,41 @@ describe("the launch scope of the Managed Projection", () => {
         additionalDirectories: ["/tmp/shared", path.resolve(activeCompanionPath)],
       },
     });
+  });
+
+  test.each([
+    [
+      "an unreadable",
+      (manifest: string) => fs.mkdir(manifest, { recursive: true }).then(() => undefined),
+    ],
+    [
+      "a corrupt",
+      async (manifest: string) => {
+        await fs.mkdir(path.dirname(manifest), { recursive: true });
+        await fs.writeFile(manifest, "{ not json");
+      },
+    ],
+  ])("%s manifest fails the sync and leaves the settings untouched", async (_label, seed) => {
+    const root = await makeTempDir("mate-claude-bad-manifest-");
+    const workingRepoPath = path.join(root, "working");
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(companionPath, { recursive: true });
+    await seedSettings(workingRepoPath, {
+      hooks: {
+        PostToolUse: [{ hooks: [{ type: "command", command: "tokensave hook acme" }] }],
+      },
+    });
+    const settingsPath = path.join(workingRepoPath, ".claude", "settings.local.json");
+    const before = await fs.readFile(settingsPath, "utf8");
+    await seed(manifestPath(workingRepoPath));
+
+    await expect(
+      syncWorkingRepoClaudeAdditionalDirectories(
+        workingRepoPath,
+        companionPath,
+        new GlobalConfigStore(path.join(root, "global-config.yaml")),
+      ),
+    ).rejects.toThrow();
+    expect(await fs.readFile(settingsPath, "utf8")).toBe(before);
   });
 });

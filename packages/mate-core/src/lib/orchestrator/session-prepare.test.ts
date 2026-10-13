@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import type { UnattendedSyncOutcome } from "../../runtime/companion-sync";
+import { EMPTY_MANIFEST } from "../../runtime/runtime-document-manifest";
+import { wrapStateOf } from "../../runtime/wrap-state";
 import { prepareSession, sessionPrepareDeps } from "./session-prepare";
 import { LaunchPreflightError, type FrameworkConfig } from "./types";
 
@@ -9,6 +11,7 @@ const calls: string[] = [];
 const lockOptions: Array<{ wait?: boolean; timeoutMs?: number }> = [];
 const repository = { id: "acme", path: "/work/acme" };
 const companionPath = "/companions/acme";
+const passWrapState = wrapStateOf(EMPTY_MANIFEST);
 const config = { allowedAgents: ["opencode", "claude"], capabilities: [], git: "auto" } as never;
 
 function unattended(outcome: Partial<UnattendedSyncOutcome>) {
@@ -45,7 +48,6 @@ function stub(overrides: Partial<FrameworkConfig> = {}): void {
     calls.push("projection-root");
     return { kind: "current" } as never;
   });
-  sessionPrepareDeps.isWrapped = mock(async () => false);
   sessionPrepareDeps.runWrapPass = mock(async () => {
     calls.push("wrap");
     return {
@@ -56,6 +58,8 @@ function stub(overrides: Partial<FrameworkConfig> = {}): void {
       writtenDocuments: [],
       changed: { written: [], removed: [] },
       warnings: ["acme shadowed"],
+      runtimes: new Set<"claude" | "opencode">(),
+      wrapState: passWrapState,
     };
   });
   sessionPrepareDeps.runCapabilityPreflight = mock(async () => {
@@ -220,6 +224,8 @@ describe("attended", () => {
       writtenDocuments: [".opencode/opencode.json"],
       changed: { written: [".opencode/commands/a.md"], removed: [".opencode/commands/c.md"] },
       warnings: [],
+      runtimes: new Set(["opencode" as const]),
+      wrapState: passWrapState,
     }));
 
     const result = await prepareSession({
@@ -246,8 +252,41 @@ describe("attended", () => {
 });
 
 describe("attended Claude", () => {
-  test("refuses a Claude-wrapped repository before taking the lock or writing", async () => {
-    sessionPrepareDeps.isWrapped = mock(async () => true);
+  test("every launch runs the Claude wrap pass after the launch scope", async () => {
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+      config,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(calls).toEqual(["git", "files", "launch", "projection-root", "wrap", "preflight"]);
+    expect(sessionPrepareDeps.projectLaunch).toHaveBeenCalledWith({
+      repoPath: repository.path,
+      companionPath,
+      config,
+    });
+    expect(sessionPrepareDeps.runWrapPass).toHaveBeenCalledWith(companionPath, repository, {
+      runtimes: ["claude"],
+      config,
+    });
+    expect(result.steps.find((step) => step.step === "working-target")).toMatchObject({
+      outcome: "ok",
+      runtimes: ["claude"],
+    });
+    expect(result.wrapState).toBe(passWrapState);
+    expect(sessionPrepareDeps.runCapabilityPreflight).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: "claude", repository }),
+    );
+  });
+
+  test("a failed Claude wrap pass fails the launch naming the entry", async () => {
+    sessionPrepareDeps.runWrapPass = mock(async () => ({
+      kind: "failed" as const,
+      message: "failed to write .claude/settings.local.json for acme: EACCES",
+    }));
 
     const result = await prepareSession({
       runtime: "claude",
@@ -259,31 +298,8 @@ describe("attended Claude", () => {
 
     expect(result.ok).toBe(false);
     expect(result.failure).toBeInstanceOf(LaunchPreflightError);
-    expect((result.failure as Error).message).toMatch(/acme is wrapped[\s\S]*mate unwrap/);
-    expect(lockOptions).toEqual([]);
-    expect(calls).toEqual([]);
-    expect(sessionPrepareDeps.isWrapped).toHaveBeenCalledWith(repository.path, "claude");
-  });
-
-  test("projects the launch scope and refreshes the Projection Root", async () => {
-    const result = await prepareSession({
-      runtime: "claude",
-      companionPath,
-      repository,
-      mode: "attended",
-      config,
-    });
-
-    expect(result.ok).toBe(true);
-    expect(calls).toEqual(["git", "files", "launch", "projection-root", "preflight"]);
-    expect(sessionPrepareDeps.projectLaunch).toHaveBeenCalledWith({
-      repoPath: repository.path,
-      companionPath,
-      config,
-    });
-    expect(sessionPrepareDeps.runCapabilityPreflight).toHaveBeenCalledWith(
-      expect.objectContaining({ providerId: "claude", repository }),
-    );
+    expect((result.failure as Error).message).toContain(".claude/settings.local.json");
+    expect(calls).not.toContain("preflight");
   });
 
   test("a degradable projection failure warns and the prepare proceeds", async () => {
@@ -311,7 +327,10 @@ describe("attended Claude", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.warnings).toEqual(["failed to write .mate/companion for acme: EPERM"]);
+    expect(result.warnings).toEqual([
+      "failed to write .mate/companion for acme: EPERM",
+      "acme shadowed",
+    ]);
   });
 
   test("a non-degradable projection failure fails the prepare", async () => {
@@ -355,7 +374,7 @@ describe("attended Claude", () => {
 
     expect(result.ok).toBe(true);
     expect(calls).toEqual(["git", "files", "preflight"]);
-    expect(sessionPrepareDeps.isWrapped).not.toHaveBeenCalled();
+    expect(sessionPrepareDeps.runWrapPass).not.toHaveBeenCalled();
     expect(sessionPrepareDeps.syncCompanionGit).toHaveBeenCalledWith(
       companionPath,
       undefined,
@@ -413,6 +432,63 @@ describe("local", () => {
     expect(result.ok).toBe(false);
     expect(calls).toEqual(["config", "wrap"]);
     expect(result.steps.at(-1)).toMatchObject({ step: "preflight", outcome: "failed" });
+  });
+});
+
+describe("wrapped runtimes", () => {
+  test("one wrap pass for every wrapped runtime, then a preflight each", async () => {
+    const result = await prepareSession({
+      runtime: "claude",
+      runtimes: ["claude", "opencode"],
+      companionPath,
+      repository,
+      mode: "local",
+    });
+
+    expect(calls).toEqual(["config", "files", "wrap", "preflight", "preflight"]);
+    expect(sessionPrepareDeps.runWrapPass).toHaveBeenCalledWith(companionPath, repository, {
+      runtimes: ["claude", "opencode"],
+      config: expect.anything(),
+    });
+    expect(sessionPrepareDeps.projectLaunch).not.toHaveBeenCalled();
+    expect(result.runtimes).toEqual(["claude", "opencode"]);
+    expect(
+      result.steps.filter((step) => step.step === "preflight").map((step) => step.runtimes),
+    ).toEqual([["claude"], ["opencode"]]);
+  });
+
+  test("a Claude-only wrap reconciles only Claude", async () => {
+    await prepareSession({
+      runtime: "claude",
+      runtimes: ["claude"],
+      companionPath,
+      repository,
+      mode: "local",
+    });
+
+    expect(sessionPrepareDeps.runWrapPass).toHaveBeenCalledWith(companionPath, repository, {
+      runtimes: ["claude"],
+      config: expect.anything(),
+    });
+    expect(sessionPrepareDeps.runCapabilityPreflight).toHaveBeenCalledTimes(1);
+  });
+
+  test("an unfinished sync names the Claude launch for a Claude wrap", async () => {
+    sessionPrepareDeps.syncCompanionUnattended = unattended({
+      status: "unfinished",
+      reason: "remote unreachable",
+    });
+
+    const result = await prepareSession({
+      runtime: "claude",
+      runtimes: ["claude"],
+      companionPath,
+      repository,
+      mode: "sync",
+    });
+
+    expect(result.warnings.join("\n")).toContain("`mate claude`");
+    expect(result.warnings.join("\n")).not.toContain("mate opencode");
   });
 });
 

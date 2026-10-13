@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   filterClaudeHookGroups,
+  hookGroupKey,
   mergeClaudeHookGroups,
   readClaudeMcpConfig,
   readClaudeSettings,
@@ -24,6 +25,16 @@ async function makeTempDir(): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
+
+describe("hookGroupKey", () => {
+  test("structurally identical groups share a key; differing ones do not", () => {
+    const group = { matcher: "Bash", hooks: [{ type: "command", command: "a.sh" }] };
+    const copy = { matcher: "Bash", hooks: [{ type: "command", command: "a.sh" }] };
+    const other = { matcher: "Edit", hooks: [{ type: "command", command: "a.sh" }] };
+    expect(hookGroupKey(copy)).toBe(hookGroupKey(group));
+    expect(hookGroupKey(other)).not.toBe(hookGroupKey(group));
+  });
 });
 
 describe("mergeClaudeHookGroups", () => {

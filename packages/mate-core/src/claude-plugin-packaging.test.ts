@@ -117,6 +117,7 @@ describe("packed Claude plugin", () => {
       "validate-artifact-path.mjs",
       "session-banner.mjs",
       "session-guidance.mjs",
+      "session-prepare.mjs",
     ]) {
       const stat = await fs.stat(path.join(pluginRoot, "hooks", shim));
       expect(stat.isFile()).toBe(true);
@@ -167,6 +168,12 @@ describe("packed Claude plugin", () => {
     );
     expect(blocked.stderr).toContain("artifact writes must go to the companion framework path");
     expect(blocked.exitCode).toBe(2);
+  });
+
+  test("session-prepare shim is inert under a launch environment", () => {
+    const result = runShim("session-prepare.mjs", {}, { MATE_ARTIFACT_PATH: "/companions/acme" });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("");
   });
 
   test("session-banner shim emits the managed-session banner", () => {

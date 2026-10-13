@@ -23,11 +23,8 @@ import {
   withCopies,
   type RenderedRuntimeDocument,
 } from "../../runtime/runtime-document-manifest";
-import {
-  isWorkingRepositoryWrapped,
-  project,
-  unwrapWorkingRuntimeDocuments,
-} from "./working-repo-projection";
+import { readWrapState } from "../../runtime/wrap-state";
+import { project, unwrapWorkingRuntimeDocuments } from "./working-repo-projection";
 
 const tempRoots: string[] = [];
 
@@ -660,8 +657,8 @@ describe("a launch beside a wrap", () => {
       runtimeDocuments: openCodeDocument("@uniqbit/mate-opencode-plugin@0.15.5"),
     });
 
-    expect(await isWorkingRepositoryWrapped(repoPath, "opencode")).toBe(true);
-    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(false);
+    expect((await readWrapState(repoPath)).runtimes.has("opencode")).toBe(true);
+    expect((await readWrapState(repoPath)).runtimes.has("claude")).toBe(false);
   });
 });
 
@@ -678,8 +675,8 @@ describe("wrap state per Agent Runtime", () => {
     const repoPath = await makeRepo("per-runtime-");
     await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, claudeDocument("/acme"));
 
-    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(true);
-    expect(await isWorkingRepositoryWrapped(repoPath, "opencode")).toBe(false);
+    expect((await readWrapState(repoPath)).runtimes.has("claude")).toBe(true);
+    expect((await readWrapState(repoPath)).runtimes.has("opencode")).toBe(false);
     expect(documents(await readManifest(repoPath), "claude")).toEqual([CLAUDE_SETTINGS_DOCUMENT]);
     expect(documents(await readManifest(repoPath), "opencode")).toEqual([]);
   });
@@ -721,8 +718,8 @@ describe("wrap state per Agent Runtime", () => {
       }),
     );
 
-    expect(await isWorkingRepositoryWrapped(repoPath, "opencode")).toBe(true);
-    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(false);
+    expect((await readWrapState(repoPath)).runtimes.has("opencode")).toBe(true);
+    expect((await readWrapState(repoPath)).runtimes.has("claude")).toBe(false);
     expect(copies(await readManifest(repoPath))).toEqual({
       ".opencode/commands/acme.md": { runtime: "opencode", sha256: "abc" },
     });
@@ -777,7 +774,7 @@ describe("unwrapping a working repository", () => {
           ...localConfigDocument(),
         ],
       });
-      expect(await isWorkingRepositoryWrapped(repoPath)).toBe(true);
+      expect((await readWrapState(repoPath)).runtimes.size).toBeGreaterThan(0);
 
       const result = await unwrapWorkingRuntimeDocuments(repoPath);
 
@@ -801,7 +798,7 @@ describe("unwrapping a working repository", () => {
    * its own `removeRuntimeDocument` cannot be parallelised — every call rewrites
    * the whole manifest from its own snapshot, so the last write restores the
    * keys the others deleted. A surviving key reads back as still wrapped, which
-   * would leave `mate claude` refused after a successful `mate unwrap`.
+   * would leave `mate claude` deferring to a wrap `mate unwrap` already withdrew.
    */
   test("withdrawing several destinations leaves no manifest entry behind", async () => {
     const repoPath = await makeRepo("unwrap-multi-repo-");
@@ -822,7 +819,7 @@ describe("unwrapping a working repository", () => {
     ]);
     expect(documents(await readManifest(repoPath))).toEqual([]);
     expect(documents(await readManifest(repoPath))).toEqual([]);
-    expect(await isWorkingRepositoryWrapped(repoPath)).toBe(false);
+    expect((await readWrapState(repoPath)).runtimes.size).toBe(0);
     expect(await exists(path.join(repoPath, ".opencode", "opencode.json"))).toBe(false);
     expect(await exists(path.join(repoPath, ".claude", "settings.local.json"))).toBe(false);
   });

@@ -8,12 +8,11 @@ import {
   launcherInvocation,
   parsePrepareOutput,
   PREPARE_TIMEOUT_MS,
-  registerSessionPrepare,
-  resetPrepareDebounce,
   spawnPrepareRunner,
   type PrepareRequest,
   type PrepareRun,
-} from "./session-prepare";
+} from "../runtime/session-prepare-runner";
+import { registerSessionPrepare, resetPrepareDebounce } from "./session-prepare";
 import { readSessionNotes } from "./session-notes";
 
 type McpConfig = { disabled?: boolean };

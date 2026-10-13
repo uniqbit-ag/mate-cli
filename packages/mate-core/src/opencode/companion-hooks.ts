@@ -12,7 +12,7 @@ import {
 import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
 import { resolveProjection } from "../runtime/projection";
-import { readManifestSync, wrappedFor } from "../runtime/runtime-document-manifest";
+import { readWrapStateSync } from "../runtime/wrap-state";
 import {
   buildArtifactError,
   extractPatchPaths,
@@ -124,7 +124,7 @@ export function createReactDoctorScanner(
 /** The Working Repository above `directory`, when it is wrapped for OpenCode. */
 export function repositoryWrappedForOpenCode(directory: string): string | undefined {
   const projection = resolveProjection(directory);
-  if (!projection || !wrappedFor(readManifestSync(projection.repoRoot), "opencode")) {
+  if (!projection || !readWrapStateSync(projection.repoRoot).runtimes.has("opencode")) {
     return undefined;
   }
   return projection.repoRoot;

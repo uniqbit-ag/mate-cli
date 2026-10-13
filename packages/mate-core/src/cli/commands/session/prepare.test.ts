@@ -9,6 +9,13 @@ import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repo-loca
 import { runWrapPass } from "../../../lib/orchestrator/wrap-pass";
 import { repoLocalDirPath } from "../../../runtime/repo-local";
 import {
+  CLAUDE_SETTINGS_DOCUMENT,
+  OPENCODE_CONFIG_DOCUMENT,
+  updateManifest,
+  withDocument,
+  type WrapRuntime,
+} from "../../../runtime/runtime-document-manifest";
+import {
   parseSessionPrepareArgs,
   runSessionPrepareCommand,
   sessionPrepareCommandDeps,
@@ -38,6 +45,14 @@ async function linkedRepo(): Promise<{ repoPath: string; companionPath: string }
   await fs.mkdir(companionPath, { recursive: true });
   await writeRepoLocalRegistryEntry(repoPath, companionPath, { id: "acme", path: repoPath }, "git");
   return { repoPath, companionPath };
+}
+
+/** Records a wrap for each runtime the way a wrap pass would, one document apiece. */
+async function recordWrap(repoPath: string, runtimes: readonly WrapRuntime[]): Promise<void> {
+  const documentFor = { claude: CLAUDE_SETTINGS_DOCUMENT, opencode: OPENCODE_CONFIG_DOCUMENT };
+  await updateManifest(repoPath, (manifest) =>
+    runtimes.reduce((next, runtime) => withDocument(next, documentFor[runtime], []), manifest),
+  );
 }
 
 function capture() {
@@ -92,7 +107,7 @@ describe("parseSessionPrepareArgs", () => {
 });
 
 describe("runSessionPrepareCommand", () => {
-  test("refuses a repository that is not wrapped for OpenCode and writes nothing", async () => {
+  test("refuses a repository wrapped for neither runtime and writes nothing", async () => {
     const { repoPath } = await linkedRepo();
     const before = await fs.readdir(repoLocalDirPath(repoPath), { recursive: true });
     const prepare = mock(async () => ({}) as never);
@@ -113,7 +128,7 @@ describe("runSessionPrepareCommand", () => {
 
   test("prints the step outcomes as JSON for a wrapped repository", async () => {
     const { repoPath, companionPath } = await linkedRepo();
-    sessionPrepareCommandDeps.isWorkingRepositoryWrapped = mock(async () => true);
+    await recordWrap(repoPath, ["claude", "opencode"]);
     sessionPrepareCommandDeps.resolveLinkedCompanions = mock(async () => [
       { companionPath } as never,
     ]);
@@ -121,6 +136,7 @@ describe("runSessionPrepareCommand", () => {
       ok: true,
       mode: "local" as const,
       runtime: "opencode" as const,
+      runtimes: ["opencode" as const],
       repositoryId: "acme",
       companionPath,
       steps: [{ step: "file-sync" as const, outcome: "ok" as const }],
@@ -140,16 +156,54 @@ describe("runSessionPrepareCommand", () => {
       steps: [{ step: "file-sync", outcome: "ok" }],
     });
     expect(sessionPrepareCommandDeps.prepareSession).toHaveBeenCalledWith({
-      runtime: "opencode",
+      runtime: "claude",
+      runtimes: ["claude", "opencode"],
       companionPath,
       repository: expect.objectContaining({ id: "acme" }),
       mode: "local",
     });
   });
 
+  test("prepares only the runtimes the manifest records", async () => {
+    const { repoPath, companionPath } = await linkedRepo();
+    await recordWrap(repoPath, ["claude"]);
+    sessionPrepareCommandDeps.resolveLinkedCompanions = mock(async () => [
+      { companionPath } as never,
+    ]);
+    sessionPrepareCommandDeps.prepareSession = mock(async () => ({
+      ok: true,
+      mode: "local" as const,
+      runtime: "claude" as const,
+      runtimes: ["claude" as const],
+      repositoryId: "acme",
+      companionPath,
+      steps: [
+        { step: "working-target" as const, outcome: "ok" as const, runtimes: ["claude" as const] },
+        { step: "preflight" as const, outcome: "ok" as const, runtimes: ["claude" as const] },
+      ],
+      warnings: [],
+    }));
+    const io = capture();
+
+    try {
+      await runSessionPrepareCommand(["--repo", repoPath, "--json"]);
+    } finally {
+      io.restore();
+    }
+
+    expect(process.exitCode).toBe(0);
+    expect(sessionPrepareCommandDeps.prepareSession).toHaveBeenCalledWith(
+      expect.objectContaining({ runtime: "claude", runtimes: ["claude"] }),
+    );
+    expect(JSON.parse(io.out.join(""))).toMatchObject({
+      runtimes: ["claude"],
+      steps: [{ runtimes: ["claude"] }, { step: "preflight", runtimes: ["claude"] }],
+    });
+  });
+
   test("--sync runs the sync mode and keeps the failure's error out of the JSON", async () => {
     const { repoPath, companionPath } = await linkedRepo();
-    sessionPrepareCommandDeps.isWorkingRepositoryWrapped = mock(async () => true);
+    await recordWrap(repoPath, ["claude", "opencode"]);
     sessionPrepareCommandDeps.resolveLinkedCompanions = mock(async () => [
       { companionPath } as never,
     ]);
@@ -157,6 +211,7 @@ describe("runSessionPrepareCommand", () => {
       ok: false,
       mode: "sync" as const,
       runtime: "opencode" as const,
+      runtimes: ["opencode" as const],
       repositoryId: "acme",
       companionPath,
       steps: [{ step: "preflight" as const, outcome: "failed" as const, detail: "acme" }],
@@ -179,7 +234,7 @@ describe("runSessionPrepareCommand", () => {
 
   test("exits non-zero when a step failed", async () => {
     const { repoPath, companionPath } = await linkedRepo();
-    sessionPrepareCommandDeps.isWorkingRepositoryWrapped = mock(async () => true);
+    await recordWrap(repoPath, ["claude", "opencode"]);
     sessionPrepareCommandDeps.resolveLinkedCompanions = mock(async () => [
       { companionPath } as never,
     ]);
@@ -187,6 +242,7 @@ describe("runSessionPrepareCommand", () => {
       ok: false,
       mode: "local" as const,
       runtime: "opencode" as const,
+      runtimes: ["opencode" as const],
       repositoryId: "acme",
       companionPath,
       steps: [{ step: "preflight" as const, outcome: "failed" as const, detail: "acme" }],
