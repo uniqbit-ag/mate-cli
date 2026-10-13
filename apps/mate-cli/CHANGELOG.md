@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.18.3](https://github.com/uniqbit-ag/mate-cli/compare/0.18.2...0.18.3) (2026-10-13)
+
+### Features
+
+- **claude:** wrap repo on mate claude launch and prepare plain sessions ([e8ab50c](https://github.com/uniqbit-ag/mate-cli/commit/e8ab50c9391c7c7f519164aa2884580dab0b9ea3))
+- **container:** persist appliance agent logins on a home volume ([9d9f11b](https://github.com/uniqbit-ag/mate-cli/commit/9d9f11bfdbe70a901d87858475b4c094e01fcdd0))
+- **openspec:** backfill writes canonical specs, expand untracked dirs ([d961285](https://github.com/uniqbit-ag/mate-cli/commit/d9612854a9514e607e2bf2f5eca7ad7bbdb16149))
+
+### Bug Fixes
+
+- **opencode:** wrap repo for OpenCode instead of overriding config dir ([3cf47aa](https://github.com/uniqbit-ag/mate-cli/commit/3cf47aa9a58db98510eb04650faff7be45d9ac7c))
+
+## [0.18.3-canary.1](https://github.com/uniqbit-ag/mate-cli/compare/0.18.2...0.18.3) (2026-10-12)
+
+### Features
+
+- **audiences:** let an audience declare plugin-provided capabilities ([9b4acc5](https://github.com/uniqbit-ag/mate-cli/commit/9b4acc55cefac67cf4380a69c4a672aa0948696a))
+
+## [0.18.3-canary.0](https://github.com/uniqbit-ag/mate-cli/compare/0.18.2...0.18.3) (2026-10-12)
+
+### Features
+
+- add companion audiences ([9b93c1b](https://github.com/uniqbit-ag/mate-cli/commit/9b93c1bfb0e0a990dd770aa62f35f38737862526))
+
 ## [0.18.2](https://github.com/uniqbit-ag/mate-cli/compare/0.18.1...0.18.2) (2026-10-08)
 
 ### Bug Fixes
