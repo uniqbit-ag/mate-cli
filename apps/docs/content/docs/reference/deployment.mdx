@@ -97,6 +97,45 @@ remotes need neither.
 Agent sessions synchronize Git only when `MATE_GIT_SYNC` is on. Otherwise each
 launch gets `--no-git`, and nothing contacts a remote after the first clone.
 
+### Agent logins survive updates
+
+Signing in to Claude Code or OpenCode with a subscription writes state under the
+container user's home, `/home/mate`. Mount a named volume there and that login,
+with the sessions and history beside it, survives a rebuild, a recreate and an
+update to a newer image:
+
+```yaml
+services:
+  mate:
+    volumes:
+      - mate-home:/home/mate
+
+volumes:
+  mate-home:
+```
+
+`compose.example.yaml` already declares it. Sign in once from Studio's terminal;
+the next container on the same volume is still signed in.
+
+- **The volume holds live subscription credentials.** Treat it like the
+  credentials themselves. It is isolated from the host: the template mounts no
+  host agent directory and no keychain, so a login on your machine is not the
+  container's login.
+- **Resetting.** `docker compose down -v` deletes the volume and signs both
+  agents out. Removing the container alone does not.
+- **Updates.** On every start the container recreates a missing agent directory
+  and re-applies the image's own TokenSave integration, offline, so a volume
+  seeded by an older image is brought current. Logins and sessions are not
+  touched. A failure names the agent and stops startup.
+- **Leftovers.** A start killed part-way through restoring plugins can leave a
+  generated npm config in the home. It names the registry token rather than
+  holding it, and the next start removes it before doing anything else.
+- **Adopting it.** An existing compose file receives nothing until you copy the
+  `mate-home` volume and its top-level `volumes:` entry. The first start seeds
+  the volume from the image; you sign in once more, and from then on it persists.
+  With rootless Podman, keep the `keep-id` mapping above so uid 10001 can write
+  it. A volume that already exists owned by root has to be chowned to 10001.
+
 ## Configuration
 
 Every setting is readable from an environment variable and from the

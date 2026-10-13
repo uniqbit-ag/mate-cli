@@ -35,10 +35,33 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-supervisor-"));
   fs.mkdirSync(path.join(root, "bin"), { recursive: true });
   fs.mkdirSync(path.join(root, "companion"), { recursive: true });
+  fs.mkdirSync(path.join(root, "home"), { recursive: true });
   fs.copyFileSync(ENTRYPOINT, path.join(root, "entrypoint.sh"));
+  stubTokensave();
 });
 
 afterEach(() => {
+  /**
+   * The container runs as root and creates the home's directories, which the
+   * host user may not be able to remove; clear them from inside first.
+   */
+  if (RUNTIME !== null) {
+    spawnSync(
+      RUNTIME,
+      [
+        "run",
+        "--rm",
+        "--volume",
+        `${root}:${CASE}:z`,
+        "--entrypoint",
+        "rm",
+        TEST_BASE_IMAGE,
+        "-rf",
+        HOME,
+      ],
+      { stdio: "ignore" },
+    );
+  }
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -47,6 +70,38 @@ function writeExecutable(name: string, body: string): void {
   fs.writeFileSync(file, body);
   fs.chmodSync(file, 0o755);
 }
+
+/**
+ * Stands in for `tokensave install`: records each call and writes the file the
+ * real one would, so a rerun is visible as an overwrite. Fails for the agent
+ * named in `tokensave-fails`, if any. Package managers and downloaders are
+ * stubbed to record themselves, since reconciliation may not invoke them.
+ */
+function stubTokensave(): void {
+  writeExecutable(
+    "tokensave",
+    `#!/usr/bin/env bash
+echo "$*" >> "${CASE}/tokensave.log"
+agent="$3"
+[[ -f "${CASE}/tokensave-fails" && "$agent" == "$(cat "${CASE}/tokensave-fails")" ]] && exit 3
+if [[ "$agent" == claude ]]; then
+  mkdir -p "$HOME/.claude/rules" && echo current > "$HOME/.claude/rules/tokensave.md"
+else
+  echo current > "$HOME/.config/opencode/tokensave.md"
+fi
+`,
+  );
+  for (const installer of ["npm", "pnpm", "yarn", "pip", "uv", "cargo", "curl", "wget"]) {
+    writeExecutable(
+      installer,
+      `#!/usr/bin/env bash\necho "${installer} $*" >> "${CASE}/installers.log"\n`,
+    );
+  }
+}
+
+/** Paths as the container sees them, for seeding and reading back the test home. */
+const HOME = `${CASE}/home`;
+const homeFile = (relative: string) => path.join(root, "home", relative);
 
 /**
  * Stands in for the startup program: prints the plan the supervisor evaluates,
@@ -147,6 +202,10 @@ async function runSupervisor(signal?: { name: string }): Promise<Outcome> {
       containerName,
       "--volume",
       `${root}:${CASE}:z`,
+      "--network",
+      "none",
+      "--env",
+      `HOME=${HOME}`,
       "--env",
       `PATH=${CASE}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
       "--env",
@@ -417,7 +476,120 @@ withContainer("what the supervisor starts Studio with", () => {
   );
 });
 
+withContainer("the persistent home is reconciled at every start", () => {
+  const LOGIN_FILES = {
+    ".claude.json": "claude-login",
+    ".claude/.credentials.json": "claude-credentials",
+    ".local/share/opencode/auth.json": "opencode-login",
+  };
+
+  function seedLogins(): void {
+    for (const [relative, content] of Object.entries(LOGIN_FILES)) {
+      fs.mkdirSync(path.dirname(homeFile(relative)), { recursive: true });
+      fs.writeFileSync(homeFile(relative), content);
+    }
+  }
+
+  test(
+    "a stale seed is refreshed and login and session files are untouched",
+    async () => {
+      stubStartup();
+      recordingMate();
+      seedLogins();
+      fs.mkdirSync(homeFile(".claude/rules"), { recursive: true });
+      fs.writeFileSync(homeFile(".claude/rules/tokensave.md"), "stale");
+
+      await runSupervisor();
+
+      expect(fs.readFileSync(homeFile(".claude/rules/tokensave.md"), "utf8")).toBe("current\n");
+      for (const [relative, content] of Object.entries(LOGIN_FILES)) {
+        expect(fs.readFileSync(homeFile(relative), "utf8")).toBe(content);
+      }
+      expect(fs.readFileSync(path.join(root, "tokensave.log"), "utf8")).toBe(
+        "install --agent claude --git-hook no --wildcard-permissions\ninstall --agent opencode --git-hook no --wildcard-permissions\n",
+      );
+    },
+    CASE_TIMEOUT,
+  );
+
+  test(
+    "a missing agent home is recreated before anything is served",
+    async () => {
+      stubStartup();
+      recordingMate();
+
+      await runSupervisor();
+
+      expect(fs.existsSync(homeFile(".claude"))).toBe(true);
+      expect(fs.readFileSync(homeFile(".config/opencode/tokensave.md"), "utf8")).toBe("current\n");
+      expect(fs.existsSync(path.join(root, "argv.log"))).toBe(true);
+    },
+    CASE_TIMEOUT,
+  );
+
+  test(
+    "a failing integration names the agent and stops before Studio",
+    async () => {
+      stubStartup();
+      recordingMate();
+      fs.writeFileSync(path.join(root, "tokensave-fails"), "opencode");
+
+      const outcome = await runSupervisor();
+
+      expect(outcome.status).toBe(1);
+      expect(outcome.stderr).toContain("TokenSave integration for opencode");
+      expect(fs.existsSync(path.join(root, "argv.log"))).toBe(false);
+    },
+    CASE_TIMEOUT,
+  );
+
+  test(
+    "leftover generated registry config is removed and login files are not",
+    async () => {
+      stubStartup();
+      recordingMate();
+      seedLogins();
+      fs.writeFileSync(homeFile(".mate-setup-npmrc.AbC123"), "//acme.test:_authToken=${TOKEN}");
+      fs.writeFileSync(homeFile(".mate-setup-npmrc.xYz987"), "stale");
+
+      await runSupervisor();
+
+      expect(fs.existsSync(homeFile(".mate-setup-npmrc.AbC123"))).toBe(false);
+      expect(fs.existsSync(homeFile(".mate-setup-npmrc.xYz987"))).toBe(false);
+      for (const relative of Object.keys(LOGIN_FILES)) {
+        expect(fs.existsSync(homeFile(relative))).toBe(true);
+      }
+    },
+    CASE_TIMEOUT,
+  );
+
+  test(
+    "reconciliation starts no package manager and needs no network",
+    async () => {
+      stubStartup();
+      recordingMate();
+
+      const outcome = await runSupervisor();
+
+      expect(outcome.stderr).not.toContain("TokenSave integration");
+      expect(fs.existsSync(path.join(root, "installers.log"))).toBe(false);
+      expect(fs.existsSync(path.join(root, "argv.log"))).toBe(true);
+    },
+    CASE_TIMEOUT,
+  );
+});
+
 describe("the supervisor script itself", () => {
+  test("reconciles the home before credentials and the startup plan", () => {
+    const source = fs.readFileSync(ENTRYPOINT, "utf8");
+    const cleanupAt = source.indexOf(".mate-setup-npmrc.*");
+    const installAt = source.indexOf('"$TOKENSAVE" install');
+    const credentialsAt = source.indexOf('"$BUN" "$STARTUP_SCRIPT" --credentials');
+    expect(cleanupAt).toBeGreaterThan(-1);
+    expect(installAt).toBeGreaterThan(cleanupAt);
+    expect(credentialsAt).toBeGreaterThan(installAt);
+  });
+
   test("is valid bash", () => {
     const result = spawnSync("bash", ["-n", ENTRYPOINT], { encoding: "utf8" });
     expect(result.stderr).toBe("");

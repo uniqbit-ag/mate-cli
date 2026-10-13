@@ -37,6 +37,14 @@ services:
       # belong, so they stay out of the process listing.
       - ./appliance.yaml:/etc/mate/appliance.yaml:ro
 
+      # The container user's home, so Claude Code and OpenCode logins and
+      # session data survive a rebuild or an image update. It holds live
+      # subscription credentials and is not shared with the host: no host
+      # agent directory or keychain is mounted. `docker compose down -v`
+      # deletes it and signs both agents out. With rootless Podman, keep the
+      # `keep-id` mapping above so the volume stays writable by uid 10001.
+      - mate-home:/home/mate
+
       # Only for Git remotes over SSH: a key and the hosts it may talk to,
       # readable by uid 10001. HTTPS remotes need neither.
       # - ./ssh/id_ed25519:/home/mate/.ssh/id_ed25519:ro
@@ -91,3 +99,6 @@ services:
 
     # Studio gives each session 5 seconds after TERM, then KILL.
     stop_grace_period: 30s
+
+volumes:
+  mate-home:
