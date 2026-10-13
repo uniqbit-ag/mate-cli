@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
@@ -7,8 +6,7 @@ import { writeAtomic } from "./write-atomic";
 
 /**
  * Runtime document manifest at the Projection Root; sole owner of its format.
- * Pure queries plus a thin I/O shell, so the plugin's sync reads and the CLI's
- * async ones agree.
+ * Pure queries plus a thin I/O shell; readers go through Wrap State (`./wrap-state`).
  */
 
 const RUNTIME_DOCUMENT_MANIFEST_FILE = "runtime-documents.json";
@@ -109,7 +107,18 @@ export function parseManifest(raw: string | null): Manifest {
   } catch {
     return EMPTY_MANIFEST;
   }
-  if (!isRecord(parsed)) return EMPTY_MANIFEST;
+  return isRecord(parsed) ? manifestOf(parsed) : EMPTY_MANIFEST;
+}
+
+/** For readers that rewrite on its strength: a manifest present but unparseable throws. */
+export function parseManifestStrict(raw: string | null): Manifest {
+  if (raw === null) return EMPTY_MANIFEST;
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isRecord(parsed)) throw new Error("runtime document manifest is not a JSON object");
+  return manifestOf(parsed);
+}
+
+function manifestOf(parsed: Record<string, unknown>): Manifest {
   return {
     documents: isRecord(parsed.documents) ? (parsed.documents as Manifest["documents"]) : {},
     runtimes: isRecord(parsed.runtimes) ? (parsed.runtimes as Manifest["runtimes"]) : {},
@@ -213,12 +222,20 @@ export function recordedMapKeys(
   );
 }
 
-/** Wrapped for a runtime: a document, a copy or a link is recorded for it. */
-export function wrappedFor(manifest: Manifest, runtime: WrapRuntime): boolean {
-  return (
-    documents(manifest, runtime).length > 0 ||
-    Object.keys(copies(manifest, runtime)).length > 0 ||
-    Object.keys(links(manifest, runtime)).length > 0
+/** Every value of the `list` regions recorded under `prefix` in one document. */
+export function recordedListValues(
+  manifest: Manifest,
+  documentPath: string,
+  prefix: readonly string[],
+): unknown[] {
+  return (documentRegions(manifest, documentPath) ?? []).flatMap((region: unknown) =>
+    isRecord(region) &&
+    region.kind === "list" &&
+    Array.isArray(region.at) &&
+    isAt(region.at.slice(0, prefix.length), prefix) &&
+    Array.isArray(region.values)
+      ? region.values
+      : [],
   );
 }
 
@@ -277,29 +294,23 @@ export function manifestPath(repoPath: string): string {
   return path.join(repoLocalDirPath(repoPath), RUNTIME_DOCUMENT_MANIFEST_FILE);
 }
 
-/** For readers that cannot await; an absent or unreadable manifest reads as empty. */
-export function readManifestSync(repoPath: string): Manifest {
-  try {
-    return parseManifest(fs.readFileSync(manifestPath(repoPath), "utf8"));
-  } catch {
-    return EMPTY_MANIFEST;
-  }
-}
-
 /**
  * The runtime document manifest at the Projection Root; empty when absent. A
  * read that failed for a reason other than absence throws, so a writer never
  * replaces a manifest it could not read.
  */
 export async function readManifest(repoPath: string): Promise<Manifest> {
-  let raw: string | null;
+  return parseManifest(await readManifestText(repoPath));
+}
+
+/** `null` when absent; any other read failure throws. */
+export async function readManifestText(repoPath: string): Promise<string | null> {
   try {
-    raw = await fsp.readFile(manifestPath(repoPath), "utf8");
+    return await fsp.readFile(manifestPath(repoPath), "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    raw = null;
+    return null;
   }
-  return parseManifest(raw);
 }
 
 /**
@@ -321,13 +332,4 @@ export async function updateManifest(
     await writeAtomic(target, contents);
   }
   return next;
-}
-
-/** The MCP server names the wrap declared in `.opencode/opencode.json`; user servers are not listed. */
-export function mateDeclaredOpenCodeMcpServers(repoPath: string): string[] {
-  return recordedMapKeys(
-    readManifestSync(repoPath),
-    OPENCODE_CONFIG_DOCUMENT,
-    OPENCODE_MCP_SERVERS_AT,
-  );
 }

@@ -1,12 +1,6 @@
-import { existsSync } from "node:fs";
-
 import { buildCompanionGuidance } from "../../../playbooks/companion-guidance";
 import { getContextModePackageRoot, validateContextModePackage } from "../../context-mode-package";
 import { getClaudePluginRoot, validateClaudePluginAssets } from "../../package-paths";
-import {
-  getCompanionClaudeMcpConfigPath,
-  getCompanionClaudeSettingsPath,
-} from "../../../tools/setup/providers/claude";
 import { type AdapterContext, LaunchAdapter } from "./base";
 
 export class ClaudeAdapter extends LaunchAdapter {
@@ -14,8 +8,7 @@ export class ClaudeAdapter extends LaunchAdapter {
   readonly interactive = true;
 
   async validateLaunch(context: AdapterContext): Promise<void> {
-    // The bundled mate plugin carries the artifact-path guard; never launch a
-    // managed session without it.
+    /** The bundled plugin carries the artifact-path guard; never launch without it. */
     try {
       validateClaudePluginAssets();
     } catch (error) {
@@ -37,24 +30,22 @@ export class ClaudeAdapter extends LaunchAdapter {
     }
   }
 
+  /**
+   * Plan in, flags out; decides nothing. `--append-system-prompt`, `--plugin-dir`
+   * and context-mode are unconditional: no settings document can carry them.
+   */
   buildArgs(context: AdapterContext, args: string[]): string[] {
-    // Load Mate-managed Claude config from companion settings when present,
-    // layered on top of the user's user/project/local sources so global
-    // skills and plugins still load. Only add the flags when the file
-    // exists so a companion without generated settings still launches with
-    // Claude's default discovery.
-    const companionSettingsPath = getCompanionClaudeSettingsPath(context.companionPath);
-    const settingsArgs = existsSync(companionSettingsPath)
-      ? ["--setting-sources", "user,project,local", "--settings", companionSettingsPath]
-      : [];
-
-    // Load Mate-managed MCP servers from the companion `.mcp.json` when present.
-    // It lives in the companion repo (not the working-repo cwd), so it must be
-    // passed explicitly rather than relying on Claude's cwd auto-discovery.
-    const companionMcpConfigPath = getCompanionClaudeMcpConfigPath(context.companionPath);
-    const mcpConfigArgs = existsSync(companionMcpConfigPath)
-      ? ["--mcp-config", companionMcpConfigPath]
-      : [];
+    const delivery = context.claudeDelivery;
+    if (!delivery) throw new Error("a Claude launch needs the launcher's delivery plan");
+    const { plan, settingsPath, mcpConfigPath } = delivery;
+    /** Layered on the user's own sources so global skills and plugins still load. */
+    const settingsArgs =
+      plan.hooks.owner !== "none" && settingsPath
+        ? ["--setting-sources", "user,project,local", "--settings", settingsPath]
+        : [];
+    const addDirArgs = plan.dirAccess === "add-dir" ? ["--add-dir", context.companionPath] : [];
+    const mcpConfigArgs =
+      plan.mcp === "mcp-config" && mcpConfigPath ? ["--mcp-config", mcpConfigPath] : [];
     const contextModeArgs = context.capabilities.some(
       (capability) => capability.name === "context-mode",
     )
@@ -62,14 +53,12 @@ export class ClaudeAdapter extends LaunchAdapter {
       : [];
 
     return [
-      "--add-dir",
-      context.companionPath,
+      ...addDirArgs,
       "--append-system-prompt",
       buildCompanionGuidance(context),
       ...settingsArgs,
       ...mcpConfigArgs,
-      // Bundled mate plugin (hooks) resolved from the running mate-core
-      // installation, coexisting with the context-mode plugin dir.
+      /** The bundled plugin from the running install, beside context-mode's. */
       "--plugin-dir",
       getClaudePluginRoot(),
       ...contextModeArgs,

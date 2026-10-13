@@ -103,20 +103,21 @@ The switch must appear after the argument separator. Mate protects managed
 paths during conflict recovery, but unrelated conflicts still require manual
 resolution.
 
-## OpenCode Starts Without Companion Guidance
+## A Plain Session Starts Without Companion Guidance
 
-Plain `opencode` in a wrapped repository loads Mate through `~/.mate/runtime/`.
-Installing or upgrading the package does not create it; any `mate` run does.
-Run `mate doctor` (or `mate opencode`) once after installing or upgrading. If
-Mate is uninstalled, run `mate unwrap` in the repository.
+Plain `opencode` and plain `claude` in a wrapped repository load Mate through
+`~/.mate/runtime/`. Installing or upgrading the package does not create it; any
+`mate` run does. Run `mate doctor` (or `mate opencode` / `mate claude`) once after
+installing or upgrading. If Mate is uninstalled, run `mate unwrap` in the
+repository.
 
-## Warning: Restart With `mate opencode`
+## Warning: Restart With `mate opencode` Or `mate claude`
 
-A plain `opencode` session syncs the companion in the background, fast-forward
-only, and cannot prompt. A diverged history, a local edit the update would
-overwrite, or an unreachable remote leaves the session on the current companion
-with this warning. Restart with `mate opencode`; its attended sync can resolve
-it.
+A plain `opencode` or `claude` session in a wrapped repository syncs the companion
+in the background, fast-forward only, and cannot prompt. A diverged history, a
+local edit the update would overwrite, or an unreachable remote leaves the session
+on the current companion with this warning. Restart with the managed launch the
+warning names (`mate opencode` or `mate claude`); its attended sync can resolve it.
 
 ## A Launch Waits For Another Sync
 

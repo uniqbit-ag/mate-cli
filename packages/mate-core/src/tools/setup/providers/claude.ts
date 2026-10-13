@@ -102,16 +102,12 @@ function getAllManagedPermissionEntries(companionPath: string): Set<string> {
   ]);
 }
 
-// Resolved path of the companion-owned Claude settings document. This is the
-// single source of truth for Mate-managed Claude hooks, permissions, and MCP
-// servers; it is loaded at launch via `claude --settings`.
+/** Companion-owned Claude settings: sole source of Mate-managed hooks, permissions and MCP servers. */
 export function getCompanionClaudeSettingsPath(companionPath: string): string {
   return path.join(companionPath, ".claude", "settings.local.json");
 }
 
-// Resolved path of the companion-owned `.mcp.json`. Mate writes Mate-managed
-// MCP servers here and loads it at launch via `claude --mcp-config`, keeping
-// the MCP surface out of the working repo and out of settings.local.json.
+/** Companion-owned `.mcp.json`; loaded via `--mcp-config` only by a companion-scoped launch. */
 export function getCompanionClaudeMcpConfigPath(companionPath: string): string {
   return path.join(companionPath, ".mcp.json");
 }
@@ -145,6 +141,23 @@ export function renderManagedClaudeMcpServers(
     }
   }
   return servers;
+}
+
+/**
+ * Enabled Capabilities' Claude hook groups per event, in declared order, as a
+ * value: what a Claude wrap carries into the Working Repository.
+ */
+export function renderManagedClaudeHookGroups(
+  contributions: CapabilityContributionInput[] = [],
+): Record<string, ClaudeHookGroup[]> {
+  const hooks: Record<string, ClaudeHookGroup[]> = {};
+  for (const input of contributions) {
+    if (!input.enabled) continue;
+    for (const hook of input.contributions.hookGroups ?? []) {
+      (hooks[hook.event] ??= []).push(hook.group);
+    }
+  }
+  return hooks;
 }
 
 // Reconcile the Mate-managed Claude settings shape (hooks, permissions, MCP

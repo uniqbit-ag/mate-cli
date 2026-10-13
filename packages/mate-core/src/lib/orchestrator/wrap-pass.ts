@@ -5,6 +5,7 @@ import { readCompanionConfig } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
 import { entryFailureMessage, firstFailure, type ProjectionChangedPaths } from "./projection-types";
 import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
+import { readWrapState, type WrapState } from "../../runtime/wrap-state";
 import type { FrameworkConfig, LinkedRepository } from "./types";
 import { project } from "./working-repo-projection";
 
@@ -42,6 +43,10 @@ export type WrapPassResult =
       changed: ProjectionChangedPaths;
       /** The render's warnings, then every entry's, for the caller to present. */
       warnings: string[];
+      /** Active runtimes whose tagged entries this pass ran; never inferred from paths. */
+      runtimes: ReadonlySet<WrapRuntime>;
+      /** The wrap state as this pass left it. */
+      wrapState: WrapState;
     }
   | { kind: "failed"; message: string };
 
@@ -76,6 +81,26 @@ export async function runWrapPass(
   const failure = firstFailure(result.outcomes);
   if (failure) return { kind: "failed", message: entryFailureMessage(failure, repository.id) };
 
+  /** Read once under the caller's lock, so it is exactly what the pass recorded. */
+  let wrapState: WrapState;
+  try {
+    wrapState = await readWrapState(repository.path);
+  } catch (error) {
+    return {
+      kind: "failed",
+      message: `could not read the runtime document manifest for ${repository.id}: ${(error as Error).message}`,
+    };
+  }
+  /** Inactive runtimes' entries run too, to withdraw; that is not covering them. */
+  const active = new Set(config.allowedAgents ?? []);
+  const runtimes = new Set(
+    result.outcomes.flatMap((outcome) =>
+      outcome.runtime && outcome.state !== "skipped" && active.has(outcome.runtime)
+        ? [outcome.runtime]
+        : [],
+    ),
+  );
+
   /** The destinations the surfaces rendered; the rest of the pass is scaffolding. */
   const destinations = new Set(
     rendered.documents.map((document) => document.path.split("/").join(path.sep)),
@@ -100,5 +125,7 @@ export async function runWrapPass(
       ...rendered.warnings,
       ...result.outcomes.flatMap((outcome) => outcome.warnings ?? []),
     ],
+    runtimes,
+    wrapState,
   };
 }

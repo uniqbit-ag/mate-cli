@@ -1653,9 +1653,7 @@ describe("mate CLI e2e", () => {
     const settings = JSON.parse(
       await fs.readFile(path.join(scenario.companion, ".claude", "settings.local.json"), "utf8"),
     );
-    // MCP server lives in the companion .mcp.json (loaded via --mcp-config),
-    // not inline in settings.local.json, though the mcp permission entry is
-    // still pre-seeded.
+    /** MCP server in companion .mcp.json, not settings.local.json; its permission is still pre-seeded. */
     expect(settings.mcpServers?.tokensave).toBeUndefined();
     expect(settings.permissions?.allow ?? []).toContain("mcp__tokensave__*");
     const mcpConfig = JSON.parse(
@@ -1667,13 +1665,16 @@ describe("mate CLI e2e", () => {
       command: "tokensave",
       args: ["serve"],
     });
-    const workingRepoSettings = JSON.parse(
-      await fs.readFile(path.join(scenario.working, ".claude", "settings.local.json"), "utf8"),
+    /** The launch wraps: the MCP server reaches the repository's `~/.claude.json` entry once. */
+    const globalConfig = JSON.parse(
+      await fs.readFile(path.join(scenario.home, ".claude.json"), "utf8"),
+    ) as { projects?: Record<string, { mcpServers?: Record<string, unknown> }> };
+    const projectEntries = Object.entries(globalConfig.projects ?? {}).filter(
+      ([, entry]) => entry.mcpServers?.tokensave,
     );
-    expect(workingRepoSettings).toEqual({
-      permissions: { additionalDirectories: [scenario.companion] },
-    });
-    // The working repo receives no Mate-managed Claude MCP declaration.
+    expect(projectEntries).toHaveLength(1);
+    const invocation = await readJson<{ argv: string[] }>(capturePath);
+    expect(invocation.argv).not.toContain("--mcp-config");
     await expect(fs.access(path.join(scenario.working, ".mcp.json"))).rejects.toThrow();
   });
 
@@ -1950,9 +1951,10 @@ describe("mate CLI e2e", () => {
         },
         scenario: E2EScenario,
       ) {
-        expect(invocation.argv[0]).toBe("--add-dir");
-        expect(invocation.argv[1]).toBe(scenario.companion);
-        expect(invocation.argv).toContain("--append-system-prompt");
+        /** A launch is a wrap; the launch defers companion access to it. */
+        expect(invocation.argv).not.toContain("--add-dir");
+        expect(invocation.argv).not.toContain("--mcp-config");
+        expect(invocation.argv[0]).toBe("--append-system-prompt");
         expect(invocation.argv).toContain("--print");
         expect(invocation.argv).toContain("hello");
         expect(invocation.argv).not.toContain("--yes");
@@ -2052,8 +2054,7 @@ describe("mate CLI e2e", () => {
       hooks?: Record<string, HookGroup[]>;
       permissions?: { allow?: string[] };
     }
-    // Mate-managed Claude config now lives in companion settings, loaded at launch
-    // via `--settings`, instead of the working repo.
+    /** Companion settings stay the source; the launch passes a derived copy via `--settings`. */
     const settingsPath = path.join(scenario.companion, ".claude", "settings.local.json");
 
     expect((await launch()).exitCode).toBe(0);
@@ -2071,12 +2072,20 @@ describe("mate CLI e2e", () => {
     expect(first.permissions?.allow).toContain("Bash(openspec:*)");
     expect(first.permissions?.allow).toContain("Bash(npx react-doctor:*)");
 
+    /** The launch wraps: Capability hooks and the prepare hook live in the repository. */
     const workingRepoSettings = JSON.parse(
       await fs.readFile(path.join(scenario.working, ".claude", "settings.local.json"), "utf8"),
-    );
-    expect(workingRepoSettings).toEqual({
-      permissions: { additionalDirectories: [scenario.companion] },
-    });
+    ) as ClaudeSettings & { permissions?: { additionalDirectories?: string[] } };
+    expect(workingRepoSettings.permissions?.additionalDirectories).toEqual([scenario.companion]);
+    expect(hasCommand(workingRepoSettings.hooks?.Stop, "react-doctor.sh")).toBe(true);
+    expect(hasCommand(workingRepoSettings.hooks?.SessionStart, "session-prepare")).toBe(true);
+
+    /** ...so the launch's derived settings omit the wrap-carried group. */
+    const invocation = await readJson<{ argv: string[] }>(capturePath);
+    const derived = JSON.parse(
+      await fs.readFile(invocation.argv[invocation.argv.indexOf("--settings") + 1]!, "utf8"),
+    ) as ClaudeSettings;
+    expect(hasCommand(derived.hooks?.Stop, "react-doctor.sh")).toBe(false);
 
     const exclude = await fs.readFile(
       path.join(scenario.working, ".git", "info", "exclude"),
@@ -2441,7 +2450,7 @@ describe("mate CLI e2e", () => {
 
       const invocation = await readJson<{ cwd: string; argv: string[] }>(capturePath);
       expect(invocation.cwd).toBe(scenario.working);
-      expect(invocation.argv).toContain("--add-dir");
+      expect(invocation.argv).toContain("--append-system-prompt");
     },
   );
 

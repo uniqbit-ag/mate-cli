@@ -23,6 +23,10 @@ export function runtimeOpenCodePluginRoot(homeDir?: string): string {
   return path.join(runtimeDirectoryPath(homeDir), "opencode-plugin");
 }
 
+export function runtimeClaudePluginRoot(homeDir?: string): string {
+  return path.join(runtimeDirectoryPath(homeDir), "claude-plugin");
+}
+
 export function runtimeWrapperBinPath(homeDir?: string): string {
   return path.join(runtimeDirectoryPath(homeDir), "wrappers", "bin");
 }

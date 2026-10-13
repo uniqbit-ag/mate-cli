@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { COMPANION_SYNC_COMMAND } from "../runtime/companion-sync";
 import { recordCompanionSync } from "../runtime/companion-git-state";
@@ -11,6 +11,7 @@ import { companionLockPath } from "../runtime/companion-lock";
 import { mateVersion } from "../runtime/install";
 import { computeProjectionStamp, writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { manifestPath } from "../runtime/runtime-document-manifest";
 import { buildSessionGuidance } from "./session-guidance";
 import { buildBanner } from "./session-banner";
 
@@ -115,6 +116,63 @@ describe("SessionStart repairs the companion", () => {
     expect(outcome.exitCode).toBe(0);
     expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
     expect(bannerMessage(outcome.stdout)).toContain(fixture.companion);
+  });
+
+  test("performs no Git work in a Claude-wrapped repository", async () => {
+    const fixture = makeFixture();
+    commitUpstream(fixture, "remote");
+    fs.writeFileSync(
+      manifestPath(fixture.repo),
+      JSON.stringify({ documents: { ".claude/settings.local.json": [] } }),
+    );
+    const before = git(fixture.companion, "rev-parse", "HEAD");
+
+    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+
+    expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
+    expect(bannerMessage(outcome.stdout)).toContain(fixture.companion);
+  });
+
+  test.each([
+    [
+      "wrapped only for OpenCode",
+      (repo: string) =>
+        fs.writeFileSync(
+          manifestPath(repo),
+          JSON.stringify({ documents: { ".opencode/opencode.json": [] } }),
+        ),
+    ],
+    [
+      "whose manifest cannot be read",
+      (repo: string) => fs.mkdirSync(manifestPath(repo), { recursive: true }),
+    ],
+  ] as const)("owns the Git work in a repository %s", async (_label, arrange) => {
+    const fixture = makeFixture();
+    commitUpstream(fixture, "remote");
+    arrange(fixture.repo);
+
+    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+
+    expect(outcome.exitCode).toBe(0);
+    expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
+  });
+
+  test("a managed session does not read the manifest", async () => {
+    const fixture = makeFixture();
+    const reads = spyOn(fs, "readFileSync");
+    try {
+      await buildBanner(
+        { MATE_ARTIFACT_PATH: fixture.companion, MATE_REPO_PATH: fixture.repo },
+        fixture.repo,
+        [],
+        { homeDir: fixture.home },
+      );
+      expect(reads.mock.calls.map(([file]) => String(file))).not.toContain(
+        manifestPath(fixture.repo),
+      );
+    } finally {
+      reads.mockRestore();
+    }
   });
 
   test("performs no Git work when the synchronization is not due", async () => {

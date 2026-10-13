@@ -4,13 +4,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 
 import { runWrapCommand } from "../../cli/commands/wrap";
 import { FRAMEWORK_NAME } from "../../framework";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
+import { refreshRuntimeDirectory } from "../../lib/runtime-directory-refresh";
+import { syncCompanionUnattended } from "../../runtime/companion-sync";
 import { MATE_ENV } from "../../runtime/env-names";
 import { cleanupWorkingRepository } from "./working-repo-cleanup";
 import type { ClaudeHookGroup, ClaudeSettings } from "./providers/claude-format";
@@ -25,6 +27,11 @@ const tempRoots: string[] = [];
 let originalExitCode: number | undefined;
 let fixtureHome: string;
 const originalHomeDir = runtimeDocumentDeps.homeDir;
+
+/** Wrapped hook commands name the runtime link; the isolated HOME needs one. */
+beforeAll(async () => {
+  await refreshRuntimeDirectory();
+});
 
 beforeEach(() => {
   originalExitCode = process.exitCode;
@@ -383,7 +390,7 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     ).rejects.toThrow();
   }, 30000);
 
-  test("repairs the companion at session start and refuses artifact writes on a fork", async () => {
+  test("leaves the session-start sync to the prepare hook and refuses artifact writes on a fork", async () => {
     const fixture = await makeCompanionAndRepo("mate-m3-git-repair-", []);
     const { upstreamPath } = await gitBackCompanion(fixture, "auto");
     await runWrapCommand(["--companion", fixture.companionPath], fixture.repoPath);
@@ -396,7 +403,7 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     const home = { HOME: fixtureHome };
     const artifact = path.join(fixture.companionPath, "openspec", "changes", "acme", "proposal.md");
 
-    /** Behind only: the repair fast-forwards and the banner carries no note. */
+    /** Behind only: the banner yields Git to the prepare hook's sync and carries no note. */
     const run = (cwd: string, ...args: string[]) =>
       spawnSync("git", args, { cwd, encoding: "utf8" });
     await fs.appendFile(path.join(upstreamPath, "notes.md"), "remote\n", "utf8");
@@ -404,10 +411,10 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     run(upstreamPath, "push", "-q", "origin", "main");
     const before = companionHead(fixture.companionPath);
 
-    const repaired = runHookCommand(banner, {}, fixture.repoPath, home);
-    expect(repaired.exitCode).toBe(0);
-    expect(companionHead(fixture.companionPath)).not.toBe(before);
-    expect(repaired.stdout).not.toContain("companion sync");
+    const yielded = runHookCommand(banner, {}, fixture.repoPath, home);
+    expect(yielded.exitCode).toBe(0);
+    expect(companionHead(fixture.companionPath)).toBe(before);
+    expect(yielded.stdout).not.toContain("companion sync");
     expect(
       runHookCommand(
         guard,
@@ -417,16 +424,13 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
       ).exitCode,
     ).toBe(0);
 
-    /** Forked: the repair declines and reports, and the guard refuses. */
+    /** Forked: the prepare hook's background sync records it, and the guard refuses. */
     await forkCompanionHistory(fixture, upstreamPath);
     await fs.rm(path.join(fixtureHome, `.${FRAMEWORK_NAME}`, "companion-git-state"), {
       recursive: true,
       force: true,
     });
-
-    const reported = runHookCommand(banner, {}, fixture.repoPath, home);
-    expect(reported.exitCode).toBe(0);
-    expect(reported.stdout).toContain(`${FRAMEWORK_NAME} companion sync`);
+    await syncCompanionUnattended(fixture.companionPath, { ttlMs: 0, homeDir: fixtureHome });
 
     const refused = runHookCommand(
       guard,

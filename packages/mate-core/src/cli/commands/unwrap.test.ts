@@ -9,7 +9,7 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
 import type { LinkedRepository } from "../../lib/orchestrator/types";
-import { isWorkingRepositoryWrapped } from "../../lib/orchestrator/working-repo-projection";
+import { readWrapState } from "../../runtime/wrap-state";
 import { runUnwrapCommand } from "./unwrap";
 import { runWrapCommand } from "./wrap";
 
@@ -82,9 +82,8 @@ const exists = (candidate: string) =>
 
 describe("runUnwrapCommand", () => {
   /**
-   * The round trip the refusal in `FrameworkLauncher.prepare` reads: after a
-   * wrap the repository is wrapped and a launch is refused, and after an unwrap
-   * it is not, with the Repository Link intact so the launch resolves again.
+   * After a wrap the repository is wrapped, and after an unwrap it is not, with
+   * the Repository Link intact so the next managed launch resolves and re-wraps.
    */
   test("withdraws what a wrap placed and leaves the link standing", async () => {
     const { repoPath, companionPath } = await makeLinkedRepo("mate-unwrap-roundtrip-");
@@ -101,7 +100,7 @@ describe("runUnwrapCommand", () => {
     } finally {
       wrapped.restore();
     }
-    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(true);
+    expect((await readWrapState(repoPath)).runtimes.has("claude")).toBe(true);
     expect(await fs.realpath(path.join(repoPath, ".claude", "skills", "acme"))).toBe(
       await fs.realpath(skill),
     );
@@ -115,8 +114,10 @@ describe("runUnwrapCommand", () => {
 
     expect(process.exitCode ?? 0).toBe(0);
     expect(unwrapped.out.join("\n")).toContain("Unwrapped app");
-    expect(unwrapped.out.join("\n")).toContain(`${FRAMEWORK_NAME} claude`);
-    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(false);
+    expect(unwrapped.out.join("\n")).toContain(
+      `next \`${FRAMEWORK_NAME} claude\` or \`${FRAMEWORK_NAME} opencode\` wraps`,
+    );
+    expect((await readWrapState(repoPath)).runtimes.has("claude")).toBe(false);
     await expect(fs.access(path.join(repoPath, ".claude", "skills", "acme"))).rejects.toThrow();
     await expect(fs.readFile(path.join(skill, "SKILL.md"), "utf8")).resolves.toBe("acme skill\n");
     await expect(fs.readFile(custom, "utf8")).resolves.toBe("user skill\n");

@@ -4,12 +4,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import {
-  links,
-  manifestPath,
-  readManifest,
-  wrappedFor,
-} from "../../runtime/runtime-document-manifest";
+import { links, manifestPath, readManifest } from "../../runtime/runtime-document-manifest";
+import { wrapStateOf } from "../../runtime/wrap-state";
 import {
   reconcileWorkingRepoClaudeSkillLinks,
   removeWorkingRepoClaudeSkillLinks,
@@ -109,6 +105,28 @@ describe("Claude working-repository skill links", () => {
     expect(await fs.readlink(link)).toBe(before);
   });
 
+  test("a link spelled differently but resolving to the recorded target is current", async () => {
+    const { repoPath, companionPath } = await makeFixture("claude-skill-realpath-");
+    /** A Windows junction reads back `\\?\`-prefixed; an alias spelling stands in for it. */
+    const alias = path.join(path.dirname(companionPath), "alias");
+    await fs.symlink(companionPath, alias, directoryLinkType);
+    await reconcileWorkingRepoClaudeSkillLinks(repoPath, alias, true, [alias]);
+    const link = path.join(repoPath, ".claude", "skills", "acme");
+    await fs.unlink(link);
+    await fs.symlink(
+      path.join(companionPath, ".claude", "skills", "acme"),
+      link,
+      directoryLinkType,
+    );
+    const manifest = await fs.readFile(manifestPath(repoPath), "utf8");
+
+    await expect(
+      reconcileWorkingRepoClaudeSkillLinks(repoPath, alias, true, [alias]),
+    ).resolves.toBe("current");
+
+    expect(await fs.readFile(manifestPath(repoPath), "utf8")).toBe(manifest);
+  });
+
   test("removes stale Mate links when Claude is disabled", async () => {
     const { repoPath, companionPath } = await makeFixture("claude-skill-disabled-");
     const custom = path.join(repoPath, ".claude", "skills", "custom", "SKILL.md");
@@ -153,7 +171,7 @@ describe("Claude working-repository skill links", () => {
         target: path.join(companionPath, ".claude", "skills", "acme"),
       },
     });
-    expect(wrappedFor(manifest, "claude")).toBe(true);
+    expect(wrapStateOf(manifest).runtimes.has("claude")).toBe(true);
   });
 
   test("re-pinning replaces a same-name recorded link without a registry", async () => {

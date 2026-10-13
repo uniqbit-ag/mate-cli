@@ -11,10 +11,10 @@ import { resolveForLaunch } from "../../lib/orchestrator/framework-context";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
-import {
-  isWorkingRepositoryWrapped,
-  project,
-} from "../../lib/orchestrator/working-repo-projection";
+import { project } from "../../lib/orchestrator/working-repo-projection";
+import type { WrapPassResult } from "../../lib/orchestrator/wrap-pass";
+import { EMPTY_MANIFEST, type WrapRuntime } from "../../runtime/runtime-document-manifest";
+import { readWrapState, wrapStateOf } from "../../runtime/wrap-state";
 import type { LinkedRepository } from "../../lib/orchestrator/types";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
 import { parseWrapArgs, runWrapCommand } from "./wrap";
@@ -279,7 +279,7 @@ describe("runWrapCommand", () => {
     expect(process.exitCode).toBe(1);
     expect(err.join("\n")).toContain("failed to write the projection for app");
     expect(await fs.exists(envPath(repoPath))).toBe(false);
-    expect(await isWorkingRepositoryWrapped(repoPath, "claude")).toBe(true);
+    expect((await readWrapState(repoPath)).runtimes.has("claude")).toBe(true);
   });
 
   test("warns about a tracked runtime document when it writes it, and only then", async () => {
@@ -324,8 +324,11 @@ describe("runWrapCommand", () => {
           projectionRoot: projectionDir(repoPath),
           companionPath,
           documents: [],
+          writtenDocuments: [],
           changed: { written: ["a", "b"], removed: ["c"] },
           warnings: ["acme needs attention"],
+          runtimes: new Set(),
+          wrapState: wrapStateOf(EMPTY_MANIFEST),
         }),
       });
     } finally {
@@ -396,12 +399,7 @@ describe("runWrapCommand", () => {
     expect(await fs.exists(yamlPath(repoPath))).toBe(true);
   });
 
-  /**
-   * Wrapping switches the repository out of managed launches, and a successful
-   * command is the only place the operator can learn that before hitting the
-   * refusal.
-   */
-  test("says that the managed launches no longer run here", async () => {
+  test("says that both session kinds work here", async () => {
     const { repoPath } = await makeLinkedRepo("wrap-notice-");
 
     const { out, restore } = capture();
@@ -412,8 +410,69 @@ describe("runWrapCommand", () => {
     }
 
     const printed = out.join("\n");
-    expect(printed).toContain(`\`${FRAMEWORK_NAME} claude\` does not run in a Claude-wrapped`);
+    expect(printed).toContain("`claude`");
+    expect(printed).toContain(`\`${FRAMEWORK_NAME} claude\``);
+    expect(printed).toContain("both work here");
+    expect(printed).not.toContain("does not run");
+    expect(printed).not.toContain("context-mode");
     expect(printed).toContain(`${FRAMEWORK_NAME} unwrap`);
+  });
+
+  test.each([
+    ["Claude", ["claude"], ["claude"], ["opencode"]],
+    ["OpenCode", ["opencode"], ["opencode"], ["claude"]],
+  ] as const)(
+    "a %s-only pass names only its runtime, whatever paths it changed",
+    async (_label, covered, named, unnamed) => {
+      const { repoPath, companionPath } = await makeLinkedRepo("wrap-runtimes-");
+      const passed: WrapPassResult = {
+        kind: "written",
+        projectionRoot: projectionDir(repoPath),
+        companionPath,
+        documents: [],
+        writtenDocuments: [],
+        changed: { written: [".claude/skills/acme"], removed: [] },
+        warnings: [],
+        runtimes: new Set<WrapRuntime>(covered),
+        wrapState: wrapStateOf(EMPTY_MANIFEST),
+      };
+      const { out, restore } = capture();
+      try {
+        await runWrapCommand([], repoPath, { runWrapPass: async () => passed });
+      } finally {
+        restore();
+      }
+
+      const notice = out.find((line) => line.startsWith("Start sessions")) ?? "";
+      for (const tool of named) {
+        expect(notice).toContain(`\`${tool}\``);
+        expect(notice).toContain(`\`${FRAMEWORK_NAME} ${tool}\``);
+      }
+      for (const tool of unnamed) {
+        expect(notice).not.toContain(`\`${tool}\``);
+        expect(notice).not.toContain(`\`${FRAMEWORK_NAME} ${tool}\``);
+      }
+    },
+  );
+
+  test("notes that context-mode stays launch-only when it is enabled", async () => {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-context-mode-");
+    await fs.mkdir(path.join(companionPath, `.${FRAMEWORK_NAME}`, "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
+      "allowedAgents:\n  - claude\ncapabilities:\n  - name: context-mode\n",
+    );
+
+    const { out, restore } = capture();
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      restore();
+    }
+
+    expect(out.join("\n")).toContain(
+      `context-mode loads only in sessions started with \`${FRAMEWORK_NAME} claude\``,
+    );
   });
 
   test("a managed launch does not reconcile the working target", async () => {

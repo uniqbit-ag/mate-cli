@@ -89,5 +89,7 @@ export async function runUnwrapCommand(
   if (result.copies.length > 0) {
     console.log(`  Withdrawn: ${result.copies.length} companion copies under .opencode/`);
   }
-  console.log(`\`${FRAMEWORK_NAME} claude\` works here again.`);
+  console.log(
+    `The next \`${FRAMEWORK_NAME} claude\` or \`${FRAMEWORK_NAME} opencode\` wraps this repository again.`,
+  );
 }

@@ -3,21 +3,18 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { recordCompanionSyncUnfinished } from "../../runtime/companion-git-state";
 import { withCompanionLock, type CompanionLockOptions } from "../../runtime/companion-lock";
 import {
+  launchRecoveryStalenessLines,
   syncCompanionUnattended,
-  unattendedSyncStalenessLines,
   type UnattendedSyncOutcome,
 } from "../../runtime/companion-sync";
+import type { WrapState } from "../../runtime/wrap-state";
 import { syncCompanionFiles } from "../../tools/setup";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
 import { attendedLockOptions, syncCompanionGit } from "./companion-git-sync";
 import { readCompanionConfig } from "./config-store";
 import { entryFailureMessage, firstFailure, type ProjectionChangedPaths } from "./projection-types";
 import { LaunchPreflightError, type FrameworkConfig, type LinkedRepository } from "./types";
-import {
-  isWorkingRepositoryWrapped,
-  project,
-  projectWorkingRepositoryBestEffort,
-} from "./working-repo-projection";
+import { project, projectWorkingRepositoryBestEffort } from "./working-repo-projection";
 import { runWrapPass } from "./wrap-pass";
 
 /**
@@ -32,7 +29,6 @@ export type PrepareMode = "attended" | "local" | "sync";
 export type PrepareRuntime = "claude" | "opencode";
 
 export type PrepareStepName =
-  | "refusal"
   | "lock"
   | "git-sync"
   | "file-sync"
@@ -44,6 +40,8 @@ export interface PrepareStep {
   step: PrepareStepName;
   outcome: "ok" | "skipped" | "warning" | "failed";
   detail?: string;
+  /** The runtimes a `working-target` or `preflight` step answered for. */
+  runtimes?: PrepareRuntime[];
 }
 
 export interface PrepareResult {
@@ -51,6 +49,8 @@ export interface PrepareResult {
   ok: boolean;
   mode: PrepareMode;
   runtime: PrepareRuntime;
+  /** Every runtime this prepare reconciled and preflighted. */
+  runtimes: PrepareRuntime[];
   repositoryId?: string;
   companionPath: string;
   steps: PrepareStep[];
@@ -59,10 +59,17 @@ export interface PrepareResult {
   companionChanged?: true;
   /** The first failed step's own error, for an attended caller to raise as it was. */
   failure?: unknown;
+  /** The wrap state the `working-target` step's pass left; a launch reads no manifest itself. */
+  wrapState?: WrapState;
 }
 
 export interface PrepareSessionInput {
   runtime: PrepareRuntime;
+  /**
+   * `local`/`sync`: the runtimes the repository is wrapped for, reconciled in
+   * one wrap pass and preflighted each; `[runtime]` when absent.
+   */
+  runtimes?: readonly PrepareRuntime[];
   companionPath: string;
   /** Absent for a companion-scope launch: nothing is projected. */
   repository?: LinkedRepository;
@@ -125,26 +132,12 @@ export const sessionPrepareDeps = {
    * which branch answered. Best-effort — a launch carries its own configuration.
    */
   refreshProjectionRoot: projectWorkingRepositoryBestEffort,
-  isWrapped: isWorkingRepositoryWrapped,
   runWrapPass,
   runCapabilityPreflight,
   withCompanionLock,
   /** As the launch decides it: Git may prompt only with a terminal on both ends. */
   isInteractiveTerminal: () => !!(process.stdin.isTTY && process.stdout.isTTY),
 };
-
-/**
- * A managed Claude launch in a Claude-wrapped repo would load the companion
- * twice (wrapped documents plus launch flags), so it is refused before any
- * write, the lock included. OpenCode's managed launch is itself a wrap.
- */
-function wrappedRepositoryRefusal(repository: LinkedRepository): string {
-  return [
-    `${FRAMEWORK_NAME}: ${repository.id} is wrapped for Claude — \`${FRAMEWORK_NAME} claude\` does not run in a Claude-wrapped working repository.`,
-    "Start the session yourself: `claude` — the wrap delivers the companion guidance.",
-    `Or restore managed launches: \`${FRAMEWORK_NAME} unwrap\`.`,
-  ].join("\n");
-}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -155,6 +148,7 @@ class StepLog {
   readonly steps: PrepareStep[] = [];
   readonly warnings: string[] = [];
   failure: unknown;
+  wrapState: WrapState | undefined;
   stopped = false;
   companionChanged = false;
 
@@ -164,8 +158,12 @@ class StepLog {
     this.steps.push(step);
   }
 
-  fail(step: PrepareStepName, error: unknown, detail = message(error)): void {
-    this.steps.push({ step, outcome: "failed", detail });
+  fail(
+    step: PrepareStepName,
+    error: unknown,
+    overrides: Pick<PrepareStep, "detail" | "runtimes"> = {},
+  ): void {
+    this.steps.push({ step, outcome: "failed", detail: message(error), ...overrides });
     if (this.failure === undefined) this.failure = error;
     if (this.attended) this.stopped = true;
   }
@@ -201,26 +199,38 @@ function wrapDetail(wrapped: {
   return parts.length > 0 ? `updated (${parts.join("; ")})` : "updated";
 }
 
-/** OpenCode: the wrap pass alone, its copies included — the managed launch is a wrap. */
-async function projectOpenCode(
+function runtimesOf(input: PrepareSessionInput): PrepareRuntime[] {
+  return input.mode !== "attended" && input.runtimes?.length
+    ? [...input.runtimes]
+    : [input.runtime];
+}
+
+/**
+ * One wrap pass for `runtimes`, OpenCode's copies included. Every managed
+ * launch is this pass followed by the agent, for either runtime.
+ */
+async function reconcileWrap(
   input: PrepareSessionInput,
   repository: LinkedRepository,
+  runtimes: PrepareRuntime[],
   config: FrameworkConfig,
   run: StepLog,
 ): Promise<void> {
   const wrapped = await sessionPrepareDeps.runWrapPass(input.companionPath, repository, {
-    runtimes: ["opencode"],
+    runtimes,
     config,
   });
   if (wrapped.kind === "failed") {
-    run.fail("working-target", new LaunchPreflightError(wrapped.message), wrapped.message);
+    run.fail("working-target", new LaunchPreflightError(wrapped.message), { runtimes });
     return;
   }
   run.warnings.push(...wrapped.warnings);
+  run.wrapState = wrapped.wrapState;
   run.push({
     step: "working-target",
     outcome: "ok",
     detail: wrapped.kind === "written" ? wrapDetail(wrapped) : "current",
+    runtimes,
   });
 }
 
@@ -249,14 +259,33 @@ async function projectClaude(
   const failure = firstFailure(result.outcomes);
   if (failure) {
     const detail = entryFailureMessage(failure, repository.id);
-    run.fail("launch-projection", new LaunchPreflightError(`${FRAMEWORK_NAME}: ${detail}`), detail);
+    run.fail("launch-projection", new LaunchPreflightError(`${FRAMEWORK_NAME}: ${detail}`), {
+      detail,
+    });
     return;
   }
   run.push({ step: "launch-projection", outcome: "ok" });
   await deps.refreshProjectionRoot(input.companionPath, repository);
+  /** A launch is a wrap: created when missing, reconciled when stale, so the launch can defer to it. */
+  await reconcileWrap(input, repository, ["claude"], config, run);
 }
 
-/** File sync, one projection pass for the runtime, and the capability preflight. */
+/** Attended: the launch's own runtime. Otherwise one wrap pass for every wrapped runtime. */
+async function projectRepository(
+  input: PrepareSessionInput,
+  repository: LinkedRepository,
+  runtimes: PrepareRuntime[],
+  config: FrameworkConfig,
+  run: StepLog,
+): Promise<void> {
+  if (input.mode === "attended" && input.runtime === "claude") {
+    await projectClaude(input, repository, config, run);
+    return;
+  }
+  await reconcileWrap(input, repository, runtimes, config, run);
+}
+
+/** File sync, one projection pass, and the capability preflight per runtime. */
 async function runLocal(
   input: PrepareSessionInput,
   config: FrameworkConfig,
@@ -265,27 +294,31 @@ async function runLocal(
   await runFileSync(input, config, run);
   if (run.stopped) return;
 
+  const runtimes = runtimesOf(input);
   if (input.repository) {
-    await (input.runtime === "opencode" ? projectOpenCode : projectClaude)(
-      input,
-      input.repository,
-      config,
-      run,
-    );
+    await projectRepository(input, input.repository, runtimes, config, run);
     if (run.stopped) return;
   }
 
-  try {
-    await sessionPrepareDeps.runCapabilityPreflight({
-      companionPath: input.companionPath,
-      config,
-      repository: input.repository,
-      providerId: input.runtime,
-    });
-    run.push({ step: "preflight", outcome: "ok" });
-  } catch (error) {
-    run.fail("preflight", error);
-  }
+  /** Attended prepares one runtime, so running these together never skips a stop. */
+  const outcomes = await Promise.allSettled(
+    runtimes.map((runtime) =>
+      sessionPrepareDeps.runCapabilityPreflight({
+        companionPath: input.companionPath,
+        config,
+        repository: input.repository,
+        providerId: runtime,
+      }),
+    ),
+  );
+  outcomes.forEach((outcome, index) => {
+    const answered = [runtimes[index]!];
+    if (outcome.status === "fulfilled") {
+      run.push({ step: "preflight", outcome: "ok", runtimes: answered });
+    } else {
+      run.fail("preflight", outcome.reason, { runtimes: answered });
+    }
+  });
 }
 
 async function runAttended(
@@ -331,7 +364,7 @@ async function runSync(input: PrepareSessionInput, run: StepLog): Promise<void> 
 
   if (outcome.status === "unfinished") {
     run.push({ step: "git-sync", outcome: "warning", detail: outcome.reason });
-    run.warnings.push(...unattendedSyncStalenessLines(outcome, input.runtime));
+    run.warnings.push(...launchRecoveryStalenessLines(outcome, runtimesOf(input)));
     return;
   }
   if (outcome.status !== "complete") {
@@ -360,24 +393,15 @@ export async function prepareSession(input: PrepareSessionInput): Promise<Prepar
     ok: !run.steps.some((step) => step.outcome === "failed"),
     mode: input.mode,
     runtime: input.runtime,
+    runtimes: runtimesOf(input),
     ...(input.repository ? { repositoryId: input.repository.id } : {}),
     companionPath: input.companionPath,
     steps: run.steps,
     warnings: run.warnings,
     ...(run.companionChanged ? { companionChanged: true as const } : {}),
     ...(run.failure === undefined ? {} : { failure: run.failure }),
+    ...(run.wrapState ? { wrapState: run.wrapState } : {}),
   });
-
-  if (
-    input.mode === "attended" &&
-    input.runtime === "claude" &&
-    input.repository &&
-    (await deps.isWrapped(input.repository.path, "claude"))
-  ) {
-    const refusal = wrappedRepositoryRefusal(input.repository);
-    run.fail("refusal", new LaunchPreflightError(refusal), refusal);
-    return result();
-  }
 
   const locked = await deps.withCompanionLock(input.companionPath, lockOptions(input), async () => {
     if (input.mode === "sync") return runSync(input, run);

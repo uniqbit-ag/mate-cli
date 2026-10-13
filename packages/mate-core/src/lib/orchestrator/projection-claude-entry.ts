@@ -11,6 +11,7 @@ import {
   type ClaudeSettings,
 } from "../../tools/setup/providers/claude-format";
 import { isMateGuardHookGroup } from "../../tools/setup/providers/claude-plugin-hooks";
+import { readWrapState, type WrapState } from "../../runtime/wrap-state";
 import { pruneEmptyAncestors } from "../../tools/setup/utils";
 import { GlobalConfigStore } from "./global-config-store";
 
@@ -52,14 +53,21 @@ function parseSettings(raw: string | null): ClaudeSettings {
 }
 
 /**
- * Strips the managed hook groups earlier releases wrote here, but leaves the
- * guard group the `wrap` scope places: that one is managed by another entry,
- * and stripping it would disarm every Unmanaged Session on the next launch.
+ * Strips the managed hook groups earlier releases wrote here, but leaves every
+ * group the `wrap` scope places: those are owned by the wrap's own entry —
+ * Capability groups match a managed marker too — and stripping them would
+ * disarm every Unmanaged Session on the next launch.
  */
-function withoutForeignManagedHookGroups(settings: ClaudeSettings): ClaudeSettings {
+function withoutForeignManagedHookGroups(
+  settings: ClaudeSettings,
+  wrap: WrapState,
+): ClaudeSettings {
   const hooks = filterClaudeHookGroups(
     settings.hooks ?? {},
-    (group) => isMateGuardHookGroup(group) || !isManagedHookGroup(group),
+    (group) =>
+      isMateGuardHookGroup(group) ||
+      wrap.carriesClaudeHookGroup(group) ||
+      !isManagedHookGroup(group),
   );
   const next = { ...settings };
   if (Object.keys(hooks).length > 0) next.hooks = hooks;
@@ -81,7 +89,10 @@ export async function syncWorkingRepoClaudeAdditionalDirectories(
 ): Promise<"written" | "current"> {
   const target = settingsPath(repoPath);
   const raw = await readRaw(target);
-  const existing = withoutForeignManagedHookGroups(parseSettings(raw));
+  const existing = withoutForeignManagedHookGroups(
+    parseSettings(raw),
+    await readWrapState(repoPath),
+  );
   const permissions = { ...existing.permissions };
   const existingAdditionalDirectories = Array.isArray(permissions.additionalDirectories)
     ? permissions.additionalDirectories

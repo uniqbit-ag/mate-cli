@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { readProjectionFile } from "../../runtime/projection";
+import { realLinkTarget, realOrResolved } from "../fs-utils";
 import {
   links,
   readManifest,
@@ -37,7 +38,7 @@ async function skillNames(root: string): Promise<string[]> {
 
 async function linkTarget(link: string): Promise<string | null> {
   const target = await fs.readlink(link).catch(() => null);
-  return target === null ? null : path.resolve(path.dirname(link), target);
+  return target === null ? null : realLinkTarget(link, target);
 }
 
 async function registeredSkillRoots(
@@ -51,11 +52,12 @@ async function registeredSkillRoots(
     companionPath ?? "",
     projection?.projection.companionPath ?? "",
   ];
-  return [
-    ...new Set(
-      candidates.filter(Boolean).map((candidate) => path.resolve(candidate, CLAUDE_SKILLS_PATH)),
-    ),
-  ];
+  const roots = await Promise.all(
+    candidates
+      .filter(Boolean)
+      .map((candidate) => realOrResolved(path.resolve(candidate, CLAUDE_SKILLS_PATH))),
+  );
+  return [...new Set(roots)];
 }
 
 async function createSkillLink(target: string, link: string): Promise<void> {
@@ -90,16 +92,13 @@ export async function reconcileWorkingRepoClaudeSkillLinks(
     if (target === null) continue;
     const record = recorded[recordKey(entry.name)];
     const owned = record
-      ? record.target === target
+      ? (await realOrResolved(record.target)) === target
       : roots.some((root) => path.dirname(target) === root);
     if (!owned) continue;
 
-    if (
-      currentRoot &&
-      target === path.join(currentRoot, entry.name) &&
-      sourceNames.has(entry.name)
-    ) {
-      records[recordKey(entry.name)] = { runtime: "claude", target };
+    const wanted = currentRoot ? path.join(currentRoot, entry.name) : null;
+    if (wanted && sourceNames.has(entry.name) && (await realOrResolved(wanted)) === target) {
+      records[recordKey(entry.name)] = { runtime: "claude", target: wanted };
       continue;
     }
 

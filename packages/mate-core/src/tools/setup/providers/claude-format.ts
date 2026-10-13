@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
+
 // Structurally matches `McpServerDescriptor` from ../plugin; declared here so
 // the format module stays dependency-free of the plugin contract (which
 // imports hook types from this module).
@@ -17,17 +19,11 @@ export interface McpEntryDescriptor {
 // groups are Mate-managed lives here too, because the companion-side reconcile
 // and the working-repo projection entry must strip the same set.
 
-export interface ClaudeHookCommand {
-  type?: string;
-  command?: string;
-  args?: string[];
-  timeout?: number;
-}
-
-export interface ClaudeHookGroup {
-  matcher?: string;
-  hooks?: ClaudeHookCommand[];
-}
+export {
+  hookGroupKey,
+  type ClaudeHookCommand,
+  type ClaudeHookGroup,
+} from "../../../runtime/claude-hook-group";
 
 export type ClaudeHookMap = Record<string, ClaudeHookGroup[]>;
 
@@ -41,10 +37,6 @@ export interface ClaudeSettings {
 export interface ClaudeMcpConfig {
   mcpServers?: Record<string, unknown>;
   [key: string]: unknown;
-}
-
-function hookGroupKey(group: ClaudeHookGroup): string {
-  return JSON.stringify(group);
 }
 
 /** Append incoming hook groups per event, skipping structurally identical ones. */

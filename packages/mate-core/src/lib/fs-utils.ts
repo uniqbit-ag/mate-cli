@@ -33,3 +33,16 @@ export async function pathIsDirectory(candidatePath: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Real path, so a Windows junction (read back `\\?\`-prefixed) or an aliased
+ * spelling compares equal; resolved text when dangling.
+ */
+export async function realOrResolved(candidate: string): Promise<string> {
+  return fs.realpath(candidate).catch(() => path.resolve(candidate));
+}
+
+/** {@link realOrResolved} for a link whose raw `readlink` text is `target`. */
+export async function realLinkTarget(link: string, target: string): Promise<string> {
+  return fs.realpath(link).catch(() => path.resolve(path.dirname(link), target));
+}

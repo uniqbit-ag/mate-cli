@@ -5,9 +5,10 @@ import {
   repositoryWrappedForOpenCode,
 } from "../../src/opencode/companion-hooks";
 import { readContext } from "../../src/opencode/companion-policy";
-import { registerSessionPrepare, spawnPrepareRunner } from "../../src/opencode/session-prepare";
+import { registerSessionPrepare } from "../../src/opencode/session-prepare";
 import { hasLaunchEnvironment } from "../../src/runtime/env";
-import { mateDeclaredOpenCodeMcpServers } from "../../src/runtime/runtime-document-manifest";
+import { spawnPrepareRunner } from "../../src/runtime/session-prepare-runner";
+import { readWrapStateSync } from "../../src/runtime/wrap-state";
 
 import { registerCompanionAccess } from "./add-dir";
 import { missingRuntimeDirectoryMessage, registerCompanion, resolveMateBin } from "./companion";
@@ -30,7 +31,7 @@ async function registerPrepare(api: Context, companionPath: string) {
     directory: api.location.directory,
     repoPath: repoRoot,
     companionPath,
-    mateServers: mateDeclaredOpenCodeMcpServers(repoRoot),
+    mateServers: readWrapStateSync(repoRoot).openCodeMcpServers,
     run: spawnPrepareRunner(mateBin, repoRoot),
   });
 }

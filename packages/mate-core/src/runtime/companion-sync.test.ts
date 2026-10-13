@@ -18,6 +18,8 @@ import {
   cachedCompanionForkState,
   companionForkRefusal,
   COMPANION_SYNC_COMMAND,
+  CLAUDE_LAUNCH_COMMAND,
+  launchRecoveryStalenessLines,
   OPENCODE_LAUNCH_COMMAND,
   COMPANION_SYNC_TIMEOUT_MS,
   persistedCompanionGitStalenessLines,
@@ -623,6 +625,21 @@ describe("operator-facing staleness lines", () => {
     expect(lines).toEqual([
       `Companion not updated: history has diverged from origin/main. Restart with \`${OPENCODE_LAUNCH_COMMAND}\` to fix it.`,
     ]);
+  });
+
+  test("name the managed launch of each wrapped runtime for a prepare", () => {
+    const outcome = {
+      status: "unfinished" as const,
+      changed: false,
+      companionPath: "/tmp/acme-companion",
+      reason: "remote unreachable",
+    };
+    expect(launchRecoveryStalenessLines(outcome, ["claude"])).toEqual([
+      `Companion not updated: remote unreachable. Restart with \`${CLAUDE_LAUNCH_COMMAND}\` to fix it.`,
+    ]);
+    expect(launchRecoveryStalenessLines(outcome, ["claude", "opencode"])[0]).toContain(
+      `\`${CLAUDE_LAUNCH_COMMAND}\` or \`${OPENCODE_LAUNCH_COMMAND}\``,
+    );
   });
 
   test("are empty for every other outcome", async () => {

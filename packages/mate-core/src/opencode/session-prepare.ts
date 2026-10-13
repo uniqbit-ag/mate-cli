@@ -1,7 +1,10 @@
-import { spawn } from "node:child_process";
-
 import type { Cleanup, Context } from "@opencode/plugin/promise/plugin";
 
+import {
+  PREPARE_TIMEOUT_MS,
+  type PrepareRun,
+  type PrepareRunner,
+} from "../runtime/session-prepare-runner";
 import { recordSessionNotes, type SessionNotePhase } from "./session-notes";
 
 /**
@@ -9,23 +12,6 @@ import { recordSessionNotes, type SessionNotePhase } from "./session-notes";
  * repo gets a managed launch's local prepare, then a background Git sync.
  * Spawned, so a crash or stale module never reaches the shared service.
  */
-
-export interface PrepareRun {
-  ok: boolean;
-  /** Failed or warned steps, already worded for the operator. */
-  notes: string[];
-  /** The sync fast-forwarded the companion and re-projected it. */
-  changed?: boolean;
-}
-
-export interface PrepareRequest {
-  /** `--sync`: fast-forward the companion, re-project when it moved. */
-  sync: boolean;
-  /** Stop waiting after this long; the prepare itself is never terminated. */
-  timeoutMs?: number;
-}
-
-export type PrepareRunner = (request: PrepareRequest) => Promise<PrepareRun>;
 
 export interface SessionPrepareOptions {
   directory: string;
@@ -39,8 +25,6 @@ export interface SessionPrepareOptions {
   debounceMs?: number;
 }
 
-/** A guard against a hung local phase; it contains no network work. */
-export const PREPARE_TIMEOUT_MS = 30_000;
 const PREPARE_DEBOUNCE_MS = 5_000;
 
 /** Keyed by companion: several repositories, and several locations, share one companion. */
@@ -49,106 +33,6 @@ const lastSynced = new Map<string, number>();
 /** Test seam: the debounce is process-wide. */
 export function resetPrepareDebounce(): void {
   lastSynced.clear();
-}
-
-interface PrepareJson {
-  ok?: boolean;
-  steps?: Array<{ step?: string; outcome?: string; detail?: string }>;
-  warnings?: string[];
-  companionChanged?: boolean;
-}
-
-export function parsePrepareOutput(stdout: string, exitCode: number | null): PrepareRun {
-  let parsed: PrepareJson | null = null;
-  try {
-    parsed = JSON.parse(stdout) as PrepareJson;
-  } catch {
-    /* not JSON: the command failed before it could report */
-  }
-  if (!parsed) {
-    const tail = stdout.trim().split("\n").slice(-3).join(" ");
-    return { ok: false, notes: [`exited ${exitCode ?? "abnormally"}${tail ? `: ${tail}` : ""}`] };
-  }
-  const notes = [
-    ...(parsed.steps ?? [])
-      .filter((step) => step.outcome === "failed")
-      .map((step) => `${step.step}: ${step.detail ?? "failed"}`),
-    ...(parsed.warnings ?? []),
-  ];
-  const changed = parsed.companionChanged === true;
-  return { ok: parsed.ok === true && exitCode === 0, notes, ...(changed ? { changed } : {}) };
-}
-
-function quoteForCmd(arg: string): string {
-  return /[\s"&|<>^()]/.test(arg) ? `"${arg.replaceAll('"', '""')}"` : arg;
-}
-
-/**
- * How to run the runtime launcher without a shell, so a path with spaces stays
- * one argument. Windows cannot execute the `.cmd` launcher directly, so it goes
- * through `cmd.exe` with the line quoted here rather than by a shell.
- */
-export function launcherInvocation(
-  mateBin: string,
-  args: readonly string[],
-  platform: NodeJS.Platform = process.platform,
-): { command: string; args: string[]; verbatim: boolean } {
-  if (platform !== "win32") return { command: mateBin, args: [...args], verbatim: false };
-  const line = [mateBin, ...args].map(quoteForCmd).join(" ");
-  return { command: "cmd.exe", args: ["/d", "/s", "/c", `"${line}"`], verbatim: true };
-}
-
-/**
- * Spawns `mate session prepare` through the runtime-directory launcher. The
- * sync is detached so it outlives a closing location: a pull must not be cut
- * off, and the companion lock stays held until its Git work ends.
- */
-export function spawnPrepareRunner(mateBin: string, repoPath: string): PrepareRunner {
-  return ({ sync, timeoutMs }) =>
-    new Promise((resolve) => {
-      const invocation = launcherInvocation(mateBin, [
-        "session",
-        "prepare",
-        "--repo",
-        repoPath,
-        "--json",
-        ...(sync ? ["--sync"] : []),
-      ]);
-      const child = spawn(invocation.command, invocation.args, {
-        cwd: repoPath,
-        stdio: ["ignore", "pipe", "pipe"],
-        shell: false,
-        detached: sync,
-        windowsHide: true,
-        windowsVerbatimArguments: invocation.verbatim,
-      });
-      if (sync) child.unref();
-      let settled = false;
-      const settle = (run: PrepareRun) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(run);
-      };
-      let stdout = "";
-      let stderr = "";
-      child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
-      child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
-      const timer =
-        timeoutMs === undefined
-          ? undefined
-          : setTimeout(
-              () => settle({ ok: false, notes: [`timed out after ${timeoutMs / 1000}s`] }),
-              timeoutMs,
-            );
-      child.once("error", (error) =>
-        settle({ ok: false, notes: [`cannot run ${mateBin}: ${error.message}`] }),
-      );
-      child.once("close", (code) => {
-        const run = parsePrepareOutput(stdout, code);
-        settle(run.ok || stdout.trim() ? run : { ok: false, notes: [...run.notes, stderr.trim()] });
-      });
-    });
 }
 
 function logger(options: SessionPrepareOptions): (line: string) => void {

@@ -3,10 +3,11 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../framework";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repo-local-registry";
 import type { ProjectionChangedPaths } from "../../lib/orchestrator/projection-types";
-import { documentRuntime } from "../../runtime/runtime-document-manifest";
 import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
+import { readCompanionConfig } from "../../lib/orchestrator/config-store";
 import { runWrapPass, type WrapPassResult } from "../../lib/orchestrator/wrap-pass";
 import { withCompanionLock } from "../../runtime/companion-lock";
+import { WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { launchAmbiguityDeps } from "./shared/companion-selection";
 
 export interface WrapCommandDependencies {
@@ -132,19 +133,26 @@ export async function runWrapCommand(
     console.error(`${FRAMEWORK_NAME}: warning: ${warning}`);
   }
   reportChangedPaths(result.changed);
-  /**
-   * Said at the moment the mode is switched, not left to be discovered at the
-   * next launch: a Claude wrap makes `mate claude` refuse here, and the operator
-   * has no other way to learn that from a successful command. `mate opencode`
-   * keeps working, because its launch is itself a wrap.
-   */
-  /** `documents` are OS paths; the runtime is read from the POSIX manifest key. */
-  const claudeWrapped = result.documents.some(
-    (document) => documentRuntime(document.split(path.sep).join("/")) === "claude",
-  );
+  const { runtimes } = result;
+  const tools = WRAP_RUNTIMES.filter((runtime) => runtimes.has(runtime));
+  if (tools.length === 0) return;
+  const plain = tools.map((tool) => `\`${tool}\``).join(", ");
+  const managed = tools.map((tool) => `\`${FRAMEWORK_NAME} ${tool}\``).join(", ");
   console.log(
-    claudeWrapped
-      ? `Start Claude sessions yourself now: \`claude\`. \`${FRAMEWORK_NAME} claude\` does not run in a Claude-wrapped repository — \`${FRAMEWORK_NAME} unwrap\` reverses this. \`opencode\` and \`${FRAMEWORK_NAME} opencode\` both work here.`
-      : `Start sessions yourself now: \`opencode\`, or \`${FRAMEWORK_NAME} opencode\`. \`${FRAMEWORK_NAME} unwrap\` reverses this.`,
+    `Start sessions yourself (${plain}) or through ${managed}; both work here. \`${FRAMEWORK_NAME} unwrap\` reverses this.`,
   );
+  if (runtimes.has("claude") && (await contextModeEnabled(result.companionPath))) {
+    console.log(
+      `Note: context-mode loads only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+    );
+  }
+}
+
+async function contextModeEnabled(companionPath: string): Promise<boolean> {
+  try {
+    const config = await readCompanionConfig(companionPath);
+    return (config.capabilities ?? []).some((capability) => capability.name === "context-mode");
+  } catch {
+    return false;
+  }
 }

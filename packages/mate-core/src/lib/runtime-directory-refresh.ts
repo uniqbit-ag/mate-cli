@@ -6,15 +6,18 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../framework";
 import {
   runtimeDirectoryPath,
+  runtimeClaudePluginRoot,
   runtimeMateBin,
   runtimeOpenCodePluginRoot,
   runtimeWrapperBinPath,
 } from "../runtime/runtime-directory";
 import { writeAtomic } from "../runtime/write-atomic";
-import { getOpenCodePluginRoot, getWrapperBinPath } from "./package-paths";
+import { realLinkTarget, realOrResolved } from "./fs-utils";
+import { getClaudePluginRoot, getOpenCodePluginRoot, getWrapperBinPath } from "./package-paths";
 
 export interface RuntimeDirectoryTargets {
   pluginRoot: string;
+  claudePluginRoot: string;
   /** The resolved `wrappers/bin`; its parent is what the `wrappers` link names. */
   wrapperBinPath: string;
   /** The interpreter running this CLI, written into the launcher. */
@@ -59,17 +62,19 @@ export function stableInterpreterPath(
 function currentRuntimeDirectoryTargets(): RuntimeDirectoryTargets {
   return {
     pluginRoot: getOpenCodePluginRoot(),
+    claudePluginRoot: getClaudePluginRoot(),
     wrapperBinPath: getWrapperBinPath(),
     execPath: stableInterpreterPath(process.execPath),
     cliEntry: path.resolve(process.argv[1] ?? ""),
   };
 }
 
+/** The link's {@link realLinkTarget}; `""` when not a link, `null` when absent. */
 async function readLinkTarget(linkPath: string): Promise<string | null> {
   try {
     const stat = await fs.lstat(linkPath);
     if (!stat.isSymbolicLink()) return "";
-    return path.resolve(path.dirname(linkPath), await fs.readlink(linkPath));
+    return await realLinkTarget(linkPath, await fs.readlink(linkPath));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
@@ -82,8 +87,8 @@ async function readLinkTarget(linkPath: string): Promise<string | null> {
  * the entry missing.
  */
 async function pointLink(linkPath: string, target: string): Promise<boolean> {
-  const current = await readLinkTarget(linkPath);
-  if (current === path.resolve(target)) return false;
+  const [current, wanted] = await Promise.all([readLinkTarget(linkPath), realOrResolved(target)]);
+  if (current === wanted) return false;
   await fs.mkdir(path.dirname(linkPath), { recursive: true });
   if (process.platform === "win32") {
     await fs.rm(linkPath, { recursive: true, force: true });
@@ -136,6 +141,9 @@ export async function refreshRuntimeDirectory(
   const changed: string[] = [];
   if (await pointLink(runtimeOpenCodePluginRoot(homeDir), targets.pluginRoot)) {
     changed.push("opencode-plugin");
+  }
+  if (await pointLink(runtimeClaudePluginRoot(homeDir), targets.claudePluginRoot)) {
+    changed.push("claude-plugin");
   }
   const wrappersLink = path.dirname(runtimeWrapperBinPath(homeDir));
   if (await pointLink(wrappersLink, path.dirname(targets.wrapperBinPath))) {
