@@ -28,6 +28,12 @@ import { createUvPlugin } from "./setup/package-managers/uv";
 import type { PackageManagerSetupDeps } from "./setup/package-managers/uv";
 import { applyRequiredSelectionsToConfig } from "./setup/policy";
 import { invalidateInstallState } from "../lib/install";
+import {
+  describeUnknownAudience,
+  installPluginDeclarations,
+  readAudienceSelection,
+  resolveAudience,
+} from "./setup/dynamic-plugins/audiences";
 import { hydrateDynamicPlugins } from "./setup/dynamic-plugins/hydrate";
 import { installDeclaredPlugins } from "./setup/dynamic-plugins/install";
 import {
@@ -139,6 +145,8 @@ export async function executeSetup(
     deps.configStore ??
     new ConfigStore(path.join(cwd, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
   const config = mergeWithDefaults(await configStore.load());
+  const audience = resolveAudience(config, readAudienceSelection(process.env));
+  if (!audience.ok) throw new ConfigError(describeUnknownAudience(audience));
   if (input.allowedAgents !== undefined) {
     config.allowedAgents = [...new Set(input.allowedAgents)];
   }
@@ -162,8 +170,9 @@ export async function executeSetup(
   // Declared plugin packages install and hydrate before the setup plan runs,
   // so a fresh clone reaches a fully applied state from one setup run
   // (install → load → plan).
-  if (config.plugins?.length) {
-    for (const result of await installDeclaredPlugins(companionPath, config.plugins)) {
+  const declarations = installPluginDeclarations(config);
+  if (declarations.length) {
+    for (const result of await installDeclaredPlugins(companionPath, declarations)) {
       if (result.status === "failed") {
         process.stderr.write(
           `${FRAMEWORK_NAME}: plugin "${result.package}" failed to install: ${result.error ?? "unknown error"}\n`,

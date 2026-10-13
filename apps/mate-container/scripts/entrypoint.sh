@@ -50,6 +50,16 @@ unset CREDENTIALS
 PLAN="$("$BUN" "$STARTUP_SCRIPT")" || exit 1
 eval "$PLAN" || fail "the startup plan could not be read"
 
+# The audience this container serves, from the environment or the configuration
+# file alike: Studio and the agent sessions it starts inherit it, so each loads
+# the same effective plugins and default agent that startup verified. An empty
+# plan value means none is served, and none must be left over in the environment.
+if [[ -n "${MATE_PLAN_AUDIENCE:-}" ]]; then
+  export MATE_AUDIENCE="$MATE_PLAN_AUDIENCE"
+else
+  unset MATE_AUDIENCE
+fi
+
 # Startup-only secrets served their purpose: Studio and the agent sessions it
 # starts inherit this environment and must not carry them.
 unset MATE_PLUGIN_REGISTRY_TOKEN MATE_GIT_CLONE_TOKEN MATE_PLUGIN_REGISTRY

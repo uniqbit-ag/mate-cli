@@ -10,6 +10,11 @@ import { pathIsDirectory } from "../../lib/orchestrator/repo-local-registry";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
 import {
+  describeUnknownAudience,
+  readAudienceSelection,
+  resolveAudience,
+} from "../../tools/setup/dynamic-plugins/audiences";
+import {
   inspectDeclaredPlugins,
   type PluginInspection,
   type PluginVerificationFailure,
@@ -26,6 +31,8 @@ interface DoctorDeps {
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
   gitHead?: (memberPath: string) => string | null;
   inspectPlugins?: (companionPath: string) => Promise<PluginInspection>;
+  /** Environment `MATE_AUDIENCE` is read from; defaults to the process environment. */
+  env?: Record<string, string | undefined>;
 }
 
 export type DoctorKind = "core" | "working" | "companion" | "hub";
@@ -59,6 +66,10 @@ export interface DoctorReport {
   toolInstallations?: DoctorToolInstallation[];
   requiredPluginDrift?: Array<{ pluginId: string; kind: string; reason: string }>;
   pluginFailures?: PluginVerificationFailure[];
+  /** Present for a companion that declares audiences or has one selected. */
+  audiences?: { declared: string[]; active: string | null };
+  /** Set when `MATE_AUDIENCE` names an audience the companion does not declare. */
+  audienceError?: string;
   /** IDs of the capabilities the verified plugins provide. */
   pluginCapabilities?: string[];
   engineRequirement?: { range: string; ok: boolean; detail: string };
@@ -215,6 +226,19 @@ function collectConfiguredRootSections(
   report.engineRequirement = collectEngineRequirement(config);
 }
 
+function collectAudiences(
+  report: DoctorReport,
+  config: FrameworkConfig,
+  env: Record<string, string | undefined>,
+): void {
+  const declared = Object.keys(config.audiences ?? {});
+  const requested = readAudienceSelection(env);
+  if (declared.length === 0 && requested === null) return;
+  const resolution = resolveAudience(config, requested);
+  report.audiences = { declared, active: resolution.ok ? resolution.active : null };
+  if (!resolution.ok) report.audienceError = describeUnknownAudience(resolution);
+}
+
 export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<DoctorReport> {
   const cwd = path.resolve(deps.cwd ?? process.cwd());
   const pathValue = deps.pathValue ?? process.env.PATH ?? "";
@@ -248,8 +272,15 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     report.engineRequirement = collectEngineRequirement(root.config);
   }
 
+  const env = deps.env ?? process.env;
+  if (root.rootPath && root.config && kind !== "hub") {
+    collectAudiences(report, root.config, env);
+  }
+
   if (root.rootPath && root.config) {
-    const inspection = await (deps.inspectPlugins ?? inspectDeclaredPlugins)(root.rootPath);
+    const inspect =
+      deps.inspectPlugins ?? ((companionPath) => inspectDeclaredPlugins(companionPath, { env }));
+    const inspection = await inspect(root.rootPath);
     report.pluginFailures = inspection.failures;
     report.pluginCapabilities = inspection.capabilities;
   }
@@ -334,6 +365,15 @@ function renderHumanReport(report: DoctorReport): void {
   if (report.toolInstallations) {
     printSection("Tool Installations", renderToolInstallations(report.toolInstallations));
   }
+  if (report.audiences) {
+    printSection(
+      "Audiences",
+      renderKeyValueTable([
+        ["Declared", report.audiences.declared.join(", ") || "none"],
+        ["Active", report.audiences.active ?? "none"],
+      ]),
+    );
+  }
   if (report.hub) printSection("Hub Members", renderHubMembers(report.hub.members));
   // Companions with no drift produce no section at all: required plugins are
   // silent when healthy.
@@ -376,8 +416,9 @@ function renderHumanReport(report: DoctorReport): void {
  * working repository), `companion`, `hub`, or `core` (not linked) — with
  * kind-specific diagnostics: policy and capabilities for working repos,
  * capabilities and tool checks for companions, member health for hubs.
- * Declared plugins are verified strictly (allowed by `MATE_ALLOWED_PLUGINS`,
- * installed, loadable); any failure is named on stderr and exits non-zero.
+ * Declared plugins of the effective set (base plus the `MATE_AUDIENCE`
+ * audience) are verified strictly (installed, loadable); any failure is named
+ * on stderr and exits non-zero, as is an undeclared `MATE_AUDIENCE`.
  * `--json` emits the same report as one JSON document.
  */
 export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {}): Promise<void> {
@@ -388,6 +429,10 @@ export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {
   const failures = report.pluginFailures ?? [];
   for (const failure of failures) {
     process.stderr.write(`${FRAMEWORK_NAME}: plugin ${failure.package}: ${failure.reason}\n`);
+  }
+  if (report.audienceError) {
+    process.stderr.write(`${FRAMEWORK_NAME}: ${report.audienceError}\n`);
+    process.exitCode = 1;
   }
   if (failures.length > 0) process.exitCode = 1;
 }

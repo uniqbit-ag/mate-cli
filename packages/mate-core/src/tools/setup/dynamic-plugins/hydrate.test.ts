@@ -276,3 +276,86 @@ export default function createPlugin() {
     expect(warnings.length).toBeLessThanOrEqual(1);
   });
 });
+
+describe("hydrateDynamicPlugins audiences", () => {
+  const AUDIENCE_ONLY = [
+    "audiences:",
+    "  ba:",
+    "    plugins:",
+    `      - package: "${PACKAGE}"`,
+    '        version: "^1.0.0"',
+  ];
+
+  async function hydrate(companionPath: string, env: Record<string, string | undefined>) {
+    const registry = makeRegistry();
+    const warnings: string[] = [];
+    await hydrateDynamicPlugins({
+      companionPath,
+      registry,
+      host: fakeHost,
+      env,
+      warn: (message) => warnings.push(message),
+    });
+    return { registry, warnings };
+  }
+
+  test("an inactive audience's installed plugin is neither imported nor registered", async () => {
+    const marker = path.join(await makeTempDir("hydrate-marker-"), "imported");
+    const source = `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(marker)}, "ran");\n${FACTORY_SOURCE}`;
+    const companionPath = await writeCompanion({ pluginsYaml: AUDIENCE_ONLY, source });
+
+    const { registry, warnings } = await hydrate(companionPath, {});
+
+    expect(warnings).toEqual([]);
+    expect(registry.getAll()).toEqual([]);
+    await expect(fs.access(marker)).rejects.toThrow();
+  });
+
+  test("the active audience's plugin registers", async () => {
+    const companionPath = await writeCompanion({ pluginsYaml: AUDIENCE_ONLY });
+
+    const { registry, warnings } = await hydrate(companionPath, { MATE_AUDIENCE: "ba" });
+
+    expect(warnings).toEqual([]);
+    expect(registry.getAll().map((plugin) => plugin.id)).toEqual(["acme-custom"]);
+  });
+
+  test("the audience declaration's own policy applies", async () => {
+    const companionPath = await writeCompanion({
+      pluginsYaml: [...AUDIENCE_ONLY, "        policy: default"],
+    });
+
+    const { registry } = await hydrate(companionPath, { MATE_AUDIENCE: "ba" });
+
+    expect(registry.getPolicy("acme-custom")).toBe("default");
+  });
+
+  test("an unknown audience warns once and hydrates base only", async () => {
+    const companionPath = await writeCompanion({ pluginsYaml: [...DECLARED, ...AUDIENCE_ONLY] });
+
+    const { registry, warnings } = await hydrate(companionPath, { MATE_AUDIENCE: "qa" });
+
+    expect(registry.getAll().map((plugin) => plugin.id)).toEqual(["acme-custom"]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('"qa"');
+    expect(warnings[0]).toContain("ba");
+  });
+
+  test("an unknown audience with no base plugins still warns and registers nothing", async () => {
+    const companionPath = await writeCompanion({ pluginsYaml: AUDIENCE_ONLY });
+
+    const { registry, warnings } = await hydrate(companionPath, { MATE_AUDIENCE: "qa" });
+
+    expect(registry.getAll()).toEqual([]);
+    expect(warnings).toHaveLength(1);
+  });
+
+  test("an empty audience selection behaves like none", async () => {
+    const companionPath = await writeCompanion({ pluginsYaml: AUDIENCE_ONLY });
+
+    const { registry, warnings } = await hydrate(companionPath, { MATE_AUDIENCE: "" });
+
+    expect(warnings).toEqual([]);
+    expect(registry.getAll()).toEqual([]);
+  });
+});

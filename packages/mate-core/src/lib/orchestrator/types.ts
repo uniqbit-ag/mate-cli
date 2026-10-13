@@ -125,6 +125,18 @@ export interface StudioTerminalConfig {
   agent?: string;
 }
 
+/**
+ * A named slice of a companion's configuration, activated by `MATE_AUDIENCE`.
+ * Plugins and capabilities add to the base lists; `studio.terminal.agent`
+ * overrides the base. Capabilities here name what a declared plugin provides,
+ * never a built-in one, so what `install` writes does not depend on the audience.
+ */
+export interface AudienceConfig {
+  capabilities?: CapabilityConfig[];
+  plugins?: PluginDeclaration[];
+  studio?: { terminal?: StudioTerminalConfig };
+}
+
 export interface FrameworkConfig {
   type?: FrameworkType;
   git?: GitModeProfile;
@@ -137,6 +149,7 @@ export interface FrameworkConfig {
   packageManagers?: string[];
   engines?: EngineConstraints;
   studio?: { terminal?: StudioTerminalConfig };
+  audiences?: Record<string, AudienceConfig>;
 }
 
 export interface CompanionRegistryConfig {

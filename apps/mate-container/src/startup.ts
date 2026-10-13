@@ -63,7 +63,21 @@ export interface CompanionSelections {
   capabilities: string[];
 }
 
-export function readCompanionSelections(companionPath: string): CompanionSelections {
+function capabilityNames(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value
+        .map((entry) =>
+          typeof entry === "string" ? entry : String((entry as { name?: unknown })?.name ?? ""),
+        )
+        .filter((name) => name !== "")
+    : [];
+}
+
+/** Base selections plus the capabilities of `audience`, when one is served. */
+export function readCompanionSelections(
+  companionPath: string,
+  audience: string | null = null,
+): CompanionSelections {
   const file = path.join(companionPath, ".mate", "config", "framework.yaml");
   let parsed: unknown;
   try {
@@ -74,16 +88,34 @@ export function readCompanionSelections(companionPath: string): CompanionSelecti
   const config = (parsed ?? {}) as {
     packageManagers?: unknown;
     capabilities?: unknown;
+    audiences?: Record<string, { capabilities?: unknown } | null> | null;
   };
   const packageManagers = Array.isArray(config.packageManagers)
     ? config.packageManagers.map((entry) => String(entry))
     : ["bun"];
-  const capabilities = Array.isArray(config.capabilities)
-    ? config.capabilities.map((entry) =>
-        typeof entry === "string" ? entry : String((entry as { name?: unknown })?.name ?? ""),
-      )
+  const audienceCapabilities =
+    audience !== null && config.audiences && Object.hasOwn(config.audiences, audience)
+      ? capabilityNames(config.audiences[audience]?.capabilities)
+      : [];
+  return {
+    packageManagers,
+    capabilities: [...capabilityNames(config.capabilities), ...audienceCapabilities],
+  };
+}
+
+/** Audience names declared under the companion's `audiences:` key, read raw like its selections. */
+export function readCompanionAudiences(companionPath: string): string[] {
+  const file = path.join(companionPath, ".mate", "config", "framework.yaml");
+  let parsed: unknown;
+  try {
+    parsed = parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    throw new StartupError(`${file} could not be read: ${(error as Error).message}`);
+  }
+  const audiences = (parsed as { audiences?: unknown } | null)?.audiences;
+  return audiences !== null && typeof audiences === "object" && !Array.isArray(audiences)
+    ? Object.keys(audiences)
     : [];
-  return { packageManagers, capabilities: capabilities.filter((name) => name !== "") };
 }
 
 export function commandOnPath(
@@ -160,6 +192,8 @@ export function parsePluginCapabilities(stdout: string): string[] {
 export interface StartupPlan {
   companion: string;
   companions: string[];
+  /** Exported to Studio and its terminal sessions; null leaves `MATE_AUDIENCE` unset. */
+  audience: string | null;
   studioPort: number;
   studioHost: string;
   studioWritable: boolean;
@@ -214,12 +248,18 @@ function overridesRegistry(npmrc: string, registry: PluginRegistry): boolean {
     .some((line) => /^\s*\/\/.*:_auth(Token)?\s*=/.test(line) && line.includes(host));
 }
 
+/** The child environment that carries the audience; nothing when none is served. */
+function audienceEnv(audience: string | null): Record<string, string> {
+  return audience === null ? {} : { MATE_AUDIENCE: audience };
+}
+
 /** Frozen restore of the companion's locked plugins through the image-owned setup script. */
 function restorePlugins(
   registry: PluginRegistry,
   companion: string,
   deps: StartupDeps,
   secrets: Array<string | null>,
+  audience: string | null,
 ): void {
   const override = path.join(companion, ".mate", "plugins", ".npmrc");
   if (fs.existsSync(override) && overridesRegistry(fs.readFileSync(override, "utf8"), registry)) {
@@ -232,6 +272,7 @@ function restorePlugins(
     MATE_PLUGIN_REGISTRY_SCOPE: registry.scope,
     MATE_PLUGIN_REGISTRY_URL: registry.url,
     MATE_PLUGIN_REGISTRY_TOKEN: registry.token,
+    ...audienceEnv(audience),
   });
   if (restored.status !== 0) {
     throw new StartupError(
@@ -289,11 +330,26 @@ export function prepareStartup(
   const companion = selectCompanion(companions, config.companion, config.setupHint);
   deps.log(`serving ${companion}`);
 
+  if (config.audience !== null) {
+    const declared = readCompanionAudiences(companion);
+    if (!declared.includes(config.audience)) {
+      throw new StartupError(
+        `MATE_AUDIENCE "${config.audience}" is not declared by ${companion}; declared audiences: ${declared.join(", ") || "none"}.`,
+      );
+    }
+    deps.log(`serving audience ${config.audience}`);
+  }
+
   if (config.pluginRegistry !== null)
-    restorePlugins(config.pluginRegistry, companion, deps, secrets);
+    restorePlugins(config.pluginRegistry, companion, deps, secrets, config.audience);
 
   /** Runs before the requirement check: verified plugins' capabilities feed it. */
-  const verifyResult = deps.run(deps.mate, ["doctor", "--json"], companion);
+  const verifyResult = deps.run(
+    deps.mate,
+    ["doctor", "--json"],
+    companion,
+    config.audience === null ? undefined : audienceEnv(config.audience),
+  );
   if (verifyResult.status !== 0) {
     throw new StartupError(
       `The declared plugins of ${companion} are not ready:\n` +
@@ -307,7 +363,11 @@ export function prepareStartup(
   }
   const pluginCapabilities = parsePluginCapabilities(verifyResult.stdout);
 
-  assertRequirementsCarried(readCompanionSelections(companion), deps.onPath, pluginCapabilities);
+  assertRequirementsCarried(
+    readCompanionSelections(companion, config.audience),
+    deps.onPath,
+    pluginCapabilities,
+  );
 
   const prepared = deps.run(deps.mate, [
     "companion",
@@ -327,6 +387,7 @@ export function prepareStartup(
   return {
     companion,
     companions,
+    audience: config.audience,
     studioPort: config.studioPort,
     studioHost: config.studioHost,
     studioWritable: config.studioWritable,
@@ -346,6 +407,7 @@ export function shellQuote(value: string): string {
 export function renderPlan(plan: StartupPlan): string {
   return [
     `MATE_PLAN_COMPANION=${shellQuote(plan.companion)}`,
+    `MATE_PLAN_AUDIENCE=${shellQuote(plan.audience ?? "")}`,
     `MATE_PLAN_STUDIO_PORT=${shellQuote(String(plan.studioPort))}`,
     `MATE_PLAN_STUDIO_HOST=${shellQuote(plan.studioHost)}`,
     `MATE_PLAN_STUDIO_WRITABLE=${shellQuote(plan.studioWritable ? "1" : "")}`,

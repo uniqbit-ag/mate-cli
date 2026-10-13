@@ -37,6 +37,8 @@ export interface ApplianceConfig {
   companionsDir: string;
   companionRepos: GitLocation[];
   companion: string | null;
+  /** The one audience of the selected companion this container serves; null serves the base. */
+  audience: string | null;
   studioPort: number;
   studioHost: string;
   studioWritable: boolean;
@@ -124,6 +126,14 @@ export const SETTINGS: Setting[] = [
     key: "companion",
     meaning:
       "Which discovered companion agent sessions run against, by directory name or absolute path. Required only where more than one is discovered.",
+    default: null,
+    required: false,
+  },
+  {
+    env: "MATE_AUDIENCE",
+    key: "audience",
+    meaning:
+      "The audience of the selected companion this container serves, as declared under `audiences:` in its `framework.yaml`. Its plugins load beside the base plugins and its Studio default agent applies. An audience the companion does not declare stops startup. Unset: the base configuration only. One container serves one audience.",
     default: null,
     required: false,
   },
@@ -327,6 +337,22 @@ function optionalText(raw: unknown): string | null {
   if (raw === null || raw === undefined) return null;
   const value = String(raw).trim();
   return value === "" ? null : value;
+}
+
+/** Mirrors the audience-name rule `mate` validates a companion's `audiences:` keys against. */
+const AUDIENCE_NAME = /^[a-z][a-z0-9-]{0,63}$/;
+
+function audienceName(setting: Setting, raw: unknown): string | null {
+  const value = optionalText(raw);
+  if (value === null) return null;
+  if (!AUDIENCE_NAME.test(value)) {
+    throw new ConfigError(
+      setting.env,
+      value,
+      "must be an audience name: lowercase letters, digits and hyphens, starting with a letter",
+    );
+  }
+  return value;
 }
 
 /** `https://host/acme.git` → `acme`. */
@@ -538,6 +564,7 @@ export function resolveConfig(
     companionsDir: text(read("MATE_COMPANIONS_DIR"), "/companions"),
     companionRepos: gitLocations(setting("MATE_COMPANION_REPOS"), read("MATE_COMPANION_REPOS")),
     companion: optionalText(read("MATE_COMPANION")),
+    audience: audienceName(setting("MATE_AUDIENCE"), read("MATE_AUDIENCE")),
     studioPort: port(setting("MATE_STUDIO_PORT"), read("MATE_STUDIO_PORT"), 4097),
     studioHost: text(read("MATE_STUDIO_HOST"), "0.0.0.0"),
     studioWritable: writable,

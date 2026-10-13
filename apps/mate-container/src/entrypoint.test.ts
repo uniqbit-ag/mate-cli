@@ -58,6 +58,7 @@ function stubStartup(
     gitSync?: boolean;
     allowedHosts?: string;
     publicOrigin?: string;
+    audience?: string;
   } = {},
 ): void {
   const writable = options.writable ?? true;
@@ -78,6 +79,7 @@ MATE_PLAN_STUDIO_DETACH_MINUTES='30'
 MATE_PLAN_STUDIO_ALLOWED_HOSTS='${options.allowedHosts ?? ""}'
 MATE_PLAN_STUDIO_PUBLIC_ORIGIN='${options.publicOrigin ?? ""}'
 MATE_PLAN_GIT_SYNC='${options.gitSync ? "1" : ""}'
+MATE_PLAN_AUDIENCE='${options.audience ?? ""}'
 PLAN
 `,
   );
@@ -319,6 +321,7 @@ function recordingMate(): void {
   echo "$1 cwd: $PWD"
   echo "$1 companion: \${MATE_ARTIFACT_PATH:-}"
   echo "$1 policy: \${MATE_UPDATE_POLICY:-}"
+  echo "$1 audience: \${MATE_AUDIENCE-<unset>}"
   echo "$1 credential: \${STUB_CREDENTIAL:-}"; } >> "${CASE}/argv.log"
 sleep 0.3
 exit 0
@@ -345,6 +348,36 @@ withContainer("what the supervisor starts Studio with", () => {
       /** Credentials reach Studio, whose agent sessions inherit them. */
       expect(recorded).toContain("studio credential: secret");
       expect(recorded).not.toContain("opencode");
+    },
+    CASE_TIMEOUT,
+  );
+
+  test(
+    "the planned audience reaches Studio's environment even when only the file selected it",
+    async () => {
+      stubStartup({ audience: "ba" });
+      recordingMate();
+
+      await runSupervisor();
+
+      expect(fs.readFileSync(path.join(root, "argv.log"), "utf8")).toContain(
+        "studio audience: ba\n",
+      );
+    },
+    CASE_TIMEOUT,
+  );
+
+  test(
+    "with no planned audience Studio's environment carries none",
+    async () => {
+      stubStartup();
+      recordingMate();
+
+      await runSupervisor();
+
+      expect(fs.readFileSync(path.join(root, "argv.log"), "utf8")).toContain(
+        "studio audience: <unset>\n",
+      );
     },
     CASE_TIMEOUT,
   );
@@ -399,6 +432,18 @@ describe("the supervisor script itself", () => {
     expect(policyAt).toBeGreaterThan(-1);
     expect(policyAt).toBeLessThan(firstStartupAt);
     expect(policyAt).toBeLessThan(firstMateAt);
+  });
+
+  test("exports the planned audience before Studio starts and unsets it otherwise", () => {
+    const source = fs.readFileSync(ENTRYPOINT, "utf8");
+    const planAt = source.indexOf('eval "$PLAN"');
+    const exportAt = source.indexOf('export MATE_AUDIENCE="$MATE_PLAN_AUDIENCE"');
+    const unsetAt = source.indexOf("unset MATE_AUDIENCE");
+    const studioAt = source.indexOf('"$MATE" "${STUDIO_ARGS[@]}"');
+    expect(exportAt).toBeGreaterThan(planAt);
+    expect(unsetAt).toBeGreaterThan(planAt);
+    expect(exportAt).toBeLessThan(studioAt);
+    expect(unsetAt).toBeLessThan(studioAt);
   });
 
   test("exports credentials before the startup plan runs Mate", () => {
