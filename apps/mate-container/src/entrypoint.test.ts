@@ -41,6 +41,27 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  /**
+   * The container runs as root and creates the home's directories, which the
+   * host user may not be able to remove; clear them from inside first.
+   */
+  if (RUNTIME !== null) {
+    spawnSync(
+      RUNTIME,
+      [
+        "run",
+        "--rm",
+        "--volume",
+        `${root}:${CASE}:z`,
+        "--entrypoint",
+        "rm",
+        TEST_BASE_IMAGE,
+        "-rf",
+        HOME,
+      ],
+      { stdio: "ignore" },
+    );
+  }
   fs.rmSync(root, { recursive: true, force: true });
 });
 
