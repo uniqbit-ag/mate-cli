@@ -16,7 +16,7 @@ import { GlobalConfigStore } from "./global-config-store";
 import { runtimeDocumentDeps } from "./projection-runtime-documents";
 import { firstFailure } from "./projection-types";
 import type { RenderedRuntimeDocument } from "../../runtime/runtime-document-manifest";
-import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "./repository-link";
 import type { LinkedRepository } from "./types";
 import {
   describe as describeProjection,

@@ -22,10 +22,8 @@ import {
   resolveFrameworkContext,
 } from "./framework-context";
 import { GlobalConfigStore } from "./global-config-store";
-import {
-  upsertRepoLocalCompanionPointer,
-  writeRepoLocalRegistryEntry,
-} from "./repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "./repository-link";
+import { upsertRepoLocalCompanionPointer } from "./repo-local-store";
 import {
   AmbiguousCompanionError,
   ConfigError,

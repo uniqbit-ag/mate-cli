@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { runtimeDocumentDeps } from "./projection-runtime-documents";
-import { writeRepoLocalRegistryEntry } from "./repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "./repository-link";
 import type { LinkedRepository } from "./types";
 import { links, manifestPath, readManifest } from "../../runtime/runtime-document-manifest";
 import { readWrapState } from "../../runtime/wrap-state";

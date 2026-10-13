@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { getActiveDistribution } from "../../../distribution";
 import { FRAMEWORK_NAME } from "../../../framework";
-import { CompanionResolver } from "../../../lib/orchestrator/companion-resolver";
+import { CompanionResolver } from "../../../lib/orchestrator/repository-link";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
 import type { Plugin } from "../plugin";
 import type { PluginRegistry } from "../registry";

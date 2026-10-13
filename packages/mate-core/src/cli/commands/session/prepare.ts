@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
-import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repo-local-registry";
+import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repository-link";
 import { prepareSession, type PrepareResult } from "../../../lib/orchestrator/session-prepare";
 import { readProjectionFile } from "../../../runtime/projection";
 import { readWrapState, WRAP_RUNTIMES } from "../../../runtime/wrap-state";

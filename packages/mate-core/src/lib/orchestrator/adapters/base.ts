@@ -3,18 +3,16 @@ import os from "node:os";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
-import type { ClaudeDeliveryPlan } from "../../../runtime/claude-delivery-plan";
 import { MATE_ENV } from "../../../runtime/env-names";
 import { getWrapperBinPath } from "../../package-paths";
 import { buildProjection, companionEnvironment, projectionEnvironment } from "../projection-record";
-import type { CapabilityConfig, GitModeProfile, LinkedRepository } from "../types";
-
-/** The paths are present only where the plan names that channel and the file exists. */
-export interface ClaudeDelivery {
-  plan: ClaudeDeliveryPlan;
-  settingsPath?: string;
-  mcpConfigPath?: string;
-}
+import type { PrepareResult } from "../session-prepare";
+import {
+  LaunchPreflightError,
+  type CapabilityConfig,
+  type GitModeProfile,
+  type LinkedRepository,
+} from "../types";
 
 export interface AdapterContext {
   repository?: LinkedRepository;
@@ -24,8 +22,6 @@ export interface AdapterContext {
   capabilities: CapabilityConfig[];
   git?: GitModeProfile;
   skipGit?: boolean;
-  /** Claude only: the launcher's delivery plan and the files it chose or wrote for it. */
-  claudeDelivery?: ClaudeDelivery;
 }
 
 export interface AdapterResult {
@@ -58,15 +54,41 @@ function prependPathEntry(pathValue: string | undefined, entry: string): string 
   return [entry, ...entries.filter((value) => value !== entry)].join(path.delimiter);
 }
 
-export abstract class LaunchAdapter {
+export function prepareFailure(result: PrepareResult): string {
+  return [
+    `${FRAMEWORK_NAME}: preparing ${result.repositoryId} for OpenCode failed.`,
+    ...result.steps.flatMap((step) =>
+      step.outcome === "failed" ? [`- ${step.step}: ${step.detail ?? "failed"}`] : [],
+    ),
+  ].join("\n");
+}
+
+/**
+ * `C` is the context one launch carries from `planLaunch` to `run`: returned,
+ * never stored, since one adapter instance serves every launch.
+ */
+export abstract class LaunchAdapter<C extends AdapterContext = AdapterContext> {
   abstract readonly toolName: string;
   readonly interactive: boolean = false;
 
-  abstract buildArgs(context: AdapterContext, args: string[]): string[];
+  abstract buildArgs(context: C, args: string[]): string[];
 
-  async validateLaunch(_context: AdapterContext): Promise<void> {}
+  /**
+   * The runtime's share of a launch after a successful Session Prepare. Nothing
+   * to plan by default; an adapter that narrows `C` overrides it.
+   */
+  async planLaunch(context: AdapterContext, _prepared: PrepareResult): Promise<C> {
+    return context as C;
+  }
 
-  extendEnvironment(_context: AdapterContext): NodeJS.ProcessEnv {
+  /** What a failed prepare raises: the failed step's own error, else a summary. */
+  launchFailure(prepared: PrepareResult): unknown {
+    return prepared.failure ?? new LaunchPreflightError(prepareFailure(prepared));
+  }
+
+  async validateLaunch(_context: C): Promise<void> {}
+
+  extendEnvironment(_context: C): NodeJS.ProcessEnv {
     return {};
   }
 
@@ -105,7 +127,7 @@ export abstract class LaunchAdapter {
     return env;
   }
 
-  async prepareLaunch(context: AdapterContext, args: string[]): Promise<PreparedLaunch> {
+  async prepareLaunch(context: C, args: string[]): Promise<PreparedLaunch> {
     const builtArgs = this.buildArgs(context, args);
     const baseEnv = this.environment(context);
     const extendedEnv = this.extendEnvironment(context);
@@ -133,7 +155,7 @@ export abstract class LaunchAdapter {
     return !(this.interactive && process.stdin.isTTY);
   }
 
-  async run(context: AdapterContext, args: string[]): Promise<AdapterResult> {
+  async run(context: C, args: string[]): Promise<AdapterResult> {
     const launch = await this.prepareLaunch(context, args);
 
     return new Promise((resolve, reject) => {

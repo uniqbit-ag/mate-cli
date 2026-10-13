@@ -4,9 +4,9 @@ import { FRAMEWORK_NAME } from "../../../framework";
 import {
   CompanionResolver,
   type CompanionMatch,
-} from "../../../lib/orchestrator/companion-resolver";
+  findRepoLocalLinkedRepository,
+} from "../../../lib/orchestrator/repository-link";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
-import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repo-local-registry";
 import { projectWorkingRepositoryBestEffort } from "../../../lib/orchestrator/working-repo-projection";
 import { resolveProjection } from "../../../runtime/projection";
 import { selectCompanion } from "../../companion-selector";

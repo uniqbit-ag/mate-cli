@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
 import { FRAMEWORK_NAME } from "../../../framework";
-import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repository-link";
 import { runWrapPass } from "../../../lib/orchestrator/wrap-pass";
 import { repoLocalDirPath } from "../../../runtime/repo-local";
 import {

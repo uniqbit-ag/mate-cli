@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
-import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import type { LinkedRepository } from "../../lib/orchestrator/types";
 import { readWrapState } from "../../runtime/wrap-state";
 import { runUnwrapCommand } from "./unwrap";

@@ -2,10 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { CompanionResolver, type CompanionResolutionResult } from "./companion-resolver";
+import {
+  CompanionResolver,
+  type CompanionResolutionResult,
+  findRepoLocalLinkedRepository,
+} from "./repository-link";
 import { ConfigStore, mergeWithDefaults } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
-import { findRepoLocalLinkedRepository } from "./repo-local-registry";
 import type { FrameworkConfig, LinkedRepository } from "./types";
 
 /** Root classification shared by install and doctor. `core` = no configured root. */
@@ -105,6 +108,7 @@ async function findConfiguredRoot(cwd: string): Promise<string | null> {
   let dir = path.resolve(cwd);
   for (;;) {
     try {
+      // oxlint-disable-next-line no-await-in-loop -- the nearest ancestor wins, so stop at the first hit
       await fs.access(path.join(dir, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"));
       return dir;
     } catch {

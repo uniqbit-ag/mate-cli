@@ -6,7 +6,7 @@ import { gitEnvironment } from "../../runtime/companion-git";
 import { getActiveDistribution } from "../../distribution";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
-import { pathIsDirectory } from "../../lib/orchestrator/repo-local-registry";
+import { pathIsDirectory } from "../../lib/fs-utils";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
 import {

@@ -6,10 +6,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { fileExists } from "../../lib/fs-utils";
-import {
-  repoLocalDirPath,
-  writeRepoLocalRegistryEntry,
-} from "../../lib/orchestrator/repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
+import { repoLocalDirPath } from "../../runtime/repo-local";
 import {
   projectionEnvPath,
   projectionYamlPath,

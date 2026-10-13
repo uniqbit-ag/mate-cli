@@ -26,14 +26,37 @@ function readAll(repoPath: string): SessionNotes {
   }
 }
 
+/**
+ * Per notes file, the record still in flight. Each record reads the file and
+ * writes it back; the background sync's report can overlap the next prepare's,
+ * and an unordered write would bring back notes the other just cleared.
+ */
+const inFlight = new Map<string, Promise<void>>();
+
 /** Replaces one phase's notes; an empty list clears them. Best-effort. */
-export async function recordSessionNotes(
+export function recordSessionNotes(
   repoPath: string,
   phase: SessionNotePhase,
   notes: readonly string[],
 ): Promise<void> {
-  const next: SessionNotes = { ...readAll(repoPath), [phase]: [...notes] };
   const target = notesPath(repoPath);
+  const recorded = (inFlight.get(target) ?? Promise.resolve()).then(() =>
+    writeNotes(repoPath, target, phase, notes),
+  );
+  inFlight.set(target, recorded);
+  void recorded.then(() => {
+    if (inFlight.get(target) === recorded) inFlight.delete(target);
+  });
+  return recorded;
+}
+
+async function writeNotes(
+  repoPath: string,
+  target: string,
+  phase: SessionNotePhase,
+  notes: readonly string[],
+): Promise<void> {
+  const next: SessionNotes = { ...readAll(repoPath), [phase]: [...notes] };
   try {
     if (Object.values(next).every((lines) => !lines?.length)) {
       await fsp.rm(target, { force: true });

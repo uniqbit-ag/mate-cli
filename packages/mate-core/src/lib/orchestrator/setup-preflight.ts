@@ -6,7 +6,7 @@ import { parse } from "yaml";
 import { FRAMEWORK_NAME } from "../../framework";
 import { fileExists } from "../fs-utils";
 import { GlobalConfigStore } from "./global-config-store";
-import { CompanionResolver, type CompanionMatch } from "./companion-resolver";
+import { CompanionResolver, type CompanionMatch } from "./repository-link";
 
 export type SetupPreflightResult =
   | { kind: "existing-companion" }
@@ -104,6 +104,7 @@ export async function looksLikeWorkingRepo(cwd: string): Promise<boolean> {
   const resolvedCwd = path.resolve(cwd);
 
   for (const marker of STRONG_FILE_MARKERS) {
+    // oxlint-disable-next-line no-await-in-loop -- one strong marker settles it; stop probing
     if (await fileExists(path.join(resolvedCwd, marker))) {
       return true;
     }
@@ -115,6 +116,7 @@ export async function looksLikeWorkingRepo(cwd: string): Promise<boolean> {
 
   let weakCount = 0;
   for (const marker of WEAK_FILE_MARKERS) {
+    // oxlint-disable-next-line no-await-in-loop -- stops probing at the second weak marker
     if (await fileExists(path.join(resolvedCwd, marker))) {
       weakCount++;
       if (weakCount >= 2) return true;

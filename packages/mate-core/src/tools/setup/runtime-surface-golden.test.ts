@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,11 +6,12 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type { AdapterContext } from "../../lib/orchestrator/adapters/base";
-import { launchSettingsPath } from "../../lib/orchestrator/launcher";
-import { planClaudeDelivery } from "../../runtime/claude-delivery-plan";
-import { EMPTY_MANIFEST } from "../../runtime/runtime-document-manifest";
+import {
+  CLAUDE_SETTINGS_DOCUMENT,
+  EMPTY_MANIFEST,
+  withDocument,
+} from "../../runtime/runtime-document-manifest";
 import { wrapStateOf } from "../../runtime/wrap-state";
-import { getCompanionClaudeSettingsPath } from "./providers/claude";
 import { ClaudeAdapter } from "../../lib/orchestrator/adapters/claude";
 import { OpenCodeAdapter } from "../../lib/orchestrator/adapters/opencode";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
@@ -312,21 +312,26 @@ async function collectLaunchSurface(
     allowedAgents: agents,
     companionPath: fixture.companionPath,
     capabilities: capabilities.map((name) => ({ name })),
-    /** As the launcher hands it over for a Claude-wrapped repository. */
-    claudeDelivery: {
-      plan: planClaudeDelivery("managed-repo", wrapStateOf(EMPTY_MANIFEST)),
-      ...(existsSync(getCompanionClaudeSettingsPath(fixture.companionPath))
-        ? { settingsPath: launchSettingsPath(fixture.companionPath, "app") }
-        : {}),
-    },
   };
   delete process.env.OPENCODE_CONFIG_CONTENT;
 
   const surface: Record<string, unknown> = {};
   if (agents.includes("claude")) {
     const adapter = new ClaudeAdapter();
-    surface.claudeArgs = adapter.buildArgs(context, []);
-    surface.claudeEnv = adapter.extendEnvironment(context);
+    /** As a launch hands it over for a Claude-wrapped repository. */
+    const claudeContext = await adapter.planLaunch(context, {
+      ok: true,
+      mode: "attended",
+      runtime: "claude",
+      runtimes: ["claude"],
+      repositoryId: "app",
+      companionPath: fixture.companionPath,
+      steps: [],
+      warnings: [],
+      wrapState: wrapStateOf(withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, [])),
+    });
+    surface.claudeArgs = adapter.buildArgs(claudeContext, []);
+    surface.claudeEnv = adapter.extendEnvironment(claudeContext);
   }
   if (agents.includes("opencode")) {
     const adapter = new OpenCodeAdapter();

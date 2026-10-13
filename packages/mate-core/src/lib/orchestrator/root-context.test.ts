@@ -127,7 +127,7 @@ test("MATE_ARTIFACT_PATH takes precedence and classifies the env root", async ()
 });
 
 test("resolves a registry match as the companion root with origin registry", async () => {
-  const { writeRepoLocalRegistryEntry } = await import("./repo-local-registry");
+  const { writeRepoLocalRegistryEntry } = await import("./repository-link");
   const root = await makeTempDir("root-context-registry-");
   const working = path.join(root, "working");
   const companion = path.join(root, "companion");
@@ -146,7 +146,7 @@ test("resolves a registry match as the companion root with origin registry", asy
 });
 
 test("passes through ambiguity diagnostics from the resolver", async () => {
-  const { writeRepoLocalRegistryEntry } = await import("./repo-local-registry");
+  const { writeRepoLocalRegistryEntry } = await import("./repository-link");
   const root = await makeTempDir("root-context-ambiguous-");
   const working = path.join(root, "working");
   const companionA = path.join(root, "companion-a");

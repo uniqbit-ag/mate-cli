@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { version } from "../../../../package.json";
-import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repo-local-registry";
+import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repository-link";
 import { renderBanner, resolveCompanionPath, resolveRepoPath, resolveShell } from "./tui";
 
 const execFileAsync = promisify(execFile);
