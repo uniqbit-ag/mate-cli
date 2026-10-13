@@ -14,13 +14,17 @@ afterEach(async () => {
 
 async function companion(
   plugins: Array<{ package: string; version: string; config?: unknown }>,
+  audiences?: Record<
+    string,
+    { plugins: Array<{ package: string; version: string; config?: unknown }> }
+  >,
 ): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "verify-"));
   roots.push(dir);
   await fs.mkdir(path.join(dir, ".mate", "config"), { recursive: true });
   await fs.writeFile(
     path.join(dir, ".mate", "config", "framework.yaml"),
-    JSON.stringify({ plugins }),
+    JSON.stringify({ plugins, audiences }),
   );
   return dir;
 }
@@ -74,5 +78,45 @@ describe("verifyDeclaredPlugins", () => {
     const result = await inspectDeclaredPlugins(dir, { env: {} });
     expect(result.capabilities).toEqual(["p"]);
     expect(result.failures.map((failure) => failure.package)).toEqual(["@acme/missing"]);
+  });
+});
+
+describe("verifyDeclaredPlugins audiences", () => {
+  const NEEDS_TOKEN = { package: "@acme/ba", version: "1.0.0", config: { token: "${BA_TOKEN}" } };
+
+  test("an inactive audience plugin with a missing credential does not fail", async () => {
+    const dir = await companion([{ package: "@acme/reader", version: "1.0.0" }], {
+      ba: { plugins: [NEEDS_TOKEN] },
+    });
+    await install(dir, "@acme/reader");
+    await install(dir, "@acme/ba");
+
+    expect(await verifyDeclaredPlugins(dir, { env: {} })).toEqual([]);
+    expect(await verifyDeclaredPlugins(dir, { env: { MATE_AUDIENCE: "qa" } })).toEqual([]);
+  });
+
+  test("the active audience's plugin is verified", async () => {
+    const dir = await companion([{ package: "@acme/reader", version: "1.0.0" }], {
+      ba: { plugins: [NEEDS_TOKEN] },
+    });
+    await install(dir, "@acme/reader");
+    await install(dir, "@acme/ba");
+
+    const failures = await verifyDeclaredPlugins(dir, { env: { MATE_AUDIENCE: "ba" } });
+    expect(failures.map((failure) => failure.package)).toEqual(["@acme/ba"]);
+    expect(failures[0]?.reason).toMatch(/BA_TOKEN/);
+    expect(
+      await verifyDeclaredPlugins(dir, { env: { MATE_AUDIENCE: "ba", BA_TOKEN: "t" } }),
+    ).toEqual([]);
+  });
+
+  test("a missing active-audience package is reported and an inactive one is not", async () => {
+    const dir = await companion([], {
+      ba: { plugins: [{ package: "@acme/ba", version: "1.0.0" }] },
+      qa: { plugins: [{ package: "@acme/qa", version: "1.0.0" }] },
+    });
+
+    const result = await inspectDeclaredPlugins(dir, { env: { MATE_AUDIENCE: "ba" } });
+    expect(result.failures.map((failure) => failure.package)).toEqual(["@acme/ba"]);
   });
 });

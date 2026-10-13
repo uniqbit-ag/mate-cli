@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
-import { readDeclarations, validateDeclaration } from "./declarations";
+import { readAudienceSelection, readEffectiveDeclarations } from "./audiences";
+import { validateDeclaration } from "./declarations";
 import { loadDynamicPlugin, type DynamicPluginLoadDeps } from "./loader";
 import { pluginPackageRoot } from "./paths";
 
@@ -18,7 +19,8 @@ export interface PluginInspection {
 }
 
 /**
- * Strict, installation-free check of every declared plugin: installed
+ * Strict, installation-free check of every effective plugin (base plus the
+ * active `MATE_AUDIENCE`; inactive audiences are not checked): installed
  * and loadable with the effective environment. Unlike hydration it fails
  * closed on the first-class problems ordinary commands only warn about.
  */
@@ -37,7 +39,7 @@ export async function inspectDeclaredPlugins(
   const failures: PluginVerificationFailure[] = [];
   const capabilities: string[] = [];
   const declarations: PluginDeclaration[] = [];
-  for (const entry of await readDeclarations(companionPath)) {
+  for (const entry of await readEffectiveDeclarations(companionPath, readAudienceSelection(env))) {
     const { declaration, error } = validateDeclaration(entry);
     if (declaration) declarations.push(declaration);
     else failures.push({ package: "(malformed entry)", reason: error ?? "invalid plugins entry" });

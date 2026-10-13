@@ -36,6 +36,7 @@ describe("every setting is readable from both sources", () => {
       MATE_COMPANIONS_DIR: "/srv/companions",
       MATE_COMPANION_REPOS: "https://example.com/acme.git",
       MATE_COMPANION: "acme",
+      MATE_AUDIENCE: "ba",
       MATE_STUDIO_PORT: "5002",
       MATE_STUDIO_HOST: "127.0.0.2",
       MATE_STUDIO_WRITABLE: "true",
@@ -58,6 +59,7 @@ describe("every setting is readable from both sources", () => {
       companionsDir: "/srv/companions",
       companionRepos: [{ url: "https://example.com/acme.git", directory: "acme" }],
       companion: "acme",
+      audience: "ba",
       studioPort: 5002,
       studioHost: "127.0.0.2",
       studioWritable: true,
@@ -88,6 +90,7 @@ describe("every setting is readable from both sources", () => {
         companionsDir: "/srv/companions",
         companionRepos: ["https://example.com/acme.git"],
         companion: "acme",
+        audience: "ba",
         studioPort: 5002,
         studioTerminal: true,
         studioDetachMinutes: 10,
@@ -105,6 +108,7 @@ describe("every setting is readable from both sources", () => {
     expect(config.companionRepos).toEqual([
       { url: "https://example.com/acme.git", directory: "acme" },
     ]);
+    expect(config.audience).toBe("ba");
     expect(config.studioWritable).toBe(false);
     expect(config.studioTerminal).toBe(false);
     expect(config.studioDetachMinutes).toBe(10);
@@ -117,6 +121,7 @@ describe("every setting is readable from both sources", () => {
   test("defaults apply where neither source supplies a value", () => {
     const config = resolveConfig({}, noFile);
     expect(config.companionsDir).toBe("/companions");
+    expect(config.audience).toBeNull();
     expect(config.studioPort).toBe(4097);
     expect(config.studioWritable).toBe(true);
     expect(config.studioTerminal).toBe(true);
@@ -323,6 +328,22 @@ describe("the plugin registry", () => {
     const config = resolveConfig({ MATE_ALLOWED_PLUGINS: "@acme/*" }, noFile);
     expect(config.removed).toEqual(["MATE_ALLOWED_PLUGINS"]);
     expect(SETTINGS.map((setting) => setting.env)).not.toContain("MATE_ALLOWED_PLUGINS");
+  });
+});
+
+describe("the audience setting", () => {
+  test("is taken from the environment or the file, the environment winning", () => {
+    expect(resolveConfig({ MATE_AUDIENCE: "ba" }, noFile).audience).toBe("ba");
+    expect(resolveConfig({}, file({ audience: "qa" })).audience).toBe("qa");
+    expect(resolveConfig({ MATE_AUDIENCE: "ba" }, file({ audience: "qa" })).audience).toBe("ba");
+  });
+
+  test("an empty environment value clears the file's audience", () => {
+    expect(resolveConfig({ MATE_AUDIENCE: "" }, file({ audience: "qa" })).audience).toBeNull();
+  });
+
+  test.each(["BA Team", "ba;rm", "-ba", "a".repeat(65)])("%j is not a usable name", (value) => {
+    expect(() => resolveConfig({ MATE_AUDIENCE: value }, noFile)).toThrow(/MATE_AUDIENCE/);
   });
 });
 
