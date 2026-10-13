@@ -323,6 +323,8 @@ RUN chmod +x /usr/local/bin/mate-appliance /usr/local/bin/xdg-open \
 # --- build-time assertions -------------------------------------------------
 # Everything the appliance needs is present now, and the runtime bootstrap has
 # nothing left to do. Asserted by presence, not by an installer declining.
+# Every `mate` invocation refreshes `~/.mate/runtime`, so the version check runs
+# under a scratch HOME; the real homes must stay untouched.
 RUN set -e \
  && command -v bun \
  && command -v node \
@@ -340,9 +342,11 @@ RUN set -e \
  && test "$(opencode --version | sed 's/^opencode v//')" = "${OPENCODE_VERSION}" \
  && claude --version | grep -q "^${CLAUDE_VERSION} " \
  && bun -e 'if (typeof Bun.Terminal !== "function") { console.error("this Bun has no native pseudo-terminal; the agent terminal needs 1.3.5 or later"); process.exit(1); }' \
- && MATE_UPDATE_POLICY=pinned mate --version | tail -1 | grep -qx "${MATE_VERSION}" \
- && test ! -e /root/.mate \
- && test ! -e /home/mate/.mate
+ && scratch="$(mktemp -d)" \
+ && test "$(HOME="${scratch}" MATE_UPDATE_POLICY=pinned mate --version | tail -1)" = "${MATE_VERSION}" \
+ && rm -rf "${scratch}" \
+ && { test ! -e /root/.mate || { echo "unexpected /root/.mate" >&2; exit 1; }; } \
+ && { test ! -e /home/mate/.mate || { echo "unexpected /home/mate/.mate" >&2; exit 1; }; }
 
 # The version the image contains, readable without starting anything.
 LABEL org.opencontainers.image.title="Mate appliance" \
