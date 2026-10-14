@@ -4,7 +4,15 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { ConfigStore, defaultConfig, mergeWithDefaults } from "./config-store";
+import { parse } from "yaml";
+
+import {
+  BASE_AUDIENCE_MIN_VERSION,
+  baseAudienceFloorVersion,
+  ConfigStore,
+  defaultConfig,
+  mergeWithDefaults,
+} from "./config-store";
 import type { FrameworkConfig } from "./types";
 
 const tempRoots: string[] = [];
@@ -689,5 +697,147 @@ describe("ConfigStore", () => {
     const bareConfig = await new ConfigStore(bare).load();
     expect(bareConfig.migrations).toBeUndefined();
     expect(await fs.readFile(bare, "utf8")).not.toContain("migrations");
+  });
+});
+
+describe("the base audience shape", () => {
+  async function fileWith(contents: string): Promise<string> {
+    const root = await makeTempDir("config-store-base-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(configPath, contents, "utf8");
+    return configPath;
+  }
+
+  const ROOT_SHAPE = [
+    "type: companion",
+    "allowedAgents: [claude]",
+    "capabilities:",
+    "  - name: openspec",
+    "plugins:",
+    '  - package: "@acme/base"',
+    "    version: 1.0.0",
+    "studio:",
+    "  terminal:",
+    "    agent: developer",
+    "audiences:",
+    "  ba:",
+    "    plugins:",
+    '      - package: "@acme/analyst"',
+    "        version: 1.0.0",
+    "",
+  ].join("\n");
+
+  test("loads audiences.base as the base set at the root, without a base audience", async () => {
+    const configPath = await fileWith(
+      [
+        "type: companion",
+        "allowedAgents: [claude]",
+        "audiences:",
+        "  base:",
+        "    capabilities:",
+        "      - name: openspec",
+        "    plugins:",
+        '      - package: "@acme/base"',
+        "        version: 1.0.0",
+        "  ba:",
+        "    plugins:",
+        '      - package: "@acme/analyst"',
+        "        version: 1.0.0",
+        "",
+      ].join("\n"),
+    );
+
+    const config = await new ConfigStore(configPath).load();
+
+    expect(config.capabilities).toEqual([{ name: "openspec" }]);
+    expect(config.plugins).toEqual([{ package: "@acme/base", version: "1.0.0" }]);
+    expect(Object.keys(config.audiences ?? {})).toEqual(["ba"]);
+  });
+
+  test("an unmigrated file loads unchanged and is left untouched until saved", async () => {
+    const configPath = await fileWith(ROOT_SHAPE);
+
+    const config = await new ConfigStore(configPath).load();
+
+    expect(config.plugins).toEqual([{ package: "@acme/base", version: "1.0.0" }]);
+    expect(await fs.readFile(configPath, "utf8")).toBe(ROOT_SHAPE);
+  });
+
+  test("saving writes the base set under audiences.base and raises the engines floor", async () => {
+    const configPath = await fileWith(ROOT_SHAPE);
+    const store = new ConfigStore(configPath);
+
+    await store.save(await store.load());
+    const saved = parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+
+    expect(saved.capabilities).toBeUndefined();
+    expect(saved.plugins).toBeUndefined();
+    expect(saved.studio).toBeUndefined();
+    expect(Object.keys(saved.audiences as object)).toEqual(["base", "ba"]);
+    expect((saved.audiences as Record<string, unknown>).base).toEqual({
+      capabilities: [{ name: "openspec" }],
+      plugins: [{ package: "@acme/base", version: "1.0.0" }],
+      studio: { terminal: { agent: "developer" } },
+    });
+    expect(saved.engines).toEqual({ mate: `>=${baseAudienceFloorVersion()}` });
+    const reloaded = await store.load();
+    expect(reloaded.capabilities).toEqual([{ name: "openspec" }]);
+    expect(reloaded.plugins).toEqual([{ package: "@acme/base", version: "1.0.0" }]);
+    expect(reloaded.studio).toEqual({ terminal: { agent: "developer" } });
+    expect(Object.keys(reloaded.audiences ?? {})).toEqual(["ba"]);
+  });
+
+  test("a higher engines floor is kept, a lower one raised", async () => {
+    for (const [floor, expected] of [
+      [">=99.0.0", ">=99.0.0"],
+      [">=0.10.0", `>=${baseAudienceFloorVersion()}`],
+    ] as const) {
+      const configPath = await fileWith(`${ROOT_SHAPE}engines:\n  mate: "${floor}"\n`);
+      const store = new ConfigStore(configPath);
+      await store.save(await store.load());
+      const saved = parse(await fs.readFile(configPath, "utf8")) as { engines: { mate: string } };
+      expect(saved.engines.mate).toBe(expected);
+    }
+  });
+
+  test("the floor is the introducing release, capped at the running one", () => {
+    expect(baseAudienceFloorVersion("99.0.0")).toBe(BASE_AUDIENCE_MIN_VERSION);
+    expect(baseAudienceFloorVersion("0.18.3")).toBe("0.18.3");
+    expect(baseAudienceFloorVersion("0.18.4-canary.2")).toBe("0.18.4");
+  });
+
+  test("a key in both places is refused, naming both", async () => {
+    const configPath = await fileWith(
+      `${ROOT_SHAPE.replace("audiences:\n", "audiences:\n  base:\n    plugins: []\n")}`,
+    );
+
+    await expect(new ConfigStore(configPath).load()).rejects.toThrow(
+      /"plugins".*root.*audiences\.base/,
+    );
+  });
+
+  test("a built-in capability is allowed in base, still refused in another audience", async () => {
+    const based = await fileWith(
+      "allowedAgents: [claude]\naudiences:\n  base:\n    capabilities:\n      - name: tokensave\n",
+    );
+    expect((await new ConfigStore(based).load()).capabilities).toEqual([{ name: "tokensave" }]);
+
+    const other = await fileWith(
+      "allowedAgents: [claude]\naudiences:\n  ba:\n    capabilities:\n      - name: tokensave\n",
+    );
+    await expect(new ConfigStore(other).load()).rejects.toThrow();
+  });
+
+  test("a hub keeps the root shape", async () => {
+    const configPath = await fileWith(
+      "type: hub\nallowedAgents: [claude]\nhub:\n  companions: []\ncapabilities: []\n",
+    );
+    const store = new ConfigStore(configPath);
+
+    await store.save(await store.load());
+    const saved = parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+
+    expect(saved.capabilities).toEqual([]);
+    expect(saved.audiences).toBeUndefined();
   });
 });

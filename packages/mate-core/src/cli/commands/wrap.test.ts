@@ -109,6 +109,44 @@ describe("parseWrapArgs", () => {
     });
     expect(parseWrapArgs(["--json"])).toEqual({ error: "unknown wrap option: --json" });
   });
+
+  test("accepts both spellings of --audience and requires a name", () => {
+    expect(parseWrapArgs(["--audience", "ba"])).toEqual({ audience: "ba" });
+    expect(parseWrapArgs(["--audience=ba", "--companion", "/tmp/acme"])).toEqual({
+      audience: "ba",
+      companion: "/tmp/acme",
+    });
+    expect(parseWrapArgs(["--audience"])).toEqual({ error: "--audience requires a name" });
+    expect(parseWrapArgs(["--audience="])).toEqual({ error: "--audience requires a name" });
+  });
+});
+
+describe("runWrapCommand audiences", () => {
+  async function run(argv: string[]) {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-audience-");
+    const passes: unknown[] = [];
+    const { out, err, restore } = capture();
+    try {
+      await runWrapCommand(argv, repoPath, {
+        resolveLinkedCompanions: async () => [{ companionPath }] as never,
+        runWrapPass: async (_companion, _repository, options) => {
+          passes.push(options?.audience);
+          return { kind: "failed", message: "stop here" };
+        },
+      });
+    } finally {
+      restore();
+    }
+    return { passes, out, err };
+  }
+
+  test("--audience records the named audience", async () => {
+    expect((await run(["--audience", "ba"])).passes).toEqual(["ba"]);
+  });
+
+  test("no flag wraps for base, withdrawing a recorded audience", async () => {
+    expect((await run([])).passes).toEqual([null]);
+  });
 });
 
 describe("runWrapCommand", () => {

@@ -1,10 +1,26 @@
 // Deliver the companion guidance to a Claude session Mate did not launch.
+import { currentAudienceLayer, readLayerGuidanceSync } from "../runtime/audience-layer";
+import { resolveProjection } from "../runtime/projection";
 import { buildProjectedGuidance } from "../runtime/projected-guidance";
+import { readWrapStateSync } from "../runtime/wrap-state";
 import type { HookEnv } from "./validate-artifact-path";
 
 export interface GuidanceOutcome {
   exitCode: number;
   stdout: string;
+}
+
+/**
+ * The guidance of the audience this checkout is wrapped for, from its layer.
+ * The wrap is the only source: an inherited `MATE_AUDIENCE` selects nothing.
+ */
+function wrappedAudienceGuidance(cwd: string): string {
+  const projection = resolveProjection(cwd);
+  if (!projection) return "";
+  const audience = readWrapStateSync(projection.repoRoot).audience;
+  if (!audience) return "";
+  const layer = currentAudienceLayer(projection.companionPath, audience);
+  return layer ? readLayerGuidanceSync(layer, "CLAUDE.md") : "";
 }
 
 /**
@@ -18,8 +34,10 @@ export interface GuidanceOutcome {
  * repository must read exactly as it did before the hook existed.
  */
 export function buildSessionGuidance(env: HookEnv, cwd: string = process.cwd()): GuidanceOutcome {
-  const guidance = buildProjectedGuidance(env, cwd);
-  if (!guidance) return { exitCode: 0, stdout: "" };
+  const companionGuidance = buildProjectedGuidance(env, cwd);
+  if (!companionGuidance) return { exitCode: 0, stdout: "" };
+  const layer = wrappedAudienceGuidance(cwd);
+  const guidance = layer ? `${companionGuidance}\n\n${layer}` : companionGuidance;
 
   return {
     exitCode: 0,

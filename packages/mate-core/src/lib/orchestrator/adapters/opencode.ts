@@ -56,7 +56,12 @@ function readInvocation(launchWorkingDirectory: string, args: string[]): OpenCod
   return { command, rest, hostsPrivateServer: Boolean(hostsServer) && !choosesRemoteServer };
 }
 
-export class OpenCodeAdapter extends LaunchAdapter {
+/** An OpenCode launch's context: the audience layer its prepare rendered, if any. */
+interface OpenCodeLaunchContext extends AdapterContext {
+  audienceLayer?: string;
+}
+
+export class OpenCodeAdapter extends LaunchAdapter<OpenCodeLaunchContext> {
   readonly toolName = "opencode";
   readonly interactive = true;
   private readonly requiredRuntimeAssets = [path.join(".opencode", "opencode.json")] as const;
@@ -77,6 +82,15 @@ export class OpenCodeAdapter extends LaunchAdapter {
         `Mate requires OpenCode ${MIN_OPENCODE_MAJOR}.x or newer. Upgrade OpenCode and retry.`,
       ].join("\n"),
     );
+  }
+
+  async planLaunch(
+    context: AdapterContext,
+    prepared: PrepareResult,
+  ): Promise<OpenCodeLaunchContext> {
+    return prepared.audienceLayer
+      ? { ...context, audienceLayer: prepared.audienceLayer.root }
+      : context;
   }
 
   /** A prepared repository reports its failure as one summary, as it always has. */
@@ -102,26 +116,29 @@ export class OpenCodeAdapter extends LaunchAdapter {
    * overlay carried now lives in the wrapped `.opencode/opencode.json`. An
    * inherited `OPENCODE_CONFIG_DIR` or `OPENCODE_CONFIG_CONTENT` passes through.
    */
-  extendEnvironment(context: AdapterContext, args: string[] = []): NodeJS.ProcessEnv {
+  extendEnvironment(context: OpenCodeLaunchContext, args: string[] = []): NodeJS.ProcessEnv {
     const { hostsPrivateServer } = readInvocation(context.launchWorkingDirectory, args);
     return {
       // Built fresh per launch from the live capability config; always set so
       // a stale value inherited from an outer Mate session can never leak in.
       // Masked unless the launch hosts its own server: a payload that reached
-      // the shared service would apply this session's guidance to every other.
+      // the shared service would apply this session's guidance — and its
+      // audience layer — to every other.
       [MATE_ENV.guidanceJson]: hostsPrivateServer
         ? JSON.stringify(this.buildGuidance(context))
         : "",
     };
   }
 
-  private buildGuidance(context: AdapterContext): MateGuidanceFile {
-    return buildOpenCodeGuidance(context.capabilities, {
+  /** The audience layer travels as a path; the plugin reads it through the surface's reader. */
+  private buildGuidance(context: OpenCodeLaunchContext): MateGuidanceFile {
+    const guidance = buildOpenCodeGuidance(context.capabilities, {
       companionScoped: !context.repository,
     });
+    return context.audienceLayer ? { ...guidance, audienceLayer: context.audienceLayer } : guidance;
   }
 
-  async validateLaunch(context: AdapterContext): Promise<void> {
+  async validateLaunch(context: OpenCodeLaunchContext): Promise<void> {
     this.validateOpenCodeVersion();
 
     const missingAssets = await Promise.all(
@@ -185,7 +202,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
 
   // Self-check the guidance payload this launch is about to inject so a
   // broken playbook template fails preflight instead of inside OpenCode.
-  private validateGuidance(context: AdapterContext): string[] {
+  private validateGuidance(context: OpenCodeLaunchContext): string[] {
     const built = this.buildGuidance(context);
     const { guidance, errors } = validateGuidanceData(built);
 

@@ -416,6 +416,16 @@ export async function removeOpenCodeForeignPluginReferences(
 
 const OPENCODE_CONTRIBUTION_CONFIG_FILES = ["opencode.json"];
 
+/**
+ * The surface's reader for an audience layer it wrote: what the Mate OpenCode
+ * plugin applies. Defined under `runtime/` so the import-isolated plugin can
+ * reach it; this surface owns the format it reads.
+ */
+export {
+  readOpenCodeAudienceLayer,
+  type OpenCodeLayerContents,
+} from "../../../runtime/opencode-audience-layer";
+
 export async function reconcileOpenCodeContributions(
   ctx: SetupContext,
   inputs: CapabilityContributionInput[],

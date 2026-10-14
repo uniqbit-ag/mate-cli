@@ -97,7 +97,13 @@ export function createGitignorePlugin(
 ): Plugin {
   // Resolve lazily so plugin sets can be built before a distribution is active.
   const resolveName = typeof frameworkName === "function" ? frameworkName : () => frameworkName;
-  const resolvePlugins = allPlugins ?? (() => getActiveDistribution().registry.getAll());
+  /** Base only: an audience plugin's entries would reach the committed `.gitignore`. */
+  const resolvePlugins =
+    allPlugins ??
+    (() =>
+      getActiveDistribution()
+        .registry.baseRegistrations()
+        .map((entry) => entry.plugin));
   return {
     id: "gitignore",
     kind: "root",

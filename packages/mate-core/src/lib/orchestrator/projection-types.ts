@@ -48,6 +48,8 @@ export interface ProjectionInput {
   runtimeDocuments?: readonly RenderedRuntimeDocument[];
   /** Restricts runtime-tagged entries to these runtimes; every runtime when absent. */
   runtimes?: readonly WrapRuntime[];
+  /** The layer directory of the audience the checkout is wrapped for; `null` or absent for base only. */
+  audienceLayerDir?: string | null;
 }
 
 export interface ProjectionRemovalInput {
