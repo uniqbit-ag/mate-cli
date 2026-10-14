@@ -1,5 +1,3 @@
-import path from "node:path";
-
 /**
  * Versioned companion guidance contract. The CLI builds the guidance data
  * from its playbooks at launch time and delivers it through the
@@ -18,12 +16,6 @@ export type MateGuidanceFile = {
   companionGuidance: string;
   codebaseExplorationGuidance: string;
   errors: string[];
-  /**
-   * The active audience's layer, for a launch that hosts its own server only.
-   * The plugin applies it only from a payload it trusts; a masked payload
-   * carries none, so the shared service and bare sessions never see one.
-   */
-  audienceLayer?: string;
 };
 
 export type GuidanceValidation = {
@@ -84,21 +76,12 @@ export function validateGuidanceData(value: unknown): GuidanceValidation {
     errors.push("injected codebase exploration guidance is malformed");
   }
 
-  const audienceLayer =
-    typeof value.audienceLayer === "string" && path.isAbsolute(value.audienceLayer)
-      ? value.audienceLayer
-      : undefined;
-  if (value.audienceLayer !== undefined && audienceLayer === undefined) {
-    errors.push("injected audience layer is not an absolute path");
-  }
-
   return {
     guidance: {
       version: GUIDANCE_FILE_VERSION,
       companionGuidance,
       codebaseExplorationGuidance,
       errors,
-      ...(audienceLayer ? { audienceLayer } : {}),
     },
     errors,
   };

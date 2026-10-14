@@ -11,8 +11,6 @@ import {
   manifestPath,
   parseManifest,
   type ManagedRegion,
-  withAudience,
-  withDocument,
 } from "./runtime-document-manifest";
 import { readWrapState, readWrapStateSync, wrapStateOf } from "./wrap-state";
 
@@ -170,13 +168,5 @@ describe("readWrapState (strict)", () => {
 
   test("the lenient read takes a corrupt manifest as not wrapped", () => {
     expect(readWrapStateSync(repoWithManifest("{ not json")).runtimes.size).toBe(0);
-  });
-});
-
-describe("the wrap's audience", () => {
-  test("Wrap State exposes the recorded audience, none by default", () => {
-    const documented = withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, []);
-    expect(wrapStateOf(documented).audience).toBeNull();
-    expect(wrapStateOf(withAudience(documented, "ba")).audience).toBe("ba");
   });
 });

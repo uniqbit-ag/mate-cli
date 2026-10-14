@@ -11,11 +11,6 @@ import { spawnPrepareRunner } from "../../src/runtime/session-prepare-runner";
 import { readWrapStateSync } from "../../src/runtime/wrap-state";
 
 import { registerCompanionAccess } from "./add-dir";
-import {
-  readTrustedAudienceLayer,
-  readWrappedAudienceLayer,
-  registerAudienceLayer,
-} from "./audience-layer";
 import { missingRuntimeDirectoryMessage, registerCompanion, resolveMateBin } from "./companion";
 import { pluginLaunchEnvironment, type LaunchEnvironment } from "./launch-environment";
 
@@ -56,17 +51,9 @@ export const MateOpenCodePlugin = Plugin.define({
     const context = readContext(env, api.location.directory);
     if (!context.companionPath) return;
 
-    /**
-     * A layer comes from a payload this launch trusts, else from the wrap of
-     * the session's checkout; an inherited environment never names one.
-     */
-    const layer =
-      (await readTrustedAudienceLayer(env)) ??
-      (await readWrappedAudienceLayer(api.location.directory, context.companionPath));
-    await registerCompanionAccess(api, context.companionPath, layer ? [layer.root] : []);
+    await registerCompanionAccess(api, context.companionPath);
     await registerCompanionHooks(api, context, env);
-    await registerCompanion(api, context, env, layer?.contents.guidance);
-    if (layer) await registerAudienceLayer(api, layer.contents);
+    await registerCompanion(api, context, env);
     /** Last: the guardrails above are live while the local phase holds `setup`. */
     const prepareCleanup = await registerPrepare(api, context.companionPath, env);
     return async () => {

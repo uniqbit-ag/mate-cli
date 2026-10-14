@@ -80,8 +80,6 @@ export interface Manifest {
   readonly runtimes: Readonly<Record<string, WrapRuntime>>;
   readonly copies: Readonly<Record<string, CopyRecord>>;
   readonly links: Readonly<Record<string, LinkRecord>>;
-  /** The audience `mate wrap --audience` recorded; the only source of a bare session's audience. */
-  readonly audience?: string;
 }
 
 export const EMPTY_MANIFEST: Manifest = Object.freeze({
@@ -126,21 +124,7 @@ function manifestOf(parsed: Record<string, unknown>): Manifest {
     runtimes: isRecord(parsed.runtimes) ? (parsed.runtimes as Manifest["runtimes"]) : {},
     copies: isRecord(parsed.copies) ? (parsed.copies as Manifest["copies"]) : {},
     links: isRecord(parsed.links) ? (parsed.links as Manifest["links"]) : {},
-    ...(typeof parsed.audience === "string" && parsed.audience
-      ? { audience: parsed.audience }
-      : {}),
   };
-}
-
-/** The audience the checkout is wrapped for; `null` for base only. */
-export function recordedAudience(manifest: Manifest): string | null {
-  return manifest.audience ?? null;
-}
-
-/** Records the checkout's audience, or none with `null`. */
-export function withAudience(manifest: Manifest, audience: string | null): Manifest {
-  const { audience: _previous, ...rest } = manifest;
-  return audience ? { ...rest, audience } : rest;
 }
 
 function recordedRuntime(manifest: Manifest, documentPath: string): WrapRuntime {
@@ -166,7 +150,6 @@ export function serializeManifest(manifest: Manifest): string | null {
       ...(recorded.length > 0 ? { runtimes } : {}),
       ...(copied.length > 0 ? { copies: manifest.copies } : {}),
       ...(linked.length > 0 ? { links: manifest.links } : {}),
-      ...(manifest.audience ? { audience: manifest.audience } : {}),
     },
     null,
     2,

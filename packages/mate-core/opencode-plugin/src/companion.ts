@@ -77,7 +77,6 @@ function buildSystemPrompt(
   context: CompanionContext,
   guidance: MateGuidanceFile,
   wrapperBinPath: string,
-  layerGuidance: string,
 ): string[] {
   const lines = [materializeCompanionGuidance(guidance.companionGuidance, context, wrapperBinPath)];
 
@@ -87,11 +86,6 @@ function buildSystemPrompt(
 
   if (context.agentsMd.trim()) {
     lines.push("", `<agents.md>${context.agentsMd.trim()}</agents.md>`);
-  }
-
-  /** The audience's guidance follows the companion's, never replaces it. */
-  if (layerGuidance.trim()) {
-    lines.push("", layerGuidance.trim());
   }
 
   return lines;
@@ -188,7 +182,6 @@ export async function registerCompanion(
   api: Context,
   context: CompanionContext,
   env: LaunchEnvironment = process.env,
-  layerGuidance = "",
 ): Promise<void> {
   const guidance = loadGuidance(env, api.location.directory);
   if (!guidance) return;
@@ -199,7 +192,7 @@ export async function registerCompanion(
     return;
   }
 
-  const companion = buildSystemPrompt(context, guidance, wrapperBinPath, layerGuidance).join("\n");
+  const companion = buildSystemPrompt(context, guidance, wrapperBinPath).join("\n");
 
   await api.session.hook("context", (event) => {
     const merged = mergeCompanionSystem(event.system, companion);

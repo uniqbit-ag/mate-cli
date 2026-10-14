@@ -10,16 +10,6 @@ import { ConfigStore } from "../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
-import type { CapabilityPlugin } from "../../tools/setup/plugin";
-import { PluginRegistry } from "../../tools/setup/registry";
-import {
-  CLAUDE_SETTINGS_DOCUMENT,
-  EMPTY_MANIFEST,
-  manifestPath,
-  serializeManifest,
-  withAudience,
-  withDocument,
-} from "../../runtime/runtime-document-manifest";
 import { runDoctorCommand } from "./doctor";
 
 const tempRoots: string[] = [];
@@ -552,8 +542,7 @@ describe("runDoctorCommand", () => {
       allowedAgents: ["claude"],
       packageManagers: [],
       capabilities: [],
-      /** At the running release: a save keeps it, since it already admits the base audience shape. */
-      engines: { mate: `>=${packageJson.version}` },
+      engines: { mate: ">=0.0.0" },
     });
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
     await globalConfigStore.register(companionPath);
@@ -564,7 +553,7 @@ describe("runDoctorCommand", () => {
 
     expect(output).toContain("Version Requirement");
     expect(output).toContain("engines.mate: satisfied");
-    expect(output).toContain(`>=${packageJson.version}`);
+    expect(output).toContain(">=0.0.0");
     expect(output).toContain(packageJson.version);
   });
 
@@ -618,12 +607,6 @@ describe("runDoctorCommand", () => {
     const repoPath = path.join(root, "working");
     await fs.mkdir(repoPath, { recursive: true });
     const companionPath = await setupCompanion(root, repoPath);
-    /** A file no save of the base audience shape has touched yet carries no floor. */
-    const configPath = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
-    await fs.writeFile(
-      configPath,
-      "allowedAgents:\n  - claude\ncapabilities:\n  - name: openspec\n",
-    );
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
     await globalConfigStore.register(companionPath);
 
@@ -647,22 +630,11 @@ describe("doctor audiences", () => {
     },
   };
 
-  async function run(
-    env: Record<string, string | undefined>,
-    argv: string[] = ["--json"],
-    wrappedFor?: string,
-  ) {
+  async function run(env: Record<string, string | undefined>, argv: string[] = ["--json"]) {
     const root = await makeTempDir("doctor-audiences-");
     const repoPath = path.join(root, "working");
     await fs.mkdir(repoPath, { recursive: true });
     const companionPath = await setupCompanion(root, repoPath, config);
-    if (wrappedFor) {
-      const manifest = withAudience(
-        withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, []),
-        wrappedFor,
-      );
-      await fs.writeFile(manifestPath(repoPath), serializeManifest(manifest) ?? "", "utf8");
-    }
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
     await globalConfigStore.register(companionPath);
     process.exitCode = 0;
@@ -710,18 +682,6 @@ describe("doctor audiences", () => {
     ]);
   });
 
-  test("a working repository wrapped for an audience reports it, in JSON and text", async () => {
-    const { output } = await run({}, ["--json"], "ba");
-    expect(JSON.parse(output).audiences).toEqual({
-      declared: ["ba", "qa"],
-      active: null,
-      wrapped: "ba",
-    });
-
-    const text = (await run({}, [], "ba")).output;
-    expect(text).toMatch(/Wrapped\s+.*ba/);
-  });
-
   test("the text report lists declared and active audiences", async () => {
     const { output } = await run({ MATE_AUDIENCE: "ba" }, []);
     expect(output).toContain("Audiences");
@@ -743,146 +703,6 @@ describe("doctor audiences", () => {
     expect(JSON.parse(output).audiences).toBeUndefined();
   });
 });
-
-describe("doctor audience isolation", () => {
-  const config: FrameworkConfig = {
-    allowedAgents: ["claude"],
-    packageManagers: [],
-    capabilities: [],
-    audiences: { ba: { plugins: [{ package: "@acme/analyst", version: "1.0.0" }] } },
-  };
-
-  function capability(id: string, overrides: Partial<CapabilityPlugin> = {}): CapabilityPlugin {
-    return {
-      id,
-      kind: "capability",
-      label: id,
-      description: id,
-      defaultSelected: false,
-      isEnabled: () => true,
-      async apply() {},
-      async teardown() {},
-      ...overrides,
-    };
-  }
-
-  async function run(options: {
-    env?: Record<string, string | undefined>;
-    argv?: string[];
-    prepare?: (companionPath: string) => Promise<void>;
-    registry?: PluginRegistry;
-  }) {
-    const root = await makeTempDir("doctor-isolation-");
-    const repoPath = path.join(root, "working");
-    await fs.mkdir(repoPath, { recursive: true });
-    const companionPath = await setupCompanion(root, repoPath, config);
-    await options.prepare?.(companionPath);
-    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
-    await globalConfigStore.register(companionPath);
-    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      const output = await captureStdout(() =>
-        runDoctorCommand(options.argv ?? ["--json"], {
-          cwd: repoPath,
-          globalConfigStore,
-          env: options.env ?? {},
-          inspectPlugins: async () => ({ failures: [], capabilities: [] }),
-          registry: options.registry ?? new PluginRegistry([capability("base-plugin")]),
-        }),
-      );
-      return output;
-    } finally {
-      stderr.mockRestore();
-      process.exitCode = 0;
-    }
-  }
-
-  const leakedBlock = [
-    "# Agents",
-    "<!-- mate:managed:ba-plugin:abc123 start -->",
-    "BA guidance.",
-    "<!-- mate:managed:ba-plugin:abc123 end -->",
-    "<!-- mate:managed:base-plugin:def456 start -->",
-    "Base guidance.",
-    "<!-- mate:managed:base-plugin:def456 end -->",
-    "",
-  ].join("\n");
-
-  test("a leaked guidance block is reported with its file and plugin", async () => {
-    const prepare = (companionPath: string) =>
-      fs.writeFile(path.join(companionPath, "AGENTS.md"), leakedBlock, "utf8");
-
-    const report = JSON.parse(await run({ prepare }));
-    expect(report.audienceIsolation.leaked).toEqual([
-      { surface: "AGENTS.md", kind: "guidance", owner: "ba-plugin" },
-    ]);
-
-    const text = await run({ prepare, argv: [] });
-    expect(text).toContain("Audience Isolation");
-    expect(text).toContain("AGENTS.md");
-    expect(text).toContain("ba-plugin");
-  });
-
-  test("ledger-recorded contributions of a non-base owner and unswept plugins are reported", async () => {
-    const prepare = async (companionPath: string) => {
-      const ledgerPath = path.join(companionPath, ".mate", "config", "contribution-ledger.json");
-      await fs.writeFile(
-        ledgerPath,
-        JSON.stringify({
-          version: 1,
-          runtimes: {
-            claude: {
-              "ba-plugin": { mcpServers: ["ba-mcp"] },
-              "base-plugin": { mcpServers: ["x"] },
-            },
-          },
-          unswept: ["@acme/analyst"],
-        }),
-        "utf8",
-      );
-    };
-
-    const report = JSON.parse(await run({ prepare }));
-    expect(report.audienceIsolation.leaked).toEqual([
-      { surface: ".mcp.json", kind: "mcpServers", identity: "ba-mcp", owner: "ba-plugin" },
-    ]);
-    expect(report.audienceIsolation.unswept).toEqual(["@acme/analyst"]);
-  });
-
-  test("an imperative active-audience plugin is reported as not delivered", async () => {
-    const registry = new PluginRegistry([capability("base-plugin")]);
-    registry.register({
-      plugin: capability("ba-plugin", {
-        async apply() {
-          await fs.writeFile("/tmp/never", "x");
-        },
-        forProvider: { claude: { async apply() {}, async teardown() {} } },
-        getRuntimeContributions: () => ({
-          opencode: {
-            pluginReferences: [{ reference: "ba-oc@1", isManagedReference: () => false }],
-          },
-        }),
-      }),
-      policy: "optional",
-      audience: "ba",
-    });
-
-    const report = JSON.parse(await run({ env: { MATE_AUDIENCE: "ba" }, registry }));
-    expect(report.audienceIsolation.undelivered).toEqual([
-      { pluginId: "ba-plugin", parts: ["apply", "forProvider", "pluginReferences"] },
-    ]);
-
-    const text = await run({ env: { MATE_AUDIENCE: "ba" }, registry, argv: [] });
-    expect(text).toContain("ba-plugin");
-    expect(text).toContain("apply is not run");
-  });
-
-  test("a clean companion reports nothing", async () => {
-    const report = JSON.parse(await run({ env: { MATE_AUDIENCE: "ba" } }));
-    expect(report.audienceIsolation).toBeUndefined();
-  });
-});
-
 describe("doctor OpenSpec rules keys", () => {
   async function companionWithConfig(
     openspecConfig: string | null,

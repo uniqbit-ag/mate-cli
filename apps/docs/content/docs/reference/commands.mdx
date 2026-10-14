@@ -162,7 +162,7 @@ start before the preflight finishes. context-mode loads only with `mate claude`.
 ## Wrapping
 
 ```sh
-mate wrap [--companion PATH] [--audience NAME]
+mate wrap [--companion PATH]
 mate unwrap
 ```
 
@@ -200,25 +200,6 @@ documents current, so a Capability enabled after the wrap reaches the next sessi
 without re-wrapping. `mate unwrap` withdraws the documents and the owned copies and
 keeps the repository link; the withdrawal holds until the next `mate claude` or
 `mate opencode` there, which wraps again.
-
-### Wrapping for an audience
-
-`mate wrap --audience NAME` gives the sessions you start yourself in this checkout
-one audience of the companion beside the base configuration. The audience is
-recorded in the checkout's wrap, never read from `MATE_AUDIENCE`: the wrap carries
-that audience's MCP servers, hooks and permissions, links its skills and agents
-into `.claude/skills` and `.claude/agents`, and the guidance hook and the Mate
-OpenCode plugin add its guidance. An audience the companion does not declare, or
-the reserved `base`, is refused.
-
-The recorded audience survives session preparation and every managed launch.
-`mate claude` or `mate opencode` with `MATE_AUDIENCE` unset (or set to the same
-audience) adopts it; a launch for another audience is refused before the agent
-starts, naming `mate wrap --audience` and another worktree. A plain `mate wrap`
-returns the checkout to base, and `mate unwrap` withdraws the audience with the
-rest of the wrap. One checkout carries one audience; for two at once, use two git
-worktrees, each linked and wrapped on its own. `mate doctor` names the audience a
-checkout is wrapped for.
 
 ## Session Preparation
 

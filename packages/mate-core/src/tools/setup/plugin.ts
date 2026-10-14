@@ -7,10 +7,9 @@ export type SetupScope = "companion" | "hub";
 /**
  * Where a reconcile pass lands its documents. `companion` writes the material's
  * own repository; `working` renders the documents an Agent Runtime discovers by
- * its own upward walk and leaves the placing to the Projection Root;
- * `audience-layer` writes one audience's launch layer, outside every repository.
+ * its own upward walk and leaves the placing to the Projection Root.
  */
-export type ProjectionTarget = "companion" | "working" | "audience-layer";
+export type ProjectionTarget = "companion" | "working";
 
 export interface SetupContext {
   companionPath: string;
@@ -23,14 +22,6 @@ export interface SetupContext {
   repoPath?: string;
   /** Defaults to `companion`, so a caller that names no target is unchanged. */
   target?: ProjectionTarget;
-  /** The audience an `audience-layer` pass renders; required by that target only. */
-  audience?: string;
-  /**
-   * Where an `audience-layer` pass writes: the staging directory a render is
-   * built in before it is renamed into place. The audience's layer directory
-   * when absent.
-   */
-  layerRoot?: string;
   /**
    * Provider-mediated context services. Always populated when the engine
    * executes a plugin; optional so hand-built contexts (tests, direct calls)
@@ -131,15 +122,9 @@ export type PluginPolicy = "required" | "default" | "optional";
 
 /**
  * A plugin registration entry. Bare plugins derive their policy from
- * `defaultSelected` (`true` → "default", `false` → "optional"). `audience` is
- * the source of a declared plugin: `null` (or absent) for compiled-in plugins
- * and top-level `plugins` declarations, the audience name for a declaration
- * under `audiences.<name>.plugins`. `packageName` names the declared package a
- * dynamic plugin was loaded from.
+ * `defaultSelected` (`true` → "default", `false` → "optional").
  */
-export type PluginRegistration =
-  | Plugin
-  | { plugin: Plugin; policy: PluginPolicy; audience?: string | null; packageName?: string };
+export type PluginRegistration = Plugin | { plugin: Plugin; policy: PluginPolicy };
 
 /**
  * A hook group a Capability contributes to a runtime's settings. `marker` is

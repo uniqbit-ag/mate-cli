@@ -9,7 +9,7 @@ import type { Plugin } from "../plugin";
 import type { PluginRegistry } from "../registry";
 import {
   describeUnknownAudience,
-  effectivePluginDeclarationSources,
+  effectivePluginDeclarations,
   readAudienceSelection,
   readFrameworkRaw,
   resolveAudience,
@@ -71,8 +71,7 @@ function activateDeclaredPlugin(plugin: Plugin): Plugin {
 /**
  * Registers the companion's effective plugins (base plus the active
  * `MATE_AUDIENCE`) into the active registry — compiled-in plugins first
- * (they are already registered), declared order after. Each registration is
- * marked with its source, so persisted passes can keep to base. Runs before cap-command detection on every invocation. No-op
+ * (they are already registered), declared order after. Runs before cap-command detection on every invocation. No-op
  * without a companion or `plugins:` entries; all diagnostics go to stderr;
  * never throws.
  */
@@ -90,12 +89,12 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
     if (!audience.ok) {
       warn(`${describeUnknownAudience(audience)}; applying the base configuration only`);
     }
-    const entries = effectivePluginDeclarationSources(raw, audience.ok ? audience.active : null);
+    const entries = effectivePluginDeclarations(raw, audience.ok ? audience.active : null);
     if (entries.length === 0) return;
 
     const registry = deps.registry ?? getActiveDistribution().registry;
 
-    for (const { entry, audience: source } of entries) {
+    for (const entry of entries) {
       const { declaration, error } = validateDeclaration(entry);
       if (!declaration) {
         if (error) warn(error);
@@ -123,8 +122,6 @@ export async function hydrateDynamicPlugins(deps: HydrateDynamicPluginsDeps = {}
       registry.register({
         plugin: activateDeclaredPlugin(result.plugin),
         policy: declaration.policy ?? "optional",
-        audience: source,
-        packageName: declaration.package,
       });
       hydratedPackages.add(declaration.package);
     }
