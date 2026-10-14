@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.5](https://github.com/uniqbit-ag/mate-cli/compare/0.18.4...0.18.5) (2026-10-14)
+
+### Bug Fixes
+
+- keep Mate's spec frontmatter conventions in OpenSpec's config hooks ([4f715a5](https://github.com/uniqbit-ag/mate-cli/commit/4f715a5a27192188fb494dc9e16f326dd9d8c38b))
+- keep reading companions that Mate 0.18.4 saved in the audiences.base shape ([5eb6653](https://github.com/uniqbit-ag/mate-cli/commit/5eb6653badf413c5fa108dc470336fb68cbb27a4))
+
+### Reverts
+
+- Revert "feat: isolate audience contributions across agent sessions" ([58cab2d](https://github.com/uniqbit-ag/mate-cli/commit/58cab2dc050fd12539dad7de98d7990d8c2960c1))
+
 ## [0.18.4](https://github.com/uniqbit-ag/mate-cli/compare/0.18.3...0.18.4) (2026-10-14)
 
 ### Features
