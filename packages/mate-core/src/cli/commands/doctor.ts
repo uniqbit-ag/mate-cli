@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
+import { readWrapStateSync } from "../../runtime/wrap-state";
 import { getActiveDistribution } from "../../distribution";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
@@ -19,7 +20,12 @@ import {
   type PluginInspection,
   type PluginVerificationFailure,
 } from "../../tools/setup/dynamic-plugins/verify";
+import {
+  inspectAudienceIsolation,
+  type AudienceIsolationReport,
+} from "../../tools/setup/isolation-diagnostics";
 import { getRequiredPluginDrift } from "../../tools/setup/policy";
+import type { PluginRegistry } from "../../tools/setup/registry";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
 import { writeJsonStdout } from "../write-json-stdout";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
@@ -33,6 +39,8 @@ interface DoctorDeps {
   inspectPlugins?: (companionPath: string) => Promise<PluginInspection>;
   /** Environment `MATE_AUDIENCE` is read from; defaults to the process environment. */
   env?: Record<string, string | undefined>;
+  /** The hydrated registry; the active distribution's when absent. */
+  registry?: PluginRegistry;
 }
 
 export type DoctorKind = "core" | "working" | "companion" | "hub";
@@ -66,10 +74,15 @@ export interface DoctorReport {
   toolInstallations?: DoctorToolInstallation[];
   requiredPluginDrift?: Array<{ pluginId: string; kind: string; reason: string }>;
   pluginFailures?: PluginVerificationFailure[];
-  /** Present for a companion that declares audiences or has one selected. */
-  audiences?: { declared: string[]; active: string | null };
+  /**
+   * Present for a companion that declares audiences or has one selected.
+   * `wrapped` is the audience the working repository is wrapped for, when any.
+   */
+  audiences?: { declared: string[]; active: string | null; wrapped?: string };
   /** Set when `MATE_AUDIENCE` names an audience the companion does not declare. */
   audienceError?: string;
+  /** Present when an audience's contributions reached a persisted surface, or a launch layer cannot deliver part of one. */
+  audienceIsolation?: AudienceIsolationReport;
   /** IDs of the capabilities the verified plugins provide. */
   pluginCapabilities?: string[];
   engineRequirement?: { range: string; ok: boolean; detail: string };
@@ -230,12 +243,18 @@ function collectAudiences(
   report: DoctorReport,
   config: FrameworkConfig,
   env: Record<string, string | undefined>,
+  repositoryPath: string | null,
 ): void {
   const declared = Object.keys(config.audiences ?? {});
   const requested = readAudienceSelection(env);
   if (declared.length === 0 && requested === null) return;
   const resolution = resolveAudience(config, requested);
-  report.audiences = { declared, active: resolution.ok ? resolution.active : null };
+  const wrapped = repositoryPath ? readWrapStateSync(repositoryPath).audience : null;
+  report.audiences = {
+    declared,
+    active: resolution.ok ? resolution.active : null,
+    ...(wrapped ? { wrapped } : {}),
+  };
   if (!resolution.ok) report.audienceError = describeUnknownAudience(resolution);
 }
 
@@ -274,7 +293,16 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
 
   const env = deps.env ?? process.env;
   if (root.rootPath && root.config && kind !== "hub") {
-    collectAudiences(report, root.config, env);
+    collectAudiences(report, root.config, env, root.linkedRepository?.path ?? null);
+    const isolation = await inspectAudienceIsolation(
+      root.rootPath,
+      root.config,
+      deps.registry ?? getActiveDistribution().registry,
+      report.audiences?.active ?? null,
+    );
+    if (isolation.leaked.length + isolation.unswept.length + isolation.undelivered.length > 0) {
+      report.audienceIsolation = isolation;
+    }
   }
 
   if (root.rootPath && root.config) {
@@ -325,6 +353,49 @@ function renderHubMembers(members: DoctorHubMember[]): string {
   );
 }
 
+function renderAudienceIsolation(isolation: AudienceIsolationReport): string {
+  const parts: string[] = [];
+  if (isolation.leaked.length > 0) {
+    parts.push(
+      "Contributions on persisted surfaces that no base plugin owns; the next sync removes them:",
+      renderTable(
+        ["Surface", "Kind", "Entry", "Owner"],
+        isolation.leaked.map((entry) => [
+          entry.surface,
+          entry.kind,
+          entry.identity ?? "",
+          entry.owner,
+        ]),
+      ),
+    );
+  }
+  if (isolation.unswept.length > 0) {
+    parts.push(
+      `Audience plugins not swept (could not be loaded); run \`MATE_AUDIENCE=<audience> ${FRAMEWORK_NAME} install --yes\` with their credentials:`,
+      renderList(isolation.unswept, ""),
+    );
+  }
+  if (isolation.undelivered.length > 0) {
+    parts.push(
+      "Active audience plugins contribute declaratively only; these parts are not delivered:",
+      renderList(
+        isolation.undelivered.map(
+          (entry) =>
+            `${entry.pluginId}: ${entry.parts
+              .map((part) =>
+                part === "pluginReferences"
+                  ? "OpenCode plugin references are not delivered"
+                  : `${part} is not run`,
+              )
+              .join("; ")}`,
+        ),
+        "",
+      ),
+    );
+  }
+  return parts.join("\n\n");
+}
+
 function renderHumanReport(report: DoctorReport): void {
   console.log("Mate Doctor");
   console.log("");
@@ -371,8 +442,19 @@ function renderHumanReport(report: DoctorReport): void {
       renderKeyValueTable([
         ["Declared", report.audiences.declared.join(", ") || "none"],
         ["Active", report.audiences.active ?? "none"],
+        ...(report.audiences.wrapped
+          ? [
+              ["Wrapped", `${report.audiences.wrapped} (bare sessions of this checkout)`] as [
+                string,
+                string,
+              ],
+            ]
+          : []),
       ]),
     );
+  }
+  if (report.audienceIsolation) {
+    printSection("Audience Isolation", renderAudienceIsolation(report.audienceIsolation));
   }
   if (report.hub) printSection("Hub Members", renderHubMembers(report.hub.members));
   // Companions with no drift produce no section at all: required plugins are

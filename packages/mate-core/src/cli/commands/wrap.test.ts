@@ -11,7 +11,9 @@ import { resolveForLaunch } from "../../lib/orchestrator/framework-context";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
+import { openSpecStoreDeps } from "../../lib/orchestrator/openspec-store";
 import { project } from "../../lib/orchestrator/working-repo-projection";
+import { stubOpenSpec } from "../../../test/openspec-store-stub";
 import type { WrapPassResult } from "../../lib/orchestrator/wrap-pass";
 import { EMPTY_MANIFEST, type WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, wrapStateOf } from "../../runtime/wrap-state";
@@ -108,6 +110,44 @@ describe("parseWrapArgs", () => {
       error: "--companion requires a path",
     });
     expect(parseWrapArgs(["--json"])).toEqual({ error: "unknown wrap option: --json" });
+  });
+
+  test("accepts both spellings of --audience and requires a name", () => {
+    expect(parseWrapArgs(["--audience", "ba"])).toEqual({ audience: "ba" });
+    expect(parseWrapArgs(["--audience=ba", "--companion", "/tmp/acme"])).toEqual({
+      audience: "ba",
+      companion: "/tmp/acme",
+    });
+    expect(parseWrapArgs(["--audience"])).toEqual({ error: "--audience requires a name" });
+    expect(parseWrapArgs(["--audience="])).toEqual({ error: "--audience requires a name" });
+  });
+});
+
+describe("runWrapCommand audiences", () => {
+  async function run(argv: string[]) {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-audience-");
+    const passes: unknown[] = [];
+    const { out, err, restore } = capture();
+    try {
+      await runWrapCommand(argv, repoPath, {
+        resolveLinkedCompanions: async () => [{ companionPath }] as never,
+        runWrapPass: async (_companion, _repository, options) => {
+          passes.push(options?.audience);
+          return { kind: "failed", message: "stop here" };
+        },
+      });
+    } finally {
+      restore();
+    }
+    return { passes, out, err };
+  }
+
+  test("--audience records the named audience", async () => {
+    expect((await run(["--audience", "ba"])).passes).toEqual(["ba"]);
+  });
+
+  test("no flag wraps for base, withdrawing a recorded audience", async () => {
+    expect((await run([])).passes).toEqual([null]);
   });
 });
 
@@ -337,6 +377,31 @@ describe("runWrapCommand", () => {
 
     expect(out.join("\n")).toContain("Copies:    2 written, 1 withdrawn under .opencode/");
     expect(err).toContain(`${FRAMEWORK_NAME}: warning: acme needs attention`);
+  });
+
+  test("a failing OpenSpec store registration warns on stderr and still exits 0", async () => {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-openspec-store-");
+    await fs.mkdir(path.join(companionPath, "openspec"), { recursive: true });
+    const root = path.dirname(repoPath);
+    const stub = await stubOpenSpec(root, path.join(root, "data"), {
+      stderr: "Store registry is busy.",
+    });
+    const originalStoreDeps = { ...openSpecStoreDeps };
+    openSpecStoreDeps.env = () => ({ ...process.env, XDG_DATA_HOME: path.join(root, "data") });
+    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    const { err, restore } = capture();
+
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      restore();
+      Object.assign(openSpecStoreDeps, originalStoreDeps);
+    }
+
+    expect(process.exitCode).toBeFalsy();
+    expect(err.join("\n")).toContain(
+      `${FRAMEWORK_NAME}: warning: failed to write ${path.join("openspec", "config.yaml")} for app: openspec store register failed: Store registry is busy.`,
+    );
   });
 
   test("writes what a launch resolution writes", async () => {

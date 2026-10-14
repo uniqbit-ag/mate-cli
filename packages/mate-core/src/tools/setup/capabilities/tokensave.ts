@@ -14,6 +14,8 @@ export { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "./tokensave-shared";
 export const TOKENSAVE_SUPPORTED_AGENTS = new Set(["claude", "opencode"]);
 export const TOKENSAVE_STORE_DIR = ".tokensave";
 export const TOKENSAVE_STORE_CONFIG_FILE = "config.json";
+/** The index itself: `tokensave sync` refuses a store without it. */
+const TOKENSAVE_STORE_DATABASE_FILE = "tokensave.db";
 export const TOKENSAVE_MIN_RUST_VERSION = "1.91.0";
 /** Single-graph posture Mate owns in the per-project store config; every other key is left as found. */
 const TOKENSAVE_OWNED_POSTURE = { auto_track: false, suppress_scope_warning: true } as const;
@@ -355,6 +357,15 @@ async function deactivateTokensaveBranchMetadata(repoPath: string): Promise<void
   if (removeActiveMetadata) {
     await fs.unlink(branchMetaPath).catch(() => {});
   }
+}
+
+/**
+ * Whether the working repo holds a TokenSave index `tokensave sync` accepts.
+ * The database, not the store folder: an empty or half-initialized
+ * `.tokensave/` must still get `tokensave init`, or every pass fails on sync.
+ */
+export async function isTokensaveIndexed(repoPath: string): Promise<boolean> {
+  return fileExists(path.join(repoPath, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_DATABASE_FILE));
 }
 
 /**

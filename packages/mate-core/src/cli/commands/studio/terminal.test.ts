@@ -16,6 +16,7 @@ import {
   type TerminalSpawnRequest,
   type TerminalViewer,
 } from "./terminal";
+import { audienceLayerDir } from "../../../runtime/audience-layer";
 import { createLaunchResolver, defaultAgentFor } from "./terminal-launch";
 
 const ACME = "/companions/acme";
@@ -398,6 +399,44 @@ describe("defaultAgentFor", () => {
       const outcome = await defaultAgentFor(root, "claude", { MATE_AUDIENCE: "ba" });
       expect(outcome.agentArgs).toBeUndefined();
       expect(outcome.notice).toContain("business-analyst");
+    });
+
+    /** A rendered layer for `audience` holding `definition`, as a managed launch leaves it. */
+    function layerWith(root: string, audience: string, definition: string): void {
+      const dir = audienceLayerDir(root, audience);
+      const version = path.join(dir, "f1");
+      fs.mkdirSync(path.join(version, path.dirname(definition)), { recursive: true });
+      fs.writeFileSync(path.join(version, definition), "---\nname: analyst\n---\n");
+      fs.rmSync(path.join(dir, "current"), { force: true });
+      fs.symlinkSync("f1", path.join(dir, "current"));
+      roots.push(dir);
+    }
+
+    test("an agent only the active audience's layer defines is applied", async () => {
+      const root = companion(withAudiences("developer", "analyst"), definitions);
+      layerWith(root, "ba", ".claude/agents/analyst.md");
+      expect(await defaultAgentFor(root, "claude", { MATE_AUDIENCE: "ba" })).toEqual({
+        agentArgs: ["--agent", "analyst"],
+      });
+    });
+
+    test("another audience's layer does not count", async () => {
+      const root = companion(withAudiences("developer", "analyst"), definitions);
+      layerWith(root, "qa", ".claude/agents/analyst.md");
+      const outcome = await defaultAgentFor(root, "claude", { MATE_AUDIENCE: "ba" });
+      expect(outcome.agentArgs).toBeUndefined();
+      expect(outcome.notice).toContain("analyst");
+    });
+
+    test("the layer's definition is per provider", async () => {
+      const root = companion(withAudiences("developer", "analyst"), definitions);
+      layerWith(root, "ba", ".opencode/agents/analyst.md");
+      expect(
+        (await defaultAgentFor(root, "claude", { MATE_AUDIENCE: "ba" })).agentArgs,
+      ).toBeUndefined();
+      expect(await defaultAgentFor(root, "opencode", { MATE_AUDIENCE: "ba" })).toEqual({
+        agentArgs: ["--agent", "analyst"],
+      });
     });
 
     test("an unsafe audience agent is rejected by config validation, never used", async () => {

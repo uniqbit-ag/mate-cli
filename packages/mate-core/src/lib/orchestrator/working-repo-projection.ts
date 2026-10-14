@@ -120,7 +120,8 @@ export async function unproject(input: ProjectionRemovalInput): Promise<Projecti
     }
     try {
       // oxlint-disable-next-line no-await-in-loop -- reverse catalogue order is the contract
-      outcomes.push(outcome(entry, await removal.remove(input)));
+      const removed = outcome(entry, await removal.remove(input));
+      outcomes.push(removal.retains ? { ...removed, retains: removal.retains } : removed);
     } catch (error) {
       outcomes.push(outcome(entry, "failed", toError(error)));
     }

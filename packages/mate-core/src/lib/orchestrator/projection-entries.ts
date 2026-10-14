@@ -37,6 +37,15 @@ import {
   removeCompanionCopies,
   withdrawCompanionCopies,
 } from "./projection-opencode-copies";
+import {
+  OPENSPEC_POINTER_EXCLUDE,
+  OPENSPEC_POINTER_PATH,
+  projectStorePointer,
+  reconcileStorePointerExclude,
+  removeStorePointer,
+  removeStorePointerExclude,
+  storePointerPresent,
+} from "./projection-openspec-store";
 import { buildProjection } from "./projection-record";
 import {
   CLAUDE_WORKING_SETTINGS_PATH,
@@ -245,6 +254,42 @@ function buildEntries(): readonly ProjectionEntry[] {
         input.companionPath && input.repository ? writeProjectionPairEntry(input) : "skipped",
       removal: { by: "entry", entry: "projection-root" },
     },
+    /**
+     * The OpenSpec store pointer's exclusion, then the pointer: the line is on
+     * disk before the file it hides. Its own line outside the managed block,
+     * disjoint from `capability-excludes`, so neither strips the other's.
+     */
+    {
+      id: "openspec-store-exclude",
+      kind: "merged",
+      path: path.join(".git", "info", "exclude"),
+      scopes: ["session", "wrap"],
+      write: async (input) =>
+        (await reconcileStorePointerExclude(input.repoPath)) ? "written" : "current",
+      degradable: true,
+      removal: { by: "self", remove: (input) => removeStorePointerExclude(input.repoPath) },
+      present: (repoPath) =>
+        workingRepoCapabilityExcludesPresent(repoPath, [OPENSPEC_POINTER_EXCLUDE]),
+    },
+    /**
+     * Degradable: without it OpenSpec still plans in the companion, it only
+     * names no Working Repository edit root — and the wrapper says so.
+     */
+    {
+      id: "openspec-store-pointer",
+      kind: "owned",
+      path: OPENSPEC_POINTER_PATH,
+      scopes: ["session", "wrap"],
+      write: async (input) =>
+        input.companionPath ? projectStorePointer(input.repoPath, input.companionPath) : "skipped",
+      degradable: true,
+      removal: {
+        by: "self",
+        remove: (input) => removeStorePointer(input.repoPath),
+        retains: "openspec-store-registration",
+      },
+      present: storePointerPresent,
+    },
     {
       id: "claude-skill-links",
       kind: "merged",
@@ -262,6 +307,7 @@ function buildEntries(): readonly ProjectionEntry[] {
           input.companionPath ?? null,
           input.config.allowedAgents?.includes("claude") ?? false,
           registeredCompanionPaths,
+          input.audienceLayerDir ?? null,
         );
       },
       removal: {

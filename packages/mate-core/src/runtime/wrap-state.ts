@@ -14,6 +14,7 @@ import {
   parseManifestStrict,
   readManifestText,
   recordedListValues,
+  recordedAudience,
   recordedMapKeys,
   type Manifest,
   type WrapRuntime,
@@ -30,6 +31,8 @@ export interface WrapState {
   carriesClaudeHookGroup(group: ClaudeHookGroup): boolean;
   /** MCP server names the wrap declared in `.opencode/opencode.json`; user servers are not listed. */
   readonly openCodeMcpServers: readonly string[];
+  /** The audience the checkout is wrapped for; `null` for base only. */
+  readonly audience: string | null;
 }
 
 export const WRAP_RUNTIMES: readonly WrapRuntime[] = ["claude", "opencode"];
@@ -61,6 +64,7 @@ export function wrapStateOf(manifest: Manifest): WrapState {
       OPENCODE_CONFIG_DOCUMENT,
       OPENCODE_MCP_SERVERS_AT,
     ),
+    audience: recordedAudience(manifest),
   };
 }
 

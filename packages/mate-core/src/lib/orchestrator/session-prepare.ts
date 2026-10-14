@@ -7,8 +7,14 @@ import {
   syncCompanionUnattended,
   type UnattendedSyncOutcome,
 } from "../../runtime/companion-sync";
-import type { WrapState } from "../../runtime/wrap-state";
+import { readWrapStateSync, type WrapState } from "../../runtime/wrap-state";
 import { syncCompanionFiles } from "../../tools/setup";
+import { renderAudienceLayer, type RenderedAudienceLayer } from "../../tools/setup/audience-layer";
+import {
+  readAudienceSelection,
+  resolveAudience,
+} from "../../tools/setup/dynamic-plugins/audiences";
+import { buildSetupInstallationPlan } from "../../tools/setup/engine";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
 import { attendedLockOptions, syncCompanionGit } from "./companion-git-sync";
 import { readCompanionConfig } from "./config-store";
@@ -34,7 +40,8 @@ export type PrepareStepName =
   | "file-sync"
   | "launch-projection"
   | "working-target"
-  | "preflight";
+  | "preflight"
+  | "audience-layer";
 
 export interface PrepareStep {
   step: PrepareStepName;
@@ -61,6 +68,8 @@ export interface PrepareResult {
   failure?: unknown;
   /** The wrap state the `working-target` step's pass left; a launch reads no manifest itself. */
   wrapState?: WrapState;
+  /** The active audience's layer, rendered for an attended prepare only. */
+  audienceLayer?: RenderedAudienceLayer;
 }
 
 export interface PrepareSessionInput {
@@ -89,9 +98,10 @@ const SYNC_LOCK_TIMEOUT_MS = 5 * 60_000;
  */
 async function runCapabilityPreflight(context: LaunchPreflightContext): Promise<void> {
   const { config, providerId } = context;
+  /** Base only: an audience plugin's `forProvider` hooks never run. */
   const preflights = getActiveDistribution()
-    .registry.getAll()
-    .flatMap((plugin) => {
+    .registry.baseRegistrations()
+    .flatMap(({ plugin }) => {
       if (plugin.kind !== "capability" || !plugin.isEnabled(config)) return [];
       const capability = plugin as CapabilityPlugin;
       const preflight = capability.forProvider?.[providerId]?.preflight;
@@ -137,6 +147,11 @@ export const sessionPrepareDeps = {
   withCompanionLock,
   /** As the launch decides it: Git may prompt only with a terminal on both ends. */
   isInteractiveTerminal: () => !!(process.stdin.isTTY && process.stdout.isTTY),
+  /** The launch's `MATE_AUDIENCE`; read by an attended prepare only. */
+  audienceSelection: () => readAudienceSelection(process.env),
+  /** The audience a checkout is wrapped for, from its manifest; `null` for base. */
+  wrappedAudience: (repoPath: string) => readWrapStateSync(repoPath).audience,
+  renderAudienceLayer,
 };
 
 function message(error: unknown): string {
@@ -149,6 +164,7 @@ class StepLog {
   readonly warnings: string[] = [];
   failure: unknown;
   wrapState: WrapState | undefined;
+  audienceLayer: RenderedAudienceLayer | undefined;
   stopped = false;
   companionChanged = false;
 
@@ -321,12 +337,71 @@ async function runLocal(
   });
 }
 
+/**
+ * The active audience's launch layer, after the base prepare. Only a managed
+ * launch reaches here: a bare session's prepare never renders one, whatever
+ * `MATE_AUDIENCE` its environment carries. An audience the companion does not
+ * declare renders nothing; hydration already warned about it.
+ */
+async function renderLayer(
+  input: PrepareSessionInput,
+  config: FrameworkConfig,
+  run: StepLog,
+): Promise<void> {
+  const deps = sessionPrepareDeps;
+  /** Adopted from the wrap: the wrap delivers it, so the launch renders no layer of its own. */
+  const wrapped = input.repository ? deps.wrappedAudience(input.repository.path) : null;
+  if (wrapped) {
+    run.push({ step: "audience-layer", outcome: "ok", detail: `${wrapped}: from the wrap` });
+    return;
+  }
+  const audience = resolveAudience(config, deps.audienceSelection());
+  if (!audience.ok || audience.active === null) return;
+  try {
+    const registry = getActiveDistribution().registry;
+    const layer = await deps.renderAudienceLayer({
+      companionPath: input.companionPath,
+      config,
+      audience: audience.active,
+      activeProviders: buildSetupInstallationPlan(config, registry.baseRegistrations())
+        .activeProviders,
+      registrations: registry.audienceRegistrations(audience.active),
+    });
+    run.audienceLayer = layer;
+    run.push({
+      step: "audience-layer",
+      outcome: "ok",
+      detail: `${layer.audience}: ${layer.rendered ? "rendered" : "current"}`,
+    });
+  } catch (error) {
+    run.fail("audience-layer", error);
+  }
+}
+
+/**
+ * A checkout wrapped for one audience refuses a launch for another before
+ * anything runs: the wrap's on-disk content would reach that session.
+ */
+function audienceConflict(input: PrepareSessionInput, config: FrameworkConfig): string | null {
+  if (!input.repository) return null;
+  const wrapped = sessionPrepareDeps.wrappedAudience(input.repository.path);
+  if (!wrapped) return null;
+  const selected = resolveAudience(config, sessionPrepareDeps.audienceSelection());
+  if (!selected.ok || selected.active === null || selected.active === wrapped) return null;
+  return `${FRAMEWORK_NAME}: ${input.repository.id} is wrapped for audience "${wrapped}", but MATE_AUDIENCE selects "${selected.active}". Run \`${FRAMEWORK_NAME} wrap --audience ${selected.active}\` in ${input.repository.path}, or launch from another worktree wrapped for "${selected.active}".`;
+}
+
 async function runAttended(
   input: PrepareSessionInput,
   config: FrameworkConfig,
   run: StepLog,
 ): Promise<void> {
   const deps = sessionPrepareDeps;
+  const conflict = audienceConflict(input, config);
+  if (conflict) {
+    run.fail("audience-layer", new LaunchPreflightError(conflict));
+    return;
+  }
   if (input.skipGit) {
     run.push({ step: "git-sync", outcome: "skipped", detail: "--no-git" });
   } else if (config.git !== "auto") {
@@ -347,6 +422,8 @@ async function runAttended(
     }
   }
   await runLocal(input, config, run);
+  if (run.stopped) return;
+  await renderLayer(input, config, run);
 }
 
 /** The sync's own config read: only a fast-forward can have changed it. */
@@ -401,6 +478,7 @@ export async function prepareSession(input: PrepareSessionInput): Promise<Prepar
     ...(run.companionChanged ? { companionChanged: true as const } : {}),
     ...(run.failure === undefined ? {} : { failure: run.failure }),
     ...(run.wrapState ? { wrapState: run.wrapState } : {}),
+    ...(run.audienceLayer ? { audienceLayer: run.audienceLayer } : {}),
   });
 
   const locked = await deps.withCompanionLock(input.companionPath, lockOptions(input), async () => {

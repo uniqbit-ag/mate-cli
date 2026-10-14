@@ -9,6 +9,11 @@ import {
   type ClaudeDeliveryPlan,
   type SessionKind,
 } from "../../../runtime/claude-delivery-plan";
+import {
+  audienceLayerDir,
+  currentAudienceLayer,
+  readLayerGuidanceSync,
+} from "../../../runtime/audience-layer";
 import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
 import { NOT_WRAPPED } from "../../../runtime/wrap-state";
 import { writeAtomic } from "../../../runtime/write-atomic";
@@ -19,15 +24,31 @@ import {
 import type { ClaudeSettings } from "../../../tools/setup/providers/claude-format";
 import { getContextModePackageRoot, validateContextModePackage } from "../../context-mode-package";
 import { getClaudePluginRoot, validateClaudePluginAssets } from "../../package-paths";
+import type { RenderedAudienceLayer } from "../../../tools/setup/audience-layer";
 import type { PrepareResult } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
 import { type AdapterContext, LaunchAdapter } from "./base";
+
+/** The active audience's layer, attached to this launch only. */
+interface ClaudeLayerDelivery {
+  audience: string;
+  root: string;
+  /** The layer's MCP configuration, when the layer holds one. */
+  mcpConfigPath?: string;
+}
 
 /** The paths are present only where the plan names that channel and the file exists. */
 interface ClaudeDelivery {
   plan: ClaudeDeliveryPlan;
   settingsPath?: string;
   mcpConfigPath?: string;
+  layer?: ClaudeLayerDelivery;
+  /**
+   * The guidance of the audience the checkout is wrapped for. The wrap carries
+   * the rest of that audience; its guidance hook stays silent in a managed
+   * session, so the launch's own system prompt carries this.
+   */
+  wrappedGuidance?: string;
 }
 
 /** A Claude launch's context: the delivery its plan chose, and the files it chose or wrote. */
@@ -35,34 +56,75 @@ interface ClaudeLaunchContext extends AdapterContext {
   delivery: ClaudeDelivery;
 }
 
-/** Where a launch with a Working Repository writes its derived `--settings`; git-ignored. */
-export function launchSettingsPath(companionPath: string, repositoryId: string): string {
-  const safeId = repositoryId.replace(/[^A-Za-z0-9._-]/g, "_");
-  return path.join(companionPath, ".claude", "state", `launch-settings.${safeId}.json`);
+function safeName(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
 /**
- * Companion settings minus `exclude`, so each wrap-carried group runs once. A
- * file, not inline JSON (platform arg limits); per repository, so concurrent
- * launches never race.
+ * Where a launch writes its derived `--settings`. Per Working Repository and
+ * audience, so concurrent launches never race; a companion-scoped launch
+ * derives one only for an audience. Without an audience it is git-ignored
+ * under the companion. With one it carries that audience's hooks and
+ * permission entries, so it lives beside the audience's layer, outside the
+ * companion, where no other audience's session can read it.
+ */
+export function launchSettingsPath(
+  companionPath: string,
+  repositoryId: string | null,
+  audience?: string,
+): string {
+  const scope = repositoryId === null ? "companion-scope" : `settings.${safeName(repositoryId)}`;
+  if (audience) {
+    return path.join(audienceLayerDir(companionPath, audience), `launch-${scope}.json`);
+  }
+  return path.join(companionPath, ".claude", "state", `launch-${scope}.json`);
+}
+
+async function readSettings(settingsPath: string): Promise<ClaudeSettings> {
+  if (!existsSync(settingsPath)) return {};
+  return JSON.parse(await fs.readFile(settingsPath, "utf8")) as ClaudeSettings;
+}
+
+/**
+ * Companion settings minus `exclude`, so each wrap-carried group runs once,
+ * plus the layer's hook groups and permission entries. A file, not inline JSON
+ * (platform arg limits). Claude reads one `--settings` file only — a second
+ * one replaces the first — so the layer is merged here, never passed beside.
  */
 async function writeLaunchSettings(
   companionSettingsPath: string,
   target: string,
   exclude: readonly ClaudeHookGroup[],
+  layerSettingsPath?: string,
 ): Promise<void> {
-  const settings = JSON.parse(await fs.readFile(companionSettingsPath, "utf8")) as ClaudeSettings;
+  const settings = await readSettings(companionSettingsPath);
+  const layer = layerSettingsPath ? await readSettings(layerSettingsPath) : {};
   const excluded = new Set(exclude.map(hookGroupKey));
   const hooks: Record<string, ClaudeHookGroup[]> = {};
   for (const [event, groups] of Object.entries(settings.hooks ?? {})) {
     const kept = (groups ?? []).filter((group) => !excluded.has(hookGroupKey(group)));
     if (kept.length > 0) hooks[event] = kept;
   }
+  for (const [event, groups] of Object.entries(layer.hooks ?? {})) {
+    hooks[event] = [...(hooks[event] ?? []), ...(groups ?? [])];
+  }
   const derived: ClaudeSettings = { ...settings, hooks };
   if (Object.keys(hooks).length === 0) delete derived.hooks;
+  const layerAllow = layer.permissions?.allow ?? [];
+  if (layerAllow.length > 0) {
+    const allow = [...new Set([...(settings.permissions?.allow ?? []), ...layerAllow])];
+    derived.permissions = { ...settings.permissions, allow };
+  }
 
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await writeAtomic(target, `${JSON.stringify(derived, null, 2)}\n`);
+  const text = `${JSON.stringify(derived, null, 2)}\n`;
+  if (layerSettingsPath) {
+    /** Beside the audience's layer: as private as the layer itself. */
+    await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+    await writeAtomic(target, text, 0o600);
+  } else {
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await writeAtomic(target, text);
+  }
 }
 
 /** The `--settings` file the plan's hook owner calls for, writing it when derived. */
@@ -70,14 +132,36 @@ async function settingsPathFor(
   plan: ClaudeDeliveryPlan,
   companionPath: string,
   repository: AdapterContext["repository"],
+  layer: RenderedAudienceLayer | undefined,
 ): Promise<string | undefined> {
   const companionSettingsPath = getCompanionClaudeSettingsPath(companionPath);
-  if (plan.hooks.owner === "none" || !existsSync(companionSettingsPath)) return undefined;
-  if (plan.hooks.owner === "settings") return companionSettingsPath;
+  if (plan.hooks.owner === "none") return undefined;
+  if (!layer && !existsSync(companionSettingsPath)) return undefined;
+  if (plan.hooks.owner === "settings" && !layer) return companionSettingsPath;
   /** Owner `wrap` is planned only for `managed-repo`, which has a repository. */
-  const settingsPath = launchSettingsPath(companionPath, repository!.id);
-  await writeLaunchSettings(companionSettingsPath, settingsPath, plan.hooks.launchSettingsExclude);
+  const settingsPath = launchSettingsPath(
+    companionPath,
+    plan.hooks.owner === "wrap" ? repository!.id : null,
+    layer?.audience,
+  );
+  await writeLaunchSettings(
+    companionSettingsPath,
+    settingsPath,
+    plan.hooks.launchSettingsExclude,
+    layer ? getCompanionClaudeSettingsPath(layer.root) : undefined,
+  );
   return settingsPath;
+}
+
+/** The layer as this launch attaches it: the directory, and its MCP configuration when present. */
+function layerDelivery(layer: RenderedAudienceLayer | undefined): ClaudeLayerDelivery | undefined {
+  if (!layer) return undefined;
+  const mcpConfigPath = getCompanionClaudeMcpConfigPath(layer.root);
+  return {
+    audience: layer.audience,
+    root: layer.root,
+    ...(existsSync(mcpConfigPath) ? { mcpConfigPath } : {}),
+  };
 }
 
 export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
@@ -100,11 +184,22 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
     }
     const plan = planClaudeDelivery(kind, wrap);
     const mcpConfigPath = getCompanionClaudeMcpConfigPath(companionPath);
-    const settingsPath = await settingsPathFor(plan, companionPath, repository);
+    const settingsPath = await settingsPathFor(
+      plan,
+      companionPath,
+      repository,
+      prepared.audienceLayer,
+    );
+    const layer = layerDelivery(prepared.audienceLayer);
+    const wrappedLayer =
+      !layer && wrap.audience ? currentAudienceLayer(companionPath, wrap.audience) : null;
+    const wrappedGuidance = wrappedLayer ? readLayerGuidanceSync(wrappedLayer, "CLAUDE.md") : "";
     const delivery: ClaudeDelivery = {
       plan,
       ...(plan.mcp === "mcp-config" && existsSync(mcpConfigPath) ? { mcpConfigPath } : {}),
       ...(settingsPath ? { settingsPath } : {}),
+      ...(layer ? { layer } : {}),
+      ...(wrappedGuidance ? { wrappedGuidance } : {}),
     };
     return { ...context, delivery };
   }
@@ -149,15 +244,30 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
    * and context-mode are unconditional: no settings document can carry them.
    */
   buildArgs(context: ClaudeLaunchContext, args: string[]): string[] {
-    const { plan, settingsPath, mcpConfigPath } = context.delivery;
+    const { plan, settingsPath, mcpConfigPath, layer, wrappedGuidance } = context.delivery;
+    const companionGuidance = buildCompanionGuidance(context);
+    const systemPrompt = wrappedGuidance
+      ? `${companionGuidance}\n\n${wrappedGuidance}`
+      : companionGuidance;
     /** Layered on the user's own sources so global skills and plugins still load. */
     const settingsArgs =
       plan.hooks.owner !== "none" && settingsPath
         ? ["--setting-sources", "user,project,local", "--settings", settingsPath]
         : [];
-    const addDirArgs = plan.dirAccess === "add-dir" ? ["--add-dir", context.companionPath] : [];
-    const mcpConfigArgs =
-      plan.mcp === "mcp-config" && mcpConfigPath ? ["--mcp-config", mcpConfigPath] : [];
+    /**
+     * The layer adds its skills, commands, agents and `CLAUDE.md` as one more
+     * directory, and its MCP servers as one more configuration beside every
+     * server the launch delivered before. Both flags are variadic, so each is
+     * followed by another flag, never by the operator's arguments.
+     */
+    const addDirArgs = [
+      ...(plan.dirAccess === "add-dir" ? ["--add-dir", context.companionPath] : []),
+      ...(layer ? ["--add-dir", layer.root] : []),
+    ];
+    const mcpConfigArgs = [
+      ...(plan.mcp === "mcp-config" && mcpConfigPath ? ["--mcp-config", mcpConfigPath] : []),
+      ...(layer?.mcpConfigPath ? ["--mcp-config", layer.mcpConfigPath] : []),
+    ];
     const contextModeArgs = context.capabilities.some(
       (capability) => capability.name === "context-mode",
     )
@@ -167,7 +277,7 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
     return [
       ...addDirArgs,
       "--append-system-prompt",
-      buildCompanionGuidance(context),
+      systemPrompt,
       ...settingsArgs,
       ...mcpConfigArgs,
       /** The bundled plugin from the running install, beside context-mode's. */

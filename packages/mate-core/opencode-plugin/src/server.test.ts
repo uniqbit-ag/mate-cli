@@ -5,7 +5,16 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { MATE_ENV, renderProjectionEnv, renderProjectionYaml } from "../../src/runtime";
+import { audienceLayerDir } from "../../src/runtime/audience-layer";
 import { runtimeMateBin, runtimeWrapperBinPath } from "../../src/runtime/runtime-directory";
+import {
+  EMPTY_MANIFEST,
+  manifestPath,
+  OPENCODE_CONFIG_DOCUMENT,
+  serializeManifest,
+  withAudience,
+  withDocument,
+} from "../../src/runtime/runtime-document-manifest";
 
 const { default: MateOpenCodePlugin } = await import("./server");
 
@@ -54,10 +63,53 @@ function fakeApi(directory: string) {
     async (name: string, callback: Hook): Promise<void> => {
       hooks.set(`${domain}.${name}`, callback);
     };
+  const applied = {
+    mcp: new Map<string, unknown>(),
+    skills: [] as Array<{ id: string; content: string }>,
+    agents: new Map<string, Record<string, unknown>>(),
+  };
   const api = {
     location: { directory },
     permission: { hook: recorder("permission") },
-    skill: { transform: async () => {} },
+    skill: {
+      transform: async (
+        transform: (editor: {
+          get: (id: string) => undefined;
+          add: (skill: { id: string; content: string }) => void;
+          update: () => void;
+        }) => void,
+      ) => {
+        transform({
+          get: () => undefined,
+          add: (skill) => applied.skills.push(skill),
+          update: () => {},
+        });
+      },
+    },
+    mcp: {
+      transform: async (
+        transform: (editor: { set: (name: string, config: unknown) => void }) => void,
+      ) => {
+        transform({ set: (name, config) => applied.mcp.set(name, config) });
+      },
+    },
+    agent: {
+      transform: async (
+        transform: (editor: {
+          get: (id: string) => Record<string, unknown> | undefined;
+          update: (id: string, update: (agent: Record<string, unknown>) => void) => void;
+        }) => void,
+      ) => {
+        transform({
+          get: (id) => applied.agents.get(id),
+          update: (id, update) => {
+            const agent = applied.agents.get(id) ?? {};
+            update(agent);
+            applied.agents.set(id, agent);
+          },
+        });
+      },
+    },
     tool: {
       hook: recorder("tool"),
       transform: async (transform: (editor: { add: (tool: { name: string }) => void }) => void) => {
@@ -72,7 +124,7 @@ function fakeApi(directory: string) {
       },
     },
   };
-  return { api: api as never, hooks, tools };
+  return { api: api as never, hooks, tools, applied };
 }
 
 async function wrappedRepo(companionPath: string): Promise<string> {
@@ -522,4 +574,187 @@ describe("the session-prepare lifecycle", () => {
       expect(lines[1]).toEndWith("--json --sync");
     },
   );
+});
+
+describe("the audience layer", () => {
+  /** A layer as the OpenCode Runtime Surface writes it. */
+  async function makeLayer(): Promise<string> {
+    const layer = await makeTempDir("mate-layer-");
+    await fs.mkdir(path.join(layer, ".opencode", "agents"), { recursive: true });
+    await fs.mkdir(path.join(layer, ".agents", "skills", "ba-skill"), { recursive: true });
+    await fs.writeFile(
+      path.join(layer, ".opencode", "opencode.json"),
+      JSON.stringify({ mcp: { servers: { "ba-mcp": { type: "local", command: ["ba"] } } } }),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(layer, ".agents", "skills", "ba-skill", "SKILL.md"),
+      "---\nname: ba-skill\ndescription: ba skill\n---\nBA skill body.\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(layer, ".opencode", "agents", "analyst.md"),
+      "---\ndescription: BA analyst\nmode: primary\n---\nYou are the BA analyst.\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(layer, "AGENTS.md"),
+      "<!-- mate:managed:ba-plugin:abc123 start -->\nBA guidance.\n<!-- mate:managed:ba-plugin:abc123 end -->\n",
+      "utf8",
+    );
+    return layer;
+  }
+
+  async function launch(payload: string, argv?: string[]) {
+    const root = await makeTempDir("mate-opencode-layer-");
+    const companion = path.join(root, "companion");
+    const repo = path.join(root, "repo");
+    await fs.mkdir(repo, { recursive: true });
+    const previousArgv = process.argv;
+    if (argv) process.argv = argv;
+    try {
+      return await withEnv(
+        {
+          ...NO_LAUNCH,
+          MATE_ARTIFACT_PATH: companion,
+          MATE_REPO_PATH: repo,
+          MATE_GUIDANCE_JSON: payload,
+          MATE_REPO_ID: "acme",
+          MATE_POLICY_JSON: "{}",
+          MATE_GIT_AUTO_MODE: "0",
+        },
+        async () => {
+          const fake = fakeApi(repo);
+          await MateOpenCodePlugin.setup(fake.api);
+          return fake;
+        },
+      );
+    } finally {
+      process.argv = previousArgv;
+    }
+  }
+
+  function payloadWith(layer: string): string {
+    return JSON.stringify({ ...JSON.parse(GUIDANCE_JSON), audienceLayer: layer });
+  }
+
+  test("a trusted payload applies the layer's MCP servers, skills, agents and guidance", async () => {
+    const layer = await makeLayer();
+
+    const { applied, hooks } = await launch(payloadWith(layer));
+
+    expect(applied.mcp.get("ba-mcp")).toEqual({ type: "local", command: ["ba"] });
+    expect(applied.skills.map((skill) => skill.id)).toEqual(["ba-skill"]);
+    expect(applied.agents.get("analyst")).toMatchObject({
+      description: "BA analyst",
+      mode: "primary",
+      system: "You are the BA analyst.",
+    });
+
+    const event = { system: [{ type: "text", text: "base prompt" }] };
+    await hooks.get("session.context")!(event);
+    const text = event.system[0]!.text;
+    expect(text).toContain("BA guidance.");
+    expect(text).not.toContain("mate:managed");
+    expect(text.indexOf("BA guidance.")).toBeGreaterThan(text.indexOf("<companion-policy "));
+
+    const access = {
+      resources: [path.join(layer, ".agents", "skills", "ba-skill", "x.sh")],
+      effect: "ask",
+    };
+    await hooks.get("permission.evaluate")!(access);
+    expect(access.effect).toBe("allow");
+  });
+
+  test("a masked payload applies no layer", async () => {
+    await makeLayer();
+
+    const { applied, hooks } = await launch("");
+
+    expect(applied.mcp.size).toBe(0);
+    expect(applied.agents.size).toBe(0);
+    expect(hooks.has("session.context")).toBe(false);
+  });
+
+  test("the shared service applies no layer, whatever payload it inherited", async () => {
+    const layer = await makeLayer();
+
+    const { applied } = await launch(payloadWith(layer), ["opencode", "serve", "--service"]);
+
+    expect(applied.mcp.size).toBe(0);
+    expect(applied.skills).toEqual([]);
+    expect(applied.agents.size).toBe(0);
+  });
+});
+
+describe("a checkout wrapped for an audience", () => {
+  /** Wraps a repository for `audience` (or base) and renders `ba` and `qa` layers for its companion. */
+  async function wrappedFor(audience: string | null) {
+    const companion = await makeTempDir("mate-wrapped-audience-companion-");
+    const repo = await wrappedRepo(companion);
+    const manifest = withAudience(
+      withDocument(EMPTY_MANIFEST, OPENCODE_CONFIG_DOCUMENT, []),
+      audience,
+    );
+    await fs.writeFile(manifestPath(repo), serializeManifest(manifest) ?? "", "utf8");
+    for (const name of ["ba", "qa"]) {
+      const dir = audienceLayerDir(companion, name);
+      const version = path.join(dir, "f1");
+      await fs.mkdir(path.join(version, ".opencode"), { recursive: true });
+      await fs.writeFile(
+        path.join(version, ".opencode", "opencode.json"),
+        JSON.stringify({
+          mcp: { servers: { [`${name}-mcp`]: { type: "local", command: [name] } } },
+        }),
+        "utf8",
+      );
+      await fs.writeFile(path.join(version, "AGENTS.md"), `Guidance for ${name}.\n`, "utf8");
+      await fs.rm(path.join(dir, "current"), { force: true });
+      await fs.symlink("f1", path.join(dir, "current"));
+      tempRoots.push(dir);
+    }
+    return { repo };
+  }
+
+  async function setupIn(repo: string, env: Record<string, string | undefined>, argv?: string[]) {
+    const previousArgv = process.argv;
+    if (argv) process.argv = argv;
+    try {
+      return await withEnv({ ...NO_LAUNCH, ...env }, async () => {
+        const fake = fakeApi(repo);
+        await MateOpenCodePlugin.setup(fake.api);
+        return fake;
+      });
+    } finally {
+      process.argv = previousArgv;
+    }
+  }
+
+  test("a bare session gets the wrapped audience, never the one in its environment", async () => {
+    const { repo } = await wrappedFor("ba");
+
+    const { applied, hooks } = await setupIn(repo, { MATE_AUDIENCE: "qa" });
+
+    expect([...applied.mcp.keys()]).toEqual(["ba-mcp"]);
+    const event = { system: [{ type: "text", text: "base prompt" }] };
+    await hooks.get("session.context")!(event);
+    expect(event.system[0]!.text).toContain("Guidance for ba.");
+    expect(event.system[0]!.text).not.toContain("Guidance for qa.");
+  });
+
+  test("the shared service serves a wrapped checkout its audience", async () => {
+    const { repo } = await wrappedFor("ba");
+
+    const { applied } = await setupIn(repo, {}, ["opencode", "serve", "--service"]);
+
+    expect([...applied.mcp.keys()]).toEqual(["ba-mcp"]);
+  });
+
+  test("a checkout wrapped for base gets no layer", async () => {
+    const { repo } = await wrappedFor(null);
+
+    const { applied } = await setupIn(repo, { MATE_AUDIENCE: "ba" });
+
+    expect(applied.mcp.size).toBe(0);
+  });
 });

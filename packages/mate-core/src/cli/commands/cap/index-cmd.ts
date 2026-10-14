@@ -1,6 +1,3 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-
 import {
   hasGraphifyCapability,
   hasTokensaveCapability,
@@ -10,7 +7,7 @@ import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import {
   ensureTokensaveBranchingPosture,
   ensureTokensaveStoreExcluded,
-  TOKENSAVE_STORE_DIR,
+  isTokensaveIndexed,
 } from "../../../tools/setup/capabilities/tokensave";
 import { ensureUnambiguousCompanion } from "../shared/companion-selection";
 import { runGraphifyCapCommand } from "./graphify";
@@ -43,13 +40,7 @@ async function defaultIsTokensaveInitialized(): Promise<boolean> {
   const repo =
     repository ?? (await workingRepoStore.load()).repos.find((entry) => entry.id === repositoryId);
   if (!repo) return false;
-
-  try {
-    const stat = await fs.stat(path.join(repo.path, TOKENSAVE_STORE_DIR));
-    return stat.isDirectory();
-  } catch {
-    return false;
-  }
+  return isTokensaveIndexed(repo.path);
 }
 
 // The reused cap commands (runGraphifyCapCommand / runTokensaveCapCommand) signal

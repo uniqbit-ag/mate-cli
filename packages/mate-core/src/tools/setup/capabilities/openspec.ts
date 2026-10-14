@@ -66,6 +66,13 @@ const OPENSPEC_TOOLS_BY_RUNTIME = {
 
 const OPENSPEC_INSTALL_COMMAND = "npm install -g @fission-ai/openspec@latest";
 
+/**
+ * Store metadata `openspec store register` writes beside the companion. Its id
+ * is machine-local, and companion Git sync would otherwise stash it on every
+ * launch. Persisted: the registration outlives the capability.
+ */
+const OPENSPEC_GITIGNORE_ENTRIES = [".openspec-store/"];
+
 type OpenSpecTool =
   (typeof OPENSPEC_TOOLS_BY_RUNTIME)[keyof typeof OPENSPEC_TOOLS_BY_RUNTIME][number];
 type OpenSpecRunCommand = typeof runCommandSilently;
@@ -394,6 +401,8 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
         },
       };
     },
+    gitignoreEntries: () => OPENSPEC_GITIGNORE_ENTRIES,
+    persistGitignoreEntries: true,
     getInstallRequirements: (): InstallRequirement[] => [
       {
         id: "capability:openspec",

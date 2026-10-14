@@ -5,6 +5,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { parse } from "yaml";
 
+import { normalizeBaseAudience } from "../../../tools/setup/dynamic-plugins/audiences";
+
 import { parsePackageSpec, runPluginInstallCommand } from "./install";
 
 const tempRoots: string[] = [];
@@ -36,12 +38,13 @@ async function makeHub(): Promise<string> {
   return makeRoot(["type: hub", "hub:", "  companions: []"]);
 }
 
+/** The base set as declared, whichever shape the file was saved in. */
 async function readFrameworkYaml(companionPath: string): Promise<{ plugins?: unknown[] }> {
   const raw = await fs.readFile(
     path.join(companionPath, ".mate", "config", "framework.yaml"),
     "utf8",
   );
-  return parse(raw) as { plugins?: unknown[] };
+  return normalizeBaseAudience(parse(raw)) as { plugins?: unknown[] };
 }
 
 const fakeInstall = (resolveTo: (pkg: string) => string) => ({
@@ -153,6 +156,23 @@ describe("runPluginInstallCommand", () => {
     const config = await readFrameworkYaml(companionPath);
     expect(config.plugins).toEqual([{ package: "@acme/custom-plugin", version: "1.2.0" }]);
     expect(logs.join(" ")).toContain("installed plugin @acme/custom-plugin@1.2.0");
+  });
+
+  test("saves the companion with its base set under audiences.base", async () => {
+    const companionPath = await makeCompanion();
+    process.env.MATE_ARTIFACT_PATH = companionPath;
+
+    await runPluginInstallCommand(["@acme/custom-plugin@1.2.0"], {
+      installDeps: fakeInstall(() => "1.2.0"),
+    });
+
+    const saved = parse(
+      await fs.readFile(path.join(companionPath, ".mate", "config", "framework.yaml"), "utf8"),
+    ) as { plugins?: unknown; audiences?: { base?: { plugins?: unknown } } };
+    expect(saved.plugins).toBeUndefined();
+    expect(saved.audiences?.base?.plugins).toEqual([
+      { package: "@acme/custom-plugin", version: "1.2.0" },
+    ]);
   });
 
   test("updates the declared version when the package is already declared", async () => {

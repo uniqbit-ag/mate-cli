@@ -16,6 +16,8 @@ import { GlobalConfigStore } from "./global-config-store";
 import { runWrapPass, wrapPassDeps } from "./wrap-pass";
 import { prepareSession, sessionPrepareDeps } from "./session-prepare";
 import { syncWorkingRepoClaudeAdditionalDirectories } from "./projection-claude-entry";
+import { openSpecStoreDeps } from "./openspec-store";
+import { writeOpenSpecRegistry } from "../../../test/openspec-store-stub";
 
 const tempRoots: string[] = [];
 const originalHomeDir = runtimeDocumentDeps.homeDir;
@@ -421,5 +423,62 @@ describe("a full wrap pass", () => {
     expect(await exists(path.join(repository.path, ".opencode", "commands", "acme.md"))).toBe(
       false,
     );
+  });
+});
+
+describe("a failing OpenSpec store entry", () => {
+  const originalStoreDeps = { ...openSpecStoreDeps };
+  const originalPrepareDeps = { ...sessionPrepareDeps };
+
+  afterEach(() => {
+    Object.assign(openSpecStoreDeps, originalStoreDeps);
+    Object.assign(sessionPrepareDeps, originalPrepareDeps);
+  });
+
+  /** A companion that is an OpenSpec root whose store id another path already holds. */
+  async function conflictingStore(): Promise<{
+    companionPath: string;
+    repository: LinkedRepository;
+  }> {
+    const linked = await linkedRepo();
+    await fs.mkdir(path.join(linked.companionPath, "openspec"), { recursive: true });
+    const dataHome = await fs.mkdtemp(path.join(os.tmpdir(), "acme-openspec-data-"));
+    tempRoots.push(dataHome);
+    await writeOpenSpecRegistry(dataHome, { companion: "/somewhere/else" });
+    openSpecStoreDeps.env = () => ({ ...process.env, XDG_DATA_HOME: dataHome });
+    openSpecStoreDeps.resolveBinary = () => undefined;
+    return linked;
+  }
+
+  test("warns and the pass still succeeds", async () => {
+    const { companionPath, repository } = await conflictingStore();
+
+    const result = await runWrapPass(companionPath, repository);
+
+    if (result.kind === "failed") throw new Error(result.message);
+    expect(result.warnings).toContainEqual(
+      expect.stringContaining(
+        `failed to write ${path.join("openspec", "config.yaml")} for acme: OpenSpec store id "companion" is already registered at /somewhere/else`,
+      ),
+    );
+  });
+
+  test.each([
+    ["claude", "attended"],
+    ["opencode", "attended"],
+  ] as const)("reaches the warnings of a %s prepare, which stays ok", async (runtime, mode) => {
+    const { companionPath, repository } = await conflictingStore();
+    sessionPrepareDeps.syncCompanionGit = (async () => ({
+      skipped: true,
+      changed: false,
+      companionPath,
+    })) as never;
+    sessionPrepareDeps.syncCompanionFiles = async () => {};
+    sessionPrepareDeps.runCapabilityPreflight = async () => {};
+
+    const result = await prepareSession({ runtime, companionPath, repository, mode });
+
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toContainEqual(expect.stringContaining("/somewhere/else"));
   });
 });

@@ -16,6 +16,9 @@ import {
   OPENCODE_CONFIG_DOCUMENT,
   type ManagedRegion,
   type Manifest,
+  withAudience,
+  recordedAudience,
+  CLAUDE_SETTINGS_DOCUMENT,
 } from "./runtime-document-manifest";
 
 const CLAUDE_REGIONS: ManagedRegion[] = [
@@ -278,5 +281,29 @@ describe("serializeManifest", () => {
       { ".opencode/command/a.md": { runtime: "opencode", sha256: "abc" } },
     );
     expect(serializeManifest(built)).toBe(FIXTURES.documentsAndCopies);
+  });
+});
+
+describe("the wrapped audience", () => {
+  const documented = withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, [
+    { at: ["hooks", "Stop"], kind: "list", values: [] },
+  ]);
+
+  test("is recorded, serialized and parsed back", () => {
+    const manifest = withAudience(documented, "ba");
+    expect(recordedAudience(manifest)).toBe("ba");
+    expect(recordedAudience(parseManifest(serializeManifest(manifest)))).toBe("ba");
+  });
+
+  test("is withdrawn by recording none", () => {
+    const manifest = withAudience(withAudience(documented, "ba"), null);
+    expect(recordedAudience(manifest)).toBeNull();
+    expect(serializeManifest(manifest)).not.toContain("audience");
+  });
+
+  test("a malformed value reads as none", () => {
+    expect(
+      recordedAudience(parseManifest(JSON.stringify({ documents: {}, audience: 42 }))),
+    ).toBeNull();
   });
 });

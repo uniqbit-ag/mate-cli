@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { parse } from "yaml";
 
 import type { PluginDeclaration } from "../lib/orchestrator/types";
 import * as hydrateModule from "./setup/dynamic-plugins/hydrate";
@@ -85,4 +86,19 @@ test("setup rejects an unknown audience before installing", async () => {
   await expect(executeSetup({}, { cwd: companion })).rejects.toThrow(/"qa".*ba/);
 
   expect(installCalls).toEqual([]);
+});
+
+test("setup with selection flags writes the base set under audiences.base", async () => {
+  await executeSetup({ capabilities: [], allowedAgents: [] }, { cwd: companion });
+
+  const saved = parse(
+    await fs.readFile(path.join(companion, ".mate", "config", "framework.yaml"), "utf8"),
+  ) as Record<string, unknown>;
+  expect(saved.capabilities).toBeUndefined();
+  expect(saved.plugins).toBeUndefined();
+  const audiences = saved.audiences as Record<string, Record<string, unknown>>;
+  expect(Object.keys(audiences)).toEqual(["base", "ba"]);
+  expect(audiences.base!.capabilities).toEqual([]);
+  expect(audiences.base!.plugins).toEqual([{ package: "@acme/base", version: "1.0.0" }]);
+  expect(saved.allowedAgents).toEqual([]);
 });

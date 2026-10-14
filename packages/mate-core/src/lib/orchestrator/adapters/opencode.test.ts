@@ -83,3 +83,74 @@ describe("the OpenCode guidance payload", () => {
     expect(await launchedPayload(["run", "--server=http://127.0.0.1:4096", "hi"])).toBe("");
   });
 });
+
+describe("an audience OpenCode launch", () => {
+  const context = {
+    repository: { id: "app", path: "/tmp/app" },
+    launchWorkingDirectory: "/tmp/app",
+    allowedAgents: ["opencode"],
+    companionPath: "/tmp/companion",
+    capabilities: [],
+  };
+  const layer = {
+    audience: "ba",
+    root: "/home/acme/.mate/state/audience-layers/k/ba/f",
+    rendered: true,
+  };
+
+  function preparedWith(audienceLayer?: PrepareResult["audienceLayer"]): PrepareResult {
+    return {
+      ok: true,
+      mode: "attended",
+      runtime: "opencode",
+      runtimes: ["opencode"],
+      repositoryId: "app",
+      companionPath: "/tmp/companion",
+      steps: [],
+      warnings: [],
+      ...(audienceLayer ? { audienceLayer } : {}),
+    };
+  }
+
+  async function launchEnv(args: string[], audienceLayer?: PrepareResult["audienceLayer"]) {
+    const adapter = new OpenCodeAdapter(() => "2.0.0");
+    const planned = await adapter.planLaunch(context, preparedWith(audienceLayer));
+    return (await adapter.prepareLaunch(planned, args)).env;
+  }
+
+  test("hands the layer path to a launch that hosts its own server", async () => {
+    for (const args of [[], ["run", "hello"]]) {
+      const env = await launchEnv(args, layer);
+      expect(JSON.parse(env.MATE_GUIDANCE_JSON ?? "{}").audienceLayer).toBe(layer.root);
+    }
+  });
+
+  test("a service-bound subcommand gets a masked payload and no layer", async () => {
+    const env = await launchEnv(["session", "list"], layer);
+    expect(env.MATE_GUIDANCE_JSON).toBe("");
+  });
+
+  test("a launch without an audience carries no layer in its payload", async () => {
+    const env = await launchEnv([]);
+    expect(JSON.parse(env.MATE_GUIDANCE_JSON ?? "{}")).not.toHaveProperty("audienceLayer");
+  });
+
+  test("leaves the operator's OpenCode configuration variables alone", async () => {
+    const names = ["OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT"] as const;
+    const previous = names.map((name) => process.env[name]);
+    process.env.OPENCODE_CONFIG = "/operator/opencode.json";
+    delete process.env.OPENCODE_CONFIG_DIR;
+    delete process.env.OPENCODE_CONFIG_CONTENT;
+    try {
+      const env = await launchEnv([], layer);
+      expect(env.OPENCODE_CONFIG).toBe("/operator/opencode.json");
+      expect(env.OPENCODE_CONFIG_DIR).toBeUndefined();
+      expect(env.OPENCODE_CONFIG_CONTENT).toBeUndefined();
+    } finally {
+      names.forEach((name, index) => {
+        if (previous[index] === undefined) delete process.env[name];
+        else process.env[name] = previous[index];
+      });
+    }
+  });
+});

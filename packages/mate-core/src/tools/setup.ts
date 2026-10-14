@@ -61,7 +61,7 @@ export async function applySetupCompatibilities(
   companionPath: string,
   config: FrameworkConfig,
   mode: "setup" | "sync",
-  plugins: PluginRegistration[] = getActiveDistribution().registry.getEntries(),
+  plugins: PluginRegistration[] = getActiveDistribution().registry.baseRegistrations(),
   repoPath?: string,
   scope: SetupScope = config.type === "hub" ? "hub" : "companion",
 ): Promise<SetupInstallationOutcome> {
@@ -73,14 +73,15 @@ export async function applySetupCompatibilities(
 
 /**
  * The active Agent Runtimes' documents for a Working Repository, rendered
- * without a write. Runs no plugin phase: the working target reconciles
+ * without a write: base, plus the audience the checkout is wrapped for. Runs no plugin phase: the working target reconciles
  * declarations only, so nothing is written to the companion on its behalf.
  */
 export async function renderWorkingRuntimeDocuments(
   companionPath: string,
   config: FrameworkConfig,
   repoPath: string,
-  plugins: PluginRegistration[] = getActiveDistribution().registry.getAll(),
+  plugins: PluginRegistration[] = getActiveDistribution().registry.baseRegistrations(),
+  wrapped?: { audience: string; registrations: PluginRegistration[] },
 ): Promise<RenderedRuntimeDocuments> {
   const plan = buildSetupInstallationPlan(config, plugins);
   const ctx: SetupContext = {
@@ -91,7 +92,7 @@ export async function renderWorkingRuntimeDocuments(
     repoPath,
     target: "working",
   };
-  return renderRuntimeDocuments(ctx, plugins, plan);
+  return renderRuntimeDocuments(ctx, plugins, plan, wrapped);
 }
 
 export async function updateProjectGitignore(
@@ -99,7 +100,9 @@ export async function updateProjectGitignore(
   config: FrameworkConfig,
 ): Promise<void> {
   const ctx: SetupContext = { companionPath, config, mode: "sync", activeProviders: [] };
-  const plugins = getActiveDistribution().registry.getAll();
+  const plugins = getActiveDistribution()
+    .registry.baseRegistrations()
+    .map((entry) => entry.plugin);
   const entries = collectManagedGitignoreEntries(ctx, plugins);
   await writeManagedGitignoreBlock(path.join(companionPath, ".gitignore"), FRAMEWORK_NAME, entries);
 }
@@ -113,7 +116,7 @@ export async function syncCompanionFiles(
     companionPath,
     config,
     "sync",
-    getActiveDistribution().registry.getAll(),
+    getActiveDistribution().registry.baseRegistrations(),
     repoPath,
   );
 }

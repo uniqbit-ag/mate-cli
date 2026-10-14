@@ -41,6 +41,17 @@ function capabilityNames(value: unknown): string[] {
 }
 
 /**
+ * A base-set key from `audiences.base`, the shape a companion is saved in. The
+ * lenient twin of the setup normalizer, which `runtime/` cannot import.
+ */
+function baseAudienceKey(config: Record<string, unknown>, key: string): unknown {
+  const audiences = config.audiences;
+  if (!audiences || typeof audiences !== "object") return undefined;
+  const base = (audiences as Record<string, unknown>).base;
+  return base && typeof base === "object" ? (base as Record<string, unknown>)[key] : undefined;
+}
+
+/**
  * Synchronous so it composes into `readCompanionRuntimeContext`. A missing or
  * unparseable companion config yields an inert policy rather than throwing.
  */
@@ -56,7 +67,9 @@ export function readCompanionPolicy(companionPath: string): CompanionPolicy {
   const config = parsed as Record<string, unknown>;
   return {
     allowedAgents: stringList(config.allowedAgents),
-    enabledCapabilities: capabilityNames(config.capabilities),
+    enabledCapabilities: capabilityNames(
+      config.capabilities ?? baseAudienceKey(config, "capabilities"),
+    ),
     gitAutoMode: config.git === "auto",
   };
 }
