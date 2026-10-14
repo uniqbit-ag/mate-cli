@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+- **opencode:** a bare `opencode` session no longer picks up another session's
+  repository from the shared OpenCode background service, and no longer fails
+  with `missing MATE_GUIDANCE_JSON in the launch environment`. The plugin now
+  trusts its process environment only for a launch `mate opencode` started,
+  and resolves everything else from the Projection Root. `mate opencode`
+  injects the guidance payload only into launches that host their own server.
+
+### Upgrade note
+
+- **Restart the OpenCode background service once after upgrading.** The
+  service keeps the plugin code it loaded at startup, so the fix takes effect
+  only after it restarts: stop `opencode serve --service` (for example
+  `pkill -f "opencode serve --service"`); the next `opencode` starts a fresh
+  one. No further restarts are needed.
+
 ## [0.18.3](https://github.com/uniqbit-ag/mate-cli/compare/0.18.2...0.18.3) (2026-10-13)
 
 ### Features

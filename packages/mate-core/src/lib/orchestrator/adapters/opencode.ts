@@ -36,6 +36,26 @@ function parseOpenCodeMajor(output: string | undefined): number | undefined {
   return match ? Number(match[1]) : undefined;
 }
 
+interface OpenCodeInvocation {
+  command: string | undefined;
+  rest: string[];
+  /**
+   * The launch runs its own private server, where the plugin loads with this
+   * launch's environment: the TUI or `run`, not pointed at a remote server.
+   * Every other invocation may start or reach the shared service, which must
+   * never receive a guidance payload.
+   */
+  hostsPrivateServer: boolean;
+}
+
+function readInvocation(launchWorkingDirectory: string, args: string[]): OpenCodeInvocation {
+  const isTui = args.length === 0 || args[0]?.startsWith("-");
+  const [command, ...rest] = isTui ? [launchWorkingDirectory, ...args] : args;
+  const hostsServer = isTui || command === "run";
+  const choosesRemoteServer = rest.some((arg) => arg === "--server" || arg.startsWith("--server="));
+  return { command, rest, hostsPrivateServer: Boolean(hostsServer) && !choosesRemoteServer };
+}
+
 export class OpenCodeAdapter extends LaunchAdapter {
   readonly toolName = "opencode";
   readonly interactive = true;
@@ -67,15 +87,13 @@ export class OpenCodeAdapter extends LaunchAdapter {
   }
 
   buildArgs(context: AdapterContext, args: string[]): string[] {
-    const codeDir = context.launchWorkingDirectory;
-    const isTui = args.length === 0 || args[0]?.startsWith("-");
-    const [command, ...rest] = isTui ? [codeDir, ...args] : args;
-    if (!command) return args;
-    const hostsServer = isTui || command === "run";
-    const choosesServer = rest.some(
-      (arg) => arg === "--standalone" || arg === "--server" || arg.startsWith("--server="),
+    const { command, rest, hostsPrivateServer } = readInvocation(
+      context.launchWorkingDirectory,
+      args,
     );
-    return hostsServer && !choosesServer ? [command, STANDALONE_FLAG, ...rest] : [command, ...rest];
+    if (!command) return args;
+    const addsStandalone = hostsPrivateServer && !rest.includes(STANDALONE_FLAG);
+    return addsStandalone ? [command, STANDALONE_FLAG, ...rest] : [command, ...rest];
   }
 
   /**
@@ -84,11 +102,16 @@ export class OpenCodeAdapter extends LaunchAdapter {
    * overlay carried now lives in the wrapped `.opencode/opencode.json`. An
    * inherited `OPENCODE_CONFIG_DIR` or `OPENCODE_CONFIG_CONTENT` passes through.
    */
-  extendEnvironment(context: AdapterContext): NodeJS.ProcessEnv {
+  extendEnvironment(context: AdapterContext, args: string[] = []): NodeJS.ProcessEnv {
+    const { hostsPrivateServer } = readInvocation(context.launchWorkingDirectory, args);
     return {
       // Built fresh per launch from the live capability config; always set so
       // a stale value inherited from an outer Mate session can never leak in.
-      [MATE_ENV.guidanceJson]: JSON.stringify(this.buildGuidance(context)),
+      // Masked unless the launch hosts its own server: a payload that reached
+      // the shared service would apply this session's guidance to every other.
+      [MATE_ENV.guidanceJson]: hostsPrivateServer
+        ? JSON.stringify(this.buildGuidance(context))
+        : "",
     };
   }
 

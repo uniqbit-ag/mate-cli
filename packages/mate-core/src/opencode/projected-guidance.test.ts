@@ -89,19 +89,19 @@ describe("resolveOpenCodeGuidance", () => {
   });
 
   /**
-   * A launch that failed to inject is broken, and the projection must not
-   * quietly stand in for it — that would hide a misconfigured `mate opencode`.
+   * Inherited `MATE_*` variables do not mark a managed launch: every shell under
+   * a Mate session carries them, so the projection decides.
    */
-  test("a launch environment without a payload stays a startup error", () => {
-    const { repoRoot, companionPath } = wrapRepo();
+  test("inherited variables without a payload resolve from the projection", () => {
+    const { repoRoot } = wrapRepo(["tokensave"]);
 
     const { guidance, errors } = resolveOpenCodeGuidance(
-      { MATE_ARTIFACT_PATH: companionPath },
+      { MATE_ARTIFACT_PATH: "/other/companion", MATE_REPO_PATH: "/other/repo" },
       repoRoot,
     );
 
-    expect(guidance).toBeNull();
-    expect(errors).toEqual(["missing MATE_GUIDANCE_JSON in the launch environment"]);
+    expect(errors).toEqual([]);
+    expect(guidance).toEqual(buildOpenCodeGuidance([{ name: "tokensave" }]));
   });
 
   test("is inert with neither a payload nor a projection", () => {

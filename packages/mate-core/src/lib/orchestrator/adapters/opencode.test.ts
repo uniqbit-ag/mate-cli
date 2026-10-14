@@ -45,3 +45,41 @@ describe("a failed OpenCode prepare", () => {
     expect(failure).toBe(own);
   });
 });
+
+describe("the OpenCode guidance payload", () => {
+  const context = {
+    repository: { id: "app", path: "/tmp/app" },
+    launchWorkingDirectory: "/tmp/app",
+    allowedAgents: ["opencode"],
+    companionPath: "/tmp/companion",
+    capabilities: [],
+  };
+
+  async function launchedPayload(args: string[]): Promise<string | undefined> {
+    const previous = process.env.MATE_GUIDANCE_JSON;
+    process.env.MATE_GUIDANCE_JSON = '{"stale":true}';
+    try {
+      const launch = await new OpenCodeAdapter(() => "2.0.0").prepareLaunch(context, args);
+      return launch.env.MATE_GUIDANCE_JSON;
+    } finally {
+      if (previous === undefined) delete process.env.MATE_GUIDANCE_JSON;
+      else process.env.MATE_GUIDANCE_JSON = previous;
+    }
+  }
+
+  test("is injected into the TUI and `run`, which host their own server", async () => {
+    for (const args of [[], ["--model", "x"], ["run", "hello"], ["--standalone"]]) {
+      const payload = await launchedPayload(args);
+      expect(JSON.parse(payload ?? "{}").version).toBe(1);
+    }
+  });
+
+  test("is masked for a service-bound subcommand", async () => {
+    expect(await launchedPayload(["session", "list"])).toBe("");
+  });
+
+  test("is masked for an operator-chosen server", async () => {
+    expect(await launchedPayload(["--server", "http://127.0.0.1:4096"])).toBe("");
+    expect(await launchedPayload(["run", "--server=http://127.0.0.1:4096", "hi"])).toBe("");
+  });
+});

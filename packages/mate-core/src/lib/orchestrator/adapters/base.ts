@@ -88,7 +88,8 @@ export abstract class LaunchAdapter<C extends AdapterContext = AdapterContext> {
 
   async validateLaunch(_context: C): Promise<void> {}
 
-  extendEnvironment(_context: C): NodeJS.ProcessEnv {
+  /** `args` are the operator's arguments, before `buildArgs` rewrites them. */
+  extendEnvironment(_context: C, _args: string[] = []): NodeJS.ProcessEnv {
     return {};
   }
 
@@ -130,7 +131,7 @@ export abstract class LaunchAdapter<C extends AdapterContext = AdapterContext> {
   async prepareLaunch(context: C, args: string[]): Promise<PreparedLaunch> {
     const builtArgs = this.buildArgs(context, args);
     const baseEnv = this.environment(context);
-    const extendedEnv = this.extendEnvironment(context);
+    const extendedEnv = this.extendEnvironment(context, args);
     const env = { ...baseEnv, ...extendedEnv };
 
     const processPath = process.env.PATH ?? "";
