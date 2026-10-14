@@ -42,7 +42,7 @@ describe("runInstallCommand", () => {
   });
 
   test("refuses a non-TTY install without --yes before running installers", async () => {
-    await runInstallCommand([]);
+    await runInstallCommand([], home);
     expect(process.exitCode).toBe(1);
     expect(stderr.join(" ")).toContain("mate install --yes");
     await expect(fs.access(path.join(home, ".mate", "install-state.yaml"))).rejects.toMatchObject({

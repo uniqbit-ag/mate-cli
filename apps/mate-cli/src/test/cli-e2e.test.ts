@@ -897,9 +897,11 @@ describe("mate CLI e2e", () => {
     );
     expect(config).toContain("name: openspec");
     expect(config).toContain("schemaProfile: mate-v1");
-    await expect(
-      fs.readFile(path.join(scenario.companion, "openspec", "config.yaml"), "utf8"),
-    ).resolves.toBe("schema: mate-v1\n");
+    const openspecConfig = parse(
+      await fs.readFile(path.join(scenario.companion, "openspec", "config.yaml"), "utf8"),
+    );
+    expect(openspecConfig.schema).toBe("mate-v1");
+    expect(openspecConfig.rules.specs).toEqual([expect.stringMatching(/^\[mate\] /)]);
     await fs.access(path.join(scenario.companion, "openspec", "schemas", "mate-v1", "schema.yaml"));
   });
 
