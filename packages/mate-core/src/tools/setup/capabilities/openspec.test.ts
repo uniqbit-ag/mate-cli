@@ -13,6 +13,8 @@ import {
   deriveOpenSpecTools,
   MATE_ARTIFACT_SKILLS,
   MATE_SKILLS,
+  MATE_SPECS_RULE,
+  MATE_SPECS_RULE_MARKER,
   OPENSPEC_SKILLS,
 } from "./openspec";
 
@@ -785,9 +787,9 @@ describe("createOpenspecPlugin", () => {
 
     await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
 
-    await expect(fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")).resolves.toBe(
-      "schema: mate-v1\n",
-    );
+    expect(
+      parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
+    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
     await expect(
       fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
     ).resolves.toBeNull();
@@ -888,19 +890,178 @@ describe("createOpenspecPlugin", () => {
     ).resolves.toBeNull();
   });
 
-  test("never rewrites an existing config.yaml, even with user-added keys", async () => {
-    const root = await makeTempDir("mate-openspec-schema-preserve-");
-    const runCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
+  test("the Mate specs rule binds only main specs and names the flat header", () => {
+    expect(MATE_SPECS_RULE.startsWith(MATE_SPECS_RULE_MARKER)).toBe(true);
+    for (const field of [
+      "type: spec",
+      "capability",
+      "repository",
+      "areas",
+      "tags: [openspec/spec]",
+    ]) {
+      expect(MATE_SPECS_RULE).toContain(field);
+    }
+    expect(MATE_SPECS_RULE).toContain("openspec/specs/");
+    expect(MATE_SPECS_RULE).toContain("Delta specs");
+    expect(MATE_SPECS_RULE).toContain("openspec/mate-conventions.yaml");
+  });
+
+  test("rerun leaves a current config byte-for-byte unchanged", async () => {
+    const root = await makeTempDir("mate-openspec-schema-rerun-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const ctx = makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]);
+    const configPath = path.join(root, "openspec", "config.yaml");
+
+    await plugin.apply(ctx);
+    const first = await fs.readFile(configPath, "utf8");
+    const { mtimeMs } = await fs.stat(configPath);
+    await plugin.apply(ctx);
+
+    await expect(fs.readFile(configPath, "utf8")).resolves.toBe(first);
+    expect((await fs.stat(configPath)).mtimeMs).toBe(mtimeMs);
+  });
+
+  test("merges the Mate entry into a user-edited config without touching user content", async () => {
+    const root = await makeTempDir("mate-openspec-schema-merge-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
     await fs.mkdir(path.join(root, "openspec"), { recursive: true });
-    const userConfig = 'schema: mate-v1\nrules:\n  tasks:\n    - "custom task rule"\n';
-    await fs.writeFile(path.join(root, "openspec", "config.yaml"), userConfig, "utf8");
+    const userConfig = [
+      "# acme planning config",
+      "schema: mate-v1",
+      "context: |",
+      "  Acme ships widgets.",
+      "rules:",
+      "  proposal:",
+      '    - "Name the customer."',
+      "  specs:",
+      '    - "Keep scenarios short."',
+      "",
+    ].join("\n");
+    const configPath = path.join(root, "openspec", "config.yaml");
+    await fs.writeFile(configPath, userConfig, "utf8");
 
     await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
 
-    await expect(fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")).resolves.toBe(
-      userConfig,
+    const merged = await fs.readFile(configPath, "utf8");
+    expect(merged).toContain("# acme planning config");
+    expect(parseYaml(merged)).toEqual({
+      schema: "mate-v1",
+      context: "Acme ships widgets.\n",
+      rules: {
+        proposal: ["Name the customer."],
+        specs: ["Keep scenarios short.", MATE_SPECS_RULE],
+      },
+    });
+  });
+
+  test("adds rules.specs to a config that has other rules only", async () => {
+    const root = await makeTempDir("mate-openspec-schema-add-specs-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
+    const configPath = path.join(root, "openspec", "config.yaml");
+    await fs.writeFile(configPath, 'schema: mate-v1\nrules:\n  tasks:\n    - "custom task rule"\n');
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
+
+    expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
+      schema: "mate-v1",
+      rules: { tasks: ["custom task rule"], specs: [MATE_SPECS_RULE] },
+    });
+  });
+
+  test("replaces an outdated Mate entry in place without duplicating it", async () => {
+    const root = await makeTempDir("mate-openspec-schema-outdated-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
+    const configPath = path.join(root, "openspec", "config.yaml");
+    await fs.writeFile(
+      configPath,
+      [
+        "schema: mate-v1",
+        "rules:",
+        "  specs:",
+        '    - "first"',
+        `    - "${MATE_SPECS_RULE_MARKER}an older Mate rule"`,
+        '    - "last"',
+        "",
+      ].join("\n"),
     );
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
+
+    expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
+      schema: "mate-v1",
+      rules: { specs: ["first", MATE_SPECS_RULE, "last"] },
+    });
+  });
+
+  test("leaves an unparseable config alone with one stderr line", async () => {
+    const root = await makeTempDir("mate-openspec-schema-broken-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
+    const configPath = path.join(root, "openspec", "config.yaml");
+    const broken = "schema: mate-v1\nrules: [\n";
+    await fs.writeFile(configPath, broken);
+    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    try {
+      await plugin.apply(
+        makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]),
+      );
+      const lines = stderr.mock.calls.map(([chunk]) => String(chunk));
+      expect(lines.filter((line) => line.includes("openspec/config.yaml"))).toHaveLength(1);
+    } finally {
+      stderr.mockRestore();
+    }
+    await expect(fs.readFile(configPath, "utf8")).resolves.toBe(broken);
+  });
+
+  test("deselection removes a config holding only Mate content", async () => {
+    const root = await makeTempDir("mate-openspec-schema-deselect-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
+
+    await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, "openspec", "schemas", "mate-v1"))).resolves.toBeNull();
+  });
+
+  test("deselection removes only the Mate entry from a user-edited config", async () => {
+    const root = await makeTempDir("mate-openspec-schema-deselect-user-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
+    const configPath = path.join(root, "openspec", "config.yaml");
+    await fs.writeFile(
+      configPath,
+      `schema: mate-v1\ncontext: Acme\nrules:\n  proposal:\n    - "Name the customer."\n  specs:\n    - "${MATE_SPECS_RULE_MARKER}old"\n`,
+    );
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
+
+    expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
+      schema: "mate-v1",
+      context: "Acme",
+      rules: { proposal: ["Name the customer."] },
+    });
+  });
+
+  test("deselection keeps user rules.specs entries next to the removed Mate entry", async () => {
+    const root = await makeTempDir("mate-openspec-schema-deselect-specs-");
+    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
+    const configPath = path.join(root, "openspec", "config.yaml");
+    await fs.writeFile(
+      configPath,
+      `schema: mate-v1\nrules:\n  specs:\n    - "Keep scenarios short."\n    - "${MATE_SPECS_RULE_MARKER}old"\n`,
+    );
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
+
+    expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
+      schema: "mate-v1",
+      rules: { specs: ["Keep scenarios short."] },
+    });
   });
 
   test("default schema profile keeps schemas available without activating a default", async () => {
@@ -1010,7 +1171,11 @@ describe("createOpenspecPlugin", () => {
       "name: mate-v1\n",
       "utf8",
     );
-    await fs.writeFile(path.join(root, "openspec", "config.yaml"), "schema: mate-v1\n", "utf8");
+    await fs.writeFile(
+      path.join(root, "openspec", "config.yaml"),
+      `schema: mate-v1\nrules:\n  specs:\n    - "${MATE_SPECS_RULE_MARKER}old"\n`,
+      "utf8",
+    );
 
     await plugin.teardown(makeCtx(root, []));
 

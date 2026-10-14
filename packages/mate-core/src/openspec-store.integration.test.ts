@@ -13,6 +13,7 @@ import { writeRepoLocalRegistryEntry } from "./lib/orchestrator/repository-link"
 import type { LinkedRepository } from "./lib/orchestrator/types";
 import { project } from "./lib/orchestrator/working-repo-projection";
 import { resolveCommandOnPath } from "./tools/setup/utils";
+import { findRealOpenSpec } from "../test/real-openspec";
 
 /**
  * The store pointer against the real OpenSpec CLI, through the real wrapper,
@@ -28,17 +29,6 @@ const SCHEMA_SOURCE = path.join(import.meta.dirname, "templates", "capabilities"
 const WRAPPER_BIN = runtimeWrapperBinPath();
 fs.mkdirSync(WRAPPER_BIN, { recursive: true });
 fs.copyFileSync(path.join(getWrapperBinPath(), "openspec"), path.join(WRAPPER_BIN, "openspec"));
-
-/** The first `openspec` on PATH that is not one of Mate's wrappers. */
-function findRealOpenSpec(): string | undefined {
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    const candidate = resolveCommandOnPath("openspec", dir);
-    if (!candidate) continue;
-    if (fs.readFileSync(candidate, "utf8").includes("_mate_projection_file")) continue;
-    return candidate;
-  }
-  return undefined;
-}
 
 const REAL_OPENSPEC = findRealOpenSpec();
 const NODE_DIR = path.dirname(

@@ -73,9 +73,12 @@ type ProjectionResult =
   | { ok: true; repository: string; areas: string[] }
   | { ok: false; reason: string };
 
+/** A leading `---` block; group 1 is its YAML, the match ends after the closing line. */
+const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+
 function parseDeltaScopes(source: string): ScopePair[] {
   const text = source.startsWith(BOM) ? source.slice(BOM.length) : source;
-  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+  const match = FRONTMATTER_PATTERN.exec(text);
   if (!match) return [];
 
   try {
@@ -92,6 +95,26 @@ function parseDeltaScopes(source: string): ScopePair[] {
     });
   } catch {
     return [];
+  }
+}
+
+const DELTA_TAGS = new Set(["openspec/change", "openspec/delta"]);
+
+/**
+ * A header an agent copied from a delta: it declares `type: delta-spec`, carries a
+ * `change` key, or a delta tag. A nested `scopes` key alone does not count, since
+ * legacy canonical specs carry one.
+ */
+function isDeltaShapedFrontmatter(yamlSource: string): boolean {
+  try {
+    const parsed = parse(yamlSource) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    const header = parsed as Record<string, unknown>;
+    if (header.type === "delta-spec" || "change" in header) return true;
+    const tags = Array.isArray(header.tags) ? header.tags : [header.tags];
+    return tags.some((tag) => typeof tag === "string" && DELTA_TAGS.has(tag));
+  } catch {
+    return false;
   }
 }
 
@@ -133,7 +156,10 @@ async function archivedChangeUsesMateSchema(
   }
 }
 
-/** Scope keys are omitted when the delta had none — a partial block beats no frontmatter. */
+/**
+ * The block through its closing line. Scope keys are omitted when the delta had
+ * none — a partial block beats no frontmatter.
+ */
 function renderCanonicalFrontmatter(
   capability: string,
   scope: { repository: string; areas: string[] } | null,
@@ -146,14 +172,14 @@ function renderCanonicalFrontmatter(
     "tags: [openspec/spec]",
     "---",
     "",
-    "",
   ].join("\n");
 }
 
 /**
  * Repairs `openspec archive` output: prepends canonical frontmatter to main specs the
- * archive run created bare. Publish does not archive, so this runs the first time publish
- * resolves that archive, however the archive was made.
+ * archive run created bare, and replaces a delta-shaped header an agent copied onto one.
+ * Publish does not archive, so this runs the first time publish resolves that archive,
+ * however the archive was made.
  *
  * `openspec archive` rebuilds a brand-new main spec from a skeleton with no frontmatter slot,
  * so scope metadata dies exactly once, at spec birth; existing specs keep theirs because only
@@ -197,8 +223,14 @@ async function reconcileMainSpecFrontmatter(
       const canonicalPath = path.join(companionPath, canonicalRelative);
 
       try {
-        const canonical = await fs.readFile(canonicalPath, "utf8");
-        if (canonical.replace(BOM, "").startsWith("---")) continue;
+        const canonical = (await fs.readFile(canonicalPath, "utf8")).replace(BOM, "");
+        /** The body that follows the written block: the whole file, or what trails a delta-shaped header. */
+        let body = `\n${canonical}`;
+        if (canonical.startsWith("---")) {
+          const header = FRONTMATTER_PATTERN.exec(canonical);
+          if (!header || !isDeltaShapedFrontmatter(header[1])) continue;
+          body = canonical.slice(header[0].length);
+        }
 
         const deltaSource = await fs.readFile(path.join(directory, entry.name), "utf8");
         const scopes = parseDeltaScopes(deltaSource);
@@ -215,7 +247,7 @@ async function reconcileMainSpecFrontmatter(
           capability,
           projected.ok ? { repository: projected.repository, areas: projected.areas } : null,
         );
-        await fs.writeFile(canonicalPath, head + canonical.replace(BOM, ""), "utf8");
+        await fs.writeFile(canonicalPath, head + body, "utf8");
         reconciled.push(canonicalRelative);
       } catch (error) {
         process.stderr.write(

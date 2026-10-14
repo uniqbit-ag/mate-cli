@@ -479,6 +479,74 @@ scopes:
 
     expect(result.ok && result.resolved.commitPaths).toContain("openspec/specs/cap/spec.md");
   });
+
+  test("a delta-shaped header is replaced and the body stays byte-for-byte", async () => {
+    const root = await makeCompanion();
+    await seedArchivedDelta(root, "2026-08-06-probe", "cap", SINGLE_SCOPE);
+    await seedCanonical(root, "cap", `${SINGLE_SCOPE}\n\n${BARE_CANONICAL}`);
+
+    const result = await openspecFinisher(root).resolve("probe");
+
+    expect(await readCanonical(root, "cap")).toBe(
+      `---\ntype: spec\ncapability: cap\nrepository: acme/product\nareas: [packages/mate-core]\ntags: [openspec/spec]\n---\n\n${BARE_CANONICAL}`,
+    );
+    expect(result.ok && result.resolved.commitPaths).toContain("openspec/specs/cap/spec.md");
+  });
+
+  test("each delta marker alone makes a header delta-shaped", async () => {
+    for (const header of [
+      "---\ntype: delta-spec\ncapability: cap\n---",
+      "---\ntype: spec\nchange: probe\ncapability: cap\n---",
+      "---\ntype: spec\ncapability: cap\ntags: [openspec/spec, openspec/delta]\n---",
+      "---\ntype: spec\ncapability: cap\ntags:\n  - openspec/change\n---",
+    ]) {
+      const root = await makeCompanion();
+      await seedArchivedDelta(root, "2026-08-06-probe", "cap", SINGLE_SCOPE);
+      await seedCanonical(root, "cap", `${header}\n\n${BARE_CANONICAL}`);
+
+      await openspecFinisher(root).resolve("probe");
+
+      const canonical = await readCanonical(root, "cap");
+      expect(canonical).toContain("repository: acme/product");
+      expect(canonical.endsWith(`---\n\n${BARE_CANONICAL}`)).toBe(true);
+    }
+  });
+
+  test("a legacy canonical-spec header with nested scopes stays byte-identical", async () => {
+    const root = await makeCompanion();
+    await seedArchivedDelta(root, "2026-08-06-probe", "cap", SINGLE_SCOPE);
+    const legacy = `---\ntype: canonical-spec\ncapability: cap\nscopes:\n  - repository: acme/other\n    area: .\ntags: [openspec/spec]\n---\n\n${BARE_CANONICAL}`;
+    await seedCanonical(root, "cap", legacy);
+
+    await openspecFinisher(root).resolve("probe");
+
+    expect(await readCanonical(root, "cap")).toBe(legacy);
+  });
+
+  test("a delta-shaped header keeps its block when the delta names two repositories", async () => {
+    const root = await makeCompanion();
+    await seedArchivedDelta(
+      root,
+      "2026-08-06-probe",
+      "cap",
+      `---
+type: delta-spec
+change: probe
+capability: cap
+scopes:
+  - repository: acme/product
+    area: packages/api
+  - repository: acme/other
+    area: packages/api
+---`,
+    );
+    const copied = `${SINGLE_SCOPE}\n\n${BARE_CANONICAL}`;
+    await seedCanonical(root, "cap", copied);
+
+    await openspecFinisher(root).resolve("probe");
+
+    expect(await readCanonical(root, "cap")).toBe(copied);
+  });
 });
 
 describe("resolveDriftedSpecs", () => {
