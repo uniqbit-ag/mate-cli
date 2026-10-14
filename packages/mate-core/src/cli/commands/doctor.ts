@@ -353,6 +353,11 @@ function renderHubMembers(members: DoctorHubMember[]): string {
   );
 }
 
+function describeUndeliveredPart(part: string): string {
+  if (part === "pluginReferences") return "OpenCode plugin references are not delivered";
+  return `${part} is not run`;
+}
+
 function renderAudienceIsolation(isolation: AudienceIsolationReport): string {
   const parts: string[] = [];
   if (isolation.leaked.length > 0) {
@@ -380,14 +385,7 @@ function renderAudienceIsolation(isolation: AudienceIsolationReport): string {
       "Active audience plugins contribute declaratively only; these parts are not delivered:",
       renderList(
         isolation.undelivered.map(
-          (entry) =>
-            `${entry.pluginId}: ${entry.parts
-              .map((part) =>
-                part === "pluginReferences"
-                  ? "OpenCode plugin references are not delivered"
-                  : `${part} is not run`,
-              )
-              .join("; ")}`,
+          (entry) => `${entry.pluginId}: ${entry.parts.map(describeUndeliveredPart).join("; ")}`,
         ),
         "",
       ),
@@ -437,21 +435,14 @@ function renderHumanReport(report: DoctorReport): void {
     printSection("Tool Installations", renderToolInstallations(report.toolInstallations));
   }
   if (report.audiences) {
-    printSection(
-      "Audiences",
-      renderKeyValueTable([
-        ["Declared", report.audiences.declared.join(", ") || "none"],
-        ["Active", report.audiences.active ?? "none"],
-        ...(report.audiences.wrapped
-          ? [
-              ["Wrapped", `${report.audiences.wrapped} (bare sessions of this checkout)`] as [
-                string,
-                string,
-              ],
-            ]
-          : []),
-      ]),
-    );
+    const rows: Array<[string, string]> = [
+      ["Declared", report.audiences.declared.join(", ") || "none"],
+      ["Active", report.audiences.active ?? "none"],
+    ];
+    if (report.audiences.wrapped) {
+      rows.push(["Wrapped", `${report.audiences.wrapped} (bare sessions of this checkout)`]);
+    }
+    printSection("Audiences", renderKeyValueTable(rows));
   }
   if (report.audienceIsolation) {
     printSection("Audience Isolation", renderAudienceIsolation(report.audienceIsolation));

@@ -7,14 +7,18 @@ import {
   syncCompanionUnattended,
   type UnattendedSyncOutcome,
 } from "../../runtime/companion-sync";
+import {
+  describeAudienceConflict,
+  resolveSessionAudience,
+  type SessionAudience,
+} from "../../runtime/session-audience";
 import { readWrapStateSync, type WrapState } from "../../runtime/wrap-state";
 import { syncCompanionFiles } from "../../tools/setup";
-import { renderAudienceLayer, type RenderedAudienceLayer } from "../../tools/setup/audience-layer";
+import { ensureAudienceLayer, type RenderedAudienceLayer } from "../../tools/setup/audience-layer";
 import {
+  declaredAudiences,
   readAudienceSelection,
-  resolveAudience,
 } from "../../tools/setup/dynamic-plugins/audiences";
-import { buildSetupInstallationPlan } from "../../tools/setup/engine";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
 import { attendedLockOptions, syncCompanionGit } from "./companion-git-sync";
 import { readCompanionConfig } from "./config-store";
@@ -151,7 +155,7 @@ export const sessionPrepareDeps = {
   audienceSelection: () => readAudienceSelection(process.env),
   /** The audience a checkout is wrapped for, from its manifest; `null` for base. */
   wrappedAudience: (repoPath: string) => readWrapStateSync(repoPath).audience,
-  renderAudienceLayer,
+  ensureAudienceLayer,
 };
 
 function message(error: unknown): string {
@@ -338,36 +342,49 @@ async function runLocal(
 }
 
 /**
+ * The launch's Session Audience, from the checkout's wrap and `MATE_AUDIENCE`
+ * as they are now: a git sync or the wrap pass may change either.
+ */
+function managedAudience(input: PrepareSessionInput, config: FrameworkConfig): SessionAudience {
+  const deps = sessionPrepareDeps;
+  return resolveSessionAudience({
+    session: "managed",
+    wrapped: input.repository ? deps.wrappedAudience(input.repository.path) : null,
+    requested: deps.audienceSelection(),
+    declared: declaredAudiences(config),
+  });
+}
+
+/**
  * The active audience's launch layer, after the base prepare. Only a managed
  * launch reaches here: a bare session's prepare never renders one, whatever
- * `MATE_AUDIENCE` its environment carries. An audience the companion does not
- * declare renders nothing; hydration already warned about it.
+ * `MATE_AUDIENCE` its environment carries.
  */
 async function renderLayer(
   input: PrepareSessionInput,
   config: FrameworkConfig,
   run: StepLog,
 ): Promise<void> {
-  const deps = sessionPrepareDeps;
-  /** Adopted from the wrap: the wrap delivers it, so the launch renders no layer of its own. */
-  const wrapped = input.repository ? deps.wrappedAudience(input.repository.path) : null;
-  if (wrapped) {
+  const audience = managedAudience(input, config);
+  if (audience.kind === "base") return;
+  /**
+   * Adopted from the wrap: the wrap delivers it, so the launch renders no layer
+   * of its own. A conflict was refused before the prepare; one now means the
+   * wrap changed during it, and the wrap still wins.
+   */
+  if (audience.kind !== "launch") {
+    const wrapped = audience.kind === "wrap" ? audience.audience : audience.wrapped;
     run.push({ step: "audience-layer", outcome: "ok", detail: `${wrapped}: from the wrap` });
     return;
   }
-  const audience = resolveAudience(config, deps.audienceSelection());
-  if (!audience.ok || audience.active === null) return;
   try {
-    const registry = getActiveDistribution().registry;
-    const layer = await deps.renderAudienceLayer({
+    /** Load warnings are dropped: hydration already reported the same declarations. */
+    const layer = await sessionPrepareDeps.ensureAudienceLayer({
       companionPath: input.companionPath,
       config,
-      audience: audience.active,
-      activeProviders: buildSetupInstallationPlan(config, registry.baseRegistrations())
-        .activeProviders,
-      registrations: registry.audienceRegistrations(audience.active),
+      audience: audience.audience,
     });
-    run.audienceLayer = layer;
+    run.audienceLayer = { audience: layer.audience, root: layer.root, rendered: layer.rendered };
     run.push({
       step: "audience-layer",
       outcome: "ok",
@@ -378,28 +395,22 @@ async function renderLayer(
   }
 }
 
-/**
- * A checkout wrapped for one audience refuses a launch for another before
- * anything runs: the wrap's on-disk content would reach that session.
- */
-function audienceConflict(input: PrepareSessionInput, config: FrameworkConfig): string | null {
-  if (!input.repository) return null;
-  const wrapped = sessionPrepareDeps.wrappedAudience(input.repository.path);
-  if (!wrapped) return null;
-  const selected = resolveAudience(config, sessionPrepareDeps.audienceSelection());
-  if (!selected.ok || selected.active === null || selected.active === wrapped) return null;
-  return `${FRAMEWORK_NAME}: ${input.repository.id} is wrapped for audience "${wrapped}", but MATE_AUDIENCE selects "${selected.active}". Run \`${FRAMEWORK_NAME} wrap --audience ${selected.active}\` in ${input.repository.path}, or launch from another worktree wrapped for "${selected.active}".`;
-}
-
 async function runAttended(
   input: PrepareSessionInput,
   config: FrameworkConfig,
   run: StepLog,
 ): Promise<void> {
   const deps = sessionPrepareDeps;
-  const conflict = audienceConflict(input, config);
-  if (conflict) {
-    run.fail("audience-layer", new LaunchPreflightError(conflict));
+  /**
+   * A checkout wrapped for one audience refuses a launch for another before
+   * anything runs: the wrap's on-disk content would reach that session.
+   */
+  const audience = managedAudience(input, config);
+  if (audience.kind === "conflict") {
+    run.fail(
+      "audience-layer",
+      new LaunchPreflightError(describeAudienceConflict(audience, input.repository!)),
+    );
     return;
   }
   if (input.skipGit) {

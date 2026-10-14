@@ -55,7 +55,8 @@ function splitFrontmatter(content: string): { fields: string; body: string } {
     : { fields: "", body: content };
 }
 
-function frontmatterScalarFromFields(fields: string, key: string): string | undefined {
+/** One scalar of a simple YAML frontmatter's fields, quotes removed. */
+function frontmatterScalar(fields: string, key: string): string | undefined {
   const value = fields.match(new RegExp(`^${key}:\\s*(.+)$`, "m"))?.[1]?.trim();
   return value?.replace(
     /^(?:"([\s\S]*)"|'([\s\S]*)')$/,
@@ -63,13 +64,8 @@ function frontmatterScalarFromFields(fields: string, key: string): string | unde
   );
 }
 
-/** One scalar of a simple YAML frontmatter, quotes removed. */
-export function frontmatterScalar(content: string, key: string): string | undefined {
-  return frontmatterScalarFromFields(splitFrontmatter(content).fields, key);
-}
-
 /** An id OpenCode accepts for a skill or agent name. */
-export function contributionId(name: string, fallback: string): string {
+function contributionId(name: string, fallback: string): string {
   return (
     name
       .toLowerCase()
@@ -102,9 +98,8 @@ export async function loadSkillInfos(roots: readonly string[]): Promise<LayerSki
       try {
         const content = await fs.readFile(filePath, "utf8");
         const { fields } = splitFrontmatter(content);
-        const name =
-          frontmatterScalarFromFields(fields, "name") || path.basename(path.dirname(filePath));
-        const description = frontmatterScalarFromFields(fields, "description");
+        const name = frontmatterScalar(fields, "name") || path.basename(path.dirname(filePath));
+        const description = frontmatterScalar(fields, "description");
         return {
           id: contributionId(name, "mate-skill"),
           name,
@@ -149,11 +144,11 @@ async function readAgents(root: string): Promise<LayerAgent[]> {
         const content = await fs.readFile(path.join(dir, name), "utf8").catch(() => null);
         if (content === null) return null;
         const { fields, body } = splitFrontmatter(content);
-        const description = frontmatterScalarFromFields(fields, "description");
+        const description = frontmatterScalar(fields, "description");
         return {
           id: contributionId(path.basename(name, ".md"), "mate-agent"),
           ...(description ? { description } : {}),
-          mode: agentMode(frontmatterScalarFromFields(fields, "mode")),
+          mode: agentMode(frontmatterScalar(fields, "mode")),
           system: body.trim(),
         };
       }),

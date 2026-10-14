@@ -15,8 +15,14 @@ import {
   pluginLocalOverridesPath,
   pluginPackageRoot,
 } from "./dynamic-plugins/paths";
-import { collectAudienceInputs, RUNTIME_SURFACE_RECONCILERS } from "./engine";
+import { loadAudienceRegistrations } from "./audience-registrations";
+import {
+  buildSetupInstallationPlan,
+  collectAudienceInputs,
+  RUNTIME_SURFACE_RECONCILERS,
+} from "./engine";
 import type { PluginRegistration, SetupContext } from "./plugin";
+import type { NormalizedRegistration } from "./registry";
 import { projectionTarget } from "./surface-target";
 
 /**
@@ -105,7 +111,7 @@ async function lockedVersions(
  * of its packages, the local plugin overrides, the Mate version and the active
  * runtimes. Anything else changing leaves the layer as it is.
  */
-export async function audienceLayerFingerprint(request: AudienceLayerRequest): Promise<string> {
+async function audienceLayerFingerprint(request: AudienceLayerRequest): Promise<string> {
   const entry = request.config.audiences?.[request.audience] ?? null;
   const packages = (entry?.plugins ?? []).map((declaration) => declaration.package);
   const overrides = await fs
@@ -204,4 +210,37 @@ export async function renderAudienceLayer(
   await pointCurrentAt(dir, fingerprint);
   await pruneStaleLayers(dir, fingerprint);
   return { audience: request.audience, root, rendered: true };
+}
+
+export interface EnsuredAudienceLayer extends RenderedAudienceLayer {
+  /** The audience's registrations the layer was rendered from. */
+  registrations: NormalizedRegistration[];
+  /** Declarations that could not be loaded; the layer renders without them. */
+  warnings: string[];
+}
+
+/**
+ * The audience's layer, rendered or reused: the one way a launch or a wrap
+ * gets one. The fingerprint does not cover the registrations, so every caller
+ * must render from the same ones; sourcing them here makes that so. They are
+ * loaded for their declarations only, reusing a plugin this process hydrated,
+ * and rendered for the runtimes the companion's base set activates.
+ */
+export async function ensureAudienceLayer(request: {
+  companionPath: string;
+  config: FrameworkConfig;
+  audience: string;
+}): Promise<EnsuredAudienceLayer> {
+  const { companionPath, config, audience } = request;
+  const registry = getActiveDistribution().registry;
+  const loaded = await loadAudienceRegistrations(companionPath, config, audience, registry);
+  const layer = await renderAudienceLayer({
+    companionPath,
+    config,
+    audience,
+    activeProviders: buildSetupInstallationPlan(config, registry.baseRegistrations())
+      .activeProviders,
+    registrations: loaded.registrations,
+  });
+  return { ...layer, registrations: loaded.registrations, warnings: loaded.warnings };
 }

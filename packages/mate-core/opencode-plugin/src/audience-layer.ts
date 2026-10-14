@@ -1,14 +1,13 @@
 import type { Context } from "@opencode/plugin/promise/plugin";
 
 import { repositoryWrappedForOpenCode } from "../../src/opencode/companion-hooks";
-import { currentAudienceLayer } from "../../src/runtime/audience-layer";
 import { MATE_ENV } from "../../src/runtime/env";
 import { parseGuidanceContent } from "../../src/runtime/guidance";
 import {
   readOpenCodeAudienceLayer,
   type OpenCodeLayerContents,
 } from "../../src/runtime/opencode-audience-layer";
-import { readWrapStateSync } from "../../src/runtime/wrap-state";
+import { wrappedAudienceLayer } from "../../src/runtime/session-audience";
 import type { LaunchEnvironment } from "./launch-environment";
 
 export interface TrustedAudienceLayer {
@@ -43,9 +42,7 @@ export async function readWrappedAudienceLayer(
 ): Promise<TrustedAudienceLayer | null> {
   const repoRoot = repositoryWrappedForOpenCode(directory);
   if (!repoRoot) return null;
-  const audience = readWrapStateSync(repoRoot).audience;
-  if (!audience) return null;
-  const root = currentAudienceLayer(companionPath, audience);
+  const root = wrappedAudienceLayer(companionPath, repoRoot);
   return root ? { root, contents: await readOpenCodeAudienceLayer(root) } : null;
 }
 

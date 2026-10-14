@@ -168,7 +168,7 @@ export function renderManagedClaudeHookGroups(
  * A layer's Claude settings: the enabled inputs' hook groups and permission
  * entries, nothing of Mate's own. The launch merges them over its base settings.
  */
-export function renderLayerClaudeSettings(
+function renderLayerClaudeSettings(
   contributions: CapabilityContributionInput[] = [],
 ): ClaudeSettings {
   const hooks = renderManagedClaudeHookGroups(contributions);

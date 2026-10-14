@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import type { PluginDeclaration } from "../../lib/orchestrator/types";
 import { removeManagedBlocksForPlugin } from "./context-services";
 import {
   audiencePluginDeclarations,
@@ -30,7 +31,7 @@ const MANAGED_BLOCK_START = new RegExp(
 );
 
 /** Plugin ids owning a managed guidance block in `text`. */
-export function managedBlockOwners(text: string): string[] {
+function managedBlockOwners(text: string): string[] {
   return [...new Set([...text.matchAll(MANAGED_BLOCK_START)].map((match) => match[1]!))];
 }
 
@@ -79,20 +80,21 @@ export interface AudienceSweepOptions {
 }
 
 /** One distinct package per audience declaration, base packages excluded. */
-function audiencePackages(raw: unknown): Map<string, ReturnType<typeof validateDeclaration>> {
+function audiencePackages(raw: unknown): Map<string, PluginDeclaration> {
   const basePackages = new Set(
     effectivePluginDeclarations(raw, null).flatMap((entry) => {
       const { declaration } = validateDeclaration(entry);
       return declaration ? [declaration.package] : [];
     }),
   );
-  const found = new Map<string, ReturnType<typeof validateDeclaration>>();
+  const found = new Map<string, PluginDeclaration>();
   for (const audience of declaredAudiences(raw)) {
     for (const entry of audiencePluginDeclarations(raw, audience)) {
-      const validated = validateDeclaration(entry);
-      const name = validated.declaration?.package;
-      if (!name || basePackages.has(name) || found.has(name)) continue;
-      found.set(name, validated);
+      const { declaration } = validateDeclaration(entry);
+      if (!declaration || basePackages.has(declaration.package) || found.has(declaration.package)) {
+        continue;
+      }
+      found.set(declaration.package, declaration);
     }
   }
   return found;
@@ -110,13 +112,13 @@ export async function sweepAudienceDeclarations(
   const sweep: AudienceSweep = { teardown: new Map(), unswept: [], warnings: [] };
   const raw = await readFrameworkRaw(ctx.companionPath);
 
-  for (const [name, { declaration }] of audiencePackages(raw)) {
+  for (const [name, declaration] of audiencePackages(raw)) {
     if (options.packages && !options.packages.has(name)) continue;
     let plugin: Plugin | undefined = options.registrations.find(
       (entry) => entry.packageName === name,
     )?.plugin;
     if (!plugin) {
-      const loaded = await loadDynamicPlugin(ctx.companionPath, declaration!, options.deps);
+      const loaded = await loadDynamicPlugin(ctx.companionPath, declaration, options.deps);
       if (!loaded.ok) {
         sweep.unswept.push(name);
         sweep.warnings.push(
@@ -127,8 +129,9 @@ export async function sweepAudienceDeclarations(
       plugin = loaded.plugin;
     }
 
+    if (plugin.kind !== "capability") continue;
     const capability = plugin as CapabilityPlugin;
-    if (plugin.kind !== "capability" || !capability.getRuntimeContributions) continue;
+    if (!capability.getRuntimeContributions) continue;
     try {
       const byRuntime = await capability.getRuntimeContributions(ctx);
       for (const [runtimeId, contributions] of Object.entries(byRuntime)) {

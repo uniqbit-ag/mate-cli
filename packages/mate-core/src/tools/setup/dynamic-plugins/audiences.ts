@@ -129,11 +129,6 @@ export function audiencePluginDeclarations(raw: unknown, audience: string): unkn
   return pluginList(audienceEntry(raw, audience));
 }
 
-/** The raw `audiences.<name>` entry, for fingerprinting what a layer depends on. */
-export function audienceDeclarationEntry(raw: unknown, audience: string): unknown {
-  return audienceEntry(raw, audience);
-}
-
 /**
  * Base plugins followed by every audience's, for installation only: a
  * package shared by audiences appears once since validation guarantees one

@@ -1,8 +1,8 @@
 // Deliver the companion guidance to a Claude session Mate did not launch.
-import { currentAudienceLayer, readLayerGuidanceSync } from "../runtime/audience-layer";
+import { readLayerGuidanceSync } from "../runtime/audience-layer";
 import { resolveProjection } from "../runtime/projection";
 import { buildProjectedGuidance } from "../runtime/projected-guidance";
-import { readWrapStateSync } from "../runtime/wrap-state";
+import { wrappedAudienceLayer } from "../runtime/session-audience";
 import type { HookEnv } from "./validate-artifact-path";
 
 export interface GuidanceOutcome {
@@ -17,9 +17,7 @@ export interface GuidanceOutcome {
 function wrappedAudienceGuidance(cwd: string): string {
   const projection = resolveProjection(cwd);
   if (!projection) return "";
-  const audience = readWrapStateSync(projection.repoRoot).audience;
-  if (!audience) return "";
-  const layer = currentAudienceLayer(projection.companionPath, audience);
+  const layer = wrappedAudienceLayer(projection.companionPath, projection.repoRoot);
   return layer ? readLayerGuidanceSync(layer, "CLAUDE.md") : "";
 }
 

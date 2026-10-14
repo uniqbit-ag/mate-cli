@@ -15,7 +15,7 @@ import type { CapabilityContributionInput, RuntimeContributions } from "./plugin
  * carries no secret.
  */
 
-export const CONTRIBUTION_LEDGER_VERSION = 1;
+const CONTRIBUTION_LEDGER_VERSION = 1;
 
 /** The identities one owner applied on one runtime. Absent kinds are none. */
 export interface LedgerIdentities {
@@ -134,10 +134,7 @@ export async function writeContributionLedger(
 }
 
 /** The identities a contribution set applies for `pluginId`. */
-export function identitiesOf(
-  pluginId: string,
-  contributions: RuntimeContributions,
-): LedgerIdentities {
+function identitiesOf(pluginId: string, contributions: RuntimeContributions): LedgerIdentities {
   return {
     mcpServers: (contributions.mcpServers ?? []).map((server) => server.name),
     guidanceKeys: (contributions.guidanceSections ?? []).map((section) =>

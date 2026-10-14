@@ -1,11 +1,8 @@
 import path from "node:path";
 
 import { renderWorkingRuntimeDocuments } from "../../tools/setup";
-import { renderAudienceLayer } from "../../tools/setup/audience-layer";
-import { loadAudienceRegistrations } from "../../tools/setup/audience-registrations";
+import { ensureAudienceLayer } from "../../tools/setup/audience-layer";
 import { declaredAudiences } from "../../tools/setup/dynamic-plugins/audiences";
-import { buildSetupInstallationPlan } from "../../tools/setup/engine";
-import { getActiveDistribution } from "../../distribution";
 import { audienceLayerDir } from "../../runtime/audience-layer";
 import {
   readManifest,
@@ -26,8 +23,7 @@ export interface WrapPassDependencies {
   renderWorkingRuntimeDocuments: typeof renderWorkingRuntimeDocuments;
   readCompanionConfig: typeof readCompanionConfig;
   project: typeof project;
-  loadAudienceRegistrations: typeof loadAudienceRegistrations;
-  renderAudienceLayer: typeof renderAudienceLayer;
+  ensureAudienceLayer: typeof ensureAudienceLayer;
   /** The registered companions, whose stale skill links a re-pin withdraws; the user's registry when absent. */
   globalConfigStore?: GlobalConfigStore;
 }
@@ -36,8 +32,7 @@ export const wrapPassDeps: WrapPassDependencies = {
   renderWorkingRuntimeDocuments,
   readCompanionConfig,
   project,
-  loadAudienceRegistrations,
-  renderAudienceLayer,
+  ensureAudienceLayer,
 };
 
 export interface WrapPassOptions {
@@ -75,14 +70,43 @@ export type WrapPassResult =
     }
   | { kind: "failed"; message: string };
 
-/** An audience a checkout may be wrapped for: declared by the companion, never the reserved base. */
+/** An audience a checkout may be wrapped for: declared by the companion, which never lists the reserved base. */
 function wrappableAudience(config: FrameworkConfig, audience: string): boolean {
-  return audience !== "base" && declaredAudiences(config).includes(audience);
+  return declaredAudiences(config).includes(audience);
 }
 
 function describeUnwrappable(config: FrameworkConfig, audience: string): string {
-  const declared = declaredAudiences(config).filter((name) => name !== "base");
+  const declared = declaredAudiences(config);
   return `audience "${audience}" cannot be wrapped: the companion declares ${declared.length > 0 ? declared.join(", ") : "no audiences"}.`;
+}
+
+type WrapAudience = { audience: string | null; warning?: string } | { failure: string };
+
+/**
+ * The audience this pass wraps for: the requested one, else the one the
+ * manifest records. A requested audience the companion does not declare fails
+ * the pass.
+ */
+async function resolveWrapAudience(
+  config: FrameworkConfig,
+  repository: LinkedRepository,
+  requested: string | null | undefined,
+): Promise<WrapAudience> {
+  if (requested !== undefined) {
+    if (requested && !wrappableAudience(config, requested)) {
+      return { failure: describeUnwrappable(config, requested) };
+    }
+    return { audience: requested };
+  }
+  const recorded = recordedAudience(await readManifest(repository.path));
+  /** A recorded audience the companion no longer declares falls back to base, never fails a prepare. */
+  if (recorded && !wrappableAudience(config, recorded)) {
+    return {
+      audience: null,
+      warning: `${describeUnwrappable(config, recorded)} ${repository.id} is wrapped for base only.`,
+    };
+  }
+  return { audience: recorded };
 }
 
 /**
@@ -99,41 +123,20 @@ export async function runWrapPass(
   const resolvedCompanionPath = path.resolve(companionPath);
   const config = options.config ?? (await deps.readCompanionConfig(resolvedCompanionPath));
 
-  const audienceWarnings: string[] = [];
-  let audience: string | null;
-  if (options.audience === undefined) {
-    const recorded = recordedAudience(await readManifest(repository.path));
-    /** A recorded audience the companion no longer declares falls back to base, never fails a prepare. */
-    if (recorded && !wrappableAudience(config, recorded)) {
-      audienceWarnings.push(
-        `${describeUnwrappable(config, recorded)} ${repository.id} is wrapped for base only.`,
-      );
-      audience = null;
-    } else {
-      audience = recorded;
-    }
-  } else {
-    audience = options.audience;
-    if (audience && !wrappableAudience(config, audience)) {
-      return { kind: "failed", message: describeUnwrappable(config, audience) };
-    }
-  }
+  const resolved = await resolveWrapAudience(config, repository, options.audience);
+  if ("failure" in resolved) return { kind: "failed", message: resolved.failure };
+  const { audience } = resolved;
+  const audienceWarnings = resolved.warning ? [resolved.warning] : [];
 
   let wrapped: { audience: string; registrations: NormalizedRegistration[] } | undefined;
   if (audience) {
-    const loaded = await deps.loadAudienceRegistrations(resolvedCompanionPath, config, audience);
-    audienceWarnings.push(...loaded.warnings);
-    await deps.renderAudienceLayer({
+    const layer = await deps.ensureAudienceLayer({
       companionPath: resolvedCompanionPath,
       config,
       audience,
-      activeProviders: buildSetupInstallationPlan(
-        config,
-        getActiveDistribution().registry.baseRegistrations(),
-      ).activeProviders,
-      registrations: loaded.registrations,
     });
-    wrapped = { audience, registrations: loaded.registrations };
+    audienceWarnings.push(...layer.warnings);
+    wrapped = { audience, registrations: layer.registrations };
   }
 
   const rendered = await deps.renderWorkingRuntimeDocuments(

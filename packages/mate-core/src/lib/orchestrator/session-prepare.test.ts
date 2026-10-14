@@ -68,7 +68,7 @@ function stub(overrides: Partial<FrameworkConfig> = {}): void {
   sessionPrepareDeps.isInteractiveTerminal = () => false;
   sessionPrepareDeps.audienceSelection = () => null;
   sessionPrepareDeps.wrappedAudience = () => null;
-  sessionPrepareDeps.renderAudienceLayer = mock(async (request: { audience: string }) => {
+  sessionPrepareDeps.ensureAudienceLayer = mock(async (request: { audience: string }) => {
     calls.push(`layer:${request.audience}`);
     return { audience: request.audience, root: `/layers/${request.audience}`, rendered: true };
   });
@@ -669,7 +669,7 @@ describe("audience layer", () => {
   test("a failed layer render fails the attended prepare", async () => {
     stub(withAudiences);
     sessionPrepareDeps.audienceSelection = () => "ba";
-    sessionPrepareDeps.renderAudienceLayer = mock(async () => {
+    sessionPrepareDeps.ensureAudienceLayer = mock(async () => {
       throw new Error("disk full");
     });
 

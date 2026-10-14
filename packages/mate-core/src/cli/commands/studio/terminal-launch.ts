@@ -4,10 +4,11 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { ConfigStore, mergeWithDefaults } from "../../../lib/orchestrator/config-store";
 import { currentAudienceLayer } from "../../../runtime/audience-layer";
+import { resolveSessionAudience } from "../../../runtime/session-audience";
 import {
+  declaredAudiences,
   effectiveStudioAgent,
   readAudienceSelection,
-  resolveAudience,
 } from "../../../tools/setup/dynamic-plugins/audiences";
 import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 import { findAction, promptArgs, skillInstalledFor, SUBJECT_PATTERN } from "./actions";
@@ -68,8 +69,14 @@ export async function defaultAgentFor(
   let layer: string | null = null;
   try {
     const config = await new ConfigStore(configPath).load();
-    const audience = resolveAudience(config, readAudienceSelection(env));
-    const active = audience.ok ? audience.active : null;
+    /** Companion-scoped: no checkout, so no wrap; Studio's own `MATE_AUDIENCE` selects. */
+    const audience = resolveSessionAudience({
+      session: "managed",
+      wrapped: null,
+      requested: readAudienceSelection(env),
+      declared: declaredAudiences(config),
+    });
+    const active = audience.kind === "launch" ? audience.audience : null;
     name = effectiveStudioAgent(config, active);
     if (active) layer = currentAudienceLayer(companionPath, active);
   } catch {

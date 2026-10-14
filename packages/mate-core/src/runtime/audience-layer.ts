@@ -30,7 +30,7 @@ export function audienceLayersRoot(homeDir?: string): string {
 }
 
 /** A short, stable key for one companion checkout: a hash of its resolved path. */
-export function companionLayerKey(companionPath: string): string {
+function companionLayerKey(companionPath: string): string {
   return crypto.createHash("sha256").update(path.resolve(companionPath)).digest("hex").slice(0, 16);
 }
 
