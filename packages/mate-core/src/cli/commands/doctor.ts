@@ -1,10 +1,14 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
+
+import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
 import { readWrapStateSync } from "../../runtime/wrap-state";
 import { getActiveDistribution } from "../../distribution";
+import { hasOpenspecCapability } from "../../lib/orchestrator/capabilities";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { pathIsDirectory } from "../../lib/fs-utils";
@@ -86,6 +90,8 @@ export interface DoctorReport {
   /** IDs of the capabilities the verified plugins provide. */
   pluginCapabilities?: string[];
   engineRequirement?: { range: string; ok: boolean; detail: string };
+  /** Present when the companion's `openspec/config.yaml` has `rules` keys OpenSpec ignores. */
+  openspecRuleWarnings?: Array<{ key: string; message: string }>;
   hub?: { members: DoctorHubMember[] };
   resolutionFailures: Array<{ companionPath: string; message: string }>;
 }
@@ -258,6 +264,70 @@ function collectAudiences(
   if (!resolution.ok) report.audienceError = describeUnknownAudience(resolution);
 }
 
+/** Artifact IDs of OpenSpec's built-in `spec-driven` schema. */
+const BUILT_IN_OPENSPEC_ARTIFACTS = ["proposal", "specs", "design", "tasks"];
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** Built-in IDs plus every `artifacts[].id` from a `schema.yaml` under the companion's `openspec/schemas/`. */
+async function knownOpenSpecArtifactIds(companionPath: string): Promise<Set<string>> {
+  const schemasDir = path.join(companionPath, "openspec", "schemas");
+  let schemaNames: string[] = [];
+  try {
+    schemaNames = await fs.readdir(schemasDir);
+  } catch {
+    /* no companion schemas */
+  }
+  const schemaIds = await Promise.all(
+    schemaNames.map(async (name) => {
+      try {
+        const schema = asRecord(
+          parseYaml(await fs.readFile(path.join(schemasDir, name, "schema.yaml"), "utf8")),
+        );
+        const artifacts: unknown[] = Array.isArray(schema?.artifacts) ? schema.artifacts : [];
+        return artifacts.flatMap((artifact) => {
+          const id = asRecord(artifact)?.id;
+          return typeof id === "string" ? [id] : [];
+        });
+      } catch {
+        return []; // not a readable schema
+      }
+    }),
+  );
+  return new Set([...BUILT_IN_OPENSPEC_ARTIFACTS, ...schemaIds.flat()]);
+}
+
+/**
+ * OpenSpec ignores a `rules` key that names no artifact, warning only on stderr
+ * of the command that reads it. Read-only; a missing or unparseable config is silent.
+ */
+async function collectOpenSpecRuleWarnings(
+  companionPath: string,
+): Promise<NonNullable<DoctorReport["openspecRuleWarnings"]>> {
+  let rules: Record<string, unknown> | undefined;
+  try {
+    const config = parseYaml(
+      await fs.readFile(path.join(companionPath, "openspec", "config.yaml"), "utf8"),
+    );
+    rules = asRecord(asRecord(config)?.rules);
+  } catch {
+    return [];
+  }
+  if (!rules) return [];
+
+  const known = await knownOpenSpecArtifactIds(companionPath);
+  return Object.keys(rules)
+    .filter((key) => !known.has(key))
+    .map((key) => ({
+      key,
+      message: `rules.${key} matches no OpenSpec artifact and is ignored; put workflow guidance in operations.apply.guidance or operations.archive.guidance`,
+    }));
+}
+
 export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<DoctorReport> {
   const cwd = path.resolve(deps.cwd ?? process.cwd());
   const pathValue = deps.pathValue ?? process.env.PATH ?? "";
@@ -303,6 +373,15 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     if (isolation.leaked.length + isolation.unswept.length + isolation.undelivered.length > 0) {
       report.audienceIsolation = isolation;
     }
+  }
+
+  if (
+    root.rootPath &&
+    (kind === "working" || kind === "companion") &&
+    hasOpenspecCapability(root.config?.capabilities)
+  ) {
+    const warnings = await collectOpenSpecRuleWarnings(root.rootPath);
+    if (warnings.length > 0) report.openspecRuleWarnings = warnings;
   }
 
   if (root.rootPath && root.config) {
@@ -479,6 +558,15 @@ function renderHumanReport(report: DoctorReport): void {
   }
   if (report.engineRequirement) {
     printSection("Version Requirement", report.engineRequirement.detail);
+  }
+  if (report.openspecRuleWarnings) {
+    printSection(
+      "OpenSpec Config",
+      renderList(
+        report.openspecRuleWarnings.map((warning) => warning.message),
+        "",
+      ),
+    );
   }
 
   printSection(

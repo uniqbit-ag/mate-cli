@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { Document, isMap, isScalar, isSeq, parseDocument, type YAMLMap, type YAMLSeq } from "yaml";
+
 import { getOpenSpecSchemaSelection } from "../../../lib/orchestrator/setup-compatibilities";
 import { getWrapperBinPath } from "../../../lib/package-paths";
 import { fetchPublicPackageVersion } from "../../../lib/public-npm";
@@ -54,6 +56,25 @@ const MATE_SCHEMA_SOURCE_ROOT = path.join(
   "../../../templates/capabilities/openspec-cap",
 );
 const MATE_CONVENTIONS_SOURCE = path.join(MATE_SCHEMA_SOURCE_ROOT, "openspec-conventions.yaml");
+
+/**
+ * Identifies Mate's own `rules.specs` entry, so a later release can replace its
+ * text instead of adding a second entry.
+ */
+export const MATE_SPECS_RULE_MARKER = "[mate] ";
+
+/**
+ * Delivered through `rules.specs`, the one config hook OpenSpec's archive and
+ * sync workflows read when writing main specs. Propose reads it for delta specs
+ * too, so the text binds main specs only.
+ */
+export const MATE_SPECS_RULE = `${MATE_SPECS_RULE_MARKER}A main spec at openspec/specs/<capability>/spec.md MUST begin with flat frontmatter: type: spec, capability: <capability>, repository: <org/repository> (one scalar), areas: [<area>, ...] (a flat list in the delta's scope order), and tags: [openspec/spec]. Project repository and areas from the delta's paired scopes; never copy scopes, change, or delta tags onto a main spec. Delta specs under openspec/changes/<name>/specs/ keep their delta frontmatter. Full rules: openspec/mate-conventions.yaml.`;
+
+/** What Mate writes besides its entry; anything beyond the two is user content. */
+const MANAGED_CONFIG_SCHEMA_ONLY = "schema: mate-v1";
+
+/** Unfolded output keeps the Mate entry on one line and user scalars unwrapped. */
+const CONFIG_TO_STRING = { lineWidth: 0 } as const;
 
 /**
  * Runtime → OpenSpec CLI tools. OpenCode reads workflow skills from the shared
@@ -293,18 +314,129 @@ async function ensureOpenSpecInstalled(
   return true;
 }
 
-/** Only the config Mate itself wrote is removed; a user-edited config.yaml is left alone. */
+function isMateSpecsRule(item: unknown): boolean {
+  return (
+    isScalar(item) &&
+    typeof item.value === "string" &&
+    item.value.startsWith(MATE_SPECS_RULE_MARKER)
+  );
+}
+
+/** The config's `rules.specs` sequence, `null` when absent, or `undefined` when a shape is foreign. */
+function readSpecsRules(doc: Document): YAMLSeq | null | undefined {
+  if (doc.contents !== null && !isMap(doc.contents)) return undefined;
+  const rules = doc.get("rules", true);
+  if (rules === undefined || rules === null) return null;
+  if (!isMap(rules)) return undefined;
+  const specs = rules.get("specs", true);
+  if (specs === undefined || specs === null) return null;
+  return isSeq(specs) ? specs : undefined;
+}
+
+/**
+ * Removes Mate's `rules.specs` entry and any `rules.specs` list or `rules` map
+ * that leaves empty. Returns whether the document changed.
+ */
+function removeMateSpecsRule(doc: Document): boolean {
+  const specs = readSpecsRules(doc);
+  if (!specs) return false;
+  const before = specs.items.length;
+  specs.items = specs.items.filter((item) => !isMateSpecsRule(item));
+  if (specs.items.length === before) return false;
+  if (specs.items.length === 0) doc.deleteIn(["rules", "specs"]);
+  const rules = doc.get("rules", true);
+  if (isMap(rules) && rules.items.length === 0) doc.delete("rules");
+  return true;
+}
+
+/**
+ * Ensures exactly one current Mate entry in `rules.specs`: appended when
+ * missing, replaced in place when outdated. Returns whether the document changed.
+ */
+function upsertMateSpecsRule(doc: Document): boolean {
+  if (doc.contents === null) doc.contents = doc.createNode({}) as YAMLMap;
+  const specs = readSpecsRules(doc);
+  if (specs === null) {
+    doc.setIn(["rules", "specs"], doc.createNode([MATE_SPECS_RULE]));
+    return true;
+  }
+  if (!specs) return false;
+
+  const index = specs.items.findIndex(isMateSpecsRule);
+  if (index === -1) {
+    specs.add(doc.createNode(MATE_SPECS_RULE));
+    return true;
+  }
+  let changed = false;
+  const current = specs.items[index];
+  if (isScalar(current) && current.value !== MATE_SPECS_RULE) {
+    current.value = MATE_SPECS_RULE;
+    changed = true;
+  }
+  const deduplicated = specs.items.filter((item, i) => i === index || !isMateSpecsRule(item));
+  if (deduplicated.length !== specs.items.length) {
+    specs.items = deduplicated;
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Removes Mate's own config content: its `rules.specs` entry always, and the
+ * file only when what remains is exactly what Mate writes. User content stays.
+ */
 async function removeManagedOpenSpecConfig(companionPath: string): Promise<void> {
   const configPath = getOpenSpecConfigPath(companionPath);
+  let content: string;
   try {
-    const content = await fs.readFile(configPath, "utf8");
-    if (content.trim() === "schema: mate-v1") {
-      await fs.rm(configPath, { force: true });
-      await pruneEmptyAncestors(path.dirname(configPath), companionPath);
-    }
+    content = await fs.readFile(configPath, "utf8");
   } catch {
-    /* no managed config present */
+    return;
   }
+
+  let remaining = content;
+  if (content.trim() !== MANAGED_CONFIG_SCHEMA_ONLY) {
+    const doc = parseDocument(content);
+    if (doc.errors.length > 0 || !removeMateSpecsRule(doc)) return;
+    remaining = doc.toString(CONFIG_TO_STRING);
+  }
+
+  if (remaining.trim() === MANAGED_CONFIG_SCHEMA_ONLY) {
+    await fs.rm(configPath, { force: true });
+    await pruneEmptyAncestors(path.dirname(configPath), companionPath);
+  } else {
+    await fs.writeFile(configPath, remaining, "utf8");
+  }
+}
+
+/** Writes a fresh Mate config, or merges Mate's entry into an existing one; writes only on change. */
+async function ensureManagedOpenSpecConfig(companionPath: string): Promise<void> {
+  const configPath = getOpenSpecConfigPath(companionPath);
+  let content: string | undefined;
+  try {
+    content = await fs.readFile(configPath, "utf8");
+  } catch {
+    /* no config yet */
+  }
+
+  if (content === undefined) {
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    const fresh = new Document({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
+    await fs.writeFile(configPath, fresh.toString(CONFIG_TO_STRING), "utf8");
+    return;
+  }
+
+  // config.yaml is user-editable once created; only Mate's own entry is touched.
+  const doc = parseDocument(content);
+  if (doc.errors.length > 0) {
+    process.stderr.write(
+      `openspec: left openspec/config.yaml unchanged, it is not valid YAML: ${doc.errors[0].message.split("\n")[0]}\n`,
+    );
+    return;
+  }
+  if (!upsertMateSpecsRule(doc)) return;
+  const merged = doc.toString(CONFIG_TO_STRING);
+  if (merged !== content) await fs.writeFile(configPath, merged, "utf8");
 }
 
 async function teardownOpenSpecSchema(companionPath: string): Promise<void> {
@@ -340,17 +472,7 @@ async function reconcileOpenSpecSchema(ctx: SetupContext): Promise<void> {
     return;
   }
 
-  const configPath = getOpenSpecConfigPath(ctx.companionPath);
-  await fs.mkdir(path.dirname(configPath), { recursive: true });
-
-  // config.yaml is user-editable once created; never overwrite it on re-sync.
-  const configExists = await fs
-    .access(configPath)
-    .then(() => true)
-    .catch(() => false);
-  if (configExists) return;
-
-  await fs.writeFile(configPath, "schema: mate-v1\n", "utf8");
+  await ensureManagedOpenSpecConfig(ctx.companionPath);
 }
 
 export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityPlugin {

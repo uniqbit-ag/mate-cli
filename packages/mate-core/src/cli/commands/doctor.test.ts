@@ -882,3 +882,104 @@ describe("doctor audience isolation", () => {
     expect(report.audienceIsolation).toBeUndefined();
   });
 });
+
+describe("doctor OpenSpec rules keys", () => {
+  async function companionWithConfig(
+    openspecConfig: string | null,
+    capabilities: FrameworkConfig["capabilities"] = [{ name: "openspec" }],
+  ): Promise<{ root: string; globalConfigStore: GlobalConfigStore }> {
+    const root = await makeTempDir("doctor-openspec-rules-");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
+    await new ConfigStore(localConfigPath).save({ allowedAgents: ["claude"], capabilities });
+    const schemaDir = path.join(root, "openspec", "schemas", "acme-flow");
+    await fs.mkdir(schemaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(schemaDir, "schema.yaml"),
+      "name: acme-flow\nartifacts:\n  - id: brief\n  - id: tasks\n",
+      "utf8",
+    );
+    if (openspecConfig !== null) {
+      await fs.writeFile(path.join(root, "openspec", "config.yaml"), openspecConfig, "utf8");
+    }
+    return { root, globalConfigStore: new GlobalConfigStore(path.join(root, "config.yaml")) };
+  }
+
+  async function doctorJson(root: string, globalConfigStore: GlobalConfigStore) {
+    const output = await captureStdout(() =>
+      runDoctorCommand(["--json"], {
+        cwd: root,
+        globalConfigStore,
+        inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+      }),
+    );
+    return JSON.parse(output) as {
+      openspecRuleWarnings?: Array<{ key: string; message: string }>;
+    };
+  }
+
+  test("warns about an unknown rules key with a pointer and keeps the exit code", async () => {
+    const { root, globalConfigStore } = await companionWithConfig(
+      "schema: acme-flow\nrules:\n  proposal: [a]\n  implementation: [b]\n",
+    );
+    const previousExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    try {
+      const output = await captureStdout(() =>
+        runDoctorCommand([], {
+          cwd: root,
+          globalConfigStore,
+          inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+        }),
+      );
+
+      expect(output).toContain("OpenSpec Config");
+      expect(output).toContain("implementation");
+      expect(output).toContain("operations.apply.guidance");
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+    }
+  });
+
+  test("JSON carries the warning naming the key", async () => {
+    const { root, globalConfigStore } = await companionWithConfig(
+      "rules:\n  implementation: [b]\n",
+    );
+
+    const report = await doctorJson(root, globalConfigStore);
+
+    expect(report.openspecRuleWarnings).toEqual([
+      {
+        key: "implementation",
+        message: expect.stringContaining("operations.archive.guidance"),
+      },
+    ]);
+  });
+
+  test("built-in and companion schema artifact IDs are known", async () => {
+    const { root, globalConfigStore } = await companionWithConfig(
+      "rules:\n  proposal: [a]\n  specs: [b]\n  design: [c]\n  tasks: [d]\n  brief: [e]\n",
+    );
+
+    expect((await doctorJson(root, globalConfigStore)).openspecRuleWarnings).toBeUndefined();
+  });
+
+  test("a missing or unparseable config is silent", async () => {
+    for (const config of [null, "rules: [\n"]) {
+      const { root, globalConfigStore } = await companionWithConfig(config);
+
+      expect((await doctorJson(root, globalConfigStore)).openspecRuleWarnings).toBeUndefined();
+    }
+  });
+
+  test("the check is inactive without the openspec capability", async () => {
+    const { root, globalConfigStore } = await companionWithConfig(
+      "rules:\n  implementation: [b]\n",
+      [],
+    );
+
+    expect((await doctorJson(root, globalConfigStore)).openspecRuleWarnings).toBeUndefined();
+  });
+});
