@@ -592,6 +592,17 @@ async function writeOpenSpecStub(scenario: E2EScenario): Promise<string> {
     "  }",
     "  process.exit(0);",
     "}",
+    /** Records the store where OpenSpec would, so Mate's registry check sees it. */
+    "if (command === 'store' && args[1] === 'register') {",
+    "  const [storePath, , id] = args.slice(2);",
+    "  fs.mkdirSync(path.join(storePath, '.openspec-store'), { recursive: true });",
+    "  fs.writeFileSync(path.join(storePath, '.openspec-store', 'store.yaml'), `version: 1\\nid: ${id}\\n`);",
+    "  const dataHome = process.env.XDG_DATA_HOME ?? path.join(process.env.HOME, '.local', 'share');",
+    "  const registry = path.join(dataHome, 'openspec', 'stores', 'registry.yaml');",
+    "  fs.mkdirSync(path.dirname(registry), { recursive: true });",
+    "  fs.writeFileSync(registry, `version: 1\\nstores:\\n  ${id}:\\n    backend:\\n      type: git\\n      local_path: ${storePath}\\n`);",
+    "  process.exit(0);",
+    "}",
     "if (command === 'config' && args[1] === 'reset') process.exit(0);",
     "if (command === 'update' || command === 'templates') { process.exit(0); }",
     /** The JSON collection commands `mate studio` reads. */
@@ -1348,11 +1359,13 @@ describe("mate CLI e2e", () => {
 
     expect(result.exitCode).toBe(0);
     const invocations = await readJson<Array<{ cwd: string; args: string[] }>>(capturePath);
-    expect(invocations).toHaveLength(2);
-    expect(invocations[0]?.cwd).toBe(scenario.companion);
-    expect(invocations[0]?.args).toEqual(["config", "reset", "--all", "-y"]);
-    expect(invocations[1]?.cwd).toBe(scenario.companion);
-    expect(invocations[1]?.args).toEqual(["update", "--force"]);
+    // The first command in the Working Repository registers the companion's store.
+    expect(invocations.map((invocation) => invocation.args)).toEqual([
+      ["store", "register", scenario.companion, "--id", "app", "--yes"],
+      ["config", "reset", "--all", "-y"],
+      ["update", "--force"],
+    ]);
+    expect(invocations.every((invocation) => invocation.cwd === scenario.companion)).toBe(true);
   });
 
   test("cap openspec injects companion schema for templates when absent", async () => {
@@ -1370,9 +1383,10 @@ describe("mate CLI e2e", () => {
 
     expect(result.exitCode).toBe(0);
     const invocations = await readJson<Array<{ cwd: string; args: string[] }>>(capturePath);
-    expect(invocations).toHaveLength(1);
-    expect(invocations[0]?.cwd).toBe(scenario.companion);
-    expect(invocations[0]?.args).toEqual(["templates", "--schema", "mate-v1", "--json"]);
+    const templates = invocations.filter((invocation) => invocation.args[0] !== "store");
+    expect(templates).toHaveLength(1);
+    expect(templates[0]?.cwd).toBe(scenario.companion);
+    expect(templates[0]?.args).toEqual(["templates", "--schema", "mate-v1", "--json"]);
   });
 
   test("cap openspec preserves explicit schema for templates", async () => {
@@ -1390,8 +1404,9 @@ describe("mate CLI e2e", () => {
 
     expect(result.exitCode).toBe(0);
     const invocations = await readJson<Array<{ cwd: string; args: string[] }>>(capturePath);
-    expect(invocations).toHaveLength(1);
-    expect(invocations[0]?.args).toEqual(["templates", "--schema", "spec-driven", "--json"]);
+    const templates = invocations.filter((invocation) => invocation.args[0] !== "store");
+    expect(templates).toHaveLength(1);
+    expect(templates[0]?.args).toEqual(["templates", "--schema", "spec-driven", "--json"]);
   });
 
   test("top-level openspec command is rejected", async () => {

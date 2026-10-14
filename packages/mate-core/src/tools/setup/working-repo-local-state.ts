@@ -118,8 +118,16 @@ export async function reconcileWorkingRepoCapabilityExcludes(
   if (!excludePath) return false;
   const existing = await readExclude(excludePath);
   const managed = new Set(managedEntries);
+  const desired = new Set(desiredEntries);
+  /**
+   * A desired line stays where it stands: re-appending it would trade places
+   * with a block written after it, like the companion copies', on every pass.
+   */
   const lines = trimTrailingEmptyLines(
-    contentLines(existing).filter((line) => !managed.has(line.trim())),
+    contentLines(existing).filter((line) => {
+      const entry = line.trim();
+      return desired.has(entry) || !managed.has(entry);
+    }),
   );
   for (const entry of desiredEntries) {
     if (!lines.some((line) => line.trim() === entry)) lines.push(entry);

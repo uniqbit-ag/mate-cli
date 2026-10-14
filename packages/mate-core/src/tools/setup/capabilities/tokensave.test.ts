@@ -14,6 +14,7 @@ import {
   TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
   ensureTokensaveBranchingPosture,
   isTokensaveAgentIntegrated,
+  isTokensaveIndexed,
   tokensaveDeps,
   createTokensavePlugin,
 } from "./tokensave";
@@ -727,6 +728,41 @@ describe("tokensave agent integration install requirements", () => {
       (r) => r.id === "capability:tokensave:claude",
     );
     await expect(requirement!.install()).rejects.toThrow("boom");
+  });
+});
+
+describe("isTokensaveIndexed", () => {
+  async function makeRepo(): Promise<string> {
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-repo-"));
+    tempRoots.push(repoDir);
+    return repoDir;
+  }
+
+  test("false without a store", async () => {
+    expect(await isTokensaveIndexed(await makeRepo())).toBe(false);
+  });
+
+  test("false for an empty store, so the next index pass runs init", async () => {
+    const repoDir = await makeRepo();
+    await fs.mkdir(path.join(repoDir, TOKENSAVE_STORE_DIR));
+    expect(await isTokensaveIndexed(repoDir)).toBe(false);
+  });
+
+  test("false for a store with config but no database", async () => {
+    const repoDir = await makeRepo();
+    await fs.mkdir(path.join(repoDir, TOKENSAVE_STORE_DIR));
+    await fs.writeFile(
+      path.join(repoDir, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE),
+      "{}\n",
+    );
+    expect(await isTokensaveIndexed(repoDir)).toBe(false);
+  });
+
+  test("true once the database exists", async () => {
+    const repoDir = await makeRepo();
+    await fs.mkdir(path.join(repoDir, TOKENSAVE_STORE_DIR));
+    await fs.writeFile(path.join(repoDir, TOKENSAVE_STORE_DIR, "tokensave.db"), "");
+    expect(await isTokensaveIndexed(repoDir)).toBe(true);
   });
 });
 

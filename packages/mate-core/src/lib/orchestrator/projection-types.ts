@@ -25,6 +25,8 @@ export type ProjectionEntryId =
   | "repo-local-framework"
   | "repo-local-registry"
   | "projection-pair"
+  | "openspec-store-exclude"
+  | "openspec-store-pointer"
   | "claude-skill-links"
   | "workspace-document"
   | "capability-excludes"
@@ -87,6 +89,8 @@ export type ProjectionEntryRemoval =
   | {
       readonly by: "self";
       remove(input: ProjectionRemovalInput): Promise<"removed" | "absent">;
+      /** What removing this path deliberately leaves outside the repository, named in the outcome. */
+      readonly retains?: string;
     }
   | { readonly by: "entry"; readonly entry: ProjectionEntryId }
   | { readonly by: "retained"; readonly because: string };
@@ -132,6 +136,8 @@ export interface ProjectionEntryOutcome {
   warnings?: string[];
   /** Present only when the entry wrote or withdrew paths it reports one by one. */
   changed?: ProjectionChangedPaths;
+  /** Present only on a removal that leaves something outside the repository behind. */
+  retains?: string;
 }
 
 export interface ProjectionResult {
@@ -159,7 +165,7 @@ export interface ProjectionDescription {
   projection: ProjectionFile | null;
 }
 
-/** A degradable entry's failure is reported in the outcomes and nowhere else. */
+/** Skips a degradable entry's failure: it never fails a pass, only shows in the outcomes. */
 export function firstFailure(outcomes: ProjectionEntryOutcome[]): ProjectionEntryOutcome | null {
   return outcomes.find((outcome) => outcome.state === "failed" && !outcome.degradable) ?? null;
 }

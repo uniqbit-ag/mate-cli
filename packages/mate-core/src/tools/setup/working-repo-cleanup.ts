@@ -18,6 +18,7 @@ const REPORTED_AS: Partial<
 > = {
   "projection-root": { as: "removed", label: ".mate" },
   "git-excludes": { as: "removed", label: "git-excludes" },
+  "openspec-store-pointer": { as: "removed", label: "openspec/config.yaml" },
   "claude-working-settings": { as: "updated", label: "claude-settings" },
   "legacy-tokensave-claude-md": { as: "updated", label: "claude-settings" },
 };
@@ -36,6 +37,7 @@ export async function cleanupWorkingRepository(
       retained.push(entry.id);
       continue;
     }
+    if (entry.retains && !retained.includes(entry.retains)) retained.push(entry.retains);
     if (entry.state !== "removed") continue;
     const reported = REPORTED_AS[entry.id];
     if (!reported) continue;

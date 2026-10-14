@@ -85,6 +85,14 @@ describe("deriveOpenSpecTools", () => {
 });
 
 describe("createOpenspecPlugin", () => {
+  test("ignores the machine-local store metadata in the companion, even once disabled", () => {
+    const plugin = createOpenspecPlugin();
+    expect(plugin.gitignoreEntries?.(makeCtx("/tmp/companion", ["claude"]))).toEqual([
+      ".openspec-store/",
+    ]);
+    expect(plugin.persistGitignoreEntries).toBe(true);
+  });
+
   test("runs openspec init and update for active supported providers", async () => {
     const runCommand = mock(async () => {});
     const installCommand = mock(async () => {});

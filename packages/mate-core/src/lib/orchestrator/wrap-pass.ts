@@ -210,6 +210,10 @@ export async function runWrapPass(
       ...audienceWarnings,
       ...rendered.warnings,
       ...result.outcomes.flatMap((outcome) => outcome.warnings ?? []),
+      /** A degradable failure does not fail the pass, but it is never silent. */
+      ...result.outcomes
+        .filter((outcome) => outcome.state === "failed" && outcome.degradable)
+        .map((outcome) => entryFailureMessage(outcome, repository.id)),
     ],
     runtimes,
     wrapState,

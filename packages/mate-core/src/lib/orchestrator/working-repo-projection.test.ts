@@ -617,6 +617,8 @@ describe("the owner's reporting", () => {
       ["projection-root", "written"],
       ["companion-link", "skipped"],
       ["projection-pair", "skipped"],
+      ["openspec-store-exclude", "current"],
+      ["openspec-store-pointer", "skipped"],
     ]);
   });
 

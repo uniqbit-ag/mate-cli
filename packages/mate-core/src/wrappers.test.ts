@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { renderProjectionEnv } from "./runtime/projection";
+import { generatedHeader, renderProjectionEnv } from "./runtime/projection";
 import { repoLocalDirPath, repoLocalRegistryPath } from "./runtime/repo-local";
 
 const WRAPPER_BIN = path.resolve(import.meta.dirname, "..", "wrappers", "bin");
@@ -172,6 +172,175 @@ describe("openspec wrapper", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("/some/other/install/wrappers/bin");
     expect(result.stderr).toContain("mate wrap");
+  });
+});
+
+/** The Mate store pointer a projection writes, or `content` for a foreign config. */
+function writePointer(repoRoot: string, content = `${generatedHeader()}\nstore: acme-companion\n`) {
+  fs.mkdirSync(path.join(repoRoot, "openspec"), { recursive: true });
+  fs.writeFileSync(path.join(repoRoot, "openspec", "config.yaml"), content, "utf8");
+}
+
+/** A Working Repository `acme` beside its companion, wrapped, with a nested package. */
+function storeFixture(): { repo: string; companion: string; nested: string } {
+  const root = makeTempDir("mate-wrapper-store-");
+  const repo = path.join(root, "acme");
+  const companion = path.join(root, "acme-companion");
+  const nested = path.join(repo, "packages", "web");
+  fs.mkdirSync(nested, { recursive: true });
+  fs.mkdirSync(path.join(companion, "openspec"), { recursive: true });
+  fs.writeFileSync(path.join(companion, "openspec", "config.yaml"), "schema: mate-v1\n", "utf8");
+  wrapRepo(repo, companion);
+  return { repo, companion, nested };
+}
+
+const ROOT_RESOLVING = [
+  "new",
+  "status",
+  "instructions",
+  "list",
+  "show",
+  "validate",
+  "archive",
+  "doctor",
+  "context",
+  "schemas",
+  "view",
+];
+
+describe("openspec wrapper with a Mate store pointer", () => {
+  test.each(ROOT_RESOLVING)("delegates %s from the Working Repository root", (command) => {
+    const { repo, nested } = storeFixture();
+    writePointer(repo);
+
+    const result = runWrapper("openspec", [command], {
+      cwd: nested,
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`cwd=${repo}\n`);
+    expect(result.stderr).toBe("");
+  });
+
+  test.each(["templates", "init", "update", "store", "config"])(
+    "keeps %s on the companion",
+    (command) => {
+      const { repo, companion, nested } = storeFixture();
+      writePointer(repo);
+
+      const result = runWrapper("openspec", [command], {
+        cwd: nested,
+        stubDir: stubBinary("openspec"),
+      });
+
+      expect(result.stdout).toContain(`cwd=${companion}\n`);
+    },
+  );
+
+  test("templates keeps defaulting its schema from the companion config", () => {
+    const { repo, nested } = storeFixture();
+    writePointer(repo);
+
+    const result = runWrapper("openspec", ["templates"], {
+      cwd: nested,
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.stdout).toContain("args=templates --schema mate-v1");
+  });
+
+  test("a missing pointer keeps the companion and hints at mate wrap on stderr only", () => {
+    const { companion, nested } = storeFixture();
+
+    const result = runWrapper("openspec", ["status", "--json"], {
+      cwd: nested,
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`cwd=${companion}\n`);
+    expect(result.stdout).not.toContain("mate wrap");
+    expect(result.stderr.trim().split("\n")).toHaveLength(1);
+    expect(result.stderr).toContain("mate wrap");
+  });
+
+  test("a non-allowlisted command without a pointer prints no hint", () => {
+    const { nested } = storeFixture();
+
+    const result = runWrapper("openspec", ["templates"], {
+      cwd: nested,
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.stderr).toBe("");
+  });
+
+  test("a caller outside the Working Repository stays on the companion without a hint", () => {
+    const { repo, companion } = storeFixture();
+    writePointer(repo);
+
+    const result = runWrapper("openspec", ["status"], {
+      cwd: companion,
+      env: { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.stdout).toContain(`cwd=${companion}\n`);
+    expect(result.stderr).toBe("");
+  });
+
+  test("a foreign config stays on the companion without a hint", () => {
+    const { repo, companion, nested } = storeFixture();
+    writePointer(repo, "schema: spec-driven\n");
+
+    const result = runWrapper("openspec", ["status"], {
+      cwd: nested,
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.stdout).toContain(`cwd=${companion}\n`);
+    expect(result.stderr).toBe("");
+  });
+
+  test("the launch environment's repository outranks the projection's", () => {
+    const { repo, companion, nested } = storeFixture();
+    writePointer(repo);
+    const other = makeTempDir("mate-wrapper-other-repo-");
+
+    const result = runWrapper("openspec", ["status"], {
+      cwd: nested,
+      env: { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: other },
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.stdout).toContain(`cwd=${companion}\n`);
+  });
+
+  test("the launch environment alone delegates from its repository", () => {
+    const { repo, companion, nested } = storeFixture();
+    writePointer(repo);
+    fs.rmSync(repoLocalDirPath(repo), { recursive: true, force: true });
+
+    const result = runWrapper("openspec", ["status"], {
+      cwd: nested,
+      env: { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.stdout).toContain(`cwd=${repo}\n`);
+  });
+
+  test("exports no MATE_ variable when delegating from the repository", () => {
+    const { repo, nested } = storeFixture();
+    writePointer(repo);
+
+    const result = runWrapper("openspec", ["status"], {
+      cwd: nested,
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.stdout).not.toContain("mate_env=");
   });
 });
 

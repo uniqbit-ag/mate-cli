@@ -11,7 +11,9 @@ import { resolveForLaunch } from "../../lib/orchestrator/framework-context";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
+import { openSpecStoreDeps } from "../../lib/orchestrator/openspec-store";
 import { project } from "../../lib/orchestrator/working-repo-projection";
+import { stubOpenSpec } from "../../../test/openspec-store-stub";
 import type { WrapPassResult } from "../../lib/orchestrator/wrap-pass";
 import { EMPTY_MANIFEST, type WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, wrapStateOf } from "../../runtime/wrap-state";
@@ -375,6 +377,31 @@ describe("runWrapCommand", () => {
 
     expect(out.join("\n")).toContain("Copies:    2 written, 1 withdrawn under .opencode/");
     expect(err).toContain(`${FRAMEWORK_NAME}: warning: acme needs attention`);
+  });
+
+  test("a failing OpenSpec store registration warns on stderr and still exits 0", async () => {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-openspec-store-");
+    await fs.mkdir(path.join(companionPath, "openspec"), { recursive: true });
+    const root = path.dirname(repoPath);
+    const stub = await stubOpenSpec(root, path.join(root, "data"), {
+      stderr: "Store registry is busy.",
+    });
+    const originalStoreDeps = { ...openSpecStoreDeps };
+    openSpecStoreDeps.env = () => ({ ...process.env, XDG_DATA_HOME: path.join(root, "data") });
+    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    const { err, restore } = capture();
+
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      restore();
+      Object.assign(openSpecStoreDeps, originalStoreDeps);
+    }
+
+    expect(process.exitCode).toBeFalsy();
+    expect(err.join("\n")).toContain(
+      `${FRAMEWORK_NAME}: warning: failed to write ${path.join("openspec", "config.yaml")} for app: openspec store register failed: Store registry is busy.`,
+    );
   });
 
   test("writes what a launch resolution writes", async () => {
