@@ -1,5 +1,8 @@
+import path from "node:path";
+
 import { confirm } from "../confirm";
 import { FRAMEWORK_NAME } from "../../framework";
+import { ConfigStore } from "../../lib/orchestrator/config-store";
 import {
   buildInstallPlan,
   inspectInstallPlan,
@@ -176,6 +179,11 @@ export async function runInstallCommand(argv: string[], cwd = process.cwd()): Pr
   }
 
   try {
+    if (!frozen && context.kind === "companion" && context.companionPath) {
+      await new ConfigStore(
+        path.join(context.companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
+      ).save(context.config);
+    }
     await reconcileInstalledCompanion(plan);
     await saveCompleteInstallState(plan, execution.results);
   } catch (error) {

@@ -3,7 +3,10 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { ConfigStore, mergeWithDefaults } from "../../../lib/orchestrator/config-store";
+import { currentAudienceLayer } from "../../../runtime/audience-layer";
+import { resolveSessionAudience } from "../../../runtime/session-audience";
 import {
+  declaredAudiences,
   effectiveStudioAgent,
   readAudienceSelection,
 } from "../../../tools/setup/dynamic-plugins/audiences";
@@ -51,7 +54,8 @@ export interface DefaultAgentOutcome {
 /**
  * The companion's effective default agent for one provider: the active
  * audience's `studio.terminal.agent` (Studio's own `MATE_AUDIENCE`, never the
- * browser's), else the base one. Never throws and never echoes the configured
+ * browser's), else the base one. Its definition may come from the companion
+ * or from the active audience's rendered layer. Never throws and never echoes the configured
  * value into the notice.
  */
 export async function defaultAgentFor(
@@ -62,11 +66,19 @@ export async function defaultAgentFor(
   const configPath = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
   if (!fs.existsSync(configPath)) return {};
   let name: unknown;
+  let layer: string | null = null;
   try {
-    name = effectiveStudioAgent(
-      await new ConfigStore(configPath).load(),
-      readAudienceSelection(env),
-    );
+    const config = await new ConfigStore(configPath).load();
+    /** Companion-scoped: no checkout, so no wrap; Studio's own `MATE_AUDIENCE` selects. */
+    const audience = resolveSessionAudience({
+      session: "managed",
+      wrapped: null,
+      requested: readAudienceSelection(env),
+      declared: declaredAudiences(config),
+    });
+    const active = audience.kind === "launch" ? audience.audience : null;
+    name = effectiveStudioAgent(config, active);
+    if (active) layer = currentAudienceLayer(companionPath, active);
   } catch {
     return {};
   }
@@ -76,8 +88,12 @@ export async function defaultAgentFor(
       notice: "Default agent not applied: studio.terminal.agent is not a valid agent name.",
     };
   }
-  const definition = path.join(companionPath, AGENT_DEFINITION_DIRS[agent], `${name}.md`);
-  if (!fs.existsSync(definition)) {
+  /** The audience's own agents live in its launch layer, which the terminal's launch attaches. */
+  const roots = layer ? [companionPath, layer] : [companionPath];
+  const defined = roots.some((root) =>
+    fs.existsSync(path.join(root, AGENT_DEFINITION_DIRS[agent], `${name}.md`)),
+  );
+  if (!defined) {
     return {
       notice: `Default agent "${name}" not applied: this companion has no ${agent} definition for it.`,
     };

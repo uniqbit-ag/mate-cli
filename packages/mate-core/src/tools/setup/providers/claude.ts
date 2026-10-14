@@ -11,7 +11,7 @@ import {
   upsertManagedBlock,
 } from "../context-services";
 import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "../plugin";
-import { surfaceRoot } from "../surface-target";
+import { projectionTarget, surfaceRoot } from "../surface-target";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
 import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
 import { patchSkillTreeMarkdownFiles } from "./skill-tree";
@@ -164,6 +164,23 @@ export function renderManagedClaudeHookGroups(
   return hooks;
 }
 
+/**
+ * A layer's Claude settings: the enabled inputs' hook groups and permission
+ * entries, nothing of Mate's own. The launch merges them over its base settings.
+ */
+function renderLayerClaudeSettings(
+  contributions: CapabilityContributionInput[] = [],
+): ClaudeSettings {
+  const hooks = renderManagedClaudeHookGroups(contributions);
+  const allow = contributions
+    .filter((input) => input.enabled)
+    .flatMap((input) => input.contributions.permissionEntries ?? []);
+  return {
+    ...(Object.keys(hooks).length > 0 ? { hooks } : {}),
+    ...(allow.length > 0 ? { permissions: { allow } } : {}),
+  };
+}
+
 // Reconcile the Mate-managed Claude settings shape (hooks, permissions, MCP
 // servers) on top of whatever already exists in the settings document. Managed
 // groups/entries always lead their arrays so the emitted shape stays stable
@@ -287,7 +304,15 @@ export async function reconcileClaudeContributions(
   // The settings sync (re)creates the managed settings document, so it only
   // runs while the Claude runtime is active; a deactivated runtime's pass is
   // teardown-only and must not resurrect files the provider teardown removed.
-  if (ctx.activeProviders.includes("claude")) {
+  // A layer carries its plugins' hooks and permission entries only, for the
+  // launch to merge into its one `--settings` file.
+  if (projectionTarget(ctx) === "audience-layer") {
+    await writeClaudeSettings(
+      getCompanionClaudeSettingsPath(root),
+      renderLayerClaudeSettings(inputs),
+    );
+    await syncCompanionClaudeMcpConfig(root);
+  } else if (ctx.activeProviders.includes("claude")) {
     await syncCompanionClaudeSettings(root, config, inputs);
   }
 

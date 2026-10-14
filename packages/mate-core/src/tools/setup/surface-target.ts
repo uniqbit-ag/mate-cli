@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { audienceLayerDir } from "../../runtime/audience-layer";
 import type { ProjectionTarget, SetupContext } from "./plugin";
 
 /**
@@ -13,6 +14,9 @@ export function projectionTarget(ctx: SetupContext): ProjectionTarget {
     throw new Error(
       "a working-target reconcile needs a Working Repository in scope; none was supplied",
     );
+  }
+  if (target === "audience-layer" && !ctx.audience) {
+    throw new Error("an audience-layer reconcile needs an audience; none was supplied");
   }
   return target;
 }
@@ -38,13 +42,18 @@ export function projectionRepoRoot(ctx: SetupContext): string {
 }
 
 /**
- * The root a Runtime Surface writes into. Defined for the companion target
- * only: a working-target pass renders its documents for the Projection Root to
- * place, so no Runtime Surface ever computes a path inside a Working Repository.
+ * The root a Runtime Surface writes into: the companion, or one audience's
+ * layer outside every repository. Never a Working Repository: a working-target
+ * pass renders its documents for the Projection Root to place, so no Runtime
+ * Surface ever computes a path inside one.
  */
 export function surfaceRoot(ctx: SetupContext): string {
-  if (projectionTarget(ctx) === "working") {
+  const target = projectionTarget(ctx);
+  if (target === "working") {
     throw new Error("a working-target reconcile renders its documents; it writes no surface root");
+  }
+  if (target === "audience-layer") {
+    return ctx.layerRoot ?? audienceLayerDir(ctx.companionPath, ctx.audience!);
   }
   return ctx.companionPath;
 }

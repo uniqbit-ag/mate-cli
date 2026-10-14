@@ -66,6 +66,12 @@ function stub(overrides: Partial<FrameworkConfig> = {}): void {
     calls.push("preflight");
   });
   sessionPrepareDeps.isInteractiveTerminal = () => false;
+  sessionPrepareDeps.audienceSelection = () => null;
+  sessionPrepareDeps.wrappedAudience = () => null;
+  sessionPrepareDeps.ensureAudienceLayer = mock(async (request: { audience: string }) => {
+    calls.push(`layer:${request.audience}`);
+    return { audience: request.audience, root: `/layers/${request.audience}`, rendered: true };
+  });
   sessionPrepareDeps.withCompanionLock = (async (
     _companion: string,
     options: { wait?: boolean; timeoutMs?: number },
@@ -588,5 +594,149 @@ describe("sync", () => {
     expect(calls).toEqual([]);
     expect(result.steps).toEqual([expect.objectContaining({ step: "lock", outcome: "warning" })]);
     expect(result.warnings).toHaveLength(1);
+  });
+});
+
+describe("audience layer", () => {
+  const withAudiences = { audiences: { ba: { plugins: [] }, qa: { plugins: [] } } } as never;
+
+  test("an attended prepare with an active audience renders its layer after the base prepare", async () => {
+    stub(withAudiences);
+    sessionPrepareDeps.audienceSelection = () => "ba";
+
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+    });
+
+    expect(calls).toEqual([
+      "config",
+      "git",
+      "files",
+      "launch",
+      "projection-root",
+      "wrap",
+      "preflight",
+      "layer:ba",
+    ]);
+    expect(result.ok).toBe(true);
+    expect(result.audienceLayer).toEqual({ audience: "ba", root: "/layers/ba", rendered: true });
+    expect(result.steps.at(-1)).toEqual({
+      step: "audience-layer",
+      outcome: "ok",
+      detail: "ba: rendered",
+    });
+  });
+
+  test("an attended prepare without an audience renders no layer", async () => {
+    stub(withAudiences);
+
+    const result = await prepareSession({ runtime: "opencode", companionPath, mode: "attended" });
+
+    expect(calls.some((call) => call.startsWith("layer:"))).toBe(false);
+    expect(result.audienceLayer).toBeUndefined();
+    expect(result.steps.some((step) => step.step === "audience-layer")).toBe(false);
+  });
+
+  test("an audience the companion does not declare renders no layer", async () => {
+    stub(withAudiences);
+    sessionPrepareDeps.audienceSelection = () => "ops";
+
+    const result = await prepareSession({ runtime: "claude", companionPath, mode: "attended" });
+
+    expect(calls.some((call) => call.startsWith("layer:"))).toBe(false);
+    expect(result.audienceLayer).toBeUndefined();
+  });
+
+  test("a bare session's prepare never renders a layer, whatever MATE_AUDIENCE says", async () => {
+    stub(withAudiences);
+    sessionPrepareDeps.audienceSelection = () => "ba";
+
+    const result = await prepareSession({
+      runtime: "claude",
+      runtimes: ["claude", "opencode"],
+      companionPath,
+      repository,
+      mode: "local",
+    });
+
+    expect(calls.some((call) => call.startsWith("layer:"))).toBe(false);
+    expect(result.audienceLayer).toBeUndefined();
+  });
+
+  test("a failed layer render fails the attended prepare", async () => {
+    stub(withAudiences);
+    sessionPrepareDeps.audienceSelection = () => "ba";
+    sessionPrepareDeps.ensureAudienceLayer = mock(async () => {
+      throw new Error("disk full");
+    });
+
+    const result = await prepareSession({ runtime: "claude", companionPath, mode: "attended" });
+
+    expect(result.ok).toBe(false);
+    expect(result.steps.at(-1)).toMatchObject({ step: "audience-layer", outcome: "failed" });
+  });
+});
+
+describe("a managed launch in a checkout wrapped for an audience", () => {
+  const withAudiences = { audiences: { ba: { plugins: [] }, qa: { plugins: [] } } } as never;
+
+  test("adopts the wrapped audience when MATE_AUDIENCE is unset: no launch layer", async () => {
+    stub(withAudiences);
+    sessionPrepareDeps.wrappedAudience = () => "ba";
+
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(calls.some((call) => call.startsWith("layer:"))).toBe(false);
+    expect(result.audienceLayer).toBeUndefined();
+    expect(result.steps.at(-1)).toEqual({
+      step: "audience-layer",
+      outcome: "ok",
+      detail: "ba: from the wrap",
+    });
+  });
+
+  test("the same audience is adopted the same way", async () => {
+    stub(withAudiences);
+    sessionPrepareDeps.wrappedAudience = () => "ba";
+    sessionPrepareDeps.audienceSelection = () => "ba";
+
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(calls.some((call) => call.startsWith("layer:"))).toBe(false);
+  });
+
+  test("a different audience is refused before anything runs", async () => {
+    stub(withAudiences);
+    sessionPrepareDeps.wrappedAudience = () => "ba";
+    sessionPrepareDeps.audienceSelection = () => "qa";
+
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(calls).toEqual(["config"]);
+    const message = (result.failure as Error).message;
+    for (const part of ['"ba"', '"qa"', "mate wrap --audience qa", "worktree"]) {
+      expect(message).toContain(part);
+    }
   });
 });

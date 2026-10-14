@@ -129,6 +129,27 @@ describe("PluginRegistry", () => {
     const reg = new PluginRegistry([makePlugin("opt-in")]);
     expect(reg.getPolicy("opt-in")).toBe("optional");
   });
+
+  test("compiled-in and bare registrations are base", () => {
+    const reg = new PluginRegistry([
+      makePlugin("built-in"),
+      { plugin: makePlugin("x"), policy: "required" },
+    ]);
+    expect(reg.getEntries().map((entry) => entry.audience)).toEqual([null, null]);
+  });
+
+  test("baseRegistrations() leaves out every audience registration", () => {
+    const reg = new PluginRegistry([makePlugin("built-in")]);
+    reg.register({ plugin: makePlugin("base-dyn"), policy: "optional", audience: null });
+    reg.register({ plugin: makePlugin("ba-dyn"), policy: "optional", audience: "ba" });
+    expect(reg.baseRegistrations().map((entry) => entry.plugin.id)).toEqual([
+      "built-in",
+      "base-dyn",
+    ]);
+    expect(reg.audienceRegistrations("ba").map((entry) => entry.plugin.id)).toEqual(["ba-dyn"]);
+    expect(reg.audienceRegistrations("qa")).toEqual([]);
+    expect(reg.getAll().map((plugin) => plugin.id)).toEqual(["built-in", "base-dyn", "ba-dyn"]);
+  });
 });
 
 describe("SetupContext — activeProviders", () => {

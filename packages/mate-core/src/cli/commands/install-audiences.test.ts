@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { parse } from "yaml";
 
 import * as realInstall from "../../lib/install";
+import { baseAudienceFloorVersion } from "../../lib/orchestrator/config-store";
 import type { PluginDeclaration } from "../../lib/orchestrator/types";
 import * as frozenModule from "../../tools/setup/dynamic-plugins/frozen";
 import * as hydrateModule from "../../tools/setup/dynamic-plugins/hydrate";
@@ -94,6 +96,9 @@ test("ordinary install writes the union of base and every audience with no audie
 });
 
 test("frozen install restores the same union for every valid audience and for none", async () => {
+  const configPath = path.join(companion, ".mate", "config", "framework.yaml");
+  const originalConfig = await fs.readFile(configPath, "utf8");
+
   for (const audience of [undefined, "ba", "qa"]) {
     if (audience) process.env.MATE_AUDIENCE = audience;
     else delete process.env.MATE_AUDIENCE;
@@ -105,6 +110,7 @@ test("frozen install restores the same union for every valid audience and for no
     ["@acme/base", "@acme/analyst", "@acme/reviewer"],
     ["@acme/base", "@acme/analyst", "@acme/reviewer"],
   ]);
+  expect(await fs.readFile(configPath, "utf8")).toBe(originalConfig);
 });
 
 test("an unknown audience exits 1 before any install, naming requested and declared", async () => {
@@ -135,4 +141,33 @@ test("without audiences the declared base list installs unchanged", async () => 
   expect(await runInstallCommand(["--yes"], companion)).toBe(true);
 
   expect(ordinaryCalls.map(packages)).toEqual([["@acme/base"]]);
+});
+
+test("install saves a legacy root base set under audiences.base", async () => {
+  const configPath = path.join(companion, ".mate", "config", "framework.yaml");
+  await fs.writeFile(
+    configPath,
+    JSON.stringify({
+      type: "companion",
+      packageManagers: [],
+      capabilities: [],
+      plugins: [BASE],
+      studio: { terminal: { agent: "developer" } },
+    }),
+  );
+
+  expect(await runInstallCommand(["--yes"], companion)).toBe(true);
+
+  const saved = parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+  expect(saved.capabilities).toBeUndefined();
+  expect(saved.plugins).toBeUndefined();
+  expect(saved.studio).toBeUndefined();
+  expect(saved.engines).toEqual({ mate: `>=${baseAudienceFloorVersion()}` });
+  expect(saved.audiences).toEqual({
+    base: {
+      capabilities: [],
+      plugins: [BASE],
+      studio: { terminal: { agent: "developer" } },
+    },
+  });
 });

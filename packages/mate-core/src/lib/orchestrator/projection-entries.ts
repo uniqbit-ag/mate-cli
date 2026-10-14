@@ -307,6 +307,7 @@ function buildEntries(): readonly ProjectionEntry[] {
           input.companionPath ?? null,
           input.config.allowedAgents?.includes("claude") ?? false,
           registeredCompanionPaths,
+          input.audienceLayerDir ?? null,
         );
       },
       removal: {

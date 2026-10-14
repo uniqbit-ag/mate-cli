@@ -1,11 +1,21 @@
 import path from "node:path";
 
 import { renderWorkingRuntimeDocuments } from "../../tools/setup";
+import { ensureAudienceLayer } from "../../tools/setup/audience-layer";
+import { declaredAudiences } from "../../tools/setup/dynamic-plugins/audiences";
+import { audienceLayerDir } from "../../runtime/audience-layer";
+import {
+  readManifest,
+  recordedAudience,
+  updateManifest,
+  withAudience,
+} from "../../runtime/runtime-document-manifest";
 import { readCompanionConfig } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
 import { entryFailureMessage, firstFailure, type ProjectionChangedPaths } from "./projection-types";
 import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, type WrapState } from "../../runtime/wrap-state";
+import type { NormalizedRegistration } from "../../tools/setup/registry";
 import type { FrameworkConfig, LinkedRepository } from "./types";
 import { project } from "./working-repo-projection";
 
@@ -13,6 +23,7 @@ export interface WrapPassDependencies {
   renderWorkingRuntimeDocuments: typeof renderWorkingRuntimeDocuments;
   readCompanionConfig: typeof readCompanionConfig;
   project: typeof project;
+  ensureAudienceLayer: typeof ensureAudienceLayer;
   /** The registered companions, whose stale skill links a re-pin withdraws; the user's registry when absent. */
   globalConfigStore?: GlobalConfigStore;
 }
@@ -21,6 +32,7 @@ export const wrapPassDeps: WrapPassDependencies = {
   renderWorkingRuntimeDocuments,
   readCompanionConfig,
   project,
+  ensureAudienceLayer,
 };
 
 export interface WrapPassOptions {
@@ -28,6 +40,12 @@ export interface WrapPassOptions {
   runtimes?: readonly WrapRuntime[];
   /** The companion config the caller already read; read from files otherwise. */
   config?: FrameworkConfig;
+  /**
+   * The audience to wrap the checkout for: a name records it, `null` withdraws
+   * it, absent keeps the one the manifest records. Never read from the
+   * environment: it is the only source of a bare session's audience.
+   */
+  audience?: string | null;
 }
 
 export type WrapPassResult =
@@ -47,8 +65,49 @@ export type WrapPassResult =
       runtimes: ReadonlySet<WrapRuntime>;
       /** The wrap state as this pass left it. */
       wrapState: WrapState;
+      /** The audience the checkout is wrapped for after this pass. */
+      audience: string | null;
     }
   | { kind: "failed"; message: string };
+
+/** An audience a checkout may be wrapped for: declared by the companion, which never lists the reserved base. */
+function wrappableAudience(config: FrameworkConfig, audience: string): boolean {
+  return declaredAudiences(config).includes(audience);
+}
+
+function describeUnwrappable(config: FrameworkConfig, audience: string): string {
+  const declared = declaredAudiences(config);
+  return `audience "${audience}" cannot be wrapped: the companion declares ${declared.length > 0 ? declared.join(", ") : "no audiences"}.`;
+}
+
+type WrapAudience = { audience: string | null; warning?: string } | { failure: string };
+
+/**
+ * The audience this pass wraps for: the requested one, else the one the
+ * manifest records. A requested audience the companion does not declare fails
+ * the pass.
+ */
+async function resolveWrapAudience(
+  config: FrameworkConfig,
+  repository: LinkedRepository,
+  requested: string | null | undefined,
+): Promise<WrapAudience> {
+  if (requested !== undefined) {
+    if (requested && !wrappableAudience(config, requested)) {
+      return { failure: describeUnwrappable(config, requested) };
+    }
+    return { audience: requested };
+  }
+  const recorded = recordedAudience(await readManifest(repository.path));
+  /** A recorded audience the companion no longer declares falls back to base, never fails a prepare. */
+  if (recorded && !wrappableAudience(config, recorded)) {
+    return {
+      audience: null,
+      warning: `${describeUnwrappable(config, recorded)} ${repository.id} is wrapped for base only.`,
+    };
+  }
+  return { audience: recorded };
+}
 
 /**
  * One pass of the `wrap` scope, restricted to the requested runtimes by each
@@ -63,10 +122,29 @@ export async function runWrapPass(
 ): Promise<WrapPassResult> {
   const resolvedCompanionPath = path.resolve(companionPath);
   const config = options.config ?? (await deps.readCompanionConfig(resolvedCompanionPath));
+
+  const resolved = await resolveWrapAudience(config, repository, options.audience);
+  if ("failure" in resolved) return { kind: "failed", message: resolved.failure };
+  const { audience } = resolved;
+  const audienceWarnings = resolved.warning ? [resolved.warning] : [];
+
+  let wrapped: { audience: string; registrations: NormalizedRegistration[] } | undefined;
+  if (audience) {
+    const layer = await deps.ensureAudienceLayer({
+      companionPath: resolvedCompanionPath,
+      config,
+      audience,
+    });
+    audienceWarnings.push(...layer.warnings);
+    wrapped = { audience, registrations: layer.registrations };
+  }
+
   const rendered = await deps.renderWorkingRuntimeDocuments(
     resolvedCompanionPath,
     config,
     repository.path,
+    undefined,
+    wrapped,
   );
   const result = await deps.project("wrap", {
     repoPath: repository.path,
@@ -74,12 +152,19 @@ export async function runWrapPass(
     repository,
     config,
     runtimeDocuments: rendered.documents,
+    audienceLayerDir: audience ? audienceLayerDir(resolvedCompanionPath, audience) : null,
     globalConfigStore: deps.globalConfigStore ?? new GlobalConfigStore(),
     ...(options.runtimes ? { runtimes: options.runtimes } : {}),
   });
 
   const failure = firstFailure(result.outcomes);
   if (failure) return { kind: "failed", message: entryFailureMessage(failure, repository.id) };
+
+  const before = recordedAudience(await readManifest(repository.path));
+  const audienceChanged = before !== audience;
+  if (audienceChanged) {
+    await updateManifest(repository.path, (manifest) => withAudience(manifest, audience));
+  }
 
   /** Read once under the caller's lock, so it is exactly what the pass recorded. */
   let wrapState: WrapState;
@@ -112,7 +197,10 @@ export async function runWrapPass(
     .map((outcome) => outcome.path);
 
   return {
-    kind: result.outcomes.some((outcome) => outcome.state === "written") ? "written" : "current",
+    kind:
+      audienceChanged || result.outcomes.some((outcome) => outcome.state === "written")
+        ? "written"
+        : "current",
     projectionRoot: result.root,
     companionPath: resolvedCompanionPath,
     documents: [...new Set(documents)],
@@ -122,6 +210,7 @@ export async function runWrapPass(
       removed: result.outcomes.flatMap((outcome) => outcome.changed?.removed ?? []),
     },
     warnings: [
+      ...audienceWarnings,
       ...rendered.warnings,
       ...result.outcomes.flatMap((outcome) => outcome.warnings ?? []),
       /** A degradable failure does not fail the pass, but it is never silent. */
@@ -131,5 +220,6 @@ export async function runWrapPass(
     ],
     runtimes,
     wrapState,
+    audience,
   };
 }

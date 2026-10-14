@@ -68,4 +68,22 @@ describe("readCompanionPolicy", () => {
   test("treats any git mode other than auto as disabled", () => {
     expect(readCompanionPolicy(makeCompanion("git: manual\n")).gitAutoMode).toBe(false);
   });
+
+  test("reads enabled capabilities from audiences.base", () => {
+    const companionPath = makeCompanion(
+      [
+        "allowedAgents: [claude]",
+        "audiences:",
+        "  base:",
+        "    capabilities:",
+        "      - name: tokensave",
+        "  ba:",
+        "    capabilities:",
+        "      - name: analyst",
+        "",
+      ].join("\n"),
+    );
+
+    expect(readCompanionPolicy(companionPath).enabledCapabilities).toEqual(["tokensave"]);
+  });
 });

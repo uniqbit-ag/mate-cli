@@ -270,18 +270,23 @@ token.
 ### Serving one audience of a companion
 
 One companion can serve several audiences — developers and business analysts,
-say — from one `framework.yaml`. The base configuration is what everyone gets;
-each named audience adds plugins and the capabilities they provide, and may
-override Studio's default agent:
+say — from one `framework.yaml`. The base configuration is what everyone gets:
+the reserved `base` audience, which always applies and is never selected. Each
+named audience adds plugins and the capabilities they provide, and may override
+Studio's default agent:
 
 ```yaml
-plugins:
-  - package: "@acme/mate-remote-discovery"
-    version: 1.0.0
-studio:
-  terminal:
-    agent: developer
+allowedAgents: [claude, opencode]
 audiences:
+  base:
+    capabilities:
+      - name: openspec
+    plugins:
+      - package: "@acme/mate-remote-discovery"
+        version: 1.0.0
+    studio:
+      terminal:
+        agent: developer
   ba:
     capabilities:
       - name: mate-business-analyst
@@ -293,8 +298,18 @@ audiences:
         agent: business-analyst
 ```
 
-`MATE_AUDIENCE` selects the audience; unset means the base configuration alone,
-exactly as before. Run one container per audience, from the same companion:
+`audiences.base` holds the base set's `capabilities`, `plugins` and
+`studio.terminal.agent`; companion-wide keys such as `allowedAgents`,
+`packageManagers`, `git` and `engines` stay at the root. A `framework.yaml` that
+still declares those three keys at the root loads exactly as before and is written
+in the new shape on its next save (`mate companion setup`, the setup wizard,
+`mate plugin install`), which shows up as a diff to commit. That save also raises
+`engines.mate` to the release that introduced the shape, because an older Mate
+would read the new file as an empty base. A key declared both at the root and
+under `audiences.base` is refused. A hub keeps the root shape.
+
+`MATE_AUDIENCE` selects the audience; unset, or `base`, means the base
+configuration alone. Run one container per audience, from the same companion:
 
 ```yaml
 services:
@@ -327,26 +342,81 @@ services:
   `openspec` or `tokensave` stay in the base list, because they change what
   `mate install` writes.
 - **Validation.** Audience names are lowercase letters, digits and hyphens (up
-  to 64, starting with a letter). An audience may contain only `capabilities`,
-  `plugins` and `studio.terminal.agent`. A capability may not be built in, or
-  declared in both base and an audience, or twice in one audience. A package may not be declared in both base and an
+  to 64, starting with a letter); `base` is reserved. An audience may contain only
+  `capabilities`, `plugins` and `studio.terminal.agent`. A capability outside
+  `base` may not be built in, or declared in both base and an audience, or twice
+  in one audience. A package may not be declared in both base and an
   audience, or twice in one audience; two audiences may share a package only at
   the same version. A hub may not declare audiences.
 - **An undeclared audience stops startup**, naming the requested and the
   declared ones, before setup or Studio run. `mate install` and `mate doctor`
   fail the same way; ordinary commands warn once and use the base alone.
-  `mate doctor --json` reports `audiences: { declared, active }`.
+  `mate doctor --json` reports `audiences: { declared, active }`, plus `wrapped`
+  in a checkout wrapped for an audience.
 - **Older Mate versions ignore `audiences:`** and refuse a frozen install whose
-  manifest holds audience packages. Set an `engines.mate` floor in
-  `framework.yaml` for a companion that uses audiences, so the engine guard names
-  the version needed.
+  manifest holds audience packages. Saving in the `audiences.base` shape raises
+  the `engines.mate` floor, so the engine guard names the version needed.
 
 Startup carries the audience to the plugin restore, strict verification,
 Studio and every agent session it starts, whether it was set in the
 environment or the configuration file. It is never written into the companion.
-Switching `MATE_AUDIENCE` on one checkout leaves files the previous audience's
-plugins generated, such as agent definitions; give each audience its own
-checkout.
+
+#### An audience is a launch-only layer
+
+Everything Mate persists is rendered from the base configuration, whatever
+`MATE_AUDIENCE` says: the companion's `AGENTS.md`, `CLAUDE.md`, `.mcp.json`,
+`.opencode/opencode.json`, skill and agent directories and managed `.gitignore`
+block, and the wrap of every working repository. An audience's plugin
+contributions reach only the sessions Mate launches for that audience:
+
+- **The layer.** A managed launch with an active audience (`mate claude`,
+  `mate opencode`, a Studio terminal, every session a container starts) renders
+  that audience's plugin contributions into a layer under
+  `~/.mate/state/audience-layers/`, outside every repository and readable by
+  the current user only. It is re-rendered only when the audience's
+  declarations, its installed plugin versions, the Mate version or the active
+  agents change, and a new render replaces the old one atomically.
+- **Claude** gets the layer as one more `--add-dir` (skills, commands, agents,
+  `CLAUDE.md`) and one more `--mcp-config`; the layer's hooks and permission
+  entries are merged into the launch's single `--settings` file, kept per
+  working repository and audience beside the layer.
+- **OpenCode** gets the layer's path in the payload of a launch that hosts its
+  own server; the Mate plugin adds the layer's MCP servers, skills and agents
+  through the plugin API and appends its guidance after the companion's. No
+  `OPENCODE_CONFIG*` variable is set, so your own value passes through.
+- **Bare sessions receive an audience only from their checkout's wrap.** A
+  plain `claude` or `opencode` session, including every session of OpenCode's
+  shared background service, gets the base configuration plus the audience its
+  checkout was wrapped for with `mate wrap --audience` (see the command
+  reference), and nothing from `MATE_AUDIENCE` exported in its shell. Without
+  such a wrap it gets base; containers keep receiving their audience through the
+  launch.
+- **Audience plugins contribute declaratively only.** Their `apply`,
+  `teardown` and `forProvider` hooks never run, OpenCode plugin references they
+  declare are not delivered, and their `.gitignore` entries are not written.
+  `mate doctor` names an active-audience plugin that relies on any of these.
+
+Delivery relies on Claude Code's `--add-dir`, `--mcp-config` and `--settings`
+flags and on the OpenCode 2.x plugin API; the launch version checks that
+already guard both runtimes apply.
+
+#### The first sync after upgrading
+
+Mate records which plugin owns each contribution it writes to the companion
+in `.mate/config/contribution-ledger.json`, names only and never values. Commit
+it with the companion: every later sync removes what a plugin no longer
+contributes, even when that plugin cannot be loaded on this machine.
+
+Companions that served an audience with an older Mate may carry that
+audience's contributions in committed files. The first sync after upgrading
+sweeps them: managed guidance blocks of plugins that are not base, and every
+declared contribution of each audience plugin. The result shows up as a diff
+to commit. An audience plugin that cannot be loaded, for example because its
+credentials are unset, is reported and stays in place; run
+`MATE_AUDIENCE=<audience> mate install --yes` with its credentials to finish
+the sweep. `mate doctor` lists contributions on persisted files that no base
+plugin owns, with the owning plugin where the ledger records one, and plugins
+the sweep could not load.
 
 ### An unsupported selection is refused by name
 
