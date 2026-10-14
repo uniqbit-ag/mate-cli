@@ -12,14 +12,15 @@ import { readWrapStateSync } from "../../src/runtime/wrap-state";
 
 import { registerCompanionAccess } from "./add-dir";
 import { missingRuntimeDirectoryMessage, registerCompanion, resolveMateBin } from "./companion";
+import { pluginLaunchEnvironment, type LaunchEnvironment } from "./launch-environment";
 
 /**
  * Only a location in a repository wrapped for OpenCode prepares, and only
  * without a launch environment: `mate opencode` has already prepared the
  * session it starts.
  */
-async function registerPrepare(api: Context, companionPath: string) {
-  if (hasLaunchEnvironment(process.env)) return undefined;
+async function registerPrepare(api: Context, companionPath: string, env: LaunchEnvironment) {
+  if (hasLaunchEnvironment(env)) return undefined;
   const repoRoot = repositoryWrappedForOpenCode(api.location.directory);
   if (!repoRoot) return undefined;
   const mateBin = resolveMateBin();
@@ -39,19 +40,22 @@ async function registerPrepare(api: Context, companionPath: string) {
 /**
  * Mate OpenCode server plugin (OpenCode 2.x). Loaded through the package's
  * `./server` export; stays inert when no companion resolves from the launch
- * environment or a Projection Root above the session directory.
+ * environment or a Projection Root above the session directory. The launch
+ * environment is decided once here: outside a managed launch every reader
+ * gets `{}`, so an environment inherited by the shared service never counts.
  */
 export const MateOpenCodePlugin = Plugin.define({
   id: "mate-opencode-plugin",
   async setup(api) {
-    const context = readContext(process.env, api.location.directory);
+    const env = pluginLaunchEnvironment(process.env, process.argv);
+    const context = readContext(env, api.location.directory);
     if (!context.companionPath) return;
 
     await registerCompanionAccess(api, context.companionPath);
-    await registerCompanionHooks(api, context);
-    await registerCompanion(api, context);
+    await registerCompanionHooks(api, context, env);
+    await registerCompanion(api, context, env);
     /** Last: the guardrails above are live while the local phase holds `setup`. */
-    const prepareCleanup = await registerPrepare(api, context.companionPath);
+    const prepareCleanup = await registerPrepare(api, context.companionPath, env);
     return async () => {
       await prepareCleanup?.();
     };

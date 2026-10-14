@@ -11,7 +11,11 @@ import { OPENCODE_LAUNCH_COMMAND } from "../runtime/companion-sync";
 import { mateVersion } from "../runtime/install";
 import { computeProjectionStamp, writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
-import { repairCompanionGitOnce, resetCompanionGitRepairGuard } from "./companion-hooks";
+import {
+  registerCompanionHooks,
+  repairCompanionGitOnce,
+  resetCompanionGitRepairGuard,
+} from "./companion-hooks";
 import { readContext, type CompanionContext } from "./companion-policy";
 import { resolveOpenCodeGuidance } from "./projected-guidance";
 import { makeSshStub, stubSshUrl } from "../../../../test/ssh-stub";
@@ -199,6 +203,27 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
+  });
+
+  /** The plugin hands `{}` to a session it does not trust; inherited variables must not gate it. */
+  test("registerCompanionHooks repairs by the environment it is given, not process.env", async () => {
+    const fixture = makeFixture();
+    process.env.HOME = fixture.home;
+    commitUpstream(fixture, "remote");
+    const saved = process.env.MATE_REPO_PATH;
+    process.env.MATE_REPO_PATH = "/other/repo";
+    const api = {
+      location: { directory: fixture.repo },
+      tool: { hook: async () => {} },
+    };
+    try {
+      await registerCompanionHooks(api as never, context(fixture), {});
+    } finally {
+      if (saved === undefined) delete process.env.MATE_REPO_PATH;
+      else process.env.MATE_REPO_PATH = saved;
+    }
+
+    expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
   });
 
   test("repairs Git for a companion-scoped managed session without a repository", async () => {

@@ -235,12 +235,9 @@ describe("Mate OpenCode server plugin", () => {
     );
   });
 
-  test("fails fast for a managed session without companion guidance", async () => {
-    const root = await makeTempDir("mate-opencode-aggregate-missing-");
-    const companion = path.join(root, "companion");
-    const repo = path.join(root, "repo");
-    await fs.mkdir(companion, { recursive: true });
-    await fs.mkdir(repo, { recursive: true });
+  test("a malformed payload in a managed launch is still fatal", async () => {
+    const companion = await makeTempDir("mate-opencode-malformed-");
+    const repo = await makeTempDir("mate-opencode-malformed-repo-");
 
     await withEnv(
       {
@@ -248,14 +245,109 @@ describe("Mate OpenCode server plugin", () => {
         MATE_ARTIFACT_PATH: companion,
         MATE_REPO_PATH: repo,
         MATE_REPO_ID: "acme",
-        MATE_POLICY_JSON: "{}",
-        MATE_GIT_AUTO_MODE: "0",
+        MATE_GUIDANCE_JSON: "{",
       },
       async () => {
         await expect(MateOpenCodePlugin.setup(fakeApi(repo).api)).rejects.toThrow(
-          "missing MATE_GUIDANCE_JSON in the launch environment",
+          "Mate OpenCode companion plugin is incomplete",
         );
       },
+    );
+  });
+});
+
+/** What a shell under another repository's Mate session exports, minus the payload. */
+async function inheritedFrom(): Promise<Record<string, string | undefined>> {
+  const other = await makeTempDir("mate-inherited-other-");
+  return {
+    ...NO_LAUNCH,
+    MATE_REPO_PATH: path.join(other, "repo"),
+    MATE_ARTIFACT_PATH: path.join(other, "companion"),
+    MATE_REPO_ID: "other",
+    MATE_POLICY_JSON: "{}",
+    MATE_WRAPPER_BIN_PATH: path.join(other, "wrappers", "bin"),
+    MATE_GIT_AUTO_MODE: "0",
+  };
+}
+
+function withArgv<T>(argv: string[], fn: () => Promise<T>): Promise<T> {
+  const previous = process.argv;
+  process.argv = argv;
+  return fn().finally(() => {
+    process.argv = previous;
+  });
+}
+
+describe("an inherited environment", () => {
+  test("in a service started from another repository's session resolves from the projection", async () => {
+    const companion = await makeTempDir("mate-projected-companion-");
+    const repo = await wrappedRepo(companion);
+    const inherited = await inheritedFrom();
+
+    await withEnv(inherited, async () => {
+      const { api, hooks, tools } = fakeApi(repo);
+      await MateOpenCodePlugin.setup(api);
+
+      const paths = tools.find((tool) => tool.name === "companion_paths") as unknown as {
+        execute: () => Promise<{ content: string }>;
+      };
+      const result = JSON.parse((await paths.execute()).content);
+      expect(result.companionFrameworkPath).toBe(companion);
+      expect(result.repositoryPath).toBe(repo);
+      expect(result.repositoryId).toBe("acme");
+
+      const event = { system: [{ type: "text", text: "base" }] };
+      await hooks.get("session.context")!(event);
+      expect(event.system[0]?.text).toContain(companion);
+      expect(event.system[0]?.text).not.toContain(inherited.MATE_ARTIFACT_PATH!);
+
+      const shell = { env: { ...inherited } as Record<string, string | undefined> };
+      await hooks.get("shell.create.before")!(shell);
+      expect(shell.env.MATE_ARTIFACT_PATH).toBe(companion);
+      expect(shell.env.MATE_REPO_PATH).toBe(repo);
+      expect(shell.env.MATE_REPO_ID).toBe("acme");
+      expect(shell.env.MATE_WRAPPER_BIN_PATH).not.toBe(inherited.MATE_WRAPPER_BIN_PATH);
+    });
+  });
+
+  test("in an unwrapped location stays inert without an error", async () => {
+    const outside = await makeTempDir("mate-inherited-inert-");
+    const { api, hooks, tools } = fakeApi(outside);
+
+    const cleanup = await withEnv(await inheritedFrom(), async () => MateOpenCodePlugin.setup(api));
+
+    expect(cleanup).toBeUndefined();
+    expect(hooks.size).toBe(0);
+    expect(tools).toEqual([]);
+  });
+
+  test("the shared service ignores even a guidance payload", async () => {
+    const projected = await makeTempDir("mate-projected-companion-");
+    const launched = await makeTempDir("mate-launched-companion-");
+    const repo = await wrappedRepo(projected);
+
+    await withArgv(["bun", "/$bunfs/root/opencode", "serve", "--service"], () =>
+      withEnv(
+        {
+          ...NO_LAUNCH,
+          MATE_ARTIFACT_PATH: launched,
+          MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+          MATE_POLICY_JSON: "{}",
+          MATE_GIT_AUTO_MODE: "0",
+        },
+        async () => {
+          const { api, hooks } = fakeApi(repo);
+          await MateOpenCodePlugin.setup(api);
+          const evaluate = hooks.get("permission.evaluate")!;
+
+          const inLaunched = { resources: [path.join(launched, "a.md")], effect: "ask" };
+          const inProjected = { resources: [path.join(projected, "a.md")], effect: "ask" };
+          await evaluate(inLaunched);
+          await evaluate(inProjected);
+          expect(inProjected.effect).toBe("allow");
+          expect(inLaunched.effect).toBe("ask");
+        },
+      ),
     );
   });
 });
@@ -310,6 +402,74 @@ describe("the session-prepare lifecycle", () => {
 
     expect(calls).toEqual([]);
     expect(errors.join("\n")).toContain("run `mate` once");
+  });
+
+  async function openCodeWrappedRepo(companion: string): Promise<string> {
+    const repo = await wrappedRepo(companion);
+    await fs.writeFile(
+      path.join(repo, ".mate", "runtime-documents.json"),
+      JSON.stringify({
+        documents: {
+          ".opencode/opencode.json": [
+            { kind: "map", at: ["mcp", "servers"], entries: { tokensave: {} } },
+          ],
+        },
+      }),
+    );
+    await fs.mkdir(path.dirname(runtimeMateBin()), { recursive: true });
+    await fs.writeFile(
+      runtimeMateBin(),
+      `#!/bin/sh\necho '{"ok":true,"steps":[],"warnings":[]}'\n`,
+      { mode: 0o755 },
+    );
+    return repo;
+  }
+
+  test.skipIf(process.platform === "win32")(
+    "a masked payload is not a managed launch and prepares from the projection",
+    async () => {
+      const companion = await makeTempDir("mate-prepare-companion-");
+      const repo = await openCodeWrappedRepo(companion);
+      const { api } = fakeApi(repo);
+      const calls = withMcp(api as unknown as Record<string, unknown>);
+
+      const cleanup = await withEnv(
+        {
+          ...NO_LAUNCH,
+          MATE_ARTIFACT_PATH: path.join(repo, "elsewhere"),
+          MATE_REPO_PATH: repo,
+          MATE_GUIDANCE_JSON: "",
+        },
+        async () => MateOpenCodePlugin.setup(api),
+      );
+      await (cleanup as (() => Promise<void>) | undefined)?.();
+
+      expect(calls).toEqual(["transform", "reload"]);
+    },
+  );
+
+  test("a managed launch stays env-first and registers no prepare", async () => {
+    const projected = await makeTempDir("mate-prepare-companion-");
+    const launched = await makeTempDir("mate-launched-companion-");
+    const repo = await openCodeWrappedRepo(projected);
+    const { api, hooks } = fakeApi(repo);
+    const calls = withMcp(api as unknown as Record<string, unknown>);
+
+    await withEnv(
+      {
+        ...NO_LAUNCH,
+        MATE_ARTIFACT_PATH: launched,
+        MATE_GUIDANCE_JSON: GUIDANCE_JSON,
+        MATE_POLICY_JSON: "{}",
+        MATE_GIT_AUTO_MODE: "0",
+      },
+      async () => MateOpenCodePlugin.setup(api),
+    );
+
+    const inLaunched = { resources: [path.join(launched, "a.md")], effect: "ask" };
+    await hooks.get("permission.evaluate")!(inLaunched);
+    expect(inLaunched.effect).toBe("allow");
+    expect(calls).toEqual([]);
   });
 
   test.skipIf(process.platform === "win32")(

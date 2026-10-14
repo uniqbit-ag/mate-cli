@@ -99,6 +99,7 @@ export async function guardToolInput(
   context: CompanionContext,
   tool: string,
   input: unknown,
+  env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
   const args = (input ?? {}) as Record<string, unknown>;
   const filePaths =
@@ -113,25 +114,27 @@ export async function guardToolInput(
       throw new Error(buildArtifactError(context, filePath));
     }
     // oxlint-disable-next-line no-await-in-loop -- the first refusal wins
-    await refuseForkedCompanionWrite(context, filePath);
+    await refuseForkedCompanionWrite(context, filePath, env);
   }
 }
 
 /**
  * Registers the companion guardrails on an OpenCode V2 plugin context.
- * The caller resolves `context` and skips this when no companion resolved.
+ * The caller resolves `context` and skips this when no companion resolved;
+ * `env` is the launch environment the caller decided to trust.
  */
 export async function registerCompanionHooks(
   api: Context,
   context: CompanionContext,
+  env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
   /**
    * Anything escaping the repair would cost the session every guardrail
    * below to save a synchronization that is optional by design.
    */
-  await repairCompanionGitOnce(context, process.env, api.location.directory).catch(() => []);
+  await repairCompanionGitOnce(context, env, api.location.directory).catch(() => []);
 
   await api.tool.hook("execute.before", (event) =>
-    guardToolInput(context, event.tool, event.input),
+    guardToolInput(context, event.tool, event.input, env),
   );
 }

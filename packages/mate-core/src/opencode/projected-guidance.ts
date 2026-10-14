@@ -1,14 +1,13 @@
 import { buildOpenCodeGuidance } from "../runtime/companion-guidance";
 import { MATE_ENV } from "../runtime/env-names";
-import { hasLaunchEnvironment } from "../runtime/env";
 import { parseGuidanceContent, type MateGuidanceFile } from "../runtime/guidance";
 import { readCompanionPolicy } from "../runtime/policy";
 import { resolveProjection } from "../runtime/projection";
 
 /**
  * `null` guidance with no errors is the inert case — no companion resolves, so
- * the plugin contributes nothing. Errors are startup failures: a managed launch
- * that failed to inject its payload is broken and must say so.
+ * the plugin contributes nothing. Errors are startup failures: a payload that
+ * does not parse, or projected guidance that cannot be built.
  */
 export interface OpenCodeGuidanceResolution {
   guidance: MateGuidanceFile | null;
@@ -26,9 +25,10 @@ export interface OpenCodeGuidanceResolution {
  * means a Capability toggled after a wrap changes the guidance on the next
  * session with no re-wrap.
  *
- * A missing payload while a launch environment *is* present stays a hard error.
- * That combination means a managed launch failed to inject, which the projection
- * must not paper over.
+ * Without a payload the projection decides, whatever other `MATE_*` variables
+ * `env` carries: those are inherited by every descendant of a Mate session and
+ * do not mark a managed launch. A present but malformed payload stays a hard
+ * error.
  */
 export function resolveOpenCodeGuidance(
   env: Record<string, string | undefined> = process.env,
@@ -38,13 +38,6 @@ export function resolveOpenCodeGuidance(
   if (raw?.trim()) {
     const { guidance, errors } = parseGuidanceContent(raw);
     return { guidance: errors.length > 0 ? null : guidance, errors };
-  }
-
-  if (hasLaunchEnvironment(env)) {
-    return {
-      guidance: null,
-      errors: [`missing ${MATE_ENV.guidanceJson} in the launch environment`],
-    };
   }
 
   const projection = resolveProjection(cwd);

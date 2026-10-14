@@ -6,6 +6,7 @@ import { MATE_ENV } from "../../src/runtime/env";
 import { COMPANION_POLICY_MARKER, type MateGuidanceFile } from "../../src/runtime/guidance";
 
 import type { CompanionContext } from "../../src/opencode/companion-policy";
+import type { LaunchEnvironment } from "./launch-environment";
 import { resolveOpenCodeGuidance } from "../../src/opencode/projected-guidance";
 import {
   runtimeDirectoryPath,
@@ -23,8 +24,8 @@ function prependPathEntry(pathValue: string | undefined, entry: string): string 
  * keeps current. `null` when neither exists: guidance naming an unresolved
  * placeholder would send the model to a path that is not there.
  */
-function resolveWrapperBinPath(): string | null {
-  if (process.env.MATE_WRAPPER_BIN_PATH) return process.env.MATE_WRAPPER_BIN_PATH;
+function resolveWrapperBinPath(env: LaunchEnvironment): string | null {
+  if (env.MATE_WRAPPER_BIN_PATH) return env.MATE_WRAPPER_BIN_PATH;
   const runtime = runtimeWrapperBinPath();
   return fs.existsSync(runtime) ? runtime : null;
 }
@@ -54,8 +55,8 @@ function buildStartupError(details: string[]): Error {
  * an Unmanaged Session in a wrapped repository builds the same payload from the
  * companion the projection names, with the Capability names read live.
  */
-function loadGuidance(directory: string): MateGuidanceFile | null {
-  const { guidance, errors } = resolveOpenCodeGuidance(process.env, directory);
+function loadGuidance(env: LaunchEnvironment, directory: string): MateGuidanceFile | null {
+  const { guidance, errors } = resolveOpenCodeGuidance(env, directory);
   if (errors.length > 0) throw buildStartupError(errors);
   return guidance;
 }
@@ -101,9 +102,10 @@ function applyCompanionShellEnv(
   context: CompanionContext,
   env: Record<string, string | undefined>,
   wrapperBinPath: string,
+  launchEnv: LaunchEnvironment,
 ): void {
   env.MATE_NAME = context.frameworkName;
-  env.MATE_VERSION = process.env.MATE_VERSION ?? "unknown";
+  env.MATE_VERSION = launchEnv.MATE_VERSION ?? "unknown";
   env.MATE_ARTIFACT_PATH = context.companionPath;
   env.MATE_WRAPPER_BIN_PATH = wrapperBinPath;
   if (context.repositoryPath) {
@@ -171,12 +173,20 @@ function mergeCompanionSystem(system: unknown[], companion: string): string[] {
   return parts.length > 0 ? [parts.join("\n\n")] : [];
 }
 
-/** Registers guidance, compaction context, shell env, and `companion_paths`. */
-export async function registerCompanion(api: Context, context: CompanionContext): Promise<void> {
-  const guidance = loadGuidance(api.location.directory);
+/**
+ * Registers guidance, compaction context, shell env, and `companion_paths`.
+ * `env` is the launch environment the caller decided to trust; `{}` resolves
+ * everything from the Projection Root.
+ */
+export async function registerCompanion(
+  api: Context,
+  context: CompanionContext,
+  env: LaunchEnvironment = process.env,
+): Promise<void> {
+  const guidance = loadGuidance(env, api.location.directory);
   if (!guidance) return;
   /** Reported, not thrown: the guardrails registered before this must stay live. */
-  const wrapperBinPath = resolveWrapperBinPath();
+  const wrapperBinPath = resolveWrapperBinPath(env);
   if (!wrapperBinPath) {
     console.error(`mate: ${missingRuntimeDirectoryMessage()}`);
     return;
@@ -199,7 +209,7 @@ export async function registerCompanion(api: Context, context: CompanionContext)
   });
 
   await api.shell.hook("create.before", (event) => {
-    applyCompanionShellEnv(context, event.env, wrapperBinPath);
+    applyCompanionShellEnv(context, event.env, wrapperBinPath, env);
   });
 
   await api.tool.transform((editor) => {
