@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.4](https://github.com/uniqbit-ag/mate-cli/compare/0.18.3...0.18.4) (2026-10-14)
+
+### Features
+
+- isolate audience contributions across agent sessions ([804a663](https://github.com/uniqbit-ag/mate-cli/commit/804a663acdd2454fce70c187d98e16508cf09312))
+- project an OpenSpec store pointer into wrapped working repositories ([ebe64eb](https://github.com/uniqbit-ag/mate-cli/commit/ebe64eb8d0c3ec58f4c70f948f5a29dc97865b8c))
+
+### Bug Fixes
+
+- **container:** run the smoke-test version check under a scratch HOME ([f835192](https://github.com/uniqbit-ag/mate-cli/commit/f83519209f535a304cd001b5bbc14008eac87312))
+- **opencode:** stop shared service sessions inheriting launch environment ([5975bdc](https://github.com/uniqbit-ag/mate-cli/commit/5975bdc637a43d9ac2e052506c7db668bfcde076))
+
 ## Unreleased
 
 ### Bug Fixes
