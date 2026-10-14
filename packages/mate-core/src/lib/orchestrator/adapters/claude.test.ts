@@ -8,14 +8,12 @@ import {
   CLAUDE_SETTINGS_DOCUMENT,
   EMPTY_MANIFEST,
   OPENCODE_CONFIG_DOCUMENT,
-  withAudience,
   withDocument,
 } from "../../../runtime/runtime-document-manifest";
 import { wrapStateOf, type WrapState } from "../../../runtime/wrap-state";
 import type { PrepareResult, PrepareStep } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
 import type { AdapterContext } from "./base";
-import { audienceLayerDir } from "../../../runtime/audience-layer";
 import { ClaudeAdapter, launchSettingsPath } from "./claude";
 
 const CARRIED = { hooks: [{ type: "command", command: "acme-wrapped" }] };
@@ -52,12 +50,7 @@ function contextFor(companionPath: string, scope: "repo" | "companion" = "repo")
 }
 
 function prepared(
-  overrides: {
-    wrapState?: WrapState;
-    steps?: PrepareStep[];
-    failure?: unknown;
-    audienceLayer?: PrepareResult["audienceLayer"];
-  } = {},
+  overrides: { wrapState?: WrapState; steps?: PrepareStep[]; failure?: unknown } = {},
 ): PrepareResult {
   return {
     ok: overrides.steps === undefined,
@@ -70,29 +63,7 @@ function prepared(
     warnings: [],
     wrapState: overrides.wrapState ?? claudeWrapState,
     ...(overrides.failure === undefined ? {} : { failure: overrides.failure }),
-    ...(overrides.audienceLayer ? { audienceLayer: overrides.audienceLayer } : {}),
   };
-}
-
-/** A rendered layer holding an MCP configuration and the audience's hooks and permission entries. */
-async function layerFor(audience: string) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), `acme-layer-${audience}-`));
-  tempRoots.push(root);
-  await fs.mkdir(path.join(root, ".claude"), { recursive: true });
-  await fs.writeFile(
-    path.join(root, ".claude", "settings.local.json"),
-    JSON.stringify({
-      hooks: { Stop: [{ hooks: [{ type: "command", command: `${audience}-hook.sh` }] }] },
-      permissions: { allow: [`Bash(${audience}:*)`] },
-    }),
-    "utf8",
-  );
-  await fs.writeFile(path.join(root, ".mcp.json"), JSON.stringify({ mcpServers: {} }), "utf8");
-  return { audience, root, rendered: true };
-}
-
-function flagValues(args: string[], flag: string): string[] {
-  return args.filter((_, index) => args[index - 1] === flag);
 }
 
 describe("the Claude delivery plan at launch", () => {
@@ -186,145 +157,5 @@ describe("a failed Claude prepare", () => {
     );
 
     expect(failure).toBe(own);
-  });
-});
-
-describe("an audience launch", () => {
-  const companionOnly = { hooks: [{ type: "command", command: "acme-companion" }] };
-
-  test("attaches the layer by --add-dir and an additional --mcp-config", async () => {
-    const { companionPath } = await companionWith({ hooks: { Stop: [companionOnly] } });
-    const layer = await layerFor("ba");
-    const adapter = new ClaudeAdapter();
-
-    const launch = await adapter.planLaunch(
-      contextFor(companionPath),
-      prepared({ audienceLayer: layer }),
-    );
-    const args = adapter.buildArgs(launch, ["--print", "hi"]);
-
-    expect(flagValues(args, "--add-dir")).toEqual([layer.root]);
-    expect(flagValues(args, "--mcp-config")).toEqual([path.join(layer.root, ".mcp.json")]);
-    expect(args.slice(-2)).toEqual(["--print", "hi"]);
-    expect(adapter.extendEnvironment(launch).CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe(
-      "1",
-    );
-  });
-
-  test("merges the layer's hooks and permission entries into its one settings file", async () => {
-    const { companionPath } = await companionWith({
-      hooks: { Stop: [CARRIED, companionOnly] },
-      permissions: { allow: ["Bash(mate:*)"] },
-    });
-    const adapter = new ClaudeAdapter();
-
-    const launch = await adapter.planLaunch(
-      contextFor(companionPath),
-      prepared({ audienceLayer: await layerFor("ba") }),
-    );
-    const args = adapter.buildArgs(launch, []);
-
-    expect(flagValues(args, "--settings")).toEqual([
-      launchSettingsPath(companionPath, "repo", "ba"),
-    ]);
-    expect(JSON.parse(await fs.readFile(launch.delivery.settingsPath!, "utf8"))).toEqual({
-      hooks: { Stop: [companionOnly, { hooks: [{ type: "command", command: "ba-hook.sh" }] }] },
-      permissions: { allow: ["Bash(mate:*)", "Bash(ba:*)"] },
-    });
-  });
-
-  test("concurrent ba and qa launches in one repository write different settings files", async () => {
-    const { companionPath } = await companionWith({ hooks: { Stop: [companionOnly] } });
-    const adapter = new ClaudeAdapter();
-
-    const [ba, qa] = await Promise.all(
-      ["ba", "qa"].map(async (audience) =>
-        adapter.planLaunch(
-          contextFor(companionPath),
-          prepared({ audienceLayer: await layerFor(audience) }),
-        ),
-      ),
-    );
-    const baArgs = adapter.buildArgs(ba!, []);
-    const qaArgs = adapter.buildArgs(qa!, []);
-
-    expect(flagValues(baArgs, "--settings")).toHaveLength(1);
-    expect(flagValues(qaArgs, "--settings")).toHaveLength(1);
-    expect(ba!.delivery.settingsPath).not.toBe(qa!.delivery.settingsPath);
-    const baText = await fs.readFile(ba!.delivery.settingsPath!, "utf8");
-    const qaText = await fs.readFile(qa!.delivery.settingsPath!, "utf8");
-    expect(baText).toContain("ba-hook.sh");
-    expect(baText).not.toContain("qa-");
-    expect(qaText).toContain("qa-hook.sh");
-    expect(qaText).not.toContain("ba-");
-    expect(baText).toContain("acme-companion");
-    expect(qaText).toContain("acme-companion");
-  });
-
-  test("a companion-scoped launch with an audience derives a merged file instead of the companion's", async () => {
-    const { companionPath, settingsPath } = await companionWith({
-      hooks: { Stop: [companionOnly] },
-    });
-    const layer = await layerFor("ba");
-    const adapter = new ClaudeAdapter();
-
-    const launch = await adapter.planLaunch(
-      contextFor(companionPath, "companion"),
-      prepared({ audienceLayer: layer }),
-    );
-    const args = adapter.buildArgs(launch, []);
-
-    const derived = launchSettingsPath(companionPath, null, "ba");
-    expect(derived).not.toBe(settingsPath);
-    expect(flagValues(args, "--settings")).toEqual([derived]);
-    expect(flagValues(args, "--add-dir")).toEqual([companionPath, layer.root]);
-    expect(await fs.readFile(derived, "utf8")).toContain("ba-hook.sh");
-  });
-
-  test("a launch without an audience passes exactly what it passed before", async () => {
-    const { companionPath } = await companionWith({ hooks: { Stop: [companionOnly] } });
-    const adapter = new ClaudeAdapter();
-
-    const launch = await adapter.planLaunch(contextFor(companionPath), prepared());
-    const args = adapter.buildArgs(launch, []);
-
-    expect(launch.delivery.layer).toBeUndefined();
-    expect(flagValues(args, "--add-dir")).toEqual([]);
-    expect(flagValues(args, "--mcp-config")).toEqual([]);
-    expect(flagValues(args, "--settings")).toEqual([
-      path.join(companionPath, ".claude", "state", "launch-settings.repo.json"),
-    ]);
-  });
-});
-
-describe("a launch in a checkout wrapped for an audience", () => {
-  test("appends the wrapped audience's guidance and adds no layer flags", async () => {
-    const { companionPath } = await companionWith({});
-    const dir = audienceLayerDir(companionPath, "ba");
-    await fs.mkdir(path.join(dir, "f1"), { recursive: true });
-    await fs.writeFile(path.join(dir, "f1", "CLAUDE.md"), "Guidance for ba.\n", "utf8");
-    await fs.rm(path.join(dir, "current"), { force: true });
-    await fs.symlink("f1", path.join(dir, "current"));
-    tempRoots.push(dir);
-    const wrapState = wrapStateOf(
-      withAudience(
-        withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, [
-          { at: ["hooks", "Stop"], kind: "list", values: [CARRIED] },
-        ]),
-        "ba",
-      ),
-    );
-    const adapter = new ClaudeAdapter();
-
-    const launch = await adapter.planLaunch(contextFor(companionPath), prepared({ wrapState }));
-    const args = adapter.buildArgs(launch, []);
-
-    expect(flagValues(args, "--add-dir")).toEqual([]);
-    expect(flagValues(args, "--mcp-config")).toEqual([]);
-    const prompt = flagValues(args, "--append-system-prompt")[0]!;
-    expect(prompt).toContain("<companion-policy ");
-    expect(prompt.indexOf("Guidance for ba.")).toBeGreaterThan(
-      prompt.indexOf("<companion-policy "),
-    );
   });
 });

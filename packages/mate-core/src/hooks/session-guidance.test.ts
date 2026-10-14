@@ -4,16 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { audienceLayerDir } from "../runtime/audience-layer";
 import { writeProjectionPair } from "../runtime/projection";
-import {
-  CLAUDE_SETTINGS_DOCUMENT,
-  EMPTY_MANIFEST,
-  manifestPath,
-  serializeManifest,
-  withAudience,
-  withDocument,
-} from "../runtime/runtime-document-manifest";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { buildSessionGuidance } from "./session-guidance";
 
@@ -124,53 +115,5 @@ describe("session-guidance hook module", () => {
     const result = buildSessionGuidance({}, makeTempDir("session-guidance-bare-"));
 
     expect(result).toEqual({ exitCode: 0, stdout: "" });
-  });
-
-  describe("a checkout wrapped for an audience", () => {
-    /** Records `audience` in the wrap and renders its layer with `guidance` in `CLAUDE.md`. */
-    function wrapForAudience(audience: string | null, guidance: string) {
-      const { repoRoot, companionPath } = wrapRepo();
-      const manifest = withAudience(
-        withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, []),
-        audience,
-      );
-      fs.writeFileSync(manifestPath(repoRoot), serializeManifest(manifest) ?? "", "utf8");
-      for (const name of ["ba", "qa"]) {
-        const version = path.join(audienceLayerDir(companionPath, name), "f1");
-        fs.mkdirSync(version, { recursive: true });
-        fs.writeFileSync(
-          path.join(version, "CLAUDE.md"),
-          `<!-- mate:managed:${name}-plugin:abc start -->\n${guidance.replace("ba", name)}\n<!-- mate:managed:${name}-plugin:abc end -->\n`,
-          "utf8",
-        );
-        fs.rmSync(path.join(audienceLayerDir(companionPath, name), "current"), { force: true });
-        fs.symlinkSync("f1", path.join(audienceLayerDir(companionPath, name), "current"));
-        tempRoots.push(audienceLayerDir(companionPath, name));
-      }
-      return { repoRoot };
-    }
-
-    test("appends the wrapped audience's layer guidance after the companion policy", () => {
-      const { repoRoot } = wrapForAudience("ba", "Guidance for ba.");
-
-      const context = additionalContext(buildSessionGuidance({}, repoRoot).stdout);
-
-      expect(context).toContain("Guidance for ba.");
-      expect(context).not.toContain("Guidance for qa.");
-      expect(context).not.toContain("mate:managed");
-      expect(context.indexOf("Guidance for ba.")).toBeGreaterThan(
-        context.indexOf("<companion-policy "),
-      );
-    });
-
-    test("a checkout wrapped for base gets no layer guidance, whatever MATE_AUDIENCE says", () => {
-      const { repoRoot } = wrapForAudience(null, "Guidance for ba.");
-
-      const context = additionalContext(
-        buildSessionGuidance({ MATE_AUDIENCE: "ba" }, repoRoot).stdout,
-      );
-
-      expect(context).not.toContain("Guidance for");
-    });
   });
 });

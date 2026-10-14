@@ -1,14 +1,5 @@
 import path from "node:path";
 
-import semver from "semver";
-
-import {
-  BASE_AUDIENCE,
-  BASE_AUDIENCE_KEYS,
-  normalizeBaseAudience,
-} from "../../tools/setup/dynamic-plugins/audiences";
-
-import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import {
   getDefaultSetupSelections,
@@ -300,81 +291,17 @@ function validateAudiences(config: FrameworkConfig): void {
   }
 }
 
-/**
- * The release that introduces the `audiences.base` shape. An older Mate would
- * read a saved file as an empty base plus an audience called `base`, so every
- * save in the new shape raises the companion's `engines` floor to it — capped
- * at the running release, so a pre-release build never locks itself out.
- */
-export const BASE_AUDIENCE_MIN_VERSION = "0.19.0";
-
-/** The floor version a save writes: the introducing release, or the running one when older. */
-export function baseAudienceFloorVersion(
-  runningVersion: string = getActiveDistribution().config.version,
-): string {
-  const running = semver.coerce(runningVersion)?.version;
-  return running && semver.lt(running, BASE_AUDIENCE_MIN_VERSION)
-    ? running
-    : BASE_AUDIENCE_MIN_VERSION;
-}
-
-/** Only companions carry audiences; a hub or a working repository keeps the root shape. */
-function usesAudiences(config: FrameworkConfig): boolean {
-  return config.type === undefined || config.type === "companion";
-}
-
-/** The floor that admits the base audience shape, keeping a higher one. */
-function raisedEngineFloor(range: string | undefined): string {
-  const version = baseAudienceFloorVersion();
-  const floor = `>=${version}`;
-  if (!range || semver.validRange(range) === null) return range ?? floor;
-  const minimum = semver.minVersion(range);
-  return minimum && semver.gte(minimum, version) ? range : floor;
-}
-
-/**
- * The file shape of a companion config: the base set's audience-scoped keys
- * under `audiences.base`, first among the audiences. The in-memory config
- * keeps them at the root, so its readers never see the difference.
- */
-function toFileShape(config: FrameworkConfig): FrameworkConfig {
-  if (!usesAudiences(config)) return config;
-  const base: Record<string, unknown> = {};
-  const rest: Record<string, unknown> = { ...config };
-  for (const key of BASE_AUDIENCE_KEYS) {
-    if (rest[key] === undefined) continue;
-    base[key] = rest[key];
-    delete rest[key];
-  }
-  if (Object.keys(base).length === 0) return config;
-  return {
-    ...(rest as unknown as FrameworkConfig),
-    audiences: { [BASE_AUDIENCE]: base, ...config.audiences } as FrameworkConfig["audiences"],
-    engines: {
-      ...config.engines,
-      [FRAMEWORK_NAME]: raisedEngineFloor(config.engines?.[FRAMEWORK_NAME]),
-    },
-  };
-}
-
 export class ConfigStore extends YamlFileStore<FrameworkConfig> {
   constructor(configPath = process.env.MATE_CONFIG ?? defaultConfigPath()) {
     super(path.resolve(configPath));
   }
 
-  /** Either file shape loads as the base set at the root; the new shape persists on the next save. */
   override async load(): Promise<FrameworkConfig> {
-    const merged = mergeWithDefaults(
-      migrateProfilesToAllowedAgents(normalizeBaseAudience(await super.load())),
-    );
+    const merged = mergeWithDefaults(migrateProfilesToAllowedAgents(await super.load()));
     validateHubConfig(merged);
     validatePluginDeclarations(merged);
     validateAudiences(merged);
     return merged;
-  }
-
-  override async save(config: FrameworkConfig): Promise<void> {
-    await super.save(toFileShape(config));
   }
 
   protected async onMissing(): Promise<FrameworkConfig> {

@@ -3,10 +3,9 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { baseAudienceFloorVersion, ConfigStore } from "../../lib/orchestrator/config-store";
+import { ConfigStore } from "../../lib/orchestrator/config-store";
 import { runSetupCommand, runSetupCommandWithDeps, setupCommandDeps } from "./setup";
 import type { SetupSelections } from "../../lib/orchestrator/setup-compatibilities";
 
@@ -538,75 +537,6 @@ describe("runSetupCommandWithDeps", () => {
       }),
       expect.objectContaining({ cwd: companionPath }),
     );
-  });
-
-  test("wizard and CLI flags save the base set under audiences.base", async () => {
-    const originalHome = process.env.HOME;
-    const originalAudience = process.env.MATE_AUDIENCE;
-    const home = await makeTempDir("acme-setup-audience-home-");
-    process.env.HOME = home;
-    delete process.env.MATE_AUDIENCE;
-
-    try {
-      for (const flow of ["wizard", "flags"] as const) {
-        const companionPath = path.join(home, `companion-${flow}`);
-        const configPath = path.join(
-          companionPath,
-          `.${FRAMEWORK_NAME}`,
-          "config",
-          "framework.yaml",
-        );
-        await fs.mkdir(path.dirname(configPath), { recursive: true });
-        await fs.writeFile(
-          configPath,
-          [
-            "type: companion",
-            "allowedAgents: [opencode]",
-            "packageManagers: []",
-            "capabilities: []",
-            "plugins: []",
-            "studio:",
-            "  terminal:",
-            "    agent: developer",
-            "",
-          ].join("\n"),
-        );
-        const selectorMock = mock(
-          async () =>
-            ({
-              allowedAgents: ["claude"],
-              packageManagers: [],
-              capabilities: [],
-              selectedOpenSpecSchema: "default",
-              selectedGitMode: "default",
-            }) satisfies SetupSelections,
-        );
-
-        await withCwd(companionPath, () =>
-          runSetupCommandWithDeps(flow === "flags" ? ["--allowed-agent", "claude"] : [], {
-            inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
-            selectSetupCompatibilities: selectorMock,
-          }),
-        );
-
-        const saved = parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
-        expect(saved.capabilities).toBeUndefined();
-        expect(saved.plugins).toBeUndefined();
-        expect(saved.studio).toBeUndefined();
-        expect(saved.engines).toEqual({ mate: `>=${baseAudienceFloorVersion()}` });
-        expect((saved.audiences as Record<string, unknown>).base).toEqual({
-          capabilities: [],
-          plugins: [],
-          studio: { terminal: { agent: "developer" } },
-        });
-        expect(selectorMock).toHaveBeenCalledTimes(flow === "wizard" ? 1 : 0);
-      }
-    } finally {
-      if (originalHome === undefined) delete process.env.HOME;
-      else process.env.HOME = originalHome;
-      if (originalAudience === undefined) delete process.env.MATE_AUDIENCE;
-      else process.env.MATE_AUDIENCE = originalAudience;
-    }
   });
 
   test("selects a companion before setup when a working repo has multiple links", async () => {

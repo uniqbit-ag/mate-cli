@@ -320,27 +320,6 @@ describe("hydrateDynamicPlugins audiences", () => {
     expect(registry.getAll().map((plugin) => plugin.id)).toEqual(["acme-custom"]);
   });
 
-  test("the active audience's plugin is marked with its audience", async () => {
-    const companionPath = await writeCompanion({ pluginsYaml: AUDIENCE_ONLY });
-
-    const { registry } = await hydrate(companionPath, { MATE_AUDIENCE: "ba" });
-
-    expect(registry.getEntries().map((entry) => [entry.plugin.id, entry.audience])).toEqual([
-      ["acme-custom", "ba"],
-    ]);
-    expect(registry.baseRegistrations()).toEqual([]);
-  });
-
-  test("a base declaration is marked base", async () => {
-    const companionPath = await writeCompanion({ pluginsYaml: DECLARED });
-
-    const { registry } = await hydrate(companionPath, { MATE_AUDIENCE: "ba" });
-
-    expect(registry.getEntries().map((entry) => [entry.plugin.id, entry.audience])).toEqual([
-      ["acme-custom", null],
-    ]);
-  });
-
   test("the audience declaration's own policy applies", async () => {
     const companionPath = await writeCompanion({
       pluginsYaml: [...AUDIENCE_ONLY, "        policy: default"],

@@ -33,29 +33,12 @@ function reportChangedPaths(changed: ProjectionChangedPaths): void {
 
 /**
  * `--companion` is consumed by the dispatch gate before the command runs, so it
- * is parsed there too. `--audience` names the audience the checkout's bare
- * sessions get beside base.
+ * is parsed there too; this only rejects anything else.
  */
-export function parseWrapArgs(
-  argv: string[],
-): { companion?: string; audience?: string } | { error: string } {
+export function parseWrapArgs(argv: string[]): { companion?: string } | { error: string } {
   let companion: string | undefined;
-  let audience: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
-    if (arg === "--audience") {
-      const value = argv[index + 1];
-      if (!value || value.startsWith("--")) return { error: "--audience requires a name" };
-      audience = value;
-      index += 1;
-      continue;
-    }
-    if (arg.startsWith("--audience=")) {
-      const value = arg.slice("--audience=".length);
-      if (!value) return { error: "--audience requires a name" };
-      audience = value;
-      continue;
-    }
     if (arg === "--companion") {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) return { error: "--companion requires a path" };
@@ -71,10 +54,7 @@ export function parseWrapArgs(
     }
     return { error: `unknown wrap option: ${arg}` };
   }
-  return {
-    ...(companion === undefined ? {} : { companion }),
-    ...(audience === undefined ? {} : { audience }),
-  };
+  return companion === undefined ? {} : { companion };
 }
 
 /**
@@ -128,12 +108,8 @@ export async function runWrapCommand(
   }
 
   /** Serialized with Session Prepare and every sync, which rewrite the same manifest. */
-  /**
-   * The flag is the only way to give a checkout's bare sessions an audience;
-   * without it the wrap is base and any recorded audience is withdrawn.
-   */
   const locked = await withCompanionLock(companionPath, attendedLockOptions(companionPath), () =>
-    wrap(companionPath, repository, { audience: parsed.audience ?? null }),
+    wrap(companionPath, repository),
   );
   const result: WrapPassResult = locked.acquired
     ? locked.value
@@ -150,7 +126,6 @@ export async function runWrapCommand(
       : `Already wrapped: ${result.projectionRoot}`,
   );
   console.log(`  Companion: ${result.companionPath}`);
-  if (result.audience) console.log(`  Audience:  ${result.audience}`);
   for (const document of result.documents) {
     console.log(`  Runtime:   ${document}`);
   }
