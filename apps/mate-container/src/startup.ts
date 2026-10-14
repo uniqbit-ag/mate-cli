@@ -73,6 +73,12 @@ function capabilityNames(value: unknown): string[] {
     : [];
 }
 
+/**
+ * Mate 0.18.4 saved the base set under `audiences.base`; read it as the root
+ * capabilities, and never as an audience of its own.
+ */
+const BASE_AUDIENCE = "base";
+
 /** Base selections plus the capabilities of `audience`, when one is served. */
 export function readCompanionSelections(
   companionPath: string,
@@ -94,12 +100,23 @@ export function readCompanionSelections(
     ? config.packageManagers.map((entry) => String(entry))
     : ["bun"];
   const audienceCapabilities =
-    audience !== null && config.audiences && Object.hasOwn(config.audiences, audience)
+    audience !== null &&
+    audience !== BASE_AUDIENCE &&
+    config.audiences &&
+    Object.hasOwn(config.audiences, audience)
       ? capabilityNames(config.audiences[audience]?.capabilities)
+      : [];
+  const baseCapabilities =
+    config.audiences && Object.hasOwn(config.audiences, BASE_AUDIENCE)
+      ? capabilityNames(config.audiences[BASE_AUDIENCE]?.capabilities)
       : [];
   return {
     packageManagers,
-    capabilities: [...capabilityNames(config.capabilities), ...audienceCapabilities],
+    capabilities: [
+      ...capabilityNames(config.capabilities),
+      ...baseCapabilities,
+      ...audienceCapabilities,
+    ],
   };
 }
 
@@ -114,7 +131,7 @@ export function readCompanionAudiences(companionPath: string): string[] {
   }
   const audiences = (parsed as { audiences?: unknown } | null)?.audiences;
   return audiences !== null && typeof audiences === "object" && !Array.isArray(audiences)
-    ? Object.keys(audiences)
+    ? Object.keys(audiences).filter((name) => name !== BASE_AUDIENCE)
     : [];
 }
 

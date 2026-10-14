@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { parse } from "yaml";
 
 import { ConfigStore, defaultConfig, mergeWithDefaults } from "./config-store";
 import type { FrameworkConfig } from "./types";
@@ -689,5 +690,40 @@ describe("ConfigStore", () => {
     const bareConfig = await new ConfigStore(bare).load();
     expect(bareConfig.migrations).toBeUndefined();
     expect(await fs.readFile(bare, "utf8")).not.toContain("migrations");
+  });
+});
+
+describe("the Mate 0.18.4 audiences.base shape", () => {
+  test("loads with the base set at the root and saves back in the root shape", async () => {
+    const root = await makeTempDir("config-store-base-audience-");
+    const configPath = path.join(root, "framework.yaml");
+    await fs.writeFile(
+      configPath,
+      [
+        "allowedAgents:",
+        "  - claude",
+        "audiences:",
+        "  base:",
+        "    capabilities:",
+        "      - name: openspec",
+        "        schemaProfile: mate-v1",
+        "  ba:",
+        "    plugins:",
+        '      - package: "@acme/analyst"',
+        "        version: ^1.0.0",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const store = new ConfigStore(configPath);
+
+    const config = await store.load();
+    expect(config.capabilities).toEqual([{ name: "openspec", schemaProfile: "mate-v1" }]);
+    expect(Object.keys(config.audiences ?? {})).toEqual(["ba"]);
+
+    await store.save(config);
+    const saved = parse(await fs.readFile(configPath, "utf8")) as FrameworkConfig;
+    expect(saved.capabilities).toEqual([{ name: "openspec", schemaProfile: "mate-v1" }]);
+    expect(Object.keys(saved.audiences ?? {})).toEqual(["ba"]);
   });
 });

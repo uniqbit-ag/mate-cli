@@ -3,12 +3,14 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { stringify } from "yaml";
 
 import {
   allPluginDeclarations,
   declaredAudiences,
   effectivePluginDeclarations,
   effectiveStudioAgent,
+  normalizeBaseAudience,
   readAllDeclarations,
   readAudienceSelection,
   readEffectiveDeclarations,
@@ -236,5 +238,75 @@ describe("raw readers", () => {
     expect(await fs.readFile(path.join(root, ".mate", "config", "framework.yaml"), "utf8")).toBe(
       yaml,
     );
+  });
+});
+
+describe("the reserved base audience", () => {
+  const tempRoots: string[] = [];
+  afterEach(async () => {
+    await Promise.all(
+      tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })),
+    );
+  });
+  const based = {
+    allowedAgents: ["claude"],
+    audiences: {
+      base: {
+        capabilities: [{ name: "openspec" }],
+        plugins: [base],
+        studio: { terminal: { agent: "developer" } },
+      },
+      ba: { plugins: [analyst] },
+    },
+  };
+
+  test("lifts the base set to the root and leaves the other audiences", () => {
+    expect(normalizeBaseAudience(based)).toEqual({
+      allowedAgents: ["claude"],
+      capabilities: [{ name: "openspec" }],
+      plugins: [base],
+      studio: { terminal: { agent: "developer" } },
+      audiences: { ba: { plugins: [analyst] } },
+    });
+  });
+
+  test("leaves a root-shaped file as it is", () => {
+    expect(normalizeBaseAudience(raw)).toEqual(raw);
+  });
+
+  test("refuses a key declared both at the root and under audiences.base", () => {
+    expect(() => normalizeBaseAudience({ ...based, plugins: [reviewer] })).toThrow(
+      /"plugins".*root.*audiences\.base/,
+    );
+  });
+
+  test("refuses a key audiences.base may not hold", () => {
+    expect(() =>
+      normalizeBaseAudience({ audiences: { base: { allowedAgents: ["claude"] } } }),
+    ).toThrow(/audiences\.base/);
+  });
+
+  test("is never declared and never selected", () => {
+    expect(declaredAudiences(based)).toEqual(["ba"]);
+    expect(resolveAudience(based, "base")).toEqual({ ok: true, active: null });
+  });
+
+  test("always applies: the effective plugins are base's, then the active audience's", () => {
+    expect(effectivePluginDeclarations(normalizeBaseAudience(based), "ba")).toEqual([
+      base,
+      analyst,
+    ]);
+    expect(effectivePluginDeclarations(based, "ba")).toEqual([base, analyst]);
+  });
+
+  test("a raw read of either shape yields the base set at the root", async () => {
+    const companionPath = await fs.mkdtemp(path.join(os.tmpdir(), "audiences-base-"));
+    tempRoots.push(companionPath);
+    const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, stringify(based), "utf8");
+
+    expect(await readEffectiveDeclarations(companionPath, null)).toEqual([base]);
+    expect(await readEffectiveDeclarations(companionPath, "ba")).toEqual([base, analyst]);
   });
 });

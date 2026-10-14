@@ -142,6 +142,7 @@ describe("published package", () => {
         ...process.env,
         CI: "1",
         HOME: path.join(root, "home"),
+        MATE_ARTIFACT_PATH: "",
         MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
         NPM_CAPTURE: npmCapture,
         NPM_GLOBAL_ROOT: path.join(project, "node_modules"),

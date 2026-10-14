@@ -4,12 +4,14 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../framework";
 import { ConfigStore } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repository-link";
 import { project } from "../lib/orchestrator/working-repo-projection";
+import { MATE_SPECS_RULE } from "./setup/capabilities/openspec";
 import { TOKENSAVE_STORE_DIR, tokensaveDeps } from "./setup/capabilities/tokensave";
 import {
   applySetupCompatibilities,
@@ -914,9 +916,9 @@ describe("executeSetup", () => {
       name: "openspec",
       schemaProfile: "mate-v1",
     });
-    await expect(fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")).resolves.toBe(
-      "schema: mate-v1\n",
-    );
+    expect(
+      parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
+    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
     await expect(
       fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
     ).resolves.toBeNull();

@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { normalizeBaseAudience } from "../../tools/setup/dynamic-plugins/audiences";
+
 import { FRAMEWORK_NAME } from "../../framework";
 import {
   getDefaultSetupSelections,
@@ -296,8 +298,11 @@ export class ConfigStore extends YamlFileStore<FrameworkConfig> {
     super(path.resolve(configPath));
   }
 
+  /** Either file shape loads as the base set at the root; the next save writes the root shape. */
   override async load(): Promise<FrameworkConfig> {
-    const merged = mergeWithDefaults(migrateProfilesToAllowedAgents(await super.load()));
+    const merged = mergeWithDefaults(
+      migrateProfilesToAllowedAgents(normalizeBaseAudience(await super.load())),
+    );
     validateHubConfig(merged);
     validatePluginDeclarations(merged);
     validateAudiences(merged);

@@ -6,6 +6,7 @@ import { parse } from "yaml";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { PLUGIN_DECLARATION_POLICIES } from "../../../lib/orchestrator/config-store";
 import type { PluginDeclaration } from "../../../lib/orchestrator/types";
+import { normalizeBaseAudience } from "./audiences";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -22,7 +23,7 @@ export async function readDeclarations(companionPath: string): Promise<unknown[]
       path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
       "utf8",
     );
-    const parsed = parse(raw) as unknown;
+    const parsed = normalizeBaseAudience(parse(raw) as unknown);
     if (!isRecord(parsed) || !Array.isArray(parsed.plugins)) return [];
     return parsed.plugins;
   } catch {

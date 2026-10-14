@@ -18,6 +18,7 @@ import {
   assertRequirementsCarried,
   parsePluginCapabilities,
   prepareStartup,
+  readCompanionAudiences,
   readCompanionSelections,
   renderCredentials,
   renderPlan,
@@ -288,6 +289,29 @@ describe("requirements the image carries", () => {
       packageManagers: ["bun"],
       capabilities: ["openspec"],
     });
+  });
+
+  test("a companion saved by Mate 0.18.4 reads its base set from audiences.base", () => {
+    const companion = path.join(root, "acme");
+    fs.mkdirSync(path.join(companion, ".mate", "config"), { recursive: true });
+    fs.writeFileSync(
+      path.join(companion, ".mate", "config", "framework.yaml"),
+      [
+        "audiences:",
+        "  base:",
+        "    capabilities:",
+        "      - name: openspec",
+        "  ba:",
+        "    capabilities:",
+        "      - name: graphify",
+        "",
+      ].join("\n"),
+    );
+    expect(readCompanionSelections(companion, "ba")).toEqual({
+      packageManagers: ["bun"],
+      capabilities: ["openspec", "graphify"],
+    });
+    expect(readCompanionAudiences(companion)).toEqual(["ba"]);
   });
 
   test("a fully loaded companion passes", () => {
