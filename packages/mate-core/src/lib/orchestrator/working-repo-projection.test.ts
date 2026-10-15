@@ -1013,3 +1013,67 @@ describe("the companion copies entry", () => {
     ).toBe("skipped");
   });
 });
+
+describe("workspace-document entry", () => {
+  async function makeFolders(prefix: string, names: string[]): Promise<string[]> {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+    tempRoots.push(root);
+    const folders = names.map((name) => path.join(root, name));
+    await Promise.all(folders.map((folder) => fs.mkdir(folder, { recursive: true })));
+    return folders;
+  }
+
+  const workspaceState = (result: Awaited<ReturnType<typeof project>>) =>
+    result.outcomes.find((entry) => entry.id === "workspace-document")?.state;
+
+  const readFolders = async (repoPath: string) =>
+    JSON.parse(
+      await fs.readFile(
+        path.join(repoPath, `.${FRAMEWORK_NAME}`, "workspace.code-workspace"),
+        "utf8",
+      ),
+    ).folders;
+
+  test("lists the repository and every workspace companion in the given order", async () => {
+    const [repoPath, companionB, companionA] = await makeFolders("workspace-many-", [
+      "working",
+      "companion-b",
+      "companion-a",
+    ]);
+
+    const result = await project("workspace", {
+      repoPath: repoPath!,
+      workspaceCompanionPaths: [companionB!, companionA!],
+    });
+
+    expect(workspaceState(result)).toBe("written");
+    expect(await readFolders(repoPath!)).toEqual([
+      { path: repoPath },
+      { path: companionB },
+      { path: companionA },
+    ]);
+  });
+
+  test("falls back to the single companionPath", async () => {
+    const [repoPath, companionPath] = await makeFolders("workspace-single-", [
+      "working",
+      "companion",
+    ]);
+
+    await project("workspace", { repoPath: repoPath!, companionPath: companionPath! });
+
+    expect(await readFolders(repoPath!)).toEqual([{ path: repoPath }, { path: companionPath }]);
+  });
+
+  test("reports an identical rewrite as current", async () => {
+    const [repoPath, companionA, companionB] = await makeFolders("workspace-current-", [
+      "working",
+      "companion-a",
+      "companion-b",
+    ]);
+    const input = { repoPath: repoPath!, workspaceCompanionPaths: [companionA!, companionB!] };
+    await project("workspace", input);
+
+    expect(workspaceState(await project("workspace", input))).toBe("current");
+  });
+});

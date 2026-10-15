@@ -384,9 +384,11 @@ function buildEntries(): readonly ProjectionEntry[] {
       path: path.join(localDir, WORKSPACE_DOCUMENT_FILE),
       scopes: ["workspace"],
       write: async (input) => {
-        if (!input.companionPath) return "skipped";
+        const companionPaths =
+          input.workspaceCompanionPaths ?? (input.companionPath ? [input.companionPath] : []);
+        if (companionPaths.length === 0) return "skipped";
         const target = workspaceDocumentPath(input.repoPath);
-        const folders = [path.resolve(input.repoPath), path.resolve(input.companionPath)];
+        const folders = [input.repoPath, ...companionPaths].map((folder) => path.resolve(folder));
         const next = `${JSON.stringify({ folders: folders.map((candidate) => ({ path: candidate })) }, null, 2)}\n`;
         if ((await fs.readFile(target, "utf8").catch(() => null)) === next) return "current";
         await fs.mkdir(path.dirname(target), { recursive: true });

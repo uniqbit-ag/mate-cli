@@ -111,11 +111,13 @@ mate companion tui
 ```
 
 `list` shows linked repositories and emits JSON when `--json` is supplied or
-stdout is not a TTY. `open` adds the active working repository and companion to
-the current window of the preferred editor, creating an unsaved multi-root
-workspace when needed, and writes `.mate/workspace.code-workspace` for
-persistence. `tui` opens an interactive shell in the resolved companion
-directory and sets `MATE_ARTIFACT_PATH` for that shell.
+stdout is not a TTY. `open` adds the active working repository and every
+companion that links it to the current window of the preferred editor, creating
+an unsaved multi-root workspace when needed, and writes
+`.mate/workspace.code-workspace` for persistence. It never asks you to pick a
+companion and leaves the companion your agent sessions use unchanged. `tui`
+opens an interactive shell in the resolved companion directory and sets
+`MATE_ARTIFACT_PATH` for that shell.
 
 ### Companion Hubs
 

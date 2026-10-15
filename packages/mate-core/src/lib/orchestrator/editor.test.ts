@@ -57,7 +57,7 @@ describe("editor helpers", () => {
       }) as typeof process.stderr.write;
 
       try {
-        expect(await editor.injectEditorFolder("/tmp/companion", "/tmp/repo-a", "code")).toBe(
+        expect(await editor.injectEditorFolder(["/tmp/companion"], "/tmp/repo-a", "code")).toBe(
           false,
         );
       } finally {
@@ -85,7 +85,7 @@ describe("editor helpers", () => {
       await fs.mkdir(repoPath, { recursive: true });
       await fs.mkdir(companionPath, { recursive: true });
 
-      expect(await editor.injectEditorFolder(companionPath, repoPath, "code", spawnProcess)).toBe(
+      expect(await editor.injectEditorFolder([companionPath], repoPath, "code", spawnProcess)).toBe(
         true,
       );
 
@@ -113,7 +113,7 @@ describe("editor helpers", () => {
       await fs.mkdir(repoPath, { recursive: true });
       await fs.mkdir(companionPath, { recursive: true });
 
-      expect(await editor.injectEditorFolder(companionPath, repoPath, "code", spawnProcess)).toBe(
+      expect(await editor.injectEditorFolder([companionPath], repoPath, "code", spawnProcess)).toBe(
         true,
       );
 
@@ -127,6 +127,34 @@ describe("editor helpers", () => {
           options: { stdio: "ignore", detached: true },
         },
       ]);
+    });
+
+    test("writes and adds every companion folder after the repository", async () => {
+      spyOn(editor, "resolveEditorBinary").mockReturnValue("/usr/bin/code");
+      const spawnCalls: string[][] = [];
+      const spawnProcess = ((command: string, args: string[]) => {
+        spawnCalls.push([command, ...args]);
+        return {
+          on: () => undefined,
+          unref: () => undefined,
+        } as unknown as EventEmitter & { unref(): void };
+      }) as typeof spawn;
+      const root = await makeTempDir("editor-inject-many-");
+      const repoPath = path.join(root, "repo");
+      const companionB = path.join(root, "companion-b");
+      const companionA = path.join(root, "companion-a");
+      await Promise.all(
+        [repoPath, companionB, companionA].map((dir) => fs.mkdir(dir, { recursive: true })),
+      );
+
+      expect(
+        await editor.injectEditorFolder([companionB, companionA], repoPath, "code", spawnProcess),
+      ).toBe(true);
+
+      expect(JSON.parse(await fs.readFile(editor.editorWorkspacePath(repoPath), "utf8"))).toEqual({
+        folders: [{ path: repoPath }, { path: companionB }, { path: companionA }],
+      });
+      expect(spawnCalls).toEqual([["/usr/bin/code", "--add", repoPath, companionB, companionA]]);
     });
 
     test("adds both folders even when the persistent workspace is already open", async () => {
@@ -145,7 +173,7 @@ describe("editor helpers", () => {
       await fs.mkdir(repoPath, { recursive: true });
       await fs.mkdir(companionPath, { recursive: true });
 
-      expect(await editor.injectEditorFolder(companionPath, repoPath, "code", spawnProcess)).toBe(
+      expect(await editor.injectEditorFolder([companionPath], repoPath, "code", spawnProcess)).toBe(
         true,
       );
 

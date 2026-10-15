@@ -41,6 +41,8 @@ export type ProjectionEntryId =
 export interface ProjectionInput {
   repoPath: string;
   companionPath?: string;
+  /** Every companion folder the workspace document lists, in order; `[companionPath]` when absent. */
+  workspaceCompanionPaths?: string[];
   repository?: LinkedRepository;
   source?: CompanionSource;
   config?: FrameworkConfig;

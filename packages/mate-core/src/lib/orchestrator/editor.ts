@@ -74,28 +74,28 @@ export const editorWorkspacePath = workspaceDocumentPath;
 
 interface WorkspaceDocument {
   workspacePath: string;
-  folders: [string, string];
+  folders: string[];
 }
 
 /**
  * Writes the generated `.mate/workspace.code-workspace` file (working
- * repository first, companion second) and returns its path and folder
- * order. Called by editor-launching `injectEditorFolder`, which backs
- * `mate companion open`.
+ * repository first, then each companion in the given order) and returns its
+ * path and folder order. Called by editor-launching `injectEditorFolder`,
+ * which backs `mate companion open`.
  */
 async function writeWorkspaceDocument(
-  companionPath: string,
+  companionPaths: string[],
   repoPath: string,
 ): Promise<WorkspaceDocument> {
-  await project("workspace", { repoPath, companionPath });
+  await project("workspace", { repoPath, workspaceCompanionPaths: companionPaths });
   return {
     workspacePath: workspaceDocumentPath(repoPath),
-    folders: [path.resolve(repoPath), path.resolve(companionPath)],
+    folders: [repoPath, ...companionPaths].map((folder) => path.resolve(folder)),
   };
 }
 
 export async function injectEditorFolder(
-  companionPath: string,
+  companionPaths: string[],
   repoPath: string,
   cli = "code",
   spawnProcess: SpawnLike = spawn,
@@ -113,7 +113,7 @@ export async function injectEditorFolder(
 
   const { binary } = resolved;
 
-  const { folders: workspaceFolders } = await writeWorkspaceDocument(companionPath, repoPath);
+  const { folders: workspaceFolders } = await writeWorkspaceDocument(companionPaths, repoPath);
 
   const child = spawnProcess(binary, ["--add", ...workspaceFolders], {
     stdio: "ignore",

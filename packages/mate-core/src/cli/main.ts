@@ -209,8 +209,11 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
         case "prepare":
           if (!(await gate({ updateGuard: true }))) return;
           break;
-        // open/tui/sync/update consume a companion context.
+        // open lists every Linked Companion itself instead of selecting one.
         case "open":
+          if (!(await gate({ updateGuard: true, notHubRoot: true }))) return;
+          break;
+        // tui/sync/update consume a companion context.
         case "tui":
         case "sync":
         case "update":
