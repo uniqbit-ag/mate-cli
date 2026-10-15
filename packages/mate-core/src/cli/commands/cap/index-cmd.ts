@@ -3,6 +3,7 @@ import {
   hasTokensaveCapability,
 } from "../../../lib/orchestrator/capabilities";
 import { resolveForCapability } from "../../../lib/orchestrator/framework-context";
+import { resolveSecretPolicy } from "../../../runtime/policy";
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import {
   ensureTokensaveBranchingPosture,
@@ -27,6 +28,12 @@ export interface SyncCapDeps {
   runTokensave?: CapRunner;
   onStepStart?: (step: SyncCapStep) => void;
   onStepDone?: (step: SyncCapStep, ok: boolean) => void;
+}
+
+/** The companion's live secret policy decides the secret-file excludes. */
+async function defaultEnsureBranchingPosture(repoPath: string): Promise<void> {
+  const { companionPath } = await resolveForCapability(process.cwd());
+  await ensureTokensaveBranchingPosture(repoPath, resolveSecretPolicy(companionPath));
 }
 
 async function defaultLoadCapabilities(): Promise<CapabilityConfig[]> {
@@ -116,7 +123,7 @@ export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {})
   const isTokensaveInitialized = deps.isTokensaveInitialized ?? defaultIsTokensaveInitialized;
   const ensureStoreExcluded = deps.ensureTokensaveStoreExcluded ?? ensureTokensaveStoreExcluded;
   const ensureBranchingPosture =
-    deps.ensureTokensaveBranchingPosture ?? ensureTokensaveBranchingPosture;
+    deps.ensureTokensaveBranchingPosture ?? defaultEnsureBranchingPosture;
   const runGraphify = deps.runGraphify ?? runGraphifyCapCommand;
   const runTokensave = deps.runTokensave ?? runTokensaveCapCommand;
 

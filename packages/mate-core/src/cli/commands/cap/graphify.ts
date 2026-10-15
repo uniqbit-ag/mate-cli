@@ -4,10 +4,16 @@ import path from "node:path";
 
 import { resolveForCapability } from "../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
+import { resolveSecretPolicy } from "../../../runtime/policy";
 import {
   GRAPHIFY_OUTPUT_SUBDIR,
   GRAPHIFY_STORE_SEGMENT,
 } from "../../../tools/setup/capabilities/graphify";
+import {
+  ensureGraphifySecretExclusion,
+  graphifySecretExcludeArgs,
+  pruneGraphifySecrets,
+} from "../../../tools/setup/capabilities/graphify-secrets";
 import { ensureUnambiguousCompanion } from "../shared/companion-selection";
 
 export interface GraphifyPaths {
@@ -17,6 +23,23 @@ export interface GraphifyPaths {
 
 export interface GraphifyCapDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
+  resolveForCapability?: typeof resolveForCapability;
+  spawn?: typeof spawnSync;
+}
+
+/** Subcommands that read the source tree into the graph; `update` also runs as `<path> --update`. */
+const GRAPHIFY_EXTRACTION_COMMANDS = new Set(["extract", "update", "watch"]);
+
+export function isGraphifyExtraction(commandArgs: string[]): boolean {
+  return GRAPHIFY_EXTRACTION_COMMANDS.has(commandArgs[0] ?? "") || commandArgs.includes("--update");
+}
+
+/** `extract` and `<path> --update` take `--exclude`; the `update` subcommand rejects it. */
+function acceptsExcludeArgs(commandArgs: string[]): boolean {
+  return (
+    commandArgs[0] === "extract" ||
+    (commandArgs[0] !== "update" && commandArgs.includes("--update"))
+  );
 }
 
 const GRAPHIFY_PATH_COMMANDS = new Set([
@@ -142,8 +165,11 @@ export async function runGraphifyCapCommand(
     return;
   }
 
-  const { companionPath, repositoryId, repository, configStore, workingRepoStore } =
-    await resolveForCapability(process.cwd());
+  const resolve = deps.resolveForCapability ?? resolveForCapability;
+  const spawn = deps.spawn ?? spawnSync;
+  const { companionPath, repositoryId, repository, configStore, workingRepoStore } = await resolve(
+    process.cwd(),
+  );
   const config = await configStore.load();
 
   const capability = (config.capabilities ?? []).find(
@@ -166,11 +192,28 @@ export async function runGraphifyCapCommand(
   const paths = deriveGraphifyPaths(companionPath, repositoryId);
   const commandArgs = deriveGraphifyCommandArgs(args, repo.path, paths);
 
+  /**
+   * Every extraction Mate runs leaves secrets out without stopping: the
+   * `.graphifyignore` region is rewritten, `--exclude` is passed where graphify
+   * takes it, and afterwards any secret that still reached the output is
+   * pruned from it. A step that can't run is a warning, never a refusal.
+   */
+  const extraction = isGraphifyExtraction(commandArgs);
+  const secrets = resolveSecretPolicy(companionPath);
+  if (extraction) {
+    try {
+      await ensureGraphifySecretExclusion(repo.path, secrets);
+    } catch (error) {
+      process.stderr.write(`mate: graphify: warning: ${(error as Error).message}\n`);
+    }
+    if (acceptsExcludeArgs(commandArgs)) commandArgs.push(...graphifySecretExcludeArgs(secrets));
+  }
+
   if (commandArgs[0] === "extract") {
     await fs.mkdir(paths.graphifyOut, { recursive: true });
   }
 
-  const result = spawnSync("graphify", commandArgs, {
+  const result = spawn("graphify", commandArgs, {
     stdio: "inherit",
     env: {
       ...process.env,
@@ -185,5 +228,11 @@ export async function runGraphifyCapCommand(
 
   if (result.status !== null) {
     process.exitCode = result.status;
+  }
+
+  if (extraction && commandArgs[0] !== "watch") {
+    for (const note of await pruneGraphifySecrets(paths.graphifyOut, secrets)) {
+      process.stderr.write(`mate: graphify: ${note}\n`);
+    }
   }
 }

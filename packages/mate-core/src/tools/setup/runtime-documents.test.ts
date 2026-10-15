@@ -13,6 +13,11 @@ import {
 import type { RenderedRuntimeDocument } from "../../runtime/runtime-document-manifest";
 import { runtimeOpenCodePluginRoot } from "../../runtime/runtime-directory";
 import { renderWorkingRuntimeDocuments } from "../setup";
+import { renderSecretDenyEntries } from "./providers/claude";
+import {
+  renderCompanionExternalDirectoryPermissions,
+  renderSecretDenyPermissions,
+} from "./providers/opencode";
 import { mergeCompanionOpenCodeConfig } from "./runtime-documents";
 
 const tempRoots: string[] = [];
@@ -71,7 +76,35 @@ describe("the OpenCode working target", () => {
       values: [
         { action: "external_directory", resource: companionPath, effect: "allow" },
         { action: "external_directory", resource: `${companionPath}/**`, effect: "allow" },
+        ...renderSecretDenyPermissions(companionPath),
       ],
+    });
+  });
+
+  test("denies reading and editing .env but never the example file", async () => {
+    const { companionPath, repoPath } = await fixture();
+
+    const documents = (await renderWorkingRuntimeDocuments(companionPath, config, repoPath))
+      .documents;
+    const values = (regionAt(documents, ["permissions"]) as { values: Record<string, string>[] })
+      .values;
+
+    expect(values).toContainEqual({ action: "read", resource: "**/.env", effect: "deny" });
+    expect(values).toContainEqual({ action: "edit", resource: "**/*.key", effect: "deny" });
+    expect(values.some((rule) => rule.resource.includes("example"))).toBe(false);
+  });
+
+  test("drops the secret deny rules after an opt-out", async () => {
+    const { companionPath, repoPath } = await fixture();
+    const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, "secrets:\n  guardrails: false\n", "utf8");
+
+    const documents = (await renderWorkingRuntimeDocuments(companionPath, config, repoPath))
+      .documents;
+
+    expect(regionAt(documents, ["permissions"])).toMatchObject({
+      values: renderCompanionExternalDirectoryPermissions(companionPath),
     });
   });
 });
@@ -94,13 +127,26 @@ describe("the Claude working target", () => {
     expect(regionAt(documents, ["permissions", "deny"], CLAUDE_SETTINGS_DOCUMENT)).toEqual({
       at: ["permissions", "deny"],
       kind: "list",
-      values: ["EnterPlanMode", "DesignSync"],
+      values: ["EnterPlanMode", "DesignSync", ...renderSecretDenyEntries()],
     });
     expect(regionAt(documents, ["enableArtifact"], CLAUDE_SETTINGS_DOCUMENT)).toEqual({
       at: ["enableArtifact"],
       kind: "value",
       value: false,
       yields: true,
+    });
+  });
+
+  test("drops the secret deny entries from the region after an opt-out", async () => {
+    const { companionPath, repoPath } = await fixture();
+    const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, "secrets:\n  guardrails: false\n", "utf8");
+
+    const documents = await renderClaudeDocuments(companionPath, repoPath);
+
+    expect(regionAt(documents, ["permissions", "deny"], CLAUDE_SETTINGS_DOCUMENT)).toMatchObject({
+      values: ["EnterPlanMode", "DesignSync"],
     });
   });
 
@@ -119,7 +165,12 @@ describe("the Claude working target", () => {
     await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, documents);
     const placed = JSON.parse(await fs.readFile(target, "utf8"));
     expect(placed.enableArtifact).toBe(true);
-    expect(placed.permissions.deny).toEqual(["Bash(rm:*)", "EnterPlanMode", "DesignSync"]);
+    expect(placed.permissions.deny).toEqual([
+      "Bash(rm:*)",
+      "EnterPlanMode",
+      "DesignSync",
+      ...renderSecretDenyEntries(),
+    ]);
     expect(await removeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT)).toBe("removed");
 
     expect(await fs.readFile(target, "utf8")).toBe(before);

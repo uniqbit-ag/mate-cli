@@ -10,9 +10,11 @@ import {
 import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
 import { resolveProjection } from "../runtime/projection";
+import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
 import { readWrapStateSync } from "../runtime/wrap-state";
 import {
   buildArtifactError,
+  extractPatchAdditions,
   extractPatchPaths,
   isArtifactPath,
   normalizeTargetPath,
@@ -94,7 +96,48 @@ export async function refuseForkedCompanionWrite(
   if (refusal) throw new Error(refusal);
 }
 
-/** Rejects when the tool call would write an artifact outside the companion. */
+/** OpenCode tool inputs in the shape the shared secret guard reads. */
+function secretToolCall(
+  context: CompanionContext,
+  tool: string,
+  args: Record<string, unknown>,
+): SecretToolCall | null {
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  const target = (value: unknown) => (text(value) ? normalizeTargetPath(context, text(value)) : "");
+  switch (tool) {
+    case "read":
+      return { kind: "read", paths: [target(args.filePath)] };
+    case "write":
+      return {
+        kind: "write",
+        writes: [{ path: target(args.filePath), content: text(args.content) }],
+      };
+    case "edit":
+      return {
+        kind: "write",
+        writes: [{ path: target(args.filePath), content: text(args.newString) }],
+      };
+    case "apply_patch":
+      return {
+        kind: "write",
+        writes: extractPatchAdditions(text(args.patchText)).map((addition) => ({
+          path: target(addition.path),
+          content: addition.content,
+        })),
+      };
+    case "bash":
+      return { kind: "shell", command: text(args.command) };
+    case "grep":
+      return { kind: "search", paths: [target(args.path)], globs: [text(args.include)] };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Rejects when the tool call touches a secret, or would write an artifact
+ * outside the companion. Secrets are checked first, as in the Claude hook.
+ */
 export async function guardToolInput(
   context: CompanionContext,
   tool: string,
@@ -102,6 +145,16 @@ export async function guardToolInput(
   env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
   const args = (input ?? {}) as Record<string, unknown>;
+
+  const secretCall = context.companionPath ? secretToolCall(context, tool, args) : null;
+  if (secretCall) {
+    const companionRoot = path.normalize(context.companionPath);
+    const refusal = await checkSecretAccess(secretCall, {
+      companionPath: context.companionPath,
+      isCompanionPath: (filePath) => filePath.startsWith(companionRoot),
+    });
+    if (refusal) throw new Error(refusal);
+  }
   const filePaths =
     tool === "write" || tool === "edit"
       ? [String(args.filePath ?? "")]

@@ -459,3 +459,143 @@ describe("validate-artifact-path hook module", () => {
     ).toBe(0);
   });
 });
+
+describe("validate-artifact-path secret guardrails", () => {
+  const GITHUB_TOKEN = ["ghp", "wWPw5k4aXcaT4fNP0UcnZwJUVFk6LO0pINUx"].join("_");
+
+  async function wrapped(): Promise<{ repo: string; companion: string }> {
+    const repo = await makeTempDir("mate-hook-secrets-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    await wrapRepo(repo, companion);
+    return { repo, companion };
+  }
+
+  test("blocks Read of .env, naming the path but not the contents", async () => {
+    const { repo } = await wrapped();
+    await fs.writeFile(path.join(repo, ".env"), "API_KEY=supersecret\n");
+
+    const result = await evaluate(
+      { tool_name: "Read", tool_input: { file_path: path.join(repo, ".env") } },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(path.join(repo, ".env"));
+    expect(result.stderr).toContain("secrets");
+    expect(result.stderr).not.toContain("supersecret");
+  });
+
+  test("blocks Write to .env.local", async () => {
+    const { repo } = await wrapped();
+    const result = await evaluate(
+      { tool_name: "Write", tool_input: { file_path: ".env.local", content: "KEY=1\n" } },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(2);
+  });
+
+  test("blocks NotebookEdit on a key file", async () => {
+    const { repo } = await wrapped();
+    const result = await evaluate(
+      { tool_name: "NotebookEdit", tool_input: { notebook_path: "certs/server.key" } },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(2);
+  });
+
+  test("lets Read of .env.example through", async () => {
+    const { repo } = await wrapped();
+    const result = await evaluate(
+      { tool_name: "Read", tool_input: { file_path: path.join(repo, ".env.example") } },
+      {},
+      repo,
+    );
+    expect(result).toEqual({ exitCode: 0, stderr: "" });
+  });
+
+  test("blocks Grep in .env or with a glob aimed at secret files, but not an ordinary search", async () => {
+    const { repo } = await wrapped();
+    const inFile = await evaluate(
+      { tool_name: "Grep", tool_input: { pattern: "KEY", path: path.join(repo, ".env") } },
+      {},
+      repo,
+    );
+    expect(inFile.exitCode).toBe(2);
+    const byGlob = await evaluate(
+      { tool_name: "Grep", tool_input: { pattern: "KEY", path: repo, glob: ".env*" } },
+      {},
+      repo,
+    );
+    expect(byGlob.exitCode).toBe(2);
+    const ordinary = await evaluate(
+      { tool_name: "Grep", tool_input: { pattern: "KEY", path: repo, glob: "*.ts" } },
+      {},
+      repo,
+    );
+    expect(ordinary.exitCode).toBe(0);
+  });
+
+  test("blocks a Bash command that names a secret file", async () => {
+    const { repo } = await wrapped();
+    for (const command of ["cat acme/.env", "echo TOKEN=x >> .env"]) {
+      // oxlint-disable-next-line no-await-in-loop -- sequential is clearer here
+      const result = await evaluate({ tool_name: "Bash", tool_input: { command } }, {}, repo);
+      expect(result.exitCode).toBe(2);
+    }
+    const example = await evaluate(
+      { tool_name: "Bash", tool_input: { command: "cat .env.example" } },
+      {},
+      repo,
+    );
+    expect(example.exitCode).toBe(0);
+  });
+
+  test("blocks a companion write that carries a token, without echoing it", async () => {
+    const { repo, companion } = await wrapped();
+    const result = await evaluate(
+      {
+        tool_name: "Write",
+        tool_input: {
+          file_path: path.join(companion, "notes", "design.md"),
+          content: `token: ${GITHUB_TOKEN}\n`,
+        },
+      },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("@secretlint/secretlint-rule-github");
+    expect(result.stderr).not.toContain(GITHUB_TOKEN);
+  });
+
+  test("does not content-scan a product code write", async () => {
+    const { repo } = await wrapped();
+    const result = await evaluate(
+      {
+        tool_name: "Edit",
+        tool_input: { file_path: path.join(repo, "src", "app.ts"), new_string: GITHUB_TOKEN },
+      },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("allows everything once the companion opts out", async () => {
+    const { repo, companion } = await wrapped();
+    const configPath = path.join(companion, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, "secrets:\n  guardrails: false\n", "utf8");
+
+    const result = await evaluate(
+      { tool_name: "Read", tool_input: { file_path: path.join(repo, ".env") } },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(0);
+  });
+});

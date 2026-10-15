@@ -6,6 +6,7 @@ const path = await import("node:path");
 
 import { MATE_ENV } from "../../../runtime/env";
 import { validateGuidanceData, type MateGuidanceFile } from "../../../runtime/guidance";
+import { resolveSecretPolicy } from "../../../runtime/policy";
 
 import { validateOpenCodePluginAssets } from "../../package-paths";
 import { readOpenCodeConfig } from "../../../tools/setup/providers/opencode-format";
@@ -118,6 +119,7 @@ export class OpenCodeAdapter extends LaunchAdapter {
   private buildGuidance(context: AdapterContext): MateGuidanceFile {
     return buildOpenCodeGuidance(context.capabilities, {
       companionScoped: !context.repository,
+      secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
     });
   }
 

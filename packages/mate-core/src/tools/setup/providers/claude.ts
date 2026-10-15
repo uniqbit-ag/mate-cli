@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
+import { resolveSecretPolicy } from "../../../runtime/policy";
+import { projectableSecretDenyPatterns } from "../../../runtime/secret-patterns";
 import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
 import {
   instructionBlockKey,
@@ -114,6 +116,35 @@ function getAllManagedPermissionEntries(companionPath: string): Set<string> {
  * by hand can still leave it. Fixed, not configurable.
  */
 export const MANAGED_CLAUDE_DENY_ENTRIES: readonly string[] = ["EnterPlanMode", "DesignSync"];
+
+const SECRET_DENY_TOOLS = ["Read", "Edit", "Write"] as const;
+
+/**
+ * Claude deny rules for the default secret files, at any depth. Claude checks
+ * deny before allow, so only patterns that can't match an allow-listed file are
+ * rendered; the hook enforces the rest of the pattern set.
+ */
+export function renderSecretDenyEntries(): string[] {
+  return projectableSecretDenyPatterns().flatMap((pattern) =>
+    SECRET_DENY_TOOLS.map((tool) => `${tool}(**/${pattern})`),
+  );
+}
+
+/** The managed `permissions.deny` list: fixed tool denies, plus secret files while guardrails are on. */
+export function renderManagedClaudeDenyEntries(companionPath: string): string[] {
+  return [
+    ...MANAGED_CLAUDE_DENY_ENTRIES,
+    ...(resolveSecretPolicy(companionPath).guardrails ? renderSecretDenyEntries() : []),
+  ];
+}
+
+/**
+ * Every deny entry Mate may have written, whatever the current config says, so
+ * an opt-out strips the secret entries instead of keeping them as user entries.
+ */
+function getAllManagedDenyEntries(): Set<string> {
+  return new Set([...MANAGED_CLAUDE_DENY_ENTRIES, ...renderSecretDenyEntries()]);
+}
 export const MANAGED_CLAUDE_FORCED_SETTINGS = { enableArtifact: false } as const;
 
 /** Companion-owned Claude settings: sole source of Mate-managed hooks, permissions and MCP servers. */
@@ -232,11 +263,11 @@ function renderManagedClaudeSettings(
     delete permissions.allow;
   }
   // permissions.deny: same reconciliation as allow, against the fixed set.
-  const managedDeny = new Set(MANAGED_CLAUDE_DENY_ENTRIES);
+  const managedDeny = getAllManagedDenyEntries();
   const existingDeny = Array.isArray(existingPermissions.deny) ? existingPermissions.deny : [];
   permissions.deny = [
     ...existingDeny.filter((entry) => !managedDeny.has(entry)),
-    ...MANAGED_CLAUDE_DENY_ENTRIES,
+    ...renderManagedClaudeDenyEntries(companionPath),
   ];
 
   const mcpServers = { ...existing.mcpServers };

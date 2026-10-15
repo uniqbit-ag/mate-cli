@@ -38,6 +38,7 @@ export function buildProjectedGuidance(
       companionPath: projection.companionPath,
       repository: { id: projection.repositoryId, path: projection.repositoryPath },
       capabilities: policy.enabledCapabilities.map((name) => ({ name })),
+      secretGuardrails: policy.secrets.guardrails,
     },
     /** The projected path, not the running install's: a wrap may be another mate's. */
     { wrapperBinPath: projection.wrapperBinPath },

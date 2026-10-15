@@ -155,6 +155,29 @@ export function extractPatchPaths(patchText: string): string[] {
   return paths;
 }
 
+/**
+ * What a patch would add to each file it touches: the `+` lines of every
+ * section, keyed by the section's target (a move's destination when present).
+ */
+export function extractPatchAdditions(patchText: string): { path: string; content: string }[] {
+  const additions: { path: string; content: string[] }[] = [];
+  let current: { path: string; content: string[] } | undefined;
+  for (const line of patchText.split("\n")) {
+    const marker = /^\*\*\* (Add|Update|Delete|Move to) File:\s*(.+)$/.exec(line);
+    if (marker) {
+      if (marker[1] === "Move to" && current) {
+        current.path = marker[2].trim();
+      } else {
+        current = { path: marker[2].trim(), content: [] };
+        additions.push(current);
+      }
+      continue;
+    }
+    if (current && line.startsWith("+")) current.content.push(line.slice(1));
+  }
+  return additions.map((entry) => ({ path: entry.path, content: entry.content.join("\n") }));
+}
+
 export function buildArtifactError(context: CompanionContext, filePath: string): string {
   const rel = path.relative(context.repositoryPath, filePath);
   const suggested = path.join(context.companionPath, rel);
