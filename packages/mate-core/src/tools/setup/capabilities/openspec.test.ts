@@ -798,7 +798,7 @@ describe("createOpenspecPlugin", () => {
       path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml"),
       "utf8",
     );
-    expect(schema).toContain("version: 9");
+    expect(schema).toContain("version: 10");
     expect(schema).toContain("openspec/mate-conventions.yaml");
     expect(schema).toContain("id: proposal");
     await expect(
@@ -903,6 +903,8 @@ describe("createOpenspecPlugin", () => {
     }
     expect(MATE_SPECS_RULE).toContain("openspec/specs/");
     expect(MATE_SPECS_RULE).toContain("Delta specs");
+    expect(MATE_SPECS_RULE).toContain("keep their `mate:delta` comment");
+    expect(MATE_SPECS_RULE).not.toContain("delta frontmatter");
     expect(MATE_SPECS_RULE).toContain("openspec/mate-conventions.yaml");
   });
 

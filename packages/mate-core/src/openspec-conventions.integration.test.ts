@@ -86,7 +86,16 @@ function expectOk(result: ReturnType<Sandbox["openspec"]>, label: string): strin
   return result.stdout;
 }
 
-const DELTA_HEADER = `---
+const DELTA_COMMENT = `<!-- mate:delta
+change: CHANGE
+capability: widget
+scopes:
+  - repository: acme/product
+    area: packages/web
+-->`;
+
+/** The YAML frontmatter Mate deltas carried before the `mate:delta` comment. */
+const LEGACY_DELTA_HEADER = `---
 type: delta-spec
 change: CHANGE
 capability: widget
@@ -125,7 +134,7 @@ function proposeChange(sandbox: Sandbox, name: string, section: string, requirem
   fs.mkdirSync(path.join(change, "specs", "widget"), { recursive: true });
   fs.writeFileSync(
     path.join(change, "specs", "widget", "spec.md"),
-    `${DELTA_HEADER.replace("CHANGE", name)}\n\n# widget delta\n\n## ${section} Requirements\n\n### Requirement: Widget renders\n${requirement}\n**Area:** \`packages/web\`\n\n#### Scenario: Widget shows\n- **WHEN** the page loads\n- **THEN** the widget shows\n`,
+    `${DELTA_COMMENT.replace("CHANGE", name)}\n\n# widget delta\n\n## ${section} Requirements\n\n### Requirement: Widget renders\n${requirement}\n**Area:** \`packages/web\`\n\n#### Scenario: Widget shows\n- **WHEN** the page loads\n- **THEN** the widget shows\n`,
   );
 }
 
@@ -184,7 +193,7 @@ describe.skipIf(!REAL_OPENSPEC)("Mate OpenSpec conventions with the real CLI", (
     expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
   });
 
-  test("a delta header an agent copied onto the main spec is replaced at publish", async () => {
+  test("a legacy delta header an agent copied onto the main spec is replaced at publish", async () => {
     const sandbox = await makeSandbox();
     proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
     archive(sandbox, "add-widget");
@@ -193,13 +202,76 @@ describe.skipIf(!REAL_OPENSPEC)("Mate OpenSpec conventions with the real CLI", (
     const born = fs
       .readFileSync(mainSpecPath(sandbox), "utf8")
       .replace(/^---\n[\s\S]*?\n---\n/, "");
-    const copied = `${DELTA_HEADER.replace("CHANGE", "add-widget")}\n${born}`;
+    const copied = `${LEGACY_DELTA_HEADER.replace("CHANGE", "add-widget")}\n${born}`;
     fs.writeFileSync(mainSpecPath(sandbox), copied);
 
     await publishResolve(sandbox, "add-widget");
 
     expect(fs.readFileSync(mainSpecPath(sandbox), "utf8")).toBe(`${CANONICAL_HEADER}${born}`);
     expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
+  });
+
+  test("a mate:delta comment an agent copied onto the main spec is replaced at publish", async () => {
+    const sandbox = await makeSandbox();
+    proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
+    archive(sandbox, "add-widget");
+    writePurpose(sandbox);
+    const born = fs.readFileSync(mainSpecPath(sandbox), "utf8");
+    fs.writeFileSync(
+      mainSpecPath(sandbox),
+      `${DELTA_COMMENT.replace("CHANGE", "add-widget")}\n${born}`,
+    );
+
+    await publishResolve(sandbox, "add-widget");
+
+    expect(fs.readFileSync(mainSpecPath(sandbox), "utf8")).toBe(`${CANONICAL_HEADER}${born}`);
+    expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
+  });
+
+  test("a delta filled in from the synced mate-v1 template passes strict validation", async () => {
+    const sandbox = await makeSandbox();
+    proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
+    const template = fs.readFileSync(
+      path.join(sandbox.companion, "openspec", "schemas", "mate-v1", "templates", "spec.md"),
+      "utf8",
+    );
+    const filled = template
+      .replace("<change-name>", "add-widget")
+      .replace("<capability>", "widget")
+      .replace("org/repository", "acme/product")
+      .replace("area: .", "area: packages/web")
+      .replace(
+        /(## Purpose\n\n)<!--[\s\S]*?-->/,
+        "$1Renders the acme widget on every product page that embeds it.",
+      )
+      .replace("<!-- requirement name -->", "Widget renders")
+      .replace(
+        /<!-- Write the normative requirement\.[\s\S]*?-->/,
+        "The system SHALL render the widget.\n**Area:** `packages/web`",
+      )
+      .replace("<!-- scenario name -->", "Widget shows")
+      .replace("<!-- condition -->", "the page loads")
+      .replace("<!-- expected outcome -->", "the widget shows");
+    expect(filled.startsWith("<!-- mate:delta\n")).toBe(true);
+    fs.writeFileSync(
+      path.join(
+        sandbox.companion,
+        "openspec",
+        "changes",
+        "add-widget",
+        "specs",
+        "widget",
+        "spec.md",
+      ),
+      filled,
+    );
+
+    const validated = sandbox.openspec(["validate", "add-widget", "--strict"]);
+    expectOk(validated, "validate add-widget");
+    expect(`${validated.stdout}${validated.stderr}`).not.toMatch(/warn/i);
+    const archived = sandbox.openspec(["archive", "add-widget", "--yes"]);
+    expectOk(archived, "archive add-widget");
+    expect(`${archived.stdout}${archived.stderr}`).not.toMatch(/warn/i);
   });
 
   test("archiving a later change keeps the main spec's header, and publish leaves it alone", async () => {

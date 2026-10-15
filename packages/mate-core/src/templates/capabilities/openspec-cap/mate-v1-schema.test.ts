@@ -41,9 +41,9 @@ describe("mate-v1 schema", () => {
 
     expect(parsed.name).toBe("mate-v1");
     expect(isValidSchemaVersion(parsed.version)).toBe(true);
-    expect(parsed.version).toBe(9);
+    expect(parsed.version).toBe(10);
 
-    const dottedVersion = parse(raw.replace("version: 9", "version: 9.1")) as {
+    const dottedVersion = parse(raw.replace("version: 10", "version: 10.1")) as {
       version?: unknown;
     };
     expect(isValidSchemaVersion(dottedVersion.version)).toBe(false);
@@ -111,9 +111,15 @@ describe("mate-v1 schema", () => {
     expect(proposal).toContain("tags: [openspec/change, openspec/proposal]");
     expect(proposal).toContain("repository: org/repository");
     expect(proposal).toContain("area: .");
-    expect(spec).toContain("type: delta-spec");
-    expect(spec).toContain("capability: <capability>");
-    expect(spec).toContain("tags: [openspec/change, openspec/spec, openspec/delta]");
+    expect(
+      spec.startsWith(
+        "<!-- mate:delta\nchange: <change-name>\ncapability: <capability>\nscopes:\n",
+      ),
+    ).toBe(true);
+    expect(spec).toContain("    area: .\n-->\n");
+    expect(spec).not.toMatch(/^---$/m);
+    expect(spec).not.toContain("type: delta-spec");
+    expect(spec).not.toContain("tags:");
     expect(spec).toContain("EVERY requirement carries an **Area:** marker");
     expect(spec).toContain("**Area:** `packages/ui`");
     expect(design).toContain("scopes:");
@@ -134,7 +140,9 @@ describe("mate-v1 schema", () => {
     expect(spec).toContain("New capabilities only");
     expect(spec).toContain("50+ characters");
     expect(spec).toContain("Delete this section for an existing capability");
-    expect(specs.instruction).toContain("start the delta spec body with a `## Purpose` section");
+    expect(specs.instruction).toContain(
+      "after the `mate:delta` comment and any `#` title, start the delta spec body with a `## Purpose` section",
+    );
     expect(specs.instruction).toContain("50+ characters");
     expect(specs.instruction).toContain("Archive copies it into the main spec it creates");
     expect(specs.instruction).toContain("TBD ... Update Purpose after archive.");
@@ -158,7 +166,7 @@ describe("mate-v1 schema", () => {
     expect(specs.instruction).not.toContain("MUST NOT carry an `**Area:**` marker");
     expect(spec).toContain("EVERY requirement carries an **Area:** marker");
     expect(conventions).toContain("Every requirement MUST carry an Area marker");
-    expect(conventions).toContain("copies requirement blocks but discards delta frontmatter");
+    expect(conventions).toContain("copies requirement blocks but discards the mate:delta comment");
   });
 
   test("defaults new capabilities to one package root without giving names scope authority", async () => {
@@ -221,8 +229,30 @@ describe("mate-v1 schema", () => {
     );
 
     expect(raw).toContain("Record the paired scope as `scopes` metadata");
-    expect(conventions).toContain("Change frontmatter uses paired scopes");
+    expect(conventions).toContain(
+      "Change frontmatter and the delta mate:delta comment use paired scopes",
+    );
     expect(conventions).toContain("Canonical frontmatter uses flat repository and areas scalars");
+  });
+
+  test("puts delta metadata in a mate:delta comment and nothing but a title above the first section", async () => {
+    const { parsed } = await readSchema();
+    const conventions = await fs.readFile(
+      path.join(profilePath, "..", "openspec-conventions.yaml"),
+      "utf8",
+    );
+    const specs = artifact(parsed, "specs");
+
+    expect(specs.instruction).toContain("<!-- mate:delta");
+    expect(specs.instruction).toContain("at most one `# ` title line");
+    expect(specs.instruction).not.toContain("type: delta-spec");
+    expect(specs.instruction).not.toContain("← [[proposal]]");
+    expect(specs.instruction).not.toContain("Applies to:");
+    const example = (parse(conventions) as { example_delta_metadata: string })
+      .example_delta_metadata;
+    expect(example.startsWith("<!-- mate:delta\n")).toBe(true);
+    expect(example.trimEnd().endsWith("-->")).toBe(true);
+    expect(conventions).not.toContain("example_delta_frontmatter");
   });
 
   test("specifies the delta-to-canonical projection including its failure case", async () => {

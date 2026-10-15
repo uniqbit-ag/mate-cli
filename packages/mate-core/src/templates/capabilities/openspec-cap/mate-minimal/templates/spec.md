@@ -1,12 +1,10 @@
----
-type: delta-spec
+<!-- mate:delta
 change: <change-name>
 capability: <capability>
-tags: [openspec/change, openspec/spec, openspec/delta]
 scopes:
   - repository: org/repository
     area: .
----
+-->
 
 ## ADDED Requirements
 
@@ -16,7 +14,7 @@ As a <!-- role -->, I want <!-- capability -->, so that <!-- benefit -->.
 The system MUST support this behavior.
 **Area:** `.` <!-- replace with the Area from scopes -->
 
-<!-- Every requirement must bind an Area from the frontmatter scopes. -->
+<!-- Every requirement must bind an Area from the `mate:delta` scopes. -->
 
 #### Acceptance Criteria
 

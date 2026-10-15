@@ -269,6 +269,16 @@ scopes:
     area: packages/mate-core
 ---`;
 
+const DELTA_COMMENT = `<!-- mate:delta
+change: probe
+capability: cap
+scopes:
+  - repository: acme/product
+    area: packages/api
+  - repository: acme/product
+    area: apps/storefront
+-->`;
+
 describe("openspecFinisher frontmatter reconciliation", () => {
   test("repairs a canonical spec born bare by an out-of-band archive", async () => {
     const root = await makeCompanion();
@@ -546,6 +556,56 @@ scopes:
     await openspecFinisher(root).resolve("probe");
 
     expect(await readCanonical(root, "cap")).toBe(copied);
+  });
+
+  test("scopes are read from a leading mate:delta comment", async () => {
+    const root = await makeCompanion();
+    await seedArchivedDelta(root, "2026-08-06-probe", "cap", `${DELTA_COMMENT}\n\n# cap delta`);
+    await seedCanonical(root, "cap", BARE_CANONICAL);
+
+    await openspecFinisher(root).resolve("probe");
+
+    expect(await readCanonical(root, "cap")).toBe(
+      `---\ntype: spec\ncapability: cap\nrepository: acme/product\nareas: [packages/api, apps/storefront]\ntags: [openspec/spec]\n---\n\n${BARE_CANONICAL}`,
+    );
+  });
+
+  test("a BOM before the mate:delta comment is ignored", async () => {
+    const root = await makeCompanion();
+    await seedArchivedDelta(root, "2026-08-06-probe", "cap", `﻿${DELTA_COMMENT}`);
+    await seedCanonical(root, "cap", BARE_CANONICAL);
+
+    await openspecFinisher(root).resolve("probe");
+
+    expect(await readCanonical(root, "cap")).toContain("repository: acme/product");
+  });
+
+  test("a mate:delta comment that is not on the first line or never closes yields no scopes", async () => {
+    for (const header of [`\n${DELTA_COMMENT}`, DELTA_COMMENT.replace("\n-->", "")]) {
+      const root = await makeCompanion();
+      await seedArchivedDelta(root, "2026-08-06-probe", "cap", header);
+      await seedCanonical(root, "cap", BARE_CANONICAL);
+
+      await openspecFinisher(root).resolve("probe");
+
+      const canonical = await readCanonical(root, "cap");
+      expect(canonical).toContain("capability: cap");
+      expect(canonical).not.toContain("repository:");
+      expect(canonical).not.toContain("areas:");
+    }
+  });
+
+  test("a mate:delta comment copied onto a main spec is replaced and the body stays byte-for-byte", async () => {
+    const root = await makeCompanion();
+    await seedArchivedDelta(root, "2026-08-06-probe", "cap", DELTA_COMMENT);
+    await seedCanonical(root, "cap", `${DELTA_COMMENT}\n\n${BARE_CANONICAL}`);
+
+    const result = await openspecFinisher(root).resolve("probe");
+
+    expect(await readCanonical(root, "cap")).toBe(
+      `---\ntype: spec\ncapability: cap\nrepository: acme/product\nareas: [packages/api, apps/storefront]\ntags: [openspec/spec]\n---\n\n${BARE_CANONICAL}`,
+    );
+    expect(result.ok && result.resolved.commitPaths).toContain("openspec/specs/cap/spec.md");
   });
 });
 

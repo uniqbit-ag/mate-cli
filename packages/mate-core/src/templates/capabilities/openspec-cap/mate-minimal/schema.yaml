@@ -1,5 +1,5 @@
 name: mate-minimal
-version: 3
+version: 4
 description: Mate's short OpenSpec workflow for one-Area, low-risk changes - specs → tasks
 artifacts:
   - id: specs
@@ -27,11 +27,13 @@ artifacts:
         include **Reason** and **Migration**.
 
       Every user story carries an **Area:** marker naming the Areas it binds, using values from
-      the frontmatter scopes - always, even when there is only one Area.
+      the `scopes` in the spec's `mate:delta` comment - always, even when there is only one Area.
 
-      **Obsidian**: Emit YAML frontmatter with `type: delta-spec`, the actual change name, the
-      capability, the `openspec/change`, `openspec/spec`, and `openspec/delta` tags, and paired
-      `scopes` metadata.
+      Start each spec file with a `<!-- mate:delta` comment on its very first line, not YAML
+      frontmatter. The comment holds YAML with the actual change name as `change`, the
+      `capability`, and paired `scopes` metadata, and closes with `-->` on its own line. Between
+      the comment and the first `## ` section, put nothing but blank lines and at most one `# `
+      title line, or `openspec validate --strict` reports the text archive would drop.
     requires: []
   - id: tasks
     generates: tasks.md

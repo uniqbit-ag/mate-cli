@@ -68,7 +68,7 @@ export const MATE_SPECS_RULE_MARKER = "[mate] ";
  * sync workflows read when writing main specs. Propose reads it for delta specs
  * too, so the text binds main specs only.
  */
-export const MATE_SPECS_RULE = `${MATE_SPECS_RULE_MARKER}A main spec at openspec/specs/<capability>/spec.md MUST begin with flat frontmatter: type: spec, capability: <capability>, repository: <org/repository> (one scalar), areas: [<area>, ...] (a flat list in the delta's scope order), and tags: [openspec/spec]. Project repository and areas from the delta's paired scopes; never copy scopes, change, or delta tags onto a main spec. Delta specs under openspec/changes/<name>/specs/ keep their delta frontmatter. Full rules: openspec/mate-conventions.yaml.`;
+export const MATE_SPECS_RULE = `${MATE_SPECS_RULE_MARKER}A main spec at openspec/specs/<capability>/spec.md MUST begin with flat frontmatter: type: spec, capability: <capability>, repository: <org/repository> (one scalar), areas: [<area>, ...] (a flat list in the delta's scope order), and tags: [openspec/spec]. Project repository and areas from the delta's paired scopes; never copy scopes, change, or delta tags onto a main spec. Delta specs under openspec/changes/<name>/specs/ keep their \`mate:delta\` comment. Full rules: openspec/mate-conventions.yaml.`;
 
 /** What Mate writes besides its entry; anything beyond the two is user content. */
 const MANAGED_CONFIG_SCHEMA_ONLY = "schema: mate-v1";

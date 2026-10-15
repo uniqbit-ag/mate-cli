@@ -76,9 +76,20 @@ type ProjectionResult =
 /** A leading `---` block; group 1 is its YAML, the match ends after the closing line. */
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
+/**
+ * A leading `<!-- mate:delta … -->` comment; group 1 is its YAML, the match ends after
+ * the closing `-->` line. OpenSpec skips HTML comments, so a delta carrying its metadata
+ * here passes `validate --strict`.
+ */
+const DELTA_COMMENT_PATTERN = /^<!--[ \t]*mate:delta[ \t]*\r?\n([\s\S]*?)\r?\n-->[ \t]*(?:\r?\n|$)/;
+
+/** The opening line of a `mate:delta` comment, closed or not. */
+const DELTA_COMMENT_OPENER = /^<!--[ \t]*mate:delta/;
+
+/** Reads `scopes` from the `mate:delta` comment, or from legacy delta frontmatter. */
 function parseDeltaScopes(source: string): ScopePair[] {
   const text = source.startsWith(BOM) ? source.slice(BOM.length) : source;
-  const match = FRONTMATTER_PATTERN.exec(text);
+  const match = DELTA_COMMENT_PATTERN.exec(text) ?? FRONTMATTER_PATTERN.exec(text);
   if (!match) return [];
 
   try {
@@ -177,7 +188,8 @@ function renderCanonicalFrontmatter(
 
 /**
  * Repairs `openspec archive` output: prepends canonical frontmatter to main specs the
- * archive run created bare, and replaces a delta-shaped header an agent copied onto one.
+ * archive run created bare, and replaces a delta-shaped header or `mate:delta` comment an
+ * agent copied onto one.
  * Publish does not archive, so this runs the first time publish resolves that archive,
  * however the archive was made.
  *
@@ -226,7 +238,11 @@ async function reconcileMainSpecFrontmatter(
         const canonical = (await fs.readFile(canonicalPath, "utf8")).replace(BOM, "");
         /** The body that follows the written block: the whole file, or what trails a delta-shaped header. */
         let body = `\n${canonical}`;
-        if (canonical.startsWith("---")) {
+        if (DELTA_COMMENT_OPENER.test(canonical)) {
+          const header = DELTA_COMMENT_PATTERN.exec(canonical);
+          if (!header) continue;
+          body = canonical.slice(header[0].length);
+        } else if (canonical.startsWith("---")) {
           const header = FRONTMATTER_PATTERN.exec(canonical);
           if (!header || !isDeltaShapedFrontmatter(header[1])) continue;
           body = canonical.slice(header[0].length);
