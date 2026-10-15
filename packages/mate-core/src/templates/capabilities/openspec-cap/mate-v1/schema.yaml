@@ -74,7 +74,7 @@ artifacts:
       - **CRITICAL**: Scenarios MUST use exactly 4 hashtags (`####`). Using 3 hashtags or bullets will fail silently.
       - Every requirement MUST have at least one scenario.
 
-      New capabilities only: after the frontmatter and backlink lines, start the delta spec body with a `## Purpose` section - one or two sentences (50+ characters, or `openspec validate --strict` reports it as too brief) describing what the capability is for. Archive copies it into the main spec it creates; without it the new main spec is left with a `TBD ... Update Purpose after archive.` placeholder to fill in by hand. Do NOT add `## Purpose` to a delta for an existing capability - that spec already has one and the delta's is ignored. To change an existing capability's Purpose - including a leftover `TBD` placeholder - edit `openspec/specs/<capability>/spec.md` directly.
+      New capabilities only: after the frontmatter and any `#` title, start the delta spec body with a `## Purpose` section - one or two sentences (50+ characters, or `openspec validate --strict` reports it as too brief) describing what the capability is for. Archive copies it into the main spec it creates; without it the new main spec is left with a `TBD ... Update Purpose after archive.` placeholder to fill in by hand. Do NOT add `## Purpose` to a delta for an existing capability - that spec already has one and the delta's is ignored. To change an existing capability's Purpose - including a leftover `TBD` placeholder - edit `openspec/specs/<capability>/spec.md` directly.
 
       MODIFIED requirements workflow:
       1. Locate the existing requirement in `openspec/specs/<capability>/spec.md`.
@@ -121,7 +121,8 @@ artifacts:
       ---
       ```
 
-      After the file's `#` title line, add a backlink on the next line: `← [[proposal]]`. If modifying an existing main spec, add on the line after: `Applies to: [[openspec/specs/<capability>/spec]]`.
+      Between the frontmatter and the first `## ` section, put at most a `#` title line: no
+      backlink or other text. Archive drops it, and `openspec validate --strict` fails on it.
 
       Canonical-spec shape, delta-to-canonical projection, and migration rules live in
       `openspec/mate-conventions.yaml`. Follow that reference when creating or repairing

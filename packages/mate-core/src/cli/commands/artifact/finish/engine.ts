@@ -1,11 +1,14 @@
+import { describeSecretFindings, type SecretFinding } from "../../../../runtime/secret-scan";
 import type { ArtifactFinisher, Produced } from "./finisher";
 import type { GitOps } from "./git";
+import type { PublicationSecretScan } from "./secret-scan";
 
 /** Pipeline step a {@link FinishResult} refers to (generic across artifact kinds). */
 export type FinishStep =
   | "resolve"
   | "branch-guard"
   | "cap-sync"
+  | "secret-scan"
   | "commit"
   | "sync-remote"
   | "tag"
@@ -31,6 +34,8 @@ export interface FinishResult {
   conflictedPaths: string[];
   local: { committed: boolean; tagged: boolean; pushed: boolean };
   message: string;
+  /** Set when the secret scan stopped the publication: where and which rule, never the value. */
+  secretFindings?: SecretFinding[];
 }
 
 export interface EngineOptions {
@@ -43,13 +48,15 @@ export interface EngineDeps {
   json: boolean;
   stdout: (line: string) => void;
   stderr: (line: string) => void;
+  /** Scans the staged outputs for secrets; absent means no scan step. */
+  secretScan?: (commitPaths: string[]) => Promise<PublicationSecretScan>;
 }
 
 /**
  * Runs the fixed publication pipeline for a resolved {@link ArtifactFinisher}:
- * resolve → branch guard → cap sync → scoped commit → sync-remote → tag → push. The
- * git, remote-sync, and conflict-handoff machinery is identical for every artifact
- * kind — only the finisher's resolution and cap sync vary.
+ * resolve → branch guard → cap sync → secret scan → scoped commit → sync-remote → tag →
+ * push. The git, remote-sync, and conflict-handoff machinery is identical for every
+ * artifact kind — only the finisher's resolution and cap sync vary.
  *
  * Isolation is a clean abort, not a rollback: the resolved artifact is durable input
  * the pipeline never produced, so no step resets, restores, or deletes a path.
@@ -146,6 +153,37 @@ export async function runFinishEngine(
       fail(
         "cap-sync",
         "mate: cap sync failed; the resolved archive was left in place — re-run `mate artifact publish` to retry.",
+      );
+      return result;
+    }
+  }
+
+  // Secret scan — the last pre-commit step, over exactly what the commit would stage.
+  // A finding or a scanner failure stops here like any pre-commit failure: no commit,
+  // no tag, no push, and the archive stays on disk.
+  if (deps.secretScan) {
+    result.step = "secret-scan";
+    let scan: PublicationSecretScan;
+    try {
+      scan = await deps.secretScan(resolved.commitPaths);
+    } catch (err) {
+      fail(
+        "secret-scan",
+        `mate: the secret scan failed (${String(err)}); nothing was committed — re-run \`mate artifact publish\` to retry.`,
+      );
+      return result;
+    }
+    if (scan.skipped) {
+      deps.stderr("mate: secret scan skipped (secrets.guardrails is false in framework.yaml).");
+    } else if (scan.findings.length > 0) {
+      result.secretFindings = scan.findings;
+      fail(
+        "secret-scan",
+        [
+          "mate: refusing to publish: the staged outputs contain secrets. Nothing was committed; the archive was left in place.",
+          ...describeSecretFindings(scan.findings).map((line) => ` ${line}`),
+          "Replace each value with a placeholder or variable name, then re-run `mate artifact publish`.",
+        ].join("\n"),
       );
       return result;
     }

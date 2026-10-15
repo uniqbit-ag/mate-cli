@@ -4,6 +4,11 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
+import {
+  DEFAULT_SECRET_DENY_PATTERNS,
+  defaultSecretPolicy,
+  parseSecretsConfig,
+} from "../../../runtime/secret-patterns";
 import type { SetupContext } from "../plugin";
 import { reconcileOpenCodeContributions } from "../providers/opencode";
 import {
@@ -252,7 +257,7 @@ describe("tokensavePlugin.apply", () => {
         ),
       );
       expect(repoConfig).toEqual({
-        exclude: ["dist"],
+        exclude: ["dist", ...DEFAULT_SECRET_DENY_PATTERNS.map((pattern) => `**/${pattern}`)],
         auto_track: false,
         suppress_scope_warning: true,
       });
@@ -820,6 +825,51 @@ describe("ensureTokensaveBranchingPosture", () => {
     expect(Object.keys(config).sort()).toEqual(
       [...Object.keys(unowned), "auto_track", "suppress_scope_warning"].sort(),
     );
+  });
+
+  test("merges secret-file excludes and keeps the user's excludes", async () => {
+    const repoDir = await makeStore({ exclude: ["dist", "**/node_modules/**"] });
+
+    await ensureTokensaveBranchingPosture(repoDir, defaultSecretPolicy());
+
+    const config = JSON.parse(await fs.readFile(configPath(repoDir), "utf8"));
+    expect(config.exclude.slice(0, 2)).toEqual(["dist", "**/node_modules/**"]);
+    expect(config.exclude).toContain("**/.env");
+    expect(config.exclude).toContain("**/.env.*");
+  });
+
+  test("lists each secret exclude once across repeated runs", async () => {
+    const repoDir = await makeStore({ exclude: ["dist"] });
+
+    await ensureTokensaveBranchingPosture(repoDir, defaultSecretPolicy());
+    const first = await fs.readFile(configPath(repoDir), "utf8");
+    await ensureTokensaveBranchingPosture(repoDir, defaultSecretPolicy());
+
+    expect(await fs.readFile(configPath(repoDir), "utf8")).toBe(first);
+    const exclude: string[] = JSON.parse(first).exclude;
+    expect(exclude.filter((entry) => entry === "**/.env")).toHaveLength(1);
+  });
+
+  test("an opt-out removes only Mate's secret excludes", async () => {
+    const repoDir = await makeStore({ exclude: ["dist"] });
+    await ensureTokensaveBranchingPosture(repoDir, parseSecretsConfig({ deny: ["*.secret"] }));
+
+    await ensureTokensaveBranchingPosture(
+      repoDir,
+      parseSecretsConfig({ guardrails: false, deny: ["*.secret"] }),
+    );
+
+    const config = JSON.parse(await fs.readFile(configPath(repoDir), "utf8"));
+    expect(config.exclude).toEqual(["dist"]);
+  });
+
+  test("leaves excludes alone without a secret policy", async () => {
+    const repoDir = await makeStore({ exclude: ["dist", "**/.env"] });
+
+    await ensureTokensaveBranchingPosture(repoDir);
+
+    const config = JSON.parse(await fs.readFile(configPath(repoDir), "utf8"));
+    expect(config.exclude).toEqual(["dist", "**/.env"]);
   });
 
   test("is idempotent across repeated runs", async () => {

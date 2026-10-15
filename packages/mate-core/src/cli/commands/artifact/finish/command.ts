@@ -10,6 +10,7 @@ import type { ArtifactFinisher, FinishContext, FinisherFactory } from "./finishe
 import { defaultGitOps, type GitOps } from "./git";
 import { openspecSpecsFinisher, resolveDriftedSpecs } from "./openspec";
 import { DEFAULT_FINISHER_TYPE, knownFinisherTypes, selectFinisher } from "./registry";
+import { type PublicationSecretScan, scanPublication } from "./secret-scan";
 
 export interface PublishCommandDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
@@ -21,6 +22,11 @@ export interface PublishCommandDeps {
   now?: () => Date;
   /** Injectable spec-publication finisher; mirrors `selectFinisher` for the other unit. */
   specsFinisher?: (context: FinishContext, paths: string[], now: () => Date) => ArtifactFinisher;
+  /** Injectable pre-commit secret scan over a publication's staged outputs. */
+  scanPublication?: (
+    companionPath: string,
+    commitPaths: string[],
+  ) => Promise<PublicationSecretScan>;
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
@@ -220,11 +226,13 @@ export async function runArtifactPublishCommand(
    * suppressed; every other mode lets the engine report each publication as it finishes.
    */
   const quiet = allMode && json;
+  const scanPublicationFn = deps.scanPublication ?? scanPublication;
   const engineDeps = {
     git,
     json: !allMode && json,
     stdout: quiet ? (): void => {} : emitOut,
     stderr: quiet ? (): void => {} : emitErr,
+    secretScan: (commitPaths: string[]) => scanPublicationFn(context.companionPath, commitPaths),
   };
 
   const runChange = (target: string): Promise<FinishResult> =>

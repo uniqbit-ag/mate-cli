@@ -19,6 +19,19 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
+/**
+ * Replaces the stub by rename, never in place: a detached sync an earlier test
+ * started may still be reading the old script, and a shell reads its script as
+ * it runs, so rewriting the file would run the new stub with the old arguments.
+ */
+async function writeMateStub(script: string): Promise<void> {
+  const bin = runtimeMateBin();
+  await fs.mkdir(path.dirname(bin), { recursive: true });
+  const staged = `${bin}.${process.pid}.tmp`;
+  await fs.writeFile(staged, script, { mode: 0o755 });
+  await fs.rename(staged, bin);
+}
+
 const GUIDANCE_JSON = JSON.stringify({
   version: 1,
   companionGuidance:
@@ -416,12 +429,7 @@ describe("the session-prepare lifecycle", () => {
         },
       }),
     );
-    await fs.mkdir(path.dirname(runtimeMateBin()), { recursive: true });
-    await fs.writeFile(
-      runtimeMateBin(),
-      `#!/bin/sh\necho '{"ok":true,"steps":[],"warnings":[]}'\n`,
-      { mode: 0o755 },
-    );
+    await writeMateStub(`#!/bin/sh\necho '{"ok":true,"steps":[],"warnings":[]}'\n`);
     return repo;
   }
 
@@ -488,11 +496,8 @@ describe("the session-prepare lifecycle", () => {
         }),
       );
       const argsFile = path.join(companion, "prepare-args");
-      await fs.mkdir(path.dirname(runtimeMateBin()), { recursive: true });
-      await fs.writeFile(
-        runtimeMateBin(),
+      await writeMateStub(
         `#!/bin/sh\necho "$@" >> '${argsFile}'\necho '{"ok":true,"steps":[],"warnings":[]}'\n`,
-        { mode: 0o755 },
       );
       const { api, hooks } = fakeApi(repo);
       const calls = withMcp(api as unknown as Record<string, unknown>);

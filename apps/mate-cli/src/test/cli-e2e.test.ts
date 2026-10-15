@@ -11,6 +11,22 @@ import { parse, stringify } from "yaml";
 import { version } from "../../package.json";
 
 const APP_ROOT = path.resolve(import.meta.dirname, "../..");
+
+/** The `--exclude` pairs Mate appends to every graphify extraction that accepts them. */
+const GRAPHIFY_SECRET_EXCLUDE_ARGS = [
+  ".env",
+  ".env.*",
+  "*.pem",
+  "*.key",
+  "*.p12",
+  "*.pfx",
+  "id_rsa",
+  "id_ecdsa",
+  "id_ed25519",
+  ".netrc",
+  ".pgpass",
+  ".npmrc",
+].flatMap((pattern) => ["--exclude", pattern]);
 const E2E_TMP_ROOT = path.join(os.tmpdir(), "mate-cli-e2e");
 const tempRoots: string[] = [];
 
@@ -1457,7 +1473,7 @@ describe("mate CLI e2e", () => {
     expect(invocation.argv[1]).toBe(scenario.working);
     expect(invocation.argv).toContain("--out");
     expect(invocation.argv).toContain(path.join(scenario.companion, ".graphify", "app"));
-    expect(invocation.argv.slice(-2)).toEqual(["--mode", "deep"]);
+    expect(invocation.argv.slice(-26)).toEqual(["--mode", "deep", ...GRAPHIFY_SECRET_EXCLUDE_ARGS]);
   });
 
   test("cap graphify query appends the shared graph path when no graph is provided", async () => {
@@ -1512,7 +1528,12 @@ describe("mate CLI e2e", () => {
 
     expect(result.exitCode).toBe(0);
     const invocation = await readJson<{ argv: string[] }>(capturePath);
-    expect(invocation.argv).toEqual([scenario.working, "--update", "--force"]);
+    expect(invocation.argv).toEqual([
+      scenario.working,
+      "--update",
+      "--force",
+      ...GRAPHIFY_SECRET_EXCLUDE_ARGS,
+    ]);
   });
 
   test("cap rejects direct tokensave passthrough in favor of the native tokensave cli", async () => {
@@ -1568,7 +1589,7 @@ describe("mate CLI e2e", () => {
       .map((line) => JSON.parse(line) as { argv: string[]; graphifyOut: string | null });
     expect(log).toEqual([
       {
-        argv: [".", "--update", "--code-only"],
+        argv: [".", "--update", "--code-only", ...GRAPHIFY_SECRET_EXCLUDE_ARGS],
         graphifyOut: path.join(scenario.companion, ".graphify", "app", "graphify-out"),
       },
     ]);
@@ -1603,7 +1624,7 @@ describe("mate CLI e2e", () => {
       .map((line) => JSON.parse(line) as { argv: string[]; graphifyOut: string | null });
     expect(log).toEqual([
       {
-        argv: [".", "--update", "--code-only"],
+        argv: [".", "--update", "--code-only", ...GRAPHIFY_SECRET_EXCLUDE_ARGS],
         graphifyOut: path.join(scenario.companion, ".graphify", "app", "graphify-out"),
       },
     ]);
@@ -1640,7 +1661,7 @@ describe("mate CLI e2e", () => {
       .map((line) => JSON.parse(line) as { argv: string[]; graphifyOut: string | null });
     expect(log).toEqual([
       {
-        argv: [".", "--update", "--code-only"],
+        argv: [".", "--update", "--code-only", ...GRAPHIFY_SECRET_EXCLUDE_ARGS],
         graphifyOut: path.join(scenario.companion, ".graphify", "app", "graphify-out"),
       },
     ]);
