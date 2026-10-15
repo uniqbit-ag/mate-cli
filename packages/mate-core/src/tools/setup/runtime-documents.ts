@@ -17,14 +17,15 @@ import {
   mateSessionPrepareHookGroups,
 } from "./providers/claude-plugin-hooks";
 import {
-  MANAGED_CLAUDE_DENY_ENTRIES,
   MANAGED_CLAUDE_FORCED_SETTINGS,
+  renderManagedClaudeDenyEntries,
   renderManagedClaudeHookGroups,
   renderManagedClaudeMcpServers,
   renderManagedClaudePermissionEntries,
 } from "./providers/claude";
 import {
   renderCompanionExternalDirectoryPermissions,
+  renderSecretDenyPermissions,
   renderManagedOpenCodeMcpServers,
 } from "./providers/opencode";
 import { isRecord, readOpenCodeConfig } from "./providers/opencode-format";
@@ -106,7 +107,11 @@ function claudeSettingsRegions(
       kind: "list",
       values: renderManagedClaudePermissionEntries(ctx.companionPath, inputs),
     },
-    { at: ["permissions", "deny"], kind: "list", values: [...MANAGED_CLAUDE_DENY_ENTRIES] },
+    {
+      at: ["permissions", "deny"],
+      kind: "list",
+      values: renderManagedClaudeDenyEntries(ctx.companionPath),
+    },
     /**
      * Yields: the document is the user's, so their own `enableArtifact` wins,
      * and unwrapping restores it instead of deleting a key Mate overwrote.
@@ -178,7 +183,10 @@ export function renderDocumentsForTarget(
         {
           at: ["permissions"],
           kind: "list",
-          values: renderCompanionExternalDirectoryPermissions(ctx.companionPath),
+          values: [
+            ...renderCompanionExternalDirectoryPermissions(ctx.companionPath),
+            ...renderSecretDenyPermissions(ctx.companionPath),
+          ],
         },
         {
           at: ["skills"],

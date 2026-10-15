@@ -65,7 +65,7 @@ function wrapRepo(
 function runWrapper(
   name: string,
   args: string[],
-  options: { cwd: string; env?: Record<string, string>; stubDir?: string },
+  options: { cwd: string; env?: Record<string, string>; stubDir?: string; nodeDir?: string },
 ): { status: number; stdout: string; stderr: string } {
   /** The harness may itself run under a launch; only what the test sets may reach the wrapper. */
   const env: Record<string, string | undefined> = {};
@@ -73,7 +73,7 @@ function runWrapper(
     if (!key.startsWith("MATE_") && key !== "GRAPHIFY_OUT") env[key] = value;
   }
   for (const [key, value] of Object.entries(options.env ?? {})) env[key] = value;
-  env.PATH = [WRAPPER_BIN, options.stubDir, "/usr/bin", "/bin"]
+  env.PATH = [WRAPPER_BIN, options.stubDir, options.nodeDir, "/usr/bin", "/bin"]
     .filter(Boolean)
     .join(path.delimiter);
 
@@ -460,5 +460,124 @@ describe("graphify wrapper", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(`graphify_out=${path.join(launched, "store", "graphify-out")}`);
+  });
+});
+
+describe("graphify wrapper secret gate", () => {
+  /** The gate shim runs on node; the harness itself runs on bun. */
+  const nodeBinary = spawnSync("bash", ["-lc", "command -v node"], {
+    encoding: "utf8",
+  }).stdout.trim();
+  const nodeDir = nodeBinary ? path.dirname(nodeBinary) : undefined;
+  const gated = nodeDir ? test : test.skip;
+
+  /** A graphify stand-in that echoes its args and writes a graph with one secret file. */
+  function leakyGraphify(): string {
+    const dir = makeTempDir("mate-wrapper-stub-leaky-");
+    const file = path.join(dir, "graphify");
+    const graph = JSON.stringify({
+      nodes: [
+        { id: "app", source_file: "src/app.ts" },
+        { id: "leak", source_file: ".env.local" },
+      ],
+      links: [{ source: "app", target: "leak" }],
+    });
+    fs.writeFileSync(
+      file,
+      [
+        "#!/usr/bin/env bash",
+        'echo "args=$*"',
+        'mkdir -p "$GRAPHIFY_OUT"',
+        `printf '%s' '${graph}' > "$GRAPHIFY_OUT/graph.json"`,
+        "exit 3",
+      ].join("\n") + "\n",
+    );
+    fs.chmodSync(file, 0o755);
+    return dir;
+  }
+
+  function wrapped() {
+    const repo = makeTempDir("mate-wrapper-gate-");
+    const companion = path.join(repo, "companion");
+    fs.mkdirSync(companion, { recursive: true });
+    spawnSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
+    wrapRepo(repo, companion);
+    return {
+      repo,
+      companion,
+      graphifyOut: path.join(companion, ".graphify", "acme", "graphify-out"),
+    };
+  }
+
+  gated("passes the secret patterns as --exclude and writes the ignore region", () => {
+    const { repo } = wrapped();
+
+    const result = runWrapper("graphify", ["update"], {
+      cwd: repo,
+      stubDir: stubBinary("graphify"),
+      nodeDir,
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`args=${repo} --update --exclude .env --exclude .env.*`);
+    expect(fs.readFileSync(path.join(repo, ".graphifyignore"), "utf8")).toContain(
+      "# mate:secrets begin",
+    );
+  });
+
+  gated("prunes secrets from the output, never stops, and keeps graphify's exit status", () => {
+    const { repo, graphifyOut } = wrapped();
+
+    const result = runWrapper("graphify", ["build"], {
+      cwd: repo,
+      stubDir: leakyGraphify(),
+      nodeDir,
+    });
+
+    expect(result.status).toBe(3);
+    expect(result.stdout).toContain("--exclude .env");
+    expect(result.stderr).toContain("left out secret file .env.local");
+    const graph = JSON.parse(fs.readFileSync(path.join(graphifyOut, "graph.json"), "utf8"));
+    expect(graph.nodes.map((node: { id: string }) => node.id)).toEqual(["app"]);
+    expect(graph.links).toEqual([]);
+  });
+
+  gated("treats a direct `<path> --update` as an extraction", () => {
+    const { repo } = wrapped();
+
+    const result = runWrapper("graphify", [".", "--update"], {
+      cwd: repo,
+      stubDir: stubBinary("graphify"),
+      nodeDir,
+    });
+
+    expect(result.stdout).toContain("args=. --update --exclude .env");
+  });
+
+  test("warns and still runs graphify when the gate can't run", () => {
+    const { repo } = wrapped();
+
+    const result = runWrapper("graphify", ["update"], {
+      cwd: repo,
+      stubDir: stubBinary("graphify"),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`args=${repo} --update`);
+    expect(result.stdout).not.toContain("--exclude");
+    expect(result.stderr).toContain("the secret gate did not run");
+  });
+
+  test("leaves queries alone", () => {
+    const { repo } = wrapped();
+
+    const result = runWrapper("graphify", ["query", "Mate"], {
+      cwd: repo,
+      stubDir: stubBinary("graphify"),
+      nodeDir,
+    });
+
+    expect(result.stdout).not.toContain("--exclude");
+    expect(fs.existsSync(path.join(repo, ".graphifyignore"))).toBe(false);
   });
 });

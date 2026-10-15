@@ -598,6 +598,34 @@ describe("runArtifactPublishCommand — --all sequencing", () => {
     expect(results[0].status).toBe("error");
   });
 
+  test("a secret-scan failure halts the queue at that publication", async () => {
+    const companion = await companionWithArchives(["2026-09-10-alpha", "2026-09-14-beta"]);
+    const record: string[] = [];
+    const changed = [
+      "openspec/changes/archive/2026-09-10-alpha/",
+      "openspec/changes/archive/2026-09-14-beta/",
+    ];
+    const { deps: d, stdout } = deps(record, companion, changed);
+    d.scanPublication = async () => ({
+      skipped: false,
+      findings: [{ path: "openspec/x.md", line: 2, ruleId: "x/rule" }],
+    });
+
+    await runArtifactPublishCommand(["--all", "--json"], d);
+
+    expect(record).toEqual(["change:2026-09-10-alpha"]);
+    const results = JSON.parse(stdout[0] ?? "[]") as Array<{
+      step: string;
+      secretFindings?: unknown[];
+    }>;
+    expect(results.length).toBe(1);
+    expect(results[0].step).toBe("secret-scan");
+    expect(results[0].secretFindings).toEqual([
+      { path: "openspec/x.md", line: 2, ruleId: "x/rule" },
+    ]);
+    expect(process.exitCode).toBe(1);
+  });
+
   test("a change that already committed its spec leaves no drift to publish", async () => {
     const companion = await companionWithArchives(["2026-09-14-widget"]);
     const archive = path.join(

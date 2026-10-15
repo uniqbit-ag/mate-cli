@@ -16,6 +16,7 @@ import { gitEnvironment } from "../runtime/companion-git";
 import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
 import { companionLinkPath } from "../runtime/repo-local";
+import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
 
 export type HookEnv = Record<string, string | undefined>;
 
@@ -252,6 +253,52 @@ export function commandMatches(command: string): string[] {
   return targets;
 }
 
+/** Claude tool payloads in the shape the shared secret guard reads. */
+function secretToolCall(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  ctx: GuardContext,
+): SecretToolCall | null {
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  const target = (value: unknown) => (text(value) ? normalizePath(text(value), ctx) : "");
+  switch (toolName) {
+    case "Read":
+      return { kind: "read", paths: [target(toolInput.file_path)] };
+    case "Write":
+      return {
+        kind: "write",
+        writes: [{ path: target(toolInput.file_path), content: text(toolInput.content) }],
+      };
+    case "Edit":
+      return {
+        kind: "write",
+        writes: [{ path: target(toolInput.file_path), content: text(toolInput.new_string) }],
+      };
+    case "MultiEdit": {
+      const edits = Array.isArray(toolInput.edits) ? toolInput.edits : [];
+      const content = edits
+        .map((edit) => (edit && typeof edit === "object" ? text(edit.new_string) : ""))
+        .join("\n");
+      return { kind: "write", writes: [{ path: target(toolInput.file_path), content }] };
+    }
+    case "NotebookEdit":
+      return {
+        kind: "write",
+        writes: [{ path: target(toolInput.notebook_path), content: text(toolInput.new_source) }],
+      };
+    case "Bash":
+      return { kind: "shell", command: text(toolInput.command) };
+    case "Grep":
+      return {
+        kind: "search",
+        paths: [target(toolInput.path)],
+        globs: [text(toolInput.glob)],
+      };
+    default:
+      return null;
+  }
+}
+
 /**
  * Fails open only when no Mate context resolves from either source; in a
  * wrapped Working Repository the guard runs without a launch.
@@ -272,6 +319,16 @@ export async function evaluate(
     input.tool_input && typeof input.tool_input === "object"
       ? (input.tool_input as Record<string, unknown>)
       : {};
+
+  /** Secrets first: a secret refusal wins over every artifact-placement verdict. */
+  const secretCall = secretToolCall(toolName, toolInput, ctx);
+  if (secretCall) {
+    const refusal = await checkSecretAccess(secretCall, {
+      companionPath: ctx.companion,
+      isCompanionPath: (target) => isCompanionPath(target, ctx),
+    });
+    if (refusal) return { exitCode: 2, stderr: `${refusal}\n` };
+  }
 
   if (toolName === "Write" || toolName === "Edit" || toolName === "MultiEdit") {
     const filePath = String(toolInput.file_path ?? "");
