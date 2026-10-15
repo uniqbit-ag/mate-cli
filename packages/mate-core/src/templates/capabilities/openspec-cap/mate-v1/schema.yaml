@@ -1,5 +1,5 @@
 name: mate-v1
-version: 9
+version: 10
 description: Mate's complete OpenSpec workflow - proposal → specs → design → tasks
 artifacts:
   - id: proposal
@@ -74,7 +74,7 @@ artifacts:
       - **CRITICAL**: Scenarios MUST use exactly 4 hashtags (`####`). Using 3 hashtags or bullets will fail silently.
       - Every requirement MUST have at least one scenario.
 
-      New capabilities only: after the frontmatter and backlink lines, start the delta spec body with a `## Purpose` section - one or two sentences (50+ characters, or `openspec validate --strict` reports it as too brief) describing what the capability is for. Archive copies it into the main spec it creates; without it the new main spec is left with a `TBD ... Update Purpose after archive.` placeholder to fill in by hand. Do NOT add `## Purpose` to a delta for an existing capability - that spec already has one and the delta's is ignored. To change an existing capability's Purpose - including a leftover `TBD` placeholder - edit `openspec/specs/<capability>/spec.md` directly.
+      New capabilities only: after the `mate:delta` comment and any `#` title, start the delta spec body with a `## Purpose` section - one or two sentences (50+ characters, or `openspec validate --strict` reports it as too brief) describing what the capability is for. Archive copies it into the main spec it creates; without it the new main spec is left with a `TBD ... Update Purpose after archive.` placeholder to fill in by hand. Do NOT add `## Purpose` to a delta for an existing capability - that spec already has one and the delta's is ignored. To change an existing capability's Purpose - including a leftover `TBD` placeholder - edit `openspec/specs/<capability>/spec.md` directly.
 
       MODIFIED requirements workflow:
       1. Locate the existing requirement in `openspec/specs/<capability>/spec.md`.
@@ -84,7 +84,7 @@ artifacts:
 
       Common pitfall: Using MODIFIED with partial content loses detail at archive time. If adding new concerns without changing existing behavior, use ADDED instead.
 
-      Example (frontmatter scopes cover `acme` and `packages/api`; every requirement carries an `**Area:**` marker, as always — the first binds both, the second one):
+      Example (scope metadata covers `acme` and `packages/api`; every requirement carries an `**Area:**` marker, as always — the first binds both, the second one):
 
       ```
       ## ADDED Requirements
@@ -107,21 +107,19 @@ artifacts:
 
       Specs should be testable - each scenario is a potential test case.
 
-       **Obsidian**: Emit this YAML frontmatter at the very top of each spec file. Replace `<change-name>`, `<repository>`, `<area>`, and `<capability>` with actual values. Each `scopes` entry MUST preserve its repository/Area pairing:
+      **Obsidian**: Start each spec file with this `mate:delta` comment as its very first line, not YAML frontmatter. Replace `<change-name>`, `<repository>`, `<area>`, and `<capability>` with actual values. Each `scopes` entry MUST preserve its repository/Area pairing:
 
       ```
-      ---
-      type: delta-spec
+      <!-- mate:delta
       change: <change-name>
       capability: <capability>
-      tags: [openspec/change, openspec/spec, openspec/delta]
       scopes:
         - repository: org/repository
           area: .
-      ---
+      -->
       ```
 
-      After the file's `#` title line, add a backlink on the next line: `← [[proposal]]`. If modifying an existing main spec, add on the line after: `Applies to: [[openspec/specs/<capability>/spec]]`.
+      Between the comment and the first `## ` section, put nothing but blank lines and at most one `# ` title line. OpenSpec skips the comment and the title, but `openspec validate --strict` reports any other text there, because archive drops it, so add no backlink or cross-reference lines.
 
       Canonical-spec shape, delta-to-canonical projection, and migration rules live in
       `openspec/mate-conventions.yaml`. Follow that reference when creating or repairing

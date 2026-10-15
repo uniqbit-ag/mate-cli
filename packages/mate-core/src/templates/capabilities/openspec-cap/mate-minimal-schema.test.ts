@@ -34,7 +34,7 @@ describe("mate-minimal schema", () => {
     const schema = await readSchema();
 
     expect(schema.name).toBe("mate-minimal");
-    expect(schema.version).toBe(3);
+    expect(schema.version).toBe(4);
     expect(schema.artifacts.map((entry) => entry.id)).toEqual(["specs", "tasks"]);
     expect(artifact(schema, "specs").requires).toEqual([]);
     expect(artifact(schema, "tasks").requires).toEqual(["specs"]);
@@ -61,6 +61,23 @@ describe("mate-minimal schema", () => {
     expect(spec).not.toContain("## ADDED User Stories");
     expect(instructions).toContain("`### User Story:` is ignored");
     expect(instructions).toContain("`openspec validate --strict`");
+  });
+
+  test("carries delta metadata in a mate:delta comment instead of frontmatter", async () => {
+    const schema = await readSchema();
+    const spec = await fs.readFile(path.join(profilePath, "templates", "spec.md"), "utf8");
+    const instructions = artifact(schema, "specs").instruction;
+
+    expect(
+      spec.startsWith(
+        "<!-- mate:delta\nchange: <change-name>\ncapability: <capability>\nscopes:\n",
+      ),
+    ).toBe(true);
+    expect(spec).not.toMatch(/^---$/m);
+    expect(spec).not.toContain("type: delta-spec");
+    expect(instructions).toContain("`<!-- mate:delta` comment");
+    expect(instructions).toContain("the `scopes` in the spec's `mate:delta` comment");
+    expect(instructions).not.toContain("type: delta-spec");
   });
 
   test("keeps companion-wide style guidance out of the profile", async () => {
