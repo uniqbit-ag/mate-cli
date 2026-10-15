@@ -11,6 +11,7 @@ import {
   withDocument,
 } from "../../../runtime/runtime-document-manifest";
 import { wrapStateOf, type WrapState } from "../../../runtime/wrap-state";
+import { syncCompanionClaudeSettings } from "../../../tools/setup/providers/claude";
 import type { PrepareResult, PrepareStep } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
 import type { AdapterContext } from "./base";
@@ -90,6 +91,22 @@ describe("the Claude delivery plan at launch", () => {
       hooks: { Stop: [companionOnly] },
       autoMemoryEnabled: false,
     });
+  });
+
+  test("a launch with a repository keeps the disabled Claude features", async () => {
+    const { companionPath } = await companionWith({});
+    await syncCompanionClaudeSettings(companionPath, {
+      allowedAgents: ["claude"],
+      capabilities: [],
+    });
+
+    await new ClaudeAdapter().planLaunch(contextFor(companionPath), prepared());
+
+    const derived = JSON.parse(
+      await fs.readFile(launchSettingsPath(companionPath, "repo"), "utf8"),
+    );
+    expect(derived.permissions.deny).toEqual(["EnterPlanMode", "DesignSync"]);
+    expect(derived.enableArtifact).toBe(false);
   });
 
   test("a launch whose prepare left no Claude wrap fails preflight naming mate wrap", async () => {
