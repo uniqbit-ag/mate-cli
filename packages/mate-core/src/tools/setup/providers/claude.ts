@@ -106,6 +106,16 @@ function getAllManagedPermissionEntries(companionPath: string): Set<string> {
   ]);
 }
 
+/**
+ * Claude Code features Mate turns off because they compete with its own
+ * workflow: plan mode writes plans outside the Companion Repository, the
+ * Artifact tool competes with `mate report`, and DesignSync has no role in a
+ * Mate session. `ExitPlanMode` stays allowed so a user who enters plan mode
+ * by hand can still leave it. Fixed, not configurable.
+ */
+export const MANAGED_CLAUDE_DENY_ENTRIES: readonly string[] = ["EnterPlanMode", "DesignSync"];
+export const MANAGED_CLAUDE_FORCED_SETTINGS = { enableArtifact: false } as const;
+
 /** Companion-owned Claude settings: sole source of Mate-managed hooks, permissions and MCP servers. */
 export function getCompanionClaudeSettingsPath(companionPath: string): string {
   return path.join(companionPath, ".claude", "settings.local.json");
@@ -221,6 +231,13 @@ function renderManagedClaudeSettings(
   } else {
     delete permissions.allow;
   }
+  // permissions.deny: same reconciliation as allow, against the fixed set.
+  const managedDeny = new Set(MANAGED_CLAUDE_DENY_ENTRIES);
+  const existingDeny = Array.isArray(existingPermissions.deny) ? existingPermissions.deny : [];
+  permissions.deny = [
+    ...existingDeny.filter((entry) => !managedDeny.has(entry)),
+    ...MANAGED_CLAUDE_DENY_ENTRIES,
+  ];
 
   const mcpServers = { ...existing.mcpServers };
   // tokensave (and any future Mate-managed MCP server) now lives in the
@@ -228,7 +245,12 @@ function renderManagedClaudeSettings(
   // entry is removed so it cannot shadow the `.mcp.json` definition.
   delete mcpServers.tokensave;
 
-  const settings: ClaudeSettings = { ...existing, hooks, autoMemoryEnabled: false };
+  const settings: ClaudeSettings = {
+    ...existing,
+    hooks,
+    autoMemoryEnabled: false,
+    ...MANAGED_CLAUDE_FORCED_SETTINGS,
+  };
   if (Object.keys(hooks).length === 0) {
     delete settings.hooks;
   }

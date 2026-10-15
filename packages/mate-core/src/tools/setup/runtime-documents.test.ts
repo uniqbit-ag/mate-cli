@@ -5,8 +5,10 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  CLAUDE_SETTINGS_DOCUMENT,
   OPENCODE_CONFIG_DOCUMENT,
   placeRuntimeDocument,
+  removeRuntimeDocument,
 } from "../../lib/orchestrator/projection-runtime-documents";
 import type { RenderedRuntimeDocument } from "../../runtime/runtime-document-manifest";
 import { runtimeOpenCodePluginRoot } from "../../runtime/runtime-directory";
@@ -40,8 +42,12 @@ async function fixture(companionConfig?: unknown): Promise<{
 
 const config = { allowedAgents: ["opencode"], capabilities: [] };
 
-function regionAt(documents: RenderedRuntimeDocument[], at: string[]) {
-  const document = documents.find((candidate) => candidate.path === OPENCODE_CONFIG_DOCUMENT);
+function regionAt(
+  documents: RenderedRuntimeDocument[],
+  at: string[],
+  documentPath = OPENCODE_CONFIG_DOCUMENT,
+) {
+  const document = documents.find((candidate) => candidate.path === documentPath);
   return document?.regions.find((region) => JSON.stringify(region.at) === JSON.stringify(at));
 }
 
@@ -67,6 +73,56 @@ describe("the OpenCode working target", () => {
         { action: "external_directory", resource: `${companionPath}/**`, effect: "allow" },
       ],
     });
+  });
+});
+
+describe("the Claude working target", () => {
+  async function renderClaudeDocuments(companionPath: string, repoPath: string) {
+    const rendered = await renderWorkingRuntimeDocuments(
+      companionPath,
+      { allowedAgents: ["claude"], capabilities: [] },
+      repoPath,
+    );
+    return rendered.documents;
+  }
+
+  test("carries the disabled Claude features, yielding a user's own enableArtifact", async () => {
+    const { companionPath, repoPath } = await fixture();
+
+    const documents = await renderClaudeDocuments(companionPath, repoPath);
+
+    expect(regionAt(documents, ["permissions", "deny"], CLAUDE_SETTINGS_DOCUMENT)).toEqual({
+      at: ["permissions", "deny"],
+      kind: "list",
+      values: ["EnterPlanMode", "DesignSync"],
+    });
+    expect(regionAt(documents, ["enableArtifact"], CLAUDE_SETTINGS_DOCUMENT)).toEqual({
+      at: ["enableArtifact"],
+      kind: "value",
+      value: false,
+      yields: true,
+    });
+  });
+
+  test("placing and removing the Claude document restores a user's own deny entries byte for byte", async () => {
+    const { companionPath, repoPath } = await fixture();
+    const target = path.join(repoPath, ".claude", "settings.local.json");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const before = `${JSON.stringify(
+      { enableArtifact: true, permissions: { deny: ["Bash(rm:*)"] } },
+      null,
+      2,
+    )}\n`;
+    await fs.writeFile(target, before, "utf8");
+    const documents = await renderClaudeDocuments(companionPath, repoPath);
+
+    await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, documents);
+    const placed = JSON.parse(await fs.readFile(target, "utf8"));
+    expect(placed.enableArtifact).toBe(true);
+    expect(placed.permissions.deny).toEqual(["Bash(rm:*)", "EnterPlanMode", "DesignSync"]);
+    expect(await removeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT)).toBe("removed");
+
+    expect(await fs.readFile(target, "utf8")).toBe(before);
   });
 });
 

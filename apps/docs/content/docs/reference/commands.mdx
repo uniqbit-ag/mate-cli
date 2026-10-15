@@ -159,6 +159,13 @@ sync in the background, fast-forward only. A failure or warning is shown to you,
 never to the model, and the session starts either way. Capability MCP servers may
 start before the preflight finishes. context-mode loads only with `mate claude`.
 
+Mate's managed Claude settings turn off Claude Code features that compete with
+Mate's own workflow: they deny the `EnterPlanMode` and `DesignSync` tools and set
+`enableArtifact: false`, beside `autoMemoryEnabled: false`. The set is fixed.
+`ExitPlanMode` stays allowed, so plan mode entered by hand (Shift+Tab) can still be
+left. A managed launch applies the set through `--settings`, and deny rules from
+there cannot be re-allowed from your own settings.
+
 ## Wrapping
 
 ```sh
@@ -189,8 +196,11 @@ reinstalling).
 
 For Claude it writes `.claude/settings.local.json` regions (the artifact-path
 guard, banner, guidance and session-prepare hooks, every enabled Capability's
-hooks, permissions) and the repository's MCP servers into `~/.claude.json`. That
-file is rewritten only when the servers change.
+hooks, permissions, and the same disabled features as a managed launch: the
+`EnterPlanMode` and `DesignSync` deny entries and `enableArtifact: false`) and the
+repository's MCP servers into `~/.claude.json`. That file is rewritten only when the
+servers change. An `enableArtifact` value you already set in
+`.claude/settings.local.json` is left as it is.
 
 Both session kinds work in a wrapped repository: plain `claude` / `opencode` and
 `mate claude` / `mate opencode`. Every managed launch wraps the repository for its

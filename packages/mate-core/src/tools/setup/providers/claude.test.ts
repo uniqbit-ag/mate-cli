@@ -86,9 +86,10 @@ interface HookGroup {
 }
 interface ClaudeSettings {
   hooks?: Record<string, HookGroup[]>;
-  permissions?: { allow?: string[] } & Record<string, unknown>;
+  permissions?: { allow?: string[]; deny?: string[] } & Record<string, unknown>;
   mcpServers?: Record<string, { command?: string; args?: string[] }>;
   autoMemoryEnabled?: boolean;
+  enableArtifact?: boolean;
 }
 
 async function readCompanionSettings(companionPath: string): Promise<ClaudeSettings> {
@@ -154,6 +155,60 @@ describe("syncCompanionClaudeSettings", () => {
 
     const settings = await readCompanionSettings(companionPath);
     expect(settings.autoMemoryEnabled).toBe(false);
+  });
+
+  test("disables plan mode, DesignSync and the Artifact tool", async () => {
+    const companionPath = await makeTempDir("mate-companion-disabled-features-");
+    await syncCompanionClaudeSettings(companionPath, {
+      allowedAgents: ["claude"],
+      capabilities: [],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.deny).toEqual(["EnterPlanMode", "DesignSync"]);
+    expect(settings.enableArtifact).toBe(false);
+  });
+
+  test("disables nothing beyond the fixed set", async () => {
+    const companionPath = await makeTempDir("mate-companion-kept-features-");
+    await syncCompanionClaudeSettings(companionPath, {
+      allowedAgents: ["claude"],
+      capabilities: [],
+    });
+
+    const settings = await readCompanionSettings(companionPath);
+    for (const kept of [
+      "ExitPlanMode",
+      "AskUserQuestion",
+      "SendMessage",
+      "Agent",
+      "TaskStop",
+      "Monitor",
+      "ListAgents",
+      "PushNotification",
+      "ScheduleWakeup",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "RemoteTrigger",
+      "ReportFindings",
+      "NotebookEdit",
+    ]) {
+      expect(settings.permissions?.deny).not.toContain(kept);
+    }
+    expect(Object.keys(settings).filter((key) => key.startsWith("disable"))).toEqual([]);
+  });
+
+  test("keeps a user deny entry and adds each managed entry once across syncs", async () => {
+    const companionPath = await makeTempDir("mate-companion-user-deny-");
+    await seedSettings(companionPath, { permissions: { deny: ["Bash(rm:*)"] } });
+    const config = { allowedAgents: ["claude"], capabilities: [] };
+
+    await syncCompanionClaudeSettings(companionPath, config);
+    await syncCompanionClaudeSettings(companionPath, config);
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.deny).toEqual(["Bash(rm:*)", "EnterPlanMode", "DesignSync"]);
   });
 
   test("adds no react-doctor hook when capability enabled", async () => {

@@ -24,6 +24,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "hooks": {
       "PreToolUse": [
         {
@@ -46,6 +47,10 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "Skill(graphify)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -214,6 +219,25 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
           "Bash(mate cap graphify:*)",
           "Bash(<wrapper-bin>/graphify:*)",
         ],
+      },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
       },
     ],
   },
@@ -446,6 +470,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "hooks": {
       "PreToolUse": [
         {
@@ -468,6 +493,10 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "Skill(graphify)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -727,6 +756,25 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
           "Bash(<wrapper-bin>/graphify:*)",
         ],
       },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
+      },
     ],
   },
   {
@@ -838,6 +886,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "hooks": {
       "PreToolUse": [
         {
@@ -886,6 +935,10 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "mcp__tokensave__*",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -1084,6 +1137,25 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           "Edit(<root>/companion/**)",
           "mcp__tokensave__*",
         ],
+      },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
       },
     ],
   },
@@ -1349,6 +1421,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "hooks": {
       "PreToolUse": [
         {
@@ -1397,6 +1470,10 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "mcp__tokensave__*",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -1674,6 +1751,25 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           "mcp__tokensave__*",
         ],
       },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
+      },
     ],
   },
   {
@@ -1816,6 +1912,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(mate:*)",
@@ -1823,6 +1920,10 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
         "Read(<root>/companion/**)",
         "Skill(context-mode:context-mode)",
         "mcp__plugin_context-mode_context-mode__*",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -1964,6 +2065,25 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
           "Skill(context-mode:context-mode)",
           "mcp__plugin_context-mode_context-mode__*",
         ],
+      },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
       },
     ],
   },
@@ -2184,6 +2304,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(mate:*)",
@@ -2191,6 +2312,10 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
         "Read(<root>/companion/**)",
         "Skill(context-mode:context-mode)",
         "mcp__plugin_context-mode_context-mode__*",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -2394,6 +2519,25 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
           "mcp__plugin_context-mode_context-mode__*",
         ],
       },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
+      },
     ],
   },
   {
@@ -2499,6 +2643,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(<react-doctor-bin>:*)",
@@ -2506,6 +2651,10 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "Skill(mate-react-doctor)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -2648,6 +2797,25 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
           "Skill(mate-react-doctor)",
           "Bash(<react-doctor-bin>:*)",
         ],
+      },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
       },
     ],
   },
@@ -2851,6 +3019,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(<react-doctor-bin>:*)",
@@ -2858,6 +3027,10 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "Skill(mate-react-doctor)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -3062,6 +3235,25 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
           "Bash(<react-doctor-bin>:*)",
         ],
       },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
+      },
     ],
   },
   {
@@ -3166,6 +3358,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(<wrapper-bin>/openspec:*)",
@@ -3187,6 +3380,10 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
         "Skill(openspec-archive-change)",
         "Skill(openspec-explore)",
         "Skill(openspec-propose)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -3360,6 +3557,25 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           "Bash(mate cap graphify:*)",
           "Bash(<wrapper-bin>/openspec:*)",
         ],
+      },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
       },
     ],
   },
@@ -3581,6 +3797,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(<wrapper-bin>/openspec:*)",
@@ -3602,6 +3819,10 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
         "Skill(openspec-archive-change)",
         "Skill(openspec-explore)",
         "Skill(openspec-propose)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -3855,6 +4076,25 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
           "Bash(<wrapper-bin>/openspec:*)",
         ],
       },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
+      },
     ],
   },
   {
@@ -3974,6 +4214,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "hooks": {
       "PreToolUse": [
         {
@@ -4055,6 +4296,10 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
         "Skill(openspec-propose)",
         "mcp__plugin_context-mode_context-mode__*",
         "mcp__tokensave__*",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -4448,6 +4693,25 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           "mcp__plugin_context-mode_context-mode__*",
         ],
       },
+      {
+        "at": [
+          "permissions",
+          "deny",
+        ],
+        "kind": "list",
+        "values": [
+          "EnterPlanMode",
+          "DesignSync",
+        ],
+      },
+      {
+        "at": [
+          "enableArtifact",
+        ],
+        "kind": "value",
+        "value": false,
+        "yields": true,
+      },
     ],
   },
   {
@@ -4591,11 +4855,16 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(mate:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -4648,11 +4917,16 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(mate:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -4706,11 +4980,16 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(mate:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -4763,11 +5042,16 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(mate:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -4820,11 +5104,16 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(mate:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -4877,6 +5166,7 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
 ,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "hooks": {
       "PreToolUse": [
         {
@@ -4899,6 +5189,10 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
         "Skill(graphify)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },
@@ -5035,11 +5329,16 @@ exports[`working repo golden fixtures hub roots set up providers only without co
   "claudeMd": null,
   "claudeSettingsLocal": {
     "autoMemoryEnabled": false,
+    "enableArtifact": false,
     "permissions": {
       "allow": [
         "Bash(mate:*)",
         "Edit(<root>/companion/**)",
         "Read(<root>/companion/**)",
+      ],
+      "deny": [
+        "EnterPlanMode",
+        "DesignSync",
       ],
     },
   },

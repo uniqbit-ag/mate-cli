@@ -130,6 +130,57 @@ describe("runUnwrapCommand", () => {
     expect(await exists(projectionDir)).toBe(true);
   });
 
+  /**
+   * `additionalDirectories` belongs to the Repository Link, which an unwrap
+   * keeps, so the byte-for-byte restore is asserted where the regions are placed.
+   */
+  test("keeps a user's enableArtifact and deny entries through a wrap and an unwrap", async () => {
+    const { repoPath } = await makeLinkedRepo("mate-unwrap-disabled-features-");
+    const settingsPath = path.join(repoPath, ".claude", "settings.local.json");
+    await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+    await fs.writeFile(
+      settingsPath,
+      JSON.stringify({ enableArtifact: true, permissions: { deny: ["Bash(rm:*)"] } }),
+      "utf8",
+    );
+
+    const wrapped = capture();
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      wrapped.restore();
+    }
+    const placed = JSON.parse(await fs.readFile(settingsPath, "utf8"));
+    expect(placed.enableArtifact).toBe(true);
+    expect(placed.permissions.deny).toEqual(["Bash(rm:*)", "EnterPlanMode", "DesignSync"]);
+
+    const unwrapped = capture();
+    try {
+      await runUnwrapCommand([], repoPath);
+    } finally {
+      unwrapped.restore();
+    }
+    const restored = JSON.parse(await fs.readFile(settingsPath, "utf8"));
+    expect(restored.enableArtifact).toBe(true);
+    expect(restored.permissions.deny).toEqual(["Bash(rm:*)"]);
+  });
+
+  test("a wrap without a user enableArtifact sets it to false", async () => {
+    const { repoPath } = await makeLinkedRepo("mate-unwrap-enable-artifact-");
+
+    const wrapped = capture();
+    try {
+      await runWrapCommand([], repoPath);
+    } finally {
+      wrapped.restore();
+    }
+    const placed = JSON.parse(
+      await fs.readFile(path.join(repoPath, ".claude", "settings.local.json"), "utf8"),
+    );
+    expect(placed.enableArtifact).toBe(false);
+    expect(placed.permissions.deny).toEqual(["EnterPlanMode", "DesignSync"]);
+  });
+
   test("reports a repository that was never wrapped without failing", async () => {
     const { repoPath } = await makeLinkedRepo("mate-unwrap-absent-");
 

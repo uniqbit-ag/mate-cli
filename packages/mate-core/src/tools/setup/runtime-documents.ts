@@ -17,6 +17,8 @@ import {
   mateSessionPrepareHookGroups,
 } from "./providers/claude-plugin-hooks";
 import {
+  MANAGED_CLAUDE_DENY_ENTRIES,
+  MANAGED_CLAUDE_FORCED_SETTINGS,
   renderManagedClaudeHookGroups,
   renderManagedClaudeMcpServers,
   renderManagedClaudePermissionEntries,
@@ -104,6 +106,17 @@ function claudeSettingsRegions(
       kind: "list",
       values: renderManagedClaudePermissionEntries(ctx.companionPath, inputs),
     },
+    { at: ["permissions", "deny"], kind: "list", values: [...MANAGED_CLAUDE_DENY_ENTRIES] },
+    /**
+     * Yields: the document is the user's, so their own `enableArtifact` wins,
+     * and unwrapping restores it instead of deleting a key Mate overwrote.
+     */
+    ...Object.entries(MANAGED_CLAUDE_FORCED_SETTINGS).map(([key, value]): ManagedRegion => ({
+      at: [key],
+      kind: "value",
+      value,
+      yields: true,
+    })),
   ];
 }
 
