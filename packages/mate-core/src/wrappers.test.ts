@@ -17,7 +17,7 @@ function makeTempDir(prefix: string): string {
   return dir;
 }
 
-/** Reports its cwd, its argv and every `MATE_`-prefixed variable it inherited. */
+/** Reports its cwd, its argv and every `MATE_`- and `OPENSPEC_`-prefixed variable it inherited. */
 function stubBinary(name: string): string {
   const dir = makeTempDir(`mate-wrapper-stub-${name}-`);
   const file = path.join(dir, name);
@@ -29,6 +29,7 @@ function stubBinary(name: string): string {
       'echo "args=$*"',
       'echo "graphify_out=${GRAPHIFY_OUT-}"',
       'env | grep "^MATE_" | sort | sed "s/^/mate_env=/"',
+      'env | grep "^OPENSPEC_" | sort | sed "s/^/openspec_env=/"',
       "exit 0",
     ].join("\n") + "\n",
     "utf8",
@@ -117,6 +118,26 @@ describe("openspec wrapper", () => {
       stubDir: stubBinary("openspec"),
     });
 
+    expect(result.stdout).not.toContain("mate_env=");
+  });
+
+  test("delegates with OpenSpec telemetry and update checks off", () => {
+    const repo = makeTempDir("mate-wrapper-openspec-env-");
+    const companion = path.join(repo, "companion");
+    fs.mkdirSync(companion, { recursive: true });
+    wrapRepo(repo, companion);
+
+    const result = runWrapper("openspec", ["status", "--change", "acme", "--json"], {
+      cwd: repo,
+      env: { OPENSPEC_TELEMETRY: "1", OPENSPEC_SCHEMA: "custom" },
+      stubDir: stubBinary("openspec"),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("openspec_env=OPENSPEC_TELEMETRY=0");
+    expect(result.stdout).not.toContain("openspec_env=OPENSPEC_TELEMETRY=1");
+    expect(result.stdout).toContain("openspec_env=OPENSPEC_NO_UPDATE_CHECK=1");
+    expect(result.stdout).toContain("openspec_env=OPENSPEC_SCHEMA=custom");
     expect(result.stdout).not.toContain("mate_env=");
   });
 

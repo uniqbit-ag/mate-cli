@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### OpenSpec output regenerates only on `mate companion setup` and `mate companion update`
+
+- **Behavior change:** launches no longer upgrade the `openspec` CLI to `@latest` or run `openspec config reset`, `openspec init --force`, and `openspec update --force`. Those commands rewrote the committed `openspec-*` skills and `/opsx` commands in the background, so teammates on different CLI versions kept overwriting each other's files. A new OpenSpec release now reaches a companion only when someone runs `mate companion update` (or `mate companion setup`) and commits the result.
+- A launch reads the `metadata.generatedBy` version from the companion's committed OpenSpec skills. When the installed `openspec` is older, Mate runs `npm install -g @fission-ai/openspec@<version>`, so every developer catches up to the version the last companion update generated with. A newer installed CLI is never downgraded, and pinned deployments skip the install. A failed install prints a warning with the manual command, and the launch continues.
+- Launches still deploy Mate-owned skills and sync Mate schemas and the `config.yaml` rule.
+- A runtime added by editing `framework.yaml` by hand gets its OpenSpec skills on the next `mate companion setup` or `mate companion update`.
+- Every OpenSpec process Mate starts, including the `openspec` wrapper agents call, runs with `OPENSPEC_TELEMETRY=0` and `OPENSPEC_NO_UPDATE_CHECK=1`. OpenSpec's "update available" hint was wrong advice inside Mate, which decides the version.
+
 ### Delta specs pass `openspec validate --strict` on OpenSpec 1.14.2
 
 - OpenSpec 1.14.2 reports any text above a delta spec's first `## ` section, which made every Mate change fail `openspec validate --strict`. Delta specs now carry their metadata (`change`, `capability`, and paired `scopes`) in a leading `<!-- mate:delta … -->` comment instead of YAML frontmatter, and the `mate-v1` instruction no longer asks for `← [[proposal]]` or `Applies to:` lines. The comment drops the delta `type` and `tags`.

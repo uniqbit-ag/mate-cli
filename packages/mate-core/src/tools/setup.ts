@@ -57,6 +57,11 @@ export interface SetupDependencies {
   globalConfigStore?: GlobalConfigStore;
 }
 
+export interface CompanionSyncOptions {
+  /** Regenerates OpenSpec CLI output; set only by `mate companion update`. */
+  regenerateOpenSpec?: boolean;
+}
+
 export async function applySetupCompatibilities(
   companionPath: string,
   config: FrameworkConfig,
@@ -64,10 +69,19 @@ export async function applySetupCompatibilities(
   plugins: PluginRegistration[] = getActiveDistribution().registry.getEntries(),
   repoPath?: string,
   scope: SetupScope = config.type === "hub" ? "hub" : "companion",
+  options: CompanionSyncOptions = {},
 ): Promise<SetupInstallationOutcome> {
   const plan = buildSetupInstallationPlan(config, plugins);
   const activeProviders = plan.activeProviders;
-  const ctx: SetupContext = { companionPath, config, mode, activeProviders, repoPath, scope };
+  const ctx: SetupContext = {
+    companionPath,
+    config,
+    mode,
+    activeProviders,
+    repoPath,
+    scope,
+    ...(options.regenerateOpenSpec ? { regenerateOpenSpec: true } : {}),
+  };
   return executeSetupInstallationPlan(ctx, plugins, plan);
 }
 
@@ -108,6 +122,7 @@ export async function syncCompanionFiles(
   companionPath: string,
   config: FrameworkConfig,
   repoPath?: string,
+  options: CompanionSyncOptions = {},
 ): Promise<void> {
   await applySetupCompatibilities(
     companionPath,
@@ -115,6 +130,8 @@ export async function syncCompanionFiles(
     "sync",
     getActiveDistribution().registry.getAll(),
     repoPath,
+    undefined,
+    options,
   );
 }
 

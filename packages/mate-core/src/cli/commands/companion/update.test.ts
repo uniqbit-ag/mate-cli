@@ -164,7 +164,7 @@ describe("mate companion update — companion resolution", () => {
   test("updates the companion the repo-local resolver answers", async () => {
     const { sync } = setup({ sync: regenerateSkill });
     await run();
-    expect(sync).toHaveBeenCalledWith(COMPANION, CONFIG);
+    expect(sync).toHaveBeenCalledWith(COMPANION, CONFIG, { regenerateOpenSpec: true });
   });
 
   test("falls back to the Projection Root for a Wrapped Repository", async () => {
@@ -174,7 +174,15 @@ describe("mate companion update — companion resolution", () => {
       resolveProjectedCompanionPath: () => "/tmp/acme-projected",
     });
     await run();
-    expect(sync).toHaveBeenCalledWith("/tmp/acme-projected", CONFIG);
+    expect(sync).toHaveBeenCalledWith("/tmp/acme-projected", CONFIG, {
+      regenerateOpenSpec: true,
+    });
+  });
+
+  test("requests OpenSpec regeneration from the companion file sync", async () => {
+    const { sync } = setup({ sync: regenerateSkill });
+    await run();
+    expect(sync).toHaveBeenCalledWith(COMPANION, CONFIG, { regenerateOpenSpec: true });
   });
 
   test("refuses with link guidance when no companion resolves", async () => {
