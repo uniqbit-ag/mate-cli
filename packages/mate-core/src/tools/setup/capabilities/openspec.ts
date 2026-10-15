@@ -3,7 +3,17 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { Document, isMap, isScalar, isSeq, parseDocument, type YAMLMap, type YAMLSeq } from "yaml";
+import semver from "semver";
+import {
+  Document,
+  isMap,
+  isScalar,
+  isSeq,
+  parse,
+  parseDocument,
+  type YAMLMap,
+  type YAMLSeq,
+} from "yaml";
 
 import { getOpenSpecSchemaSelection } from "../../../lib/orchestrator/setup-compatibilities";
 import { getWrapperBinPath } from "../../../lib/package-paths";
@@ -88,6 +98,15 @@ const OPENSPEC_TOOLS_BY_RUNTIME = {
 const OPENSPEC_INSTALL_COMMAND = "npm install -g @fission-ai/openspec@latest";
 
 /**
+ * Set on every `openspec` process Mate starts. Mate decides the CLI version, so
+ * OpenSpec's own "update available" hint is wrong advice here.
+ */
+export const OPENSPEC_ENV = {
+  OPENSPEC_TELEMETRY: "0",
+  OPENSPEC_NO_UPDATE_CHECK: "1",
+} as const satisfies Record<string, string>;
+
+/**
  * Store metadata `openspec store register` writes beside the companion. Its id
  * is machine-local, and companion Git sync would otherwise stash it on every
  * launch. Persisted: the registration outlives the capability.
@@ -115,7 +134,10 @@ async function defaultGetInstalledVersion(pathValue: string): Promise<string | u
   if (!bin) return undefined;
 
   try {
-    const { stdout } = await execFileAsync(bin, ["--version"], { timeout: 10_000 });
+    const { stdout } = await execFileAsync(bin, ["--version"], {
+      timeout: 10_000,
+      env: { ...process.env, ...OPENSPEC_ENV },
+    });
     return stdout.match(/\d+\.\d+\.\d+/)?.[0];
   } catch {
     return undefined;
@@ -197,6 +219,7 @@ async function reconcileOpenSpecTools(
   try {
     await runCommand("openspec", ["config", "reset", "--all", "-y"], {
       cwd: ctx.companionPath,
+      env: OPENSPEC_ENV,
     });
   } catch (error) {
     process.stderr.write(
@@ -206,9 +229,11 @@ async function reconcileOpenSpecTools(
 
   await runCommand("openspec", ["init", "--tools", tools.join(","), "--force", ctx.companionPath], {
     cwd: ctx.companionPath,
+    env: OPENSPEC_ENV,
   });
   await runCommand("openspec", ["update", "--force", ctx.companionPath], {
     cwd: ctx.companionPath,
+    env: OPENSPEC_ENV,
   });
 
   await removeLegacyOpenCodeCopies(ctx.companionPath);
@@ -247,6 +272,97 @@ async function updateOpenSpecIfOutdated(
     });
   } catch {
     process.stderr.write("openspec: upgrade failed - continuing with the installed version\n");
+  }
+}
+
+/** Matches a SKILL.md's leading YAML frontmatter block. */
+const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+
+function readGeneratedBy(content: string): string | undefined {
+  const frontmatter = FRONTMATTER_PATTERN.exec(content)?.[1];
+  if (frontmatter === undefined) return undefined;
+  let version: unknown;
+  try {
+    const data = parse(frontmatter) as { metadata?: { generatedBy?: unknown } | null } | null;
+    version = data?.metadata?.generatedBy;
+  } catch {
+    return undefined;
+  }
+  return typeof version === "string" ? (semver.valid(version) ?? undefined) : undefined;
+}
+
+/**
+ * The highest OpenSpec CLI version recorded as `metadata.generatedBy` in the
+ * companion's committed OpenSpec skills, or `undefined` when none records one.
+ */
+export async function readCompanionGeneratedOpenSpecVersion(
+  companionPath: string,
+): Promise<string | undefined> {
+  const skillFiles = await Promise.all(
+    [getClaudeSkillsDir(companionPath), getSharedSkillsDir(companionPath)].map(async (dir) => {
+      const entries = await fs.readdir(dir).catch(() => [] as string[]);
+      return entries
+        .filter((name) => name.startsWith("openspec-"))
+        .map((name) => path.join(dir, name, "SKILL.md"));
+    }),
+  );
+  const versions = await Promise.all(
+    skillFiles.flat().map(async (file) => {
+      const content = await fs.readFile(file, "utf8").catch(() => undefined);
+      return content === undefined ? undefined : readGeneratedBy(content);
+    }),
+  );
+  return versions
+    .filter((version): version is string => version !== undefined)
+    .reduce<string | undefined>(
+      (highest, version) => (!highest || semver.gt(version, highest) ? version : highest),
+      undefined,
+    );
+}
+
+/**
+ * Launch-time counterpart of the reconcile: moves an older installed CLI up to
+ * the version the companion's skills were generated with. Never downgrades and
+ * never writes OpenSpec output.
+ */
+async function catchUpOpenSpecToCompanion(
+  ctx: SetupContext,
+  deps: Required<
+    Pick<
+      OpenSpecPluginDeps,
+      | "installCommand"
+      | "isCommandOnPath"
+      | "pathValue"
+      | "getInstalledVersion"
+      | "isPinnedDeployment"
+    >
+  >,
+): Promise<void> {
+  if (!deps.isCommandOnPath("openspec", deps.pathValue())) {
+    process.stderr.write(
+      `openspec binary not found. Install it manually with \`${OPENSPEC_INSTALL_COMMAND}\`\n`,
+    );
+    return;
+  }
+  /** Pinned artifacts change tool versions by replacement, never reconciliation. */
+  if (deps.isPinnedDeployment()) return;
+
+  const generated = await readCompanionGeneratedOpenSpecVersion(ctx.companionPath);
+  if (!generated) return;
+  const installed = await deps.getInstalledVersion(deps.pathValue());
+  if (!installed || !isNewer(generated, installed)) return;
+
+  const pkg = `@fission-ai/openspec@${generated}`;
+  const command = `npm install -g ${pkg}`;
+  process.stdout.write(
+    `openspec: installed version ${installed} is older than the companion's ${generated}. Updating now:\n  ${command}\n`,
+  );
+  try {
+    await deps.installCommand("npm", ["install", "-g", pkg], { cwd: ctx.companionPath });
+  } catch (error) {
+    process.stderr.write(
+      `openspec: catch-up to ${generated} failed (${error instanceof Error ? error.message : String(error)}) - install it manually with \`${command}\`\n`,
+    );
   }
 }
 
@@ -541,12 +657,19 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
     ],
     async apply(ctx) {
       const tools = deriveOpenSpecTools(ctx.activeProviders);
-      if (ctx.mode === "setup" || tools.length > 0) {
-        if (await ensureOpenSpecInstalled(ctx, depsWithDefaults)) {
-          if (tools.length > 0) {
-            await reconcileOpenSpecTools(ctx, depsWithDefaults.runCommand);
+      // OpenSpec output is committed in the companion, so only setup and
+      // `mate companion update` regenerate it; a launch must leave it alone.
+      if (ctx.mode === "setup" || ctx.regenerateOpenSpec === true) {
+        if (ctx.mode === "setup" || tools.length > 0) {
+          if (await ensureOpenSpecInstalled(ctx, depsWithDefaults)) {
+            if (tools.length > 0) {
+              await reconcileOpenSpecTools(ctx, depsWithDefaults.runCommand);
+            }
           }
         }
+      } else if (tools.length > 0) {
+        await catchUpOpenSpecToCompanion(ctx, depsWithDefaults);
+        await applyMateOpenspecSkills(ctx.companionPath, ctx.activeProviders);
       }
       await removeLegacyOpenCodeCopies(ctx.companionPath);
       await reconcileOpenSpecSchema(ctx);

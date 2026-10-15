@@ -15,7 +15,9 @@ import {
   MATE_SKILLS,
   MATE_SPECS_RULE,
   MATE_SPECS_RULE_MARKER,
+  OPENSPEC_ENV,
   OPENSPEC_SKILLS,
+  readCompanionGeneratedOpenSpecVersion,
 } from "./openspec";
 
 interface MinimalSchema {
@@ -110,18 +112,19 @@ describe("createOpenspecPlugin", () => {
     expect(installCommand).not.toHaveBeenCalled();
     expect(runCommand).toHaveBeenNthCalledWith(1, "openspec", ["config", "reset", "--all", "-y"], {
       cwd: "/tmp/companion",
+      env: OPENSPEC_ENV,
     });
     expect(runCommand).toHaveBeenNthCalledWith(
       2,
       "openspec",
       ["init", "--tools", "claude,agents,opencode", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion" },
+      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
     );
     expect(runCommand).toHaveBeenNthCalledWith(
       3,
       "openspec",
       ["update", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion" },
+      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
     );
   });
 
@@ -160,7 +163,7 @@ describe("createOpenspecPlugin", () => {
     expect(runCommand).toHaveBeenCalledWith(
       "openspec",
       ["init", "--tools", "claude", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion" },
+      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
     );
   });
 
@@ -189,7 +192,7 @@ describe("createOpenspecPlugin", () => {
       expect(runCommand).toHaveBeenCalledWith(
         "openspec",
         ["init", "--tools", "claude", "--force", "/tmp/companion"],
-        { cwd: "/tmp/companion" },
+        { cwd: "/tmp/companion", env: OPENSPEC_ENV },
       );
     } finally {
       restorePolicy();
@@ -257,7 +260,7 @@ describe("createOpenspecPlugin", () => {
     expect(runCommand).toHaveBeenCalledWith(
       "openspec",
       ["init", "--tools", "claude", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion" },
+      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
     );
   });
 
@@ -287,11 +290,11 @@ describe("createOpenspecPlugin", () => {
     expect(runCommand).toHaveBeenCalledWith(
       "openspec",
       ["init", "--tools", "claude", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion" },
+      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
     );
   });
 
-  test("sync automatically upgrades openspec before reconciliation", async () => {
+  test("sync with a regeneration request upgrades openspec before reconciliation", async () => {
     const events: string[] = [];
     const runCommand = mock(async (_command: string, args: string[]) => {
       events.push(args[0]);
@@ -311,7 +314,10 @@ describe("createOpenspecPlugin", () => {
 
     const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"], [{ name: "openspec" }], "sync"));
+      await plugin.apply({
+        ...makeCtx("/tmp/companion", ["claude"], [{ name: "openspec" }], "sync"),
+        regenerateOpenSpec: true,
+      });
     } finally {
       stderrSpy.mockRestore();
     }
@@ -1187,5 +1193,273 @@ describe("createOpenspecPlugin", () => {
       fs.access(path.join(root, "openspec", "schemas", "mate-minimal")),
     ).rejects.toThrow();
     await expect(fs.access(path.join(root, "openspec", "mate-conventions.yaml"))).rejects.toThrow();
+  });
+});
+
+describe("OpenSpec environment", () => {
+  test("setup reconcile runs every openspec command with telemetry and update checks off", async () => {
+    const before = {
+      telemetry: process.env.OPENSPEC_TELEMETRY,
+      updateCheck: process.env.OPENSPEC_NO_UPDATE_CHECK,
+    };
+    const runCommand = mock(async () => {});
+    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
+
+    await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
+
+    expect(OPENSPEC_ENV).toEqual({
+      OPENSPEC_TELEMETRY: "0",
+      OPENSPEC_NO_UPDATE_CHECK: "1",
+    });
+    const subcommands = runCommand.mock.calls.map((call) => (call as unknown[])[1] as string[]);
+    expect(subcommands.map((args) => args[0])).toEqual(["config", "init", "update"]);
+    for (const call of runCommand.mock.calls) {
+      expect((call as unknown[])[2]).toEqual({
+        cwd: "/tmp/companion",
+        env: OPENSPEC_ENV,
+      });
+    }
+    expect(process.env.OPENSPEC_TELEMETRY).toBe(before.telemetry);
+    expect(process.env.OPENSPEC_NO_UPDATE_CHECK).toBe(before.updateCheck);
+  });
+
+  test("version detection runs openspec --version with both variables set", async () => {
+    const before = process.env.OPENSPEC_TELEMETRY;
+    const bin = await makeTempDir("mate-openspec-version-env-");
+    const record = path.join(bin, "env.txt");
+    await fs.writeFile(
+      path.join(bin, "openspec"),
+      `#!/bin/sh\nprintf '%s %s' "$OPENSPEC_TELEMETRY" "$OPENSPEC_NO_UPDATE_CHECK" > "${record}"\necho 1.6.0\n`,
+      { mode: 0o755 },
+    );
+    const plugin = createOpenspecPlugin({
+      runCommand: mock(async () => {}),
+      installCommand: mock(async () => {}),
+      isCommandOnPath: (command) => command === "openspec",
+      pathValue: () => bin,
+      fetchLatestVersion: async () => "1.6.0",
+      isPinnedDeployment: () => false,
+    });
+
+    await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
+
+    await expect(fs.readFile(record, "utf8")).resolves.toBe("0 1");
+    expect(process.env.OPENSPEC_TELEMETRY).toBe(before);
+  });
+});
+
+/** Writes an OpenSpec-generated skill whose frontmatter records `generatedBy`. */
+async function writeGeneratedSkill(
+  root: string,
+  runtimeDir: ".claude" | ".agents",
+  skill: string,
+  frontmatter: string,
+): Promise<void> {
+  const dir = path.join(root, runtimeDir, "skills", skill);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "SKILL.md"), `---\n${frontmatter}---\n\nBody\n`, "utf8");
+}
+
+const generatedBy = (version: string) =>
+  `name: acme\nmetadata:\n  author: openspec\n  generatedBy: "${version}"\n`;
+
+describe("launch-time sync", () => {
+  test("invokes no OpenSpec reconcile and no @latest upgrade, and still deploys Mate skills", async () => {
+    const root = await makeTempDir("mate-openspec-launch-");
+    await writeGeneratedSkill(root, ".claude", "openspec-explore", generatedBy("1.14.2"));
+    const before = await fs.readFile(
+      path.join(root, ".claude", "skills", "openspec-explore", "SKILL.md"),
+      "utf8",
+    );
+    const runCommand = mock(async () => {});
+    const installCommand = mock(async () => {});
+    const fetchLatestVersion = mock(async () => "1.15.0");
+    const plugin = createOpenspecPlugin({
+      runCommand,
+      installCommand,
+      isCommandOnPath: (command) => command === "openspec",
+      getInstalledVersion: async () => "1.14.2",
+      fetchLatestVersion,
+      isPinnedDeployment: () => false,
+    });
+
+    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }], "sync"));
+
+    expect(runCommand).not.toHaveBeenCalled();
+    expect(installCommand).not.toHaveBeenCalled();
+    expect(fetchLatestVersion).not.toHaveBeenCalled();
+    await expect(
+      fs.readFile(path.join(root, ".claude", "skills", "openspec-explore", "SKILL.md"), "utf8"),
+    ).resolves.toBe(before);
+    await expect(
+      fs.access(path.join(root, ".claude", "skills", "mate-grill-me", "SKILL.md")),
+    ).resolves.toBeNull();
+    await expect(
+      fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
+    ).resolves.toBeNull();
+  });
+
+  test("warns about a missing openspec without prompting and still deploys Mate skills", async () => {
+    const root = await makeTempDir("mate-openspec-launch-missing-");
+    const confirm = mock(async () => true);
+    const installCommand = mock(async () => {});
+    const plugin = createOpenspecPlugin({
+      runCommand: mock(async () => {}),
+      installCommand,
+      confirm,
+      isCommandOnPath: () => false,
+    });
+
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }], "sync"));
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining("npm install -g @fission-ai/openspec@latest"),
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(installCommand).not.toHaveBeenCalled();
+    await expect(
+      fs.access(path.join(root, ".claude", "skills", "mate-grill-me", "SKILL.md")),
+    ).resolves.toBeNull();
+  });
+});
+
+describe("readCompanionGeneratedOpenSpecVersion", () => {
+  test("returns undefined when no generated skill exists", async () => {
+    const root = await makeTempDir("mate-openspec-generated-missing-");
+    await expect(readCompanionGeneratedOpenSpecVersion(root)).resolves.toBeUndefined();
+  });
+
+  test("ignores malformed frontmatter and invalid versions", async () => {
+    const root = await makeTempDir("mate-openspec-generated-malformed-");
+    await writeGeneratedSkill(root, ".claude", "openspec-explore", "metadata: [unclosed\n");
+    await writeGeneratedSkill(root, ".claude", "openspec-propose", generatedBy("latest"));
+    const noFrontmatter = path.join(root, ".claude", "skills", "openspec-sync-specs", "SKILL.md");
+    await fs.mkdir(path.dirname(noFrontmatter), { recursive: true });
+    await fs.writeFile(noFrontmatter, "No frontmatter\n", "utf8");
+
+    await expect(readCompanionGeneratedOpenSpecVersion(root)).resolves.toBeUndefined();
+  });
+
+  test("returns the highest valid version across mixed skills, ignoring non-OpenSpec skills", async () => {
+    const root = await makeTempDir("mate-openspec-generated-mixed-");
+    await writeGeneratedSkill(root, ".claude", "openspec-explore", generatedBy("1.14.2"));
+    await writeGeneratedSkill(root, ".claude", "openspec-propose", generatedBy("not-a-version"));
+    await writeGeneratedSkill(root, ".claude", "openspec-apply-change", generatedBy("1.9.0"));
+    await writeGeneratedSkill(root, ".claude", "mate-grill-me", generatedBy("9.9.9"));
+
+    await expect(readCompanionGeneratedOpenSpecVersion(root)).resolves.toBe("1.14.2");
+  });
+
+  test("reads both the Claude and the shared skill roots", async () => {
+    const root = await makeTempDir("mate-openspec-generated-roots-");
+    await writeGeneratedSkill(root, ".claude", "openspec-explore", generatedBy("1.14.2"));
+    await writeGeneratedSkill(root, ".agents", "openspec-explore", generatedBy("1.15.0"));
+
+    await expect(readCompanionGeneratedOpenSpecVersion(root)).resolves.toBe("1.15.0");
+  });
+});
+
+describe("launch-time catch-up to the companion's generated version", () => {
+  async function launch(options: {
+    generated?: string;
+    installed?: string;
+    pinned?: boolean;
+    installFails?: boolean;
+  }) {
+    const root = await makeTempDir("mate-openspec-catch-up-");
+    if (options.generated) {
+      await writeGeneratedSkill(
+        root,
+        ".claude",
+        "openspec-explore",
+        generatedBy(options.generated),
+      );
+    }
+    const runCommand = mock(async () => {});
+    const installCommand = mock(async () => {
+      if (options.installFails) throw new Error("npm exited with code 1");
+    });
+    const plugin = createOpenspecPlugin({
+      runCommand,
+      installCommand,
+      isCommandOnPath: (command) => command === "openspec",
+      getInstalledVersion: async () => options.installed,
+      fetchLatestVersion: async () => "2.0.0",
+      isPinnedDeployment: () => options.pinned ?? false,
+    });
+    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
+    let stderr = "";
+    try {
+      await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }], "sync"));
+      stderr = stderrSpy.mock.calls.map((call) => String(call[0])).join("");
+    } finally {
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+    }
+    return { root, runCommand, installCommand, stderr };
+  }
+
+  test("a developer behind the companion installs exactly the generated version", async () => {
+    const { root, runCommand, installCommand } = await launch({
+      generated: "1.15.0",
+      installed: "1.14.2",
+    });
+
+    expect(installCommand).toHaveBeenCalledTimes(1);
+    expect(installCommand).toHaveBeenCalledWith(
+      "npm",
+      ["install", "-g", "@fission-ai/openspec@1.15.0"],
+      { cwd: root },
+    );
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  test("a developer ahead of the companion is left alone", async () => {
+    const { installCommand, runCommand } = await launch({
+      generated: "1.14.2",
+      installed: "1.15.0",
+    });
+
+    expect(installCommand).not.toHaveBeenCalled();
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  test("a failed catch-up warns with the manual command and the launch continues", async () => {
+    const { root, stderr } = await launch({
+      generated: "1.15.0",
+      installed: "1.14.2",
+      installFails: true,
+    });
+
+    expect(stderr).toContain("npm exited with code 1");
+    expect(stderr).toContain("npm install -g @fission-ai/openspec@1.15.0");
+    await expect(
+      fs.access(path.join(root, ".claude", "skills", "mate-grill-me", "SKILL.md")),
+    ).resolves.toBeNull();
+  });
+
+  test("no recorded version runs no install", async () => {
+    const { installCommand } = await launch({ installed: "1.14.2" });
+    expect(installCommand).not.toHaveBeenCalled();
+  });
+
+  test("an unknown installed version runs no install", async () => {
+    const { installCommand } = await launch({ generated: "1.15.0" });
+    expect(installCommand).not.toHaveBeenCalled();
+  });
+
+  test("a pinned deployment runs no install", async () => {
+    const { installCommand } = await launch({
+      generated: "1.15.0",
+      installed: "1.14.2",
+      pinned: true,
+    });
+    expect(installCommand).not.toHaveBeenCalled();
   });
 });

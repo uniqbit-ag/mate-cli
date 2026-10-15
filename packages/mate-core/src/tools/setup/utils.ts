@@ -65,21 +65,31 @@ function waitForClose(child: ChildProcess, formatError: (code: number) => string
   });
 }
 
+export interface RunCommandOptions {
+  cwd?: string;
+  /** Merged over `process.env` for the child only; Mate's own env is untouched. */
+  env?: Record<string, string>;
+}
+
+function childEnv(options: RunCommandOptions): { env?: NodeJS.ProcessEnv } {
+  return options.env ? { env: { ...process.env, ...options.env } } : {};
+}
+
 export async function runCommand(
   command: string,
   args: string[],
-  options: { cwd?: string } = {},
+  options: RunCommandOptions = {},
 ): Promise<void> {
-  const child = spawn(command, args, { cwd: options.cwd, stdio: "inherit" });
+  const child = spawn(command, args, { cwd: options.cwd, stdio: "inherit", ...childEnv(options) });
   await waitForClose(child, (code) => `${command} ${args.join(" ")} exited with code ${code}`);
 }
 
 export async function runCommandSilently(
   command: string,
   args: string[],
-  options: { cwd?: string } = {},
+  options: RunCommandOptions = {},
 ): Promise<void> {
-  const child = spawn(command, args, { cwd: options.cwd, stdio: "pipe" });
+  const child = spawn(command, args, { cwd: options.cwd, stdio: "pipe", ...childEnv(options) });
   await waitForClose(child, (code) => `${command} ${args.join(" ")} exited with code ${code}`);
 }
 

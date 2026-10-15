@@ -13,7 +13,7 @@ import {
   isNewer,
 } from "../../../lib/update-checker";
 import { resolveCompanionRuntime } from "../../../runtime/env";
-import { syncCompanionFiles } from "../../../tools/setup";
+import { syncCompanionFiles, type CompanionSyncOptions } from "../../../tools/setup";
 import { MANAGED_MATE_SKILL_NAMES } from "../../../tools/setup/mate";
 import { runCommand } from "../../../tools/setup/utils";
 import { confirm } from "../../confirm";
@@ -96,7 +96,11 @@ export interface CompanionUpdateDeps {
   getCurrentVersion: () => string;
   fetchLatestVersion: () => Promise<string>;
   loadConfig: (companionPath: string) => Promise<FrameworkConfig>;
-  syncCompanionFiles: (companionPath: string, config: FrameworkConfig) => Promise<void>;
+  syncCompanionFiles: (
+    companionPath: string,
+    config: FrameworkConfig,
+    options: CompanionSyncOptions,
+  ) => Promise<void>;
   /** Returns true when the file was rewritten. */
   writeEngineFloor: (companionPath: string, range: string) => Promise<boolean>;
   hasSkillsLock: (companionPath: string) => Promise<boolean>;
@@ -114,7 +118,8 @@ export const companionUpdateDeps: CompanionUpdateDeps = {
   getCurrentVersion,
   fetchLatestVersion,
   loadConfig: (companionPath) => new ConfigStore(frameworkConfigPath(companionPath)).load(),
-  syncCompanionFiles,
+  syncCompanionFiles: (companionPath, config, options) =>
+    syncCompanionFiles(companionPath, config, undefined, options),
   async writeEngineFloor(companionPath, range) {
     const store = new RawFrameworkConfigStore(frameworkConfigPath(companionPath));
     const raw = (await store.load()) ?? {};
@@ -315,7 +320,10 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
 
   try {
     const config = await companionUpdateDeps.loadConfig(companionPath);
-    await companionUpdateDeps.syncCompanionFiles(companionPath, config);
+    // Only this command and setup regenerate OpenSpec output; launches leave it alone.
+    await companionUpdateDeps.syncCompanionFiles(companionPath, config, {
+      regenerateOpenSpec: true,
+    });
   } catch (error) {
     fail(`companion file synchronization failed: ${errorMessage(error)}`);
     return;

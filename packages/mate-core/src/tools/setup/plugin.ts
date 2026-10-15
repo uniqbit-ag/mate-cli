@@ -23,6 +23,11 @@ export interface SetupContext {
   /** Defaults to `companion`, so a caller that names no target is unchanged. */
   target?: ProjectionTarget;
   /**
+   * Asks the OpenSpec capability to regenerate its CLI output in `sync` mode.
+   * Only `mate companion update` sets it; launches leave committed output alone.
+   */
+  regenerateOpenSpec?: boolean;
+  /**
    * Provider-mediated context services. Always populated when the engine
    * executes a plugin; optional so hand-built contexts (tests, direct calls)
    * remain valid.

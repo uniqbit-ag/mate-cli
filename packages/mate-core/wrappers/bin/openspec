@@ -133,4 +133,6 @@ case "$command" in
     _mate_use_store_pointer
     ;;
 esac
-exec env -C "$_cwd" "$_real" "$@"
+# Mate decides the OpenSpec version, so OpenSpec's update hint is wrong advice
+# here; both variables reach the delegated binary only.
+exec env -C "$_cwd" OPENSPEC_TELEMETRY=0 OPENSPEC_NO_UPDATE_CHECK=1 "$_real" "$@"

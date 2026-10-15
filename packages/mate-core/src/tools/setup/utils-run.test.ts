@@ -69,6 +69,27 @@ describe("command helpers", () => {
     );
   });
 
+  test("runCommand and runCommandSilently merge an env override for the child only", async () => {
+    const before = { ...process.env };
+    const seen: unknown[] = [];
+    spawnImpl = (_command, _args, options) => {
+      seen.push(options);
+      const child = new EventEmitter();
+      queueMicrotask(() => child.emit("close", 0));
+      return child;
+    };
+
+    await runCommand("acme", [], { cwd: "/tmp/project", env: { ACME_FLAG: "1" } });
+    await runCommandSilently("acme", [], { cwd: "/tmp/project", env: { ACME_FLAG: "1" } });
+
+    for (const options of seen) {
+      const { env } = options as { env: NodeJS.ProcessEnv };
+      expect(env.ACME_FLAG).toBe("1");
+      expect(env.PATH).toBe(process.env.PATH);
+    }
+    expect(process.env).toEqual(before);
+  });
+
   test("runShellCommand rejects with the shell command in the message", async () => {
     spawnImpl = (command, options) => {
       expect(command).toBe("echo hello");
