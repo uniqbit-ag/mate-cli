@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 
 import { version } from "../../package.json";
 
@@ -1903,6 +1903,53 @@ describe("mate CLI e2e", () => {
         path.join(scenario.working, ".mate", "workspace.code-workspace"),
       ),
     ).toEqual({ folders: [{ path: scenario.working }, { path: scenario.companion }] });
+  });
+
+  test("companion open adds every Linked Companion without a TTY", async () => {
+    const scenario = await createScenario("mate-cli-e2e-workspace-open-many-");
+    const capturePath = await writeEditorStub(scenario, "code");
+
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+
+    // A copy of the companion already lists the working repo in its registry;
+    // pointing the repo-local registry at it too makes the link ambiguous.
+    const secondCompanion = `${scenario.companion}-b`;
+    await fs.cp(scenario.companion, secondCompanion, { recursive: true });
+    const registryPath = path.join(scenario.working, ".mate", "config", "registry.yaml");
+    const registry = parse(await fs.readFile(registryPath, "utf8")) as {
+      companions: Array<{ path: string }>;
+    };
+    registry.companions.push({ ...registry.companions[0]!, path: secondCompanion });
+    await fs.writeFile(registryPath, stringify(registry), "utf8");
+
+    const result = await runMate(scenario, {
+      cwd: scenario.working,
+      args: ["companion", "open"],
+      env: { MATE_E2E_EDITOR_CAPTURE_PATH: capturePath },
+    });
+
+    expect(result.exitCode).toBe(0);
+
+    await waitForFile(capturePath);
+    const invocation = await readJson<{ argv: string[] }>(capturePath);
+    expect(invocation.argv).toEqual([
+      "--add",
+      scenario.working,
+      scenario.companion,
+      secondCompanion,
+    ]);
+    expect(
+      await readJson<{ folders: Array<{ path: string }> }>(
+        path.join(scenario.working, ".mate", "workspace.code-workspace"),
+      ),
+    ).toEqual({
+      folders: [
+        { path: scenario.working },
+        { path: scenario.companion },
+        { path: secondCompanion },
+      ],
+    });
   });
 
   test("companion open falls back to code-insiders when code is unavailable", async () => {
