@@ -32,6 +32,8 @@ function withDeclaration(
   );
 }
 
+const INSTALL_USAGE = `usage: ${FRAMEWORK_NAME} plugin install <package>[@version]`;
+
 export interface PluginInstallCommandDeps {
   cwd?: string;
   installDeps?: PluginInstallDeps;
@@ -50,10 +52,13 @@ export async function runPluginInstallCommand(
   deps: PluginInstallCommandDeps = {},
 ): Promise<boolean> {
   const spec = argv[0];
-  if (!spec) {
-    process.stderr.write(
-      `${FRAMEWORK_NAME}: usage: ${FRAMEWORK_NAME} plugin install <package>[@version]\n`,
-    );
+  if (spec === "-h" || spec === "--help") {
+    process.stdout.write(`${INSTALL_USAGE}\n`);
+    return true;
+  }
+  if (!spec || spec.startsWith("-")) {
+    const problem = spec ? `unknown option ${spec}; ` : "";
+    process.stderr.write(`${FRAMEWORK_NAME}: ${problem}${INSTALL_USAGE}\n`);
     process.exitCode = 1;
     return false;
   }

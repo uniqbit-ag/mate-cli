@@ -1,13 +1,14 @@
 import { usage } from "../../usage";
-import { runPluginInstallCommand } from "./install";
+import { type PluginInstallCommandDeps, runPluginInstallCommand } from "./install";
 
 export async function runPluginCommand(
   subcommand: string | undefined,
   argv: string[],
+  deps: PluginInstallCommandDeps = {},
 ): Promise<void> {
   switch (subcommand) {
     case "install":
-      await runPluginInstallCommand(argv);
+      if (!(await runPluginInstallCommand(argv, deps))) process.exitCode = 1;
       return;
     default:
       console.error(`Unknown plugin command: ${subcommand ?? ""}`);
