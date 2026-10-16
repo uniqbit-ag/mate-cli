@@ -72,6 +72,15 @@ export async function validateContextModePackage(companionPath: string): Promise
   );
 }
 
+export const contextModePackageDeps = {
+  runInstall: (cwd: string) =>
+    spawnSync(
+      "npm",
+      ["install", "--no-audit", "--no-fund", "--loglevel=error", "--registry", PUBLIC_NPM_REGISTRY],
+      { cwd, encoding: "utf8" as const, env: process.env },
+    ),
+};
+
 export async function installContextModePackage(companionPath: string): Promise<void> {
   validateContextModeNodeRuntime();
   const installDir = getContextModeInstallDir(companionPath);
@@ -85,15 +94,11 @@ export async function installContextModePackage(companionPath: string): Promise<
     ) + "\n",
     "utf8",
   );
-  const result = spawnSync(
-    "npm",
-    ["install", "--no-audit", "--no-fund", "--silent", "--registry", PUBLIC_NPM_REGISTRY],
-    { cwd: installDir, encoding: "utf8", env: process.env },
-  );
+  const result = contextModePackageDeps.runInstall(installDir);
   if (result.error || result.status !== 0) {
-    throw new Error(
-      `Could not install ${getContextModePackageReference()}: ${result.error?.message ?? result.stderr?.trim() ?? `npm exited with ${result.status}`}`,
-    );
+    const cause =
+      result.error?.message ?? (result.stderr?.trim() || `npm exited with ${result.status}`);
+    throw new Error(`Could not install ${getContextModePackageReference()}: ${cause}`);
   }
   await validateContextModePackage(companionPath);
 }

@@ -40,11 +40,11 @@ export interface WarmPluginCacheResult {
 
 export const opencodePluginCacheDeps = {
   runInstall: (cwd: string, registry: string) =>
-    spawnSync("npm", ["install", "--no-audit", "--no-fund", "--silent", "--registry", registry], {
-      cwd,
-      encoding: "utf8" as const,
-      stdio: ["ignore", "pipe", "pipe"] as const,
-    }),
+    spawnSync(
+      "npm",
+      ["install", "--no-audit", "--no-fund", "--loglevel=error", "--registry", registry],
+      { cwd, encoding: "utf8" as const, stdio: ["ignore", "pipe", "pipe"] as const },
+    ),
 };
 
 export async function warmOpenCodePackageCache(
