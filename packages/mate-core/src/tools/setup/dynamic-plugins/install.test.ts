@@ -294,3 +294,100 @@ describe("installDeclaredPlugins", () => {
     await expect(fs.access(dynamicPluginsWorkspaceRoot(companionPath))).rejects.toThrow();
   });
 });
+
+describe("installDeclaredPlugins npm failures", () => {
+  test("a failed npm install with an empty detail still fails every declaration", async () => {
+    const companionPath = await makeTempDir("plugin-install-empty-detail-");
+    // A tree left by an earlier run must not mask the failure.
+    await installDeclaredPlugins(companionPath, [declaration()], {
+      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+    });
+
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [declaration(), declaration({ package: "@acme/other" })],
+      { runNpmInstall: async () => ({ ok: false, detail: "" }) },
+    );
+
+    expect(results).toEqual([
+      {
+        package: "@acme/custom-plugin",
+        status: "failed",
+        error: "npm install failed",
+      },
+      { package: "@acme/other", status: "failed", error: "npm install failed" },
+    ]);
+  });
+
+  test("npm's own install error is passed through instead of a missing tree", async () => {
+    const companionPath = await makeTempDir("plugin-install-e401-");
+    const detail = "npm error code E401\nnpm error 401 Unauthorized";
+
+    const results = await installDeclaredPlugins(companionPath, [declaration()], {
+      runNpmInstall: async () => ({ ok: false, detail }),
+    });
+
+    expect(results).toEqual([{ package: "@acme/custom-plugin", status: "failed", error: detail }]);
+  });
+
+  test("a failed npm update for a moving tag reports npm's error", async () => {
+    const companionPath = await makeTempDir("plugin-install-update-fail-");
+    const decl = declaration({ version: "latest" });
+    await installDeclaredPlugins(companionPath, [decl], {
+      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+    });
+
+    const results = await installDeclaredPlugins(companionPath, [decl], {
+      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+      runNpmUpdate: async () => ({
+        ok: false,
+        detail: "npm error code ETARGET",
+      }),
+    });
+
+    expect(results).toEqual([
+      {
+        package: "@acme/custom-plugin",
+        status: "failed",
+        error: "npm error code ETARGET",
+      },
+    ]);
+  });
+
+  test("a failed npm update with an empty detail still fails the moving declaration", async () => {
+    const companionPath = await makeTempDir("plugin-install-update-empty-");
+    const decl = declaration({ version: "latest" });
+    await installDeclaredPlugins(companionPath, [decl], {
+      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+    });
+
+    const results = await installDeclaredPlugins(companionPath, [decl], {
+      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+      runNpmUpdate: async () => ({ ok: false, detail: "" }),
+    });
+
+    expect(results).toEqual([
+      {
+        package: "@acme/custom-plugin",
+        status: "failed",
+        error: "npm update failed",
+      },
+    ]);
+  });
+
+  test("a missing tree after a successful npm run is still reported", async () => {
+    const companionPath = await makeTempDir("plugin-install-missing-tree-");
+
+    const results = await installDeclaredPlugins(companionPath, [declaration()], {
+      runNpmInstall: async () => ({ ok: true }),
+    });
+
+    expect(results).toEqual([
+      {
+        package: "@acme/custom-plugin",
+        status: "failed",
+        error: "installed tree is missing @acme/custom-plugin/package.json",
+      },
+    ]);
+  });
+});

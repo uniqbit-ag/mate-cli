@@ -26,45 +26,40 @@ export interface PluginInstallResult {
   error?: string;
 }
 
-/** Runs `npm install` for the shared plugin workspace, honoring the user's ambient registry/auth config. */
-function defaultNpmInstall(workspaceRoot: string): { ok: boolean; detail?: string } {
-  const result = spawnSync("npm", ["install", "--no-audit", "--no-fund", "--silent"], {
-    cwd: workspaceRoot,
-    encoding: "utf8",
-  });
+/**
+ * Runs `npm <command>` in the shared plugin workspace, honoring the user's ambient
+ * registry/auth config. `--loglevel=error` keeps npm's own error in stderr for the report.
+ */
+function runNpm(
+  workspaceRoot: string,
+  command: string,
+  args: string[] = [],
+): { ok: boolean; detail?: string } {
+  const result = spawnSync(
+    "npm",
+    [command, "--no-audit", "--no-fund", "--loglevel=error", ...args],
+    { cwd: workspaceRoot, encoding: "utf8" },
+  );
   if (result.error || result.status !== 0) {
     return {
       ok: false,
       detail:
         result.error?.message ??
-        result.stderr?.trim() ??
-        `npm install exited with ${result.status}`,
+        (result.stderr?.trim() || `npm ${command} exited with ${result.status}`),
     };
   }
   return { ok: true };
 }
+
+/** Runs `npm install` for the shared plugin workspace. */
+const defaultNpmInstall: NpmInstallRunner = (workspaceRoot) => runNpm(workspaceRoot, "install");
 
 /** Version literals treated as moving targets: re-resolved via `npm update` on every run. */
 const MOVING_VERSION_TAGS = new Set(["latest", "canary"]);
 
 /** Runs `npm update <pkg...>` to force re-resolution of moving-tag-declared plugins every run. */
-function defaultNpmUpdate(
-  workspaceRoot: string,
-  packages: string[],
-): { ok: boolean; detail?: string } {
-  const result = spawnSync("npm", ["update", "--no-audit", "--no-fund", "--silent", ...packages], {
-    cwd: workspaceRoot,
-    encoding: "utf8",
-  });
-  if (result.error || result.status !== 0) {
-    return {
-      ok: false,
-      detail:
-        result.error?.message ?? result.stderr?.trim() ?? `npm update exited with ${result.status}`,
-    };
-  }
-  return { ok: true };
-}
+const defaultNpmUpdate: NpmUpdateRunner = (workspaceRoot, packages) =>
+  runNpm(workspaceRoot, "update", packages);
 
 async function readInstalledVersion(packageRoot: string): Promise<string | null> {
   try {
@@ -155,14 +150,15 @@ export async function installDeclaredPlugins(
 
   await writeWorkspaceManifest(workspaceRoot, desired);
   const installOutcome = await runNpmInstall(workspaceRoot);
+  // Failure is decided from `ok`, so an empty detail can never read as success.
   const installFailure = installOutcome.ok
     ? undefined
-    : (installOutcome.detail ?? "npm install failed");
+    : installOutcome.detail || "npm install failed";
 
   let updateFailure: string | undefined;
   if (movingPackages.length > 0) {
     const updateOutcome = await runNpmUpdate(workspaceRoot, movingPackages);
-    updateFailure = updateOutcome.ok ? undefined : (updateOutcome.detail ?? "npm update failed");
+    updateFailure = updateOutcome.ok ? undefined : updateOutcome.detail || "npm update failed";
   }
 
   const resolvedVersions = await Promise.all(
@@ -174,7 +170,7 @@ export async function installDeclaredPlugins(
   return sorted.map((declaration, index) => {
     const isMoving = MOVING_VERSION_TAGS.has(declaration.version);
     const failure = installFailure ?? (isMoving ? updateFailure : undefined);
-    if (failure) {
+    if (failure !== undefined) {
       return { package: declaration.package, status: "failed", error: failure };
     }
     const resolvedVersion = resolvedVersions[index];

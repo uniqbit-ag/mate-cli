@@ -6,17 +6,21 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   CONTEXT_MODE_VERSION,
+  contextModePackageDeps,
   getContextModeInstallDir,
   getContextModePackageReference,
   getContextModePackageRoot,
   isContextModeNodeVersionSupported,
+  installContextModePackage,
   isContextModePackageReference,
   validateContextModePackage,
 } from "./context-mode-package";
 
 const tempRoots: string[] = [];
+const originalRunInstall = contextModePackageDeps.runInstall;
 
 afterEach(async () => {
+  contextModePackageDeps.runInstall = originalRunInstall;
   await Promise.all(
     tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })),
   );
@@ -66,5 +70,35 @@ describe("context-mode package contract", () => {
     await expect(validateContextModePackage(companionPath)).resolves.toBeUndefined();
     await fs.rm(path.join(root, "hooks", "hooks.json"));
     await expect(validateContextModePackage(companionPath)).rejects.toThrow();
+  });
+});
+
+describe("installContextModePackage npm failures", () => {
+  async function companion(): Promise<string> {
+    const companionPath = await fs.mkdtemp(path.join(os.tmpdir(), "mate-context-install-"));
+    tempRoots.push(companionPath);
+    return companionPath;
+  }
+
+  test("names the package reference and npm's network error", async () => {
+    const companionPath = await companion();
+    contextModePackageDeps.runInstall = () =>
+      ({
+        status: 1,
+        stderr: "npm error code ENOTFOUND\nnpm error network request failed\n",
+      }) as never;
+
+    await expect(installContextModePackage(companionPath)).rejects.toThrow(
+      `Could not install ${getContextModePackageReference()}: npm error code ENOTFOUND\nnpm error network request failed`,
+    );
+  });
+
+  test("ends with the exit status when npm writes nothing", async () => {
+    const companionPath = await companion();
+    contextModePackageDeps.runInstall = () => ({ status: 1, stderr: "" }) as never;
+
+    await expect(installContextModePackage(companionPath)).rejects.toThrow(
+      `Could not install ${getContextModePackageReference()}: npm exited with 1`,
+    );
   });
 });
