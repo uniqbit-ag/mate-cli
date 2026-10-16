@@ -12,6 +12,8 @@ let originalArtifactPath: string | undefined;
 let originalExitCode: number | undefined;
 let stderrWrites: string[];
 let originalStderrWrite: typeof process.stderr.write;
+let stdoutWrites: string[];
+let originalStdoutWrite: typeof process.stdout.write;
 let logs: string[];
 let originalLog: typeof console.log;
 
@@ -72,6 +74,12 @@ beforeEach(() => {
     stderrWrites.push(chunk.toString());
     return true;
   }) as typeof process.stderr.write;
+  stdoutWrites = [];
+  originalStdoutWrite = process.stdout.write;
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    stdoutWrites.push(chunk.toString());
+    return true;
+  }) as typeof process.stdout.write;
   logs = [];
   originalLog = console.log;
   console.log = (...args: unknown[]) => {
@@ -84,6 +92,7 @@ afterEach(async () => {
   else process.env.MATE_ARTIFACT_PATH = originalArtifactPath;
   process.exitCode = originalExitCode;
   process.stderr.write = originalStderrWrite;
+  process.stdout.write = originalStdoutWrite;
   console.log = originalLog;
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
@@ -114,6 +123,55 @@ describe("runPluginInstallCommand", () => {
     expect(ok).toBe(false);
     expect(process.exitCode).toBe(1);
     expect(stderrWrites.join(" ")).toContain("usage");
+  });
+
+  for (const flag of ["--help", "-h"]) {
+    test(`${flag} prints usage without declaring anything`, async () => {
+      const companionPath = await makeCompanion();
+      process.env.MATE_ARTIFACT_PATH = companionPath;
+      const configFile = path.join(companionPath, ".mate", "config", "framework.yaml");
+      const before = await fs.readFile(configFile, "utf8");
+      let installRan = false;
+
+      const ok = await runPluginInstallCommand([flag], {
+        installDeps: {
+          runNpmInstall: async () => {
+            installRan = true;
+            return { ok: true };
+          },
+        },
+      });
+
+      expect(ok).toBe(true);
+      expect(process.exitCode).toBe(0);
+      expect(stdoutWrites.join(" ")).toContain("mate plugin install <package>[@version]");
+      expect(await fs.readFile(configFile, "utf8")).toBe(before);
+      expect(installRan).toBe(false);
+    });
+  }
+
+  test("an unknown option is refused without declaring anything", async () => {
+    const companionPath = await makeCompanion();
+    process.env.MATE_ARTIFACT_PATH = companionPath;
+    const configFile = path.join(companionPath, ".mate", "config", "framework.yaml");
+    const before = await fs.readFile(configFile, "utf8");
+    let installRan = false;
+
+    const ok = await runPluginInstallCommand(["--force"], {
+      installDeps: {
+        runNpmInstall: async () => {
+          installRan = true;
+          return { ok: true };
+        },
+      },
+    });
+
+    expect(ok).toBe(false);
+    expect(process.exitCode).toBe(1);
+    expect(stderrWrites.join(" ")).toContain("unknown option --force");
+    expect(stderrWrites.join(" ")).toContain("usage");
+    expect(await fs.readFile(configFile, "utf8")).toBe(before);
+    expect(installRan).toBe(false);
   });
 
   test("requires a companion or hub context", async () => {
