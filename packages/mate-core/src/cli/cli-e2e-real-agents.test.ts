@@ -233,19 +233,41 @@ async function runMateInTty(
       .replaceAll("]", "\\]")
       .replaceAll("\n", "\\n")
       .replaceAll("\r", "\\r")}"`;
-  const command = ["bun", path.join(APP_ROOT, "src/cli.ts"), ...args].map(toTclString).join(" ");
+  /**
+   * Run through `sh` so mate's exit code reaches us as an output marker: the
+   * `wait` builtin blocks on this expect build once the child is reaped.
+   */
+  const command = [
+    "sh",
+    "-c",
+    `bun "$@"; printf '\\n${TTY_EXIT_MARKER}%s\\n' "$?"`,
+    "mate-e2e",
+    path.join(APP_ROOT, "src/cli.ts"),
+    ...args,
+  ]
+    .map(toTclString)
+    .join(" ");
   const sends = inputChunks
     .map((entry) => {
       const step = typeof entry === "string" ? { chunk: entry } : entry;
       return [`after ${step.delayMs ?? 150}`, `send -- ${toTclString(step.chunk)}`].join("\n");
     })
     .join("\n");
+  /**
+   * Ink frames do not reach expect before exit, so the first key waits for the
+   * prompt to switch the PTY to raw mode instead: keys typed earlier land in
+   * the cooked line buffer and arrive as one chunk the prompt discards.
+   */
   const expectScript = [
     `set timeout ${timeoutSeconds ?? 8}`,
     "log_user 1",
     `spawn -noecho ${command}`,
+    ...(inputChunks.length > 0 ? WAIT_FOR_RAW_MODE_TCL : []),
     sends,
-    "expect { eof { set result [wait]; exit [lindex $result 3] } timeout { exit 124 } }",
+    "expect {",
+    "  eof {}",
+    "  timeout { exit 124 }",
+    "}",
   ].join("\n");
 
   return new Promise((resolve, reject) => {
@@ -280,9 +302,33 @@ async function runMateInTty(
       stderr += chunk.toString();
     });
     child.on("error", reject);
-    child.on("close", (exitCode) => resolve({ exitCode: exitCode ?? 1, stdout, stderr }));
+    child.on("close", (exitCode) => resolve(withTtyExitCode(exitCode, stdout, stderr)));
     child.stdin.end();
   });
+}
+
+const TTY_EXIT_MARKER = "__MATE_E2E_EXIT__";
+
+/** Polls the PTY until the prompt has taken it into raw mode, failing like a timeout. */
+const WAIT_FOR_RAW_MODE_TCL = [
+  "set tty $spawn_out(slave,name)",
+  "set deadline [expr {[clock milliseconds] + $timeout * 1000}]",
+  "while {[catch {exec stty -a < $tty} modes] || ![regexp -- {-icanon} $modes]} {",
+  "  if {[clock milliseconds] > $deadline} { exit 124 }",
+  "  after 25",
+  "}",
+];
+
+/** Mate's own exit code from the marker; expect's (124 on timeout) when mate never finished. */
+function withTtyExitCode(
+  expectExitCode: number | null,
+  stdout: string,
+  stderr: string,
+): CliRunResult {
+  const marker = new RegExp(`\\r?\\n${TTY_EXIT_MARKER}(\\d+)\\r?\\n?`);
+  const match = stdout.match(marker);
+  if (!match) return { exitCode: expectExitCode || 1, stdout, stderr };
+  return { exitCode: Number(match[1]), stdout: stdout.replace(marker, ""), stderr };
 }
 
 async function writeUvStub(scenario: E2EScenario): Promise<void> {

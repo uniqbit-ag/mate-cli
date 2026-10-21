@@ -557,8 +557,16 @@ describe("FrameworkLauncher", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-launcher-readonly-"));
     const blocker = path.join(root, "not-a-directory");
     await fs.writeFile(blocker, "", "utf8");
+    /**
+     * Its own companion, not the shared `/tmp/companion`: the real refresh spawns
+     * `openspec store register` once another test has left an `openspec/` there.
+     */
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(companionPath);
 
     const { launcher, adapter } = createLauncher();
+    const resolveConfig = launcher.resolveConfig;
+    launcher.resolveConfig = async () => ({ ...(await resolveConfig()), companionPath });
     sessionPrepareDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
     const syncCompanionFiles = mock(async () => {});
     const projectWorkingRepo = mock(async () => projectedNothing());
