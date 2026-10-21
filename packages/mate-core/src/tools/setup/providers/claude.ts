@@ -5,6 +5,13 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { resolveSecretPolicy } from "../../../runtime/policy";
+import {
+  CLAUDE_LOCAL_CONFIG_DOCUMENT,
+  CLAUDE_SETTINGS_DOCUMENT,
+  renderedDocument,
+  type ManagedRegion,
+  type RenderedRuntimeDocuments,
+} from "../../../runtime/runtime-document-manifest";
 import { projectableSecretDenyPatterns } from "../../../runtime/secret-patterns";
 import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
 import {
@@ -13,7 +20,7 @@ import {
   upsertManagedBlock,
 } from "../context-services";
 import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "../plugin";
-import { surfaceRoot } from "../surface-target";
+import { projectionRepoRoot, surfaceRoot } from "../surface-target";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
 import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
 import { patchSkillTreeMarkdownFiles } from "./skill-tree";
@@ -30,6 +37,12 @@ import {
   type ClaudeHookGroup,
   type ClaudeSettings,
 } from "./claude-format";
+import {
+  mateBannerHookGroups,
+  mateGuardHookGroups,
+  mateGuidanceHookGroups,
+  mateSessionPrepareHookGroups,
+} from "./claude-plugin-hooks";
 import { getSetupRootTemplates } from "./utils";
 
 async function configureClaudeGuidance(companionPath: string): Promise<void> {
@@ -131,7 +144,7 @@ export function renderSecretDenyEntries(): string[] {
 }
 
 /** The managed `permissions.deny` list: fixed tool denies, plus secret files while guardrails are on. */
-export function renderManagedClaudeDenyEntries(companionPath: string): string[] {
+function renderManagedClaudeDenyEntries(companionPath: string): string[] {
   return [
     ...MANAGED_CLAUDE_DENY_ENTRIES,
     ...(resolveSecretPolicy(companionPath).guardrails ? renderSecretDenyEntries() : []),
@@ -145,7 +158,7 @@ export function renderManagedClaudeDenyEntries(companionPath: string): string[] 
 function getAllManagedDenyEntries(): Set<string> {
   return new Set([...MANAGED_CLAUDE_DENY_ENTRIES, ...renderSecretDenyEntries()]);
 }
-export const MANAGED_CLAUDE_FORCED_SETTINGS = { enableArtifact: false } as const;
+const MANAGED_CLAUDE_FORCED_SETTINGS = { enableArtifact: false } as const;
 
 /** Companion-owned Claude settings: sole source of Mate-managed hooks, permissions and MCP servers. */
 export function getCompanionClaudeSettingsPath(companionPath: string): string {
@@ -162,7 +175,7 @@ export function getCompanionClaudeMcpConfigPath(companionPath: string): string {
  * Rendered separately from the settings document so a working-target pass can
  * obtain them without a write.
  */
-export function renderManagedClaudePermissionEntries(
+function renderManagedClaudePermissionEntries(
   companionPath: string,
   contributions: CapabilityContributionInput[] = [],
 ): string[] {
@@ -175,7 +188,7 @@ export function renderManagedClaudePermissionEntries(
 }
 
 /** The Mate-managed `.mcp.json` server map of one pass, as a value. */
-export function renderManagedClaudeMcpServers(
+function renderManagedClaudeMcpServers(
   contributions: CapabilityContributionInput[] = [],
 ): Record<string, unknown> {
   const servers: Record<string, unknown> = {};
@@ -192,7 +205,7 @@ export function renderManagedClaudeMcpServers(
  * Enabled Capabilities' Claude hook groups per event, in declared order, as a
  * value: what a Claude wrap carries into the Working Repository.
  */
-export function renderManagedClaudeHookGroups(
+function renderManagedClaudeHookGroups(
   contributions: CapabilityContributionInput[] = [],
 ): Record<string, ClaudeHookGroup[]> {
   const hooks: Record<string, ClaudeHookGroup[]> = {};
@@ -297,6 +310,122 @@ function renderManagedClaudeSettings(
   }
 
   return settings;
+}
+
+/**
+ * Loaded by a managed session beside the launch's plugin. Mate hooks here run
+ * twice there, inertly: guard is input-pure, guidance/prepare yield under a
+ * launch env, banner is `--projected`. Capability groups run once: the launch
+ * omits them from `--settings`. A launch passes no `--add-dir`; it relies on
+ * `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` for companion `CLAUDE.md`.
+ *
+ * Unlike {@link renderManagedClaudeSettings}, this carries no
+ * `autoMemoryEnabled: false`. Whether a Wrap should leave the user's choice
+ * alone there is an open question, not settled policy.
+ */
+function claudeSettingsRegions(
+  ctx: SetupContext,
+  inputs: CapabilityContributionInput[],
+): ManagedRegion[] {
+  const capabilityHooks = renderManagedClaudeHookGroups(inputs);
+  const mateHooks: Record<string, unknown[]> = {
+    PreToolUse: mateGuardHookGroups(),
+    SessionStart: [
+      ...mateBannerHookGroups(),
+      ...mateGuidanceHookGroups(),
+      ...mateSessionPrepareHookGroups(),
+    ],
+  };
+  const events = [...new Set([...Object.keys(mateHooks), ...Object.keys(capabilityHooks)])];
+  return [
+    ...events.map((event): ManagedRegion => ({
+      at: ["hooks", event],
+      kind: "list",
+      values: [...(mateHooks[event] ?? []), ...(capabilityHooks[event] ?? [])],
+    })),
+    /**
+     * `stripPrefix` heals a repository an older Mate wrapped. That version wrote
+     * the whole launch environment here, and Claude Code applies `env` to the
+     * session, so every hook in a bare session inherited `MATE_*` and read the
+     * repository as a Managed Session — silently, since looking managed is
+     * exactly what makes the guidance hook emit nothing. Guidance must be the
+     * projection's to give in an Unmanaged Session, so no `MATE_*` key may
+     * survive here.
+     */
+    {
+      at: ["env"],
+      kind: "map",
+      entries: { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" },
+      stripPrefix: "MATE_",
+    },
+    {
+      at: ["permissions", "allow"],
+      kind: "list",
+      values: renderManagedClaudePermissionEntries(ctx.companionPath, inputs),
+    },
+    {
+      at: ["permissions", "deny"],
+      kind: "list",
+      values: renderManagedClaudeDenyEntries(ctx.companionPath),
+    },
+    /**
+     * Yields: the document is the user's, so their own `enableArtifact` wins,
+     * and unwrapping restores it instead of deleting a key Mate overwrote.
+     */
+    ...Object.entries(MANAGED_CLAUDE_FORCED_SETTINGS).map(([key, value]): ManagedRegion => ({
+      at: [key],
+      kind: "value",
+      value,
+      yields: true,
+    })),
+  ];
+}
+
+/**
+ * The working target's Claude documents, rendered as values. Each is a document
+ * the runtime finds by walking up from the current directory, and every path
+ * inside one still names the Companion Repository — only where the document is
+ * placed differs from the companion target.
+ */
+export async function renderClaudeWorkingDocuments(
+  ctx: SetupContext,
+  inputs: CapabilityContributionInput[],
+): Promise<RenderedRuntimeDocuments> {
+  const repoRoot = projectionRepoRoot(ctx);
+  return {
+    documents: [
+      ...renderedDocument(CLAUDE_SETTINGS_DOCUMENT, claudeSettingsRegions(ctx, inputs)),
+      /**
+       * Local scope, not `.mcp.json`: a project-scoped server is inert until a
+       * human approves it in a session, which an Unmanaged Session is exactly the
+       * case that cannot rely on. The repo path is the key Claude Code files a
+       * project under, resolved so a symlinked working directory still matches.
+       *
+       * Confirmed against a real `~/.claude.json`: the keys there are the
+       * directories sessions started in, not repository roots — sibling
+       * directories of one checkout each hold their own entry, as do temporary
+       * directories. So this reaches exactly one session: the one started at the
+       * repository root. A session started in a subdirectory of a wrapped
+       * repository has its own key, finds no `mcpServers` under it, and sees none
+       * of these servers — the Unmanaged Session case this document exists for,
+       * missed. That limit is deliberate. The directories a session might start
+       * in are unbounded, and every one of them would be a fresh entry in the
+       * user's global configuration that nothing later reclaims; keying the
+       * repository root only keeps the projection's footprint there to a single
+       * key. A subdirectory session still gets the rest of the projection — the
+       * documents inside the repository are found by the runtime's own upward
+       * walk — it loses only the MCP servers.
+       */
+      ...renderedDocument(CLAUDE_LOCAL_CONFIG_DOCUMENT, [
+        {
+          at: ["projects", repoRoot, "mcpServers"],
+          kind: "map",
+          entries: renderManagedClaudeMcpServers(inputs),
+        },
+      ]),
+    ],
+    warnings: [],
+  };
 }
 
 // Write the Mate-managed Claude settings into the companion repo. This is the

@@ -2,7 +2,7 @@
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
-import type { RenderedRuntimeDocument } from "../../runtime/runtime-document-manifest";
+import type { RenderedRuntimeDocuments } from "../../runtime/runtime-document-manifest";
 import { collectHostingProviders, ContextServiceMediator } from "./context-services";
 import type {
   CapabilityContributionInput,
@@ -11,10 +11,15 @@ import type {
   PluginRegistration,
   SetupContext,
 } from "./plugin";
-import { reconcileClaudeContributions } from "./providers/claude";
-import { reconcileOpenCodeContributions } from "./providers/opencode";
-import { mergeCompanionOpenCodeConfig, renderDocumentsForTarget } from "./runtime-documents";
+import { reconcileClaudeContributions, renderClaudeWorkingDocuments } from "./providers/claude";
+import {
+  reconcileOpenCodeContributions,
+  renderOpenCodeWorkingDocuments,
+} from "./providers/opencode";
 import { normalizeRegistration, type NormalizedRegistration } from "./registry";
+import { projectionRepoRoot } from "./surface-target";
+
+export type { RenderedRuntimeDocuments };
 
 export interface SetupInstallationPlanAction {
   phase: Plugin["kind"];
@@ -191,6 +196,18 @@ const RUNTIME_SURFACE_RECONCILERS: Record<
 };
 
 /**
+ * The working-target render of each Runtime Surface, by runtime id, in the
+ * order its documents are rendered.
+ */
+const RUNTIME_SURFACE_WORKING_RENDERERS: Record<
+  string,
+  (ctx: SetupContext, inputs: CapabilityContributionInput[]) => Promise<RenderedRuntimeDocuments>
+> = {
+  claude: renderClaudeWorkingDocuments,
+  opencode: renderOpenCodeWorkingDocuments,
+};
+
+/**
  * The declared Capability contributions of one pass, keyed by runtime. Shared
  * by both targets: what a companion pass writes is what a working pass renders.
  */
@@ -252,27 +269,26 @@ async function reconcileCapabilityContributions(
   }
 }
 
-/** What a render returns: its warnings are data for the caller, never printed here. */
-export interface RenderedRuntimeDocuments {
-  documents: RenderedRuntimeDocument[];
-  warnings: string[];
-}
-
 /**
  * The same declarations, rendered rather than written: a working-target pass
  * produces the documents and the Projection Root places them, so no Runtime
- * Surface reaches inside a Working Repository.
+ * Surface reaches inside a Working Repository. Refuses before anything renders
+ * when the context has no Working Repository: every document is addressed by it.
  */
 export async function renderRuntimeDocuments(
   ctx: SetupContext,
   registrations: PluginRegistration[],
   plan: SetupInstallationPlan,
 ): Promise<RenderedRuntimeDocuments> {
+  projectionRepoRoot(ctx);
   const plugins = registrations.map((entry) => normalizeRegistration(entry).plugin);
-  const documents = renderDocumentsForTarget(
-    ctx,
-    await collectContributionInputs(ctx, plugins, plan),
-  );
-  if (ctx.target !== "working") return { documents, warnings: [] };
-  return mergeCompanionOpenCodeConfig(ctx.companionPath, documents);
+  const inputsByRuntime = await collectContributionInputs(ctx, plugins, plan);
+  const rendered: RenderedRuntimeDocuments = { documents: [], warnings: [] };
+  for (const [runtimeId, render] of Object.entries(RUNTIME_SURFACE_WORKING_RENDERERS)) {
+    if (!ctx.activeProviders.includes(runtimeId)) continue;
+    const { documents, warnings } = await render(ctx, inputsByRuntime.get(runtimeId) ?? []);
+    rendered.documents.push(...documents);
+    rendered.warnings.push(...warnings);
+  }
+  return rendered;
 }

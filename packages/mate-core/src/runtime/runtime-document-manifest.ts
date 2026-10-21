@@ -62,6 +62,27 @@ export interface RenderedRuntimeDocument {
   readonly regions: readonly ManagedRegion[];
 }
 
+/** What a working-target render returns: its warnings are data for the caller, never printed. */
+export interface RenderedRuntimeDocuments {
+  documents: RenderedRuntimeDocument[];
+  warnings: string[];
+}
+
+function nonEmpty(region: ManagedRegion): boolean {
+  if (region.kind === "list") return region.values.length > 0;
+  if (region.kind === "map") return Object.keys(region.entries).length > 0;
+  return true;
+}
+
+/** One rendered document of its non-empty regions, or none when every region is empty. */
+export function renderedDocument(
+  documentPath: string,
+  regions: ManagedRegion[],
+): RenderedRuntimeDocument[] {
+  const kept = regions.filter(nonEmpty);
+  return kept.length > 0 ? [{ path: documentPath, regions: kept }] : [];
+}
+
 /** An owned companion copy: the hash of what Mate last wrote there. */
 export interface CopyRecord {
   runtime: WrapRuntime;

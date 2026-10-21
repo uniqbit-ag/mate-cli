@@ -6,8 +6,9 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
+import { CLAUDE_LOCAL_CONFIG_DOCUMENT } from "../../runtime/runtime-document-manifest";
+import { renderRuntimeDocuments, type SetupInstallationPlan } from "./engine";
 import type { SetupContext } from "./plugin";
-import { CLAUDE_LOCAL_CONFIG_DOCUMENT, renderDocumentsForTarget } from "./runtime-documents";
 import { renderWorkingRuntimeDocuments } from "../setup";
 import { projectionRepoRoot, projectionTarget, surfaceRoot } from "./surface-target";
 
@@ -40,6 +41,8 @@ function contextFor(companionPath: string, repoPath?: string): SetupContext {
     ...(repoPath ? { repoPath } : {}),
   };
 }
+
+const plan: SetupInstallationPlan = { activeProviders: ["claude"], actions: [] };
 
 async function makeFixture(prefix: string): Promise<{ repoPath: string; companionPath: string }> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -82,7 +85,7 @@ describe("the projection target", () => {
     expect(() => projectionTarget(contextFor(companionPath))).toThrow(
       /needs a Working Repository in scope/,
     );
-    expect(() => renderDocumentsForTarget(contextFor(companionPath), new Map())).toThrow(
+    await expect(renderRuntimeDocuments(contextFor(companionPath), [], plan)).rejects.toThrow(
       /needs a Working Repository in scope/,
     );
   });
@@ -93,7 +96,7 @@ describe("the projection target", () => {
    * current working directory — so a render started anywhere would have keyed
    * its MCP servers under that directory in the user's global Claude config.
    */
-  test("refuses to address a render by the current directory when no repository is in scope", () => {
+  test("refuses to address a render by the current directory when no repository is in scope", async () => {
     const ctx: SetupContext = {
       companionPath: "/companions/acme",
       config,
@@ -102,7 +105,7 @@ describe("the projection target", () => {
     };
 
     expect(() => projectionRepoRoot(ctx)).toThrow(/needs a Working Repository in scope/);
-    expect(() => renderDocumentsForTarget(ctx, new Map())).toThrow(
+    await expect(renderRuntimeDocuments(ctx, [], plan)).rejects.toThrow(
       /needs a Working Repository in scope/,
     );
   });
