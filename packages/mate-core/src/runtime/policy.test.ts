@@ -4,7 +4,13 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { companionFrameworkConfigPath, isCapabilityEnabled, readCompanionPolicy } from "./policy";
+import {
+  companionFrameworkConfigPath,
+  isCapabilityEnabled,
+  readCompanionPolicy,
+  resolveSecretPolicy,
+} from "./policy";
+import { defaultSecretPolicy, isSecretFile } from "./secret-patterns";
 
 const tempRoots: string[] = [];
 
@@ -44,6 +50,7 @@ describe("readCompanionPolicy", () => {
       allowedAgents: ["claude", "opencode"],
       enabledCapabilities: ["graphify", "openspec"],
       gitAutoMode: true,
+      secrets: defaultSecretPolicy(),
     });
   });
 
@@ -56,7 +63,12 @@ describe("readCompanionPolicy", () => {
   });
 
   test("yields an inert policy for a missing, empty, or unparseable companion config", () => {
-    const inert = { allowedAgents: [], enabledCapabilities: [], gitAutoMode: false };
+    const inert = {
+      allowedAgents: [],
+      enabledCapabilities: [],
+      gitAutoMode: false,
+      secrets: defaultSecretPolicy(),
+    };
     expect(readCompanionPolicy(makeCompanion(null))).toEqual(inert);
     expect(readCompanionPolicy(makeCompanion(""))).toEqual(inert);
     expect(readCompanionPolicy(makeCompanion("[unbalanced\n"))).toEqual(inert);
@@ -67,5 +79,39 @@ describe("readCompanionPolicy", () => {
 
   test("treats any git mode other than auto as disabled", () => {
     expect(readCompanionPolicy(makeCompanion("git: manual\n")).gitAutoMode).toBe(false);
+  });
+});
+
+describe("resolveSecretPolicy", () => {
+  test("an absent secrets block keeps guardrails on with the defaults", () => {
+    expect(resolveSecretPolicy(makeCompanion("type: companion\n"))).toEqual(defaultSecretPolicy());
+  });
+
+  test("an explicit opt-out disables guardrails", () => {
+    const companionPath = makeCompanion("secrets:\n  guardrails: false\n");
+    expect(resolveSecretPolicy(companionPath).guardrails).toBe(false);
+  });
+
+  test("an extra allow pattern exempts a file without touching the defaults", () => {
+    const policy = resolveSecretPolicy(makeCompanion('secrets:\n  allow: [".env.test"]\n'));
+    expect(isSecretFile("acme/.env.test", policy)).toBe(false);
+    expect(isSecretFile("acme/.env", policy)).toBe(true);
+  });
+
+  test("an unparseable or missing config fails safe", () => {
+    expect(resolveSecretPolicy(makeCompanion("secrets: [unbalanced\n"))).toEqual(
+      defaultSecretPolicy(),
+    );
+    expect(resolveSecretPolicy(makeCompanion(null)).guardrails).toBe(true);
+  });
+
+  test("reads the block live, so a toggle applies on the next call", () => {
+    const companionPath = makeCompanion("type: companion\n");
+    expect(resolveSecretPolicy(companionPath).guardrails).toBe(true);
+    fs.writeFileSync(
+      companionFrameworkConfigPath(companionPath),
+      "secrets: { guardrails: false }\n",
+    );
+    expect(resolveSecretPolicy(companionPath).guardrails).toBe(false);
   });
 });

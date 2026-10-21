@@ -10,6 +10,7 @@ import {
   type SessionKind,
 } from "../../../runtime/claude-delivery-plan";
 import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
+import { resolveSecretPolicy } from "../../../runtime/policy";
 import { NOT_WRAPPED } from "../../../runtime/wrap-state";
 import { writeAtomic } from "../../../runtime/write-atomic";
 import {
@@ -167,7 +168,10 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
     return [
       ...addDirArgs,
       "--append-system-prompt",
-      buildCompanionGuidance(context),
+      buildCompanionGuidance({
+        ...context,
+        secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
+      }),
       ...settingsArgs,
       ...mcpConfigArgs,
       /** The bundled plugin from the running install, beside context-mode's. */

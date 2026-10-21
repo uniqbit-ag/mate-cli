@@ -11,7 +11,10 @@ import {
   withDocument,
 } from "../../../runtime/runtime-document-manifest";
 import { wrapStateOf, type WrapState } from "../../../runtime/wrap-state";
-import { syncCompanionClaudeSettings } from "../../../tools/setup/providers/claude";
+import {
+  renderSecretDenyEntries,
+  syncCompanionClaudeSettings,
+} from "../../../tools/setup/providers/claude";
 import type { PrepareResult, PrepareStep } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
 import type { AdapterContext } from "./base";
@@ -105,7 +108,11 @@ describe("the Claude delivery plan at launch", () => {
     const derived = JSON.parse(
       await fs.readFile(launchSettingsPath(companionPath, "repo"), "utf8"),
     );
-    expect(derived.permissions.deny).toEqual(["EnterPlanMode", "DesignSync"]);
+    expect(derived.permissions.deny).toEqual([
+      "EnterPlanMode",
+      "DesignSync",
+      ...renderSecretDenyEntries(),
+    ]);
     expect(derived.enableArtifact).toBe(false);
   });
 

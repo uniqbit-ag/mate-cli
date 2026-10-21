@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { isLegacyMateOpenCodePluginReference } from "../../../lib/opencode-plugin-package";
+import { resolveSecretPolicy } from "../../../runtime/policy";
+import { projectableSecretDenyPatterns } from "../../../runtime/secret-patterns";
 import { refreshFromTemplate, stripGuidanceBlock } from "../plugins/guidance";
 import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
 import { reconcileSharedSkillTree } from "./agents-skill-root";
@@ -527,6 +529,20 @@ export function renderCompanionExternalDirectoryPermissions(
     { action: "external_directory", resource: companionPath, effect: "allow" },
     { action: "external_directory", resource: `${companionPath}/**`, effect: "allow" },
   ];
+}
+
+/**
+ * V2 deny rules for the default secret files: `read`, and `edit`, which covers
+ * write and patch. Only patterns that can't match an allow-listed file are
+ * rendered, as for Claude; the middleware enforces the rest of the set.
+ */
+export function renderSecretDenyPermissions(
+  companionPath: string,
+): Array<{ action: string; resource: string; effect: string }> {
+  if (!resolveSecretPolicy(companionPath).guardrails) return [];
+  return projectableSecretDenyPatterns().flatMap((pattern) =>
+    ["read", "edit"].map((action) => ({ action, resource: `**/${pattern}`, effect: "deny" })),
+  );
 }
 
 /**

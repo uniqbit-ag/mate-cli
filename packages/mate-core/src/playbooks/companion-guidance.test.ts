@@ -7,6 +7,23 @@ import {
 import { getWrapperBinPath } from "../lib/package-paths";
 
 describe("buildCompanionGuidance", () => {
+  test("carries the secret-handling rule while guardrails are active", () => {
+    const guidance = buildCompanionGuidance({ companionPath: "/tmp/companion" });
+
+    expect(guidance).toContain('<rule id="secret-handling" severity="critical">');
+    expect(guidance).toContain(".env.example");
+    expect(guidance).toContain("ask the user");
+  });
+
+  test("drops the secret-handling rule after an opt-out", () => {
+    const guidance = buildCompanionGuidance({
+      companionPath: "/tmp/companion",
+      secretGuardrails: false,
+    });
+
+    expect(guidance).not.toContain("secret-handling");
+  });
+
   test("mentions gitignored local-only working-repo artifacts", () => {
     const guidance = buildCompanionGuidance({
       companionPath: "/tmp/companion",

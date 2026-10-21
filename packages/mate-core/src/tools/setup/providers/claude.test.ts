@@ -6,8 +6,10 @@ import {
   createClaudePlugin,
   getCompanionClaudeMcpConfigPath,
   getCompanionClaudeSettingsPath,
+  renderSecretDenyEntries,
   syncCompanionClaudeSettings,
 } from "./claude";
+import { companionFrameworkConfigPath } from "../../../runtime/policy";
 import { getReactDoctorBinPath, getWrapperBinPath } from "../../../lib/package-paths";
 import { createContextModePlugin } from "../capabilities/context-mode";
 import { createGraphifyPlugin } from "../capabilities/graphify";
@@ -165,8 +167,42 @@ describe("syncCompanionClaudeSettings", () => {
     });
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.permissions?.deny).toEqual(["EnterPlanMode", "DesignSync"]);
+    expect(settings.permissions?.deny).toEqual([
+      "EnterPlanMode",
+      "DesignSync",
+      ...renderSecretDenyEntries(),
+    ]);
     expect(settings.enableArtifact).toBe(false);
+  });
+
+  test("denies reading .env at any depth but never the example file", async () => {
+    const companionPath = await makeTempDir("mate-companion-secret-deny-");
+    await syncCompanionClaudeSettings(companionPath, {
+      allowedAgents: ["claude"],
+      capabilities: [],
+    });
+
+    const deny = (await readCompanionSettings(companionPath)).permissions?.deny ?? [];
+    expect(deny).toContain("Read(**/.env)");
+    expect(deny).toContain("Edit(**/.env.local)");
+    expect(deny).toContain("Write(**/*.key)");
+    expect(deny.some((entry: string) => entry.includes(".env.*)"))).toBe(false);
+    expect(deny.some((entry: string) => entry.includes("example"))).toBe(false);
+  });
+
+  test("an opt-out strips the secret entries and keeps the fixed and user entries", async () => {
+    const companionPath = await makeTempDir("mate-companion-secret-optout-");
+    await seedSettings(companionPath, { permissions: { deny: ["Bash(rm:*)"] } });
+    const config = { allowedAgents: ["claude"], capabilities: [] };
+    await syncCompanionClaudeSettings(companionPath, config);
+
+    const configPath = companionFrameworkConfigPath(companionPath);
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(configPath, "secrets:\n  guardrails: false\n", "utf8");
+    await syncCompanionClaudeSettings(companionPath, config);
+
+    const settings = await readCompanionSettings(companionPath);
+    expect(settings.permissions?.deny).toEqual(["Bash(rm:*)", "EnterPlanMode", "DesignSync"]);
   });
 
   test("disables nothing beyond the fixed set", async () => {
@@ -208,7 +244,12 @@ describe("syncCompanionClaudeSettings", () => {
     await syncCompanionClaudeSettings(companionPath, config);
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.permissions?.deny).toEqual(["Bash(rm:*)", "EnterPlanMode", "DesignSync"]);
+    expect(settings.permissions?.deny).toEqual([
+      "Bash(rm:*)",
+      "EnterPlanMode",
+      "DesignSync",
+      ...renderSecretDenyEntries(),
+    ]);
   });
 
   test("adds no react-doctor hook when capability enabled", async () => {

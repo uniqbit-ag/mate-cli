@@ -344,8 +344,9 @@ describe("graphify wrapper script content", () => {
     const content = await fs.readFile(path.join(getWrapperBinPath(), "graphify"), "utf8");
 
     expect(content).toContain("update)");
-    expect(content).toContain("extract|watch|cluster-only|label|check-update)");
-    expect(content).toContain('exec "$_real" "$_repo_path" --update "${@:2}"');
+    expect(content).toContain("cluster-only|label|check-update)");
+    expect(content).toContain('_extract "$_repo_path" --update "${@:2}"');
+    expect(content).toContain('_extract extract "$_repo_path" "${@:2}"');
     expect(content).toContain('exec "$_real" "$_cmd" "$_repo_path" "${@:2}"');
   });
 
@@ -375,7 +376,9 @@ describe("graphify wrapper script content", () => {
 
     const content = await fs.readFile(path.join(getWrapperBinPath(), "graphify"), "utf8");
 
-    expect(content).toContain('*)\n    exec "$_real" "$@"');
+    expect(content).toMatch(
+      /\*\)\n(?: {4}#.*\n| {4}for .*\n| {6}.*\n| {4}done\n)*    exec "\$_real" "\$@"/,
+    );
   });
 });
 
@@ -559,7 +562,11 @@ describe("graphify wrapper invocation (E2E: path routing and env guard)", () => 
     });
 
     const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as { args: string[] };
-    expect(capture.args).toEqual([repoPath, "--update", "--force"]);
+    expect(capture.args.slice(0, 3)).toEqual([repoPath, "--update", "--force"]);
+    /** Whatever follows is the secret gate's `--exclude` pairs. */
+    expect(capture.args.slice(3).filter((_, index) => index % 2 === 0)).toEqual(
+      Array(capture.args.slice(3).length / 2).fill("--exclude"),
+    );
   });
 });
 

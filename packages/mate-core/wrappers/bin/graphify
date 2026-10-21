@@ -69,6 +69,34 @@ _graphify_root="$(dirname "$_graphify_out")"
 _graph_json="$_graphify_out/graph.json"
 export GRAPHIFY_OUT="$_graphify_out"
 
+# Secret gate: leaves secret files out of every extraction and prunes any
+# secret that still reaches the output. It never stops graphify: when the gate
+# can't run, the wrapper warns and runs graphify anyway.
+_gate="$_this_dir/../lib/graphify-gate.mjs"
+_secret_excludes=()
+_secret_pre() {
+  local _out _p
+  if ! _out="$(node "$_gate" pre "$_companion" "$_repo_path")"; then
+    echo "graphify: warning: the secret gate did not run; secret files may be indexed" >&2
+    return
+  fi
+  while IFS= read -r _p; do
+    [ -n "$_p" ] && _secret_excludes+=(--exclude "$_p")
+  done <<< "$_out"
+}
+_secret_post() {
+  node "$_gate" post "$_companion" "$_graphify_out" ||
+    echo "graphify: warning: the graphify output was not checked for secrets" >&2
+}
+# Runs an extraction that accepts --exclude, then prunes its output.
+_extract() {
+  _secret_pre
+  "$_real" "$@" "${_secret_excludes[@]}"
+  local _status=$?
+  _secret_post
+  exit "$_status"
+}
+
 _cmd="${1:-}"
 case "$_cmd" in
   build)
@@ -81,16 +109,32 @@ case "$_cmd" in
         *) _rest+=("$_a") ;;
       esac
     done
-    exec "$_real" extract "$_repo_path" --out "$_graphify_root" "${_rest[@]}"
+    _extract extract "$_repo_path" --out "$_graphify_root" "${_rest[@]}"
     ;;
   update)
     if [ "$#" -eq 1 ] || [[ "$2" == -* ]]; then
-      exec "$_real" "$_repo_path" --update "${@:2}"
+      _extract "$_repo_path" --update "${@:2}"
     else
-      exec "$_real" "$2" --update "${@:3}"
+      _extract "$2" --update "${@:3}"
     fi
     ;;
-  extract|watch|cluster-only|label|check-update)
+  extract)
+    if [ "$#" -eq 1 ] || [[ "$2" == -* ]]; then
+      _extract extract "$_repo_path" "${@:2}"
+    else
+      _extract "$@"
+    fi
+    ;;
+  watch)
+    # Long-running: only the ignore region applies; there is no output to prune.
+    _secret_pre
+    if [ "$#" -eq 1 ] || [[ "$2" == -* ]]; then
+      exec "$_real" watch "$_repo_path" "${@:2}"
+    else
+      exec "$_real" "$@"
+    fi
+    ;;
+  cluster-only|label|check-update)
     if [ "$#" -eq 1 ] || [[ "$2" == -* ]]; then
       exec "$_real" "$_cmd" "$_repo_path" "${@:2}"
     else
@@ -120,6 +164,10 @@ case "$_cmd" in
     fi
     ;;
   *)
+    # A direct `graphify <path> --update` is an extraction too.
+    for _a in "$@"; do
+      [ "$_a" = "--update" ] && _extract "$@"
+    done
     exec "$_real" "$@"
     ;;
 esac
