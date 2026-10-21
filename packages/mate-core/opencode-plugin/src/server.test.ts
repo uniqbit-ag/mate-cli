@@ -521,7 +521,11 @@ describe("the session-prepare lifecycle", () => {
         // oxlint-disable-next-line no-await-in-loop -- waits for the detached sync
         await new Promise((resolve) => setTimeout(resolve, 20));
         // oxlint-disable-next-line no-await-in-loop
-        lines = (await fs.readFile(argsFile, "utf8").catch(() => "")).trim().split("\n");
+        lines = (await fs.readFile(argsFile, "utf8").catch(() => ""))
+          .trim()
+          .split("\n")
+          // A detached sync an earlier test started can still run this stub; keep only this repo's calls.
+          .filter((line) => line.includes(path.basename(repo)));
       }
       expect(lines[0]).toEndWith("--json");
       expect(lines[1]).toEndWith("--json --sync");
