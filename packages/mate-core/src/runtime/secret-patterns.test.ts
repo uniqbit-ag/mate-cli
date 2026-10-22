@@ -9,6 +9,10 @@ import {
   matchesSecretPattern,
   parseSecretsConfig,
   projectableSecretDenyPatterns,
+  secretRule,
+  secretRules,
+  type SecretPolicy,
+  type SecretRule,
 } from "./secret-patterns";
 
 const defaults = defaultSecretPolicy();
@@ -58,8 +62,128 @@ describe("isSecretFile", () => {
     expect(isSecretFile("/repo/myconfig/master.key.enc", policy)).toBe(false);
   });
 
+  test("`**` crosses folder names that hold a line break", () => {
+    const policy = parseSecretsConfig({ deny: ["config/**/prod.yaml", "vault/**"] });
+    expect(isSecretFile("config/eu\nwest/prod.yaml", policy)).toBe(true);
+    expect(isSecretFile("vault/a\nb/token.txt", policy)).toBe(true);
+  });
+
   test("normalizes Windows separators", () => {
     expect(isSecretFile("acme\\certs\\server.key", defaults)).toBe(true);
+    expect(isSecretFile("notes\\.env", defaults)).toBe(true);
+  });
+});
+
+describe("letter case", () => {
+  test.each(["notes/.ENV", "keys/ID_RSA", ".Env", "certs/Prod.KEY", "acme/.ENV.Local"])(
+    "%s is a secret file",
+    (filePath) => {
+      expect(isSecretFile(filePath, defaults)).toBe(true);
+    },
+  );
+
+  test("a differently-cased allowed file stays allowed", () => {
+    expect(isSecretFile(".ENV.EXAMPLE", defaults)).toBe(false);
+  });
+
+  test("a companion pattern with a folder ignores case in every segment", () => {
+    const policy = parseSecretsConfig({ deny: ["config/**/prod.yaml"] });
+    expect(isSecretFile("Config/eu/PROD.yaml", policy)).toBe(true);
+  });
+});
+
+describe("secretRule", () => {
+  test("a slash-free pattern is tested against the file name", () => {
+    expect(secretRule(".env.*")).toEqual({
+      pattern: ".env.*",
+      source: "^\\.env\\.[^/]*$",
+      flags: "i",
+      subject: "name",
+    });
+  });
+
+  test("a pattern with a slash is tested against the path", () => {
+    expect(secretRule("config/**/prod.yaml")).toMatchObject({
+      pattern: "config/**/prod.yaml",
+      flags: "i",
+      subject: "path",
+    });
+  });
+
+  test("a leading slash does not make a name pattern a path pattern", () => {
+    expect(secretRule("/.npmrc").subject).toBe("name");
+  });
+});
+
+/**
+ * What a consumer outside mate-core does with the rules: build each regular
+ * expression from its source and flags, and test the subject the rule names.
+ */
+function evaluate(rules: readonly SecretRule[], filePath: string): boolean {
+  const normalized = filePath.replaceAll("\\", "/").replace(/\/+$/, "");
+  if (!normalized) return false;
+  const name = normalized.slice(normalized.lastIndexOf("/") + 1);
+  return rules.some((rule) =>
+    new RegExp(rule.source, rule.flags).test(rule.subject === "name" ? name : normalized),
+  );
+}
+
+describe("secretRules", () => {
+  test("carries the policy's guardrails flag and one rule per pattern", () => {
+    const policy = parseSecretsConfig({ guardrails: false, deny: ["*.tfstate"] });
+    const rules = secretRules(policy);
+    expect(rules.guardrails).toBe(false);
+    expect(rules.deny.map((rule) => rule.pattern)).toEqual(policy.deny);
+    expect(rules.allow.map((rule) => rule.pattern)).toEqual(policy.allow);
+  });
+
+  const policies: [string, SecretPolicy][] = [
+    ["defaults", defaults],
+    [
+      "companion patterns",
+      parseSecretsConfig({
+        deny: ["*.tfstate", "config/**/prod.yaml", "/secrets/**", "vault?.json"],
+        allow: [".env.test", "config/**/prod.example.yaml"],
+      }),
+    ],
+  ];
+  const paths = [
+    ".env",
+    "notes/.ENV",
+    "notes\\.env",
+    "acme/.env.example",
+    ".ENV.EXAMPLE",
+    "acme/.env.test",
+    "keys/ID_RSA",
+    "keys/id_rsa.pub",
+    "certs/server.KEY",
+    "infra/acme.tfstate",
+    "infra/acme.TFSTATE",
+    "config/prod.yaml",
+    "Config/eu/PROD.yaml",
+    "config/eu/prod.example.yaml",
+    "myconfig/prod.yaml",
+    "secrets/token.txt",
+    "repo/secrets/deep/token.txt",
+    "vault1.json",
+    "vault12.json",
+    "src/env.ts",
+    "README.md",
+    "docs/",
+    "",
+  ];
+
+  for (const [label, policy] of policies) {
+    test.each(paths)(`agree with isSecretFile for %p under ${label}`, (filePath) => {
+      const rules = secretRules(policy);
+      const portable = evaluate(rules.deny, filePath) && !evaluate(rules.allow, filePath);
+      expect(portable).toBe(isSecretFile(filePath, policy));
+    });
+  }
+
+  test("survive a JSON round trip unchanged", () => {
+    const rules = secretRules(defaults);
+    expect(JSON.parse(JSON.stringify(rules))).toEqual(rules);
   });
 });
 
@@ -93,6 +217,27 @@ describe("parseSecretsConfig", () => {
 
 describe("projectableSecretDenyPatterns", () => {
   const projectable = projectableSecretDenyPatterns();
+
+  test("keeps the pattern text that runtimes match themselves", () => {
+    expect(projectable).toEqual([
+      ".env",
+      ".env.local",
+      ".env.development",
+      ".env.production",
+      ".env.test",
+      ".env.*.local",
+      "*.pem",
+      "*.key",
+      "*.p12",
+      "*.pfx",
+      "id_rsa",
+      "id_ecdsa",
+      "id_ed25519",
+      ".netrc",
+      ".pgpass",
+      ".npmrc",
+    ]);
+  });
 
   test("never matches an allow-listed file", () => {
     for (const allowed of DEFAULT_SECRET_ALLOW_PATTERNS) {

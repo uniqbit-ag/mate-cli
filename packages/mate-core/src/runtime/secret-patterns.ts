@@ -64,10 +64,36 @@ export function parseSecretsConfig(value: unknown): SecretPolicy {
   };
 }
 
-const compiled = new Map<string, RegExp>();
+/**
+ * One compiled secret pattern, in a form any JavaScript consumer can evaluate:
+ * build `new RegExp(source, flags)` and test it against the subject the rule
+ * names. mate's own matching evaluates the same rules, so the two never differ.
+ */
+export interface SecretRule {
+  /** The pattern as configured, for messages. */
+  pattern: string;
+  /** ECMAScript regular expression source. */
+  source: string;
+  /** Regular expression flags; `i`, since macOS and Windows ignore letter case. */
+  flags: string;
+  /** `name` tests the file name; `path` tests the `/`-separated path. */
+  subject: "name" | "path";
+}
 
-/** Gitignore-style subset: `*` and `?` stay inside a segment, `**` crosses them. */
-function patternRegExp(pattern: string): RegExp {
+/** A secret policy compiled into rules, as the launch policy carries it. */
+export interface SecretRules {
+  guardrails: boolean;
+  deny: SecretRule[];
+  allow: SecretRule[];
+}
+
+const compiled = new Map<string, { rule: SecretRule; regExp: RegExp }>();
+
+/**
+ * The only secret pattern compiler. Gitignore-style subset: `*` and `?` stay
+ * inside a segment, `**` crosses them. Letter case is ignored.
+ */
+function compile(pattern: string): { rule: SecretRule; regExp: RegExp } {
   const cached = compiled.get(pattern);
   if (cached) return cached;
   let source = "";
@@ -76,11 +102,12 @@ function patternRegExp(pattern: string): RegExp {
     const char = body[i];
     if (char === "*" && body[i + 1] === "*") {
       // `**/` matches zero or more whole segments; a bare `**` matches anything.
+      // `[\s\S]`, not `.`, so a name holding a line break is crossed too.
       if (body[i + 2] === "/") {
-        source += "(?:.*/)?";
+        source += "(?:[\\s\\S]*/)?";
         i += 2;
       } else {
-        source += ".*";
+        source += "[\\s\\S]*";
         i += 1;
       }
     } else if (char === "*") {
@@ -91,11 +118,30 @@ function patternRegExp(pattern: string): RegExp {
       source += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
     }
   }
-  // A slash-free pattern matches the basename; one with a slash matches the
+  // A slash-free pattern matches the file name; one with a slash matches the
   // trailing segments of the path, since the repository root is not known here.
-  const regExp = body.includes("/") ? new RegExp(`(?:^|/)${source}$`) : new RegExp(`^${source}$`);
-  compiled.set(pattern, regExp);
-  return regExp;
+  const subject = body.includes("/") ? "path" : "name";
+  const rule: SecretRule = {
+    pattern,
+    source: subject === "path" ? `(?:^|/)${source}$` : `^${source}$`,
+    flags: "i",
+    subject,
+  };
+  const entry = { rule, regExp: new RegExp(rule.source, rule.flags) };
+  compiled.set(pattern, entry);
+  return entry;
+}
+
+export function secretRule(pattern: string): SecretRule {
+  return { ...compile(pattern).rule };
+}
+
+export function secretRules(policy: SecretPolicy): SecretRules {
+  return {
+    guardrails: policy.guardrails,
+    deny: policy.deny.map(secretRule),
+    allow: policy.allow.map(secretRule),
+  };
 }
 
 function normalizePath(filePath: string): string {
@@ -105,12 +151,10 @@ function normalizePath(filePath: string): string {
 export function matchesSecretPattern(filePath: string, patterns: readonly string[]): boolean {
   const normalized = normalizePath(filePath);
   if (!normalized) return false;
-  const basename = normalized.slice(normalized.lastIndexOf("/") + 1);
+  const name = normalized.slice(normalized.lastIndexOf("/") + 1);
   return patterns.some((pattern) => {
-    const regExp = patternRegExp(pattern);
-    return pattern.replace(/^\/+/, "").includes("/")
-      ? regExp.test(normalized)
-      : regExp.test(basename);
+    const { rule, regExp } = compile(pattern);
+    return regExp.test(rule.subject === "name" ? name : normalized);
   });
 }
 

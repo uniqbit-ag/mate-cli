@@ -22,6 +22,7 @@ const allowedSignersPath = path.join(repoRoot, ".github/allowed_signers");
 const PUBLISHED_PACKAGES = [
   ["packages/mate-core", "@uniqbit/mate-core"],
   ["apps/mate-cli", "@uniqbit/mate"],
+  ["packages/mate-plugin-companion-mentions", "@uniqbit/mate-plugin-companion-mentions"],
 ] as const;
 
 type ReleaseConfig = {
@@ -117,7 +118,7 @@ type PublishOptions = {
 
 async function createPublishFixture(
   version: string,
-  overrides: Partial<Record<"core" | "cli", string>> = {},
+  overrides: Partial<Record<"core" | "cli" | "plugin", string>> = {},
 ): Promise<PublishFixture> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-publish-"));
   tempDirs.push(tempDir);
@@ -138,9 +139,14 @@ async function createPublishFixture(
     await fs.copyFile(path.join(repoRoot, file), path.join(tempDir, file));
   }
 
-  const workspacePackages: Array<["core" | "cli", string, string]> = [
+  const workspacePackages: Array<["core" | "cli" | "plugin", string, string]> = [
     ["core", "packages/mate-core", "@uniqbit/mate-core"],
     ["cli", "apps/mate-cli", "@uniqbit/mate"],
+    [
+      "plugin",
+      "packages/mate-plugin-companion-mentions",
+      "@uniqbit/mate-plugin-companion-mentions",
+    ],
   ];
   for (const [key, dir, name] of workspacePackages) {
     const packageDir = path.join(tempDir, dir);
@@ -158,9 +164,10 @@ async function createPublishFixture(
     Object.fromEntries(
       names.map((name) => [`node_modules/${name}`, { version, integrity: FIXTURE_INTEGRITY }]),
     );
+  // The plugin is publish-only: no image lock pins it.
   await fs.writeFile(
     path.join(lockDir, "global-tools.package-lock.json"),
-    JSON.stringify({ packages: lockEntries(workspacePackages.map(([, , name]) => name)) }),
+    JSON.stringify({ packages: lockEntries(["@uniqbit/mate-core", "@uniqbit/mate"]) }),
     "utf8",
   );
   await fs.writeFile(
@@ -280,6 +287,15 @@ describe("stable release-it config", () => {
     const config = JSON.parse(await fs.readFile(stableReleaseConfigPath, "utf8")) as ReleaseConfig;
 
     expect(config.hooks?.["before:init"]).toContain("bun run test");
+  });
+
+  test("runs the companion-mentions plugin's tests in stable releases", async () => {
+    const config = JSON.parse(await fs.readFile(stableReleaseConfigPath, "utf8")) as ReleaseConfig;
+
+    // Hooks run in apps/mate-cli, where `bun run test` covers the CLI alone.
+    expect(config.hooks?.["before:init"]).toContain(
+      "bun run --cwd ../../packages/mate-plugin-companion-mentions test",
+    );
   });
 
   test("ignores canary tags when selecting the previous release tag", async () => {
@@ -451,7 +467,7 @@ describe("sync-release-versions", () => {
     expect(canaryConfig.hooks?.["after:bump"]).toContain("bun scripts/sync-release-versions.ts");
   });
 
-  test("propagates the bumped CLI version to core and the CLI's core pin", async () => {
+  test("propagates the bumped CLI version to core, the plugin, and their core pins", async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-sync-versions-"));
     tempDirs.push(workspaceDir);
 
@@ -464,6 +480,14 @@ describe("sync-release-versions", () => {
     const fixturePackages = [
       ["apps/mate-cli", { name: "@uniqbit/mate", version: "1.5.0-canary.2" }],
       ["packages/mate-core", { name: "@uniqbit/mate-core", version: "1.4.0" }],
+      [
+        "packages/mate-plugin-companion-mentions",
+        {
+          name: "@uniqbit/mate-plugin-companion-mentions",
+          version: "1.4.0",
+          devDependencies: { "@uniqbit/mate-core": "1.4.0" },
+        },
+      ],
     ] as const;
     for (const [dir, contents] of fixturePackages) {
       await fs.mkdir(path.join(workspaceDir, dir), { recursive: true });
@@ -487,9 +511,17 @@ describe("sync-release-versions", () => {
     const core = JSON.parse(
       await fs.readFile(path.join(workspaceDir, "packages/mate-core/package.json"), "utf8"),
     );
+    const plugin = JSON.parse(
+      await fs.readFile(
+        path.join(workspaceDir, "packages/mate-plugin-companion-mentions/package.json"),
+        "utf8",
+      ),
+    );
 
     expect(core.version).toBe("1.5.0-canary.2");
     expect(cli.dependencies["@uniqbit/mate-core"]).toBe("1.5.0-canary.2");
+    expect(plugin.version).toBe("1.5.0-canary.2");
+    expect(plugin.devDependencies["@uniqbit/mate-core"]).toBe("1.5.0-canary.2");
 
     // The touched manifests are staged so they land in the release commit.
     const staged = execFileSync("git", ["diff", "--cached", "--name-only"], {
@@ -498,6 +530,7 @@ describe("sync-release-versions", () => {
     });
     expect(staged).toContain("apps/mate-cli/package.json");
     expect(staged).toContain("packages/mate-core/package.json");
+    expect(staged).toContain("packages/mate-plugin-companion-mentions/package.json");
   });
 });
 
@@ -516,6 +549,7 @@ describe("publish.sh", () => {
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-core");
       expect(calls).not.toContain("mate-opencode-plugin");
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate");
+      expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-plugin-companion-mentions");
       for (const line of await publishCalls(fixture)) {
         expect(line).toMatch(
           new RegExp(
@@ -524,10 +558,11 @@ describe("publish.sh", () => {
         );
       }
 
-      // Core must publish before the CLI that pins it.
+      // Core must publish before the CLI that pins it; the publish-only plugin comes last.
       expect(await publishedTarballs(fixture)).toEqual([
         `uniqbit-mate-core-${version}.tgz`,
         `uniqbit-mate-${version}.tgz`,
+        `uniqbit-mate-plugin-companion-mentions-${version}.tgz`,
       ]);
 
       // The verified tarball is what is published: one pack per package, all before any publish.
@@ -535,7 +570,7 @@ describe("publish.sh", () => {
       const packs = lines.flatMap((line, index) =>
         line.startsWith("pack --pack-destination") ? [index] : [],
       );
-      expect(packs).toHaveLength(2);
+      expect(packs).toHaveLength(3);
       const firstPublish = lines.findIndex((line) => line.startsWith("publish "));
       expect(Math.max(...packs)).toBeLessThan(firstPublish);
       expect(calls).not.toContain("publish --workspace");
@@ -579,6 +614,17 @@ describe("publish.sh", () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("synchronized versions");
+    expect(await fs.stat(fixture.callsPath).catch(() => undefined)).toBeUndefined();
+  });
+
+  test("rejects a plugin version behind the release tag and names the plugin", async () => {
+    const fixture = await createPublishFixture("1.2.3", { plugin: "1.2.2" });
+    const result = runPublish(fixture, "latest");
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "packages/mate-plugin-companion-mentions/package.json is at version '1.2.2'",
+    );
     expect(await fs.stat(fixture.callsPath).catch(() => undefined)).toBeUndefined();
   });
 
@@ -632,7 +678,7 @@ describe("publish.sh", () => {
     const result = runPublish(fixture, "latest", { refName: "main", releaseTagArg: "1.2.3" });
 
     expect(result.status).toBe(0);
-    expect(await publishCalls(fixture)).toHaveLength(2);
+    expect(await publishCalls(fixture)).toHaveLength(3);
   });
 
   test("completes a partial publication by skipping packages already published with the same integrity", async () => {
@@ -643,7 +689,53 @@ describe("publish.sh", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Skipping @uniqbit/mate-core@1.2.3");
-    expect(await publishedTarballs(fixture)).toEqual(["uniqbit-mate-1.2.3.tgz"]);
+    expect(await publishedTarballs(fixture)).toEqual([
+      "uniqbit-mate-1.2.3.tgz",
+      "uniqbit-mate-plugin-companion-mentions-1.2.3.tgz",
+    ]);
+  });
+
+  test("a retry after core and the CLI were published publishes only the plugin", async () => {
+    const fixture = await createPublishFixture("1.2.3");
+    await seedRegistry(fixture, "@uniqbit/mate-core", FIXTURE_INTEGRITY);
+    await seedRegistry(fixture, "@uniqbit/mate", FIXTURE_INTEGRITY);
+
+    const result = runPublish(fixture, "latest");
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Skipping @uniqbit/mate-core@1.2.3");
+    expect(result.stdout).toContain("Skipping @uniqbit/mate@1.2.3");
+    expect(await publishedTarballs(fixture)).toEqual([
+      "uniqbit-mate-plugin-companion-mentions-1.2.3.tgz",
+    ]);
+  });
+
+  test("publishes nothing when its package list differs from the release package list", async () => {
+    const pluginName = '  "@uniqbit/mate-plugin-companion-mentions"\n';
+    const pluginDir = '  "$ROOT_DIR/packages/mate-plugin-companion-mentions"\n';
+    const rewrites: Array<(script: string) => string> = [
+      // Without the plugin.
+      (script) => script.replace(pluginName, "").replace(pluginDir, ""),
+      // With the plugin before the CLI.
+      (script) =>
+        script
+          .replace(pluginName, "")
+          .replace('  "@uniqbit/mate"\n', `${pluginName}  "@uniqbit/mate"\n`),
+    ];
+    for (const rewrite of rewrites) {
+      const fixture = await createPublishFixture("1.2.3");
+      const script = await fs.readFile(fixture.scriptPath, "utf8");
+      const rewritten = rewrite(script);
+      expect(rewritten).not.toBe(script);
+      await fs.writeFile(fixture.scriptPath, rewritten, "utf8");
+
+      const result = runPublish(fixture, "latest");
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("image-pins verify reported");
+      expect(result.stderr).toContain("nothing was published");
+      expect(await publishCalls(fixture)).toEqual([]);
+    }
   });
 
   test("stops before publishing further packages when a published version has another integrity", async () => {
@@ -666,6 +758,23 @@ describe("publish.sh", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("trusted publisher");
     expect(await publishedTarballs(fixture)).toEqual(["uniqbit-mate-core-1.2.3.tgz"]);
+  });
+
+  test("a rejected plugin does not hold back core or the CLI", async () => {
+    const fixture = await createPublishFixture("1.2.3");
+    const result = runPublish(fixture, "latest", {
+      failPublishFor: "@uniqbit/mate-plugin-companion-mentions",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "npm rejected @uniqbit/mate-plugin-companion-mentions@1.2.3. Check its trusted publisher",
+    );
+    expect(await publishedTarballs(fixture)).toEqual([
+      "uniqbit-mate-core-1.2.3.tgz",
+      "uniqbit-mate-1.2.3.tgz",
+      "uniqbit-mate-plugin-companion-mentions-1.2.3.tgz",
+    ]);
   });
 
   test("does not repeat release preparation checks or request the image", async () => {

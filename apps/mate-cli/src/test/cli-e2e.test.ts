@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { defaultSecretPolicy, secretRules } from "@uniqbit/mate-core/runtime";
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { parse, stringify } from "yaml";
 
@@ -2136,6 +2137,7 @@ describe("mate CLI e2e", () => {
       expect(invocation.env.MATE_REPO_PROFILE).toBeUndefined();
       expect(JSON.parse(invocation.env.MATE_POLICY_JSON ?? "{}")).toEqual({
         allowedAgents: testCase.allowedAgents ?? ["claude", "opencode"],
+        secrets: secretRules(defaultSecretPolicy()),
       });
 
       testCase.assertInvocation(invocation, scenario);

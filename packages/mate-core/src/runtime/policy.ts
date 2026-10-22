@@ -4,7 +4,12 @@ import path from "node:path";
 import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "./framework";
-import { defaultSecretPolicy, parseSecretsConfig, type SecretPolicy } from "./secret-patterns";
+import {
+  defaultSecretPolicy,
+  parseSecretsConfig,
+  secretRules,
+  type SecretPolicy,
+} from "./secret-patterns";
 
 /**
  * Predicates that are never projected: they are read live from the companion
@@ -73,6 +78,17 @@ export function readCompanionPolicy(companionPath: string): CompanionPolicy {
 /** The companion's live secret policy, read on every call. */
 export function resolveSecretPolicy(companionPath: string): SecretPolicy {
   return readCompanionPolicy(companionPath).secrets;
+}
+
+/**
+ * The `MATE_POLICY_JSON` document. The launch environment and the projection
+ * fallback both build it here, so every session carries the same secret rules.
+ */
+export function policyDocument(input: { allowedAgents: string[]; secrets: SecretPolicy }): string {
+  return JSON.stringify({
+    allowedAgents: input.allowedAgents,
+    secrets: secretRules(input.secrets),
+  });
 }
 
 export function isCapabilityEnabled(policy: CompanionPolicy, name: string): boolean {

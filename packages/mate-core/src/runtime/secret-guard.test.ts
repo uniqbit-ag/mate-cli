@@ -69,6 +69,12 @@ describe("checkSecretAccess: file tools", () => {
     expect(refusal).not.toContain("KEY=1");
   });
 
+  test("blocks a differently-cased .Env", async () => {
+    expect(await checkSecretAccess({ kind: "read", paths: ["acme/.Env"] }, scope())).toContain(
+      "acme/.Env",
+    );
+  });
+
   test("lets the example file through", async () => {
     expect(await checkSecretAccess({ kind: "read", paths: ["acme/.env.example"] }, scope())).toBe(
       null,

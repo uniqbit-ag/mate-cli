@@ -7,10 +7,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   companionFrameworkConfigPath,
   isCapabilityEnabled,
+  policyDocument,
   readCompanionPolicy,
   resolveSecretPolicy,
 } from "./policy";
-import { defaultSecretPolicy, isSecretFile } from "./secret-patterns";
+import {
+  defaultSecretPolicy,
+  isSecretFile,
+  parseSecretsConfig,
+  secretRules,
+} from "./secret-patterns";
 
 const tempRoots: string[] = [];
 
@@ -113,5 +119,39 @@ describe("resolveSecretPolicy", () => {
       "secrets: { guardrails: false }\n",
     );
     expect(resolveSecretPolicy(companionPath).guardrails).toBe(false);
+  });
+});
+
+describe("policyDocument", () => {
+  test("carries the allowed agents and the compiled secret rules", () => {
+    const secrets = defaultSecretPolicy();
+    expect(JSON.parse(policyDocument({ allowedAgents: ["claude"], secrets }))).toEqual({
+      allowedAgents: ["claude"],
+      secrets: secretRules(secrets),
+    });
+  });
+
+  test("adds a companion's own deny pattern beside the defaults", () => {
+    const document = JSON.parse(
+      policyDocument({ allowedAgents: [], secrets: parseSecretsConfig({ deny: ["*.tfstate"] }) }),
+    );
+    const patterns = document.secrets.deny.map((rule: { pattern: string }) => rule.pattern);
+    expect(patterns).toContain(".env");
+    expect(patterns).toContain("*.tfstate");
+  });
+
+  test("carries an opt-out", () => {
+    const secrets = parseSecretsConfig({ guardrails: false });
+    expect(JSON.parse(policyDocument({ allowedAgents: [], secrets })).secrets.guardrails).toBe(
+      false,
+    );
+  });
+
+  test("stays small with the default patterns", () => {
+    const document = policyDocument({
+      allowedAgents: ["claude", "opencode"],
+      secrets: defaultSecretPolicy(),
+    });
+    expect(document.length).toBeLessThan(4096);
   });
 });

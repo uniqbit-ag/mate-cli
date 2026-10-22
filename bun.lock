@@ -95,6 +95,13 @@
         "@types/semver": "^7.7.1",
       },
     },
+    "packages/mate-plugin-companion-mentions": {
+      "name": "@uniqbit/mate-plugin-companion-mentions",
+      "version": "0.18.5",
+      "devDependencies": {
+        "@uniqbit/mate-core": "0.18.5",
+      },
+    },
   },
   "packages": {
     "@ai-sdk/provider": ["@ai-sdk/provider@3.0.8", "", { "dependencies": { "json-schema": "^0.4.0" } }, "sha512-oGMAgGoQdBXbZqNG0Ze56CHjDZ1IDYOwGYxYjO5KLSlz5HiNQ9udIXsPZ61VWaHGZ5XW/jyjmr6t2xz2jGVwbQ=="],
@@ -1070,6 +1077,8 @@
     "@uniqbit/mate-core": ["@uniqbit/mate-core@workspace:packages/mate-core"],
 
     "@uniqbit/mate-docs": ["@uniqbit/mate-docs@workspace:apps/docs"],
+
+    "@uniqbit/mate-plugin-companion-mentions": ["@uniqbit/mate-plugin-companion-mentions@workspace:packages/mate-plugin-companion-mentions"],
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@5.2.0", "", { "dependencies": { "@babel/core": "^7.29.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-rc.3", "@types/babel__core": "^7.20.5", "react-refresh": "^0.18.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0" } }, "sha512-YmKkfhOAi3wsB1PhJq5Scj3GXMn3WvtQ/JC0xoopuHoXSdmtdStOpFrYaT1kie2YgFBcIe64ROzMYRjCrYOdYw=="],
 

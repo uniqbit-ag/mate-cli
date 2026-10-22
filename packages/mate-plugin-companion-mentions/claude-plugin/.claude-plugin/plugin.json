@@ -1,0 +1,7 @@
+{
+  "name": "mate-companion-mentions",
+  "description": "@mate:<path> mentions: find and attach files from the mate companion repo in the @ menu.",
+  "author": {
+    "name": "Kevin Tornquist"
+  }
+}

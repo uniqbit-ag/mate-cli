@@ -220,6 +220,13 @@ describe("OpenCode secret guardrails", () => {
     ).resolves.toBeUndefined();
   });
 
+  test("refuses a differently-cased secret file", async () => {
+    const { repo, context } = await guarded();
+    await expect(
+      guardToolInput(context, "read", { filePath: path.join(repo, ".Env") }),
+    ).rejects.toThrow("secret files are off-limits");
+  });
+
   test("refuses bash commands naming a secret file", async () => {
     const { context } = await guarded();
     await expect(guardToolInput(context, "bash", { command: "source .env" })).rejects.toThrow(

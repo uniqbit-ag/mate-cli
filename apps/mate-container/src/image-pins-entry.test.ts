@@ -8,6 +8,8 @@ import { sync, verify, type EntryDeps } from "../scripts/image-pins";
 import { CONTAINER_ROOT } from "./image-inputs";
 import { IMAGE_LOCKS, RELEASE_PACKAGES, type NpmRunner } from "./image-pins";
 
+const PLUGIN = "@uniqbit/mate-plugin-companion-mentions";
+
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -140,6 +142,52 @@ describe("image-pins sync then verify", () => {
     );
   });
 
+  test("verify reports the three release packages in list order", async () => {
+    const root = workspace("1.2.3");
+    expect(await sync(["1.2.3", root], deps().entryDeps)).toBe(0);
+    const published = deps();
+
+    expect(await verify(["1.2.3", tempDir(), root], published.entryDeps)).toBe(0);
+    expect(
+      published.output.stdout
+        .trimEnd()
+        .split("\n")
+        .map((line) => line.split("\t")[0]),
+    ).toEqual(["@uniqbit/mate-core", "@uniqbit/mate", PLUGIN]);
+  });
+
+  test("preparation completes without a plugin pin and writes the plugin into no image file", async () => {
+    const root = workspace("1.2.3");
+    const prepared = deps();
+
+    expect(await sync(["1.2.3", root], prepared.entryDeps)).toBe(0);
+    expect(prepared.output.stderr).toBe("");
+    for (const contents of snapshot(root).values()) {
+      expect(contents).not.toContain(PLUGIN);
+    }
+  });
+
+  test("verify compares the publish-only tarball with no lock and prints it for publication", async () => {
+    const root = workspace("1.2.3");
+    expect(await sync(["1.2.3", root], deps().entryDeps)).toBe(0);
+
+    // A plugin tree changed after preparation has no pin to drift from.
+    fs.writeFileSync(
+      path.join(root, "packages/mate-plugin-companion-mentions/package.json"),
+      JSON.stringify({ name: PLUGIN, version: "1.2.3", content: "acme-changed" }),
+    );
+    const packDir = tempDir();
+    const published = deps();
+
+    expect(await verify(["1.2.3", packDir, root], published.entryDeps)).toBe(0);
+    expect(published.output.stderr).toBe("");
+    const tarball = path.join(packDir, "uniqbit-mate-plugin-companion-mentions-1.2.3.tgz");
+    expect(published.output.stdout).toContain(
+      `${PLUGIN}\t${integrityOf("acme-changed")}\t${tarball}\n`,
+    );
+    expect(fs.readFileSync(tarball, "utf8")).toBe("acme-changed");
+  });
+
   test("a tree changed after preparation fails verification naming the stale locks", async () => {
     const root = workspace("1.2.3");
     expect(await sync(["1.2.3", root], deps().entryDeps)).toBe(0);
@@ -165,6 +213,7 @@ describe("image-pins sync then verify", () => {
 
     expect(await sync(["1.2.3", root], prepared.entryDeps)).not.toBe(0);
     expect(prepared.output.stderr).toContain("@uniqbit/mate-core");
+    expect(prepared.output.stderr).not.toContain(PLUGIN);
     expect(prepared.output.staged).toEqual([]);
     expect(snapshot(root)).toEqual(before);
   });
@@ -175,6 +224,7 @@ describe("image-pins sync then verify", () => {
 
     expect(await verify(["1.2.3", tempDir(), root], published.entryDeps)).not.toBe(0);
     expect(published.output.stderr).toContain("no image lock pins @uniqbit/mate-core");
+    expect(published.output.stderr).not.toContain(PLUGIN);
     expect(published.output.stdout).toBe("");
   });
 });
