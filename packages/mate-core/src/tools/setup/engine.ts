@@ -9,9 +9,15 @@ import type {
   CapabilityPlugin,
   Plugin,
   PluginRegistration,
+  RuntimeContributionsByRuntime,
   SetupContext,
 } from "./plugin";
-import { reconcileClaudeContributions } from "./providers/claude";
+import {
+  claudePluginCapabilityIds,
+  gatherClaudePluginDirectories,
+  reconcileClaudeContributions,
+  type GatheredClaudePluginDirectories,
+} from "./providers/claude";
 import { reconcileOpenCodeContributions } from "./providers/opencode";
 import { mergeCompanionOpenCodeConfig, renderDocumentsForTarget } from "./runtime-documents";
 import { normalizeRegistration, type NormalizedRegistration } from "./registry";
@@ -33,6 +39,8 @@ export interface SetupInstallationOutcome {
   executedActions: SetupInstallationPlanAction[];
   skippedActions: SetupInstallationPlanAction[];
   warnings: string[];
+  /** Enabled Capabilities' Claude plugin folders; their warnings are never printed here. */
+  claudePluginDirectories: GatheredClaudePluginDirectories;
 }
 
 export function buildSetupInstallationPlan(
@@ -176,9 +184,12 @@ export async function executeSetupInstallationPlan(
 
   await mediator.finalize();
 
-  await reconcileCapabilityContributions(ctx, plugins, plan);
+  const inputsByRuntime = await reconcileCapabilityContributions(ctx, plugins, plan);
+  const claudePluginDirectories = await gatherClaudePluginDirectories(
+    inputsByRuntime.get("claude") ?? [],
+  );
 
-  return { executedActions, skippedActions, warnings };
+  return { executedActions, skippedActions, warnings, claudePluginDirectories };
 }
 
 // The Runtime Surface of each active Agent Runtime, by runtime id.
@@ -198,6 +209,7 @@ async function collectContributionInputs(
   ctx: SetupContext,
   plugins: Plugin[],
   plan: SetupInstallationPlan,
+  onContributionError?: ContributionErrorHandler,
 ): Promise<Map<string, CapabilityContributionInput[]>> {
   // The plan already resolved enablement (policy, saved selection, package
   // manager requirements); mirror it instead of recomputing.
@@ -213,7 +225,14 @@ async function collectContributionInputs(
     const capability = plugin as CapabilityPlugin;
     if (!capability.getRuntimeContributions) continue;
     const enabled = enabledByPluginId.get(capability.id) ?? false;
-    const byRuntime = await capability.getRuntimeContributions(ctx);
+    let byRuntime: RuntimeContributionsByRuntime;
+    try {
+      byRuntime = await capability.getRuntimeContributions(ctx);
+    } catch (error) {
+      if (!onContributionError) throw error;
+      onContributionError(capability.id, error);
+      continue;
+    }
     for (const [runtimeId, contributions] of Object.entries(byRuntime)) {
       if (!contributions) continue;
       // Inactive runtimes still reconcile — with everything disabled — so a
@@ -237,25 +256,47 @@ async function collectContributionInputs(
  * Reconcile declared Capability contributions through every active runtime's
  * Runtime Surface (spec: plugin-engine). Runs after all plugin phases, so
  * providers are always done first. Disabled capabilities participate with
- * `enabled: false` and drive teardown of their managed entries.
+ * `enabled: false` and drive teardown of their managed entries. Returns the
+ * inputs it reconciled, so the pass derives launch-only data from the same ones.
  */
 async function reconcileCapabilityContributions(
   ctx: SetupContext,
   plugins: Plugin[],
   plan: SetupInstallationPlan,
-): Promise<void> {
+): Promise<Map<string, CapabilityContributionInput[]>> {
   const inputsByRuntime = await collectContributionInputs(ctx, plugins, plan);
   for (const [runtimeId, inputs] of inputsByRuntime) {
     const reconcile = RUNTIME_SURFACE_RECONCILERS[runtimeId];
     if (!reconcile || inputs.length === 0) continue;
     await reconcile(ctx, inputs);
   }
+  return inputsByRuntime;
+}
+
+/** Receives one Capability's rejected contributions; that Capability then contributes nothing. */
+export type ContributionErrorHandler = (capabilityId: string, error: unknown) => void;
+
+/**
+ * One pass's declared Capability contributions by runtime, collected without a
+ * reconcile. A rejecting Capability fails the collection unless
+ * `onContributionError` takes its error; only diagnostics should pass one.
+ */
+export async function collectRuntimeContributionInputs(
+  ctx: SetupContext,
+  registrations: PluginRegistration[],
+  plan: SetupInstallationPlan,
+  onContributionError?: ContributionErrorHandler,
+): Promise<Map<string, CapabilityContributionInput[]>> {
+  const plugins = registrations.map((entry) => normalizeRegistration(entry).plugin);
+  return collectContributionInputs(ctx, plugins, plan, onContributionError);
 }
 
 /** What a render returns: its warnings are data for the caller, never printed here. */
 export interface RenderedRuntimeDocuments {
   documents: RenderedRuntimeDocument[];
   warnings: string[];
+  /** Enabled Capabilities whose Claude plugin folder loads only through a managed launch. */
+  claudePluginCapabilities: string[];
 }
 
 /**
@@ -268,11 +309,12 @@ export async function renderRuntimeDocuments(
   registrations: PluginRegistration[],
   plan: SetupInstallationPlan,
 ): Promise<RenderedRuntimeDocuments> {
-  const plugins = registrations.map((entry) => normalizeRegistration(entry).plugin);
-  const documents = renderDocumentsForTarget(
-    ctx,
-    await collectContributionInputs(ctx, plugins, plan),
-  );
-  if (ctx.target !== "working") return { documents, warnings: [] };
-  return mergeCompanionOpenCodeConfig(ctx.companionPath, documents);
+  const inputsByRuntime = await collectRuntimeContributionInputs(ctx, registrations, plan);
+  const documents = renderDocumentsForTarget(ctx, inputsByRuntime);
+  const claudePluginCapabilities = claudePluginCapabilityIds(inputsByRuntime.get("claude") ?? []);
+  if (ctx.target !== "working") return { documents, warnings: [], claudePluginCapabilities };
+  return {
+    ...(await mergeCompanionOpenCodeConfig(ctx.companionPath, documents)),
+    claudePluginCapabilities,
+  };
 }

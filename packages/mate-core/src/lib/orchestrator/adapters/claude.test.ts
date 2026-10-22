@@ -12,6 +12,7 @@ import {
 } from "../../../runtime/runtime-document-manifest";
 import { wrapStateOf, type WrapState } from "../../../runtime/wrap-state";
 import { syncCompanionClaudeSettings } from "../../../tools/setup/providers/claude";
+import { getClaudePluginRoot } from "../../package-paths";
 import type { PrepareResult, PrepareStep } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
 import type { AdapterContext } from "./base";
@@ -51,7 +52,12 @@ function contextFor(companionPath: string, scope: "repo" | "companion" = "repo")
 }
 
 function prepared(
-  overrides: { wrapState?: WrapState; steps?: PrepareStep[]; failure?: unknown } = {},
+  overrides: {
+    wrapState?: WrapState;
+    steps?: PrepareStep[];
+    failure?: unknown;
+    claudePluginDirectories?: string[];
+  } = {},
 ): PrepareResult {
   return {
     ok: overrides.steps === undefined,
@@ -64,7 +70,15 @@ function prepared(
     warnings: [],
     wrapState: overrides.wrapState ?? claudeWrapState,
     ...(overrides.failure === undefined ? {} : { failure: overrides.failure }),
+    ...(overrides.claudePluginDirectories
+      ? { claudePluginDirectories: overrides.claudePluginDirectories }
+      : {}),
   };
+}
+
+/** The values that follow each `--plugin-dir`, in order. */
+function pluginDirs(args: string[]): string[] {
+  return args.filter((_, index) => args[index - 1] === "--plugin-dir");
 }
 
 describe("the Claude delivery plan at launch", () => {
@@ -174,5 +188,47 @@ describe("a failed Claude prepare", () => {
     );
 
     expect(failure).toBe(own);
+  });
+});
+
+describe("Capability plugin folders at launch", () => {
+  async function launchArgs(scope: "repo" | "companion", claudePluginDirectories?: string[]) {
+    const { companionPath } = await companionWith({});
+    const adapter = new ClaudeAdapter();
+    const launch = await adapter.planLaunch(
+      contextFor(companionPath, scope),
+      prepared(claudePluginDirectories ? { claudePluginDirectories } : {}),
+    );
+    return adapter.buildArgs(launch, ["--print"]);
+  }
+
+  test("passes each gathered folder after the bundled plugin, in gathered order", async () => {
+    const args = await launchArgs("repo", ["/acme/plugins/zeta", "/acme/plugins/alpha"]);
+
+    expect(pluginDirs(args)).toEqual([
+      getClaudePluginRoot(),
+      "/acme/plugins/zeta",
+      "/acme/plugins/alpha",
+    ]);
+    expect(args.at(-1)).toBe("--print");
+  });
+
+  test("passes only the bundled plugin when the prepare gathered no folder", async () => {
+    expect(pluginDirs(await launchArgs("repo"))).toEqual([getClaudePluginRoot()]);
+    expect(pluginDirs(await launchArgs("repo", []))).toEqual([getClaudePluginRoot()]);
+  });
+
+  test("a companion-scoped launch passes its gathered folders too", async () => {
+    const args = await launchArgs("companion", ["/acme/plugins/zeta"]);
+
+    expect(pluginDirs(args)).toEqual([getClaudePluginRoot(), "/acme/plugins/zeta"]);
+  });
+
+  test("a path with a space and a drive letter passes through unchanged", async () => {
+    const windowsPath = "C:\\Users\\Acme Corp\\plugins\\acme";
+
+    const args = await launchArgs("repo", [windowsPath]);
+
+    expect(pluginDirs(args)).toEqual([getClaudePluginRoot(), windowsPath]);
   });
 });

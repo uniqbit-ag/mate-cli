@@ -23,6 +23,12 @@ import {
   writeManagedGitignoreBlock,
 } from "./setup/plugins/gitignore";
 import type { PluginRegistration, SetupContext, SetupScope } from "./setup/plugin";
+import {
+  describeClaudePluginDirectories,
+  type ClaudePluginContributionFailure,
+  type ClaudePluginDirectoryReport,
+  type GatheredClaudePluginDirectories,
+} from "./setup/providers/claude";
 import { getActiveDistribution } from "../distribution";
 import { createUvPlugin } from "./setup/package-managers/uv";
 import type { PackageManagerSetupDeps } from "./setup/package-managers/uv";
@@ -38,10 +44,12 @@ import { hydrateDynamicPlugins } from "./setup/dynamic-plugins/hydrate";
 import { installDeclaredPlugins } from "./setup/dynamic-plugins/install";
 import {
   buildSetupInstallationPlan,
+  collectRuntimeContributionInputs,
   executeSetupInstallationPlan,
   renderRuntimeDocuments,
   type RenderedRuntimeDocuments,
   type SetupInstallationOutcome,
+  type SetupInstallationPlan,
 } from "./setup/engine";
 
 export interface SetupInput {
@@ -96,16 +104,59 @@ export async function renderWorkingRuntimeDocuments(
   repoPath: string,
   plugins: PluginRegistration[] = getActiveDistribution().registry.getAll(),
 ): Promise<RenderedRuntimeDocuments> {
+  const { plan, ctx } = planSyncPass(companionPath, config, plugins, {
+    repoPath,
+    target: "working",
+  });
+  return renderRuntimeDocuments(ctx, plugins, plan);
+}
+
+/** A sync pass's plan and context, for a caller that runs no plugin phase. */
+function planSyncPass(
+  companionPath: string,
+  config: FrameworkConfig,
+  plugins: PluginRegistration[],
+  extra: Pick<SetupContext, "repoPath" | "target"> = {},
+): { plan: SetupInstallationPlan; ctx: SetupContext } {
   const plan = buildSetupInstallationPlan(config, plugins);
   const ctx: SetupContext = {
     companionPath,
     config,
     mode: "sync",
     activeProviders: plan.activeProviders,
-    repoPath,
-    target: "working",
+    ...extra,
   };
-  return renderRuntimeDocuments(ctx, plugins, plan);
+  return { plan, ctx };
+}
+
+/** What an operator sees of the enabled Capabilities' Claude plugin folders. */
+export interface ClaudePluginDirectoryInspection {
+  plugins: ClaudePluginDirectoryReport[];
+  /** Capabilities whose contributions rejected; the other Capabilities are still listed. */
+  failures: ClaudePluginContributionFailure[];
+}
+
+/**
+ * Enabled Capabilities' declared Claude plugin folders and whether each holds
+ * a manifest. Read-only: runs no plugin phase and reconciles nothing.
+ */
+export async function inspectClaudePluginDirectories(
+  companionPath: string,
+  config: FrameworkConfig,
+  plugins: PluginRegistration[] = getActiveDistribution().registry.getEntries(),
+): Promise<ClaudePluginDirectoryInspection> {
+  const { plan, ctx } = planSyncPass(companionPath, config, plugins);
+  const failures: ClaudePluginContributionFailure[] = [];
+  const inputs = await collectRuntimeContributionInputs(ctx, plugins, plan, (capability, error) =>
+    failures.push({
+      capability,
+      reason: error instanceof Error ? error.message : String(error),
+    }),
+  );
+  return {
+    plugins: await describeClaudePluginDirectories(inputs.get("claude") ?? []),
+    failures,
+  };
 }
 
 export async function updateProjectGitignore(
@@ -118,13 +169,17 @@ export async function updateProjectGitignore(
   await writeManagedGitignoreBlock(path.join(companionPath, ".gitignore"), FRAMEWORK_NAME, entries);
 }
 
+/**
+ * Returns the pass's Claude plugin folders and their warnings, for a launch to
+ * pass and report; every other caller ignores them.
+ */
 export async function syncCompanionFiles(
   companionPath: string,
   config: FrameworkConfig,
   repoPath?: string,
   options: CompanionSyncOptions = {},
-): Promise<void> {
-  await applySetupCompatibilities(
+): Promise<GatheredClaudePluginDirectories> {
+  const outcome = await applySetupCompatibilities(
     companionPath,
     config,
     "sync",
@@ -133,6 +188,7 @@ export async function syncCompanionFiles(
     undefined,
     options,
   );
+  return outcome.claudePluginDirectories;
 }
 
 export const setupToolDeps = {

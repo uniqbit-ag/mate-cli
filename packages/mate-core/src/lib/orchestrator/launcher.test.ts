@@ -24,6 +24,9 @@ import type { ProjectionInput, ProjectionResult } from "./projection-types";
 import { sessionPrepareDeps } from "./session-prepare";
 import { LaunchPreflightError, type CapabilityConfig, type LaunchRequest } from "./types";
 
+/** What a companion file sync hands a launch when no Capability ships a Claude plugin folder. */
+const NOTHING_GATHERED = { directories: [], warnings: [] };
+
 /**
  * The real adapters, so each runtime's own share of a launch stays under test;
  * only the checks against the install and the agent process are stubbed.
@@ -167,7 +170,7 @@ describe("FrameworkLauncher", () => {
   test("resolveLaunchPreview is side-effect free", async () => {
     const { launcher, adapter } = createLauncher();
     const syncCompanionGit = mock(async () => {});
-    const syncCompanionFiles = mock(async () => {});
+    const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     const projectWorkingRepo = mock(async () => projectedNothing());
 
     const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
@@ -220,6 +223,7 @@ describe("FrameworkLauncher", () => {
     });
     const syncCompanionFiles = mock(async () => {
       events.push("setup");
+      return NOTHING_GATHERED;
     });
     const projectWorkingRepo = mock(async () => {
       events.push("repo-settings");
@@ -282,7 +286,7 @@ describe("FrameworkLauncher", () => {
       makeCapability("companion-capability", { preflight: capabilityPreflight }),
     ]);
     const syncCompanionGit = mock(async () => {});
-    const syncCompanionFiles = mock(async () => {});
+    const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
     const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
     sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
@@ -325,7 +329,7 @@ describe("FrameworkLauncher", () => {
   test("hands the launch scope no render, so it can place no runtime document", async () => {
     const { launcher } = createLauncher();
     const projectWorkingRepo = mock(async (_input: ProjectionInput) => projectedNothing());
-    const syncCompanionFiles = mock(async () => {});
+    const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
 
     const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
     const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
@@ -419,7 +423,7 @@ describe("FrameworkLauncher", () => {
   test("does not run Git preflight when Git auto mode is disabled", async () => {
     const { launcher, adapter } = createLauncher();
     const syncCompanionGit = mock(async () => {});
-    const syncCompanionFiles = mock(async () => {});
+    const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
     const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
     sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
@@ -451,7 +455,7 @@ describe("FrameworkLauncher", () => {
     const syncCompanionGit = mock(async () => {
       throw new Error("sync failed");
     });
-    const syncCompanionFiles = mock(async () => {});
+    const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
     const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
     sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
@@ -481,7 +485,7 @@ describe("FrameworkLauncher", () => {
       "auto",
     );
     const syncCompanionGit = mock(async () => {});
-    const syncCompanionFiles = mock(async () => {});
+    const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     const originalSyncCompanionGit = sessionPrepareDeps.syncCompanionGit;
     const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
     sessionPrepareDeps.syncCompanionGit = syncCompanionGit;
@@ -518,7 +522,7 @@ describe("FrameworkLauncher", () => {
     try {
       for (const vars of envVars) {
         const { launcher, adapter } = createLauncher();
-        const syncCompanionFiles = mock(async () => {});
+        const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
         const projectWorkingRepo = mock(async () => projectedNothing());
         const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
         const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
@@ -560,7 +564,7 @@ describe("FrameworkLauncher", () => {
 
     const { launcher, adapter } = createLauncher();
     sessionPrepareDeps.refreshProjectionRoot = originalRefreshProjectionRoot;
-    const syncCompanionFiles = mock(async () => {});
+    const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     const projectWorkingRepo = mock(async () => projectedNothing());
     const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
     const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
@@ -593,7 +597,7 @@ describe("FrameworkLauncher", () => {
     await fs.chmod(claudeDir, 0o555);
 
     const { launcher, adapter } = createLauncher();
-    const syncCompanionFiles = mock(async () => {});
+    const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
     sessionPrepareDeps.syncCompanionFiles = syncCompanionFiles;
 
@@ -617,7 +621,7 @@ describe("FrameworkLauncher", () => {
 
   test("a degradable launch-scope failure warns and the launch proceeds", async () => {
     const { launcher, adapter } = createLauncher();
-    const syncCompanionFiles = mock(async () => {});
+    const syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     const projectWorkingRepo = mock(async () => ({
       ...projectedNothing(),
       outcomes: [
@@ -667,7 +671,7 @@ describe("launching in a wrapped working repository", () => {
       runWrapPass: sessionPrepareDeps.runWrapPass,
     };
     sessionPrepareDeps.syncCompanionGit = mock(async () => {}) as never;
-    sessionPrepareDeps.syncCompanionFiles = mock(async () => {});
+    sessionPrepareDeps.syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
     sessionPrepareDeps.runWrapPass = runWrapPass;
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
@@ -721,7 +725,7 @@ describe("launching in a wrapped working repository", () => {
     const { launcher, adapter } = createLauncher();
     const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
     const originalProjectWorkingRepo = sessionPrepareDeps.projectLaunch;
-    sessionPrepareDeps.syncCompanionFiles = mock(async () => {});
+    sessionPrepareDeps.syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
 
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
@@ -860,7 +864,7 @@ describe("an OpenCode-only wrap", () => {
     const { launcher, adapter } = createLauncher();
     const originalFiles = sessionPrepareDeps.syncCompanionFiles;
     const originalProject = sessionPrepareDeps.projectLaunch;
-    sessionPrepareDeps.syncCompanionFiles = mock(async () => {});
+    sessionPrepareDeps.syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
     spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
       id: "repo",
@@ -903,7 +907,7 @@ describe("the Claude delivery plan at launch", () => {
     const { launcher, adapter } = createLauncher(new TestClaudeAdapter(), []);
     const resolve = launcher.resolveConfig;
     launcher.resolveConfig = async () => ({ ...(await resolve()), companionPath });
-    sessionPrepareDeps.syncCompanionFiles = mock(async () => {});
+    sessionPrepareDeps.syncCompanionFiles = mock(async () => NOTHING_GATHERED);
     sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
     return { launcher, adapter, companionPath, settingsPath };
   }
@@ -967,6 +971,48 @@ describe("the Claude delivery plan at launch", () => {
     expect(settingsArgs).toEqual([alphaSettings, betaSettings]);
     for (const derived of [alphaSettings, betaSettings]) {
       expect(JSON.parse(await fs.readFile(derived, "utf8"))).toEqual({});
+    }
+  });
+});
+
+describe("Capability plugin folders in a launch", () => {
+  test("a left-out folder's warning prints before the adapter runs, and the launch proceeds", async () => {
+    const { launcher, adapter } = createLauncher();
+    const events: string[] = [];
+    const kept = "/acme/plugins/kept";
+    const leftOut =
+      "acme: Claude plugin folder /acme/plugins/broken holds no .claude-plugin/plugin.json; it was left out.";
+    const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
+    const originalProjectLaunch = sessionPrepareDeps.projectLaunch;
+    sessionPrepareDeps.syncCompanionFiles = mock(async () => ({
+      directories: [kept],
+      warnings: [leftOut],
+    }));
+    sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
+    const warn = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      events.push(`warn: ${args.join(" ")}`);
+    });
+    adapter.validateLaunch.mockImplementation(async () => {
+      events.push("adapter");
+    });
+    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
+      id: "acme",
+      path: "/tmp/repo",
+    });
+
+    try {
+      const prepared = await launcher.prepare(makeRequest());
+      await prepared.execute();
+
+      expect(events).toEqual([`warn: mate: warning: ${leftOut}`, "adapter"]);
+      const [context] = adapter.run.mock.calls[0]!;
+      const args = adapter.buildArgs(context as never, []);
+      const pluginDirs = args.filter((_, index) => args[index - 1] === "--plugin-dir");
+      expect(pluginDirs.slice(1)).toEqual([kept]);
+    } finally {
+      warn.mockRestore();
+      sessionPrepareDeps.syncCompanionFiles = originalSyncCompanionFiles;
+      sessionPrepareDeps.projectLaunch = originalProjectLaunch;
     }
   });
 });

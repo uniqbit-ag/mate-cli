@@ -7,8 +7,10 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import {
   CONTEXT_MODE_VERSION,
   getContextModePackageReference,
+  getContextModePackageRoot,
 } from "../../../lib/context-mode-package";
 import { applySetupCompatibilities } from "../../setup";
+import type { SessionKind } from "../../../runtime/session-kind";
 import type { LaunchPreflightContext, SetupContext } from "../plugin";
 import { createClaudePlugin } from "../providers/claude";
 import { createOpenCodePlugin, reconcileOpenCodeContributions } from "../providers/opencode";
@@ -367,5 +369,126 @@ describe("createContextModePlugin", () => {
     expect(await fs.readFile(path.join(root, "AGENTS.md"), "utf8")).not.toContain(
       CONTEXT_MODE_OPENCODE_GUIDANCE,
     );
+  });
+
+  test("declares its package root as a Claude plugin folder beside its permissions", async () => {
+    const ctx = await makeContext();
+
+    const claude = createContextModePlugin().getRuntimeContributions!(ctx).claude!;
+
+    expect(claude.pluginDirectories).toEqual([
+      { path: getContextModePackageRoot(ctx.companionPath) },
+    ]);
+    expect(claude.permissionEntries).toContain("Skill(context-mode:context-mode)");
+  });
+
+  test("a sync pass gathers the installed package's Claude plugin folder", async () => {
+    const ctx = await makeContext();
+    const root = await writePreinstalledCopy(ctx.companionPath, CONTEXT_MODE_VERSION);
+    await fs.mkdir(path.join(root, ".claude-plugin"), { recursive: true });
+    await fs.writeFile(path.join(root, ".claude-plugin", "plugin.json"), '{"name":"context-mode"}');
+    const contextMode = createContextModePlugin({
+      installPackage: async () => {},
+      validatePackage: async () => {},
+    });
+
+    const outcome = await applySetupCompatibilities(ctx.companionPath, ctx.config, "sync", [
+      createClaudePlugin(),
+      contextMode,
+    ]);
+
+    expect(outcome.claudePluginDirectories).toEqual({ directories: [root], warnings: [] });
+  });
+});
+
+describe("context-mode Claude preflight", () => {
+  const REPAIR = "Repair it with `mate companion setup`.";
+
+  /** A complete installed package, as setup leaves it. */
+  async function installPackage(companionPath: string, version = CONTEXT_MODE_VERSION) {
+    const root = await writePreinstalledCopy(companionPath, version);
+    for (const asset of [
+      ".claude-plugin/plugin.json",
+      "hooks/hooks.json",
+      "skills/context-mode/SKILL.md",
+      "build/adapters/opencode/plugin.js",
+    ]) {
+      await fs.mkdir(path.dirname(path.join(root, asset)), { recursive: true });
+      await fs.writeFile(path.join(root, asset), "{}\n");
+    }
+    return root;
+  }
+
+  async function preflight(sessionKind: SessionKind = "managed-repo") {
+    const ctx = await makeContext();
+    const launch: LaunchPreflightContext = {
+      companionPath: ctx.companionPath,
+      config: ctx.config,
+      repository: { id: "acme", path: "/tmp/acme" },
+      providerId: "claude",
+      sessionKind,
+    };
+    const run = () => createContextModePlugin().forProvider!.claude!.preflight!(launch);
+    return { companionPath: ctx.companionPath, run };
+  }
+
+  /** Runs `fn` with a `node` on PATH that reports `version`. */
+  async function withNode<T>(version: string, fn: () => Promise<T>): Promise<T> {
+    const bin = await fs.mkdtemp(path.join(os.tmpdir(), "mate-fake-node-"));
+    tempRoots.push(bin);
+    await fs.writeFile(path.join(bin, "node"), `#!/bin/sh\necho ${version}\n`, { mode: 0o755 });
+    const previous = process.env.PATH;
+    process.env.PATH = `${bin}${path.delimiter}${previous ?? ""}`;
+    try {
+      return await fn();
+    } finally {
+      process.env.PATH = previous;
+    }
+  }
+
+  test("passes an installed package on a compatible runtime", async () => {
+    const { companionPath, run } = await preflight();
+    await installPackage(companionPath);
+
+    expect(await withNode("v24.0.0", run)).toEqual([]);
+  });
+
+  test("reports a missing package with the expected version and the repair command", async () => {
+    const { companionPath, run } = await preflight();
+    const root = getContextModePackageRoot(companionPath);
+
+    expect(await withNode("v24.0.0", run)).toEqual([
+      `Claude context-mode plugin is unavailable: Expected ${getContextModePackageReference()} at ${root}; it is not installed. Re-run \`mate companion setup\`. ${REPAIR}`,
+    ]);
+  });
+
+  test("reports a package at the wrong version", async () => {
+    const { companionPath, run } = await preflight();
+    const root = await installPackage(companionPath, "0.0.1");
+
+    expect(await withNode("v24.0.0", run)).toEqual([
+      `Claude context-mode plugin is unavailable: Expected ${getContextModePackageReference()} at ${root}; found 0.0.1. Re-run \`mate companion setup\`. ${REPAIR}`,
+    ]);
+  });
+
+  test("reports a Node.js that is too old, naming the required and the found version", async () => {
+    const { companionPath, run } = await preflight();
+    await installPackage(companionPath);
+
+    expect(await withNode("v20.1.0", run)).toEqual([
+      `Claude context-mode plugin is unavailable: context-mode ${CONTEXT_MODE_VERSION} requires Node.js >=22.5.0; found v20.1.0. ${REPAIR}`,
+    ]);
+  });
+
+  test("a session that loads no plugin folders checks nothing", async () => {
+    const { run } = await preflight("unmanaged");
+
+    expect(await withNode("v20.1.0", run)).toEqual([]);
+  });
+
+  test("a companion-scoped launch checks the package too", async () => {
+    const { run } = await preflight("managed-companion");
+
+    expect(await withNode("v24.0.0", run)).toHaveLength(1);
   });
 });

@@ -1,4 +1,5 @@
 import type { FrameworkConfig, LinkedRepository } from "../../lib/orchestrator/types";
+import type { SessionKind } from "../../runtime/session-kind";
 import type { InstallRequirement, InstallRequirementContext } from "./install-contract";
 import type { ClaudeHookGroup } from "./providers/claude-format";
 
@@ -42,6 +43,8 @@ export interface LaunchPreflightContext {
   config: FrameworkConfig;
   repository?: LinkedRepository;
   providerId: string;
+  /** The session the prepare answers for, so a check can skip what that session does not load. */
+  sessionKind: SessionKind;
 }
 
 /** Provider-agnostic description of an MCP server to register. */
@@ -193,10 +196,17 @@ export interface AgentDefinitionContribution {
   content: string;
 }
 
+/** A Claude Code plugin folder, declared under the `claude` key. Launch-only: never written to a file. */
+export interface PluginDirectoryContribution {
+  /** Absolute path of the folder holding `.claude-plugin/plugin.json`. */
+  path: string;
+}
+
 /**
  * Declarative Agent Runtime contributions of one Capability for one runtime.
  * The runtime's Runtime Surface reconciles these symmetrically: applied while
  * the Capability is enabled, removed when it is not, idempotent across runs.
+ * `pluginDirectories` is the exception: gathered for the launch, written nowhere.
  */
 export interface RuntimeContributions {
   mcpServers?: McpServerDescriptor[];
@@ -206,6 +216,7 @@ export interface RuntimeContributions {
   skillTrees?: SkillTreeContribution[];
   pluginReferences?: PluginReferenceContribution[];
   agentDefinitions?: AgentDefinitionContribution[];
+  pluginDirectories?: PluginDirectoryContribution[];
 }
 
 /**

@@ -47,6 +47,8 @@ export type WrapPassResult =
       runtimes: ReadonlySet<WrapRuntime>;
       /** The wrap state as this pass left it. */
       wrapState: WrapState;
+      /** Enabled Capabilities that declare a Claude plugin folder; named, never checked. */
+      claudePluginCapabilities: string[];
     }
   | { kind: "failed"; message: string };
 
@@ -131,5 +133,6 @@ export async function runWrapPass(
     ],
     runtimes,
     wrapState,
+    claudePluginCapabilities: rendered.claudePluginCapabilities,
   };
 }

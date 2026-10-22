@@ -1,3 +1,5 @@
+/** @test-requires sockets */
+
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";

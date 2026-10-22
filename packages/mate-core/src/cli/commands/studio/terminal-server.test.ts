@@ -1,3 +1,5 @@
+/** @test-requires sockets */
+
 import { describe, expect, test } from "bun:test";
 
 import { companionDigest } from "./selection";

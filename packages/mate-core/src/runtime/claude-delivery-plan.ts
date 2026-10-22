@@ -1,4 +1,5 @@
 import type { ClaudeHookGroup } from "./claude-hook-group";
+import type { SessionKind } from "./session-kind";
 import { NOT_WRAPPED, readWrapStateSync, type WrapState } from "./wrap-state";
 
 /**
@@ -7,12 +8,7 @@ import { NOT_WRAPPED, readWrapStateSync, type WrapState } from "./wrap-state";
  * may import it.
  */
 
-/**
- * `managed-repo`: `mate claude` with a Working Repository; its prepare just
- * reconciled the Claude wrap, which the launcher asserts. `managed-companion`:
- * a companion-scoped launch. `unmanaged`: a session with no launch environment.
- */
-export type SessionKind = "managed-repo" | "managed-companion" | "unmanaged";
+export type { SessionKind } from "./session-kind";
 
 export interface ClaudeDeliveryPlan {
   /** Capability hook groups; `launchSettingsExclude` is what `--settings` must not repeat. */
@@ -28,9 +24,22 @@ export interface ClaudeDeliveryPlan {
   readonly reconcile: "attended-prepare" | "prepare-hook" | "none";
   /** Companion Git synchronization. */
   readonly gitSync: "launch-preflight" | "prepare-hook" | "banner";
+  /** Plugin folders loaded as Claude plugins: Mate's bundled plugin and Capability plugin directories. */
+  readonly plugins: ClaudePluginDelivery;
+}
+
+export type ClaudePluginDelivery = "launch-flag" | "none";
+
+/** No settings document can carry a plugin folder, so the wrap state never matters. */
+export function claudePluginDelivery(kind: SessionKind): ClaudePluginDelivery {
+  return kind === "unmanaged" ? "none" : "launch-flag";
 }
 
 export function planClaudeDelivery(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan {
+  return { ...planChannels(kind, wrap), plugins: claudePluginDelivery(kind) };
+}
+
+function planChannels(kind: SessionKind, wrap: WrapState): Omit<ClaudeDeliveryPlan, "plugins"> {
   switch (kind) {
     case "managed-repo":
       return {

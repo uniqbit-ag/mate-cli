@@ -23,7 +23,17 @@ import {
   type PluginInspection,
   type PluginVerificationFailure,
 } from "../../tools/setup/dynamic-plugins/verify";
+import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
+import {
+  inspectClaudePluginDirectories,
+  type ClaudePluginDirectoryInspection,
+} from "../../tools/setup";
 import { getRequiredPluginDrift } from "../../tools/setup/policy";
+import {
+  CLAUDE_PLUGIN_MANIFEST,
+  type ClaudePluginContributionFailure,
+  type ClaudePluginDirectoryReport,
+} from "../../tools/setup/providers/claude";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
 import { writeJsonStdout } from "../write-json-stdout";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
@@ -35,6 +45,12 @@ interface DoctorDeps {
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
   gitHead?: (memberPath: string) => string | null;
   inspectPlugins?: (companionPath: string) => Promise<PluginInspection>;
+  /** Loads the companion's declared plugins so their Capabilities contribute. */
+  hydratePlugins?: (companionPath: string) => Promise<void>;
+  inspectClaudePlugins?: (
+    companionPath: string,
+    config: FrameworkConfig,
+  ) => Promise<ClaudePluginDirectoryInspection>;
   /** Environment `MATE_AUDIENCE` is read from; defaults to the process environment. */
   env?: Record<string, string | undefined>;
 }
@@ -79,6 +95,13 @@ export interface DoctorReport {
   engineRequirement?: { range: string; ok: boolean; detail: string };
   /** Present when the companion's `openspec/config.yaml` has `rules` keys OpenSpec ignores. */
   openspecRuleWarnings?: Array<{ key: string; message: string }>;
+  /**
+   * Enabled Capabilities' Claude plugin folders, which load only with `mate claude`; absent when
+   * none. `problem` names why a folder cannot load: `not-absolute` or `missing-manifest`.
+   */
+  claudePlugins?: ClaudePluginDirectoryReport[];
+  /** Capabilities whose contributions failed, so their Claude plugin folders are unknown; absent when none. */
+  claudePluginFailures?: ClaudePluginContributionFailure[];
   hub?: { members: DoctorHubMember[] };
   resolutionFailures: Array<{ companionPath: string; message: string }>;
 }
@@ -356,6 +379,18 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     if (warnings.length > 0) report.openspecRuleWarnings = warnings;
   }
 
+  if (root.rootPath && root.config && (kind === "working" || kind === "companion")) {
+    /** Doctor reports plugin failures below; hydration supplies their contributions. */
+    const hydrate =
+      deps.hydratePlugins ??
+      ((companionPath) => hydrateDynamicPlugins({ companionPath, env, warn: () => {} }));
+    await hydrate(root.rootPath);
+    const inspectClaudePlugins = deps.inspectClaudePlugins ?? inspectClaudePluginDirectories;
+    const inspection = await inspectClaudePlugins(root.rootPath, root.config);
+    if (inspection.plugins.length > 0) report.claudePlugins = inspection.plugins;
+    if (inspection.failures.length > 0) report.claudePluginFailures = inspection.failures;
+  }
+
   if (root.rootPath && root.config) {
     const inspect =
       deps.inspectPlugins ?? ((companionPath) => inspectDeclaredPlugins(companionPath, { env }));
@@ -402,6 +437,12 @@ function renderHubMembers(members: DoctorHubMember[]): string {
       member.commitStatus,
     ]),
   );
+}
+
+function claudePluginStatus(plugin: ClaudePluginDirectoryReport): string {
+  if (plugin.problem === "not-absolute") return "not an absolute path";
+  if (plugin.problem === "missing-manifest") return `missing ${CLAUDE_PLUGIN_MANIFEST}`;
+  return "present";
 }
 
 function renderHumanReport(report: DoctorReport): void {
@@ -477,6 +518,36 @@ function renderHumanReport(report: DoctorReport): void {
   if (report.engineRequirement) {
     printSection("Version Requirement", report.engineRequirement.detail);
   }
+  if (report.claudePlugins || report.claudePluginFailures) {
+    const tables: string[] = [];
+    if (report.claudePlugins) {
+      tables.push(
+        renderTable(
+          ["Capability", "Plugin Folder", "Status"],
+          report.claudePlugins.map((plugin) => [
+            plugin.capability,
+            plugin.path,
+            claudePluginStatus(plugin),
+          ]),
+        ),
+      );
+    }
+    if (report.claudePluginFailures) {
+      tables.push(
+        renderTable(
+          ["Capability", "Error"],
+          report.claudePluginFailures.map((failure) => [failure.capability, failure.reason]),
+        ),
+      );
+    }
+    printSection(
+      "Claude Plugins",
+      [
+        ...tables.flatMap((table) => [table, ""]),
+        `These plugins load only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+      ].join("\n"),
+    );
+  }
   if (report.openspecRuleWarnings) {
     printSection(
       "OpenSpec Config",
@@ -506,7 +577,8 @@ function renderHumanReport(report: DoctorReport): void {
  * capabilities and tool checks for companions, member health for hubs.
  * Declared plugins of the effective set (base plus the `MATE_AUDIENCE`
  * audience) are verified strictly (installed, loadable); any failure is named
- * on stderr and exits non-zero, as is an undeclared `MATE_AUDIENCE`.
+ * on stderr and exits non-zero, as is an undeclared `MATE_AUDIENCE` or a
+ * Capability whose runtime contributions fail to load.
  * `--json` emits the same report as one JSON document.
  */
 export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {}): Promise<void> {
@@ -517,6 +589,12 @@ export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {
   const failures = report.pluginFailures ?? [];
   for (const failure of failures) {
     process.stderr.write(`${FRAMEWORK_NAME}: plugin ${failure.package}: ${failure.reason}\n`);
+  }
+  for (const failure of report.claudePluginFailures ?? []) {
+    process.stderr.write(
+      `${FRAMEWORK_NAME}: capability ${failure.capability}: ${failure.reason}\n`,
+    );
+    process.exitCode = 1;
   }
   if (report.audienceError) {
     process.stderr.write(`${FRAMEWORK_NAME}: ${report.audienceError}\n`);

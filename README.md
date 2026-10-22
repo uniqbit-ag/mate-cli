@@ -255,6 +255,36 @@ npm-managed Mate package and starts a fresh post-update install. Self-update is
 supported only for npm global installations. `update --check` reports whether a
 new version exists without installing it.
 
+## Development Checks
+
+Use the Bun version declared in the root `package.json`.
+
+```sh
+bun run test:unit
+bun run test:integration
+bun run test
+bun run typecheck
+bun run lint
+bun run format:check
+```
+
+`test:unit` runs tests that need no package downloads, listening sockets, or
+container daemon. It sets npm's offline mode and keeps npm/Bun caches under the
+temporary HOME. `test:integration` runs files whose
+first line declares external access, for example `/** @test-requires sockets */`.
+These tests need the declared access and may write package-manager caches.
+Real-agent tests retain their separate `MATE_RUN_REAL_AGENT_TESTS=1` opt-in.
+`test` keeps running both suites together. All three commands accept Bun test
+filters and flags through the workspace scripts.
+
+Every run uses a canonical temporary HOME and clears inherited Mate launch state
+and Agent Runtime config overrides. Test controls such as the container-runtime
+selection remain available. Tests that change environment variables should use
+`withEnv` or `overrideEnv` from `test/fixtures.ts`; `createTempDir` returns canonical
+paths. Import them from that module directly.
+Dynamic-plugin install fixtures should use `fakePluginInstallDeps` from
+`packages/mate-core/test/plugin-install.ts` to supply both npm subprocess runners.
+
 ## Releasing
 
 Releases are prepared and signed locally, then published by the
@@ -264,7 +294,7 @@ from a maintainer machine, and no npm token is involved.
 ### One-Time Signing Setup
 
 Release commits and tags are signed with an SSH key. Add the public key to
-GitHub as a *Signing key*, list it in [`.github/allowed_signers`](.github/allowed_signers)
+GitHub as a _Signing key_, list it in [`.github/allowed_signers`](.github/allowed_signers)
 on `main` with your git email as principal, and configure git:
 
 ```sh

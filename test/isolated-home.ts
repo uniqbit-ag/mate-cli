@@ -19,6 +19,7 @@ export function isolatedTestEnv(
   base: NodeJS.ProcessEnv,
   home: string,
   realHome: string,
+  options: { containers?: boolean } = {},
 ): NodeJS.ProcessEnv {
   /**
    * Fresh, with nothing newer on either channel: no test reaches the registry
@@ -41,6 +42,19 @@ export function isolatedTestEnv(
     USERPROFILE: home,
     [TEST_HOME_ENV]: home,
   };
+  const testControls = new Set([
+    "MATE_RUN_REAL_AGENT_TESTS",
+    "MATE_CONTAINER_RUNTIME",
+    "MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH",
+  ]);
+  for (const name of Object.keys(env)) {
+    if (name.startsWith("MATE_") && !name.startsWith("MATE_TEST_") && !testControls.has(name)) {
+      delete env[name];
+    }
+  }
+  for (const name of ["OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT", "CLAUDE_CONFIG_DIR"]) {
+    delete env[name];
+  }
   for (const name of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"]) {
     delete env[name];
   }
@@ -54,7 +68,7 @@ export function isolatedTestEnv(
   for (const [name, dir] of caches) {
     if (env[name] === undefined && fs.existsSync(dir)) env[name] = dir;
   }
-  Object.assign(env, containerRuntimeEnv(base, realHome));
+  if (options.containers !== false) Object.assign(env, containerRuntimeEnv(base, realHome));
   return env;
 }
 

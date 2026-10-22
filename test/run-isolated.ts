@@ -15,21 +15,51 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { createTempDir } from "./fixtures";
 import { isolatedTestEnv } from "./isolated-home";
+import { suiteArguments } from "./suites";
 
 const realHome = os.homedir();
-const home = fs.mkdtempSync(path.join(os.tmpdir(), "mate-test-home-"));
-const cleanUp = () => fs.rmSync(home, { recursive: true, force: true });
+const args = process.argv.slice(2);
+const suiteOptions = args.filter((arg) => arg.startsWith("--suite="));
+const suite = suiteOptions[0]?.slice("--suite=".length);
+if (
+  suiteOptions.length > 1 ||
+  (suite !== undefined && suite !== "unit" && suite !== "integration")
+) {
+  throw new Error(
+    "Use one --suite=unit or --suite=integration option, or omit it for the full suite.",
+  );
+}
+const exclusions = suite ? suiteArguments(suite) : [];
+const testHome = await createTempDir("mate-test-home-");
+const cleanUp = () => fs.rmSync(testHome, { recursive: true, force: true });
+const env = isolatedTestEnv(process.env, testHome, realHome, { containers: suite !== "unit" });
+if (suite === "unit") {
+  env.npm_config_offline = "true";
+  env.npm_config_cache = path.join(testHome, ".cache", "npm");
+  env.BUN_INSTALL_CACHE_DIR = path.join(testHome, ".cache", "bun");
+}
 
-const child = spawn(process.execPath, ["test", ...process.argv.slice(2)], {
-  stdio: "inherit",
-  env: isolatedTestEnv(process.env, home, realHome),
-});
+const child = spawn(
+  process.execPath,
+  ["test", ...exclusions, ...args.filter((arg) => !arg.startsWith("--suite="))],
+  {
+    stdio: "inherit",
+    env,
+  },
+);
 
 /** Forwarded rather than handled, so an interrupted run still removes its HOME on the way out. */
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => child.kill(signal));
 }
+
+child.on("error", (error) => {
+  cleanUp();
+  console.error(error.message);
+  process.exitCode = 1;
+});
 
 child.on("close", (code, signal) => {
   cleanUp();

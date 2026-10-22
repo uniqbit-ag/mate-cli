@@ -39,7 +39,7 @@ import {
 import { ClaudeAdapter, launchSettingsPath } from "./claude";
 import { OpenCodeAdapter } from "./opencode";
 import type { AdapterContext } from "./base";
-import { withEnv } from "../../../../test/helpers";
+import { withEnv } from "../../../../../../test/fixtures";
 
 const tempRoots: string[] = [];
 const OPENCODE_V2 = () => "2.0.20";
@@ -63,7 +63,7 @@ async function withPath<T>(value: string, fn: () => Promise<T> | T): Promise<T> 
 const CLAUDE_WRAP = wrapStateOf(withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, []));
 
 /** As a launch hands the context over: planned by the adapter after a prepare that wrapped for Claude. */
-function planClaude(context: AdapterContext) {
+function planClaude(context: AdapterContext, claudePluginDirectories?: string[]) {
   return new ClaudeAdapter().planLaunch(context, {
     ok: true,
     mode: "attended",
@@ -74,6 +74,7 @@ function planClaude(context: AdapterContext) {
     steps: [],
     warnings: [],
     wrapState: CLAUDE_WRAP,
+    ...(claudePluginDirectories ? { claudePluginDirectories } : {}),
   });
 }
 
@@ -81,8 +82,12 @@ async function prepareClaudeLaunch(context: AdapterContext, args: string[]) {
   return new ClaudeAdapter().prepareLaunch(await planClaude(context), args);
 }
 
-async function claudeArgs(context: AdapterContext, args: string[]) {
-  return new ClaudeAdapter().buildArgs(await planClaude(context), args);
+async function claudeArgs(
+  context: AdapterContext,
+  args: string[],
+  claudePluginDirectories?: string[],
+) {
+  return new ClaudeAdapter().buildArgs(await planClaude(context, claudePluginDirectories), args);
 }
 
 /** A companion that holds the Claude settings and, when asked, the MCP config. */
@@ -590,7 +595,8 @@ describe("Claude companion settings launch flags", () => {
       companionPath,
     };
 
-    const args = await claudeArgs(context, ["--print"]);
+    /** context-mode's folder reaches the launch as its prepare gathered it, like any Capability's. */
+    const args = await claudeArgs(context, ["--print"], [getContextModePackageRoot(companionPath)]);
 
     expect(args).toEqual([
       "--append-system-prompt",
@@ -615,23 +621,25 @@ describe("Claude companion settings launch flags", () => {
     expect(pluginDirs).toEqual([getClaudePluginRoot()]);
   });
 
-  test("adds the local context-mode plugin directory only when enabled, alongside the mate plugin", async () => {
+  /**
+   * Migrated: "adds the local context-mode plugin directory only when enabled"
+   * read the capability list here. The adapter now passes what its prepare
+   * gathered, so the behavior is asserted where it lives: context-mode declares
+   * its folder and a sync pass gathers it (`context-mode.test.ts`), a disabled
+   * Capability's folder is not gathered (`engine-reconcile.test.ts`), the
+   * adapter passes gathered folders after the bundled plugin (`claude.test.ts`),
+   * and an enabled context-mode still yields the same two flags
+   * (`context-mode-launch.test.ts`).
+   */
+  test("passes a capability-only context-mode no plugin folder of its own", async () => {
     const companionPath = await makeTempDir("mate-claude-context-mode-flag-");
-    const enabled = await claudeArgs(
+    const args = await claudeArgs(
       { ...makeContext([{ name: "context-mode" }]), companionPath },
       [],
     );
-    const disabled = await claudeArgs({ ...makeContext(), companionPath }, []);
 
-    const enabledPluginDirs = enabled.filter((_, index) => enabled[index - 1] === "--plugin-dir");
-    expect(enabledPluginDirs).toEqual([
-      getClaudePluginRoot(),
-      getContextModePackageRoot(companionPath),
-    ]);
-    const disabledPluginDirs = disabled.filter(
-      (_, index) => disabled[index - 1] === "--plugin-dir",
-    );
-    expect(disabledPluginDirs).toEqual([getClaudePluginRoot()]);
+    const pluginDirs = args.filter((_, index) => args[index - 1] === "--plugin-dir");
+    expect(pluginDirs).toEqual([getClaudePluginRoot()]);
   });
 
   test("validates the bundled mate plugin assets", async () => {

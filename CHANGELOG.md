@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Capabilities can ship Claude plugins
+
+- A Capability, built-in or dynamic, can declare Claude Code plugin folders as `pluginDirectories: [{ path }]` under its `claude` Runtime Contribution. `mate claude` passes each enabled folder as `--plugin-dir`, after Mate's own plugin. Plain `claude` sessions do not load them, because a plugin folder has no settings document to land in.
+- Each launch checks the folders it gathers. A folder that is not an absolute path, or holds no `.claude-plugin/plugin.json`, is left out, and the session still starts. A folder declared twice, even with a trailing separator or through a symlink, is passed once. Only `mate claude` warns about it; `mate opencode` cannot load the folder, so it stays silent.
+- `mate wrap` names every Capability whose Claude plugin loads only through `mate claude`, replacing the context-mode-only note. `mate doctor` lists the contributed Claude plugins, with whether each folder can load (present, missing its plugin manifest, or not an absolute path), in text and `--json`. When a Capability's contributions fail to load, doctor names the Capability and the error, still reports everything else, and exits non-zero.
+- context-mode uses the new contribution. It passes the same two `--plugin-dir` flags in the same order, and a missing or broken package still fails `mate claude` before Claude starts. Its Claude package check moved from the Claude adapter into context-mode's own launch preflight, which skips plain sessions. A missing package now names the expected version instead of a bare "no such file" error.
+- Capability preflight hooks receive the kind of session being prepared (`sessionKind`). `RuntimeContributions`, `RuntimeContributionsByRuntime`, `PluginDirectoryContribution` and `SessionKind` are exported as types for dynamic plugin authors.
+
 ### OpenSpec output regenerates only on `mate companion setup` and `mate companion update`
 
 - **Behavior change:** launches no longer upgrade the `openspec` CLI to `@latest` or run `openspec config reset`, `openspec init --force`, and `openspec update --force`. Those commands rewrote the committed `openspec-*` skills and `/opsx` commands in the background, so teammates on different CLI versions kept overwriting each other's files. A new OpenSpec release now reaches a companion only when someone runs `mate companion update` (or `mate companion setup`) and commits the result.

@@ -27,7 +27,7 @@ import {
 } from "../../runtime/runtime-directory";
 import { project } from "../../lib/orchestrator/working-repo-projection";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
-import { executeSetup, renderWorkingRuntimeDocuments } from "../setup";
+import { executeSetup, renderWorkingRuntimeDocuments, syncCompanionFiles } from "../setup";
 
 // Golden-fixture harness for the Runtime Surface refactor: runs the real
 // `executeSetup` across a capability × runtime matrix and snapshots the
@@ -307,6 +307,7 @@ async function collectLaunchSurface(
   fixture: Fixture,
   agents: string[],
   capabilities: string[],
+  config: FrameworkConfig,
 ): Promise<unknown> {
   const context: AdapterContext = {
     repository: { id: "app", path: path.join(fixture.root, "working") },
@@ -320,6 +321,8 @@ async function collectLaunchSurface(
   const surface: Record<string, unknown> = {};
   if (agents.includes("claude")) {
     const adapter = new ClaudeAdapter();
+    /** The plugin folders a launch's own sync pass gathers. */
+    const { directories } = await syncCompanionFiles(fixture.companionPath, config);
     /** As a launch hands it over for a Claude-wrapped repository. */
     const claudeContext = await adapter.planLaunch(context, {
       ok: true,
@@ -331,6 +334,7 @@ async function collectLaunchSurface(
       steps: [],
       warnings: [],
       wrapState: wrapStateOf(withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, [])),
+      claudePluginDirectories: directories,
     });
     surface.claudeArgs = adapter.buildArgs(claudeContext, []);
     surface.claudeEnv = adapter.extendEnvironment(claudeContext);
@@ -406,7 +410,9 @@ describe("runtime surface golden fixtures", () => {
           const fixture = await makeFixture(`mate-golden-${capability}-`);
           const { config } = await runSetup(fixture, agents, [capability]);
           expect(await collectEffectiveState(fixture)).toMatchSnapshot();
-          expect(await collectLaunchSurface(fixture, agents, [capability])).toMatchSnapshot();
+          expect(
+            await collectLaunchSurface(fixture, agents, [capability], config),
+          ).toMatchSnapshot();
           expect(await collectWorkingTargetDocuments(fixture, config)).toMatchSnapshot();
         },
         { timeout: 30000 },
@@ -421,7 +427,7 @@ describe("runtime surface golden fixtures", () => {
       const { config } = await runSetup(fixture, ["claude", "opencode"], [...CAPABILITIES]);
       expect(await collectEffectiveState(fixture)).toMatchSnapshot();
       expect(
-        await collectLaunchSurface(fixture, ["claude", "opencode"], [...CAPABILITIES]),
+        await collectLaunchSurface(fixture, ["claude", "opencode"], [...CAPABILITIES], config),
       ).toMatchSnapshot();
       expect(await collectWorkingTargetDocuments(fixture, config)).toMatchSnapshot();
     },

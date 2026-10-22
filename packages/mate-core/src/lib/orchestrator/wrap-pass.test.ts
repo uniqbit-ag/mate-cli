@@ -201,7 +201,7 @@ describe("an attended Claude prepare", () => {
       changed: false,
       companionPath,
     })) as never;
-    sessionPrepareDeps.syncCompanionFiles = async () => {};
+    sessionPrepareDeps.syncCompanionFiles = async () => ({ directories: [], warnings: [] });
     sessionPrepareDeps.runCapabilityPreflight = async () => {};
 
     const result = await prepareSession({
@@ -473,12 +473,38 @@ describe("a failing OpenSpec store entry", () => {
       changed: false,
       companionPath,
     })) as never;
-    sessionPrepareDeps.syncCompanionFiles = async () => {};
+    sessionPrepareDeps.syncCompanionFiles = async () => ({ directories: [], warnings: [] });
     sessionPrepareDeps.runCapabilityPreflight = async () => {};
 
     const result = await prepareSession({ runtime, companionPath, repository, mode });
 
     expect(result.ok).toBe(true);
     expect(result.warnings).toContainEqual(expect.stringContaining("/somewhere/else"));
+  });
+});
+
+describe("the Claude plugins a wrap pass names", () => {
+  test("names an enabled Capability that ships a Claude plugin folder, checking no folder", async () => {
+    const { companionPath, repository } = await linkedRepo();
+    await writeCompanionConfig(
+      companionPath,
+      "allowedAgents:\n  - claude\n  - opencode\ncapabilities:\n  - name: context-mode\n",
+    );
+
+    const result = await runWrapPass(companionPath, repository);
+
+    if (result.kind === "failed") throw new Error(result.message);
+    expect(result.claudePluginCapabilities).toEqual(["context-mode"]);
+    /** The package is not installed, and the pass says nothing about it: launches report that. */
+    expect(result.warnings.join("\n")).not.toContain("context-mode");
+  });
+
+  test("names none when no enabled Capability ships one", async () => {
+    const { companionPath, repository } = await linkedRepo();
+
+    const result = await runWrapPass(companionPath, repository);
+
+    if (result.kind === "failed") throw new Error(result.message);
+    expect(result.claudePluginCapabilities).toEqual([]);
   });
 });

@@ -4,7 +4,6 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repository-link";
 import type { ProjectionChangedPaths } from "../../lib/orchestrator/projection-types";
 import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
-import { readCompanionConfig } from "../../lib/orchestrator/config-store";
 import { runWrapPass, type WrapPassResult } from "../../lib/orchestrator/wrap-pass";
 import { withCompanionLock } from "../../runtime/companion-lock";
 import { WRAP_RUNTIMES } from "../../runtime/wrap-state";
@@ -141,18 +140,15 @@ export async function runWrapCommand(
   console.log(
     `Start sessions yourself (${plain}) or through ${managed}; both work here. \`${FRAMEWORK_NAME} unwrap\` reverses this.`,
   );
-  if (runtimes.has("claude") && (await contextModeEnabled(result.companionPath))) {
+  const pluginCapabilityIds = result.claudePluginCapabilities;
+  if (runtimes.has("claude") && pluginCapabilityIds.length > 0) {
     console.log(
-      `Note: context-mode loads only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+      `Note: ${listNames(pluginCapabilityIds)} ${pluginCapabilityIds.length === 1 ? "loads" : "load"} only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
     );
   }
 }
 
-async function contextModeEnabled(companionPath: string): Promise<boolean> {
-  try {
-    const config = await readCompanionConfig(companionPath);
-    return (config.capabilities ?? []).some((capability) => capability.name === "context-mode");
-  } catch {
-    return false;
-  }
+/** `a`, `a and b`, `a, b and c`. */
+function listNames(names: string[]): string {
+  return names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names.at(-1)!}`;
 }

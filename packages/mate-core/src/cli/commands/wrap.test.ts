@@ -331,6 +331,7 @@ describe("runWrapCommand", () => {
           warnings: ["acme needs attention"],
           runtimes: new Set(),
           wrapState: wrapStateOf(EMPTY_MANIFEST),
+          claudePluginCapabilities: [],
         }),
       });
     } finally {
@@ -462,6 +463,7 @@ describe("runWrapCommand", () => {
         warnings: [],
         runtimes: new Set<WrapRuntime>(covered),
         wrapState: wrapStateOf(EMPTY_MANIFEST),
+        claudePluginCapabilities: [],
       };
       const { out, restore } = capture();
       try {
@@ -500,6 +502,44 @@ describe("runWrapCommand", () => {
     expect(out.join("\n")).toContain(
       `context-mode loads only in sessions started with \`${FRAMEWORK_NAME} claude\``,
     );
+  });
+
+  /** A pass that reconciled `runtimes` and found `claudePluginCapabilities`, as the command sees it. */
+  async function noteFor(runtimes: WrapRuntime[], claudePluginCapabilities: string[]) {
+    const { repoPath, companionPath } = await makeLinkedRepo("wrap-plugin-note-");
+    const passed: WrapPassResult = {
+      kind: "current",
+      projectionRoot: projectionDir(repoPath),
+      companionPath,
+      documents: [],
+      writtenDocuments: [],
+      changed: { written: [], removed: [] },
+      warnings: [],
+      runtimes: new Set(runtimes),
+      wrapState: wrapStateOf(EMPTY_MANIFEST),
+      claudePluginCapabilities,
+    };
+    const { out, restore } = capture();
+    try {
+      await runWrapCommand([], repoPath, { runWrapPass: async () => passed });
+    } finally {
+      restore();
+    }
+    return out.filter((line) => line.startsWith("Note:"));
+  }
+
+  test("names every Capability whose Claude plugin loads only with mate claude, in one note", async () => {
+    expect(await noteFor(["claude"], ["context-mode", "acme-mentions"])).toEqual([
+      `Note: context-mode and acme-mentions load only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+    ]);
+  });
+
+  test("prints no plugin note when no Capability ships a Claude plugin", async () => {
+    expect(await noteFor(["claude"], [])).toEqual([]);
+  });
+
+  test("prints no plugin note for a pass that did not reconcile Claude", async () => {
+    expect(await noteFor(["opencode"], ["context-mode"])).toEqual([]);
   });
 
   test("a managed launch does not reconcile the working target", async () => {

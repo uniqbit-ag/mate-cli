@@ -1,3 +1,5 @@
+/** @test-requires sockets, agent binaries */
+
 import { spawn, spawnSync } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import fs from "node:fs/promises";

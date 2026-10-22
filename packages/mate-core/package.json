@@ -32,6 +32,8 @@
   },
   "scripts": {
     "test": "CI=1 bun ../../test/run-isolated.ts",
+    "test:unit": "CI=1 bun ../../test/run-isolated.ts --suite=unit",
+    "test:integration": "CI=1 bun ../../test/run-isolated.ts --suite=integration",
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
     "lint": "oxlint src/ opencode-plugin/",
     "lint:fix": "oxlint src/ opencode-plugin/ --fix",

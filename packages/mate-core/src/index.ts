@@ -39,13 +39,17 @@ export type {
   McpService,
   Plugin,
   PluginCliCommand,
+  PluginDirectoryContribution,
   PluginPolicy,
   PluginRegistration,
   ProviderHosting,
   ProviderPlugin,
+  RuntimeContributions,
+  RuntimeContributionsByRuntime,
   SetupContext,
   TemplatesService,
 } from "./tools/setup/plugin";
+export type { SessionKind } from "./runtime/session-kind";
 export type {
   FrameworkType,
   FrameworkConfig,
