@@ -52,6 +52,7 @@ export function isolatedTestEnv(
       delete env[name];
     }
   }
+  /** `CLAUDE_CONFIG_DIR` too, or Claude's user settings resolve outside the temporary HOME. */
   for (const name of ["OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT", "CLAUDE_CONFIG_DIR"]) {
     delete env[name];
   }

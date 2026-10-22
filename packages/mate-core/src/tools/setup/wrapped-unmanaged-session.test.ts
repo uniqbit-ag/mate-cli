@@ -12,6 +12,7 @@ import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import { refreshRuntimeDirectory } from "../../lib/runtime-directory-refresh";
+import { ARTIFACT_REFUSAL_HEADLINE } from "../../runtime/artifact-refusal";
 import { syncCompanionUnattended } from "../../runtime/companion-sync";
 import { MATE_ENV } from "../../runtime/env-names";
 import { cleanupWorkingRepository } from "./working-repo-cleanup";
@@ -193,7 +194,7 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
       repoPath,
     );
     expect(blocked.exitCode).toBe(2);
-    expect(blocked.stderr).toContain("artifact writes must go to the companion framework path");
+    expect(blocked.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
 
     const allowed = runHookCommand(
       commands[0]!,

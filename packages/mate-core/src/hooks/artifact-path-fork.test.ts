@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { refuseForkedCompanionWrite } from "../opencode/companion-hooks";
 import { readContext } from "../opencode/companion-policy";
+import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { COMPANION_SYNC_COMMAND } from "../runtime/companion-sync";
 import { mateVersion } from "../runtime/install";
 import { computeProjectionStamp, writeProjectionPair } from "../runtime/projection";
@@ -215,7 +216,7 @@ describe("the Claude guard and a forked companion", () => {
     );
 
     expect(outcome.exitCode).toBe(2);
-    expect(outcome.stderr).toContain("artifact writes must go to the companion framework path");
+    expect(outcome.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
     expect(outcome.stderr).not.toContain("forked");
   });
 

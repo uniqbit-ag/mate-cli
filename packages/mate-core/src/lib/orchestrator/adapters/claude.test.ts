@@ -131,6 +131,30 @@ describe("the Claude delivery plan at launch", () => {
     expect(derived.enableArtifact).toBe(false);
   });
 
+  test("a launch carries the managed attribution unless the repository sets its own", async () => {
+    const { companionPath } = await companionWith({});
+    await syncCompanionClaudeSettings(companionPath, {
+      allowedAgents: ["claude"],
+      capabilities: [],
+    });
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "acme-launch-repo-"));
+    tempRoots.push(repo);
+    const context = { ...contextFor(companionPath), repository: { id: "repo", path: repo } };
+    const derived = async () =>
+      JSON.parse(await fs.readFile(launchSettingsPath(companionPath, "repo"), "utf8"));
+
+    await new ClaudeAdapter().planLaunch(context, prepared());
+    expect((await derived()).attribution).toEqual({ commit: "", pr: "", sessionUrl: false });
+
+    await fs.mkdir(path.join(repo, ".claude"), { recursive: true });
+    await fs.writeFile(
+      path.join(repo, ".claude", "settings.json"),
+      JSON.stringify({ attribution: { pr: "Built with AI" } }),
+    );
+    await new ClaudeAdapter().planLaunch(context, prepared());
+    expect("attribution" in (await derived())).toBe(false);
+  });
+
   test("a launch whose prepare left no Claude wrap fails preflight naming mate wrap", async () => {
     const { companionPath } = await companionWith({});
 

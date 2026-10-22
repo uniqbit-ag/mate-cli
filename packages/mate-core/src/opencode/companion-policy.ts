@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+import { artifactRefusal, resolveArtifactTarget } from "../runtime/artifact-refusal";
 import { persistedCompanionGitStalenessLines } from "../runtime/companion-sync";
 import { resolveCompanionRuntime, type CompanionRuntimeContext } from "../runtime/env";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
@@ -60,7 +61,7 @@ export function isArtifactPath(filePath: string): boolean {
 }
 
 export function isProductDocumentationPath(context: CompanionContext, filePath: string): boolean {
-  const normalized = normalizeTargetPath(context, filePath);
+  const normalized = resolveArtifactTarget(filePath, context.repositoryPath);
   const relativePath = path.relative(context.repositoryPath, normalized);
   if (!relativePath || relativePath.startsWith("..")) {
     return false;
@@ -86,12 +87,10 @@ export function isProductDocumentationPath(context: CompanionContext, filePath: 
   return false;
 }
 
-export function normalizeTargetPath(context: CompanionContext, filePath: string): string {
-  if (path.isAbsolute(filePath)) {
-    return path.normalize(filePath);
-  }
-
-  return path.normalize(path.join(context.repositoryPath, filePath));
+export function isCompanionTarget(context: CompanionContext, filePath: string): boolean {
+  return resolveArtifactTarget(filePath, context.repositoryPath).startsWith(
+    path.normalize(context.companionPath),
+  );
 }
 
 export function isGitignored(context: CompanionContext, filePath: string): boolean {
@@ -99,7 +98,7 @@ export function isGitignored(context: CompanionContext, filePath: string): boole
     return false;
   }
 
-  const normalized = normalizeTargetPath(context, filePath);
+  const normalized = resolveArtifactTarget(filePath, context.repositoryPath);
   if (!normalized.startsWith(path.normalize(context.repositoryPath))) {
     return false;
   }
@@ -126,7 +125,7 @@ export function shouldBlockArtifactWrite(context: CompanionContext, filePath: st
     return false;
   }
 
-  if (normalizeTargetPath(context, filePath).startsWith(path.normalize(context.companionPath))) {
+  if (isCompanionTarget(context, filePath)) {
     return false;
   }
 
@@ -179,15 +178,12 @@ export function extractPatchAdditions(patchText: string): { path: string; conten
 }
 
 export function buildArtifactError(context: CompanionContext, filePath: string): string {
-  const rel = path.relative(context.repositoryPath, filePath);
-  const suggested = path.join(context.companionPath, rel);
-
-  return [
-    `${context.frameworkName} guardrail: artifact writes must go to the companion framework path.`,
-    `  target:   ${filePath}`,
-    `  suggested: ${suggested}`,
-    `Rewrite to ${suggested} and retry.`,
-  ].join("\n");
+  return artifactRefusal({
+    target: filePath,
+    resolved: resolveArtifactTarget(filePath, context.repositoryPath),
+    companion: context.companionPath,
+    repoRoot: context.repositoryPath,
+  });
 }
 
 /**

@@ -5,6 +5,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { evaluate } from "../hooks/validate-artifact-path";
+import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import {
@@ -148,8 +150,39 @@ describe("OpenCode companion policy", () => {
     const context = makeContext(repo, companion);
     expect(shouldBlockArtifactWrite(context, path.join(repo, "scratch", "note.md"))).toBe(true);
     expect(buildArtifactError(context, path.join(repo, "scratch", "note.md"))).toContain(
-      "artifact writes must go to the companion framework path",
+      ARTIFACT_REFUSAL_HEADLINE,
     );
+  });
+
+  test("refuses with the same message as the Claude hook", async () => {
+    const repo = await makeTempDir("mate-opencode-parity-");
+    const companion = await makeTempDir("mate-opencode-parity-companion-");
+    await initGitRepo(repo);
+
+    const context = makeContext(repo, companion);
+    for (const target of ["notes/handoff.md", path.join(repo, "scratch", "plan.md"), "CLAUDE.md"]) {
+      // oxlint-disable-next-line no-await-in-loop -- one target at a time
+      const claude = await evaluate(
+        { tool_name: "Write", tool_input: { file_path: target } },
+        { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+      );
+      expect(claude.exitCode).toBe(2);
+      expect(buildArtifactError(context, target)).toBe(claude.stderr.replace(/\n$/, ""));
+    }
+  });
+
+  test("suggests no path for a target outside the working repository", async () => {
+    const repo = await makeTempDir("mate-opencode-outside-");
+    const companion = await makeTempDir("mate-opencode-outside-companion-");
+    const elsewhere = await makeTempDir("mate-opencode-outside-elsewhere-");
+    await initGitRepo(repo);
+
+    const context = makeContext(repo, companion);
+    const target = path.join(elsewhere, "notes.md");
+    expect(shouldBlockArtifactWrite(context, target)).toBe(true);
+    const message = buildArtifactError(context, target);
+    expect(message).toContain(companion);
+    expect(message).not.toContain("suggested:");
   });
 
   test("allows product documentation and storybook paths in the working repository", async () => {

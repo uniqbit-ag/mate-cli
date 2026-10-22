@@ -139,6 +139,43 @@ local edit the update would overwrite, or an unreachable remote leaves the sessi
 on the current companion with this warning. Restart with the managed launch the
 warning names (`mate opencode` or `mate claude`); its attended sync can resolve it.
 
+## Artifact Write Blocked By The Guardrail
+
+Agent artifacts (plans, specs, notes, and most Markdown) belong in the companion,
+not the working repository. The guardrail refuses a write that would create one
+in the working repository, and the refusal names the target and the companion:
+
+```text
+mate guardrail: artifact writes must go to the companion framework path.
+ target:    notes/handoff.md
+ resolved:  /work/acme/notes/handoff.md
+ companion: /home/me/.mate/companions/acme
+ suggested: /home/me/.mate/companions/acme/notes/handoff.md
+Relative paths resolve against the working repository; a preceding `cd` is not followed.
+Rewrite to the suggested absolute path and retry.
+```
+
+The guardrail resolves a relative path against the working repository, even after
+a `cd` into the companion in the same shell command. `resolved:` shows the path it
+judged, and appears only for a relative target. `suggested:` is the matching
+companion path, offered only when the target lies inside the working repository.
+Write artifacts with absolute companion paths. A path that is gitignored, or a file
+already tracked, stays writable in the working repository.
+
+## Commit Refused For A Co-Authored-By Trailer
+
+An agent commit whose message credits an AI model as co-author is refused before
+the commit is created:
+
+```text
+Mate guardrail: Co-Authored-By trailers that credit an AI model are not allowed in this repository.
+No commit was created. Rerun the same commit without the Co-Authored-By trailer; do not amend or rewrite history to remove it.
+```
+
+Nothing needs to be undone. Rerun the commit without the trailer. A human
+co-author trailer is allowed. See
+[Commit Attribution](/docs/concepts/commit-attribution).
+
 ## A Launch Waits For Another Sync
 
 Every companion sync holds one lock per companion under `~/.mate/locks/`. A

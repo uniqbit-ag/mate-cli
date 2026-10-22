@@ -7,6 +7,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createTempDir, withEnv } from "../../../../test/fixtures";
 import { guardToolInput, registerCompanionHooks } from "./companion-hooks";
 import { readContext, type CompanionContext } from "./companion-policy";
+import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
@@ -108,7 +109,7 @@ describe("OpenCode companion hooks without a launch", () => {
     expect(context.companionPath).toBe(companion);
     await expect(
       guardToolInput(context, "write", { filePath: path.join(repo, "design.md") }),
-    ).rejects.toThrow("artifact writes must go to the companion framework path");
+    ).rejects.toThrow(ARTIFACT_REFUSAL_HEADLINE);
   });
 
   test("resolves no companion when neither the environment nor a projection does", async () => {
@@ -178,6 +179,20 @@ describe("OpenCode companion hooks", () => {
     ).resolves.toBeUndefined();
   });
 
+  test("names the resolution of a relative apply_patch path", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-patch-relative-");
+    const context = await launchContext(companion, repo);
+
+    const refusal = await guardToolInput(context, "apply_patch", {
+      patchText: "*** Add File: notes/x.md\ncontent",
+    }).then(
+      () => "",
+      (error: Error) => error.message,
+    );
+    expect(refusal).toContain(` resolved:  ${path.join(repo, "notes", "x.md")}`);
+    expect(refusal).toContain(` suggested: ${path.join(companion, "notes", "x.md")}`);
+  });
+
   test("allows gitignored artifact writes", async () => {
     const { repo, companion } = await setupRepoFixture("mate-opencode-gitignore-");
     await fs.writeFile(path.join(repo, ".gitignore"), "local-notes.md\n", "utf8");
@@ -196,6 +211,26 @@ describe("OpenCode companion hooks", () => {
       guardToolInput(context, "read", { filePath: path.join(repo, "spec.md") }),
     ).resolves.toBeUndefined();
     await expect(guardToolInput(context, "bash", undefined)).resolves.toBeUndefined();
+  });
+});
+
+describe("OpenCode commit-attribution guard", () => {
+  test("refuses a bash commit with a model co-author trailer, after the secret check", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-attribution-");
+    const context = await launchContext(companion, repo);
+    const trailer = "Co-Authored-By: Claude <noreply@anthropic.com>";
+
+    await expect(
+      guardToolInput(context, "bash", { command: `git commit -m "x" -m "${trailer}"` }),
+    ).rejects.toThrow("No commit was created");
+    await expect(
+      guardToolInput(context, "bash", { command: `git commit -m "${trailer}" && cat .env` }),
+    ).rejects.toThrow("secret files are off-limits");
+    await expect(
+      guardToolInput(context, "bash", {
+        command: `git commit -m "Co-Authored-By: Jane <jane@acme.example>"`,
+      }),
+    ).resolves.toBeUndefined();
   });
 });
 

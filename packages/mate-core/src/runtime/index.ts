@@ -1,4 +1,9 @@
 export {
+  ARTIFACT_REFUSAL_HEADLINE,
+  artifactRefusal,
+  type ArtifactRefusalInput,
+} from "./artifact-refusal";
+export {
   GRAPHIFY_SHARED_COMPANION_PATH_CONTRACT,
   GRAPHIFY_COMPANION_PATH_CONTRACT,
   buildCodebaseExplorationGuidanceSection,

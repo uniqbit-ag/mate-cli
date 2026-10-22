@@ -425,11 +425,14 @@ describe("runtime surface golden fixtures", () => {
     async () => {
       const fixture = await makeFixture("mate-golden-all-");
       const { config } = await runSetup(fixture, ["claude", "opencode"], [...CAPABILITIES]);
-      expect(await collectEffectiveState(fixture)).toMatchSnapshot();
-      expect(
+      const written = [
+        await collectEffectiveState(fixture),
         await collectLaunchSurface(fixture, ["claude", "opencode"], [...CAPABILITIES], config),
-      ).toMatchSnapshot();
-      expect(await collectWorkingTargetDocuments(fixture, config)).toMatchSnapshot();
+        await collectWorkingTargetDocuments(fixture, config),
+      ];
+      for (const state of written) expect(state).toMatchSnapshot();
+      /** Claude Code before v2.1.281 drops a whole settings file that holds `false`. */
+      expect(JSON.stringify(written)).not.toMatch(/"attribution":\s*false/);
     },
     { timeout: 30000 },
   );
@@ -568,4 +571,46 @@ describe("working repo golden fixtures", () => {
 
     expect(await collectEffectiveState(fixture)).toMatchSnapshot();
   });
+});
+
+/** The companion policy reaches the agent only at launch, never via a guidance file. */
+describe("agent guidance files", () => {
+  test(
+    "never carry the guardrail rule",
+    async () => {
+      const fixture = await makeFixture("mate-golden-no-guardrail-");
+      const workingRepoPath = path.join(fixture.root, "working");
+      await fs.mkdir(path.join(workingRepoPath, ".git", "info"), { recursive: true });
+      const { config } = await runSetup(fixture, ["claude", "opencode"], [...CAPABILITIES]);
+      await syncCompanionFiles(fixture.companionPath, config, workingRepoPath);
+      await project("launch", {
+        repoPath: workingRepoPath,
+        companionPath: fixture.companionPath,
+        config,
+        globalConfigStore: fixture.globalConfigStore,
+      });
+      const { documents } = await renderWorkingRuntimeDocuments(
+        fixture.companionPath,
+        config,
+        workingRepoPath,
+      );
+
+      const files = [fixture.companionPath, workingRepoPath].flatMap((root) =>
+        ["CLAUDE.md", "AGENTS.md"].map((name) => path.join(root, name)),
+      );
+      const templates = ["TEMPLATE_CLAUDE.md", "TEMPLATE_AGENTS.md"].map((name) =>
+        path.resolve(import.meta.dirname, "../../templates/root", name),
+      );
+      for (const template of templates) {
+        // oxlint-disable-next-line no-await-in-loop -- one file at a time
+        expect(await readText(template)).not.toBeNull();
+      }
+      for (const file of [...files, ...templates]) {
+        // oxlint-disable-next-line no-await-in-loop -- one file at a time
+        expect((await readText(file)) ?? "").not.toContain('id="guardrail"');
+      }
+      expect(JSON.stringify(documents)).not.toContain('id=\\"guardrail\\"');
+    },
+    { timeout: 30000 },
+  );
 });

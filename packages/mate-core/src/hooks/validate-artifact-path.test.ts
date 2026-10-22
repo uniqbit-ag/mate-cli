@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { writeProjectionPair, type MateProjection } from "../runtime/projection";
 import { companionLinkPath, repoLocalRegistryPath } from "../runtime/repo-local";
 import { evaluate } from "./validate-artifact-path";
@@ -89,6 +90,34 @@ describe("validate-artifact-path hook module", () => {
         )
       ).exitCode,
     ).toBe(2);
+  });
+
+  test("blocks a commit with a model co-author trailer in a wrapped repository", async () => {
+    const repo = await makeTempDir("mate-hook-attribution-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    await wrapRepo(repo, companion);
+
+    const trailer = "Co-Authored-By: Claude <noreply@anthropic.com>";
+    const bash = (command: string) =>
+      evaluate({ tool_name: "Bash", tool_input: { command } }, {}, repo);
+
+    const refused = await bash(`git commit -m "fix: x" -m "${trailer}"`);
+    expect(refused.exitCode).toBe(2);
+    expect(refused.stderr).toContain("No commit was created");
+
+    /** Before the artifact checks: the attribution refusal wins over a redirect target. */
+    const redirected = await bash(`git commit -m "${trailer}" > design.md`);
+    expect(redirected.stderr).toContain("No commit was created");
+
+    /** After the secret check: the secret refusal wins. */
+    const secret = await bash(`git commit -m "${trailer}" && cat .env`);
+    expect(secret.stderr).toContain("secret files are off-limits");
+
+    expect((await bash(`git commit -m "Co-Authored-By: Jane <jane@acme.example>"`)).exitCode).toBe(
+      0,
+    );
   });
 
   test("the launch environment outranks the projection", async () => {
@@ -185,7 +214,7 @@ describe("validate-artifact-path hook module", () => {
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
     expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain("artifact writes must go to the companion framework path");
+    expect(result.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
   });
 
   test("notes the companion CLAUDE.md location when blocking CLAUDE.md", async () => {
@@ -200,6 +229,100 @@ describe("validate-artifact-path hook module", () => {
     );
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain(`${companion}/CLAUDE.md`);
+  });
+
+  test("explains a relative redirect after cd into the companion", async () => {
+    const repo = await makeTempDir("mate-hook-cd-");
+    const companion = await makeTempDir("mate-hook-cd-companion-");
+    await initGitRepo(repo);
+
+    const result = await evaluate(
+      { tool_name: "Bash", tool_input: { command: `cd ${companion} && cat > notes/handoff.md` } },
+      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(` resolved:  ${path.join(repo, "notes", "handoff.md")}`);
+    expect(result.stderr).toContain("Relative paths resolve against the working repository");
+    expect(result.stderr).toContain("`cd` is not followed");
+    expect(result.stderr).toContain(` suggested: ${path.join(companion, "notes", "handoff.md")}`);
+  });
+
+  test("suggests a companion path for an absolute in-repo target", async () => {
+    const repo = await makeTempDir("mate-hook-abs-");
+    const companion = await makeTempDir("mate-hook-abs-companion-");
+    await initGitRepo(repo);
+
+    const result = await evaluate(
+      { tool_name: "Write", tool_input: { file_path: path.join(repo, "scratch", "plan.md") } },
+      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(` suggested: ${path.join(companion, "scratch", "plan.md")}`);
+    expect(result.stderr).not.toContain("resolved:");
+    expect(result.stderr).not.toContain("Relative paths resolve");
+  });
+
+  test("suggests nothing for a target outside the working repo", async () => {
+    const repo = await makeTempDir("mate-hook-out-");
+    const companion = await makeTempDir("mate-hook-out-companion-");
+    const elsewhere = await makeTempDir("mate-hook-out-elsewhere-");
+    await initGitRepo(repo);
+
+    const result = await evaluate(
+      {
+        tool_name: "Bash",
+        tool_input: { command: `echo x > ${path.join(elsewhere, "notes.md")}` },
+      },
+      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(` companion: ${companion}`);
+    expect(result.stderr).not.toContain("suggested:");
+  });
+
+  describe("heredoc bodies", () => {
+    async function bashVerdict(command: string): Promise<number> {
+      const repo = await makeTempDir("mate-hook-heredoc-");
+      const companion = await makeTempDir("mate-hook-heredoc-companion-");
+      await initGitRepo(repo);
+      const result = await evaluate(
+        { tool_name: "Bash", tool_input: { command } },
+        { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+      );
+      return result.exitCode;
+    }
+
+    test("ignores redirect-like text in a heredoc body", async () => {
+      const command = [
+        "cat >> src/app.ts <<'EOF'",
+        "const files = roots.flatMap((root) =>",
+        '  ["CLAUDE.md", "AGENTS.md"].map((name) => path.join(root, name)),',
+        ");",
+        "echo notes > scratch/plan.md",
+        "EOF",
+      ].join("\n");
+      expect(await bashVerdict(command)).toBe(0);
+    });
+
+    test("still judges a redirect after the heredoc marker", async () => {
+      expect(await bashVerdict("cat <<'EOF' > notes/x.md\nbody\nEOF")).toBe(2);
+    });
+
+    test("still judges a redirect before the heredoc marker", async () => {
+      expect(await bashVerdict("cat > notes/x.md <<EOF\nbody\nEOF")).toBe(2);
+    });
+
+    test("still judges a redirect after the heredoc ends", async () => {
+      expect(await bashVerdict("cat <<EOF | sort\nbody\nEOF\necho x > notes/x.md")).toBe(2);
+    });
+
+    test("does not pair a line-end redirect with a later line", async () => {
+      expect(await bashVerdict("node -e 'a =>\nnotes.md'")).toBe(0);
+    });
+
+    test("does not pair a line-end tee with a later line", async () => {
+      expect(await bashVerdict("echo hi | tee\nnotes.md")).toBe(0);
+    });
   });
 
   test("allows gitignored bash tee targets in the working repo", async () => {
@@ -273,7 +396,7 @@ describe("validate-artifact-path hook module", () => {
         { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
       );
       expect(result.exitCode).toBe(2);
-      expect(result.stderr).toContain("artifact writes must go to the companion framework path");
+      expect(result.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
     }
   });
 
