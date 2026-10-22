@@ -1,322 +1,40 @@
 # Mate
 
-Mate is a companion-first CLI for running coding agents against linked working
-repositories. It keeps agent instructions, skills, specs, and capability output
-in a companion repository while agents edit product code in a separate working
-repository.
+Coding agents that already know your project.
 
-Mate is currently alpha.
+> [!WARNING]
+> Mate is currently alpha. Commands, configuration, and behavior may change
+> between releases.
 
-## Quick Start
+## The Problem
 
-Install the published package with npm. The package bootstraps Bun when it is
-not already available.
+Your team's AI work is invisible to the business.
+
+- Product owners, business analysts, and developers all use AI to shape
+  requirements, plans, and decisions.
+- The results stay in private chats, local files, or scattered across code
+  repositories the business side never opens.
+- Teams spend extra effort aligning, and it gets harder to trace why something
+  was built.
+
+## The Idea
+
+One shared source of truth for every role.
+
+- A companion repository collects specifications, plans, and decisions in one
+  place that every role can read and contribute to.
+- Documentation comes for free: developers following the recommended Mate
+  workflow produce up-to-date specs as a by-product of delivery.
+- The business sees what is being built and why, and every AI session starts
+  from the same, current context.
+
+## Install
 
 ```sh
 npm install -g @uniqbit/mate
 ```
 
-Then run the default workflow from the repository you want an agent to edit:
+## Documentation
 
-```sh
-mate install
-mate companion link
-mate opencode
-```
-
-The first `mate install` verifies Mate's core requirements without requiring a
-companion. `mate companion link` is interactive and must run in a TTY. It can
-clone a Git companion, select an existing managed companion, or link a local
-companion repository by pasted path. Linking installs the requirements selected
-by that companion, so no second `mate install` is needed before launch.
-
-Use `mate claude` instead of `mate opencode` when the selected companion profile
-allows Claude.
-
-## Repository Model
-
-- **Companion repository**: Mate configuration, agent instructions, skills,
-  specs, reports, and capability-managed artifacts.
-- **Working repository**: Product source code and tests that the agent edits.
-- **Repo-local link**: `./.mate/config/registry.yaml` records which companion
-  belongs to a working repository. Mate keeps this directory out of Git's
-  tracked files through `.git/info/exclude`.
-
-Run launch commands from the working repository. Run setup commands from the
-companion repository unless the command explicitly says otherwise.
-
-## Installation State
-
-After the package is installed or updated, run:
-
-```sh
-mate install
-```
-
-Without a linked companion, Mate installs and records only the core runtime
-requirements. In a companion or linked context, it also installs the selected
-package managers and capabilities. Already available requirements are skipped,
-and unselected capabilities are not enabled. Use `mate install --yes` in
-non-interactive environments.
-
-Before normal commands run, Mate checks the local requirements. When every
-requirement is already available and only the recorded installation state is
-missing or stale, Mate repairs that bookkeeping and continues. If a requirement
-is missing, the companion is ambiguous, or the Mate engine requirement is
-unsatisfied, the command is blocked and Mate points to `mate install`. These
-recovery commands remain available:
-
-```sh
-mate install
-mate doctor
-mate companion setup
-mate companion link
-mate update
-mate --help
-mate --version
-```
-
-Run `mate install` after changing companion selections or when a requirement is
-missing. Linking a different companion installs that companion's requirements
-as part of the link flow.
-
-## Commands
-
-### Setup And Linking
-
-```sh
-mate companion setup
-```
-
-Initialize or reconfigure the current directory as a companion repository. The
-interactive setup chooses allowed agents, package managers, capabilities,
-OpenSpec schema, and Git mode. Explicit selections can be supplied with
-`--allowed-agent`, `--package-manager`, `--capability`, `--openspec-schema`,
-and `--git-mode`.
-
-```sh
-mate companion link
-```
-
-Run inside a working repository. Select an existing companion or clone one from
-Git. GitHub URLs are attempted over SSH first and HTTPS second. The command
-stores the link in the working repository's local `.mate` registry, installs
-the companion's selected requirements, and may add both roots to the current VS
-Code or Cursor workspace.
-
-```sh
-mate companion list [--json]
-mate companion open
-mate companion tui
-```
-
-`list` shows linked repositories and emits JSON when `--json` is supplied or
-stdout is not a TTY. `open` adds the active working repository and every
-companion that links it to the current window of the preferred editor, creating
-an unsaved multi-root workspace when needed, and writes
-`.mate/workspace.code-workspace` for persistence. It never asks you to pick a
-companion and leaves the companion your agent sessions use unchanged. `tui`
-opens an interactive shell in the resolved companion directory and sets
-`MATE_ARTIFACT_PATH` for that shell.
-
-### Companion Hubs
-
-```sh
-mate hub init ./workspace
-mate hub add <registered-companion-or-git-url>
-mate hub sync
-```
-
-A hub is a local, non-Git Mate root containing materialized `type: companion`
-children. Git-backed additions are fresh clones; registered companions without
-a Git origin are copied as local-only children. `hub sync` is explicit,
-updates only hub-declared plugins, fetches tracked remotes, and applies only
-clean fast-forward updates. It never updates child plugin workspaces, pushes,
-merges, resets, or discards child changes. Initialization, adding,
-synchronization, and setup do not open an editor implicitly. Hub initialization
-allows all built-in agents for hub-local MCP configuration, but does not create
-agent guidance, `CLAUDE.md`, `AGENTS.md`, or the Mate OpenCode plugin, and never
-sets up child companions.
-
-### Health And Inspection
-
-```sh
-mate doctor
-mate config [--vscode]
-mate report [--days N] [--input FILE|-] [--json]
-```
-
-`doctor` reports whether the current directory is a linked working repository,
-companion repository, or neither. It also shows the active companion, policy,
-capabilities, and required tool installations.
-
-`config` opens Mate's global configuration directory (`~/.mate`) in the OS file
-manager. Use `--vscode` to open it in VS Code.
-
-`report` aggregates configured usage and savings tools, adapts the result to a
-versioned `ReportDocument`, renders a temporary HTML report, and opens it in the
-default browser. Use `--input FILE` or `--input -` to submit an explicit JSON
-`ReportDocument` from a file or stdin; `--days` cannot be combined with this
-mode. Both paths accept `--json` for normalized machine-readable output and do
-not create a file or open a browser. Browser reports include a `Print / Save as
-PDF` control backed by the browser's native print dialog. If HTML creation or
-browser launch fails, Mate warns on stderr and prints the complete report
-document as JSON to stdout. Existing `REPORT.md` files are not modified.
-
-### Agent Launch
-
-```sh
-mate claude
-mate opencode
-```
-
-Launch from a linked working repository. Mate resolves the companion, applies
-the selected provider and capability configuration, refreshes enabled indexes,
-and then starts the agent. The active profile must allow the selected agent.
-
-To launch against the Companion Repository without a Working Repository, opt in
-after the separator:
-
-```sh
-mate opencode -- --companion
-```
-
-Companion-scoped launches run from the companion, synchronize its own runtime
-configuration and Git state, and skip Working-Repository projection, automatic
-indexing, and repository-only hooks. They carry no `MATE_REPO_PATH` or
-`MATE_REPO_ID` in the agent environment.
-
-Forward agent arguments after `--`:
-
-```sh
-mate claude -- --model sonnet
-mate opencode -- --continue
-```
-
-If companion Git auto mode is enabled, skip its pre-launch synchronization for
-one launch with:
-
-```sh
-mate claude -- --no-git
-mate opencode -- --no-git
-```
-
-`--no-git` must appear after the argument separator.
-
-Mate asks for confirmation only when standard input is a TTY. Non-interactive
-launches proceed unattended. Use `-- --yes` to suppress the prompt in a TTY;
-both `--companion` and `--yes` are Mate control tokens only after the separator.
-
-### Capabilities
-
-```sh
-mate cap openspec <subcommand> [args...]
-mate cap graphify <subcommand> [args...]
-mate cap index [--graphify | --tokensave]
-```
-
-OpenSpec and Graphify commands run through the active Mate context. `cap index`
-refreshes enabled Graphify and TokenSave indexes; without a flag it chooses the enabled default,
-and the flags restrict the run to one indexer.
-
-The available capabilities are OpenSpec, React Doctor, TokenSave, RTK,
-Graphify, Context7, and Context Mode. RTK is independently selectable and patches
-supported provider integrations.
-Providers are Claude and OpenCode. Bun is always part of the core runtime; uv is
-selected for Python-backed capability workflows.
-
-Context Mode is opt-in and pins `context-mode@1.0.169` (Elastic License 2.0,
-Node.js `>=22.5.0`). Mate installs its Claude plugin below the Companion's
-`.mate/plugins/.local/` directory and activates it per launch; it does not
-change Claude's global marketplace state. OpenCode receives the same exact
-package pin after Mate's policy plugin. Mate does not add a separate
-context-mode MCP entry.
-
-Context Mode retains session and memory data in its provider defaults (normally
-`~/.claude/context-mode/` for Claude and `~/.config/opencode/context-mode/` for
-OpenCode). Disabling the capability removes only Mate-owned activation and
-package files, not this potentially sensitive provider data. Remove those data
-directories manually when their retained content is no longer needed. Upgrades
-must update the single pin in `context-mode-package.ts`, confirm the package's
-license, Node engine and plugin assets, then run the Claude/OpenCode composition
-tests before release.
-
-### Artifacts And Updates
-
-```sh
-mate artifact publish <change-name> [--type openspec] [--force] [--no-push] [--json]
-mate update
-mate update --check
-```
-
-`artifact publish` commits, tags, and pushes a completed change artifact
-(`artifact finish` is a deprecated alias). `update` upgrades the
-npm-managed Mate package and starts a fresh post-update install. Self-update is
-supported only for npm global installations. `update --check` reports whether a
-new version exists without installing it.
-
-## Releasing
-
-Releases are prepared and signed locally, then published by the
-[`release.yml`](.github/workflows/release.yml) workflow. Nothing is published
-from a maintainer machine, and no npm token is involved.
-
-### One-Time Signing Setup
-
-Release commits and tags are signed with an SSH key. Add the public key to
-GitHub as a *Signing key*, list it in [`.github/allowed_signers`](.github/allowed_signers)
-on `main` with your git email as principal, and configure git:
-
-```sh
-git config gpg.format ssh
-git config user.signingkey ~/.ssh/<signing-key>.pub
-```
-
-Without a usable key, release-it fails before the release commit is created.
-
-### Prepare A Release
-
-```sh
-bun release          # stable x.y.z from main, npm dist-tag latest
-bun release:canary   # x.y.z-canary.n, npm dist-tag canary
-```
-
-release-it bumps and synchronizes the package versions, pins the image locks,
-creates a signed release commit and signed annotated tag, and pushes both.
-
-### CI Publication
-
-The pushed tag starts `release.yml`:
-
-1. `verify` checks the tag signature against `allowed_signers` read from `main`
-   and, for stable versions, that the tagged commit is on `main`.
-2. `publish` runs `publish.sh` in the `npm-publish` environment. It checks
-   synchronized versions, tag/version/channel agreement, and that every packed
-   tarball matches the image-lock pins, then publishes `@uniqbit/mate-core`
-   (which bundles the OpenCode plugin) and `@uniqbit/mate` via npm Trusted
-   Publishing with provenance.
-3. `image` requests `publish-image.yml` best-effort; a failure prints the
-   manual retry command and does not fail the release.
-
-### Retry
-
-Re-run the failed workflow run, or dispatch it for the existing tag:
-
-```sh
-gh workflow run release.yml --repo uniqbit-ag/mate-cli --field tag=<version>
-```
-
-Packages already published with the identical tarball are skipped; a version
-published with a different tarball stops the run. No new version is needed.
-
-### Verify A Release
-
-```sh
-mkdir mate-verify && cd mate-verify && npm init -y >/dev/null
-npm install @uniqbit/mate@<version>
-npm audit signatures
-```
-
-This verifies the registry signatures and provenance attestations of the
-installed packages. The npm package page also shows the provenance link to the source
-commit and workflow run.
+Quickstart, concepts, and the command reference are on the website:
+**[uniqbit-ag.github.io/mate-cli](https://uniqbit-ag.github.io/mate-cli/)**

@@ -39,6 +39,7 @@ jobs:
               - ".github/workflows/ci.yml"
             docs:
               - "apps/docs/**"
+              - "packages/mate-core/src/cli/usage.ts"
               - ".github/workflows/ci.yml"
 
   static:
@@ -107,6 +108,9 @@ jobs:
 
       - name: Astro check
         run: bun run docs:check
+
+      - name: Command reference covers every CLI command
+        run: bun apps/docs/scripts/check-commands.ts
 
   ci-ok:
     name: ci-ok

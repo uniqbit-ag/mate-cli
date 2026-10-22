@@ -59,11 +59,11 @@ export async function runSetupCommand(argv: string[]): Promise<void> {
  * via `setup.execute` and prints a summary table of allowed agents, package managers,
  * and capabilities.
  * @flags
- * - `--agents <list>` — parsed via `parseAllowedAgents`.
- * - `--package-managers <list>` — parsed via `parsePackageManagers`.
- * - `--capabilities <list>` — parsed via `parseCapabilities`.
- * - `--openspec-schema <value>` — parsed via `parseOpenSpecSchema`.
- * - `--git-mode <value>` — parsed via `parseGitMode`.
+ * - `--allowed-agent <agent>` — repeatable; parsed via `parseAllowedAgents`.
+ * - `--package-manager <name>` — repeatable; parsed via `parsePackageManagers`.
+ * - `--capability <name>` — repeatable; parsed via `parseCapabilities`.
+ * - `--openspec-schema <mate-v1|default>` — parsed via `parseOpenSpecSchema`.
+ * - `--git-mode <auto|default>` — parsed via `parseGitMode`.
  * @remarks When any flag above is present, the whole selection is treated as
  * explicit and the interactive picker is skipped.
  */

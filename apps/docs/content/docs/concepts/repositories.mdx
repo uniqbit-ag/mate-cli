@@ -5,6 +5,8 @@ description: How companion repositories and working repositories fit together.
 
 Mate separates agent-owned artifacts from product code.
 
+<RepoModel />
+
 ## Companion Repository
 
 The companion repository stores the context that should travel with an agent
@@ -60,7 +62,7 @@ can run from a subdirectory of the working repository.
 `mate opencode` and `mate wrap` also write into the working repository: Mate's
 regions in `.opencode/opencode.json` and copies of the companion's `.opencode/`
 files, all git-excluded. `mate unwrap` withdraws them and keeps the link. See
-[Wrapping](/mate-cli/reference/commands#wrapping).
+[Wrapping](/docs/reference/commands#wrapping).
 
 ## Resolution Order
 

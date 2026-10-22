@@ -1,4 +1,12 @@
 {
   "title": "Mate CLI",
-  "pages": ["index", "getting-started", "capabilities"]
+  "pages": [
+    "index",
+    "getting-started",
+    "concepts",
+    "scenarios",
+    "capabilities",
+    "reference",
+    "troubleshooting"
+  ]
 }

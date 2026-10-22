@@ -3,9 +3,10 @@ import { getCollection } from "astro:content";
 import { structure, type StructuredData } from "fumadocs-core/mdx-plugins";
 import { loader, type StaticSource } from "fumadocs-core/source";
 import * as path from "node:path";
+import { docsBaseUrl } from "./base";
 
 export const source = loader({
-  baseUrl: "/mate-cli",
+  baseUrl: docsBaseUrl,
   source: await createSource(),
 });
 

@@ -1,0 +1,28 @@
+---
+import { capabilities, capabilitiesHref } from "@/content/landing";
+import { withBase } from "@/lib/base";
+import SectionHeading from "./SectionHeading.astro";
+---
+
+<section class="mx-auto max-w-6xl px-6 py-20">
+  <SectionHeading
+    eyebrow="Capabilities"
+    title="Optional tools, wired in at launch"
+    description="Select capabilities per companion. Mate installs them and syncs them into every linked working repository."
+  />
+  <ul class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    {
+      capabilities.map((capability) => (
+        <li>
+          <a
+            href={withBase(capabilitiesHref)}
+            class="flex h-full flex-col rounded-xl border bg-fd-card p-5 transition-colors hover:border-fd-primary/60"
+          >
+            <span class="font-semibold">{capability.name}</span>
+            <span class="mt-1 text-sm text-fd-muted-foreground">{capability.description}</span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</section>

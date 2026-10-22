@@ -22,6 +22,8 @@ mate companion link
 mate opencode
 ```
 
+<InstallLinkLaunch />
+
 ## 1. Install Mate Requirements
 
 Move to the working repository and initialize Mate's core requirements:
@@ -44,7 +46,7 @@ mate companion link
 
 Mate opens the TUI flow. Use it to select an existing companion, paste a local
 companion path, or clone one from Git. A cloned companion is configured when
-necessary.
+necessary. No companion yet? See [Create A Companion](/docs/getting-started/companion).
 
 The link is stored in the working repository's local `.mate` registry. Mate
 also adds that directory to Git's local exclude file so the link metadata is
@@ -72,10 +74,10 @@ the working repository context.
 `mate opencode` also wraps the working repository for OpenCode: it writes Mate's
 regions into `.opencode/opencode.json` and copies the companion's `.opencode/`
 files as git-excluded files. After that, plain `opencode` in the repository
-loads the companion as well. See [Wrapping](/mate-cli/reference/commands#wrapping).
+loads the companion as well. See [Wrapping](/docs/reference/commands#wrapping).
 
 Run `mate install` again after updating Mate or changing a companion's selected
 package managers or capabilities. Any `mate` run also refreshes
 `~/.mate/runtime/`, which wrapped repositories load Mate through.
 
-See [Capabilities](/mate-cli/capabilities) for the optional tools Mate can wire into the flow.
+See [Capabilities](/docs/capabilities) for the optional tools Mate can wire into the flow.

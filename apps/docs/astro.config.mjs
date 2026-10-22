@@ -10,18 +10,22 @@ import {
   remarkNpm,
   remarkStructure,
 } from "fumadocs-core/mdx-plugins";
+import { remarkBaseLinks } from "./src/lib/remark-base-links.ts";
+
+const base = "/mate-cli";
 
 const remarkPlugins = [
   remarkHeading,
   remarkCodeTab,
   remarkNpm,
   [remarkStructure, { exportAs: "structuredData" }],
+  [remarkBaseLinks, { base }],
 ];
 const rehypePlugins = [rehypeCode];
 
 export default defineConfig({
   site: "https://uniqbit-ag.github.io",
-  base: "/mate-cli",
+  base,
   markdown: {
     processor: unified({
       syntaxHighlight: false,

@@ -1,0 +1,154 @@
+---
+title: Design A Team Companion
+description: Create the companion repository that sets how every agent on your team works.
+---
+
+## Audience
+
+AI architects, platform engineers, and tech leads who decide how coding agents
+work across a team. It also helps developers who own a companion for their own
+repositories.
+
+## Goal
+
+Create a shared companion with the team's agents, capabilities, rules,
+skills, and secret patterns, then roll it out so every teammate gets the same
+setup with two commands.
+
+## Steps
+
+<Steps>
+<Step>
+
+### Create the companion repository
+
+Create an empty repository on your Git host, for example `acme/acme-companion`,
+and link it from one of the team's working repositories:
+
+```sh
+cd /path/to/acme-app
+mate install
+mate companion link
+```
+
+Choose **git** and paste the repository URL. Mate clones it to
+`~/.mate/companions/acme-companion/` and runs setup on it, because it is not a
+companion yet. To start from a local folder instead, see
+[Create A Companion](/docs/getting-started/companion).
+
+</Step>
+<Step>
+
+### Set the team policy
+
+Setup decides which agents may launch, which capabilities everyone gets, the
+OpenSpec schema profile, and the Git mode. To change the choices later, or to
+keep them in a script you can review, run setup with flags from the companion:
+
+```sh
+cd ~/.mate/companions/acme-companion
+mate companion setup \
+  --allowed-agent claude \
+  --allowed-agent opencode \
+  --capability openspec \
+  --capability tokensave \
+  --openspec-schema mate-v1 \
+  --git-mode auto
+```
+
+Use `auto` Git mode for a shared companion. Every launch then fetches and
+merges the companion's upstream first, so teammates get your changes without
+syncing by hand. See [Capabilities](/docs/capabilities) for what each one adds.
+
+</Step>
+<Step>
+
+### Write the team rules
+
+`AGENTS.md` holds the instructions every agent reads. It starts with Mate's
+defaults. Replace them with your team's conventions: architecture boundaries,
+testing expectations, review rules, and anything an agent keeps getting wrong.
+Mate creates `AGENTS.md` only when it is missing and never overwrites it.
+
+</Step>
+<Step>
+
+### Add team skills
+
+Put the team's own skills next to Mate's:
+
+- `.claude/skills/<skill-name>/SKILL.md` for Claude Code.
+- `.agents/skills/<skill-name>/SKILL.md` for OpenCode.
+
+Mate manages only the skills it installs, so your skills are never overwritten
+or removed when it refreshes its own.
+
+</Step>
+<Step>
+
+### Tighten the secret guardrails
+
+The [secret guardrails](/docs/concepts/secret-guardrails) are on by default.
+Add patterns for the secret files your repositories use in the companion's
+`.mate/config/framework.yaml`:
+
+```yaml
+secrets:
+  deny: ["config/master.key.enc"]
+  allow: [".env.test"]
+```
+
+Extra patterns are added to the defaults and never replace them.
+
+</Step>
+<Step>
+
+### Try it, then push
+
+From the working repository you linked first, check the setup and start a
+session:
+
+```sh
+mate doctor
+mate claude
+```
+
+When the agent behaves the way you want, commit and push the companion:
+
+```sh
+cd ~/.mate/companions/acme-companion
+git add -A
+git commit -m "Set up team companion"
+git push
+```
+
+</Step>
+<Step>
+
+### Roll it out
+
+Each teammate runs this once in each of their working repositories:
+
+```sh
+mate install
+mate companion link
+```
+
+They choose **git** and paste the same URL. From then on, everyone launches
+with `mate claude` or `mate opencode`, and every change you push to the
+companion reaches them on their next launch.
+
+</Step>
+</Steps>
+
+## Diagram
+
+<CompanionDesign />
+
+## Outcome
+
+The team's agent setup lives in one reviewed repository: allowed agents,
+capabilities, rules, skills, and secret patterns. Changing how agents work is
+a commit to the companion, not a change in every product repository. To use
+the same companion across several codebases, see
+[One Companion, Many Repositories](/docs/scenarios/one-companion-many-repos).

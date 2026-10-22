@@ -1,0 +1,18 @@
+---
+import { RepoModel } from "@/components/diagrams";
+import { repoModel } from "@/content/landing";
+import { withBase } from "@/lib/base";
+import SectionHeading from "./SectionHeading.astro";
+---
+
+<section class="mx-auto max-w-6xl px-6 py-20">
+  <SectionHeading eyebrow="Repository model" title={repoModel.title} description={repoModel.description} />
+  <div class="mx-auto max-w-4xl">
+    <RepoModel />
+    <p class="text-center text-sm">
+      <a href={withBase(repoModel.href)} class="font-medium text-fd-primary hover:underline">
+        Read about the repository model →
+      </a>
+    </p>
+  </div>
+</section>
