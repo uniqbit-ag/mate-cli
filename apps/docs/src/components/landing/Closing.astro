@@ -1,0 +1,42 @@
+---
+import { closing, hero } from "@/content/landing";
+import { withBase } from "@/lib/base";
+import { githubUrl } from "@/lib/layout-options";
+---
+
+<section class="relative overflow-hidden border-t">
+  <div class="hero-backdrop pointer-events-none absolute inset-0 rotate-180" aria-hidden="true"></div>
+  <div class="relative mx-auto flex max-w-3xl flex-col items-center px-6 py-24 text-center">
+    <h2 class="text-3xl font-bold tracking-tight text-balance sm:text-4xl">{closing.title}</h2>
+    <p class="mt-4 text-pretty text-fd-muted-foreground">{closing.description}</p>
+    <div class="mt-8 flex flex-wrap justify-center gap-3">
+      <a
+        href={withBase(closing.cta.href)}
+        class="rounded-lg bg-fd-primary px-5 py-2.5 text-sm font-medium text-fd-primary-foreground transition-opacity hover:opacity-90"
+      >
+        {closing.cta.label}
+      </a>
+      <a
+        href={githubUrl}
+        class="rounded-lg border bg-fd-background px-5 py-2.5 text-sm font-medium transition-colors hover:bg-fd-accent"
+      >
+        View on GitHub
+      </a>
+    </div>
+  </div>
+</section>
+<footer class="border-t">
+  <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-8 text-sm text-fd-muted-foreground sm:flex-row">
+    <p class="flex items-center gap-2">
+      <span class="rounded-full border border-fd-primary/40 bg-fd-primary/10 px-2 py-0.5 text-xs font-medium text-fd-primary">
+        {hero.badge}
+      </span>
+      {closing.alphaNote}
+    </p>
+    <nav class="flex gap-5">
+      <a href={withBase("/docs")} class="hover:text-fd-foreground">Docs</a>
+      <a href={githubUrl} class="hover:text-fd-foreground">GitHub</a>
+      <a href="https://www.npmjs.com/package/@uniqbit/mate" class="hover:text-fd-foreground">npm</a>
+    </nav>
+  </div>
+</footer>

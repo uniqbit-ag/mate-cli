@@ -1,6 +1,6 @@
 ---
 title: Introduction
-description: What Mate is and how it is organized.
+description: What Mate is and where to find things in these docs.
 ---
 
 Mate is an alpha CLI for running coding agents with project-specific context, policies, and capabilities already wired in.
@@ -11,22 +11,31 @@ It uses two repositories:
 - working repository: stores the project code agents should edit
 
 The default workflow runs from the working repository: `mate install`,
-`mate companion link`, then `mate opencode`. Linking selects or clones a
-companion and completes the installation of its selected requirements before
-the first launch.
+`mate companion link`, then `mate claude` or `mate opencode`. Linking selects or
+clones a companion and installs its selected requirements before the first
+launch. Each launch then syncs the companion's managed files into the working
+repository. The two repositories keep separate histories. No companion yet?
+[Create one](/docs/getting-started/companion) first.
 
-Mate resolves the link from the working repository's local `.mate` registry,
-keeps that metadata out of tracked Git files, and synchronizes the companion's
-managed files into the working repository at launch time. The companion and
-working repositories keep separate histories.
-
-## Read Next
+## Sections
 
 <Cards>
-  <Card title="Quickstart" href="/mate-cli/getting-started/quickstart" />
-  <Card title="Installation" href="/mate-cli/getting-started/install" />
-  <Card title="Repository model" href="/mate-cli/concepts/repositories" />
-  <Card title="Capabilities" href="/mate-cli/capabilities" />
-  <Card title="Command reference" href="/mate-cli/reference/commands" />
-  <Card title="Troubleshooting" href="/mate-cli/troubleshooting" />
+  <Card title="Getting Started" href="/docs/getting-started/quickstart">
+    Install Mate, link a companion, and launch your first agent.
+  </Card>
+  <Card title="Concepts" href="/docs/concepts/repositories">
+    The repository model and the secret guardrails.
+  </Card>
+  <Card title="Scenarios" href="/docs/scenarios">
+    Step-by-step walkthroughs of the core flows.
+  </Card>
+  <Card title="Capabilities" href="/docs/capabilities">
+    Optional tools such as OpenSpec, Graphify, TokenSave, and React Doctor.
+  </Card>
+  <Card title="Reference" href="/docs/reference/commands">
+    The CLI commands, their context, and their options.
+  </Card>
+  <Card title="Troubleshooting" href="/docs/troubleshooting">
+    Diagnose installation, linking, launch, and Git problems.
+  </Card>
 </Cards>

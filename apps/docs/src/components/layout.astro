@@ -1,15 +1,22 @@
 ---
 import { ClientRouter } from "astro:transitions";
+import { withBase } from "@/lib/base";
 
 interface Props {
   title?: string;
   description?: string;
+  /** Pages sharing a name keep their persisted body across client navigation. */
+  transitionName?: string;
 }
 
 const {
   title = "Mate Docs",
   description = "Companion-first docs for Mate: setup, launch flow, concepts, capabilities, and CLI reference.",
+  transitionName = "page-layout",
 } = Astro.props;
+
+const pageUrl = new URL(Astro.url.pathname, Astro.site).href;
+const ogImage = new URL(withBase("/og.png"), Astro.site).href;
 ---
 
 <html lang="en">
@@ -18,13 +25,42 @@ const {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Mate" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
     <ClientRouter />
+    <script is:inline>
+      /**
+       * Client navigation replaces <html> attributes with the new page's server
+       * HTML, which has no theme class yet. Carry the active theme over so dark
+       * mode does not flash light while the theme script catches up.
+       */
+      if (!window.__mateThemeSwap) {
+        window.__mateThemeSwap = true;
+        document.addEventListener("astro:before-swap", (event) => {
+          const current = document.documentElement;
+          const next = event.newDocument.documentElement;
+          next.className = current.className;
+          next.style.colorScheme = current.style.colorScheme;
+        });
+      }
+    </script>
   </head>
   <body
-    class="flex min-h-screen flex-col bg-fd-background text-fd-foreground"
+    class="relative isolate flex min-h-screen flex-col bg-fd-background text-fd-foreground"
     transition:persist
     transition:animate="none"
-    transition:name="page-layout"
+    transition:name={transitionName}
   >
     <slot />
   </body>

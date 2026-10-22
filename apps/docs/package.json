@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "bun scripts/check-commands.ts && astro build && bun scripts/check-links.ts",
     "check": "astro check",
     "preview": "astro preview"
   },
@@ -18,8 +18,7 @@
     "fumadocs-ui": "npm:@fumadocs/base-ui@16.11.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "sharp": "^0.34.5",
-    "takumi-js": "^2.2.0"
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
