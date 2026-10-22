@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { buildCompanionGuidance } from "../../../playbooks/companion-guidance";
-import { planClaudeDelivery, type ClaudeDeliveryPlan } from "../../../runtime/claude-delivery-plan";
+import {
+  launchPluginFolders,
+  planClaudeDelivery,
+  type ClaudeDeliveryPlan,
+} from "../../../runtime/claude-delivery-plan";
 import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import type { SessionKind } from "../../../runtime/session-kind";
@@ -134,8 +138,8 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
 
   /**
    * Plan in, flags out; decides nothing. `--append-system-prompt` is
-   * unconditional and `--plugin-dir` follows the plan: no settings document can
-   * carry either.
+   * unconditional: no settings document can carry it. `--plugin-dir` passes
+   * the folders `launchPluginFolders` names, from the running install's bundled plugin.
    */
   buildArgs(context: ClaudeLaunchContext, args: string[]): string[] {
     const { plan, settingsPath, mcpConfigPath } = context.delivery;
@@ -145,10 +149,11 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
         ? ["--setting-sources", "user,project,local", "--settings", settingsPath]
         : [];
     const addDirArgs = plan.dirAccess === "add-dir" ? ["--add-dir", context.companionPath] : [];
-    /** The bundled plugin from the running install first, then each gathered folder. */
-    const pluginDirs =
-      plan.plugins === "launch-flag" ? [getClaudePluginRoot(), ...context.pluginDirectories] : [];
-    const pluginDirArgs = pluginDirs.flatMap((dir) => ["--plugin-dir", dir]);
+    const pluginDirArgs = launchPluginFolders(
+      plan,
+      context.pluginDirectories,
+      getClaudePluginRoot(),
+    ).flatMap((dir) => ["--plugin-dir", dir]);
     const mcpConfigArgs =
       plan.mcp === "mcp-config" && mcpConfigPath ? ["--mcp-config", mcpConfigPath] : [];
 

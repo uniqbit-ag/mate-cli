@@ -128,7 +128,8 @@ export async function runWrapCommand(
   for (const document of result.documents) {
     console.log(`  Runtime:   ${document}`);
   }
-  for (const warning of result.warnings) {
+  const publication = result.claudePluginFolders?.publication;
+  for (const warning of [...result.warnings, ...(publication?.warnings ?? [])]) {
     console.error(`${FRAMEWORK_NAME}: warning: ${warning}`);
   }
   reportChangedPaths(result.changed);
@@ -140,16 +141,10 @@ export async function runWrapCommand(
   console.log(
     `Start sessions yourself (${plain}) or through ${managed}; both work here. \`${FRAMEWORK_NAME} unwrap\` reverses this.`,
   );
-  const pluginCapabilityIds = result.claudePluginCapabilities;
-  if (runtimes.has("claude") && pluginCapabilityIds.length > 0) {
-    const verb = pluginCapabilityIds.length === 1 ? "loads" : "load";
+  if (!runtimes.has("claude")) return;
+  for (const unpublished of publication?.unpublished ?? []) {
     console.log(
-      `Note: ${listNames(pluginCapabilityIds)} ${verb} only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+      `Note: ${unpublished.capability}'s Claude plugin folder ${unpublished.path} ${unpublished.detail}, so it loads only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
     );
   }
-}
-
-/** `a`, `a and b`, `a, b and c`. */
-function listNames(names: string[]): string {
-  return names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names.at(-1)!}`;
 }

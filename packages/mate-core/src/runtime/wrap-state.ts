@@ -9,6 +9,7 @@ import {
   copies,
   documents,
   links,
+  recordedMapEntries,
   manifestPath,
   parseManifest,
   parseManifestStrict,
@@ -21,13 +22,16 @@ import {
 
 /**
  * Wrap State: the one read model over the runtime document manifest for "which
- * runtimes are wrapped" and "which Claude hook groups does the wrap carry".
+ * runtimes are wrapped" and "which Claude hook groups and plugin folders does
+ * the wrap carry".
  * Mate's own plugin groups are not folded in; `isMateGuardHookGroup` owns those.
  */
 export interface WrapState {
   readonly runtimes: ReadonlySet<WrapRuntime>;
   readonly carriedClaudeHookGroups: readonly ClaudeHookGroup[];
   carriesClaudeHookGroup(group: ClaudeHookGroup): boolean;
+  /** Capability plugin folders the wrap enables through a `directory` marketplace, as recorded. */
+  readonly carriedClaudePluginDirectories: readonly string[];
   /** MCP server names the wrap declared in `.opencode/opencode.json`; user servers are not listed. */
   readonly openCodeMcpServers: readonly string[];
 }
@@ -43,8 +47,37 @@ function wrappedFor(manifest: Manifest, runtime: WrapRuntime): boolean {
   );
 }
 
-function isHookGroup(value: unknown): value is ClaudeHookGroup {
+/**
+ * The folders of the recorded `directory` marketplaces whose plugin the wrap
+ * also enables: one without the other loads nothing.
+ */
+function carriedPluginDirectories(manifest: Manifest): string[] {
+  const marketplaces = recordedMapEntries(manifest, CLAUDE_SETTINGS_DOCUMENT, [
+    "extraKnownMarketplaces",
+  ]);
+  const enabled = recordedMapEntries(manifest, CLAUDE_SETTINGS_DOCUMENT, ["enabledPlugins"]);
+  const enabledMarketplaces = new Set(
+    Object.entries(enabled)
+      .filter(([, value]) => value === true)
+      .map(([id]) => id.slice(id.lastIndexOf("@") + 1)),
+  );
+  return Object.entries(marketplaces).flatMap(([name, entry]) => {
+    const source = isRecord(entry) ? entry.source : undefined;
+    return enabledMarketplaces.has(name) &&
+      isRecord(source) &&
+      source.source === "directory" &&
+      typeof source.path === "string"
+      ? [source.path]
+      : [];
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isHookGroup(value: unknown): value is ClaudeHookGroup {
+  return isRecord(value);
 }
 
 export function wrapStateOf(manifest: Manifest): WrapState {
@@ -56,6 +89,7 @@ export function wrapStateOf(manifest: Manifest): WrapState {
     runtimes: new Set(WRAP_RUNTIMES.filter((runtime) => wrappedFor(manifest, runtime))),
     carriedClaudeHookGroups: carried,
     carriesClaudeHookGroup: (group) => carriedKeys.has(hookGroupKey(group)),
+    carriedClaudePluginDirectories: carriedPluginDirectories(manifest),
     openCodeMcpServers: recordedMapKeys(
       manifest,
       OPENCODE_CONFIG_DOCUMENT,

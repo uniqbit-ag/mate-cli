@@ -14,10 +14,17 @@ import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-d
 import { openSpecStoreDeps } from "../../lib/orchestrator/openspec-store";
 import { project } from "../../lib/orchestrator/working-repo-projection";
 import { stubOpenSpec } from "../../../test/openspec-store-stub";
-import type { WrapPassResult } from "../../lib/orchestrator/wrap-pass";
+import { runWrapPass, wrapPassDeps, type WrapPassResult } from "../../lib/orchestrator/wrap-pass";
+import { getActiveDistribution } from "../../distribution";
+import type { CapabilityPlugin } from "../../tools/setup/plugin";
+import {
+  publishWorkingClaudePluginMarketplaces,
+  renderWorkingRuntimeDocuments,
+} from "../../tools/setup";
 import { EMPTY_MANIFEST, type WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapState, wrapStateOf } from "../../runtime/wrap-state";
 import type { LinkedRepository } from "../../lib/orchestrator/types";
+import type { ClaudePluginUnpublished } from "../../tools/setup/providers/claude-plugin-folders";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
 import { parseWrapArgs, runWrapCommand } from "./wrap";
 
@@ -331,7 +338,6 @@ describe("runWrapCommand", () => {
           warnings: ["acme needs attention"],
           runtimes: new Set(),
           wrapState: wrapStateOf(EMPTY_MANIFEST),
-          claudePluginCapabilities: [],
         }),
       });
     } finally {
@@ -463,7 +469,6 @@ describe("runWrapCommand", () => {
         warnings: [],
         runtimes: new Set<WrapRuntime>(covered),
         wrapState: wrapStateOf(EMPTY_MANIFEST),
-        claudePluginCapabilities: [],
       };
       const { out, restore } = capture();
       try {
@@ -484,7 +489,7 @@ describe("runWrapCommand", () => {
     },
   );
 
-  test("notes that context-mode stays launch-only when it is enabled", async () => {
+  test("says nothing of context-mode's plugin while its package is not installed", async () => {
     const { repoPath, companionPath } = await makeLinkedRepo("wrap-context-mode-");
     await fs.mkdir(path.join(companionPath, `.${FRAMEWORK_NAME}`, "config"), { recursive: true });
     await fs.writeFile(
@@ -499,13 +504,21 @@ describe("runWrapCommand", () => {
       restore();
     }
 
-    expect(out.join("\n")).toContain(
-      `context-mode loads only in sessions started with \`${FRAMEWORK_NAME} claude\``,
-    );
+    expect(out.filter((line) => line.startsWith("Note:"))).toEqual([]);
+    expect(out.join("\n")).not.toContain(`loads only in sessions started with`);
   });
 
-  /** A pass that reconciled `runtimes` and found `claudePluginCapabilities`, as the command sees it. */
-  async function noteFor(runtimes: WrapRuntime[], claudePluginCapabilities: string[]) {
+  const UNPUBLISHED: ClaudePluginUnpublished = {
+    capability: "acme-mentions",
+    path: "/plugins/acme",
+    reason: "foreign-marketplace",
+    detail: "holds a .claude-plugin/marketplace.json that Mate did not write",
+    warning:
+      "acme-mentions: Claude plugin folder /plugins/acme holds a .claude-plugin/marketplace.json that Mate did not write; plain `claude` sessions do not load it.",
+  };
+
+  /** A pass that reconciled `runtimes` and could not publish `unpublished`, as the command sees it. */
+  async function noteFor(runtimes: WrapRuntime[], unpublished: ClaudePluginUnpublished[]) {
     const { repoPath, companionPath } = await makeLinkedRepo("wrap-plugin-note-");
     const passed: WrapPassResult = {
       kind: "current",
@@ -517,7 +530,13 @@ describe("runWrapCommand", () => {
       warnings: [],
       runtimes: new Set(runtimes),
       wrapState: wrapStateOf(EMPTY_MANIFEST),
-      claudePluginCapabilities,
+      claudePluginFolders: {
+        launch: unpublished.map((entry) => entry.path),
+        loadWarnings: [],
+        published: [],
+        report: [],
+        publication: { unpublished, warnings: [] },
+      },
     };
     const { out, restore } = capture();
     try {
@@ -528,18 +547,80 @@ describe("runWrapCommand", () => {
     return out.filter((line) => line.startsWith("Note:"));
   }
 
-  test("names every Capability whose Claude plugin loads only with mate claude, in one note", async () => {
-    expect(await noteFor(["claude"], ["context-mode", "acme-mentions"])).toEqual([
-      `Note: context-mode and acme-mentions load only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+  test("names each folder plain sessions cannot load, with its reason", async () => {
+    expect(await noteFor(["claude"], [UNPUBLISHED])).toEqual([
+      `Note: acme-mentions's Claude plugin folder /plugins/acme holds a .claude-plugin/marketplace.json that Mate did not write, so it loads only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
     ]);
   });
 
-  test("prints no plugin note when no Capability ships a Claude plugin", async () => {
+  test.skipIf(process.getuid?.() === 0)(
+    "names a folder it cannot write once, in a note with the write error",
+    async () => {
+      const { repoPath, companionPath } = await makeLinkedRepo("wrap-unwritable-");
+      await fs.mkdir(path.join(companionPath, `.${FRAMEWORK_NAME}`, "config"), {
+        recursive: true,
+      });
+      await fs.writeFile(
+        path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
+        "allowedAgents:\n  - claude\ncapabilities: []\n",
+      );
+      const folder = path.join(path.dirname(companionPath), "plugins", "acme");
+      await fs.mkdir(path.join(folder, ".claude-plugin"), { recursive: true });
+      await fs.writeFile(path.join(folder, ".claude-plugin", "plugin.json"), `{"name":"acme"}\n`);
+      const capability: CapabilityPlugin = {
+        id: "acme-plugin",
+        kind: "capability",
+        label: "Acme",
+        description: "ships a Claude plugin folder",
+        defaultSelected: false,
+        isEnabled: () => true,
+        async apply() {},
+        async teardown() {},
+        getRuntimeContributions: () => ({ claude: { pluginDirectories: [{ path: folder }] } }),
+      };
+      const plugins = [...getActiveDistribution().registry.getAll(), capability];
+      const deps = {
+        ...wrapPassDeps,
+        publishWorkingClaudePluginMarketplaces: (
+          companion: string,
+          config: Parameters<typeof publishWorkingClaudePluginMarketplaces>[1],
+          repo: string,
+        ) => publishWorkingClaudePluginMarketplaces(companion, config, repo, plugins),
+        renderWorkingRuntimeDocuments: (
+          companion: string,
+          config: Parameters<typeof renderWorkingRuntimeDocuments>[1],
+          repo: string,
+        ) => renderWorkingRuntimeDocuments(companion, config, repo, plugins),
+      };
+      await fs.chmod(path.join(folder, ".claude-plugin"), 0o555);
+      const { out, err, restore } = capture();
+      try {
+        await runWrapCommand([], repoPath, {
+          runWrapPass: (companion, repository) => runWrapPass(companion, repository, {}, deps),
+        });
+      } finally {
+        restore();
+        await fs.chmod(path.join(folder, ".claude-plugin"), 0o755);
+      }
+
+      expect(process.exitCode).toBeFalsy();
+      const notes = out.filter((line) => line.includes(folder));
+      expect(notes).toHaveLength(1);
+      expect(notes[0]).toStartWith(`Note: acme-plugin's Claude plugin folder ${folder} holds no`);
+      expect(notes[0]).toContain(path.join(folder, ".claude-plugin", "marketplace.json"));
+      expect(notes[0]).toEndWith(
+        `so it loads only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+      );
+      expect(err.filter((line) => line.includes(folder))).toEqual([]);
+    },
+  );
+
+  test("prints no plugin note when every folder is published", async () => {
     expect(await noteFor(["claude"], [])).toEqual([]);
   });
 
   test("prints no plugin note for a pass that did not reconcile Claude", async () => {
-    expect(await noteFor(["opencode"], ["context-mode"])).toEqual([]);
+    expect(await noteFor(["opencode"], [UNPUBLISHED])).toEqual([]);
   });
 
   test("a managed launch does not reconcile the working target", async () => {

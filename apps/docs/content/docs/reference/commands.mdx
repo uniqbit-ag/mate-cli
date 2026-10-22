@@ -120,10 +120,11 @@ holds when OpenCode's shared background service was started from another directo
 Its preparation wraps the repository for Claude when that wrap is missing (never
 wrapped, or wrapped only for OpenCode) and reconciles it when it is out of date,
 before Claude starts. The launch then passes only what a wrap cannot deliver: the
-companion guidance, Mate's own plugin, and the Claude plugin folders that enabled
-Capabilities declare (context-mode's among them). Capability hooks, Mate's MCP
-servers, the companion skills and access to the companion directory come from the
-wrap, so each loads once. If the wrap fails, the launch stops before Claude starts
+companion guidance, Mate's own plugin, and any Claude plugin folder of an enabled
+Capability that the wrap could not publish. Capability hooks, Capability plugin
+folders (context-mode's among them), Mate's MCP servers, the companion skills and
+access to the companion directory come from the wrap, so each loads once. A
+companion-scoped launch has no wrap, so it passes every plugin folder itself. If the wrap fails, the launch stops before Claude starts
 and names the document that failed.
 
 There is no launch-only mode for Claude any more: every `mate claude` from a
@@ -137,14 +138,17 @@ capability preflight), waiting at most 30 seconds, then starts the companion Git
 sync in the background, fast-forward only. A failure or warning is shown to you,
 never to the model, and the session starts either way. Capability MCP servers may
 start before the preflight finishes. Capability plugin folders, context-mode's
-among them, load only with `mate claude`; `mate doctor` lists them.
+among them, load as well in a folder Claude Code trusts. Claude loads plugins
+before the `SessionStart` hook runs, so a Capability enabled since the last
+preparation loads from the session after it. `mate doctor` lists the folders and
+whether plain sessions load each one.
 
 Mate's managed Claude settings turn off Claude Code features that compete with
 Mate's own workflow: they deny the `EnterPlanMode` and `DesignSync` tools and set
 `enableArtifact: false`, beside `autoMemoryEnabled: false`. Those tool denies are
 fixed. While secret guardrails are on, the managed deny list also carries `Read`,
 `Edit` and `Write` deny rules for the default secret files; see
-[Secret Guardrails](/mate-cli/concepts/secret-guardrails). `ExitPlanMode` stays
+[Secret Guardrails](/docs/concepts/secret-guardrails). `ExitPlanMode` stays
 allowed, so plan mode entered by hand (Shift+Tab) can still be left. A managed
 launch applies these settings through `--settings`, and deny rules from there
 cannot be re-allowed from your own settings.
@@ -186,6 +190,35 @@ servers into `~/.claude.json`. That file is rewritten only when the servers
 change. An `enableArtifact` value you already set in
 `.claude/settings.local.json` is left as it is.
 
+Each enabled Capability's Claude plugin folder is published as its own local
+marketplace and enabled in `.claude/settings.local.json` (`extraKnownMarketplaces`
+and `enabledPlugins`). Claude Code loads it from the folder itself, without
+copying it.
+
+- **Marketplace file.** A folder's marketplace file is
+  `.claude-plugin/marketplace.json`. If the plugin's author ships one that lists
+  the plugin, as context-mode does, Mate uses it. Otherwise Mate writes its own,
+  named `mate-plugin-<plugin>`, and removes it when the Capability is disabled.
+  Mate never changes a marketplace file it did not write. A file of Mate's that
+  no longer matches what Mate writes is rewritten at the next pass; until a
+  rewrite succeeds, the wrap does not enable the folder, and `mate claude` passes
+  it instead.
+- **Folders that are not published** load only through `mate claude`. Each is
+  named once per command, with the reason: in one note from `mate wrap`, in one
+  warning from `mate claude`, and not at all by `mate session prepare`, which
+  plain sessions run. A folder is not published when:
+  - the folder holds a marketplace file that Mate did not write and that does not
+    list the plugin;
+  - the plugin's name cannot form a marketplace name;
+  - your Claude Code configuration already uses the marketplace name with another
+    source, for example context-mode added from GitHub. Mate leaves your
+    marketplace alone;
+  - Mate could not write its marketplace file into the folder, for example
+    because the folder is read-only. The message gives the error.
+- **Claude Code's records.** Claude Code records these plugins in
+  `~/.claude/plugins/`. Those records stay after `mate unwrap`, and have no effect
+  once the plugin is no longer enabled.
+
 Both session kinds work in a wrapped repository: plain `claude` / `opencode` and
 `mate claude` / `mate opencode`. Every managed launch wraps the repository for its
 runtime, so `mate wrap` is only needed for a repository you want to use with plain
@@ -214,7 +247,8 @@ launches, `mate companion sync`, session-start repairs and this command) is
 serialized through one lock per companion under `~/.mate/locks/`. The command
 refuses a repository wrapped for neither runtime and names `mate wrap`. `--json`
 prints each step's outcome, the runtimes each step answered for, and the warnings.
-The OpenCode plugin and the Claude session-prepare hook call this for you.
+It reports no Claude plugin-folder problems; `mate wrap` and `mate doctor` name
+them. The OpenCode plugin and the Claude session-prepare hook call this for you.
 
 ### Exit Status And Signals
 

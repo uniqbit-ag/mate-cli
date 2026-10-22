@@ -32,10 +32,12 @@ import {
 import { getRequiredPluginDrift } from "../../tools/setup/policy";
 import {
   CLAUDE_PLUGIN_MANIFEST,
+  CLAUDE_PLUGIN_MARKETPLACE,
   type ClaudePluginContributionFailure,
   type ClaudePluginDirectoryProblem,
   type ClaudePluginDirectoryReport,
-} from "../../tools/setup/providers/claude";
+  type ClaudePluginUnpublishedReason,
+} from "../../tools/setup/providers/claude-plugin-folders";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
 import { writeJsonStdout } from "../write-json-stdout";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
@@ -455,7 +457,21 @@ function claudePluginStatus(plugin: ClaudePluginDirectoryReport): string {
   return plugin.problem ? CLAUDE_PLUGIN_PROBLEM_STATUS[plugin.problem] : "present";
 }
 
-/** A table for each list present, then a note that these plugins need a managed launch. */
+/** The Plain Sessions column's text for each reason a loadable folder is not published. */
+const CLAUDE_PLUGIN_UNPUBLISHED_STATUS: Record<ClaudePluginUnpublishedReason, string> = {
+  "foreign-marketplace": `no: ${CLAUDE_PLUGIN_MARKETPLACE} is not Mate's and does not list it`,
+  "invalid-marketplace-name": "no: its name cannot form a marketplace name",
+  "name-conflict": "no: its marketplace name is already in use",
+  "missing-marketplace": `no: ${CLAUDE_PLUGIN_MARKETPLACE} could not be written`,
+};
+
+function claudePluginPlainSessions(plugin: ClaudePluginDirectoryReport): string {
+  if (plugin.marketplace) return `marketplace ${plugin.marketplace}`;
+  if (plugin.unpublishedReason) return CLAUDE_PLUGIN_UNPUBLISHED_STATUS[plugin.unpublishedReason];
+  return "no";
+}
+
+/** A table for each list present, then a note on where plain sessions load them. */
 function renderClaudePlugins(
   plugins: ClaudePluginDirectoryReport[] | undefined,
   failures: ClaudePluginContributionFailure[] | undefined,
@@ -464,8 +480,13 @@ function renderClaudePlugins(
   if (plugins) {
     tables.push(
       renderTable(
-        ["Capability", "Plugin Folder", "Status"],
-        plugins.map((plugin) => [plugin.capability, plugin.path, claudePluginStatus(plugin)]),
+        ["Capability", "Plugin Folder", "Status", "Plain Sessions"],
+        plugins.map((plugin) => [
+          plugin.capability,
+          plugin.path,
+          claudePluginStatus(plugin),
+          claudePluginPlainSessions(plugin),
+        ]),
       ),
     );
   }
@@ -479,7 +500,7 @@ function renderClaudePlugins(
   }
   return [
     ...tables.flatMap((table) => [table, ""]),
-    `These plugins load only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+    `\`${FRAMEWORK_NAME} claude\` loads every present plugin. Plain \`claude\` sessions load one with a marketplace, and only in a wrapped repository that Claude Code trusts.`,
   ].join("\n");
 }
 

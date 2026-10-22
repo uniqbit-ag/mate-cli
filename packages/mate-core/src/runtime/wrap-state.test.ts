@@ -170,3 +170,51 @@ describe("readWrapState (strict)", () => {
     expect(readWrapStateSync(repoWithManifest("{ not json")).runtimes.size).toBe(0);
   });
 });
+
+describe("carriedClaudePluginDirectories", () => {
+  const manifestWith = (regions: ManagedRegion[]) =>
+    parseManifest(json({ documents: { [CLAUDE_SETTINGS_DOCUMENT]: regions } }));
+  const marketplaces = (entries: Record<string, unknown>): ManagedRegion => ({
+    at: ["extraKnownMarketplaces"],
+    kind: "map",
+    entries,
+  });
+  const enabled = (entries: Record<string, unknown>): ManagedRegion => ({
+    at: ["enabledPlugins"],
+    kind: "map",
+    entries,
+  });
+
+  test("names each recorded directory marketplace whose plugin the wrap enables", () => {
+    const state = wrapStateOf(
+      manifestWith([
+        marketplaces({
+          "mate-plugin-acme": { source: { source: "directory", path: "/plugins/acme" } },
+          "context-mode": { source: { source: "directory", path: "/pkg/context-mode" } },
+        }),
+        enabled({ "acme@mate-plugin-acme": true, "context-mode@context-mode": true }),
+      ]),
+    );
+
+    expect(state.carriedClaudePluginDirectories).toEqual(["/plugins/acme", "/pkg/context-mode"]);
+  });
+
+  test("a marketplace without an enabled plugin, or a malformed one, carries nothing", () => {
+    const state = wrapStateOf(
+      manifestWith([
+        marketplaces({
+          declared: { source: { source: "directory", path: "/plugins/declared" } },
+          remote: { source: { source: "github", repo: "acme/remote" } },
+          broken: "not a record",
+        }),
+        enabled({ "x@remote": true, "y@broken": true, "z@declared": false }),
+      ]),
+    );
+
+    expect(state.carriedClaudePluginDirectories).toEqual([]);
+  });
+
+  test("nothing wrapped carries nothing", () => {
+    expect(wrapStateOf(EMPTY_MANIFEST).carriedClaudePluginDirectories).toEqual([]);
+  });
+});

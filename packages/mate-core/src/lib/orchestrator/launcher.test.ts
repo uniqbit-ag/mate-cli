@@ -25,7 +25,7 @@ import { sessionPrepareDeps } from "./session-prepare";
 import { LaunchPreflightError, type CapabilityConfig, type LaunchRequest } from "./types";
 
 /** What a companion file sync hands a launch when no Capability ships a Claude plugin folder. */
-const NOTHING_GATHERED = { directories: [], warnings: [] };
+const NOTHING_GATHERED = { launch: [], loadWarnings: [], published: [], report: [] };
 
 /**
  * The real adapters, so each runtime's own share of a launch stays under test;
@@ -993,8 +993,9 @@ describe("Capability plugin folders in a launch", () => {
     const originalSyncCompanionFiles = sessionPrepareDeps.syncCompanionFiles;
     const originalProjectLaunch = sessionPrepareDeps.projectLaunch;
     sessionPrepareDeps.syncCompanionFiles = mock(async () => ({
-      directories: [kept],
-      warnings: [leftOut],
+      ...NOTHING_GATHERED,
+      launch: [kept],
+      loadWarnings: [leftOut],
     }));
     sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
     const warn = spyOn(console, "error").mockImplementation((...args: unknown[]) => {

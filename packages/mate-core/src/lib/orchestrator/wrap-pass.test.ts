@@ -13,11 +13,21 @@ import { links, manifestPath, readManifest } from "../../runtime/runtime-documen
 import { readWrapState } from "../../runtime/wrap-state";
 import { unproject, unwrapWorkingRuntimeDocuments } from "./working-repo-projection";
 import { GlobalConfigStore } from "./global-config-store";
-import { runWrapPass, wrapPassDeps } from "./wrap-pass";
+import { getActiveDistribution } from "../../distribution";
+import {
+  publishWorkingClaudePluginMarketplaces,
+  renderWorkingRuntimeDocuments,
+} from "../../tools/setup";
+import type { CapabilityPlugin } from "../../tools/setup/plugin";
+import { runWrapPass, wrapPassDeps, type WrapPassDependencies } from "./wrap-pass";
 import { prepareSession, sessionPrepareDeps } from "./session-prepare";
 import { syncWorkingRepoClaudeAdditionalDirectories } from "./projection-claude-entry";
 import { openSpecStoreDeps } from "./openspec-store";
 import { writeOpenSpecRegistry } from "../../../test/openspec-store-stub";
+import { planClaudeDelivery } from "../../runtime/claude-delivery-plan";
+
+/** A sync pass that gathered no Claude plugin folder. */
+const NO_PLUGIN_FOLDERS = { launch: [], loadWarnings: [], published: [], report: [] };
 
 const tempRoots: string[] = [];
 const originalHomeDir = runtimeDocumentDeps.homeDir;
@@ -201,7 +211,7 @@ describe("an attended Claude prepare", () => {
       changed: false,
       companionPath,
     })) as never;
-    sessionPrepareDeps.syncCompanionFiles = async () => ({ directories: [], warnings: [] });
+    sessionPrepareDeps.syncCompanionFiles = async () => NO_PLUGIN_FOLDERS;
     sessionPrepareDeps.runCapabilityPreflight = async () => {};
 
     const result = await prepareSession({
@@ -473,7 +483,7 @@ describe("a failing OpenSpec store entry", () => {
       changed: false,
       companionPath,
     })) as never;
-    sessionPrepareDeps.syncCompanionFiles = async () => ({ directories: [], warnings: [] });
+    sessionPrepareDeps.syncCompanionFiles = async () => NO_PLUGIN_FOLDERS;
     sessionPrepareDeps.runCapabilityPreflight = async () => {};
 
     const result = await prepareSession({ runtime, companionPath, repository, mode });
@@ -483,8 +493,162 @@ describe("a failing OpenSpec store entry", () => {
   });
 });
 
-describe("the Claude plugins a wrap pass names", () => {
-  test("names an enabled Capability that ships a Claude plugin folder, checking no folder", async () => {
+describe("the Claude plugin folders a wrap pass publishes", () => {
+  /** A Capability shipping one Claude plugin folder, enabled, beside the real registry. */
+  async function withPluginFolder(
+    companionPath: string,
+    marketplace?: string,
+  ): Promise<{ folder: string; deps: WrapPassDependencies }> {
+    const folder = path.join(path.dirname(companionPath), "plugins", "acme");
+    await fs.mkdir(path.join(folder, ".claude-plugin"), { recursive: true });
+    await fs.writeFile(path.join(folder, ".claude-plugin", "plugin.json"), `{"name":"acme"}\n`);
+    if (marketplace !== undefined) {
+      await fs.writeFile(path.join(folder, ".claude-plugin", "marketplace.json"), marketplace);
+    }
+    const capability: CapabilityPlugin = {
+      id: "acme-plugin",
+      kind: "capability",
+      label: "Acme",
+      description: "ships a Claude plugin folder",
+      defaultSelected: false,
+      isEnabled: () => true,
+      async apply() {},
+      async teardown() {},
+      getRuntimeContributions: () => ({ claude: { pluginDirectories: [{ path: folder }] } }),
+    };
+    const plugins = [...getActiveDistribution().registry.getAll(), capability];
+    return {
+      folder,
+      deps: {
+        ...wrapPassDeps,
+        publishWorkingClaudePluginMarketplaces: (companion, config, repoPath) =>
+          publishWorkingClaudePluginMarketplaces(companion, config, repoPath, plugins),
+        renderWorkingRuntimeDocuments: (companion, config, repoPath) =>
+          renderWorkingRuntimeDocuments(companion, config, repoPath, plugins),
+      },
+    };
+  }
+
+  async function repoSettings(repoPath: string): Promise<Record<string, unknown>> {
+    return JSON.parse(
+      await fs.readFile(path.join(repoPath, ".claude", "settings.local.json"), "utf8"),
+    ) as Record<string, unknown>;
+  }
+
+  test("publishes the folder, enables it in the settings and records it as carried", async () => {
+    const { companionPath, repository } = await linkedRepo();
+    const { folder, deps } = await withPluginFolder(companionPath);
+
+    const result = await runWrapPass(companionPath, repository, {}, deps);
+
+    if (result.kind === "failed") throw new Error(result.message);
+    const settings = await repoSettings(repository.path);
+    expect(settings.extraKnownMarketplaces).toEqual({
+      "mate-plugin-acme": { source: { source: "directory", path: folder } },
+    });
+    expect(settings.enabledPlugins).toEqual({ "acme@mate-plugin-acme": true });
+    expect(
+      JSON.parse(
+        await fs.readFile(path.join(folder, ".claude-plugin", "marketplace.json"), "utf8"),
+      ),
+    ).toMatchObject({ name: "mate-plugin-acme", owner: { name: "Mate" } });
+    expect(result.wrapState.carriedClaudePluginDirectories).toEqual([folder]);
+    expect(result.claudePluginFolders?.publication?.unpublished).toEqual([]);
+  });
+
+  test("keeps the user's entries, and unwrap withdraws only Mate's", async () => {
+    const { companionPath, repository } = await linkedRepo();
+    const { folder, deps } = await withPluginFolder(companionPath);
+    await fs.mkdir(path.join(repository.path, ".claude"), { recursive: true });
+    await fs.writeFile(
+      path.join(repository.path, ".claude", "settings.local.json"),
+      JSON.stringify({
+        extraKnownMarketplaces: { mine: { source: { source: "github", repo: "me/mine" } } },
+        enabledPlugins: { "tool@mine": true },
+      }),
+    );
+
+    await runWrapPass(companionPath, repository, {}, deps);
+    const wrapped = await repoSettings(repository.path);
+    const result = await unwrapWorkingRuntimeDocuments(repository.path);
+    const unwrapped = await repoSettings(repository.path);
+
+    expect(result.kind).toBe("unwrapped");
+    expect(Object.keys(wrapped.enabledPlugins as object).sort()).toEqual([
+      "acme@mate-plugin-acme",
+      "tool@mine",
+    ]);
+    expect(unwrapped.extraKnownMarketplaces).toEqual({
+      mine: { source: { source: "github", repo: "me/mine" } },
+    });
+    expect(unwrapped.enabledPlugins).toEqual({ "tool@mine": true });
+    /** The folder's marketplace file is not the wrap's to withdraw. */
+    expect(await exists(path.join(folder, ".claude-plugin", "marketplace.json"))).toBe(true);
+  });
+
+  test("names a folder it cannot publish, and enables nothing for it", async () => {
+    const { companionPath, repository } = await linkedRepo();
+    const foreign = `{"name":"tools","owner":{"name":"Acme"},"plugins":[]}\n`;
+    const { folder, deps } = await withPluginFolder(companionPath, foreign);
+
+    const result = await runWrapPass(companionPath, repository, {}, deps);
+
+    if (result.kind === "failed") throw new Error(result.message);
+    expect(result.claudePluginFolders?.publication?.unpublished).toEqual([
+      expect.objectContaining({
+        capability: "acme-plugin",
+        path: folder,
+        reason: "foreign-marketplace",
+      }),
+    ]);
+    expect(result.wrapState.carriedClaudePluginDirectories).toEqual([]);
+    expect((await repoSettings(repository.path)).enabledPlugins).toBeUndefined();
+    expect(await fs.readFile(path.join(folder, ".claude-plugin", "marketplace.json"), "utf8")).toBe(
+      foreign,
+    );
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    "enables no stale marketplace of Mate's it cannot rewrite, so the launch passes the folder",
+    async () => {
+      const { companionPath, repository } = await linkedRepo();
+      const stale = `${JSON.stringify({
+        name: "mate-plugin-old",
+        owner: { name: "Mate" },
+        plugins: [{ name: "acme", source: "./" }],
+      })}\n`;
+      const { folder, deps } = await withPluginFolder(companionPath, stale);
+      const marketplace = path.join(folder, ".claude-plugin", "marketplace.json");
+      await fs.chmod(marketplace, 0o444);
+
+      const result = await runWrapPass(companionPath, repository, {}, deps);
+      await fs.chmod(marketplace, 0o644);
+
+      if (result.kind === "failed") throw new Error(result.message);
+      const settings = await repoSettings(repository.path);
+      expect(settings.extraKnownMarketplaces).toBeUndefined();
+      expect(settings.enabledPlugins).toBeUndefined();
+      expect(result.wrapState.carriedClaudePluginDirectories).toEqual([]);
+      const { launchExclude } = planClaudeDelivery("managed-repo", result.wrapState).plugins;
+      expect(result.claudePluginFolders?.launch).toEqual([folder]);
+      expect(launchExclude).not.toContain(folder);
+      expect(result.claudePluginFolders?.publication?.unpublished).toEqual([
+        expect.objectContaining({ path: folder, reason: "missing-marketplace" }),
+      ]);
+      expect(await fs.readFile(marketplace, "utf8")).toBe(stale);
+    },
+  );
+
+  test("an OpenCode-only pass publishes nothing", async () => {
+    const { companionPath, repository } = await linkedRepo();
+    const { folder, deps } = await withPluginFolder(companionPath);
+
+    await runWrapPass(companionPath, repository, { runtimes: ["opencode"] }, deps);
+
+    expect(await exists(path.join(folder, ".claude-plugin", "marketplace.json"))).toBe(false);
+  });
+
+  test("names nothing for context-mode while its package is not installed", async () => {
     const { companionPath, repository } = await linkedRepo();
     await writeCompanionConfig(
       companionPath,
@@ -494,17 +658,8 @@ describe("the Claude plugins a wrap pass names", () => {
     const result = await runWrapPass(companionPath, repository);
 
     if (result.kind === "failed") throw new Error(result.message);
-    expect(result.claudePluginCapabilities).toEqual(["context-mode"]);
+    expect(result.claudePluginFolders?.publication?.unpublished).toEqual([]);
     /** The package is not installed, and the pass says nothing about it: launches report that. */
     expect(result.warnings.join("\n")).not.toContain("context-mode");
-  });
-
-  test("names none when no enabled Capability ships one", async () => {
-    const { companionPath, repository } = await linkedRepo();
-
-    const result = await runWrapPass(companionPath, repository);
-
-    if (result.kind === "failed") throw new Error(result.message);
-    expect(result.claudePluginCapabilities).toEqual([]);
   });
 });

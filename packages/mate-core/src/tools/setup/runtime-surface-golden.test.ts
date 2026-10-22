@@ -322,7 +322,7 @@ async function collectLaunchSurface(
   if (agents.includes("claude")) {
     const adapter = new ClaudeAdapter();
     /** The plugin folders a launch's own sync pass gathers. */
-    const { directories } = await syncCompanionFiles(fixture.companionPath, config);
+    const { launch } = await syncCompanionFiles(fixture.companionPath, config);
     /** As a launch hands it over for a Claude-wrapped repository. */
     const claudeContext = await adapter.planLaunch(context, {
       ok: true,
@@ -334,7 +334,7 @@ async function collectLaunchSurface(
       steps: [],
       warnings: [],
       wrapState: wrapStateOf(withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, [])),
-      claudePluginDirectories: directories,
+      claudePluginDirectories: [...launch],
     });
     surface.claudeArgs = adapter.buildArgs(claudeContext, []);
     surface.claudeEnv = adapter.extendEnvironment(claudeContext);

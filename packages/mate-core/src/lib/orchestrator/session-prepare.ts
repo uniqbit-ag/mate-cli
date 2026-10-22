@@ -1,6 +1,6 @@
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
-import { claudePluginDelivery } from "../../runtime/claude-delivery-plan";
+import { launchPassesClaudePluginFolders } from "../../runtime/claude-delivery-plan";
 import { recordCompanionSyncUnfinished } from "../../runtime/companion-git-state";
 import { withCompanionLock, type CompanionLockOptions } from "../../runtime/companion-lock";
 import {
@@ -12,6 +12,7 @@ import type { SessionKind } from "../../runtime/session-kind";
 import type { WrapState } from "../../runtime/wrap-state";
 import { syncCompanionFiles } from "../../tools/setup";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
+import type { ClaudePluginFolders } from "../../tools/setup/providers/claude-plugin-folders";
 import { attendedLockOptions, syncCompanionGit } from "./companion-git-sync";
 import { readCompanionConfig } from "./config-store";
 import { entryFailureMessage, firstFailure, type ProjectionChangedPaths } from "./projection-types";
@@ -181,16 +182,18 @@ async function runFileSync(
 ): Promise<void> {
   const deps = sessionPrepareDeps;
   try {
-    const gathered = input.repository
+    const folders = input.repository
       ? await deps.syncCompanionFiles(input.companionPath, config, input.repository.path)
       : await deps.syncCompanionFiles(input.companionPath, config);
-    run.claudePluginDirectories = gathered.directories;
-    /** The Claude plan speaks for Claude sessions only; OpenCode loads no plugin folder. */
-    if (
-      input.runtime === "claude" &&
-      claudePluginDelivery(sessionKindOf(input)) === "launch-flag"
-    ) {
-      run.warnings.push(...gathered.warnings);
+    run.claudePluginDirectories = [...folders.launch];
+    /**
+     * The Claude plan speaks for Claude sessions only; OpenCode loads no plugin
+     * folder. With a Working Repository the wrap pass reports publication;
+     * without one no wrap pass runs, so this step does.
+     */
+    if (reportsClaudePluginFolders(input)) {
+      run.warnings.push(...folders.loadWarnings);
+      if (!input.repository) run.warnings.push(...publicationWarnings(folders));
     }
     run.push({ step: "file-sync", outcome: "ok" });
   } catch (error) {
@@ -208,6 +211,18 @@ function wrapDetail(wrapped: {
   if (wrote.length > 0) parts.push(`wrote ${wrote.join(", ")}`);
   if (withdrew.length > 0) parts.push(`withdrew ${withdrew.join(", ")}`);
   return parts.length > 0 ? `updated (${parts.join("; ")})` : "updated";
+}
+
+/** A managed Claude launch; plain sessions' prepares and OpenCode report no plugin-folder problem. */
+function reportsClaudePluginFolders(input: PrepareSessionInput): boolean {
+  return input.runtime === "claude" && launchPassesClaudePluginFolders(sessionKindOf(input));
+}
+
+/** What a publication left undone, one sentence per folder. */
+function publicationWarnings(folders: ClaudePluginFolders | undefined): string[] {
+  const publication = folders?.publication;
+  if (!publication) return [];
+  return [...publication.unpublished.map((entry) => entry.warning), ...publication.warnings];
 }
 
 /** Attended is a managed launch, with or without a Working Repository; the rest serve plain sessions. */
@@ -242,6 +257,9 @@ async function reconcileWrap(
     return;
   }
   run.warnings.push(...wrapped.warnings);
+  if (reportsClaudePluginFolders(input)) {
+    run.warnings.push(...publicationWarnings(wrapped.claudePluginFolders));
+  }
   run.wrapState = wrapped.wrapState;
   run.push({
     step: "working-target",

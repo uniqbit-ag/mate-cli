@@ -1,6 +1,10 @@
 import path from "node:path";
 
-import { renderWorkingRuntimeDocuments } from "../../tools/setup";
+import {
+  publishWorkingClaudePluginMarketplaces,
+  renderWorkingRuntimeDocuments,
+} from "../../tools/setup";
+import type { ClaudePluginFolders } from "../../tools/setup/providers/claude-plugin-folders";
 import { readCompanionConfig } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
 import { entryFailureMessage, firstFailure, type ProjectionChangedPaths } from "./projection-types";
@@ -10,6 +14,7 @@ import type { FrameworkConfig, LinkedRepository } from "./types";
 import { project } from "./working-repo-projection";
 
 export interface WrapPassDependencies {
+  publishWorkingClaudePluginMarketplaces: typeof publishWorkingClaudePluginMarketplaces;
   renderWorkingRuntimeDocuments: typeof renderWorkingRuntimeDocuments;
   readCompanionConfig: typeof readCompanionConfig;
   project: typeof project;
@@ -18,6 +23,7 @@ export interface WrapPassDependencies {
 }
 
 export const wrapPassDeps: WrapPassDependencies = {
+  publishWorkingClaudePluginMarketplaces,
   renderWorkingRuntimeDocuments,
   readCompanionConfig,
   project,
@@ -47,8 +53,11 @@ export type WrapPassResult =
       runtimes: ReadonlySet<WrapRuntime>;
       /** The wrap state as this pass left it. */
       wrapState: WrapState;
-      /** Enabled Capabilities that declare a Claude plugin folder; named, never checked. */
-      claudePluginCapabilities: string[];
+      /**
+       * The Claude plugin folders this pass published, when it covered Claude;
+       * what publication left undone is the caller's to present, never in `warnings`.
+       */
+      claudePluginFolders?: ClaudePluginFolders;
     }
   | { kind: "failed"; message: string };
 
@@ -65,6 +74,15 @@ export async function runWrapPass(
 ): Promise<WrapPassResult> {
   const resolvedCompanionPath = path.resolve(companionPath);
   const config = options.config ?? (await deps.readCompanionConfig(resolvedCompanionPath));
+  /** The render reads the marketplace files, so they are written first. */
+  const published =
+    !options.runtimes || options.runtimes.includes("claude")
+      ? await deps.publishWorkingClaudePluginMarketplaces(
+          resolvedCompanionPath,
+          config,
+          repository.path,
+        )
+      : undefined;
   const rendered = await deps.renderWorkingRuntimeDocuments(
     resolvedCompanionPath,
     config,
@@ -133,6 +151,6 @@ export async function runWrapPass(
     ],
     runtimes,
     wrapState,
-    claudePluginCapabilities: rendered.claudePluginCapabilities,
+    ...(published ? { claudePluginFolders: published } : {}),
   };
 }

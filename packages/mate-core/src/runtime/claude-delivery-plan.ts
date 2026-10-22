@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { ClaudeHookGroup } from "./claude-hook-group";
 import type { SessionKind } from "./session-kind";
 import { NOT_WRAPPED, readWrapStateSync, type WrapState } from "./wrap-state";
@@ -22,19 +24,55 @@ export interface ClaudeDeliveryPlan {
   readonly reconcile: "attended-prepare" | "prepare-hook" | "none";
   /** Companion Git synchronization. */
   readonly gitSync: "launch-preflight" | "prepare-hook" | "banner";
-  /** Plugin folders loaded as Claude plugins: Mate's bundled plugin and Capability plugin directories. */
-  readonly plugins: ClaudePluginDelivery;
+  /**
+   * Plugin folders loaded as Claude plugins. A managed launch passes Mate's
+   * bundled plugin and every gathered Capability folder but `launchExclude`,
+   * the folders the wrap carries; a Claude-wrapped plain session gets those
+   * from the wrap alone.
+   */
+  readonly plugins: {
+    readonly owner: "launch-flag" | "wrap" | "none";
+    readonly launchExclude: readonly string[];
+  };
 }
 
-export type ClaudePluginDelivery = "launch-flag" | "none";
-
-/** No settings document can carry a plugin folder, so the wrap state never matters. */
-export function claudePluginDelivery(kind: SessionKind): ClaudePluginDelivery {
-  return kind === "unmanaged" ? "none" : "launch-flag";
+/**
+ * Whether the session's launch passes `--plugin-dir`: every managed launch does, a plain
+ * session cannot. Not whether the session loads plugin folders: a Claude-wrapped plain
+ * session gets them from the wrap.
+ */
+export function launchPassesClaudePluginFolders(kind: SessionKind): boolean {
+  return kind !== "unmanaged";
 }
 
 export function planClaudeDelivery(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan {
-  return { ...planChannels(kind, wrap), plugins: claudePluginDelivery(kind) };
+  return { ...planChannels(kind, wrap), plugins: planPlugins(kind, wrap) };
+}
+
+/**
+ * The folders a managed launch passes with `--plugin-dir`, in order: the
+ * bundled plugin, then each gathered folder the wrap does not carry, matched
+ * by resolved path. None when the launch flag does not own plugin folders.
+ */
+export function launchPluginFolders(
+  plan: ClaudeDeliveryPlan,
+  gathered: readonly string[],
+  bundledPluginRoot: string,
+): string[] {
+  if (plan.plugins.owner !== "launch-flag") return [];
+  const carried = new Set(plan.plugins.launchExclude.map((dir) => path.resolve(dir)));
+  return [bundledPluginRoot, ...gathered.filter((dir) => !carried.has(path.resolve(dir)))];
+}
+
+function planPlugins(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan["plugins"] {
+  switch (kind) {
+    case "managed-repo":
+      return { owner: "launch-flag", launchExclude: wrap.carriedClaudePluginDirectories };
+    case "managed-companion":
+      return { owner: "launch-flag", launchExclude: [] };
+    case "unmanaged":
+      return { owner: wrap.runtimes.has("claude") ? "wrap" : "none", launchExclude: [] };
+  }
 }
 
 function planChannels(kind: SessionKind, wrap: WrapState): Omit<ClaudeDeliveryPlan, "plugins"> {

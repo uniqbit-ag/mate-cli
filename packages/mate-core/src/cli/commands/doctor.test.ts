@@ -811,8 +811,11 @@ describe("doctor OpenSpec rules keys", () => {
 });
 
 describe("contributed Claude plugins", () => {
-  /** A companion with `capabilities` enabled for Claude; context-mode's folder holds a manifest when `installed`. */
-  async function companion(capabilities: string[], installed = false) {
+  /**
+   * A companion with `capabilities` enabled for Claude; context-mode's folder
+   * holds a manifest when `installed`, and `marketplace` as its marketplace file.
+   */
+  async function companion(capabilities: string[], installed = false, marketplace?: string) {
     const root = await makeTempDir("doctor-claude-plugins-");
     const configPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
     await fs.mkdir(path.dirname(configPath), { recursive: true });
@@ -823,7 +826,13 @@ describe("contributed Claude plugins", () => {
     const folder = getContextModePackageRoot(root);
     if (installed) {
       await fs.mkdir(path.join(folder, ".claude-plugin"), { recursive: true });
-      await fs.writeFile(path.join(folder, ".claude-plugin", "plugin.json"), "{}\n");
+      await fs.writeFile(
+        path.join(folder, ".claude-plugin", "plugin.json"),
+        `{"name":"context-mode"}\n`,
+      );
+      if (marketplace !== undefined) {
+        await fs.writeFile(path.join(folder, ".claude-plugin", "marketplace.json"), marketplace);
+      }
     }
     const deps = {
       cwd: root,
@@ -833,14 +842,47 @@ describe("contributed Claude plugins", () => {
     return { folder, deps };
   }
 
-  test("lists an installed context-mode plugin as present, loading only with mate claude", async () => {
-    const { folder, deps } = await companion(["context-mode"], true);
+  const SHIPPED_MARKETPLACE = `${JSON.stringify({
+    name: "context-mode",
+    owner: { name: "Mert Koseoğlu" },
+    plugins: [{ name: "context-mode", source: "./" }],
+  })}\n`;
+  const FOREIGN_MARKETPLACE = `{"name":"tools","owner":{"name":"Acme"},"plugins":[]}\n`;
+
+  test("lists an installed context-mode plugin as present, with the marketplace plain sessions use", async () => {
+    const { folder, deps } = await companion(["context-mode"], true, SHIPPED_MARKETPLACE);
 
     const output = await captureStdout(() => runDoctorCommand([], deps));
 
     expect(output).toContain("Claude Plugins");
-    expect(output).toMatch(new RegExp(`\\| context-mode +\\| ${folder} +\\| present +\\|`));
-    expect(output).toContain(`load only in sessions started with \`${FRAMEWORK_NAME} claude\``);
+    expect(output).toMatch(
+      new RegExp(`\\| context-mode +\\| ${folder} +\\| present +\\| marketplace context-mode +\\|`),
+    );
+    expect(output).toContain("only in a wrapped repository that Claude Code trusts");
+    expect(output).not.toContain("load only in sessions started with");
+  });
+
+  test("names why plain sessions do not load a folder with a foreign marketplace", async () => {
+    const { folder, deps } = await companion(["context-mode"], true, FOREIGN_MARKETPLACE);
+
+    const output = await captureStdout(() => runDoctorCommand([], deps));
+    const report = JSON.parse(await captureStdout(() => runDoctorCommand(["--json"], deps))) as {
+      claudePlugins?: unknown;
+    };
+
+    expect(output).toMatch(
+      new RegExp(
+        `\\| context-mode +\\| ${folder} +\\| present +\\| no: \\.claude-plugin/marketplace\\.json is not Mate's`,
+      ),
+    );
+    expect(report.claudePlugins).toEqual([
+      {
+        capability: "context-mode",
+        path: folder,
+        loadable: true,
+        unpublishedReason: "foreign-marketplace",
+      },
+    ]);
   });
 
   test("marks a folder without a plugin manifest as missing one", async () => {
@@ -863,7 +905,19 @@ describe("contributed Claude plugins", () => {
     expect(output).not.toContain("Claude Plugins");
   });
 
-  test("JSON carries the Capability, its folder and whether it holds a manifest", async () => {
+  test("JSON carries the Capability, its folder, whether it holds a manifest and its marketplace", async () => {
+    const { folder, deps } = await companion(["context-mode"], true, SHIPPED_MARKETPLACE);
+
+    const report = JSON.parse(await captureStdout(() => runDoctorCommand(["--json"], deps))) as {
+      claudePlugins?: unknown;
+    };
+
+    expect(report.claudePlugins).toEqual([
+      { capability: "context-mode", path: folder, loadable: true, marketplace: "context-mode" },
+    ]);
+  });
+
+  test("doctor writes no marketplace file", async () => {
     const { folder, deps } = await companion(["context-mode"], true);
 
     const report = JSON.parse(await captureStdout(() => runDoctorCommand(["--json"], deps))) as {
@@ -871,8 +925,19 @@ describe("contributed Claude plugins", () => {
     };
 
     expect(report.claudePlugins).toEqual([
-      { capability: "context-mode", path: folder, loadable: true },
+      {
+        capability: "context-mode",
+        path: folder,
+        loadable: true,
+        marketplace: "mate-plugin-context-mode",
+      },
     ]);
+    expect(
+      await fs.stat(path.join(folder, ".claude-plugin", "marketplace.json")).then(
+        () => true,
+        () => false,
+      ),
+    ).toBe(false);
   });
 
   test("JSON carries no entry when no enabled Capability ships a Claude plugin", async () => {

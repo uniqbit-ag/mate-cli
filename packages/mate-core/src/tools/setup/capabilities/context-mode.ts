@@ -13,7 +13,7 @@ import {
 } from "../../../lib/context-mode-package";
 import { warmOpenCodePackageCache } from "../../../lib/opencode-plugin-package";
 import { installedVersionAt, isPreinstalledPluginPath } from "../../../lib/preinstalled-plugins";
-import { claudePluginDelivery } from "../../../runtime/claude-delivery-plan";
+import { launchPassesClaudePluginFolders } from "../../../runtime/claude-delivery-plan";
 import type {
   CapabilityPlugin,
   LaunchPreflightContext,
@@ -110,12 +110,12 @@ async function validateOpenCodeReferences(ctx: LaunchPreflightContext): Promise<
   ];
 }
 
-/** Checked only where the plan delivers plugin folders. Observational: reads files and runs `node --version`. */
+/** Checked only where the launch passes plugin folders, so a plain session skips it. Observational: reads files and runs `node --version`. */
 async function validateClaudePackage(
   ctx: LaunchPreflightContext,
   validatePackage: typeof validateContextModePackage,
 ): Promise<string[]> {
-  if (claudePluginDelivery(ctx.sessionKind) === "none") return [];
+  if (!launchPassesClaudePluginFolders(ctx.sessionKind)) return [];
   try {
     await validatePackage(ctx.companionPath);
     return [];

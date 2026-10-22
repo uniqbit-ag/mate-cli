@@ -386,13 +386,11 @@ describe("dynamic plugin Claude plugin folders", () => {
     };
 
     const withDeclaration = await syncFresh();
-    expect(withDeclaration.warnings).toEqual([]);
-    expect(withDeclaration.directories).toHaveLength(1);
-    expect(withDeclaration.directories[0]).toEndWith(
-      path.join(...SHIPPER.split("/"), "claude-plugin"),
-    );
+    expect(withDeclaration.loadWarnings).toEqual([]);
+    expect(withDeclaration.launch).toHaveLength(1);
+    expect(withDeclaration.launch[0]).toEndWith(path.join(...SHIPPER.split("/"), "claude-plugin"));
 
     await fs.writeFile(configPath, [...declared, ""].join("\n"), "utf8");
-    expect(await syncFresh()).toEqual({ directories: [], warnings: [] });
+    expect(await syncFresh()).toMatchObject({ launch: [], loadWarnings: [] });
   });
 });
