@@ -223,7 +223,7 @@ function renderManagedClaudeHookGroups(
 export const CLAUDE_PLUGIN_MANIFEST = path.join(".claude-plugin", "plugin.json");
 
 /** True when `directory` holds a Claude plugin manifest. */
-export async function hasClaudePluginManifest(directory: string): Promise<boolean> {
+async function hasClaudePluginManifest(directory: string): Promise<boolean> {
   try {
     return (await fs.stat(path.join(directory, CLAUDE_PLUGIN_MANIFEST))).isFile();
   } catch {
@@ -261,14 +261,10 @@ const CLAUDE_PLUGIN_DIRECTORY_WARNINGS: Record<ClaudePluginDirectoryProblem, str
  */
 async function claudePluginManifestName(directory: string): Promise<string | undefined> {
   try {
-    const manifest: unknown = JSON.parse(
+    const manifest = JSON.parse(
       await fs.readFile(path.join(directory, CLAUDE_PLUGIN_MANIFEST), "utf8"),
-    );
-    const name =
-      typeof manifest === "object" && manifest !== null && "name" in manifest
-        ? manifest.name
-        : undefined;
-    return typeof name === "string" ? name : undefined;
+    ) as { name?: unknown } | null;
+    return typeof manifest?.name === "string" ? manifest.name : undefined;
   } catch {
     return undefined;
   }

@@ -146,13 +146,9 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
         : [];
     const addDirArgs = plan.dirAccess === "add-dir" ? ["--add-dir", context.companionPath] : [];
     /** The bundled plugin from the running install first, then each gathered folder. */
-    const pluginDirArgs =
-      plan.plugins === "launch-flag"
-        ? [getClaudePluginRoot(), ...context.pluginDirectories].flatMap((dir) => [
-            "--plugin-dir",
-            dir,
-          ])
-        : [];
+    const pluginDirs =
+      plan.plugins === "launch-flag" ? [getClaudePluginRoot(), ...context.pluginDirectories] : [];
+    const pluginDirArgs = pluginDirs.flatMap((dir) => ["--plugin-dir", dir]);
     const mcpConfigArgs =
       plan.mcp === "mcp-config" && mcpConfigPath ? ["--mcp-config", mcpConfigPath] : [];
 

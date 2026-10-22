@@ -8,8 +8,6 @@ import { NOT_WRAPPED, readWrapStateSync, type WrapState } from "./wrap-state";
  * may import it.
  */
 
-export type { SessionKind } from "./session-kind";
-
 export interface ClaudeDeliveryPlan {
   /** Capability hook groups; `launchSettingsExclude` is what `--settings` must not repeat. */
   readonly hooks: {

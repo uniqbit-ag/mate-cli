@@ -11,6 +11,7 @@ import {
   OPENCODE_CONFIG_DOCUMENT,
   withDocument,
 } from "./runtime-document-manifest";
+import type { SessionKind } from "./session-kind";
 import { wrapStateOf, type WrapState } from "./wrap-state";
 
 const GUARD = { matcher: "Edit", hooks: [{ type: "command", command: "/acme/guard.mjs" }] };

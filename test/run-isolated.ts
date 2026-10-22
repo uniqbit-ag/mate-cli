@@ -5,8 +5,8 @@
  * HOME has to be set before Bun starts: Bun reads `os.homedir()` once, and a
  * child process spawned without an explicit `env` inherits the launch
  * environment rather than `process.env`, so assigning HOME from inside a test
- * process reaches neither. Everything after the script name is passed to
- * `bun test` unchanged.
+ * process reaches neither. Everything after the script name except
+ * `--suite=` is passed to `bun test` unchanged.
  *
  *   bun ../../test/run-isolated.ts src/lib/update-checker.test.ts
  */
@@ -21,7 +21,9 @@ import { suiteArguments } from "./suites";
 
 const realHome = os.homedir();
 const args = process.argv.slice(2);
-const suiteOptions = args.filter((arg) => arg.startsWith("--suite="));
+const isSuiteOption = (arg: string) => arg.startsWith("--suite=");
+const suiteOptions = args.filter(isSuiteOption);
+const testArgs = args.filter((arg) => !isSuiteOption(arg));
 const suite = suiteOptions[0]?.slice("--suite=".length);
 if (
   suiteOptions.length > 1 ||
@@ -41,14 +43,10 @@ if (suite === "unit") {
   env.BUN_INSTALL_CACHE_DIR = path.join(testHome, ".cache", "bun");
 }
 
-const child = spawn(
-  process.execPath,
-  ["test", ...exclusions, ...args.filter((arg) => !arg.startsWith("--suite="))],
-  {
-    stdio: "inherit",
-    env,
-  },
-);
+const child = spawn(process.execPath, ["test", ...exclusions, ...testArgs], {
+  stdio: "inherit",
+  env,
+});
 
 /** Forwarded rather than handled, so an interrupted run still removes its HOME on the way out. */
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

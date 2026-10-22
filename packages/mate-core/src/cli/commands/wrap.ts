@@ -142,8 +142,9 @@ export async function runWrapCommand(
   );
   const pluginCapabilityIds = result.claudePluginCapabilities;
   if (runtimes.has("claude") && pluginCapabilityIds.length > 0) {
+    const verb = pluginCapabilityIds.length === 1 ? "loads" : "load";
     console.log(
-      `Note: ${listNames(pluginCapabilityIds)} ${pluginCapabilityIds.length === 1 ? "loads" : "load"} only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+      `Note: ${listNames(pluginCapabilityIds)} ${verb} only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
     );
   }
 }

@@ -455,6 +455,34 @@ function claudePluginStatus(plugin: ClaudePluginDirectoryReport): string {
   return plugin.problem ? CLAUDE_PLUGIN_PROBLEM_STATUS[plugin.problem] : "present";
 }
 
+/** A table for each list present, then a note that these plugins need a managed launch. */
+function renderClaudePlugins(
+  plugins: ClaudePluginDirectoryReport[] | undefined,
+  failures: ClaudePluginContributionFailure[] | undefined,
+): string {
+  const tables: string[] = [];
+  if (plugins) {
+    tables.push(
+      renderTable(
+        ["Capability", "Plugin Folder", "Status"],
+        plugins.map((plugin) => [plugin.capability, plugin.path, claudePluginStatus(plugin)]),
+      ),
+    );
+  }
+  if (failures) {
+    tables.push(
+      renderTable(
+        ["Capability", "Error"],
+        failures.map((failure) => [failure.capability, failure.reason]),
+      ),
+    );
+  }
+  return [
+    ...tables.flatMap((table) => [table, ""]),
+    `These plugins load only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+  ].join("\n");
+}
+
 function renderHumanReport(report: DoctorReport): void {
   console.log("Mate Doctor");
   console.log("");
@@ -529,33 +557,9 @@ function renderHumanReport(report: DoctorReport): void {
     printSection("Version Requirement", report.engineRequirement.detail);
   }
   if (report.claudePlugins || report.claudePluginFailures) {
-    const tables: string[] = [];
-    if (report.claudePlugins) {
-      tables.push(
-        renderTable(
-          ["Capability", "Plugin Folder", "Status"],
-          report.claudePlugins.map((plugin) => [
-            plugin.capability,
-            plugin.path,
-            claudePluginStatus(plugin),
-          ]),
-        ),
-      );
-    }
-    if (report.claudePluginFailures) {
-      tables.push(
-        renderTable(
-          ["Capability", "Error"],
-          report.claudePluginFailures.map((failure) => [failure.capability, failure.reason]),
-        ),
-      );
-    }
     printSection(
       "Claude Plugins",
-      [
-        ...tables.flatMap((table) => [table, ""]),
-        `These plugins load only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
-      ].join("\n"),
+      renderClaudePlugins(report.claudePlugins, report.claudePluginFailures),
     );
   }
   if (report.openspecRuleWarnings) {
