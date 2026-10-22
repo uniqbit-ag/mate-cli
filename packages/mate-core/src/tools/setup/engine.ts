@@ -2,7 +2,8 @@
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
-import type { RenderedRuntimeDocuments as RenderedSurfaceDocuments } from "../../runtime/runtime-document-manifest";
+import { getClaudePluginRoot } from "../../lib/package-paths";
+import type { RenderedRuntimeDocuments } from "../../runtime/runtime-document-manifest";
 import { collectHostingProviders, ContextServiceMediator } from "./context-services";
 import type {
   CapabilityContributionInput,
@@ -27,7 +28,7 @@ import { normalizeRegistration, type NormalizedRegistration } from "./registry";
 import { projectionRepoRoot } from "./surface-target";
 
 /** A working-target render of every active Runtime Surface; its warnings are data for the caller, never printed here. */
-export interface RenderedRuntimeDocuments extends RenderedSurfaceDocuments {
+export interface RenderedWorkingDocuments extends RenderedRuntimeDocuments {
   /** Enabled Capabilities whose Claude plugin folder loads only through a managed launch. */
   claudePluginCapabilities: string[];
 }
@@ -197,6 +198,7 @@ export async function executeSetupInstallationPlan(
   const inputsByRuntime = await reconcileCapabilityContributions(ctx, plugins, plan);
   const claudePluginDirectories = await gatherClaudePluginDirectories(
     inputsByRuntime.get("claude") ?? [],
+    getClaudePluginRoot(),
   );
 
   return { executedActions, skippedActions, warnings, claudePluginDirectories };
@@ -217,7 +219,7 @@ const RUNTIME_SURFACE_RECONCILERS: Record<
  */
 const RUNTIME_SURFACE_WORKING_RENDERERS: Record<
   string,
-  (ctx: SetupContext, inputs: CapabilityContributionInput[]) => Promise<RenderedSurfaceDocuments>
+  (ctx: SetupContext, inputs: CapabilityContributionInput[]) => Promise<RenderedRuntimeDocuments>
 > = {
   claude: renderClaudeWorkingDocuments,
   opencode: renderOpenCodeWorkingDocuments,
@@ -323,10 +325,10 @@ export async function renderRuntimeDocuments(
   ctx: SetupContext,
   registrations: PluginRegistration[],
   plan: SetupInstallationPlan,
-): Promise<RenderedRuntimeDocuments> {
+): Promise<RenderedWorkingDocuments> {
   projectionRepoRoot(ctx);
   const inputsByRuntime = await collectRuntimeContributionInputs(ctx, registrations, plan);
-  const rendered: RenderedRuntimeDocuments = {
+  const rendered: RenderedWorkingDocuments = {
     documents: [],
     warnings: [],
     claudePluginCapabilities: claudePluginCapabilityIds(inputsByRuntime.get("claude") ?? []),

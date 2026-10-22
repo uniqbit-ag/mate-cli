@@ -13,6 +13,7 @@ import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-sto
 import { pathIsDirectory } from "../../lib/fs-utils";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
+import { MATE_CLAUDE_PLUGIN_NAME } from "../../lib/package-paths";
 import {
   describeUnknownAudience,
   readAudienceSelection,
@@ -32,6 +33,7 @@ import { getRequiredPluginDrift } from "../../tools/setup/policy";
 import {
   CLAUDE_PLUGIN_MANIFEST,
   type ClaudePluginContributionFailure,
+  type ClaudePluginDirectoryProblem,
   type ClaudePluginDirectoryReport,
 } from "../../tools/setup/providers/claude";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
@@ -97,7 +99,9 @@ export interface DoctorReport {
   openspecRuleWarnings?: Array<{ key: string; message: string }>;
   /**
    * Enabled Capabilities' Claude plugin folders, which load only with `mate claude`; absent when
-   * none. `problem` names why a folder cannot load: `not-absolute` or `missing-manifest`.
+   * none. `problem` names why `mate claude` leaves a folder out: `not-absolute`,
+   * `missing-manifest`, `bundled-mate-plugin` (Mate's own plugin, which every managed launch
+   * loads already) or `mate-plugin-name` (its manifest uses Mate's plugin name).
    */
   claudePlugins?: ClaudePluginDirectoryReport[];
   /** Capabilities whose contributions failed, so their Claude plugin folders are unknown; absent when none. */
@@ -439,10 +443,16 @@ function renderHubMembers(members: DoctorHubMember[]): string {
   );
 }
 
+/** The Status column's text for each reason a folder is left out. */
+const CLAUDE_PLUGIN_PROBLEM_STATUS: Record<ClaudePluginDirectoryProblem, string> = {
+  "not-absolute": "not an absolute path",
+  "bundled-mate-plugin": "Mate's bundled plugin, already loaded",
+  "missing-manifest": `missing ${CLAUDE_PLUGIN_MANIFEST}`,
+  "mate-plugin-name": `uses Mate's plugin name ${MATE_CLAUDE_PLUGIN_NAME}`,
+};
+
 function claudePluginStatus(plugin: ClaudePluginDirectoryReport): string {
-  if (plugin.problem === "not-absolute") return "not an absolute path";
-  if (plugin.problem === "missing-manifest") return `missing ${CLAUDE_PLUGIN_MANIFEST}`;
-  return "present";
+  return plugin.problem ? CLAUDE_PLUGIN_PROBLEM_STATUS[plugin.problem] : "present";
 }
 
 function renderHumanReport(report: DoctorReport): void {

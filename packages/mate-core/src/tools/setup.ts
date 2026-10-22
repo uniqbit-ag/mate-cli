@@ -18,6 +18,7 @@ import {
   type CapabilityConfig,
   type FrameworkConfig,
 } from "../lib/orchestrator/types";
+import { getClaudePluginRoot } from "../lib/package-paths";
 import {
   collectManagedGitignoreEntries,
   writeManagedGitignoreBlock,
@@ -47,7 +48,7 @@ import {
   collectRuntimeContributionInputs,
   executeSetupInstallationPlan,
   renderRuntimeDocuments,
-  type RenderedRuntimeDocuments,
+  type RenderedWorkingDocuments,
   type SetupInstallationOutcome,
   type SetupInstallationPlan,
 } from "./setup/engine";
@@ -103,7 +104,7 @@ export async function renderWorkingRuntimeDocuments(
   config: FrameworkConfig,
   repoPath: string,
   plugins: PluginRegistration[] = getActiveDistribution().registry.getAll(),
-): Promise<RenderedRuntimeDocuments> {
+): Promise<RenderedWorkingDocuments> {
   const { plan, ctx } = planSyncPass(companionPath, config, plugins, {
     repoPath,
     target: "working",
@@ -137,8 +138,9 @@ export interface ClaudePluginDirectoryInspection {
 }
 
 /**
- * Enabled Capabilities' declared Claude plugin folders and whether each holds
- * a manifest. Read-only: runs no plugin phase and reconciles nothing.
+ * Enabled Capabilities' declared Claude plugin folders and whether `mate claude`
+ * passes each, checked against the running install's bundled plugin. Read-only:
+ * runs no plugin phase and reconciles nothing.
  */
 export async function inspectClaudePluginDirectories(
   companionPath: string,
@@ -154,7 +156,10 @@ export async function inspectClaudePluginDirectories(
     }),
   );
   return {
-    plugins: await describeClaudePluginDirectories(inputs.get("claude") ?? []),
+    plugins: await describeClaudePluginDirectories(
+      inputs.get("claude") ?? [],
+      getClaudePluginRoot(),
+    ),
     failures,
   };
 }

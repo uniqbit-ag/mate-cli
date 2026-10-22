@@ -21,17 +21,11 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
-/**
- * Replaces the stub by rename, never in place: a detached sync an earlier test
- * started may still be reading the old script, and a shell reads its script as
- * it runs, so rewriting the file would run the new stub with the old arguments.
- */
+/** Each test's stub lives under its own HOME, so no other test's sync reads it. */
 async function writeMateStub(script: string): Promise<void> {
   const bin = runtimeMateBin();
   await fs.mkdir(path.dirname(bin), { recursive: true });
-  const staged = `${bin}.${process.pid}.tmp`;
-  await fs.writeFile(staged, script, { mode: 0o755 });
-  await fs.rename(staged, bin);
+  await fs.writeFile(bin, script, { mode: 0o755 });
 }
 
 const GUIDANCE_JSON = JSON.stringify({

@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
+import { MATE_CLAUDE_PLUGIN_NAME } from "./lib/package-paths";
 import { MATE_ENV } from "./runtime/env-names";
 import { writeProjectionPair } from "./runtime/projection";
 import { repoLocalRegistryPath } from "./runtime/repo-local";
@@ -106,7 +107,8 @@ describe("packed Claude plugin", () => {
     const manifest = JSON.parse(
       await fs.readFile(path.join(pluginRoot, ".claude-plugin", "plugin.json"), "utf8"),
     ) as { name: string };
-    expect(manifest.name).toBe("mate-claude-plugin");
+    /** The sync pass leaves out any contributed folder using this name. */
+    expect(manifest.name).toBe(MATE_CLAUDE_PLUGIN_NAME);
 
     const wiring = JSON.parse(
       await fs.readFile(path.join(pluginRoot, "hooks", "hooks.json"), "utf8"),

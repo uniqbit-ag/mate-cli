@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { getClaudePluginRoot } from "../../lib/package-paths";
 import { buildSetupInstallationPlan, executeSetupInstallationPlan } from "./engine";
 import type { CapabilityPlugin, ProviderPlugin, SetupContext } from "./plugin";
 
@@ -177,6 +178,24 @@ describe("engine contribution reconciliation", () => {
       directories: [enabled.folder],
       warnings: [],
     });
+  });
+
+  test("the pass leaves out Mate's bundled plugin, which the launch passes already", async () => {
+    const companionPath = await makeCompanion();
+    const { capability } = await pluginFolderCapability("acme", companionPath, true);
+    const declaringBundled: CapabilityPlugin = {
+      ...capability,
+      getRuntimeContributions: () => ({
+        claude: { pluginDirectories: [{ path: getClaudePluginRoot() }] },
+      }),
+    };
+
+    const outcome = await runPlan(companionPath, [fakeProvider("claude", []), declaringBundled]);
+
+    expect(outcome.claudePluginDirectories.directories).toEqual([]);
+    expect(outcome.claudePluginDirectories.warnings).toEqual([
+      expect.stringContaining(getClaudePluginRoot()),
+    ]);
   });
 
   test("a gathered plugin folder is named in no runtime file and printed by no warning", async () => {

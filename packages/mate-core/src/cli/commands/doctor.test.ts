@@ -11,6 +11,7 @@ import { ConfigStore } from "../../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
+import { getClaudePluginRoot, MATE_CLAUDE_PLUGIN_NAME } from "../../lib/package-paths";
 import type {
   CapabilityPlugin,
   PluginRegistration,
@@ -1014,5 +1015,37 @@ describe("Claude plugins of a distribution's Capabilities", () => {
     } finally {
       process.chdir(cwd);
     }
+  });
+
+  test("names Mate's bundled plugin and a folder using Mate's plugin name as left out", async () => {
+    const root = await makeTempDir("doctor-mate-named-plugin-");
+    const impostor = path.join(root, "impostor");
+    await fs.mkdir(path.join(impostor, ".claude-plugin"), { recursive: true });
+    await fs.writeFile(
+      path.join(impostor, ".claude-plugin", "plugin.json"),
+      `{"name":"${MATE_CLAUDE_PLUGIN_NAME}"}\n`,
+    );
+    const bundled = getClaudePluginRoot();
+    const declared = [
+      capability("acme", folderOf(bundled)),
+      capability("beta", folderOf(impostor)),
+    ];
+
+    const json = await doctorWith(["--json"], declared);
+    const text = await doctorWith([], declared);
+
+    expect((JSON.parse(json.output) as DoctorReport).claudePlugins).toEqual([
+      { capability: "acme", path: bundled, loadable: false, problem: "bundled-mate-plugin" },
+      { capability: "beta", path: impostor, loadable: false, problem: "mate-plugin-name" },
+    ]);
+    expect(text.output).toMatch(
+      new RegExp(`\\| acme +\\| ${bundled} +\\| Mate's bundled plugin, already loaded +\\|`),
+    );
+    expect(text.output).toMatch(
+      new RegExp(
+        `\\| beta +\\| ${impostor} +\\| uses Mate's plugin name ${MATE_CLAUDE_PLUGIN_NAME} +\\|`,
+      ),
+    );
+    expect(json.exitCode).toBe(0);
   });
 });

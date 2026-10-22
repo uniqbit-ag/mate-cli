@@ -32,6 +32,13 @@ export function getClaudePluginRoot(): string {
   return path.resolve(import.meta.dirname, "../../claude-plugin");
 }
 
+/**
+ * The `name` in the bundled Claude plugin's manifest. Claude Code identifies a
+ * plugin by its name, so a contributed folder using this one could take the
+ * place of Mate's plugin and its guardrail hooks.
+ */
+export const MATE_CLAUDE_PLUGIN_NAME = "mate-claude-plugin";
+
 const CLAUDE_PLUGIN_HOOK_SHIMS = [
   "validate-artifact-path.mjs",
   "session-banner.mjs",

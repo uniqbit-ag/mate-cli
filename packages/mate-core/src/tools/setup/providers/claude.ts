@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
+import { MATE_CLAUDE_PLUGIN_NAME } from "../../../lib/package-paths";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import {
   CLAUDE_LOCAL_CONFIG_DOCUMENT,
@@ -238,14 +239,56 @@ export interface GatheredClaudePluginDirectories {
   warnings: string[];
 }
 
-/** Why a declared Claude plugin folder cannot load. */
-export type ClaudePluginDirectoryProblem = "not-absolute" | "missing-manifest";
+/** Why a launch leaves a declared Claude plugin folder out, in the order they are checked. */
+export type ClaudePluginDirectoryProblem =
+  | "not-absolute"
+  | "bundled-mate-plugin"
+  | "missing-manifest"
+  | "mate-plugin-name";
 
+/** How a sync warning words each problem, after the Capability and the folder. */
+const CLAUDE_PLUGIN_DIRECTORY_WARNINGS: Record<ClaudePluginDirectoryProblem, string> = {
+  "not-absolute": "is not an absolute path; it was left out.",
+  "bundled-mate-plugin":
+    "is Mate's bundled plugin, which every managed launch loads already; it was left out.",
+  "missing-manifest": `holds no ${CLAUDE_PLUGIN_MANIFEST}; it was left out.`,
+  "mate-plugin-name": `uses Mate's plugin name ${MATE_CLAUDE_PLUGIN_NAME}; it was left out so it cannot replace Mate's guardrail hooks.`,
+};
+
+/**
+ * The `name` a folder's plugin manifest declares; undefined when the manifest
+ * does not parse or holds no string `name`.
+ */
+async function claudePluginManifestName(directory: string): Promise<string | undefined> {
+  try {
+    const manifest: unknown = JSON.parse(
+      await fs.readFile(path.join(directory, CLAUDE_PLUGIN_MANIFEST), "utf8"),
+    );
+    const name =
+      typeof manifest === "object" && manifest !== null && "name" in manifest
+        ? manifest.name
+        : undefined;
+    return typeof name === "string" ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The first problem that leaves `directory` out, if any. `isBundledPlugin` says
+ * it resolves to Mate's bundled plugin, which is named as such rather than as a
+ * folder using Mate's plugin name.
+ */
 async function claudePluginDirectoryProblem(
   directory: string,
+  isBundledPlugin: boolean,
 ): Promise<ClaudePluginDirectoryProblem | undefined> {
   if (!path.isAbsolute(directory)) return "not-absolute";
-  return (await hasClaudePluginManifest(directory)) ? undefined : "missing-manifest";
+  if (isBundledPlugin) return "bundled-mate-plugin";
+  if (!(await hasClaudePluginManifest(directory))) return "missing-manifest";
+  return (await claudePluginManifestName(directory)) === MATE_CLAUDE_PLUGIN_NAME
+    ? "mate-plugin-name"
+    : undefined;
 }
 
 /** Enabled Capabilities' declared folders, in registration order. */
@@ -270,25 +313,25 @@ async function claudePluginDirectoryKey(directory: string): Promise<string> {
 /**
  * Enabled Capabilities' Claude plugin folders. Launch-only: nothing is written,
  * linked or copied. Dedupes before checking, so each folder warns at most once.
+ * The launch passes Mate's bundled plugin (`bundledPluginRoot`) before these, so
+ * a folder that resolves to it is left out like a duplicate, but with a warning.
  */
 export async function gatherClaudePluginDirectories(
   contributions: CapabilityContributionInput[],
+  bundledPluginRoot: string,
 ): Promise<GatheredClaudePluginDirectories> {
   const directories: string[] = [];
   const warnings: string[] = [];
+  const bundledKey = await claudePluginDirectoryKey(bundledPluginRoot);
   const seen = new Set<string>();
   for (const { capability, directory } of enabledClaudePluginDirectories(contributions)) {
     const key = await claudePluginDirectoryKey(directory);
     if (seen.has(key)) continue;
     seen.add(key);
-    const problem = await claudePluginDirectoryProblem(directory);
-    if (problem === "not-absolute") {
+    const problem = await claudePluginDirectoryProblem(directory, key === bundledKey);
+    if (problem) {
       warnings.push(
-        `${capability}: Claude plugin folder ${directory} is not an absolute path; it was left out.`,
-      );
-    } else if (problem === "missing-manifest") {
-      warnings.push(
-        `${capability}: Claude plugin folder ${directory} holds no ${CLAUDE_PLUGIN_MANIFEST}; it was left out.`,
+        `${capability}: Claude plugin folder ${directory} ${CLAUDE_PLUGIN_DIRECTORY_WARNINGS[problem]}`,
       );
     } else {
       directories.push(path.resolve(directory));
@@ -301,9 +344,12 @@ export async function gatherClaudePluginDirectories(
 export interface ClaudePluginDirectoryReport {
   capability: string;
   path: string;
-  /** The folder is an absolute path holding a Claude plugin manifest, so `mate claude` passes it. */
+  /**
+   * `mate claude` passes the folder: an absolute path holding a plugin manifest,
+   * neither Mate's bundled plugin nor using Mate's plugin name.
+   */
   loadable: boolean;
-  /** Why the folder cannot load; absent when it can. */
+  /** Why `mate claude` leaves the folder out; absent when it passes it. */
   problem?: ClaudePluginDirectoryProblem;
 }
 
@@ -313,13 +359,19 @@ export interface ClaudePluginContributionFailure {
   reason: string;
 }
 
-/** Every enabled Capability's declared Claude plugin folders, each with its load state. */
+/**
+ * Every enabled Capability's declared Claude plugin folders, each with its load
+ * state, checked against Mate's bundled plugin (`bundledPluginRoot`) as the gather does.
+ */
 export async function describeClaudePluginDirectories(
   contributions: CapabilityContributionInput[],
+  bundledPluginRoot: string,
 ): Promise<ClaudePluginDirectoryReport[]> {
   const reports: ClaudePluginDirectoryReport[] = [];
+  const bundledKey = await claudePluginDirectoryKey(bundledPluginRoot);
   for (const { capability, directory } of enabledClaudePluginDirectories(contributions)) {
-    const problem = await claudePluginDirectoryProblem(directory);
+    const isBundledPlugin = (await claudePluginDirectoryKey(directory)) === bundledKey;
+    const problem = await claudePluginDirectoryProblem(directory, isBundledPlugin);
     reports.push({
       capability,
       path: directory,
