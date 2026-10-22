@@ -1,0 +1,35 @@
+---
+import { useCases } from "@/content/landing";
+import { withBase } from "@/lib/base";
+import SectionHeading from "./SectionHeading.astro";
+---
+
+<section id="use-cases" class="scroll-mt-20 border-y bg-fd-card/40">
+  <div class="mx-auto max-w-6xl px-6 py-20">
+    <SectionHeading
+      eyebrow="Use cases"
+      title="What working with Mate looks like"
+      description="Step-by-step walkthroughs of the core flows."
+    />
+    <div class="grid gap-4 md:grid-cols-2">
+      {
+        useCases.map((useCase) => (
+          <a
+            href={withBase(`/docs/scenarios/${useCase.slug}`)}
+            class="group flex flex-col rounded-xl border bg-fd-background p-6 transition-colors hover:border-fd-primary/60"
+          >
+            <h3 class="text-lg font-semibold">{useCase.title}</h3>
+            <p class="mt-2 flex-1 text-sm text-fd-muted-foreground">{useCase.description}</p>
+            <span class="mt-4 text-sm font-medium text-fd-primary">
+              Read the walkthrough <span class="inline-block transition-transform group-hover:translate-x-0.5">→</span>
+            </span>
+          </a>
+        ))
+      }
+      <div class="flex flex-col rounded-xl border border-dashed p-6">
+        <h3 class="text-lg font-semibold">More walkthroughs soon</h3>
+        <p class="mt-2 text-sm text-fd-muted-foreground">Mate already supports more flows than these. Their walkthroughs are still being written.</p>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,36 @@
+---
+import { source } from "@/lib/source";
+
+/**
+ * Docs pages used to live at the site root. GitHub Pages cannot redirect on the
+ * server, so every former docs URL gets a static page that forwards to its new
+ * location under /docs and keeps the URL fragment.
+ */
+export function getStaticPaths() {
+  return source.getPages().flatMap((page) =>
+    page.slugs.length > 0
+      ? [{ params: { legacy: page.slugs.join("/") }, props: { target: page.url } }]
+      : [],
+  );
+}
+
+const { target } = Astro.props;
+const canonical = new URL(target, Astro.site).href;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Moved to {target}</title>
+    <link rel="canonical" href={canonical} />
+    <meta name="robots" content="noindex" />
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+    <script is:inline define:vars={{ target }}>
+      location.replace(target + location.search + location.hash);
+    </script>
+  </head>
+  <body>
+    <p>This page has moved to <a href={target}>{target}</a>.</p>
+  </body>
+</html>

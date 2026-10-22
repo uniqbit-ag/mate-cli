@@ -16,13 +16,22 @@ capability.
 - [TokenSave](https://github.com/aovestdipaperino/tokensave) for code-graph exploration through MCP
 - [React Doctor](https://www.react.doctor/) for React diagnostics
 
+Mate can also wire in these optional projects:
+
+- [RTK](https://github.com/rtk-ai/rtk) for compact command output (Apache-2.0)
+- [Context7](https://github.com/upstash/context7) for library documentation through MCP (MIT)
+- [Context Mode](https://github.com/mksglu/context-mode) for session context management (Elastic License 2.0)
+
+Mate installs each project from its own source; it does not bundle them.
+
 ## Skill Acknowledgements
 
 Mate's bundled process skills are adapted from open-source work by:
 
-- [Addy Osmani's `agent-skills`](https://github.com/addyosmani/agent-skills), including `mate-interview-me` and `mate-simplify-code`
-- [Matt Pocock's `skills`](https://github.com/mattpocock/skills), including `mate-domain-modeling`, `mate-grill-me`, `mate-grilling`, and `mate-grill-with-docs`
-- [Million's `react-doctor`](https://github.com/millionco/react-doctor), including `mate-react-doctor`
+- [Addy Osmani's `agent-skills`](https://github.com/addyosmani/agent-skills) (MIT), including `mate-interview-me` and `mate-simplify-code`
+- [Matt Pocock's `skills`](https://github.com/mattpocock/skills) (MIT), including `mate-domain-modeling`, `mate-grill-me`, `mate-grilling`, and `mate-grill-with-docs`
+- [HumanLayer's `skills`](https://github.com/humanlayer/skills) (MIT), including `mate-show-me`
+- [Million's `react-doctor`](https://github.com/millionco/react-doctor) (modified MIT), including `mate-react-doctor`
 
 These adaptations add Mate-specific workflow, policy, and companion integration
 while preserving credit to the original authors.
@@ -119,7 +128,7 @@ Do not edit canonical specs while planning a change.
 
 `openspec archive` is the bridge: it merges the delta requirement blocks into the
 canonical spec and moves the change into `openspec/changes/archive/<date>-<name>/`.
-`mate artifact finish` is the sanctioned terminal flow for that archive and its
+`mate artifact publish` is the sanctioned terminal flow for that archive and its
 follow-up Git work.
 
 ### Graphify

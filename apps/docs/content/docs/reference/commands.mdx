@@ -5,16 +5,16 @@ description: Current Mate CLI commands and their execution contexts.
 
 ## Setup And Linking
 
-| Command                                         | Context                 | Purpose                                                                    |
-| ----------------------------------------------- | ----------------------- | -------------------------------------------------------------------------- |
-| `mate companion setup`                          | Companion root          | Create or reconfigure a companion explicitly.                              |
-| `mate companion link`                           | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
-| `mate companion list [--json]`                  | Linked context          | List linked repositories.                                                  |
-| `mate companion open`                           | Linked context          | Add the working repository and companion to the preferred editor.          |
-| `mate companion tui`                            | Linked context, TTY     | Open a shell in the resolved companion.                                    |
-| `mate companion sync`                           | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
-| `mate companion register [path]`                | Any                     | Register an already-configured companion without reconfiguring it.         |
-| `mate companion prepare --from <bundle> [path]` | Any                     | Prepare machine-local dependencies from a fully installed prebuilt bundle. |
+| Command                         | Context                 | Purpose                                                                    |
+| ------------------------------- | ----------------------- | -------------------------------------------------------------------------- |
+| `mate companion setup`          | Companion root          | Create or reconfigure a companion explicitly.                              |
+| `mate companion link`           | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
+| `mate companion list [--json]`  | Linked context          | List linked repositories.                                                  |
+| `mate companion open`           | Linked context          | Add the working repository and companion to the preferred editor.          |
+| `mate companion tui`            | Linked context, TTY     | Open a shell in the resolved companion.                                    |
+| `mate companion sync`           | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
+| `mate companion update [--yes]` | Linked context          | Regenerate the companion's Mate-managed files with the newest stable Mate. |
+| `mate working cleanup`          | Working repository      | Remove Mate's local integration from a linked working repository.          |
 
 `mate companion link` does not accept flags. Its selection and any required
 installation confirmation are interactive. The default workflow is:
@@ -25,53 +25,31 @@ mate companion link
 mate opencode
 ```
 
+`mate companion update` requires a stable Mate that is also the newest stable
+release; otherwise it stops and asks you to run `mate update` first. It
+regenerates the companion's Mate-managed files, skills, and OpenSpec output,
+raises `engines.mate` to the running version, and then offers to commit and push
+exactly the files it wrote. `--yes` commits and pushes without asking. Outside
+an interactive shell and without `--yes`, the changes stay uncommitted. A file
+you had edited locally before the update is reported, not silently overwritten.
+
+`mate working cleanup` runs from a working repository linked to a companion. It
+removes the local `.mate` projection, Mate's Git excludes, and the OpenSpec
+store pointer, and updates the Claude settings Mate wrote. Tracked files and
+product work are untouched, and the next link or launch recreates what it needs.
+Run from a companion or a repository that is not linked, it exits non-zero.
+
 ## Installation And Health
 
-| Command                                             | Purpose                                                                            |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `mate install [--yes]`                              | Install and verify core requirements or refresh the active companion requirements. |
-| `mate doctor`                                       | Show context, policy, selected capabilities, and tool status.                      |
-| `mate config [--vscode]`                            | Open the global `~/.mate` configuration directory.                                 |
-| `mate report [--days N] [--input FILE\|-] [--json]` | Generate a built-in or structured report.                                          |
-| `mate studio [--writable]`                          | Serve Studio; the Vault is read-only unless explicitly writable.                   |
+| Command                  | Purpose                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `mate install [--yes]`   | Install and verify core requirements or refresh the active companion requirements. |
+| `mate doctor`            | Show context, policy, selected capabilities, and tool status.                      |
+| `mate config [--vscode]` | Open the global `~/.mate` configuration directory.                                 |
 
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
 installs only Mate's core requirements.
-
-### Reports
-
-Without `--input`, `mate report` collects configured usage and savings data. To
-create a report from a skill or script, pass a versioned JSON `ReportDocument`
-with `--input FILE`, or use `--input -` to read JSON from stdin. The document
-contains `version: 1`, `title`, `generatedAt`, `metadata`, `summary`, and typed
-sections: `metadata`, `metrics`, `key-value`, `table`, `statuses`, or `text`.
-Section IDs must be unique and dynamic values are limited to JSON scalar values.
-
-Use `--json` with either path for normalized JSON output. Otherwise Mate writes
-self-contained HTML to a temporary file and opens it in the default browser.
-A report with a `mermaid` diagram loads the pinned Mermaid runtime from
-jsDelivr; offline, each diagram shows as its source text.
-The HTML includes a browser-native `Print / Save as PDF` control; selecting
-`Save as PDF` in the print dialog creates the PDF. No PDF runtime or server is
-required.
-
-### Studio
-
-`mate studio` serves one local page showing the Mate and workflow with
-the selected companion's real state on it: a Dashboard over its changes and
-specs, a Workflow view presenting the prompts a change is driven by — one card
-per prompt, copied by clicking it — and a Vault view over the companion's
-markdown files.
-It runs from any directory, binds a port the operating system assigns on the
-loopback interface, opens the platform browser, and serves in the foreground
-until interrupted. Pass `--writable` to `mate studio` or
-`mate studio serve --port <port>` to enable Vault saves; all other endpoints
-remain read-only, and the default remains read-only. Add `--terminal` (with
-`--writable`) for a browser terminal that starts Claude Code or OpenCode against
-the companion; it, and every `mate studio serve`, is guarded by a per-start
-access token.
-See [mate studio](/mate-cli/reference/studio).
 
 ## Agent Launch
 
@@ -252,13 +230,8 @@ caller can tell a clean shutdown from a crash. At a terminal this is unchanged
 in practice: Ctrl-C reaches the whole foreground process group, so the agent is
 stopped once and the shell is returned.
 
-This is the one part of the unattended work that changes what an existing
-workstation launch does, and it has no opt-out. A caller that read success from
-a zero exit will now see agent failures.
-
-`mate companion register` and `mate companion prepare` cover starting a launch
-where no one is at a terminal; see
-[Unattended Deployments](/mate-cli/reference/unattended).
+This has no opt-out: a caller that read success from a zero exit will see
+agent failures.
 
 ## Capabilities
 
@@ -279,18 +252,35 @@ Every Graphify extraction Mate runs, and every one an agent runs through the
 the repository's `.graphifyignore` and passes the secret patterns as
 `--exclude`. Afterwards it removes any secret that still reached the output and
 keeps the rest of the graph. A secret never stops the run. See
-[Secret Guardrails](/mate-cli/concepts/secret-guardrails).
+[Secret Guardrails](/docs/concepts/secret-guardrails).
 
 ## Artifacts And Updates
 
-| Command                                        | Purpose                                                              |
-| ---------------------------------------------- | -------------------------------------------------------------------- |
-| `mate artifact finish <change-name> [options]` | Finalize a change artifact workflow.                                 |
-| `mate update`                                  | Upgrade an npm-managed Mate installation and reinstall requirements. |
-| `mate update --check`                          | Check for an update without installing it.                           |
+| Command                                    | Purpose                                                              |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| `mate artifact pending [--json]`           | List archived changes and drifted specs that are not published yet.  |
+| `mate artifact publish <target> [options]` | Commit, tag, and push one archived change.                           |
+| `mate update`                              | Upgrade an npm-managed Mate installation and reinstall requirements. |
+| `mate update --check`                      | Check for an update without installing it.                           |
 
-Artifact finish options are `--type openspec`, `--force`, `--no-push`, and
-`--json`. Update also accepts `--yes` to skip its confirmation prompt.
+`mate artifact pending` is read-only. It lists each archived OpenSpec change
+whose files are still uncommitted in the companion, with the canonical specs it
+applied, and separately lists uncommitted specs no pending change accounts for.
+
+The `publish` target is a dated archive anchor (`YYYY-MM-DD-<name>`) or a change
+name that matches exactly one archive. Publishing never archives: archive the
+change first. Options:
+
+- `--specs [<path>...]` publishes drifted canonical specs as their own
+  publication instead of a change; with paths, only those specs.
+- `--all` publishes every pending change in order, then the remaining spec
+  drift, and stops at the first conflict or error.
+- `--type openspec` selects the publisher; it is the default.
+- `--no-push` commits and tags locally without pushing.
+- `--json` prints machine-readable results.
+
+`mate artifact finish` is the deprecated name of `publish`: it still works but
+prints a warning. Update accepts `--yes` to skip its confirmation prompt.
 
 `mate artifact publish` scans the files it is about to commit for secrets
 before the commit step. A finding stops the publication at a `secret-scan`

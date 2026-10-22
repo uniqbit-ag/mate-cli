@@ -1,0 +1,142 @@
+---
+title: Create A Companion
+description: Create the companion repository that holds your agent instructions, skills, and capabilities.
+---
+
+A companion repository is a separate Git repository that holds everything your
+agents need: Mate configuration, agent instructions, skills, and planning
+artifacts such as OpenSpec changes. Product code stays in your working
+repositories. See [Repository Model](/docs/concepts/repositories).
+
+If your team already has a companion, skip this page:
+`mate companion link` can clone it, see [Quickstart](/docs/getting-started/quickstart).
+
+There are two ways to create one. Both end with the same result.
+
+## Option A: Start From A Git Remote
+
+Use this when the companion should be shared, which is the usual case for a
+team.
+
+<Steps>
+<Step>
+
+### Create an empty repository
+
+Create an empty repository on your Git host, for example `acme/acme-companion`.
+
+</Step>
+<Step>
+
+### Link it from a working repository
+
+```sh
+cd /path/to/acme-app
+mate companion link
+```
+
+Choose **git** and paste the repository URL. Mate clones it to
+`~/.mate/companions/acme-companion/`. Because the repository is not a companion
+yet, Mate runs [setup](#setup-choices) on it, then links the working repository
+and installs what the companion selected.
+
+</Step>
+<Step>
+
+### Commit and push the companion
+
+```sh
+cd ~/.mate/companions/acme-companion
+git add -A
+git commit -m "Set up Mate companion"
+git push
+```
+
+Setup does not commit anything. Pushing makes the setup available to everyone
+who links the same repository.
+
+</Step>
+</Steps>
+
+## Option B: Start From A Local Folder
+
+Use this to try Mate before you create a remote.
+
+<Steps>
+<Step>
+
+### Create the folder
+
+```sh
+mkdir -p ~/.mate/companions/acme-companion
+cd ~/.mate/companions/acme-companion
+git init
+```
+
+A companion under `~/.mate/companions/` shows up in the link wizard's
+**existing companion** list. A companion anywhere else is linked with **local**
+and its path.
+
+</Step>
+<Step>
+
+### Run setup
+
+```sh
+mate companion setup
+```
+
+Mate asks to confirm that the folder should become a companion, then shows the
+[setup choices](#setup-choices). Setup registers the companion on this machine.
+
+</Step>
+<Step>
+
+### Link it from a working repository
+
+```sh
+cd /path/to/acme-app
+mate companion link
+```
+
+Choose **existing companion** and select `acme-companion`. Commit the companion
+and add a remote whenever you are ready to share it.
+
+</Step>
+</Steps>
+
+## Setup Choices
+
+Setup asks for:
+
+- **Allowed agents**: Claude Code, OpenCode, or both.
+- **Package managers**: Bun is always included; uv is selected for Python-backed capability workflows.
+- **Capabilities**: OpenSpec is always included; the others are optional, see [Capabilities](/docs/capabilities).
+- **OpenSpec schema profile**: `mate-v1` for full planning, or OpenSpec's default.
+- **Git mode**: in auto mode, every launch fetches and merges the companion's upstream before syncing its files.
+
+The same choices are available as flags for scripted setups, see
+[Create Or Reconfigure A Companion](/docs/getting-started/install#create-or-reconfigure-a-companion).
+Run `mate companion setup` again from the companion at any time to change them.
+
+## What Setup Creates
+
+```text
+acme-companion/
+├── .mate/config/framework.yaml   # your setup choices
+├── AGENTS.md                     # agent instructions
+├── CLAUDE.md                     # points Claude Code at AGENTS.md
+├── .claude/  .opencode/  .agents/  # skills and agent settings
+├── openspec/                     # OpenSpec config, schemas, changes, specs
+├── .mcp.json
+└── .gitignore                    # Mate-managed block for local-only files
+```
+
+`AGENTS.md` starts with Mate's default instructions. Edit it to describe your
+own team's rules: Mate creates it only when it is missing and never overwrites
+it. Mate's own skills, agent settings, and the managed `.gitignore` block are
+refreshed at every launch; OpenSpec's generated skills and commands are
+refreshed only by setup and `mate companion update`. Commit these files with
+the rest of the companion.
+
+Next: [Quickstart](/docs/getting-started/quickstart) to launch your first agent.

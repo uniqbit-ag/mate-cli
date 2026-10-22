@@ -1,0 +1,35 @@
+---
+import { hero, installCommand, terminal } from "@/content/landing";
+import { withBase } from "@/lib/base";
+import { InstallCommand } from "./install-command";
+import { TerminalDemo } from "./terminal-demo";
+---
+
+<section class="relative overflow-hidden">
+  <div class="hero-backdrop pointer-events-none absolute inset-0" aria-hidden="true"></div>
+  <div class="relative mx-auto grid max-w-6xl items-center gap-12 px-6 pt-20 pb-16 lg:grid-cols-2 lg:pt-28">
+    <div class="flex flex-col items-start gap-6">
+      <span class="rounded-full border border-fd-primary/40 bg-fd-primary/10 px-3 py-1 text-xs font-medium text-fd-primary">
+        {hero.badge}
+      </span>
+      <h1 class="text-4xl font-bold tracking-tight text-balance sm:text-5xl">{hero.tagline}</h1>
+      <p class="max-w-xl text-lg text-pretty text-fd-muted-foreground">{hero.description}</p>
+      <InstallCommand command={installCommand} client:visible />
+      <div class="flex flex-wrap gap-3">
+        <a
+          href={withBase(hero.primaryCta.href)}
+          class="rounded-lg bg-fd-primary px-4 py-2 text-sm font-medium text-fd-primary-foreground transition-opacity hover:opacity-90"
+        >
+          {hero.primaryCta.label}
+        </a>
+        <a
+          href={withBase(hero.secondaryCta.href)}
+          class="rounded-lg border bg-fd-background px-4 py-2 text-sm font-medium transition-colors hover:bg-fd-accent"
+        >
+          {hero.secondaryCta.label}
+        </a>
+      </div>
+    </div>
+    <TerminalDemo lines={terminal} client:visible />
+  </div>
+</section>

@@ -1,14 +1,14 @@
 import { navigate } from "astro:transitions/client";
 import type { AstroProviderProps } from "fumadocs-core/framework/astro";
 import type { Root } from "fumadocs-core/page-tree";
-import { DocsLayout } from "fumadocs-ui/layouts/docs";
+import { DocsLayout } from "fumadocs-ui/layouts/notebook";
 import {
   DocsBody,
   DocsDescription,
   DocsPage,
   DocsTitle,
   type DocsPageProps,
-} from "fumadocs-ui/layouts/docs/page";
+} from "fumadocs-ui/layouts/notebook/page";
 import { RootProvider } from "fumadocs-ui/provider/astro";
 import type { ReactNode } from "react";
 import { baseOptions } from "@/lib/layout-options";
@@ -31,9 +31,10 @@ export function Docs({
   description?: string;
   page?: DocsPageProps;
 }) {
+  const options = baseOptions();
   return (
     <RootProvider pathname={pathname} params={params} navigate={navigate} search={{ SearchDialog }}>
-      <DocsLayout tree={tree} {...baseOptions()}>
+      <DocsLayout tree={tree} {...options} nav={{ ...options.nav, mode: "top" }}>
         <DocsPage {...page}>
           <DocsTitle>{title}</DocsTitle>
           <DocsDescription>{description}</DocsDescription>

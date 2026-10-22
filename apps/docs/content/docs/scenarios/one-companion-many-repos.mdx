@@ -1,0 +1,113 @@
+---
+title: One Companion, Many Repositories
+description: Share one set of agent instructions, skills, and capabilities across several working repositories.
+---
+
+## Audience
+
+Developers and teams who work across several repositories, such as a frontend,
+an API, and a shared library, and want their agents set up the same way in
+each.
+
+## Goal
+
+Maintain agent instructions, skills, and capability selections in one
+companion repository and use it from every working repository.
+
+## Steps
+
+<Steps>
+<Step>
+
+### Set up the companion once
+
+Create or reconfigure the companion from its own directory:
+
+```sh
+cd /path/to/companion-repo
+mate companion setup
+```
+
+Setup selects the allowed agents, package managers, capabilities, and the
+OpenSpec schema profile. Commit the result so everyone who clones the companion
+gets the same setup. If your team already has a companion, skip this step:
+`mate companion link` can clone it.
+
+</Step>
+<Step>
+
+### Link each working repository
+
+Repeat this in every working repository and pick the same companion:
+
+```sh
+cd /path/to/web-app
+mate install
+mate companion link
+```
+
+```sh
+cd /path/to/api-service
+mate install
+mate companion link
+```
+
+Each link is stored in that repository's local `.mate/` directory, so no
+working repository needs a tracked change.
+
+</Step>
+<Step>
+
+### See what is linked
+
+From any linked repository:
+
+```sh
+mate companion list
+```
+
+</Step>
+<Step>
+
+### Launch anywhere
+
+```sh
+mate claude
+```
+
+Every launch resolves the companion linked to the current repository and
+syncs its managed files in before the agent starts.
+
+</Step>
+<Step>
+
+### Change the companion once
+
+Edit a skill or instruction in the companion and commit it. The next launch in
+every linked repository picks it up. When the companion uses Git auto mode,
+launches also fetch and merge its upstream first. To sync without launching:
+
+```sh
+mate companion sync
+```
+
+After changing capability selections with `mate companion setup`, run
+`mate install` once to refresh the requirements.
+
+</Step>
+</Steps>
+
+## Diagram
+
+<RepoModel />
+
+## Outcome
+
+One companion repository is the single place where your agent setup lives.
+Every working repository gets the same instructions, skills, and capabilities,
+while product code and agent artifacts keep separate histories. Planning
+artifacts such as OpenSpec changes are written to the companion, not to the
+product repositories.
+
+See [Repository Model](/docs/concepts/repositories) for how Mate resolves the
+companion and what happens when a repository links more than one.

@@ -1,0 +1,25 @@
+---
+import { Home } from "@/components/home";
+import CapabilityStrip from "@/components/landing/CapabilityStrip.astro";
+import Closing from "@/components/landing/Closing.astro";
+import Hero from "@/components/landing/Hero.astro";
+import HowItWorks from "@/components/landing/HowItWorks.astro";
+import ProblemIdea from "@/components/landing/ProblemIdea.astro";
+import RepoModelSection from "@/components/landing/RepoModelSection.astro";
+import UseCases from "@/components/landing/UseCases.astro";
+import Layout from "@/components/layout.astro";
+import { hero } from "@/content/landing";
+import "@/styles/global.css";
+---
+
+<Layout title={`Mate | ${hero.tagline}`} description={hero.description} transitionName="landing-layout">
+  <Home pathname={Astro.url.pathname} params={Astro.params} client:load>
+    <Hero />
+    <ProblemIdea />
+    <HowItWorks />
+    <RepoModelSection />
+    <UseCases />
+    <CapabilityStrip />
+    <Closing />
+  </Home>
+</Layout>

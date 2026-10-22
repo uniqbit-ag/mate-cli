@@ -1,7 +1,9 @@
 ---
 import { render, type CollectionEntry } from "astro:content";
 import type { TOCItemType } from "fumadocs-core/toc";
+import { Step, Steps } from "fumadocs-ui/components/steps";
 import defaultMdxComponents from "fumadocs-ui/mdx";
+import { CompanionDesign, InstallLinkLaunch, LaunchPipeline, RepoModel } from "@/components/diagrams";
 import { Docs } from "@/components/docs";
 import Layout from "@/components/layout.astro";
 import { source } from "@/lib/source";
@@ -28,6 +30,7 @@ const toc: TOCItemType[] = headings.map((heading) => ({
 ---
 
 <Layout title={`${page.data.title} | Mate Docs`} description={page.data.description}>
+  <div class="docs-backdrop pointer-events-none absolute inset-x-0 top-0 -z-10 h-96" aria-hidden="true"></div>
   <Docs
     tree={source.getPageTree()}
     pathname={Astro.url.pathname}
@@ -37,6 +40,16 @@ const toc: TOCItemType[] = headings.map((heading) => ({
     page={{ toc, full: page.data.full }}
     client:load
   >
-    <Content components={{ ...defaultMdxComponents }} />
+    <Content
+      components={{
+        ...defaultMdxComponents,
+        Step,
+        Steps,
+        CompanionDesign,
+        InstallLinkLaunch,
+        LaunchPipeline,
+        RepoModel,
+      }}
+    />
   </Docs>
 </Layout>

@@ -5,10 +5,10 @@ description: "Running Mate as a container: what to mount, what to configure, and
 
 The appliance image is Mate as a single-tenant deployment: one container, one
 human, one or more Companion Repositories mounted into it. Inside,
-[Studio](/mate-cli/reference/studio) is served on one port: the browser reads
+Studio is served on one port: the browser reads
 and edits the companion's markdown there — a served appliance cannot run
 Obsidian — and starts Claude Code or OpenCode from Studio's
-[agent terminal](/mate-cli/reference/studio#agent-terminal). Both runtimes are
+agent terminal. Both runtimes are
 in the image.
 
 ```sh
@@ -28,8 +28,7 @@ A worked example with volumes, ports and the identity mapping is in
 ## Put something in front of it
 
 Studio's port is guarded by an **access token**, a Host check, and an Origin
-check — see [Access Modes and the
-Token](/mate-cli/reference/studio#access-modes-and-the-token). It has no user
+check. It has no user
 accounts and does not terminate TLS, and the terminal behind it is shell-level
 access through the agent. Publish the port on a loopback address, as the
 example does, and put a reverse proxy with TLS in front of it — or keep the
@@ -382,8 +381,7 @@ It is also on the image as the `ai.mate.version` label, alongside
 runtimes.
 
 That contained version is a different thing from the **minimum compatible
-version** recorded in [Unattended
-Deployments](/mate-cli/reference/unattended): `0.17.0-canary.5`, the first
+version** for unattended deployments: `0.17.0-canary.5`, the first
 release whose unattended registration, pinned update policy, prebuilt workspace
 preparation, preinstalled plugin binding, and launch exit status and signal
 forwarding all work in a deployment whose version is fixed by its image. Every
@@ -403,9 +401,7 @@ all: no command is blocked however new a version is cached, no banner is shown,
 no registry is contacted, and the update-state cache is neither read nor
 written.
 
-The reasoning and the full list are in [the pinned update
-policy](/mate-cli/reference/unattended); this page does not restate it. The
-short version is that a deployment whose version is fixed by its image cannot
+A deployment whose version is fixed by its image cannot
 act on advice to upgrade, so being refused for not having taken it would simply
 turn the appliance off. Every other gate still applies.
 
@@ -474,13 +470,11 @@ versions, so nothing is installed when one starts.
   definition exists, such as one a plugin wrote to `.claude/agents/`; otherwise
   the session starts plain and says so. The audience being served
   (`MATE_AUDIENCE`) may override it with its own
-  `audiences.<name>.studio.terminal.agent`. See [the Studio
-  reference](/mate-cli/reference/studio#agent-terminal).
+  `audiences.<name>.studio.terminal.agent`.
 - **Sessions outlive their tab.** Closing or reloading the tab, or losing the
   network, detaches the session; the agent keeps running for the detach window
   (`MATE_STUDIO_DETACH_MINUTES`, 30 minutes), and reloading or opening Studio in
-  another tab reattaches it. The details are in [the Studio
-  reference](/mate-cli/reference/studio#agent-terminal).
+  another tab reattaches it.
 - **At most four sessions** run at once, detached ones included.
 
 ## Migrating from port 4096

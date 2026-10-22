@@ -1,0 +1,45 @@
+---
+import { problemIdea } from "@/content/landing";
+import { withBase } from "@/lib/base";
+
+const { problem, idea } = problemIdea;
+---
+
+<section class="mx-auto max-w-6xl px-6 py-20">
+  <div class="grid gap-6 md:grid-cols-2">
+    <div class="rounded-xl border bg-fd-card p-6">
+      <p class="text-sm font-semibold tracking-wide text-fd-muted-foreground uppercase">The problem</p>
+      <h2 class="mt-2 text-2xl font-bold tracking-tight">{problem.title}</h2>
+      <ul class="mt-5 space-y-3 text-fd-muted-foreground">
+        {
+          problem.points.map((point) => (
+            <li class="flex gap-3">
+              <span class="mt-2.5 size-1.5 shrink-0 rounded-full bg-fd-muted-foreground/60" />
+              {point}
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+    <div class="rounded-xl border border-fd-primary/40 bg-fd-primary/5 p-6">
+      <p class="text-sm font-semibold tracking-wide text-fd-primary uppercase">The idea</p>
+      <h2 class="mt-2 text-2xl font-bold tracking-tight">{idea.title}</h2>
+      <ul class="mt-5 space-y-3">
+        {
+          idea.points.map((point) => (
+            <li class="flex gap-3">
+              <span class="mt-2.5 size-1.5 shrink-0 rounded-full bg-fd-primary" />
+              {point}
+            </li>
+          ))
+        }
+      </ul>
+      <p class="mt-5 border-t border-fd-primary/20 pt-4 text-sm text-fd-muted-foreground">
+        {idea.guardrails}{" "}
+        <a href={withBase("/docs/concepts/secret-guardrails")} class="font-medium text-fd-primary hover:underline">
+          How the guardrails work →
+        </a>
+      </p>
+    </div>
+  </div>
+</section>
