@@ -75,6 +75,45 @@ describe("the Claude working target", () => {
     });
   });
 
+  test("carries the managed attribution as a yielding region", async () => {
+    const { companionPath, repoPath } = await fixture();
+
+    const documents = await renderClaudeDocuments(companionPath, repoPath);
+
+    expect(regionAt(documents, ["attribution"])).toEqual({
+      at: ["attribution"],
+      kind: "value",
+      value: { commit: "", pr: "", sessionUrl: false },
+      yields: true,
+    });
+  });
+
+  test("places no attribution region when the project settings set their own", async () => {
+    const { companionPath, repoPath } = await fixture();
+    await fs.mkdir(path.join(repoPath, ".claude"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoPath, ".claude", "settings.json"),
+      JSON.stringify({ attribution: { pr: "Built with AI" } }),
+    );
+
+    expect(regionAt(await renderClaudeDocuments(companionPath, repoPath), ["attribution"])).toBe(
+      undefined,
+    );
+  });
+
+  test("leaves the user's local attribution unchanged", async () => {
+    const { companionPath, repoPath } = await fixture();
+    const target = path.join(repoPath, ".claude", "settings.local.json");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const own = { commit: "Co-Authored-By: Jane Doe <jane@acme.example>" };
+    await fs.writeFile(target, JSON.stringify({ attribution: own }), "utf8");
+
+    const documents = await renderClaudeDocuments(companionPath, repoPath);
+    await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, documents);
+
+    expect(JSON.parse(await fs.readFile(target, "utf8")).attribution).toEqual(own);
+  });
+
   test("drops the secret deny entries from the region after an opt-out", async () => {
     const { companionPath, repoPath } = await fixture();
     const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
@@ -103,6 +142,7 @@ describe("the Claude working target", () => {
     await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, documents);
     const placed = JSON.parse(await fs.readFile(target, "utf8"));
     expect(placed.enableArtifact).toBe(true);
+    expect(placed.attribution).toEqual({ commit: "", pr: "", sessionUrl: false });
     expect(placed.permissions.deny).toEqual([
       "Bash(rm:*)",
       "EnterPlanMode",

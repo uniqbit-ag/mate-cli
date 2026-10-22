@@ -23,6 +23,12 @@ import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "
 import { projectionRepoRoot, surfaceRoot } from "../surface-target";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
 import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
+import {
+  claudeUserConfigDir,
+  definesUserClaudeAttribution,
+  isManagedClaudeAttribution,
+  MANAGED_CLAUDE_ATTRIBUTION,
+} from "./claude-attribution";
 import { patchSkillTreeMarkdownFiles } from "./skill-tree";
 import {
   filterClaudeHookGroups,
@@ -227,6 +233,7 @@ function renderManagedClaudeSettings(
   companionPath: string,
   config: FrameworkConfig,
   contributions: CapabilityContributionInput[] = [],
+  userDefinesAttribution: boolean,
 ): ClaudeSettings {
   // Declared markers and permission entries widen the managed strip set for
   // every registered Capability, enabled or not, so deselection tears down.
@@ -308,6 +315,11 @@ function renderManagedClaudeSettings(
   } else {
     delete settings.mcpServers;
   }
+  /** The document's own value is kept; Mate's yields to one the user scope sets. */
+  if (!("attribution" in existing) || isManagedClaudeAttribution(existing.attribution)) {
+    if (userDefinesAttribution) delete settings.attribution;
+    else settings.attribution = { ...MANAGED_CLAUDE_ATTRIBUTION };
+  }
 
   return settings;
 }
@@ -326,6 +338,7 @@ function renderManagedClaudeSettings(
 function claudeSettingsRegions(
   ctx: SetupContext,
   inputs: CapabilityContributionInput[],
+  repoRoot: string,
 ): ManagedRegion[] {
   const capabilityHooks = renderManagedClaudeHookGroups(inputs);
   const mateHooks: Record<string, unknown[]> = {
@@ -378,6 +391,21 @@ function claudeSettingsRegions(
       value,
       yields: true,
     })),
+    /**
+     * Placed only while no scope sets attribution: a project-scope value would
+     * lose to this local one, yielding or not. Mate's own earlier value does
+     * not count as the user's.
+     */
+    ...(definesUserClaudeAttribution({ repoRoot })
+      ? []
+      : [
+          {
+            at: ["attribution"],
+            kind: "value",
+            value: { ...MANAGED_CLAUDE_ATTRIBUTION },
+            yields: true,
+          } satisfies ManagedRegion,
+        ]),
   ];
 }
 
@@ -394,7 +422,7 @@ export async function renderClaudeWorkingDocuments(
   const repoRoot = projectionRepoRoot(ctx);
   return {
     documents: [
-      ...renderedDocument(CLAUDE_SETTINGS_DOCUMENT, claudeSettingsRegions(ctx, inputs)),
+      ...renderedDocument(CLAUDE_SETTINGS_DOCUMENT, claudeSettingsRegions(ctx, inputs, repoRoot)),
       /**
        * Local scope, not `.mcp.json`: a project-scoped server is inert until a
        * human approves it in a session, which an Unmanaged Session is exactly the
@@ -435,10 +463,17 @@ export async function syncCompanionClaudeSettings(
   companionPath: string,
   config: FrameworkConfig,
   contributions: CapabilityContributionInput[] = [],
+  env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
   const settingsPath = getCompanionClaudeSettingsPath(companionPath);
   const existing = await readClaudeSettings(settingsPath);
-  const settings = renderManagedClaudeSettings(existing, companionPath, config, contributions);
+  const settings = renderManagedClaudeSettings(
+    existing,
+    companionPath,
+    config,
+    contributions,
+    definesUserClaudeAttribution({ userConfigDir: claudeUserConfigDir(env) }),
+  );
 
   await writeClaudeSettings(settingsPath, settings);
 

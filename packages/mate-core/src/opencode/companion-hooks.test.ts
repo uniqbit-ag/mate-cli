@@ -229,6 +229,26 @@ describe("OpenCode companion hooks", () => {
   });
 });
 
+describe("OpenCode commit-attribution guard", () => {
+  test("refuses a bash commit with a model co-author trailer, after the secret check", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-attribution-");
+    const context = await launchContext(companion, repo);
+    const trailer = "Co-Authored-By: Claude <noreply@anthropic.com>";
+
+    await expect(
+      guardToolInput(context, "bash", { command: `git commit -m "x" -m "${trailer}"` }),
+    ).rejects.toThrow("No commit was created");
+    await expect(
+      guardToolInput(context, "bash", { command: `git commit -m "${trailer}" && cat .env` }),
+    ).rejects.toThrow("secret files are off-limits");
+    await expect(
+      guardToolInput(context, "bash", {
+        command: `git commit -m "Co-Authored-By: Jane <jane@acme.example>"`,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("OpenCode secret guardrails", () => {
   const GITHUB_TOKEN = ["ghp", "wWPw5k4aXcaT4fNP0UcnZwJUVFk6LO0pINUx"].join("_");
 

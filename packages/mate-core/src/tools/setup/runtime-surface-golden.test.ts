@@ -419,11 +419,14 @@ describe("runtime surface golden fixtures", () => {
     async () => {
       const fixture = await makeFixture("mate-golden-all-");
       const { config } = await runSetup(fixture, ["claude", "opencode"], [...CAPABILITIES]);
-      expect(await collectEffectiveState(fixture)).toMatchSnapshot();
-      expect(
+      const written = [
+        await collectEffectiveState(fixture),
         await collectLaunchSurface(fixture, ["claude", "opencode"], [...CAPABILITIES]),
-      ).toMatchSnapshot();
-      expect(await collectWorkingTargetDocuments(fixture, config)).toMatchSnapshot();
+        await collectWorkingTargetDocuments(fixture, config),
+      ];
+      for (const state of written) expect(state).toMatchSnapshot();
+      /** Claude Code before v2.1.281 drops a whole settings file that holds `false`. */
+      expect(JSON.stringify(written)).not.toMatch(/"attribution":\s*false/);
     },
     { timeout: 30000 },
   );

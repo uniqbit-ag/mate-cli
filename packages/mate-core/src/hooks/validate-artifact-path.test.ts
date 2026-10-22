@@ -92,6 +92,34 @@ describe("validate-artifact-path hook module", () => {
     ).toBe(2);
   });
 
+  test("blocks a commit with a model co-author trailer in a wrapped repository", async () => {
+    const repo = await makeTempDir("mate-hook-attribution-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    await wrapRepo(repo, companion);
+
+    const trailer = "Co-Authored-By: Claude <noreply@anthropic.com>";
+    const bash = (command: string) =>
+      evaluate({ tool_name: "Bash", tool_input: { command } }, {}, repo);
+
+    const refused = await bash(`git commit -m "fix: x" -m "${trailer}"`);
+    expect(refused.exitCode).toBe(2);
+    expect(refused.stderr).toContain("No commit was created");
+
+    /** Before the artifact checks: the attribution refusal wins over a redirect target. */
+    const redirected = await bash(`git commit -m "${trailer}" > design.md`);
+    expect(redirected.stderr).toContain("No commit was created");
+
+    /** After the secret check: the secret refusal wins. */
+    const secret = await bash(`git commit -m "${trailer}" && cat .env`);
+    expect(secret.stderr).toContain("secret files are off-limits");
+
+    expect((await bash(`git commit -m "Co-Authored-By: Jane <jane@acme.example>"`)).exitCode).toBe(
+      0,
+    );
+  });
+
   test("the launch environment outranks the projection", async () => {
     const repo = await makeTempDir("mate-hook-outranks-");
     const launched = path.join(repo, "launched");

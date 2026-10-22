@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Context } from "@opencode/plugin/promise/plugin";
 
 import { resolveArtifactTarget } from "../runtime/artifact-refusal";
+import { checkCommitAttribution } from "../runtime/commit-attribution-guard";
 import {
   companionForkRefusal,
   syncCompanionUnattended,
@@ -135,8 +136,9 @@ function secretToolCall(
 }
 
 /**
- * Rejects when the tool call touches a secret, or would write an artifact
- * outside the companion. Secrets are checked first, as in the Claude hook.
+ * Rejects when the tool call touches a secret, commits with a model co-author
+ * trailer, or would write an artifact outside the companion. Checked in that
+ * order, as in the Claude hook.
  */
 export async function guardToolInput(
   context: CompanionContext,
@@ -153,6 +155,10 @@ export async function guardToolInput(
       companionPath: context.companionPath,
       isCompanionPath: (filePath) => filePath.startsWith(companionRoot),
     });
+    if (refusal) throw new Error(refusal);
+  }
+  if (tool === "bash") {
+    const refusal = checkCommitAttribution(String(args.command ?? ""));
     if (refusal) throw new Error(refusal);
   }
   const filePaths =

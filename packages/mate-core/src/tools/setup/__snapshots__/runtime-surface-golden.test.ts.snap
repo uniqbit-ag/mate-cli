@@ -23,6 +23,11 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -334,6 +339,18 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -727,6 +744,11 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -1131,6 +1153,18 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
   {
@@ -1401,6 +1435,11 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -1768,6 +1807,18 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -2194,6 +2245,11 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -2642,6 +2698,18 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
   {
@@ -2943,6 +3011,11 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -3212,6 +3285,18 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -3593,6 +3678,11 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -3926,6 +4016,18 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
   {
@@ -4190,6 +4292,11 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -4460,6 +4567,18 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -4824,6 +4943,11 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -5158,6 +5282,18 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
   {
@@ -5421,6 +5557,11 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -5736,6 +5877,18 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -6118,6 +6271,11 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -6515,6 +6673,18 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
   {
@@ -6793,6 +6963,11 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -7390,6 +7565,18 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
   {
@@ -7692,6 +7879,11 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -7802,6 +7994,11 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -7913,6 +8110,11 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -8023,6 +8225,11 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -8133,6 +8340,11 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -8243,6 +8455,11 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -8454,6 +8671,11 @@ exports[`working repo golden fixtures hub roots set up providers only without co
   },
   "claudeMd": null,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {

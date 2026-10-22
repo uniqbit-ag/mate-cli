@@ -17,6 +17,7 @@ import {
   getCompanionClaudeMcpConfigPath,
   getCompanionClaudeSettingsPath,
 } from "../../../tools/setup/providers/claude";
+import { definesUserClaudeAttribution } from "../../../tools/setup/providers/claude-attribution";
 import type { ClaudeSettings } from "../../../tools/setup/providers/claude-format";
 import { getContextModePackageRoot, validateContextModePackage } from "../../context-mode-package";
 import { getClaudePluginRoot, validateClaudePluginAssets } from "../../package-paths";
@@ -45,12 +46,15 @@ export function launchSettingsPath(companionPath: string, repositoryId: string):
 /**
  * Companion settings minus `exclude`, so each wrap-carried group runs once. A
  * file, not inline JSON (platform arg limits); per repository, so concurrent
- * launches never race.
+ * launches never race. `--settings` outranks every file scope, so `attribution`
+ * is dropped when the user or the repository sets its own, even one added
+ * after the companion's last sync.
  */
 async function writeLaunchSettings(
   companionSettingsPath: string,
   target: string,
   exclude: readonly ClaudeHookGroup[],
+  repoRoot: string,
 ): Promise<void> {
   const settings = JSON.parse(await fs.readFile(companionSettingsPath, "utf8")) as ClaudeSettings;
   const excluded = new Set(exclude.map(hookGroupKey));
@@ -61,6 +65,9 @@ async function writeLaunchSettings(
   }
   const derived: ClaudeSettings = { ...settings, hooks };
   if (Object.keys(hooks).length === 0) delete derived.hooks;
+  if (definesUserClaudeAttribution({ repoRoot })) {
+    delete derived.attribution;
+  }
 
   await fs.mkdir(path.dirname(target), { recursive: true });
   await writeAtomic(target, `${JSON.stringify(derived, null, 2)}\n`);
@@ -77,7 +84,12 @@ async function settingsPathFor(
   if (plan.hooks.owner === "settings") return companionSettingsPath;
   /** Owner `wrap` is planned only for `managed-repo`, which has a repository. */
   const settingsPath = launchSettingsPath(companionPath, repository!.id);
-  await writeLaunchSettings(companionSettingsPath, settingsPath, plan.hooks.launchSettingsExclude);
+  await writeLaunchSettings(
+    companionSettingsPath,
+    settingsPath,
+    plan.hooks.launchSettingsExclude,
+    repository!.path,
+  );
   return settingsPath;
 }
 

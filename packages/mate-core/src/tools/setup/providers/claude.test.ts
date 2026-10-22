@@ -92,6 +92,7 @@ interface ClaudeSettings {
   mcpServers?: Record<string, { command?: string; args?: string[] }>;
   autoMemoryEnabled?: boolean;
   enableArtifact?: boolean;
+  attribution?: unknown;
 }
 
 async function readCompanionSettings(companionPath: string): Promise<ClaudeSettings> {
@@ -173,6 +174,39 @@ describe("syncCompanionClaudeSettings", () => {
       ...renderSecretDenyEntries(),
     ]);
     expect(settings.enableArtifact).toBe(false);
+  });
+
+  test("suppresses commit and PR attribution in the object form, idempotently", async () => {
+    const companionPath = await makeTempDir("mate-companion-attribution-");
+    const userConfigDir = await makeTempDir("mate-claude-user-");
+    const config = { allowedAgents: ["claude"], capabilities: [] };
+    const env = { CLAUDE_CONFIG_DIR: userConfigDir };
+    await syncCompanionClaudeSettings(companionPath, config, [], env);
+    const first = await fs.readFile(getCompanionClaudeSettingsPath(companionPath), "utf8");
+    await syncCompanionClaudeSettings(companionPath, config, [], env);
+
+    expect(await fs.readFile(getCompanionClaudeSettingsPath(companionPath), "utf8")).toBe(first);
+    expect(JSON.parse(first).attribution).toEqual({ commit: "", pr: "", sessionUrl: false });
+  });
+
+  test("yields attribution to the user scope, and keeps the companion's own value", async () => {
+    const companionPath = await makeTempDir("mate-companion-attribution-yield-");
+    const userConfigDir = await makeTempDir("mate-claude-user-");
+    const config = { allowedAgents: ["claude"], capabilities: [] };
+    const env = { CLAUDE_CONFIG_DIR: userConfigDir };
+    await syncCompanionClaudeSettings(companionPath, config, [], env);
+
+    await fs.writeFile(
+      path.join(userConfigDir, "settings.json"),
+      JSON.stringify({ attribution: { commit: "Generated with AI" } }),
+    );
+    await syncCompanionClaudeSettings(companionPath, config, [], env);
+    expect("attribution" in (await readCompanionSettings(companionPath))).toBe(false);
+
+    const own = { commit: "Reviewed by a human" };
+    await seedSettings(companionPath, { attribution: own });
+    await syncCompanionClaudeSettings(companionPath, config, [], env);
+    expect((await readCompanionSettings(companionPath)).attribution).toEqual(own);
   });
 
   test("denies reading .env at any depth but never the example file", async () => {

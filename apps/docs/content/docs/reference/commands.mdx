@@ -144,6 +144,16 @@ Mate's own workflow: they deny the `EnterPlanMode` and `DesignSync` tools and se
 left. A managed launch applies the set through `--settings`, and deny rules from
 there cannot be re-allowed from your own settings.
 
+The managed settings also hide Claude Code's commit and pull request attribution
+with `attribution: { "commit": "", "pr": "", "sessionUrl": false }`, so the
+session is never told to add a `Co-Authored-By: Claude` trailer. Mate writes the
+object form, never `attribution: false`, which Claude Code before v2.1.281 rejects
+along with the whole settings file. Your own setting wins: when your user settings,
+or the repository's `.claude/settings.json` or `.claude/settings.local.json`, set
+`attribution` (or the older `includeCoAuthoredBy`), Mate leaves the key out. A
+managed launch checks again at every start. Model co-author trailers are still
+refused; see [Commit Attribution](/docs/concepts/commit-attribution).
+
 ## Wrapping
 
 ```sh
@@ -178,7 +188,9 @@ hooks, permissions, and the same disabled features as a managed launch: the
 `EnterPlanMode` and `DesignSync` deny entries and `enableArtifact: false`) and the
 repository's MCP servers into `~/.claude.json`. That file is rewritten only when the
 servers change. An `enableArtifact` value you already set in
-`.claude/settings.local.json` is left as it is.
+`.claude/settings.local.json` is left as it is. The wrap also places the managed
+`attribution` value, unless one of your Claude settings already sets attribution;
+an `attribution` you set in `.claude/settings.local.json` is left as it is.
 
 Both session kinds work in a wrapped repository: plain `claude` / `opencode` and
 `mate claude` / `mate opencode`. Every managed launch wraps the repository for its

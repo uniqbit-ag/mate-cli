@@ -41,7 +41,14 @@ export function isolatedTestEnv(
     USERPROFILE: home,
     [TEST_HOME_ENV]: home,
   };
-  for (const name of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"]) {
+  /** `CLAUDE_CONFIG_DIR` too, or Claude's user settings resolve outside the temporary HOME. */
+  for (const name of [
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+    "XDG_CACHE_HOME",
+    "CLAUDE_CONFIG_DIR",
+  ]) {
     delete env[name];
   }
   const caches: Array<[string, string]> = [

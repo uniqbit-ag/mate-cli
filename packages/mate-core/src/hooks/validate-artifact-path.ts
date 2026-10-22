@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { artifactRefusal, resolveArtifactTarget } from "../runtime/artifact-refusal";
+import { checkCommitAttribution } from "../runtime/commit-attribution-guard";
 import { gitEnvironment } from "../runtime/companion-git";
 import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
@@ -337,6 +338,9 @@ export async function evaluate(
 
   if (toolName === "Bash") {
     const command = String(toolInput.command ?? "");
+    const attribution = checkCommitAttribution(command);
+    if (attribution) return { exitCode: 2, stderr: `${attribution}\n` };
+
     const targets = commandMatches(command);
     for (const target of targets) {
       const outcome = checkFilePath(target, ctx);
