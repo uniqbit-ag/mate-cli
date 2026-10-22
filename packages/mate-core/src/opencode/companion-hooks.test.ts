@@ -7,6 +7,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { guardToolInput, registerCompanionHooks } from "./companion-hooks";
 import { readContext, type CompanionContext } from "./companion-policy";
+import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
@@ -123,7 +124,7 @@ describe("OpenCode companion hooks without a launch", () => {
     expect(context.companionPath).toBe(companion);
     await expect(
       guardToolInput(context, "write", { filePath: path.join(repo, "design.md") }),
-    ).rejects.toThrow("artifact writes must go to the companion framework path");
+    ).rejects.toThrow(ARTIFACT_REFUSAL_HEADLINE);
   });
 
   test("resolves no companion when neither the environment nor a projection does", async () => {
@@ -191,6 +192,20 @@ describe("OpenCode companion hooks", () => {
     await expect(
       guardToolInput(context, "apply_patch", { patchText: "*** Add File: src/main.ts\ncontent" }),
     ).resolves.toBeUndefined();
+  });
+
+  test("names the resolution of a relative apply_patch path", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-patch-relative-");
+    const context = await launchContext(companion, repo);
+
+    const refusal = await guardToolInput(context, "apply_patch", {
+      patchText: "*** Add File: notes/x.md\ncontent",
+    }).then(
+      () => "",
+      (error: Error) => error.message,
+    );
+    expect(refusal).toContain(` resolved:  ${path.join(repo, "notes", "x.md")}`);
+    expect(refusal).toContain(` suggested: ${path.join(companion, "notes", "x.md")}`);
   });
 
   test("allows gitignored artifact writes", async () => {

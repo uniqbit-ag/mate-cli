@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
+import { ARTIFACT_REFUSAL_HEADLINE } from "./runtime/artifact-refusal";
 import { MATE_ENV } from "./runtime/env-names";
 import { writeProjectionPair } from "./runtime/projection";
 import { repoLocalRegistryPath } from "./runtime/repo-local";
@@ -142,7 +143,7 @@ describe("packed Claude plugin", () => {
       { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
     );
     expect(blocked.exitCode).toBe(2);
-    expect(blocked.stderr).toContain("artifact writes must go to the companion framework path");
+    expect(blocked.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
 
     const allowed = runShim(
       "validate-artifact-path.mjs",
@@ -166,7 +167,7 @@ describe("packed Claude plugin", () => {
       withoutLaunchEnvironment(),
       repo,
     );
-    expect(blocked.stderr).toContain("artifact writes must go to the companion framework path");
+    expect(blocked.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
     expect(blocked.exitCode).toBe(2);
   });
 

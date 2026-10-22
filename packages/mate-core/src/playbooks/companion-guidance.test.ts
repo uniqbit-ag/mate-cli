@@ -38,6 +38,26 @@ describe("buildCompanionGuidance", () => {
     expect(guidance).toContain("local-only");
   });
 
+  test("states how the guardrail resolves relative paths", () => {
+    const guidance = buildCompanionGuidance({
+      companionPath: "/tmp/companion",
+      policy: {},
+      repository: { id: "app", path: "/tmp/working" },
+    } as never);
+    const rule = guidance.split("\n").find((line) => line.includes('<rule id="guardrail"'));
+
+    expect(rule).toContain("resolves relative paths against /tmp/working");
+    expect(rule).toContain("does not follow cd");
+    expect(rule).toContain("absolute paths under /tmp/companion");
+  });
+
+  test("states no path resolution rule without a working repository", () => {
+    const guidance = buildCompanionGuidance({ companionPath: "/tmp/companion" });
+
+    expect(guidance).not.toContain("resolves relative paths");
+    expect(guidance).not.toContain("does not follow cd");
+  });
+
   test("renders companion-only guidance without working-repository fields", () => {
     const guidance = buildCompanionGuidance({
       companionPath: "/tmp/companion",

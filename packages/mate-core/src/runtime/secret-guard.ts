@@ -1,6 +1,7 @@
 import { resolveSecretPolicy } from "./policy";
 import { globTargetsSecretFiles, isSecretFile } from "./secret-patterns";
 import { describeSecretFindings, scanContent, type SecretFinding } from "./secret-scan";
+import { HEREDOC_MARKER, stripHeredocBodies } from "./shell-heredoc";
 
 /**
  * The secret check both runtimes run before a tool call: the Claude PreToolUse
@@ -47,13 +48,7 @@ const SHELL_SEPARATOR = /[\s;|&<>()`]/;
  */
 export function shellWords(command: string): string[] {
   const words: string[] = [];
-  const lines = command.split("\n");
-  let heredocEnd: string | undefined;
-  for (const line of lines) {
-    if (heredocEnd !== undefined) {
-      if (line.trim() === heredocEnd) heredocEnd = undefined;
-      continue;
-    }
+  for (const line of stripHeredocBodies(command).split("\n")) {
     let word = "";
     let quote: string | undefined;
     let quoted = false;
@@ -75,13 +70,8 @@ export function shellWords(command: string): string[] {
         word += line[++i];
       } else if (char === "<" && line[i + 1] === "<") {
         flush();
-        const marker = /^<<-?\s*(['"]?)([\w.-]+)\1/.exec(line.slice(i));
-        if (marker) {
-          heredocEnd = marker[2];
-          i += marker[0].length - 1;
-        } else {
-          i += 1;
-        }
+        const marker = HEREDOC_MARKER.exec(line.slice(i));
+        i += marker ? marker[0].length - 1 : 1;
       } else if (SHELL_SEPARATOR.test(char)) {
         flush();
       } else {

@@ -12,11 +12,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { artifactRefusal, resolveArtifactTarget } from "../runtime/artifact-refusal";
 import { gitEnvironment } from "../runtime/companion-git";
 import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
 import { companionLinkPath } from "../runtime/repo-local";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
+import { stripHeredocBodies } from "../runtime/shell-heredoc";
 
 export type HookEnv = Record<string, string | undefined>;
 
@@ -45,8 +47,9 @@ const ARTIFACT_PATH_MARKERS = [
   "/docs/prd/",
 ];
 
-const MD_REDIRECT_PATTERN = />{1,2}\s*([^\s;|&<>]+\.md)\b/g;
-const MD_TEE_PATTERN = /\btee\s+(?:-a\s+)?([^\s;|&<>]+\.md)\b/g;
+/** `[ \t]`, not `\s`: a redirect or `tee` names its target on its own line. */
+const MD_REDIRECT_PATTERN = />{1,2}[ \t]*([^\s;|&<>]+\.md)\b/g;
+const MD_TEE_PATTERN = /\btee[ \t]+(?:-a[ \t]+)?([^\s;|&<>]+\.md)\b/g;
 
 export function artifactLikePath(filePath: string): boolean {
   if (!filePath) return false;
@@ -119,11 +122,6 @@ function claudeConfigRoot(env: HookEnv): string {
   return path.normalize(path.join(env.HOME || os.homedir(), ".claude"));
 }
 
-function normalizePath(filePath: string, ctx: GuardContext): string {
-  if (path.isAbsolute(filePath)) return path.normalize(filePath);
-  return path.normalize(path.join(ctx.repoRoot, filePath));
-}
-
 function isUnder(target: string, root: string): boolean {
   const relative = path.relative(path.normalize(root), path.normalize(target));
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
@@ -182,17 +180,14 @@ function isProductDocumentationPath(target: string, ctx: GuardContext): boolean 
   return false;
 }
 
-function blockWrite(target: string, companion: string): HookOutcome {
-  const lines = [
-    "Mate guardrail: artifact writes must go to the companion framework path.",
-    ` target: ${target}`,
-    ` companion: ${companion}`,
-    "Use an absolute path under MATE_ARTIFACT_PATH instead.",
-  ];
-  if (path.basename(target) === "CLAUDE.md") {
-    lines.push(`Note: CLAUDE.md already lives in the companion repo at ${companion}/CLAUDE.md.`);
-  }
-  return { exitCode: 2, stderr: lines.join("\n") + "\n" };
+function blockWrite(target: string, resolved: string, ctx: GuardContext): HookOutcome {
+  const refusal = artifactRefusal({
+    target,
+    resolved,
+    companion: ctx.companion,
+    repoRoot: ctx.repoRoot,
+  });
+  return { exitCode: 2, stderr: `${refusal}\n` };
 }
 
 function checkFilePath(
@@ -202,7 +197,7 @@ function checkFilePath(
 ): HookOutcome | null {
   if (!filePath) return null;
 
-  const normalized = normalizePath(filePath, ctx);
+  const normalized = resolveArtifactTarget(filePath, ctx.repoRoot);
   if (isCompanionPath(normalized, ctx)) return null;
 
   if (isUnder(normalized, claudeConfigRoot(ctx.env))) return null;
@@ -220,7 +215,7 @@ function checkFilePath(
     return null;
   }
 
-  return blockWrite(filePath, ctx.companion);
+  return blockWrite(filePath, normalized, ctx);
 }
 
 /**
@@ -235,17 +230,19 @@ async function checkForkedCompanion(
   ctx: GuardContext,
 ): Promise<HookOutcome | null> {
   if (!filePath || !artifactLikePath(filePath)) return null;
-  if (!isCompanionPath(normalizePath(filePath, ctx), ctx)) return null;
+  if (!isCompanionPath(resolveArtifactTarget(filePath, ctx.repoRoot), ctx)) return null;
 
   const refusal = await companionForkRefusal(ctx.env, ctx.companion);
   return refusal ? { exitCode: 2, stderr: `${refusal}\n` } : null;
 }
 
+/** Heredoc bodies are what a command writes, not what it runs: they are not scanned. */
 export function commandMatches(command: string): string[] {
   const targets: string[] = [];
+  const commandText = stripHeredocBodies(command);
   for (const pattern of [MD_REDIRECT_PATTERN, MD_TEE_PATTERN]) {
     const matcher = new RegExp(pattern.source, pattern.flags);
-    for (const match of command.matchAll(matcher)) {
+    for (const match of commandText.matchAll(matcher)) {
       const target = match[1].trim().replace(/^["']+|["']+$/g, "");
       if (target) targets.push(target);
     }
@@ -260,7 +257,8 @@ function secretToolCall(
   ctx: GuardContext,
 ): SecretToolCall | null {
   const text = (value: unknown) => (typeof value === "string" ? value : "");
-  const target = (value: unknown) => (text(value) ? normalizePath(text(value), ctx) : "");
+  const target = (value: unknown) =>
+    text(value) ? resolveArtifactTarget(text(value), ctx.repoRoot) : "";
   switch (toolName) {
     case "Read":
       return { kind: "read", paths: [target(toolInput.file_path)] };
