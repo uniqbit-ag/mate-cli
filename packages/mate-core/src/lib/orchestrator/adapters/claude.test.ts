@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { launchPluginFolders } from "../../../runtime/claude-delivery-plan";
 import {
   CLAUDE_SETTINGS_DOCUMENT,
   EMPTY_MANIFEST,
@@ -15,6 +16,7 @@ import {
   renderSecretDenyEntries,
   syncCompanionClaudeSettings,
 } from "../../../tools/setup/providers/claude";
+import { getClaudePluginRoot } from "../../package-paths";
 import type { PrepareResult, PrepareStep } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
 import type { AdapterContext } from "./base";
@@ -54,7 +56,12 @@ function contextFor(companionPath: string, scope: "repo" | "companion" = "repo")
 }
 
 function prepared(
-  overrides: { wrapState?: WrapState; steps?: PrepareStep[]; failure?: unknown } = {},
+  overrides: {
+    wrapState?: WrapState;
+    steps?: PrepareStep[];
+    failure?: unknown;
+    claudePluginDirectories?: string[];
+  } = {},
 ): PrepareResult {
   return {
     ok: overrides.steps === undefined,
@@ -67,7 +74,15 @@ function prepared(
     warnings: [],
     wrapState: overrides.wrapState ?? claudeWrapState,
     ...(overrides.failure === undefined ? {} : { failure: overrides.failure }),
+    ...(overrides.claudePluginDirectories
+      ? { claudePluginDirectories: overrides.claudePluginDirectories }
+      : {}),
   };
+}
+
+/** The values that follow each `--plugin-dir`, in order. */
+function pluginDirs(args: string[]): string[] {
+  return args.filter((_, index) => args[index - 1] === "--plugin-dir");
 }
 
 describe("the Claude delivery plan at launch", () => {
@@ -205,5 +220,32 @@ describe("a failed Claude prepare", () => {
     );
 
     expect(failure).toBe(own);
+  });
+});
+
+describe("Capability plugin folders at launch", () => {
+  test("passes the plan's folder list as --plugin-dir flags, in order, before the user's args", async () => {
+    const { companionPath } = await companionWith({});
+    const adapter = new ClaudeAdapter();
+    const launch = await adapter.planLaunch(
+      contextFor(companionPath),
+      prepared({ claudePluginDirectories: ["/acme/plugins/zeta", "/acme/plugins/alpha"] }),
+    );
+
+    const args = adapter.buildArgs(launch, ["--print"]);
+
+    expect(pluginDirs(args)).toEqual(
+      launchPluginFolders(
+        launch.delivery.plan,
+        ["/acme/plugins/zeta", "/acme/plugins/alpha"],
+        getClaudePluginRoot(),
+      ),
+    );
+    expect(pluginDirs(args)).toEqual([
+      getClaudePluginRoot(),
+      "/acme/plugins/zeta",
+      "/acme/plugins/alpha",
+    ]);
+    expect(args.at(-1)).toBe("--print");
   });
 });

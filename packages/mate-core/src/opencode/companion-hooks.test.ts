@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
+import { createTempDir, withEnv } from "../../../../test/fixtures";
 import { guardToolInput, registerCompanionHooks } from "./companion-hooks";
 import { readContext, type CompanionContext } from "./companion-policy";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
@@ -14,24 +14,9 @@ import { repoLocalRegistryPath } from "../runtime/repo-local";
 const tempRoots: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  const dir = await createTempDir(prefix);
   tempRoots.push(dir);
   return dir;
-}
-
-function withEnv<T>(env: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
-  const previous = new Map<string, string | undefined>();
-  for (const [key, value] of Object.entries(env)) {
-    previous.set(key, process.env[key]);
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-  return fn().finally(() => {
-    for (const [key, value] of previous) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  });
 }
 
 /** Every launch variable cleared: `hasLaunchEnvironment` counts any of them as a launch. */

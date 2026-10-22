@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
+import { createTempDir, overrideEnv, withEnv } from "../../../../test/fixtures";
 import { MATE_ENV, renderProjectionEnv, renderProjectionYaml } from "../../src/runtime";
 import { runtimeMateBin, runtimeWrapperBinPath } from "../../src/runtime/runtime-directory";
 
@@ -12,24 +12,20 @@ const { default: MateOpenCodePlugin } = await import("./server");
 type Hook = (event: Record<string, unknown>) => unknown;
 
 const tempRoots: string[] = [];
+let restoreEnvironment: () => void;
+let prepareArgsFile: string;
 
 async function makeTempDir(prefix: string): Promise<string> {
-  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
+  const dir = await createTempDir(prefix);
   tempRoots.push(dir);
   return dir;
 }
 
-/**
- * Replaces the stub by rename, never in place: a detached sync an earlier test
- * started may still be reading the old script, and a shell reads its script as
- * it runs, so rewriting the file would run the new stub with the old arguments.
- */
+/** Each test's stub lives under its own HOME, so no other test's sync reads it. */
 async function writeMateStub(script: string): Promise<void> {
   const bin = runtimeMateBin();
   await fs.mkdir(path.dirname(bin), { recursive: true });
-  const staged = `${bin}.${process.pid}.tmp`;
-  await fs.writeFile(staged, script, { mode: 0o755 });
-  await fs.rename(staged, bin);
+  await fs.writeFile(bin, script, { mode: 0o755 });
 }
 
 const GUIDANCE_JSON = JSON.stringify({
@@ -42,21 +38,6 @@ const GUIDANCE_JSON = JSON.stringify({
 
 /** Every launch variable cleared, so only a Projection Root can resolve a companion. */
 const NO_LAUNCH = Object.fromEntries(Object.values(MATE_ENV).map((name) => [name, undefined]));
-
-function withEnv<T>(env: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
-  const previous = new Map<string, string | undefined>();
-  for (const [key, value] of Object.entries(env)) {
-    previous.set(key, process.env[key]);
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
-  return fn().finally(() => {
-    for (const [key, value] of previous) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  });
-}
 
 /** Records every hook and transform the plugin registers. */
 function fakeApi(directory: string) {
@@ -110,14 +91,46 @@ async function wrappedRepo(companionPath: string): Promise<string> {
   return repoRoot;
 }
 
-/** What any `mate` run leaves behind; the plugin resolves wrapper paths through it. */
+/** Each test owns its launcher; detached syncs may outlive setup. */
 beforeEach(async () => {
+  restoreEnvironment = overrideEnv({ HOME: await makeTempDir("acme-server-home-") });
+  prepareArgsFile = path.join(path.dirname(runtimeMateBin()), "prepare-args");
   await fs.mkdir(runtimeWrapperBinPath(), { recursive: true });
 });
 
 afterEach(async () => {
-  await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  try {
+    await finishedPrepareArguments();
+  } finally {
+    restoreEnvironment();
+    await Promise.all(
+      tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })),
+    );
+  }
 });
+
+async function writePrepareLauncher(): Promise<void> {
+  const quotedArgsFile = `'${prepareArgsFile.replaceAll("'", "'\\''")}'`;
+  await writeMateStub(
+    `#!/bin/sh\necho '{"ok":true,"steps":[],"warnings":[]}'\necho "$@" >> ${quotedArgsFile}\n`,
+  );
+}
+
+/** The launcher records its sync after its last use of fixture files. */
+async function finishedPrepareArguments(): Promise<string[]> {
+  const read = async () =>
+    (await fs.readFile(prepareArgsFile, "utf8").catch(() => "")).trim().split("\n").filter(Boolean);
+  let lines = await read();
+  if (lines.length === 0) return lines;
+  const deadline = Date.now() + 5_000;
+  while (!lines.some((line) => line.endsWith("--sync")) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    lines = await read();
+  }
+  if (!lines.some((line) => line.endsWith("--sync")))
+    throw new Error("The fixture's detached prepare did not finish.");
+  return lines;
+}
 
 describe("Mate OpenCode server plugin", () => {
   test("exports an OpenCode 2.x definition only", () => {
@@ -429,7 +442,7 @@ describe("the session-prepare lifecycle", () => {
         },
       }),
     );
-    await writeMateStub(`#!/bin/sh\necho '{"ok":true,"steps":[],"warnings":[]}'\n`);
+    await writePrepareLauncher();
     return repo;
   }
 
@@ -495,10 +508,7 @@ describe("the session-prepare lifecycle", () => {
           },
         }),
       );
-      const argsFile = path.join(companion, "prepare-args");
-      await writeMateStub(
-        `#!/bin/sh\necho "$@" >> '${argsFile}'\necho '{"ok":true,"steps":[],"warnings":[]}'\n`,
-      );
+      await writePrepareLauncher();
       const { api, hooks } = fakeApi(repo);
       const calls = withMcp(api as unknown as Record<string, unknown>);
       let hooksAtGate = -1;
@@ -515,20 +525,11 @@ describe("the session-prepare lifecycle", () => {
       expect(hooksAtGate).toBeGreaterThan(0);
       expect(hooksAtGate).toBe(hooks.size);
       expect(calls).toEqual(["transform", "reload"]);
-      const deadline = Date.now() + 5_000;
-      let lines: string[] = [];
-      while (lines.length < 2 && Date.now() < deadline) {
-        // oxlint-disable-next-line no-await-in-loop -- waits for the detached sync
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        // oxlint-disable-next-line no-await-in-loop
-        lines = (await fs.readFile(argsFile, "utf8").catch(() => ""))
-          .trim()
-          .split("\n")
-          // A detached sync an earlier test started can still run this stub; keep only this repo's calls.
-          .filter((line) => line.includes(path.basename(repo)));
-      }
-      expect(lines[0]).toEndWith("--json");
-      expect(lines[1]).toEndWith("--json --sync");
+      const lines = await finishedPrepareArguments();
+      expect(lines).toEqual([
+        `session prepare --repo ${repo} --json`,
+        `session prepare --repo ${repo} --json --sync`,
+      ]);
     },
   );
 });

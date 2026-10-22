@@ -1,31 +1,39 @@
+import { fakePluginInstallDeps } from "../../../../test/plugin-install";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
+import { createTempDir, overrideEnv } from "../../../../../../test/fixtures";
 import { main, type MainDeps } from "../../../cli/main";
+import { collectDoctorReport } from "../../../cli/commands/doctor";
 import { resetActiveDistribution, setActiveDistribution } from "../../../distribution";
 import { ConfigStore } from "../../../lib/orchestrator/config-store";
+import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
+import { syncCompanionFiles } from "../../setup";
+import type { ProviderPlugin } from "../plugin";
 import { PluginRegistry } from "../registry";
 import { hydrateDynamicPlugins, resetDynamicPluginHydration } from "./hydrate";
 import { installDeclaredPlugins, type NpmInstallRunner } from "./install";
 
 const tempRoots: string[] = [];
+let restoreEnvironment: () => void;
 
 async function makeTempDir(prefix: string): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  const dir = await createTempDir(prefix);
   tempRoots.push(dir);
   return dir;
 }
 
 beforeEach(() => {
   resetDynamicPluginHydration();
+  restoreEnvironment = overrideEnv({ MATE_ARTIFACT_PATH: undefined, MATE_REPO_ID: undefined });
 });
 
 afterEach(async () => {
   resetActiveDistribution();
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  restoreEnvironment();
 });
 
 const PACKAGE = "@acme/custom-plugin";
@@ -140,7 +148,7 @@ describe("dynamic plugins end to end", () => {
       companionPath,
       (await new ConfigStore(path.join(companionPath, ".mate", "config", "framework.yaml")).load())
         .plugins ?? [],
-      { runNpmInstall: fakeNpmInstall },
+      fakePluginInstallDeps({ runNpmInstall: fakeNpmInstall }),
     );
     expect(installResults).toEqual([
       { package: PACKAGE, status: "installed", resolvedVersion: "1.2.0" },
@@ -170,9 +178,13 @@ describe("dynamic plugins end to end", () => {
     const companionPath = await writeCompanion({ outFile });
     const env = { ACME_GREETING: "hi" };
     activateDistribution();
-    await installDeclaredPlugins(companionPath, [{ package: PACKAGE, version: "^1.0.0" }], {
-      runNpmInstall: fakeNpmInstall,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [{ package: PACKAGE, version: "^1.0.0" }],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall,
+      }),
+    );
     // A second, broken declaration: declared but never installed.
     const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
     await fs.appendFile(
@@ -226,9 +238,13 @@ describe("dynamic plugins end to end", () => {
       "utf8",
     );
     const registry = activateDistribution();
-    await installDeclaredPlugins(companionPath, [{ package: PACKAGE, version: "^1.0.0" }], {
-      runNpmInstall: fakeNpmInstall,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [{ package: PACKAGE, version: "^1.0.0" }],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall,
+      }),
+    );
 
     const warnings: string[] = [];
     await hydrateDynamicPlugins({
@@ -241,5 +257,140 @@ describe("dynamic plugins end to end", () => {
     expect(warnings[0]).toContain("rejected its configuration");
     expect(warnings[0]).toContain("outFile is required");
     expect(registry.getAll()).toEqual([]);
+  });
+});
+
+const SHIPPER = "@acme/claude-shipper";
+
+/** A dynamic plugin that ships a Claude plugin folder inside its own package. */
+const SHIPPER_SOURCE = `
+import { fileURLToPath } from "node:url";
+const pluginDir = fileURLToPath(new URL("./claude-plugin", import.meta.url));
+export default function createPlugin() {
+  return {
+    id: "acme-shipper",
+    kind: "capability",
+    label: "Acme Shipper",
+    description: "ships a Claude plugin folder",
+    defaultSelected: false,
+    isEnabled: () => false,
+    apply: async () => {},
+    teardown: async () => {},
+    getRuntimeContributions: () => ({ claude: { pluginDirectories: [{ path: pluginDir }] } }),
+  };
+}
+`;
+
+const shipperNpmInstall: NpmInstallRunner = async (installDir) => {
+  const root = path.join(installDir, "node_modules", ...SHIPPER.split("/"));
+  await fs.mkdir(path.join(root, "claude-plugin", ".claude-plugin"), { recursive: true });
+  await fs.writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({
+      name: SHIPPER,
+      version: "1.0.0",
+      type: "module",
+      main: "index.js",
+      mate: { pluginApiVersion: 1 },
+    }),
+    "utf8",
+  );
+  await fs.writeFile(path.join(root, "index.js"), SHIPPER_SOURCE, "utf8");
+  await fs.writeFile(
+    path.join(root, "claude-plugin", ".claude-plugin", "plugin.json"),
+    '{"name":"acme-shipper"}\n',
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(installDir, "package-lock.json"),
+    JSON.stringify({ packages: { [`node_modules/${SHIPPER}`]: { version: "1.0.0" } } }, null, 2),
+    "utf8",
+  );
+  return { ok: true };
+};
+
+const claudeProvider: ProviderPlugin = {
+  id: "claude",
+  kind: "provider",
+  label: "Claude",
+  description: "fixture runtime",
+  defaultSelected: true,
+  isEnabled: () => true,
+  apply: async () => {},
+  teardown: async () => {},
+};
+
+describe("dynamic plugin Claude plugin folders", () => {
+  async function companionWithShipper() {
+    const companionPath = await makeTempDir("dynamic-plugins-claude-");
+    const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    const declared = ["allowedAgents: [claude]", "capabilities: []"];
+    await fs.writeFile(
+      configPath,
+      [...declared, "plugins:", `  - package: "${SHIPPER}"`, '    version: "^1.0.0"', ""].join(
+        "\n",
+      ),
+      "utf8",
+    );
+    await installDeclaredPlugins(
+      companionPath,
+      [{ package: SHIPPER, version: "^1.0.0" }],
+      fakePluginInstallDeps({
+        runNpmInstall: shipperNpmInstall,
+      }),
+    );
+    return { companionPath, configPath, declared };
+  }
+
+  test("doctor lists a declared Claude plugin from a companion subdirectory", async () => {
+    const { companionPath } = await companionWithShipper();
+    const cwd = path.join(companionPath, "docs");
+    await fs.mkdir(cwd);
+    activateDistribution().register(claudeProvider);
+
+    const report = await collectDoctorReport({
+      cwd,
+      env: {},
+      globalConfigStore: new GlobalConfigStore(path.join(companionPath, "global.yaml")),
+    });
+
+    expect(report).toMatchObject({
+      kind: "companion",
+      pluginCapabilities: ["acme-shipper"],
+      pluginFailures: [],
+      claudePlugins: [
+        {
+          capability: "acme-shipper",
+          path: path.join(
+            companionPath,
+            ".mate",
+            "plugins",
+            "node_modules",
+            ...SHIPPER.split("/"),
+            "claude-plugin",
+          ),
+          loadable: true,
+        },
+      ],
+    });
+  });
+
+  test("a declared plugin's folder is gathered, and not once its declaration is removed", async () => {
+    const { companionPath, configPath, declared } = await companionWithShipper();
+    const syncFresh = async () => {
+      resetDynamicPluginHydration();
+      activateDistribution().register(claudeProvider);
+      await hydrateDynamicPlugins({ companionPath, env: {} });
+      return syncCompanionFiles(companionPath, await new ConfigStore(configPath).load());
+    };
+
+    const withDeclaration = await syncFresh();
+    expect(withDeclaration.loadWarnings).toEqual([]);
+    expect(withDeclaration.launch).toHaveLength(1);
+    expect(withDeclaration.launch[0]).toEndWith(path.join(...SHIPPER.split("/"), "claude-plugin"));
+
+    await fs.writeFile(configPath, [...declared, ""].join("\n"), "utf8");
+    expect(await syncFresh()).toMatchObject({ launch: [], loadWarnings: [] });
   });
 });

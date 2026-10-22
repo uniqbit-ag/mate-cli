@@ -6,12 +6,14 @@ import {
   CONTEXT_MODE_VERSION,
   getContextModeInstallDir,
   getContextModePackageReference,
+  getContextModePackageRoot,
   installContextModePackage,
   isContextModePackageReference,
   validateContextModePackage,
 } from "../../../lib/context-mode-package";
 import { warmOpenCodePackageCache } from "../../../lib/opencode-plugin-package";
 import { installedVersionAt, isPreinstalledPluginPath } from "../../../lib/preinstalled-plugins";
+import { launchPassesClaudePluginFolders } from "../../../runtime/claude-delivery-plan";
 import type {
   CapabilityPlugin,
   LaunchPreflightContext,
@@ -108,6 +110,22 @@ async function validateOpenCodeReferences(ctx: LaunchPreflightContext): Promise<
   ];
 }
 
+/** Checked only where the launch passes plugin folders, so a plain session skips it. Observational: reads files and runs `node --version`. */
+async function validateClaudePackage(
+  ctx: LaunchPreflightContext,
+  validatePackage: typeof validateContextModePackage,
+): Promise<string[]> {
+  if (!launchPassesClaudePluginFolders(ctx.sessionKind)) return [];
+  try {
+    await validatePackage(ctx.companionPath);
+    return [];
+  } catch (error) {
+    return [
+      `Claude context-mode plugin is unavailable: ${(error as Error).message} Repair it with \`mate companion setup\`.`,
+    ];
+  }
+}
+
 export function createContextModePlugin(deps: ContextModePluginDeps = {}): CapabilityPlugin {
   const installPackage = deps.installPackage ?? installContextModePackage;
   const validatePackage = deps.validatePackage ?? validateContextModePackage;
@@ -120,11 +138,11 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
     defaultSelected: false,
     isEnabled: (config) =>
       (config.capabilities ?? []).some((capability) => capability.name === "context-mode"),
-    // The pinned OpenCode plugin reference is declared and reconciled by the
-    // OpenCode Runtime Surface into both config files. Any context-mode
-    // reference counts as Mate-managed (marker scheme), so stale pins are
-    // replaced and teardown removes only context-mode entries.
-    getRuntimeContributions(): RuntimeContributionsByRuntime {
+    /**
+     * Every context-mode reference is Mate-managed; the installed package also
+     * supplies Claude's launch-only plugin.
+     */
+    getRuntimeContributions(ctx): RuntimeContributionsByRuntime {
       return {
         claude: {
           // The context-mode Claude plugin exposes its skill and MCP tools
@@ -134,6 +152,7 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
             "Skill(context-mode:context-mode)",
             "mcp__plugin_context-mode_context-mode__*",
           ],
+          pluginDirectories: [{ path: getContextModePackageRoot(ctx.companionPath) }],
         },
         opencode: {
           pluginReferences: [
@@ -195,6 +214,7 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
     },
     forProvider: {
       claude: {
+        preflight: (ctx) => validateClaudePackage(ctx, validatePackage),
         async apply(ctx) {
           await assertNoMcpConflict(ctx, "claude");
         },

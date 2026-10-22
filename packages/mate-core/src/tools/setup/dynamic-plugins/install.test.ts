@@ -1,3 +1,4 @@
+import { fakePluginInstallDeps } from "../../../../test/plugin-install";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -86,9 +87,13 @@ describe("installDeclaredPlugins", () => {
     const companionPath = await makeTempDir("plugin-install-fresh-");
     const { runner } = fakeNpmInstall(() => "1.2.0");
 
-    const results = await installDeclaredPlugins(companionPath, [declaration()], {
-      runNpmInstall: runner,
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({
+        runNpmInstall: runner,
+      }),
+    );
 
     expect(results).toEqual([
       { package: "@acme/custom-plugin", status: "installed", resolvedVersion: "1.2.0" },
@@ -119,7 +124,7 @@ describe("installDeclaredPlugins", () => {
     const results = await installDeclaredPlugins(
       companionPath,
       [declaration({ package: "@acme/b", version: "^2.0.0" }), declaration({ package: "@acme/a" })],
-      { runNpmInstall: runner },
+      fakePluginInstallDeps({ runNpmInstall: runner }),
     );
 
     expect(calls.length).toBe(1);
@@ -140,13 +145,21 @@ describe("installDeclaredPlugins", () => {
   test("unchanged declarations are left untouched", async () => {
     const companionPath = await makeTempDir("plugin-install-unchanged-");
     const first = fakeNpmInstall(() => "1.2.0");
-    await installDeclaredPlugins(companionPath, [declaration()], { runNpmInstall: first.runner });
+    await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({ runNpmInstall: first.runner }),
+    );
 
     // A newer version exists now, but the declared range must stay put.
     const second = fakeNpmInstall(() => "1.3.0");
-    const results = await installDeclaredPlugins(companionPath, [declaration()], {
-      runNpmInstall: second.runner,
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({
+        runNpmInstall: second.runner,
+      }),
+    );
 
     expect(second.calls).toEqual([]);
     expect(results).toEqual([
@@ -157,16 +170,24 @@ describe("installDeclaredPlugins", () => {
   test("latest re-resolves via npm update on every run, even when nothing else changed", async () => {
     const companionPath = await makeTempDir("plugin-install-latest-");
     const decl = declaration({ version: "latest" });
-    await installDeclaredPlugins(companionPath, [decl], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [decl],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+      }),
+    );
 
     const install = fakeNpmInstall(() => "1.2.0");
     const update = fakeNpmUpdate(() => "1.3.0");
-    const results = await installDeclaredPlugins(companionPath, [decl], {
-      runNpmInstall: install.runner,
-      runNpmUpdate: update.runner,
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [decl],
+      fakePluginInstallDeps({
+        runNpmInstall: install.runner,
+        runNpmUpdate: update.runner,
+      }),
+    );
 
     expect(update.calls).toEqual([["@acme/custom-plugin"]]);
     expect(results).toEqual([
@@ -177,16 +198,24 @@ describe("installDeclaredPlugins", () => {
   test("canary re-resolves via npm update on every run, even when nothing else changed", async () => {
     const companionPath = await makeTempDir("plugin-install-canary-");
     const decl = declaration({ version: "canary" });
-    await installDeclaredPlugins(companionPath, [decl], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0-canary.0").runner,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [decl],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0-canary.0").runner,
+      }),
+    );
 
     const install = fakeNpmInstall(() => "1.2.0-canary.0");
     const update = fakeNpmUpdate(() => "1.3.0-canary.0");
-    const results = await installDeclaredPlugins(companionPath, [decl], {
-      runNpmInstall: install.runner,
-      runNpmUpdate: update.runner,
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [decl],
+      fakePluginInstallDeps({
+        runNpmInstall: install.runner,
+        runNpmUpdate: update.runner,
+      }),
+    );
 
     expect(update.calls).toEqual([["@acme/custom-plugin"]]);
     expect(results).toEqual([
@@ -199,16 +228,24 @@ describe("installDeclaredPlugins", () => {
     const pinned = declaration({ package: "@acme/pinned", version: "^1.0.0" });
     const latest = declaration({ package: "@acme/latest", version: "latest" });
     const canary = declaration({ package: "@acme/canary", version: "canary" });
-    await installDeclaredPlugins(companionPath, [pinned, latest, canary], {
-      runNpmInstall: fakeNpmInstall(() => "1.0.0").runner,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [pinned, latest, canary],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.0.0").runner,
+      }),
+    );
 
     const install = fakeNpmInstall(() => "1.0.0");
     const update = fakeNpmUpdate(() => "1.1.0");
-    const results = await installDeclaredPlugins(companionPath, [pinned, latest, canary], {
-      runNpmInstall: install.runner,
-      runNpmUpdate: update.runner,
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [pinned, latest, canary],
+      fakePluginInstallDeps({
+        runNpmInstall: install.runner,
+        runNpmUpdate: update.runner,
+      }),
+    );
 
     expect(update.calls).toEqual([["@acme/canary", "@acme/latest"]]);
     expect(results).toEqual([
@@ -220,15 +257,19 @@ describe("installDeclaredPlugins", () => {
 
   test("edited declared version invalidates the diff and re-resolves", async () => {
     const companionPath = await makeTempDir("plugin-install-edited-");
-    await installDeclaredPlugins(companionPath, [declaration({ version: "^1.0.0" })], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [declaration({ version: "^1.0.0" })],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+      }),
+    );
 
     const second = fakeNpmInstall(() => "2.1.0");
     const results = await installDeclaredPlugins(
       companionPath,
       [declaration({ version: "^2.0.0" })],
-      { runNpmInstall: second.runner },
+      fakePluginInstallDeps({ runNpmInstall: second.runner }),
     );
 
     expect(second.calls.length).toBe(1);
@@ -237,18 +278,26 @@ describe("installDeclaredPlugins", () => {
 
   test("missing installed tree reinstalls even though the manifest is unchanged", async () => {
     const companionPath = await makeTempDir("plugin-install-repair-");
-    await installDeclaredPlugins(companionPath, [declaration()], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+      }),
+    );
     await fs.rm(pluginPackageRoot(companionPath, "@acme/custom-plugin"), {
       recursive: true,
       force: true,
     });
 
     const second = fakeNpmInstall(() => "1.2.0");
-    const results = await installDeclaredPlugins(companionPath, [declaration()], {
-      runNpmInstall: second.runner,
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({
+        runNpmInstall: second.runner,
+      }),
+    );
 
     expect(second.calls.length).toBe(1);
     expect(results[0]?.status).toBe("installed");
@@ -256,9 +305,13 @@ describe("installDeclaredPlugins", () => {
 
   test("failed install reports the failure for every declared plugin", async () => {
     const companionPath = await makeTempDir("plugin-install-failed-");
-    const results = await installDeclaredPlugins(companionPath, [declaration()], {
-      runNpmInstall: async () => ({ ok: false, detail: "registry unreachable" }),
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({
+        runNpmInstall: async () => ({ ok: false, detail: "registry unreachable" }),
+      }),
+    );
 
     expect(results[0]?.status).toBe("failed");
     expect(results[0]?.error).toContain("registry unreachable");
@@ -266,12 +319,20 @@ describe("installDeclaredPlugins", () => {
 
   test("undeclared packages are pruned from the shared workspace on the next run", async () => {
     const companionPath = await makeTempDir("plugin-install-prune-");
-    await installDeclaredPlugins(companionPath, [declaration()], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+      }),
+    );
 
     const second = fakeNpmInstall(() => "9.9.9");
-    await installDeclaredPlugins(companionPath, [], { runNpmInstall: second.runner });
+    await installDeclaredPlugins(
+      companionPath,
+      [],
+      fakePluginInstallDeps({ runNpmInstall: second.runner }),
+    );
 
     expect(second.calls.length).toBe(1);
     const manifest = JSON.parse(
@@ -287,7 +348,11 @@ describe("installDeclaredPlugins", () => {
     const companionPath = await makeTempDir("plugin-install-empty-");
     const { runner, calls } = fakeNpmInstall(() => "1.0.0");
 
-    const results = await installDeclaredPlugins(companionPath, [], { runNpmInstall: runner });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [],
+      fakePluginInstallDeps({ runNpmInstall: runner }),
+    );
 
     expect(results).toEqual([]);
     expect(calls).toEqual([]);
@@ -299,14 +364,18 @@ describe("installDeclaredPlugins npm failures", () => {
   test("a failed npm install with an empty detail still fails every declaration", async () => {
     const companionPath = await makeTempDir("plugin-install-empty-detail-");
     // A tree left by an earlier run must not mask the failure.
-    await installDeclaredPlugins(companionPath, [declaration()], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+      }),
+    );
 
     const results = await installDeclaredPlugins(
       companionPath,
       [declaration(), declaration({ package: "@acme/other" })],
-      { runNpmInstall: async () => ({ ok: false, detail: "" }) },
+      fakePluginInstallDeps({ runNpmInstall: async () => ({ ok: false, detail: "" }) }),
     );
 
     expect(results).toEqual([
@@ -323,9 +392,13 @@ describe("installDeclaredPlugins npm failures", () => {
     const companionPath = await makeTempDir("plugin-install-e401-");
     const detail = "npm error code E401\nnpm error 401 Unauthorized";
 
-    const results = await installDeclaredPlugins(companionPath, [declaration()], {
-      runNpmInstall: async () => ({ ok: false, detail }),
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({
+        runNpmInstall: async () => ({ ok: false, detail }),
+      }),
+    );
 
     expect(results).toEqual([{ package: "@acme/custom-plugin", status: "failed", error: detail }]);
   });
@@ -333,17 +406,25 @@ describe("installDeclaredPlugins npm failures", () => {
   test("a failed npm update for a moving tag reports npm's error", async () => {
     const companionPath = await makeTempDir("plugin-install-update-fail-");
     const decl = declaration({ version: "latest" });
-    await installDeclaredPlugins(companionPath, [decl], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
-    });
-
-    const results = await installDeclaredPlugins(companionPath, [decl], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
-      runNpmUpdate: async () => ({
-        ok: false,
-        detail: "npm error code ETARGET",
+    await installDeclaredPlugins(
+      companionPath,
+      [decl],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
       }),
-    });
+    );
+
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [decl],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+        runNpmUpdate: async () => ({
+          ok: false,
+          detail: "npm error code ETARGET",
+        }),
+      }),
+    );
 
     expect(results).toEqual([
       {
@@ -357,14 +438,22 @@ describe("installDeclaredPlugins npm failures", () => {
   test("a failed npm update with an empty detail still fails the moving declaration", async () => {
     const companionPath = await makeTempDir("plugin-install-update-empty-");
     const decl = declaration({ version: "latest" });
-    await installDeclaredPlugins(companionPath, [decl], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
-    });
+    await installDeclaredPlugins(
+      companionPath,
+      [decl],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+      }),
+    );
 
-    const results = await installDeclaredPlugins(companionPath, [decl], {
-      runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
-      runNpmUpdate: async () => ({ ok: false, detail: "" }),
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [decl],
+      fakePluginInstallDeps({
+        runNpmInstall: fakeNpmInstall(() => "1.2.0").runner,
+        runNpmUpdate: async () => ({ ok: false, detail: "" }),
+      }),
+    );
 
     expect(results).toEqual([
       {
@@ -378,9 +467,13 @@ describe("installDeclaredPlugins npm failures", () => {
   test("a missing tree after a successful npm run is still reported", async () => {
     const companionPath = await makeTempDir("plugin-install-missing-tree-");
 
-    const results = await installDeclaredPlugins(companionPath, [declaration()], {
-      runNpmInstall: async () => ({ ok: true }),
-    });
+    const results = await installDeclaredPlugins(
+      companionPath,
+      [declaration()],
+      fakePluginInstallDeps({
+        runNpmInstall: async () => ({ ok: true }),
+      }),
+    );
 
     expect(results).toEqual([
       {

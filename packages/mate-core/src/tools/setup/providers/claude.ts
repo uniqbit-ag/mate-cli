@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
+import { getClaudePluginRoot } from "../../../lib/package-paths";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import {
   CLAUDE_LOCAL_CONFIG_DOCUMENT,
@@ -29,6 +30,10 @@ import {
   isManagedClaudeAttribution,
   MANAGED_CLAUDE_ATTRIBUTION,
 } from "./claude-attribution";
+import {
+  inspectClaudePluginFolders,
+  type PublishedClaudePluginFolder,
+} from "./claude-plugin-folders";
 import { patchSkillTreeMarkdownFiles } from "./skill-tree";
 import {
   filterClaudeHookGroups,
@@ -339,6 +344,7 @@ function claudeSettingsRegions(
   ctx: SetupContext,
   inputs: CapabilityContributionInput[],
   repoRoot: string,
+  pluginFolders: readonly PublishedClaudePluginFolder[],
 ): ManagedRegion[] {
   const capabilityHooks = renderManagedClaudeHookGroups(inputs);
   const mateHooks: Record<string, unknown[]> = {
@@ -381,6 +387,7 @@ function claudeSettingsRegions(
       kind: "list",
       values: renderManagedClaudeDenyEntries(ctx.companionPath),
     },
+    ...claudePluginRegions(pluginFolders),
     /**
      * Yields: the document is the user's, so their own `enableArtifact` wins,
      * and unwrapping restores it instead of deleting a key Mate overwrote.
@@ -410,6 +417,34 @@ function claudeSettingsRegions(
 }
 
 /**
+ * Each published plugin folder as a local `directory` marketplace and its one
+ * enabled plugin, so a plain session in a trusted folder loads it in place. The
+ * path is the folder as the launch passes it, so the wrap state can name what
+ * the launch must leave to the wrap.
+ */
+function claudePluginRegions(published: readonly PublishedClaudePluginFolder[]): ManagedRegion[] {
+  return [
+    {
+      at: ["extraKnownMarketplaces"],
+      kind: "map",
+      entries: Object.fromEntries(
+        published.map(({ path: folder, marketplace }) => [
+          marketplace,
+          { source: { source: "directory", path: folder } },
+        ]),
+      ),
+    },
+    {
+      at: ["enabledPlugins"],
+      kind: "map",
+      entries: Object.fromEntries(
+        published.map(({ plugin, marketplace }) => [`${plugin}@${marketplace}`, true]),
+      ),
+    },
+  ];
+}
+
+/**
  * The working target's Claude documents, rendered as values. Each is a document
  * the runtime finds by walking up from the current directory, and every path
  * inside one still names the Companion Repository — only where the document is
@@ -420,9 +455,16 @@ export async function renderClaudeWorkingDocuments(
   inputs: CapabilityContributionInput[],
 ): Promise<RenderedRuntimeDocuments> {
   const repoRoot = projectionRepoRoot(ctx);
+  /** Reads the folders only; the pass published them before this render. */
+  const pluginFolders = (
+    await inspectClaudePluginFolders(inputs, { bundledPluginRoot: getClaudePluginRoot() })
+  ).published;
   return {
     documents: [
-      ...renderedDocument(CLAUDE_SETTINGS_DOCUMENT, claudeSettingsRegions(ctx, inputs, repoRoot)),
+      ...renderedDocument(
+        CLAUDE_SETTINGS_DOCUMENT,
+        claudeSettingsRegions(ctx, inputs, repoRoot, pluginFolders),
+      ),
       /**
        * Local scope, not `.mcp.json`: a project-scoped server is inert until a
        * human approves it in a session, which an Unmanaged Session is exactly the

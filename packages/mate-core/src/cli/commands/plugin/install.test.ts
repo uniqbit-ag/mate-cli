@@ -1,3 +1,4 @@
+import { fakePluginInstallDeps } from "../../../../test/plugin-install";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -46,23 +47,24 @@ async function readFrameworkYaml(companionPath: string): Promise<{ plugins?: unk
   return parse(raw) as { plugins?: unknown[] };
 }
 
-const fakeInstall = (resolveTo: (pkg: string) => string) => ({
-  runNpmInstall: async (workspaceRoot: string) => {
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(workspaceRoot, "package.json"), "utf8"),
-    ) as { dependencies: Record<string, string> };
-    for (const pkg of Object.keys(manifest.dependencies)) {
-      const root = path.join(workspaceRoot, "node_modules", ...pkg.split("/"));
-      await fs.mkdir(root, { recursive: true });
-      await fs.writeFile(
-        path.join(root, "package.json"),
-        JSON.stringify({ name: pkg, version: resolveTo(pkg) }),
-        "utf8",
-      );
-    }
-    return { ok: true };
-  },
-});
+const fakeInstall = (resolveTo: (pkg: string) => string) =>
+  fakePluginInstallDeps({
+    runNpmInstall: async (workspaceRoot: string) => {
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(workspaceRoot, "package.json"), "utf8"),
+      ) as { dependencies: Record<string, string> };
+      for (const pkg of Object.keys(manifest.dependencies)) {
+        const root = path.join(workspaceRoot, "node_modules", ...pkg.split("/"));
+        await fs.mkdir(root, { recursive: true });
+        await fs.writeFile(
+          path.join(root, "package.json"),
+          JSON.stringify({ name: pkg, version: resolveTo(pkg) }),
+          "utf8",
+        );
+      }
+      return { ok: true };
+    },
+  });
 
 beforeEach(() => {
   originalArtifactPath = process.env.MATE_ARTIFACT_PATH;
@@ -134,12 +136,12 @@ describe("runPluginInstallCommand", () => {
       let installRan = false;
 
       const ok = await runPluginInstallCommand([flag], {
-        installDeps: {
+        installDeps: fakePluginInstallDeps({
           runNpmInstall: async () => {
             installRan = true;
             return { ok: true };
           },
-        },
+        }),
       });
 
       expect(ok).toBe(true);
@@ -158,12 +160,12 @@ describe("runPluginInstallCommand", () => {
     let installRan = false;
 
     const ok = await runPluginInstallCommand(["--force"], {
-      installDeps: {
+      installDeps: fakePluginInstallDeps({
         runNpmInstall: async () => {
           installRan = true;
           return { ok: true };
         },
-      },
+      }),
     });
 
     expect(ok).toBe(false);
@@ -251,7 +253,9 @@ describe("runPluginInstallCommand", () => {
     process.env.MATE_ARTIFACT_PATH = companionPath;
 
     const ok = await runPluginInstallCommand(["@acme/broken@1.0.0"], {
-      installDeps: { runNpmInstall: async () => ({ ok: false, detail: "registry unreachable" }) },
+      installDeps: fakePluginInstallDeps({
+        runNpmInstall: async () => ({ ok: false, detail: "registry unreachable" }),
+      }),
     });
 
     expect(ok).toBe(false);

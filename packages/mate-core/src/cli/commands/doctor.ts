@@ -13,6 +13,7 @@ import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-sto
 import { pathIsDirectory } from "../../lib/fs-utils";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
+import { MATE_CLAUDE_PLUGIN_NAME } from "../../lib/package-paths";
 import {
   describeUnknownAudience,
   readAudienceSelection,
@@ -23,7 +24,20 @@ import {
   type PluginInspection,
   type PluginVerificationFailure,
 } from "../../tools/setup/dynamic-plugins/verify";
+import { hydrateDynamicPlugins } from "../../tools/setup/dynamic-plugins/hydrate";
+import {
+  inspectClaudePluginDirectories,
+  type ClaudePluginDirectoryInspection,
+} from "../../tools/setup";
 import { getRequiredPluginDrift } from "../../tools/setup/policy";
+import {
+  CLAUDE_PLUGIN_MANIFEST,
+  CLAUDE_PLUGIN_MARKETPLACE,
+  type ClaudePluginContributionFailure,
+  type ClaudePluginDirectoryProblem,
+  type ClaudePluginDirectoryReport,
+  type ClaudePluginUnpublishedReason,
+} from "../../tools/setup/providers/claude-plugin-folders";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
 import { writeJsonStdout } from "../write-json-stdout";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
@@ -35,6 +49,12 @@ interface DoctorDeps {
   /** Returns a member checkout's HEAD commit, or null when unreadable. */
   gitHead?: (memberPath: string) => string | null;
   inspectPlugins?: (companionPath: string) => Promise<PluginInspection>;
+  /** Loads the companion's declared plugins so their Capabilities contribute. */
+  hydratePlugins?: (companionPath: string) => Promise<void>;
+  inspectClaudePlugins?: (
+    companionPath: string,
+    config: FrameworkConfig,
+  ) => Promise<ClaudePluginDirectoryInspection>;
   /** Environment `MATE_AUDIENCE` is read from; defaults to the process environment. */
   env?: Record<string, string | undefined>;
 }
@@ -79,6 +99,15 @@ export interface DoctorReport {
   engineRequirement?: { range: string; ok: boolean; detail: string };
   /** Present when the companion's `openspec/config.yaml` has `rules` keys OpenSpec ignores. */
   openspecRuleWarnings?: Array<{ key: string; message: string }>;
+  /**
+   * Enabled Capabilities' Claude plugin folders, which load only with `mate claude`; absent when
+   * none. `problem` names why `mate claude` leaves a folder out: `not-absolute`,
+   * `missing-manifest`, `bundled-mate-plugin` (Mate's own plugin, which every managed launch
+   * loads already) or `mate-plugin-name` (its manifest uses Mate's plugin name).
+   */
+  claudePlugins?: ClaudePluginDirectoryReport[];
+  /** Capabilities whose contributions failed, so their Claude plugin folders are unknown; absent when none. */
+  claudePluginFailures?: ClaudePluginContributionFailure[];
   hub?: { members: DoctorHubMember[] };
   resolutionFailures: Array<{ companionPath: string; message: string }>;
 }
@@ -356,6 +385,18 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     if (warnings.length > 0) report.openspecRuleWarnings = warnings;
   }
 
+  if (root.rootPath && root.config && (kind === "working" || kind === "companion")) {
+    /** Doctor reports plugin failures below; hydration supplies their contributions. */
+    const hydrate =
+      deps.hydratePlugins ??
+      ((companionPath) => hydrateDynamicPlugins({ companionPath, env, warn: () => {} }));
+    await hydrate(root.rootPath);
+    const inspectClaudePlugins = deps.inspectClaudePlugins ?? inspectClaudePluginDirectories;
+    const inspection = await inspectClaudePlugins(root.rootPath, root.config);
+    if (inspection.plugins.length > 0) report.claudePlugins = inspection.plugins;
+    if (inspection.failures.length > 0) report.claudePluginFailures = inspection.failures;
+  }
+
   if (root.rootPath && root.config) {
     const inspect =
       deps.inspectPlugins ?? ((companionPath) => inspectDeclaredPlugins(companionPath, { env }));
@@ -402,6 +443,65 @@ function renderHubMembers(members: DoctorHubMember[]): string {
       member.commitStatus,
     ]),
   );
+}
+
+/** The Status column's text for each reason a folder is left out. */
+const CLAUDE_PLUGIN_PROBLEM_STATUS: Record<ClaudePluginDirectoryProblem, string> = {
+  "not-absolute": "not an absolute path",
+  "bundled-mate-plugin": "Mate's bundled plugin, already loaded",
+  "missing-manifest": `missing ${CLAUDE_PLUGIN_MANIFEST}`,
+  "mate-plugin-name": `uses Mate's plugin name ${MATE_CLAUDE_PLUGIN_NAME}`,
+};
+
+function claudePluginStatus(plugin: ClaudePluginDirectoryReport): string {
+  return plugin.problem ? CLAUDE_PLUGIN_PROBLEM_STATUS[plugin.problem] : "present";
+}
+
+/** The Plain Sessions column's text for each reason a loadable folder is not published. */
+const CLAUDE_PLUGIN_UNPUBLISHED_STATUS: Record<ClaudePluginUnpublishedReason, string> = {
+  "foreign-marketplace": `no: ${CLAUDE_PLUGIN_MARKETPLACE} is not Mate's and does not list it`,
+  "invalid-marketplace-name": "no: its name cannot form a marketplace name",
+  "name-conflict": "no: its marketplace name is already in use",
+  "missing-marketplace": `no: ${CLAUDE_PLUGIN_MARKETPLACE} could not be written`,
+};
+
+function claudePluginPlainSessions(plugin: ClaudePluginDirectoryReport): string {
+  if (plugin.marketplace) return `marketplace ${plugin.marketplace}`;
+  if (plugin.unpublishedReason) return CLAUDE_PLUGIN_UNPUBLISHED_STATUS[plugin.unpublishedReason];
+  return "no";
+}
+
+/** A table for each list present, then a note on where plain sessions load them. */
+function renderClaudePlugins(
+  plugins: ClaudePluginDirectoryReport[] | undefined,
+  failures: ClaudePluginContributionFailure[] | undefined,
+): string {
+  const tables: string[] = [];
+  if (plugins) {
+    tables.push(
+      renderTable(
+        ["Capability", "Plugin Folder", "Status", "Plain Sessions"],
+        plugins.map((plugin) => [
+          plugin.capability,
+          plugin.path,
+          claudePluginStatus(plugin),
+          claudePluginPlainSessions(plugin),
+        ]),
+      ),
+    );
+  }
+  if (failures) {
+    tables.push(
+      renderTable(
+        ["Capability", "Error"],
+        failures.map((failure) => [failure.capability, failure.reason]),
+      ),
+    );
+  }
+  return [
+    ...tables.flatMap((table) => [table, ""]),
+    `\`${FRAMEWORK_NAME} claude\` loads every present plugin. Plain \`claude\` sessions load one with a marketplace, and only in a wrapped repository that Claude Code trusts.`,
+  ].join("\n");
 }
 
 function renderHumanReport(report: DoctorReport): void {
@@ -477,6 +577,12 @@ function renderHumanReport(report: DoctorReport): void {
   if (report.engineRequirement) {
     printSection("Version Requirement", report.engineRequirement.detail);
   }
+  if (report.claudePlugins || report.claudePluginFailures) {
+    printSection(
+      "Claude Plugins",
+      renderClaudePlugins(report.claudePlugins, report.claudePluginFailures),
+    );
+  }
   if (report.openspecRuleWarnings) {
     printSection(
       "OpenSpec Config",
@@ -506,7 +612,8 @@ function renderHumanReport(report: DoctorReport): void {
  * capabilities and tool checks for companions, member health for hubs.
  * Declared plugins of the effective set (base plus the `MATE_AUDIENCE`
  * audience) are verified strictly (installed, loadable); any failure is named
- * on stderr and exits non-zero, as is an undeclared `MATE_AUDIENCE`.
+ * on stderr and exits non-zero, as is an undeclared `MATE_AUDIENCE` or a
+ * Capability whose runtime contributions fail to load.
  * `--json` emits the same report as one JSON document.
  */
 export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {}): Promise<void> {
@@ -517,6 +624,12 @@ export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {
   const failures = report.pluginFailures ?? [];
   for (const failure of failures) {
     process.stderr.write(`${FRAMEWORK_NAME}: plugin ${failure.package}: ${failure.reason}\n`);
+  }
+  for (const failure of report.claudePluginFailures ?? []) {
+    process.stderr.write(
+      `${FRAMEWORK_NAME}: capability ${failure.capability}: ${failure.reason}\n`,
+    );
+    process.exitCode = 1;
   }
   if (report.audienceError) {
     process.stderr.write(`${FRAMEWORK_NAME}: ${report.audienceError}\n`);
