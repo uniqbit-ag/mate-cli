@@ -1,5 +1,6 @@
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
+import { launchPassesClaudePluginFolders } from "../../runtime/claude-delivery-plan";
 import { recordCompanionSyncUnfinished } from "../../runtime/companion-git-state";
 import { withCompanionLock, type CompanionLockOptions } from "../../runtime/companion-lock";
 import {
@@ -7,9 +8,11 @@ import {
   syncCompanionUnattended,
   type UnattendedSyncOutcome,
 } from "../../runtime/companion-sync";
+import type { SessionKind } from "../../runtime/session-kind";
 import type { WrapState } from "../../runtime/wrap-state";
 import { syncCompanionFiles } from "../../tools/setup";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
+import type { ClaudePluginFolders } from "../../tools/setup/providers/claude-plugin-folders";
 import { attendedLockOptions, syncCompanionGit } from "./companion-git-sync";
 import { readCompanionConfig } from "./config-store";
 import { entryFailureMessage, firstFailure, type ProjectionChangedPaths } from "./projection-types";
@@ -61,6 +64,8 @@ export interface PrepareResult {
   failure?: unknown;
   /** The wrap state the `working-target` step's pass left; a launch reads no manifest itself. */
   wrapState?: WrapState;
+  /** The Claude plugin folders the `file-sync` step gathered; a launch gathers none itself. */
+  claudePluginDirectories?: string[];
 }
 
 export interface PrepareSessionInput {
@@ -149,6 +154,7 @@ class StepLog {
   readonly warnings: string[] = [];
   failure: unknown;
   wrapState: WrapState | undefined;
+  claudePluginDirectories: string[] | undefined;
   stopped = false;
   companionChanged = false;
 
@@ -176,10 +182,18 @@ async function runFileSync(
 ): Promise<void> {
   const deps = sessionPrepareDeps;
   try {
-    if (input.repository) {
-      await deps.syncCompanionFiles(input.companionPath, config, input.repository.path);
-    } else {
-      await deps.syncCompanionFiles(input.companionPath, config);
+    const folders = input.repository
+      ? await deps.syncCompanionFiles(input.companionPath, config, input.repository.path)
+      : await deps.syncCompanionFiles(input.companionPath, config);
+    run.claudePluginDirectories = [...folders.launch];
+    /**
+     * The Claude plan speaks for Claude sessions only; OpenCode loads no plugin
+     * folder. With a Working Repository the wrap pass reports publication;
+     * without one no wrap pass runs, so this step does.
+     */
+    if (reportsClaudePluginFolders(input)) {
+      run.warnings.push(...folders.loadWarnings);
+      if (!input.repository) run.warnings.push(...publicationWarnings(folders));
     }
     run.push({ step: "file-sync", outcome: "ok" });
   } catch (error) {
@@ -197,6 +211,24 @@ function wrapDetail(wrapped: {
   if (wrote.length > 0) parts.push(`wrote ${wrote.join(", ")}`);
   if (withdrew.length > 0) parts.push(`withdrew ${withdrew.join(", ")}`);
   return parts.length > 0 ? `updated (${parts.join("; ")})` : "updated";
+}
+
+/** A managed Claude launch; plain sessions' prepares and OpenCode report no plugin-folder problem. */
+function reportsClaudePluginFolders(input: PrepareSessionInput): boolean {
+  return input.runtime === "claude" && launchPassesClaudePluginFolders(sessionKindOf(input));
+}
+
+/** What a publication left undone, one sentence per folder. */
+function publicationWarnings(folders: ClaudePluginFolders | undefined): string[] {
+  const publication = folders?.publication;
+  if (!publication) return [];
+  return [...publication.unpublished.map((entry) => entry.warning), ...publication.warnings];
+}
+
+/** Attended is a managed launch, with or without a Working Repository; the rest serve plain sessions. */
+function sessionKindOf(input: PrepareSessionInput): SessionKind {
+  if (input.mode !== "attended") return "unmanaged";
+  return input.repository ? "managed-repo" : "managed-companion";
 }
 
 function runtimesOf(input: PrepareSessionInput): PrepareRuntime[] {
@@ -225,6 +257,9 @@ async function reconcileWrap(
     return;
   }
   run.warnings.push(...wrapped.warnings);
+  if (reportsClaudePluginFolders(input)) {
+    run.warnings.push(...publicationWarnings(wrapped.claudePluginFolders));
+  }
   run.wrapState = wrapped.wrapState;
   run.push({
     step: "working-target",
@@ -308,6 +343,7 @@ async function runLocal(
         config,
         repository: input.repository,
         providerId: runtime,
+        sessionKind: sessionKindOf(input),
       }),
     ),
   );
@@ -401,6 +437,9 @@ export async function prepareSession(input: PrepareSessionInput): Promise<Prepar
     ...(run.companionChanged ? { companionChanged: true as const } : {}),
     ...(run.failure === undefined ? {} : { failure: run.failure }),
     ...(run.wrapState ? { wrapState: run.wrapState } : {}),
+    ...(run.claudePluginDirectories
+      ? { claudePluginDirectories: run.claudePluginDirectories }
+      : {}),
   });
 
   const locked = await deps.withCompanionLock(input.companionPath, lockOptions(input), async () => {

@@ -5,12 +5,13 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { buildCompanionGuidance } from "../../../playbooks/companion-guidance";
 import {
+  launchPluginFolders,
   planClaudeDelivery,
   type ClaudeDeliveryPlan,
-  type SessionKind,
 } from "../../../runtime/claude-delivery-plan";
 import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
 import { resolveSecretPolicy } from "../../../runtime/policy";
+import type { SessionKind } from "../../../runtime/session-kind";
 import { NOT_WRAPPED } from "../../../runtime/wrap-state";
 import { writeAtomic } from "../../../runtime/write-atomic";
 import {
@@ -18,7 +19,6 @@ import {
   getCompanionClaudeSettingsPath,
 } from "../../../tools/setup/providers/claude";
 import type { ClaudeSettings } from "../../../tools/setup/providers/claude-format";
-import { getContextModePackageRoot, validateContextModePackage } from "../../context-mode-package";
 import { getClaudePluginRoot, validateClaudePluginAssets } from "../../package-paths";
 import type { PrepareResult } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
@@ -34,6 +34,8 @@ interface ClaudeDelivery {
 /** A Claude launch's context: the delivery its plan chose, and the files it chose or wrote. */
 interface ClaudeLaunchContext extends AdapterContext {
   delivery: ClaudeDelivery;
+  /** The Capability plugin folders this launch's own prepare gathered, in order. */
+  pluginDirectories: readonly string[];
 }
 
 /** Where a launch with a Working Repository writes its derived `--settings`; git-ignored. */
@@ -107,7 +109,7 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
       ...(plan.mcp === "mcp-config" && existsSync(mcpConfigPath) ? { mcpConfigPath } : {}),
       ...(settingsPath ? { settingsPath } : {}),
     };
-    return { ...context, delivery };
+    return { ...context, delivery, pluginDirectories: prepared.claudePluginDirectories ?? [] };
   }
 
   /** A failed Claude wrap pass names the entry that failed. */
@@ -122,7 +124,7 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
     return super.launchFailure(prepared);
   }
 
-  async validateLaunch(context: ClaudeLaunchContext): Promise<void> {
+  async validateLaunch(_context: ClaudeLaunchContext): Promise<void> {
     /** The bundled plugin carries the artifact-path guard; never launch without it. */
     try {
       validateClaudePluginAssets();
@@ -132,22 +134,12 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
         { cause: error },
       );
     }
-
-    if (context.capabilities.some((capability) => capability.name === "context-mode")) {
-      try {
-        await validateContextModePackage(context.companionPath);
-      } catch (error) {
-        throw new Error(
-          `Claude context-mode plugin is unavailable: ${(error as Error).message} Repair it with \`mate companion setup\`.`,
-          { cause: error },
-        );
-      }
-    }
   }
 
   /**
-   * Plan in, flags out; decides nothing. `--append-system-prompt`, `--plugin-dir`
-   * and context-mode are unconditional: no settings document can carry them.
+   * Plan in, flags out; decides nothing. `--append-system-prompt` is
+   * unconditional: no settings document can carry it. `--plugin-dir` passes
+   * the folders `launchPluginFolders` names, from the running install's bundled plugin.
    */
   buildArgs(context: ClaudeLaunchContext, args: string[]): string[] {
     const { plan, settingsPath, mcpConfigPath } = context.delivery;
@@ -157,13 +149,13 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
         ? ["--setting-sources", "user,project,local", "--settings", settingsPath]
         : [];
     const addDirArgs = plan.dirAccess === "add-dir" ? ["--add-dir", context.companionPath] : [];
+    const pluginDirArgs = launchPluginFolders(
+      plan,
+      context.pluginDirectories,
+      getClaudePluginRoot(),
+    ).flatMap((dir) => ["--plugin-dir", dir]);
     const mcpConfigArgs =
       plan.mcp === "mcp-config" && mcpConfigPath ? ["--mcp-config", mcpConfigPath] : [];
-    const contextModeArgs = context.capabilities.some(
-      (capability) => capability.name === "context-mode",
-    )
-      ? ["--plugin-dir", getContextModePackageRoot(context.companionPath)]
-      : [];
 
     return [
       ...addDirArgs,
@@ -174,10 +166,7 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
       }),
       ...settingsArgs,
       ...mcpConfigArgs,
-      /** The bundled plugin from the running install, beside context-mode's. */
-      "--plugin-dir",
-      getClaudePluginRoot(),
-      ...contextModeArgs,
+      ...pluginDirArgs,
       ...args,
     ];
   }

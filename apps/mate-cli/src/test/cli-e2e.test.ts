@@ -1,3 +1,5 @@
+/** @test-requires sockets */
+
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { accessSync, constants } from "node:fs";

@@ -1,8 +1,14 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import type { UnattendedSyncOutcome } from "../../runtime/companion-sync";
 import { EMPTY_MANIFEST } from "../../runtime/runtime-document-manifest";
+import { parsePrepareOutput } from "../../runtime/session-prepare-runner";
 import { wrapStateOf } from "../../runtime/wrap-state";
+import { publishClaudePluginFolders } from "../../tools/setup/providers/claude-plugin-folders";
 import { prepareSession, sessionPrepareDeps } from "./session-prepare";
 import { LaunchPreflightError, type FrameworkConfig } from "./types";
 
@@ -13,6 +19,8 @@ const repository = { id: "acme", path: "/work/acme" };
 const companionPath = "/companions/acme";
 const passWrapState = wrapStateOf(EMPTY_MANIFEST);
 const config = { allowedAgents: ["opencode", "claude"], capabilities: [], git: "auto" } as never;
+/** A sync pass that gathered no Claude plugin folder. */
+const NO_PLUGIN_FOLDERS = { launch: [], loadWarnings: [], published: [], report: [] };
 
 function unattended(outcome: Partial<UnattendedSyncOutcome>) {
   return mock(async () => {
@@ -39,6 +47,7 @@ function stub(overrides: Partial<FrameworkConfig> = {}): void {
   sessionPrepareDeps.recordCompanionSyncUnfinished = mock(() => true);
   sessionPrepareDeps.syncCompanionFiles = mock(async () => {
     calls.push("files");
+    return NO_PLUGIN_FOLDERS;
   });
   sessionPrepareDeps.projectLaunch = mock(async () => {
     calls.push("launch");
@@ -588,5 +597,233 @@ describe("sync", () => {
     expect(calls).toEqual([]);
     expect(result.steps).toEqual([expect.objectContaining({ step: "lock", outcome: "warning" })]);
     expect(result.warnings).toHaveLength(1);
+  });
+});
+
+describe("Claude plugin folders", () => {
+  const folder = "/companions/acme/.mate/plugins/acme-plugin";
+  const leftOut =
+    "acme: Claude plugin folder /nowhere holds no .claude-plugin/plugin.json; it was left out.";
+
+  beforeEach(() => {
+    sessionPrepareDeps.syncCompanionFiles = mock(async () => {
+      calls.push("files");
+      return { ...NO_PLUGIN_FOLDERS, launch: [folder], loadWarnings: [leftOut] };
+    });
+  });
+
+  test("an attended prepare hands the launch its folders and reports what it left out", async () => {
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+      config,
+    });
+
+    expect(result.claudePluginDirectories).toEqual([folder]);
+    expect(result.warnings).toEqual([leftOut, "acme shadowed"]);
+  });
+
+  test("a companion-scoped launch gets its folders too", async () => {
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      mode: "attended",
+      config,
+    });
+
+    expect(result.claudePluginDirectories).toEqual([folder]);
+    expect(result.warnings).toEqual([leftOut]);
+  });
+
+  test("an OpenCode launch reports no Claude plugin-folder warning", async () => {
+    const result = await prepareSession({
+      runtime: "opencode",
+      companionPath,
+      mode: "attended",
+      config,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toEqual([]);
+  });
+
+  test("a plain session's local prepare reports no plugin-folder warning", async () => {
+    const result = await prepareSession({
+      runtime: "claude",
+      runtimes: ["claude"],
+      companionPath,
+      repository,
+      mode: "local",
+    });
+
+    expect(result.warnings).toEqual(["acme shadowed"]);
+  });
+
+  test("the notes a plain session's prepare hook prints name no plugin folder", async () => {
+    const {
+      failure: _failure,
+      wrapState: _wrapState,
+      ...reported
+    } = await prepareSession({
+      runtime: "claude",
+      runtimes: ["claude"],
+      companionPath,
+      repository,
+      mode: "local",
+    });
+
+    const { notes } = parsePrepareOutput(JSON.stringify(reported), 0);
+
+    expect(notes).toEqual(["acme shadowed"]);
+  });
+
+  test("a plain session's sync prepare reports no plugin-folder warning", async () => {
+    sessionPrepareDeps.syncCompanionUnattended = unattended({ changed: true });
+
+    const result = await prepareSession({
+      runtime: "claude",
+      runtimes: ["claude"],
+      companionPath,
+      repository,
+      mode: "sync",
+    });
+
+    expect(calls).toContain("files");
+    expect(result.warnings).toEqual(["acme shadowed"]);
+  });
+});
+
+describe.skipIf(process.getuid?.() === 0)("a Claude plugin folder Mate cannot write", () => {
+  let root: string;
+  let folder: string;
+
+  /** What every pass learns of the folder: Mate's marketplace file could not be written. */
+  const publish = () =>
+    publishClaudePluginFolders(
+      [
+        {
+          pluginId: "acme-cap",
+          enabled: true,
+          contributions: { pluginDirectories: [{ path: folder }] },
+        },
+      ],
+      { bundledPluginRoot: path.join(root, "bundled"), userMarketplaces: new Map() },
+    );
+
+  beforeEach(async () => {
+    root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "prepare-plugin-folder-")));
+    folder = path.join(root, "acme");
+    await fs.mkdir(path.join(folder, ".claude-plugin"), { recursive: true });
+    await fs.writeFile(path.join(folder, ".claude-plugin", "plugin.json"), `{"name":"acme"}\n`);
+    await fs.chmod(path.join(folder, ".claude-plugin"), 0o555);
+    sessionPrepareDeps.syncCompanionFiles = mock(async () => publish());
+    sessionPrepareDeps.runWrapPass = mock(async () => ({
+      kind: "current" as const,
+      projectionRoot: "",
+      companionPath,
+      documents: [],
+      writtenDocuments: [],
+      changed: { written: [], removed: [] },
+      warnings: [],
+      runtimes: new Set<"claude" | "opencode">(["claude"]),
+      wrapState: passWrapState,
+      claudePluginFolders: await publish(),
+    }));
+  });
+
+  afterEach(async () => {
+    await fs.chmod(path.join(folder, ".claude-plugin"), 0o755);
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  const naming = (warnings: string[]) => warnings.filter((warning) => warning.includes(folder));
+
+  test("a managed launch in a Working Repository names it once, and passes it", async () => {
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+      config,
+    });
+
+    expect(naming(result.warnings)).toEqual([
+      expect.stringContaining("acme-cap: Claude plugin folder"),
+    ]);
+    expect(result.claudePluginDirectories).toEqual([folder]);
+  });
+
+  test("a companion-scoped launch names it once", async () => {
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      mode: "attended",
+      config,
+    });
+
+    expect(naming(result.warnings)).toHaveLength(1);
+  });
+
+  test.each(["local", "sync"] as const)(
+    "a plain session's %s prepare names it not at all",
+    async (mode) => {
+      sessionPrepareDeps.syncCompanionUnattended = unattended({ changed: true });
+
+      const result = await prepareSession({
+        runtime: "claude",
+        runtimes: ["claude"],
+        companionPath,
+        repository,
+        mode,
+      });
+
+      expect(sessionPrepareDeps.syncCompanionFiles).toHaveBeenCalled();
+      expect(sessionPrepareDeps.runWrapPass).toHaveBeenCalled();
+      expect(naming(result.warnings)).toEqual([]);
+    },
+  );
+
+  test("an OpenCode launch names it not at all", async () => {
+    const result = await prepareSession({
+      runtime: "opencode",
+      companionPath,
+      repository,
+      mode: "attended",
+      config,
+    });
+
+    expect(naming(result.warnings)).toEqual([]);
+  });
+});
+
+describe("preflight session kind", () => {
+  test.each([
+    ["attended", "with a repository", "managed-repo"],
+    ["attended", "without a repository", "managed-companion"],
+    ["local", "with a repository", "unmanaged"],
+  ] as const)("a %s prepare %s preflights a %s session", async (mode, scope, kind) => {
+    await prepareSession({
+      runtime: "claude",
+      companionPath,
+      ...(scope === "with a repository" ? { repository } : {}),
+      mode,
+      config,
+    });
+
+    expect(sessionPrepareDeps.runCapabilityPreflight).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: "claude", sessionKind: kind }),
+    );
+  });
+
+  test("a sync prepare preflights an unmanaged session", async () => {
+    sessionPrepareDeps.syncCompanionUnattended = unattended({ changed: true });
+
+    await prepareSession({ runtime: "opencode", companionPath, repository, mode: "sync" });
+
+    expect(sessionPrepareDeps.runCapabilityPreflight).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: "opencode", sessionKind: "unmanaged" }),
+    );
   });
 });

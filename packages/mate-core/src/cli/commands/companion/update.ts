@@ -118,8 +118,10 @@ export const companionUpdateDeps: CompanionUpdateDeps = {
   getCurrentVersion,
   fetchLatestVersion,
   loadConfig: (companionPath) => new ConfigStore(frameworkConfigPath(companionPath)).load(),
-  syncCompanionFiles: (companionPath, config, options) =>
-    syncCompanionFiles(companionPath, config, undefined, options),
+  /** The Claude plugin folders it gathers are for a launch; an update ignores them. */
+  async syncCompanionFiles(companionPath, config, options) {
+    await syncCompanionFiles(companionPath, config, undefined, options);
+  },
   async writeEngineFloor(companionPath, range) {
     const store = new RawFrameworkConfigStore(frameworkConfigPath(companionPath));
     const raw = (await store.load()) ?? {};

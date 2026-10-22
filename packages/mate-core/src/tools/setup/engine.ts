@@ -2,6 +2,7 @@
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
+import { getClaudePluginRoot } from "../../lib/package-paths";
 import type { RenderedRuntimeDocuments } from "../../runtime/runtime-document-manifest";
 import { collectHostingProviders, ContextServiceMediator } from "./context-services";
 import type {
@@ -9,17 +10,21 @@ import type {
   CapabilityPlugin,
   Plugin,
   PluginRegistration,
+  RuntimeContributionsByRuntime,
   SetupContext,
 } from "./plugin";
 import { reconcileClaudeContributions, renderClaudeWorkingDocuments } from "./providers/claude";
+import {
+  inspectClaudePluginFolders,
+  publishClaudePluginFolders,
+  type ClaudePluginFolders,
+} from "./providers/claude-plugin-folders";
 import {
   reconcileOpenCodeContributions,
   renderOpenCodeWorkingDocuments,
 } from "./providers/opencode";
 import { normalizeRegistration, type NormalizedRegistration } from "./registry";
 import { projectionRepoRoot } from "./surface-target";
-
-export type { RenderedRuntimeDocuments };
 
 export interface SetupInstallationPlanAction {
   phase: Plugin["kind"];
@@ -38,6 +43,11 @@ export interface SetupInstallationOutcome {
   executedActions: SetupInstallationPlanAction[];
   skippedActions: SetupInstallationPlanAction[];
   warnings: string[];
+  /**
+   * Enabled Capabilities' Claude plugin folders, published outside a hub (a hub
+   * has no wrap for plain sessions to load them through); never printed here.
+   */
+  claudePluginFolders: ClaudePluginFolders;
 }
 
 export function buildSetupInstallationPlan(
@@ -181,9 +191,15 @@ export async function executeSetupInstallationPlan(
 
   await mediator.finalize();
 
-  await reconcileCapabilityContributions(ctx, plugins, plan);
+  const inputsByRuntime = await reconcileCapabilityContributions(ctx, plugins, plan);
+  const claudeInputs = inputsByRuntime.get("claude") ?? [];
+  const folderOptions = { bundledPluginRoot: getClaudePluginRoot() };
+  const claudePluginFolders =
+    ctx.scope === "hub"
+      ? await inspectClaudePluginFolders(claudeInputs, folderOptions)
+      : await publishClaudePluginFolders(claudeInputs, folderOptions);
 
-  return { executedActions, skippedActions, warnings };
+  return { executedActions, skippedActions, warnings, claudePluginFolders };
 }
 
 // The Runtime Surface of each active Agent Runtime, by runtime id.
@@ -215,6 +231,7 @@ async function collectContributionInputs(
   ctx: SetupContext,
   plugins: Plugin[],
   plan: SetupInstallationPlan,
+  onContributionError?: ContributionErrorHandler,
 ): Promise<Map<string, CapabilityContributionInput[]>> {
   // The plan already resolved enablement (policy, saved selection, package
   // manager requirements); mirror it instead of recomputing.
@@ -230,7 +247,14 @@ async function collectContributionInputs(
     const capability = plugin as CapabilityPlugin;
     if (!capability.getRuntimeContributions) continue;
     const enabled = enabledByPluginId.get(capability.id) ?? false;
-    const byRuntime = await capability.getRuntimeContributions(ctx);
+    let byRuntime: RuntimeContributionsByRuntime;
+    try {
+      byRuntime = await capability.getRuntimeContributions(ctx);
+    } catch (error) {
+      if (!onContributionError) throw error;
+      onContributionError(capability.id, error);
+      continue;
+    }
     for (const [runtimeId, contributions] of Object.entries(byRuntime)) {
       if (!contributions) continue;
       // Inactive runtimes still reconcile — with everything disabled — so a
@@ -254,19 +278,39 @@ async function collectContributionInputs(
  * Reconcile declared Capability contributions through every active runtime's
  * Runtime Surface (spec: plugin-engine). Runs after all plugin phases, so
  * providers are always done first. Disabled capabilities participate with
- * `enabled: false` and drive teardown of their managed entries.
+ * `enabled: false` and drive teardown of their managed entries. Returns the
+ * inputs it reconciled, so the pass derives launch-only data from the same ones.
  */
 async function reconcileCapabilityContributions(
   ctx: SetupContext,
   plugins: Plugin[],
   plan: SetupInstallationPlan,
-): Promise<void> {
+): Promise<Map<string, CapabilityContributionInput[]>> {
   const inputsByRuntime = await collectContributionInputs(ctx, plugins, plan);
   for (const [runtimeId, inputs] of inputsByRuntime) {
     const reconcile = RUNTIME_SURFACE_RECONCILERS[runtimeId];
     if (!reconcile || inputs.length === 0) continue;
     await reconcile(ctx, inputs);
   }
+  return inputsByRuntime;
+}
+
+/** Receives one Capability's rejected contributions; that Capability then contributes nothing. */
+export type ContributionErrorHandler = (capabilityId: string, error: unknown) => void;
+
+/**
+ * One pass's declared Capability contributions by runtime, collected without a
+ * reconcile. A rejecting Capability fails the collection unless
+ * `onContributionError` takes its error; only diagnostics should pass one.
+ */
+export async function collectRuntimeContributionInputs(
+  ctx: SetupContext,
+  registrations: PluginRegistration[],
+  plan: SetupInstallationPlan,
+  onContributionError?: ContributionErrorHandler,
+): Promise<Map<string, CapabilityContributionInput[]>> {
+  const plugins = registrations.map((entry) => normalizeRegistration(entry).plugin);
+  return collectContributionInputs(ctx, plugins, plan, onContributionError);
 }
 
 /**
@@ -274,6 +318,7 @@ async function reconcileCapabilityContributions(
  * produces the documents and the Projection Root places them, so no Runtime
  * Surface reaches inside a Working Repository. Refuses before anything renders
  * when the context has no Working Repository: every document is addressed by it.
+ * Its warnings are data for the caller, never printed here.
  */
 export async function renderRuntimeDocuments(
   ctx: SetupContext,
@@ -281,8 +326,7 @@ export async function renderRuntimeDocuments(
   plan: SetupInstallationPlan,
 ): Promise<RenderedRuntimeDocuments> {
   projectionRepoRoot(ctx);
-  const plugins = registrations.map((entry) => normalizeRegistration(entry).plugin);
-  const inputsByRuntime = await collectContributionInputs(ctx, plugins, plan);
+  const inputsByRuntime = await collectRuntimeContributionInputs(ctx, registrations, plan);
   const rendered: RenderedRuntimeDocuments = { documents: [], warnings: [] };
   for (const [runtimeId, render] of Object.entries(RUNTIME_SURFACE_WORKING_RENDERERS)) {
     if (!ctx.activeProviders.includes(runtimeId)) continue;
@@ -291,4 +335,20 @@ export async function renderRuntimeDocuments(
     rendered.warnings.push(...warnings);
   }
   return rendered;
+}
+
+/**
+ * Publishes the enabled Claude plugin folders for a wrap pass, before it
+ * renders: writes Mate's marketplace files and removes those of disabled
+ * Capabilities. Runs no plugin phase.
+ */
+export async function publishRuntimeClaudePluginMarketplaces(
+  ctx: SetupContext,
+  registrations: PluginRegistration[],
+  plan: SetupInstallationPlan,
+): Promise<ClaudePluginFolders> {
+  const inputsByRuntime = await collectRuntimeContributionInputs(ctx, registrations, plan);
+  return publishClaudePluginFolders(inputsByRuntime.get("claude") ?? [], {
+    bundledPluginRoot: getClaudePluginRoot(),
+  });
 }

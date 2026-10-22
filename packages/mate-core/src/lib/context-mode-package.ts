@@ -54,9 +54,17 @@ function validateContextModeNodeRuntime(): void {
 export async function validateContextModePackage(companionPath: string): Promise<void> {
   validateContextModeNodeRuntime();
   const root = getContextModePackageRoot(companionPath);
-  const manifest = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8")) as {
-    version?: string;
-  };
+  let manifestText: string;
+  try {
+    manifestText = await fs.readFile(path.join(root, "package.json"), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    throw new Error(
+      `Expected ${getContextModePackageReference()} at ${root}; it is not installed. Re-run \`mate companion setup\`.`,
+      { cause: error },
+    );
+  }
+  const manifest = JSON.parse(manifestText) as { version?: string };
   if (manifest.version !== CONTEXT_MODE_VERSION) {
     throw new Error(
       `Expected ${getContextModePackageReference()} at ${root}; found ${manifest.version ?? "an unknown version"}. Re-run \`mate companion setup\`.`,

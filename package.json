@@ -14,6 +14,8 @@
     "release:canary": "bun run --cwd ./apps/mate-cli release:canary",
     "release:dry-run": "bun run --cwd ./apps/mate-cli release:dry-run",
     "test": "bun run --filter @uniqbit/mate --filter @uniqbit/mate-core --filter @uniqbit/mate-container test",
+    "test:unit": "bun run --filter @uniqbit/mate --filter @uniqbit/mate-core --filter @uniqbit/mate-container test:unit",
+    "test:integration": "bun run --filter @uniqbit/mate --filter @uniqbit/mate-core --filter @uniqbit/mate-container test:integration",
     "test:ci": "bun run --filter @uniqbit/mate test:ci",
     "test:coverage": "bun run --filter @uniqbit/mate test:coverage",
     "typecheck": "bun run --filter @uniqbit/mate typecheck",

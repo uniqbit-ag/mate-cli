@@ -4,7 +4,6 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repository-link";
 import type { ProjectionChangedPaths } from "../../lib/orchestrator/projection-types";
 import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
-import { readCompanionConfig } from "../../lib/orchestrator/config-store";
 import { runWrapPass, type WrapPassResult } from "../../lib/orchestrator/wrap-pass";
 import { withCompanionLock } from "../../runtime/companion-lock";
 import { WRAP_RUNTIMES } from "../../runtime/wrap-state";
@@ -129,7 +128,8 @@ export async function runWrapCommand(
   for (const document of result.documents) {
     console.log(`  Runtime:   ${document}`);
   }
-  for (const warning of result.warnings) {
+  const publication = result.claudePluginFolders?.publication;
+  for (const warning of [...result.warnings, ...(publication?.warnings ?? [])]) {
     console.error(`${FRAMEWORK_NAME}: warning: ${warning}`);
   }
   reportChangedPaths(result.changed);
@@ -141,18 +141,10 @@ export async function runWrapCommand(
   console.log(
     `Start sessions yourself (${plain}) or through ${managed}; both work here. \`${FRAMEWORK_NAME} unwrap\` reverses this.`,
   );
-  if (runtimes.has("claude") && (await contextModeEnabled(result.companionPath))) {
+  if (!runtimes.has("claude")) return;
+  for (const unpublished of publication?.unpublished ?? []) {
     console.log(
-      `Note: context-mode loads only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
+      `Note: ${unpublished.capability}'s Claude plugin folder ${unpublished.path} ${unpublished.detail}, so it loads only in sessions started with \`${FRAMEWORK_NAME} claude\`.`,
     );
-  }
-}
-
-async function contextModeEnabled(companionPath: string): Promise<boolean> {
-  try {
-    const config = await readCompanionConfig(companionPath);
-    return (config.capabilities ?? []).some((capability) => capability.name === "context-mode");
-  } catch {
-    return false;
   }
 }

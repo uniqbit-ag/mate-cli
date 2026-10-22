@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Capabilities can ship Claude plugins
+
+- A Capability, built-in or dynamic, can declare Claude Code plugin folders as `pluginDirectories: [{ path }]` under its `claude` Runtime Contribution. `mate claude` passes each enabled folder as `--plugin-dir`, after Mate's own plugin.
+- Plain `claude` sessions in a wrapped repository load these plugins too, as long as Claude Code trusts the folder. Each folder is published as its own local marketplace through `.claude-plugin/marketplace.json`. Mate reuses a marketplace file the plugin's author ships if it lists the plugin; context-mode ships one. Otherwise Mate writes its own, named `mate-plugin-<plugin>`, and removes it when the Capability is disabled. Mate never changes a marketplace file it did not write.
+- The Claude wrap enables each published folder in `.claude/settings.local.json` (`extraKnownMarketplaces` and `enabledPlugins`), keeps entries you added there, and `mate unwrap` withdraws Mate's. In a wrapped repository, `mate claude` leaves those folders to the wrap, so each plugin loads once.
+- Some folders are not published, and load only through `mate claude`:
+  - a folder whose marketplace file Mate did not write and that does not list the plugin;
+  - a folder whose plugin name cannot form a marketplace name;
+  - a folder whose marketplace name your Claude Code configuration already uses with another source, for example context-mode added from GitHub. Mate skips it rather than redirect your marketplace.
+- Claude Code records the plugins in `~/.claude/plugins/`, and those records stay after `mate unwrap`. Once the plugin is no longer enabled, they have no effect.
+- Each launch checks the folders it gathers. A folder that is not an absolute path, or holds no `.claude-plugin/plugin.json`, is left out, and the session still starts. A folder declared twice, even with a trailing separator or through a symlink, is passed once. A folder that is Mate's own bundled plugin, or whose manifest uses Mate's plugin name (`mate-claude-plugin`), is left out with a warning, so a Capability can neither load Mate's plugin twice nor replace its guardrail hooks. Only `mate claude` warns about it; `mate opencode` cannot load the folder, so it stays silent.
+- `mate wrap` names each Claude plugin folder it could not publish, and why, replacing the context-mode-only note. `mate doctor` lists the contributed Claude plugins, in text and `--json`:
+  - whether each folder can load: present, missing its plugin manifest, not an absolute path, Mate's bundled plugin, or using Mate's plugin name;
+  - for plain sessions, the marketplace that publishes it, or why it is not published (`marketplace` and `unpublishedReason` in `--json`).
+
+  When a Capability's contributions fail to load, doctor names the Capability and the error, still reports everything else, and exits non-zero.
+- context-mode uses the new contribution, so it now loads in plain `claude` sessions of wrapped repositories too. A companion-scoped `mate claude` passes the same two `--plugin-dir` flags in the same order. In a wrapped repository, `mate claude` passes only Mate's own plugin flag, and the wrap loads context-mode. A missing or broken package still fails `mate claude` before Claude starts. Its Claude package check moved from the Claude adapter into context-mode's own launch preflight, which skips plain sessions. A missing package now names the expected version instead of a bare "no such file" error.
+- Capability preflight hooks receive the kind of session being prepared (`sessionKind`). `RuntimeContributions`, `RuntimeContributionsByRuntime`, `PluginDirectoryContribution` and `SessionKind` are exported as types for dynamic plugin authors.
+
 ### Secret guardrails (breaking)
 
 - Agents in Mate-managed sessions can no longer read, write, or edit secret files (`.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ecdsa`, `id_ed25519`, `.netrc`, `.pgpass`, `.npmrc`), and shell commands that name one are blocked, as are Grep searches inside a secret file or with a glob aimed at secret files (such as `.env*`). `.env.example`, `.env.sample`, `.env.template`, and `.env.dist` stay readable. The Claude hook and the OpenCode middleware enforce this, and Mate's managed deny rules back it up.

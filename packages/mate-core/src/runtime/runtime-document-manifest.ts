@@ -236,11 +236,23 @@ export function recordedMapKeys(
   documentPath: string,
   at: readonly string[],
 ): string[] {
-  return (documentRegions(manifest, documentPath) ?? []).flatMap((region: unknown) =>
-    isRecord(region) && region.kind === "map" && isAt(region.at, at) && isRecord(region.entries)
-      ? Object.keys(region.entries)
-      : [],
-  );
+  return Object.keys(recordedMapEntries(manifest, documentPath, at));
+}
+
+/** The entries of the `map` regions recorded at `at` in one document, checked like {@link recordedMapKeys}. */
+export function recordedMapEntries(
+  manifest: Manifest,
+  documentPath: string,
+  at: readonly string[],
+): Record<string, unknown> {
+  return Object.assign(
+    {},
+    ...(documentRegions(manifest, documentPath) ?? []).flatMap((region: unknown) =>
+      isRecord(region) && region.kind === "map" && isAt(region.at, at) && isRecord(region.entries)
+        ? [region.entries]
+        : [],
+    ),
+  ) as Record<string, unknown>;
 }
 
 /** Every value of the `list` regions recorded under `prefix` in one document. */

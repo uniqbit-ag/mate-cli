@@ -16,14 +16,17 @@ const IMPORT_PATTERN =
   /(?:import|export)[^"']*from\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g;
 
 function listSourceFiles(dir: string): string[] {
-  return fs
-    .readdirSync(dir, { withFileTypes: true })
-    .flatMap((entry) =>
-      entry.isDirectory()
-        ? listSourceFiles(path.join(dir, entry.name))
-        : [path.join(dir, entry.name)],
-    )
-    .filter((file) => /\.(ts|tsx)$/.test(file));
+  return (
+    fs
+      .readdirSync(dir, { withFileTypes: true })
+      .flatMap((entry) =>
+        entry.isDirectory()
+          ? listSourceFiles(path.join(dir, entry.name))
+          : [path.join(dir, entry.name)],
+      )
+      /** Package files exclude tests; only the shipped runtime has this import boundary. */
+      .filter((file) => /\.(ts|tsx)$/.test(file) && !file.endsWith(".test.ts"))
+  );
 }
 
 describe("OpenCode plugin import isolation", () => {

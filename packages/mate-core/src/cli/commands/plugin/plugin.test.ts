@@ -1,3 +1,4 @@
+import { fakePluginInstallDeps } from "../../../../test/plugin-install";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -47,7 +48,9 @@ describe("runPluginCommand install", () => {
     process.env.MATE_ARTIFACT_PATH = companionPath;
 
     await runPluginCommand("install", ["@acme/private-tool"], {
-      installDeps: { runNpmInstall: async () => ({ ok: false, detail: "E401" }) },
+      installDeps: fakePluginInstallDeps({
+        runNpmInstall: async () => ({ ok: false, detail: "E401" }),
+      }),
     });
 
     expect(process.exitCode).toBe(1);
@@ -62,7 +65,7 @@ describe("runPluginCommand install", () => {
     process.env.MATE_ARTIFACT_PATH = companionPath;
 
     await runPluginCommand("install", ["@acme/custom-plugin@1.2.0"], {
-      installDeps: {
+      installDeps: fakePluginInstallDeps({
         runNpmInstall: async (workspaceRoot: string) => {
           const root = path.join(workspaceRoot, "node_modules", "@acme", "custom-plugin");
           await fs.mkdir(root, { recursive: true });
@@ -73,7 +76,7 @@ describe("runPluginCommand install", () => {
           );
           return { ok: true };
         },
-      },
+      }),
     });
 
     expect(process.exitCode).toBe(0);
