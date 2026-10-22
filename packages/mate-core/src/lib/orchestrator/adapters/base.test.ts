@@ -667,7 +667,7 @@ describe("Adapter base-URL rewriting is gone", () => {
   /**
    * Migrated from the launch overlay: references, permissions, skills and the
    * plugin root are asserted on the wrapped document in
-   * `tools/setup/runtime-documents.test.ts`.
+   * `tools/setup/providers/opencode-working-documents.test.ts`.
    */
   test("OpenCodeAdapter sets neither OPENCODE_CONFIG_DIR nor a config overlay", async () => {
     const launch = await withEnv("OPENCODE_CONFIG_DIR", undefined, () =>

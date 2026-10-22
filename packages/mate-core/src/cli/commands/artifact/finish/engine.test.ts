@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { type FinishResult, runFinishEngine } from "./engine";
+import { type EngineDeps, type FinishResult, runFinishEngine } from "./engine";
 import type { ArtifactFinisher, Produced } from "./finisher";
 import type { GitOps, RebaseResult } from "./git";
 
@@ -534,5 +534,89 @@ describe("runFinishEngine — tag collision policy", () => {
     const order = ops(h);
     expect(order.indexOf("fetch")).toBeLessThan(order.indexOf("tag"));
     expect(order.indexOf("rebaseOntoUpstream")).toBeLessThan(order.indexOf("tag"));
+  });
+});
+
+describe("runFinishEngine — secret scan", () => {
+  const FINDING = {
+    path: `openspec/changes/archive/${ANCHOR}/design.md`,
+    line: 7,
+    ruleId: "x/aws",
+  };
+
+  function runWithScan(h: Harness, secretScan: EngineDeps["secretScan"], json = true) {
+    return runFinishEngine(
+      h.finisher,
+      { name: "my-change", noPush: false },
+      {
+        git: h.git,
+        json,
+        stdout: (l) => h.stdout.push(l),
+        stderr: (l) => h.stderr.push(l),
+        secretScan,
+      },
+    );
+  }
+
+  test("scans exactly the commit paths, after cap sync and before the commit", async () => {
+    const h = harness();
+    const order: string[] = [];
+    const scanned: string[][] = [];
+    h.finisher.capSync = async () => {
+      order.push("capSync");
+      return true;
+    };
+
+    const result = await runWithScan(h, async (paths) => {
+      order.push(`scan:${ops(h).includes("add")}`);
+      scanned.push(paths);
+      return { skipped: false, findings: [] };
+    });
+
+    expect(order).toEqual(["capSync", "scan:false"]);
+    expect(scanned).toEqual([COMMIT_PATHS]);
+    expect(result.status).toBe("ok");
+    expect(result.local).toEqual({ committed: true, tagged: true, pushed: true });
+  });
+
+  test("a finding stops before the commit, reporting path, line and rule id", async () => {
+    const h = harness();
+
+    const result = await runWithScan(h, async () => ({ skipped: false, findings: [FINDING] }));
+
+    expect(result.step).toBe("secret-scan");
+    expect(result.status).toBe("error");
+    expect(result.secretFindings).toEqual([FINDING]);
+    expect(result.local).toEqual({ committed: false, tagged: false, pushed: false });
+    expect(ops(h)).not.toContain("add");
+    expect(ops(h)).not.toContain("tag");
+    expect(ops(h)).not.toContain("push");
+    expect(result.message).toContain(`${FINDING.path}:7 (x/aws)`);
+    expect(process.exitCode).toBe(1);
+    expectNoUndo(h);
+  });
+
+  test("a scanner error fails the step the same way", async () => {
+    const h = harness();
+
+    const result = await runWithScan(h, async () => {
+      throw new Error("engine exploded");
+    });
+
+    expect(result.step).toBe("secret-scan");
+    expect(result.status).toBe("error");
+    expect(ops(h)).not.toContain("add");
+  });
+
+  test("an opt-out skips the scan with a one-line notice and publishes", async () => {
+    const h = harness();
+
+    const result = await runWithScan(h, async () => ({ skipped: true }));
+
+    expect(h.stderr).toEqual([
+      "mate: secret scan skipped (secrets.guardrails is false in framework.yaml).",
+    ]);
+    expect(result.status).toBe("ok");
+    expect(result.local.committed).toBe(true);
   });
 });

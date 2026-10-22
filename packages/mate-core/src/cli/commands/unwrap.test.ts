@@ -10,6 +10,7 @@ import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-d
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import type { LinkedRepository } from "../../lib/orchestrator/types";
 import { readWrapState } from "../../runtime/wrap-state";
+import { renderSecretDenyEntries } from "../../tools/setup/providers/claude";
 import { runUnwrapCommand } from "./unwrap";
 import { runWrapCommand } from "./wrap";
 
@@ -152,7 +153,12 @@ describe("runUnwrapCommand", () => {
     }
     const placed = JSON.parse(await fs.readFile(settingsPath, "utf8"));
     expect(placed.enableArtifact).toBe(true);
-    expect(placed.permissions.deny).toEqual(["Bash(rm:*)", "EnterPlanMode", "DesignSync"]);
+    expect(placed.permissions.deny).toEqual([
+      "Bash(rm:*)",
+      "EnterPlanMode",
+      "DesignSync",
+      ...renderSecretDenyEntries(),
+    ]);
 
     const unwrapped = capture();
     try {
@@ -178,7 +184,11 @@ describe("runUnwrapCommand", () => {
       await fs.readFile(path.join(repoPath, ".claude", "settings.local.json"), "utf8"),
     );
     expect(placed.enableArtifact).toBe(false);
-    expect(placed.permissions.deny).toEqual(["EnterPlanMode", "DesignSync"]);
+    expect(placed.permissions.deny).toEqual([
+      "EnterPlanMode",
+      "DesignSync",
+      ...renderSecretDenyEntries(),
+    ]);
   });
 
   test("reports a repository that was never wrapped without failing", async () => {

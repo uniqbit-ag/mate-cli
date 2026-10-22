@@ -2,7 +2,7 @@
 import { getActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
-import type { RenderedRuntimeDocument } from "../../runtime/runtime-document-manifest";
+import type { RenderedRuntimeDocuments as RenderedSurfaceDocuments } from "../../runtime/runtime-document-manifest";
 import { collectHostingProviders, ContextServiceMediator } from "./context-services";
 import type {
   CapabilityContributionInput,
@@ -16,11 +16,21 @@ import {
   claudePluginCapabilityIds,
   gatherClaudePluginDirectories,
   reconcileClaudeContributions,
+  renderClaudeWorkingDocuments,
   type GatheredClaudePluginDirectories,
 } from "./providers/claude";
-import { reconcileOpenCodeContributions } from "./providers/opencode";
-import { mergeCompanionOpenCodeConfig, renderDocumentsForTarget } from "./runtime-documents";
+import {
+  reconcileOpenCodeContributions,
+  renderOpenCodeWorkingDocuments,
+} from "./providers/opencode";
 import { normalizeRegistration, type NormalizedRegistration } from "./registry";
+import { projectionRepoRoot } from "./surface-target";
+
+/** A working-target render of every active Runtime Surface; its warnings are data for the caller, never printed here. */
+export interface RenderedRuntimeDocuments extends RenderedSurfaceDocuments {
+  /** Enabled Capabilities whose Claude plugin folder loads only through a managed launch. */
+  claudePluginCapabilities: string[];
+}
 
 export interface SetupInstallationPlanAction {
   phase: Plugin["kind"];
@@ -202,6 +212,18 @@ const RUNTIME_SURFACE_RECONCILERS: Record<
 };
 
 /**
+ * The working-target render of each Runtime Surface, by runtime id, in the
+ * order its documents are rendered.
+ */
+const RUNTIME_SURFACE_WORKING_RENDERERS: Record<
+  string,
+  (ctx: SetupContext, inputs: CapabilityContributionInput[]) => Promise<RenderedSurfaceDocuments>
+> = {
+  claude: renderClaudeWorkingDocuments,
+  opencode: renderOpenCodeWorkingDocuments,
+};
+
+/**
  * The declared Capability contributions of one pass, keyed by runtime. Shared
  * by both targets: what a companion pass writes is what a working pass renders.
  */
@@ -291,30 +313,29 @@ export async function collectRuntimeContributionInputs(
   return collectContributionInputs(ctx, plugins, plan, onContributionError);
 }
 
-/** What a render returns: its warnings are data for the caller, never printed here. */
-export interface RenderedRuntimeDocuments {
-  documents: RenderedRuntimeDocument[];
-  warnings: string[];
-  /** Enabled Capabilities whose Claude plugin folder loads only through a managed launch. */
-  claudePluginCapabilities: string[];
-}
-
 /**
  * The same declarations, rendered rather than written: a working-target pass
  * produces the documents and the Projection Root places them, so no Runtime
- * Surface reaches inside a Working Repository.
+ * Surface reaches inside a Working Repository. Refuses before anything renders
+ * when the context has no Working Repository: every document is addressed by it.
  */
 export async function renderRuntimeDocuments(
   ctx: SetupContext,
   registrations: PluginRegistration[],
   plan: SetupInstallationPlan,
 ): Promise<RenderedRuntimeDocuments> {
+  projectionRepoRoot(ctx);
   const inputsByRuntime = await collectRuntimeContributionInputs(ctx, registrations, plan);
-  const documents = renderDocumentsForTarget(ctx, inputsByRuntime);
-  const claudePluginCapabilities = claudePluginCapabilityIds(inputsByRuntime.get("claude") ?? []);
-  if (ctx.target !== "working") return { documents, warnings: [], claudePluginCapabilities };
-  return {
-    ...(await mergeCompanionOpenCodeConfig(ctx.companionPath, documents)),
-    claudePluginCapabilities,
+  const rendered: RenderedRuntimeDocuments = {
+    documents: [],
+    warnings: [],
+    claudePluginCapabilities: claudePluginCapabilityIds(inputsByRuntime.get("claude") ?? []),
   };
+  for (const [runtimeId, render] of Object.entries(RUNTIME_SURFACE_WORKING_RENDERERS)) {
+    if (!ctx.activeProviders.includes(runtimeId)) continue;
+    const { documents, warnings } = await render(ctx, inputsByRuntime.get(runtimeId) ?? []);
+    rendered.documents.push(...documents);
+    rendered.warnings.push(...warnings);
+  }
+  return rendered;
 }

@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { resolveSecretPolicy } from "../../../runtime/policy";
+import { DEFAULT_SECRET_DENY_PATTERNS, type SecretPolicy } from "../../../runtime/secret-patterns";
 import { resolveGitInfoExcludePath } from "../git-utils";
 import type { InstallRequirement } from "../install-contract";
 import type { CapabilityPlugin, RuntimeContributionsByRuntime } from "../plugin";
@@ -368,14 +370,40 @@ export async function isTokensaveIndexed(repoPath: string): Promise<boolean> {
   return fileExists(path.join(repoPath, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_DATABASE_FILE));
 }
 
+function secretExclude(pattern: string): string {
+  return `**/${pattern.replace(/^\/+/, "")}`;
+}
+
+/**
+ * Mate owns the excludes derived from the defaults and from the companion's
+ * current extra patterns. An extra removed from config is no longer
+ * recognizable, so its exclude stays: over-excluding from an index is harmless.
+ */
+function reconcileSecretExcludes(existing: unknown, secrets: SecretPolicy): string[] {
+  const owned = new Set([...DEFAULT_SECRET_DENY_PATTERNS, ...secrets.deny].map(secretExclude));
+  const kept = (Array.isArray(existing) ? existing : []).filter(
+    (entry): entry is string => typeof entry === "string" && !owned.has(entry),
+  );
+  const managed = secrets.guardrails ? [...new Set(secrets.deny.map(secretExclude))] : [];
+  return [...kept, ...managed];
+}
+
 /**
  * Reconciles Mate's single-graph branching posture into the working repo's
  * git-excluded `.tokensave/config.json` and deactivates existing branch
  * metadata. Best-effort by design: the file is created by `tokensave init`,
  * so an absent, unreadable, or unparseable config is left untouched rather
  * than treated as an error. Existing branch databases are never removed.
+ *
+ * With a secret policy, also reconciles the secret-file excludes: Mate's
+ * `**\/<pattern>` entries are appended while guardrails are on and removed
+ * when they are off, by exact value, so user-authored excludes keep their
+ * place. Without one, `exclude` is left as it is.
  */
-export async function ensureTokensaveBranchingPosture(repoPath: string): Promise<void> {
+export async function ensureTokensaveBranchingPosture(
+  repoPath: string,
+  secrets?: SecretPolicy,
+): Promise<void> {
   const configPath = path.join(repoPath, TOKENSAVE_STORE_DIR, TOKENSAVE_STORE_CONFIG_FILE);
 
   let raw: string;
@@ -395,8 +423,13 @@ export async function ensureTokensaveBranchingPosture(repoPath: string): Promise
     return;
   }
 
+  const config = parsed as Record<string, unknown>;
   const next = JSON.stringify(
-    { ...(parsed as Record<string, unknown>), ...TOKENSAVE_OWNED_POSTURE },
+    {
+      ...config,
+      ...TOKENSAVE_OWNED_POSTURE,
+      ...(secrets ? { exclude: reconcileSecretExcludes(config.exclude, secrets) } : {}),
+    },
     null,
     2,
   );
@@ -539,7 +572,7 @@ export function createTokensavePlugin(): CapabilityPlugin {
       ) {
         return;
       }
-      await ensureTokensaveBranchingPosture(targetPath);
+      await ensureTokensaveBranchingPosture(targetPath, resolveSecretPolicy(ctx.companionPath));
       if (ctx.mode === "setup") {
         installTokensaveAgentIntegrations(ctx.activeProviders, targetPath);
       }

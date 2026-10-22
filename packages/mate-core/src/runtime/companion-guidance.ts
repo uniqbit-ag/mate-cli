@@ -27,7 +27,14 @@ export interface GuidanceContext {
   companionPath: string;
   repository?: { id: string; path: string };
   capabilities?: GuidanceCapability[];
+  /**
+   * Whether the companion's secret guardrails are active. Absent means active:
+   * a caller that cannot tell never drops the rule.
+   */
+  secretGuardrails?: boolean;
 }
+
+const SECRET_HANDLING_RULE = `    <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>`;
 
 export function hasGraphifyCapability(capabilities: GuidanceCapability[] = []): boolean {
   return capabilities.some((capability) => capability.name === "graphify");
@@ -167,6 +174,10 @@ export function buildCompanionPolicyXml(
     );
   }
 
+  if (context.secretGuardrails !== false) {
+    lines.push(SECRET_HANDLING_RULE);
+  }
+
   if (hasOpenspecCapability(context.capabilities)) {
     lines.push(
       `    <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository. areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>`,
@@ -225,7 +236,7 @@ export function buildCompanionGuidance(
  */
 export function buildOpenCodeGuidance(
   capabilities: GuidanceCapability[],
-  options: { companionScoped?: boolean } = {},
+  options: { companionScoped?: boolean; secretGuardrails?: boolean } = {},
 ): MateGuidanceFile {
   const repository = options.companionScoped
     ? undefined
@@ -235,6 +246,7 @@ export function buildOpenCodeGuidance(
       companionPath: "$MATE_ARTIFACT_PATH",
       repository,
       capabilities,
+      secretGuardrails: options.secretGuardrails,
     },
     { wrapperBinPath: "$MATE_WRAPPER_BIN_PATH" },
   );

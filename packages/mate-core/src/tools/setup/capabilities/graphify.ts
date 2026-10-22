@@ -12,9 +12,11 @@ import {
 import { confirm } from "../../../cli/confirm";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { getWrapperBinPath } from "../../../lib/package-paths";
+import { resolveSecretPolicy } from "../../../runtime/policy";
 import { isInstalledViaUvTool } from "../package-managers/uv";
 import { stripSectionFromFile } from "../providers/agent-file-sections";
 import { graphifySectionOptions } from "./graphify-shared";
+import { ensureGraphifySecretExclusion } from "./graphify-secrets";
 export { removeGraphifySection } from "./graphify-shared";
 import {
   mergeClaudeSettingsJsonHooks,
@@ -203,6 +205,16 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
               `graphify: install failed — install manually with \`${GRAPHIFY_INSTALL_CMD}\`\n`,
             );
           }
+        }
+      }
+
+      // Written here so it exists before any extraction; every Mate-invoked
+      // extraction rewrites it anyway and prunes whatever still gets through.
+      if (ctx.repoPath) {
+        try {
+          await ensureGraphifySecretExclusion(ctx.repoPath, resolveSecretPolicy(ctx.companionPath));
+        } catch (error) {
+          process.stderr.write(`graphify: ${(error as Error).message}\n`);
         }
       }
     },

@@ -198,3 +198,82 @@ describe("OpenCode companion hooks", () => {
     await expect(guardToolInput(context, "bash", undefined)).resolves.toBeUndefined();
   });
 });
+
+describe("OpenCode secret guardrails", () => {
+  const GITHUB_TOKEN = ["ghp", "wWPw5k4aXcaT4fNP0UcnZwJUVFk6LO0pINUx"].join("_");
+
+  async function guarded() {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-secrets-");
+    return { repo, companion, context: await launchContext(companion, repo) };
+  }
+
+  test("refuses read and edit of secret files, and lets the example through", async () => {
+    const { repo, context } = await guarded();
+    await expect(
+      guardToolInput(context, "read", { filePath: path.join(repo, ".env") }),
+    ).rejects.toThrow("secret files are off-limits");
+    await expect(
+      guardToolInput(context, "edit", { filePath: "certs/server.key", newString: "x" }),
+    ).rejects.toThrow("certs/server.key");
+    await expect(
+      guardToolInput(context, "read", { filePath: path.join(repo, ".env.example") }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("refuses bash commands naming a secret file", async () => {
+    const { context } = await guarded();
+    await expect(guardToolInput(context, "bash", { command: "source .env" })).rejects.toThrow(
+      "secret files are off-limits",
+    );
+    await expect(
+      guardToolInput(context, "bash", { command: "cat .env.example" }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("refuses a grep in a secret file or aimed at secret files", async () => {
+    const { repo, context } = await guarded();
+    await expect(
+      guardToolInput(context, "grep", { pattern: "KEY", path: path.join(repo, ".env") }),
+    ).rejects.toThrow("secret files are off-limits");
+    await expect(
+      guardToolInput(context, "grep", { pattern: "KEY", path: repo, include: "*.pem" }),
+    ).rejects.toThrow("*.pem");
+    await expect(
+      guardToolInput(context, "grep", { pattern: "KEY", path: repo, include: "*.ts" }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("refuses a patch that adds a secret file", async () => {
+    const { context } = await guarded();
+    await expect(
+      guardToolInput(context, "apply_patch", { patchText: "*** Add File: .env.local\n+KEY=1" }),
+    ).rejects.toThrow(".env.local");
+  });
+
+  test("scans companion writes and patches, never echoing the value", async () => {
+    const { companion, context } = await guarded();
+    const target = path.join(companion, "notes", "design.md");
+    const write = guardToolInput(context, "write", {
+      filePath: target,
+      content: `token: ${GITHUB_TOKEN}\n`,
+    });
+    await expect(write).rejects.toThrow("@secretlint/secretlint-rule-github");
+    await write.catch((error: Error) => expect(error.message).not.toContain(GITHUB_TOKEN));
+
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText: `*** Update File: ${target}\n@@\n-old\n+token: ${GITHUB_TOKEN}`,
+      }),
+    ).rejects.toThrow("@secretlint/secretlint-rule-github");
+  });
+
+  test("does not scan product code writes", async () => {
+    const { repo, context } = await guarded();
+    await expect(
+      guardToolInput(context, "write", {
+        filePath: path.join(repo, "src", "main.ts"),
+        content: GITHUB_TOKEN,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});

@@ -44,6 +44,9 @@ export function resolveOpenCodeGuidance(
   if (!projection) return { guidance: null, errors: [] };
 
   const policy = readCompanionPolicy(projection.companionPath);
-  const guidance = buildOpenCodeGuidance(policy.enabledCapabilities.map((name) => ({ name })));
+  const guidance = buildOpenCodeGuidance(
+    policy.enabledCapabilities.map((name) => ({ name })),
+    { secretGuardrails: policy.secrets.guardrails },
+  );
   return { guidance: guidance.errors.length > 0 ? null : guidance, errors: guidance.errors };
 }

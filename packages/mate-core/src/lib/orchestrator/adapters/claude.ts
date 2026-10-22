@@ -6,6 +6,7 @@ import { FRAMEWORK_NAME } from "../../../framework";
 import { buildCompanionGuidance } from "../../../playbooks/companion-guidance";
 import { planClaudeDelivery, type ClaudeDeliveryPlan } from "../../../runtime/claude-delivery-plan";
 import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
+import { resolveSecretPolicy } from "../../../runtime/policy";
 import type { SessionKind } from "../../../runtime/session-kind";
 import { NOT_WRAPPED } from "../../../runtime/wrap-state";
 import { writeAtomic } from "../../../runtime/write-atomic";
@@ -158,7 +159,10 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
     return [
       ...addDirArgs,
       "--append-system-prompt",
-      buildCompanionGuidance(context),
+      buildCompanionGuidance({
+        ...context,
+        secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
+      }),
       ...settingsArgs,
       ...mcpConfigArgs,
       ...pluginDirArgs,

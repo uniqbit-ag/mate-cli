@@ -118,4 +118,17 @@ describe("resolveOpenCodeGuidance", () => {
     expect(guidance).toBeNull();
     expect(errors.length).toBeGreaterThan(0);
   });
+
+  test("reads the secret guardrails switch live from the companion", () => {
+    const { repoRoot, companionPath } = wrapRepo();
+    expect(resolveOpenCodeGuidance({}, repoRoot).guidance?.companionGuidance).toContain(
+      'id="secret-handling"',
+    );
+
+    const configPath = path.join(companionPath, ".mate", "config", "framework.yaml");
+    fs.writeFileSync(configPath, "secrets:\n  guardrails: false\n", "utf8");
+    expect(resolveOpenCodeGuidance({}, repoRoot).guidance?.companionGuidance).not.toContain(
+      "secret-handling",
+    );
+  });
 });

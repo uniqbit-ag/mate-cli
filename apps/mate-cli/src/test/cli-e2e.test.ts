@@ -13,6 +13,22 @@ import { parse, stringify } from "yaml";
 import { version } from "../../package.json";
 
 const APP_ROOT = path.resolve(import.meta.dirname, "../..");
+
+/** The `--exclude` pairs Mate appends to every graphify extraction that accepts them. */
+const GRAPHIFY_SECRET_EXCLUDE_ARGS = [
+  ".env",
+  ".env.*",
+  "*.pem",
+  "*.key",
+  "*.p12",
+  "*.pfx",
+  "id_rsa",
+  "id_ecdsa",
+  "id_ed25519",
+  ".netrc",
+  ".pgpass",
+  ".npmrc",
+].flatMap((pattern) => ["--exclude", pattern]);
 const E2E_TMP_ROOT = path.join(os.tmpdir(), "mate-cli-e2e");
 const tempRoots: string[] = [];
 
@@ -245,36 +261,50 @@ async function runMateInTty(
       .replaceAll("]", "\\]")
       .replaceAll("\n", "\\n")
       .replaceAll("\r", "\\r")}"`;
-  const command = ["bun", path.join(APP_ROOT, "src/cli.ts"), ...args].map(toTclString).join(" ");
-  // Ink renders through the alternate-screen buffer, so the wizard's frames do
-  // not reach expect until the PTY drains at exit. Real-time `expect <pattern>`
-  // matching therefore cannot gate the interaction; instead each chunk is sent
-  // after a fixed `delayMs`, timed so the wizard has mounted (and, for the final
-  // step, resolved its async preview) before the key arrives.
+  /**
+   * Run through `sh` so mate's exit code reaches us as an output marker: the
+   * `wait` builtin blocks indefinitely on this expect build once the child is
+   * reaped at eof.
+   */
+  const command = [
+    "sh",
+    "-c",
+    `bun "$@"; printf '\\n${TTY_EXIT_MARKER}%s\\n' "$?"`,
+    "mate-e2e",
+    path.join(APP_ROOT, "src/cli.ts"),
+    ...args,
+  ]
+    .map(toTclString)
+    .join(" ");
+  /**
+   * Ink frames do not reach expect until the PTY drains at exit, so no output
+   * can gate the interaction. The first key instead waits for the prompt to
+   * switch the PTY to raw mode: keys typed earlier land in the cooked line
+   * buffer and arrive as one chunk the prompt discards. Later keys follow
+   * after a fixed `delayMs` (for the final step, long enough to resolve its
+   * async preview).
+   */
   const sends = inputChunks
     .map((entry) => {
       const step = typeof entry === "string" ? { chunk: entry } : entry;
       return [`after ${step.delayMs ?? 150}`, `send -- ${toTclString(step.chunk)}`].join("\n");
     })
     .join("\n");
-  // NOTE: gating the send schedule on early PTY output does NOT work here —
-  // this expect build buffers every Ink frame until the PTY drains at exit, so
-  // no byte is observable mid-run to sync against (verified empirically). The
-  // fixed `delayMs` clocks below are therefore the only workable mechanism;
-  // keep them generous enough to absorb Bun cold start under parallel load.
-  //
-  // log_user 1 streams the full PTY transcript to stdout, so the caller's
-  // captured stdout carries every wizard screen. After the interactions we wait
-  // for the child to close the PTY: a clean self-exit yields eof (exit 0), while
-  // a hang trips the timeout branch (exit 124) so a process that fails to
-  // terminate still fails the test. We deliberately avoid the `wait` builtin —
-  // it blocks indefinitely on this expect build once the child is reaped at eof.
+  /**
+   * `log_user 1` streams the full PTY transcript to stdout, so the caller's
+   * captured stdout carries every wizard screen. A process that never closes
+   * the PTY trips the timeout branch (exit 124) and still fails the test.
+   */
   const expectScript = [
     `set timeout ${timeoutSeconds ?? 8}`,
     "log_user 1",
     `spawn -noecho ${command}`,
+    ...(inputChunks.length > 0 ? WAIT_FOR_RAW_MODE_TCL : []),
     sends,
-    "expect { eof { set result [wait]; exit [lindex $result 3] } timeout { exit 124 } }",
+    "expect {",
+    "  eof {}",
+    "  timeout { exit 124 }",
+    "}",
   ].join("\n");
 
   return new Promise((resolve, reject) => {
@@ -312,15 +342,35 @@ async function runMateInTty(
 
     child.on("error", reject);
     child.on("close", (exitCode) => {
-      resolve({
-        exitCode: exitCode ?? 1,
-        stdout: output,
-        stderr,
-      });
+      resolve(withTtyExitCode(exitCode, output, stderr));
     });
 
     child.stdin.end();
   });
+}
+
+const TTY_EXIT_MARKER = "__MATE_E2E_EXIT__";
+
+/** Polls the PTY until the prompt has taken it into raw mode, failing like a timeout. */
+const WAIT_FOR_RAW_MODE_TCL = [
+  "set tty $spawn_out(slave,name)",
+  "set deadline [expr {[clock milliseconds] + $timeout * 1000}]",
+  "while {[catch {exec stty -a < $tty} modes] || ![regexp -- {-icanon} $modes]} {",
+  "  if {[clock milliseconds] > $deadline} { exit 124 }",
+  "  after 25",
+  "}",
+];
+
+/** Mate's own exit code from the marker; expect's (124 on timeout) when mate never finished. */
+function withTtyExitCode(
+  expectExitCode: number | null,
+  stdout: string,
+  stderr: string,
+): CliRunResult {
+  const marker = new RegExp(`\\r?\\n${TTY_EXIT_MARKER}(\\d+)\\r?\\n?`);
+  const match = stdout.match(marker);
+  if (!match) return { exitCode: expectExitCode || 1, stdout, stderr };
+  return { exitCode: Number(match[1]), stdout: stdout.replace(marker, ""), stderr };
 }
 
 async function setupCompanion(
@@ -1459,7 +1509,7 @@ describe("mate CLI e2e", () => {
     expect(invocation.argv[1]).toBe(scenario.working);
     expect(invocation.argv).toContain("--out");
     expect(invocation.argv).toContain(path.join(scenario.companion, ".graphify", "app"));
-    expect(invocation.argv.slice(-2)).toEqual(["--mode", "deep"]);
+    expect(invocation.argv.slice(-26)).toEqual(["--mode", "deep", ...GRAPHIFY_SECRET_EXCLUDE_ARGS]);
   });
 
   test("cap graphify query appends the shared graph path when no graph is provided", async () => {
@@ -1514,7 +1564,12 @@ describe("mate CLI e2e", () => {
 
     expect(result.exitCode).toBe(0);
     const invocation = await readJson<{ argv: string[] }>(capturePath);
-    expect(invocation.argv).toEqual([scenario.working, "--update", "--force"]);
+    expect(invocation.argv).toEqual([
+      scenario.working,
+      "--update",
+      "--force",
+      ...GRAPHIFY_SECRET_EXCLUDE_ARGS,
+    ]);
   });
 
   test("cap rejects direct tokensave passthrough in favor of the native tokensave cli", async () => {
@@ -1570,7 +1625,7 @@ describe("mate CLI e2e", () => {
       .map((line) => JSON.parse(line) as { argv: string[]; graphifyOut: string | null });
     expect(log).toEqual([
       {
-        argv: [".", "--update", "--code-only"],
+        argv: [".", "--update", "--code-only", ...GRAPHIFY_SECRET_EXCLUDE_ARGS],
         graphifyOut: path.join(scenario.companion, ".graphify", "app", "graphify-out"),
       },
     ]);
@@ -1605,7 +1660,7 @@ describe("mate CLI e2e", () => {
       .map((line) => JSON.parse(line) as { argv: string[]; graphifyOut: string | null });
     expect(log).toEqual([
       {
-        argv: [".", "--update", "--code-only"],
+        argv: [".", "--update", "--code-only", ...GRAPHIFY_SECRET_EXCLUDE_ARGS],
         graphifyOut: path.join(scenario.companion, ".graphify", "app", "graphify-out"),
       },
     ]);
@@ -1642,7 +1697,7 @@ describe("mate CLI e2e", () => {
       .map((line) => JSON.parse(line) as { argv: string[]; graphifyOut: string | null });
     expect(log).toEqual([
       {
-        argv: [".", "--update", "--code-only"],
+        argv: [".", "--update", "--code-only", ...GRAPHIFY_SECRET_EXCLUDE_ARGS],
         graphifyOut: path.join(scenario.companion, ".graphify", "app", "graphify-out"),
       },
     ]);
