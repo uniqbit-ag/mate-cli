@@ -1,5 +1,7 @@
 import { Box, Text } from "ink";
 
+import { BRAND_ACCENT } from "../../brand/palette";
+
 interface WizardHeaderProps {
   title: string;
   step: number;
@@ -12,7 +14,7 @@ export function WizardHeader({ title, step, totalSteps }: WizardHeaderProps) {
   return (
     <Box borderStyle="round" width="100%">
       <Box flexDirection="column" flexGrow={1} marginLeft={1}>
-        <Text bold color="green">
+        <Text bold color={BRAND_ACCENT}>
           mate framework
         </Text>
         <Box justifyContent="space-between">

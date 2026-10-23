@@ -237,7 +237,14 @@ ul.plain li:last-child { border-bottom: 0; }
   overflow-y: auto;
 }
 .sidebar-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.sidebar-brand-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: var(--bg-rail); font-size: .72rem; font-weight: 800; }
+.sidebar-brand-mark { display: block; flex: none; width: 30px; height: 30px; }
+.brand-symbol-color { display: none; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .brand-symbol-color { display: block; }
+  :root:not([data-theme="dark"]) .brand-symbol-on-dark { display: none; }
+}
+:root[data-theme="light"] .brand-symbol-color { display: block; }
+:root[data-theme="light"] .brand-symbol-on-dark { display: none; }
 .sidebar-brand-copy { display: grid; gap: 1px; min-width: 0; }
 .sidebar-brand-copy strong { font-size: .9rem; letter-spacing: -.02em; }
 .sidebar-brand-copy span { color: var(--muted); font-size: .68rem; }

@@ -25,6 +25,8 @@ import { findRealOpenSpec } from "../test/real-openspec";
  */
 
 const REAL_OPENSPEC = findRealOpenSpec();
+/** Each test spawns the real CLI several times; Bun's 5s default trips under a loaded full-suite run. */
+const OPENSPEC_TEST_TIMEOUT = 30_000;
 
 const tempRoots: string[] = [];
 /** A session's companion pointer would otherwise win over the sandbox in doctor's root resolution. */
@@ -167,164 +169,204 @@ async function publishResolve(sandbox: Sandbox, name: string): Promise<void> {
 }
 
 describe.skipIf(!REAL_OPENSPEC)("Mate OpenSpec conventions with the real CLI", () => {
-  test("the Mate rules.specs entry reaches the spec instructions without a warning", async () => {
-    const sandbox = await makeSandbox();
-    expectOk(sandbox.openspec(["new", "change", "demo"]), "new change");
+  test(
+    "the Mate rules.specs entry reaches the spec instructions without a warning",
+    async () => {
+      const sandbox = await makeSandbox();
+      expectOk(sandbox.openspec(["new", "change", "demo"]), "new change");
 
-    const instructions = sandbox.openspec(["instructions", "specs", "--change", "demo", "--json"]);
-
-    expect(instructions.status).toBe(0);
-    expect(JSON.parse(instructions.stdout).rules).toEqual([MATE_SPECS_RULE]);
-    expect(instructions.stderr).not.toContain("Unknown artifact ID");
-  });
-
-  test("a spec born by archive gets the flat header at publish and passes strict validation", async () => {
-    const sandbox = await makeSandbox();
-    proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
-    archive(sandbox, "add-widget");
-    writePurpose(sandbox);
-
-    await publishResolve(sandbox, "add-widget");
-
-    const spec = fs.readFileSync(mainSpecPath(sandbox), "utf8");
-    expect(spec.startsWith(CANONICAL_HEADER)).toBe(true);
-    expect(spec).toContain("### Requirement: Widget renders");
-    expect(spec).toContain("**Area:** `packages/web`");
-    expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
-  });
-
-  test("a legacy delta header an agent copied onto the main spec is replaced at publish", async () => {
-    const sandbox = await makeSandbox();
-    proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
-    archive(sandbox, "add-widget");
-    writePurpose(sandbox);
-    /** What an agent improvising during archive writes: the delta's own header. */
-    const born = fs
-      .readFileSync(mainSpecPath(sandbox), "utf8")
-      .replace(/^---\n[\s\S]*?\n---\n/, "");
-    const copied = `${LEGACY_DELTA_HEADER.replace("CHANGE", "add-widget")}\n${born}`;
-    fs.writeFileSync(mainSpecPath(sandbox), copied);
-
-    await publishResolve(sandbox, "add-widget");
-
-    expect(fs.readFileSync(mainSpecPath(sandbox), "utf8")).toBe(`${CANONICAL_HEADER}${born}`);
-    expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
-  });
-
-  test("a mate:delta comment an agent copied onto the main spec is replaced at publish", async () => {
-    const sandbox = await makeSandbox();
-    proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
-    archive(sandbox, "add-widget");
-    writePurpose(sandbox);
-    const born = fs.readFileSync(mainSpecPath(sandbox), "utf8");
-    fs.writeFileSync(
-      mainSpecPath(sandbox),
-      `${DELTA_COMMENT.replace("CHANGE", "add-widget")}\n${born}`,
-    );
-
-    await publishResolve(sandbox, "add-widget");
-
-    expect(fs.readFileSync(mainSpecPath(sandbox), "utf8")).toBe(`${CANONICAL_HEADER}${born}`);
-    expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
-  });
-
-  test("a delta filled in from the synced mate-v1 template passes strict validation", async () => {
-    const sandbox = await makeSandbox();
-    proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
-    const template = fs.readFileSync(
-      path.join(sandbox.companion, "openspec", "schemas", "mate-v1", "templates", "spec.md"),
-      "utf8",
-    );
-    const filled = template
-      .replace("<change-name>", "add-widget")
-      .replace("<capability>", "widget")
-      .replace("org/repository", "acme/product")
-      .replace("area: .", "area: packages/web")
-      .replace(
-        /(## Purpose\n\n)<!--[\s\S]*?-->/,
-        "$1Renders the acme widget on every product page that embeds it.",
-      )
-      .replace("<!-- requirement name -->", "Widget renders")
-      .replace(
-        /<!-- Write the normative requirement\.[\s\S]*?-->/,
-        "The system SHALL render the widget.\n**Area:** `packages/web`",
-      )
-      .replace("<!-- scenario name -->", "Widget shows")
-      .replace("<!-- condition -->", "the page loads")
-      .replace("<!-- expected outcome -->", "the widget shows");
-    expect(filled.startsWith("<!-- mate:delta\n")).toBe(true);
-    fs.writeFileSync(
-      path.join(
-        sandbox.companion,
-        "openspec",
-        "changes",
-        "add-widget",
+      const instructions = sandbox.openspec([
+        "instructions",
         "specs",
-        "widget",
-        "spec.md",
-      ),
-      filled,
-    );
+        "--change",
+        "demo",
+        "--json",
+      ]);
 
-    const validated = sandbox.openspec(["validate", "add-widget", "--strict"]);
-    expectOk(validated, "validate add-widget");
-    expect(`${validated.stdout}${validated.stderr}`).not.toMatch(/warn/i);
-    const archived = sandbox.openspec(["archive", "add-widget", "--yes"]);
-    expectOk(archived, "archive add-widget");
-    expect(`${archived.stdout}${archived.stderr}`).not.toMatch(/warn/i);
-  });
+      expect(instructions.status).toBe(0);
+      expect(JSON.parse(instructions.stdout).rules).toEqual([MATE_SPECS_RULE]);
+      expect(instructions.stderr).not.toContain("Unknown artifact ID");
+    },
+    OPENSPEC_TEST_TIMEOUT,
+  );
 
-  test("archiving a later change keeps the main spec's header, and publish leaves it alone", async () => {
-    const sandbox = await makeSandbox();
-    proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
-    archive(sandbox, "add-widget");
-    writePurpose(sandbox);
-    await publishResolve(sandbox, "add-widget");
+  test(
+    "a spec born by archive gets the flat header at publish and passes strict validation",
+    async () => {
+      const sandbox = await makeSandbox();
+      proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
+      archive(sandbox, "add-widget");
+      writePurpose(sandbox);
 
-    proposeChange(sandbox, "tune-widget", "MODIFIED", "The system SHALL render the widget fast.");
-    archive(sandbox, "tune-widget");
-    const archived = fs.readFileSync(mainSpecPath(sandbox), "utf8");
-    await publishResolve(sandbox, "tune-widget");
+      await publishResolve(sandbox, "add-widget");
 
-    expect(archived.startsWith(CANONICAL_HEADER)).toBe(true);
-    expect(archived).toContain("render the widget fast");
-    expect(fs.readFileSync(mainSpecPath(sandbox), "utf8")).toBe(archived);
-    expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
-  });
+      const spec = fs.readFileSync(mainSpecPath(sandbox), "utf8");
+      expect(spec.startsWith(CANONICAL_HEADER)).toBe(true);
+      expect(spec).toContain("### Requirement: Widget renders");
+      expect(spec).toContain("**Area:** `packages/web`");
+      expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
+    },
+    OPENSPEC_TEST_TIMEOUT,
+  );
 
-  test("doctor flags exactly the rules keys OpenSpec ignores", async () => {
-    const sandbox = await makeSandbox();
-    const configPath = path.join(sandbox.companion, "openspec", "config.yaml");
-    fs.appendFileSync(
-      configPath,
-      "  proposal:\n    - Name the customer.\n  implementation:\n    - Run the widget tests.\n  brief:\n    - Keep it short.\n",
-    );
-    const frameworkConfig = path.join(
-      sandbox.companion,
-      `.${FRAMEWORK_NAME}`,
-      "config",
-      "framework.yaml",
-    );
-    fs.mkdirSync(path.dirname(frameworkConfig), { recursive: true });
-    await new ConfigStore(frameworkConfig).save({
-      allowedAgents: [],
-      capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
-    });
-    expectOk(sandbox.openspec(["new", "change", "demo"]), "new change");
+  test(
+    "a legacy delta header an agent copied onto the main spec is replaced at publish",
+    async () => {
+      const sandbox = await makeSandbox();
+      proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
+      archive(sandbox, "add-widget");
+      writePurpose(sandbox);
+      /** What an agent improvising during archive writes: the delta's own header. */
+      const born = fs
+        .readFileSync(mainSpecPath(sandbox), "utf8")
+        .replace(/^---\n[\s\S]*?\n---\n/, "");
+      const copied = `${LEGACY_DELTA_HEADER.replace("CHANGE", "add-widget")}\n${born}`;
+      fs.writeFileSync(mainSpecPath(sandbox), copied);
 
-    const instructions = sandbox.openspec(["instructions", "specs", "--change", "demo", "--json"]);
-    const ignoredByOpenSpec = [
-      ...instructions.stderr.matchAll(/Unknown artifact ID in rules: "([^"]+)"/g),
-    ].map((match) => match[1]);
-    const report = await collectDoctorReport({
-      cwd: sandbox.companion,
-      globalConfigStore: new GlobalConfigStore(path.join(sandbox.root, "global.yaml")),
-      inspectPlugins: async () => ({ failures: [], capabilities: [] }),
-    });
+      await publishResolve(sandbox, "add-widget");
 
-    expect(ignoredByOpenSpec.toSorted()).toEqual(["brief", "implementation"]);
-    expect(report.openspecRuleWarnings?.map((warning) => warning.key).toSorted()).toEqual(
-      ignoredByOpenSpec.toSorted(),
-    );
-  });
+      expect(fs.readFileSync(mainSpecPath(sandbox), "utf8")).toBe(`${CANONICAL_HEADER}${born}`);
+      expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
+    },
+    OPENSPEC_TEST_TIMEOUT,
+  );
+
+  test(
+    "a mate:delta comment an agent copied onto the main spec is replaced at publish",
+    async () => {
+      const sandbox = await makeSandbox();
+      proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
+      archive(sandbox, "add-widget");
+      writePurpose(sandbox);
+      const born = fs.readFileSync(mainSpecPath(sandbox), "utf8");
+      fs.writeFileSync(
+        mainSpecPath(sandbox),
+        `${DELTA_COMMENT.replace("CHANGE", "add-widget")}\n${born}`,
+      );
+
+      await publishResolve(sandbox, "add-widget");
+
+      expect(fs.readFileSync(mainSpecPath(sandbox), "utf8")).toBe(`${CANONICAL_HEADER}${born}`);
+      expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
+    },
+    OPENSPEC_TEST_TIMEOUT,
+  );
+
+  test(
+    "a delta filled in from the synced mate-v1 template passes strict validation",
+    async () => {
+      const sandbox = await makeSandbox();
+      proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
+      const template = fs.readFileSync(
+        path.join(sandbox.companion, "openspec", "schemas", "mate-v1", "templates", "spec.md"),
+        "utf8",
+      );
+      const filled = template
+        .replace("<change-name>", "add-widget")
+        .replace("<capability>", "widget")
+        .replace("org/repository", "acme/product")
+        .replace("area: .", "area: packages/web")
+        .replace(
+          /(## Purpose\n\n)<!--[\s\S]*?-->/,
+          "$1Renders the acme widget on every product page that embeds it.",
+        )
+        .replace("<!-- requirement name -->", "Widget renders")
+        .replace(
+          /<!-- Write the normative requirement\.[\s\S]*?-->/,
+          "The system SHALL render the widget.\n**Area:** `packages/web`",
+        )
+        .replace("<!-- scenario name -->", "Widget shows")
+        .replace("<!-- condition -->", "the page loads")
+        .replace("<!-- expected outcome -->", "the widget shows");
+      expect(filled.startsWith("<!-- mate:delta\n")).toBe(true);
+      fs.writeFileSync(
+        path.join(
+          sandbox.companion,
+          "openspec",
+          "changes",
+          "add-widget",
+          "specs",
+          "widget",
+          "spec.md",
+        ),
+        filled,
+      );
+
+      const validated = sandbox.openspec(["validate", "add-widget", "--strict"]);
+      expectOk(validated, "validate add-widget");
+      expect(`${validated.stdout}${validated.stderr}`).not.toMatch(/warn/i);
+      const archived = sandbox.openspec(["archive", "add-widget", "--yes"]);
+      expectOk(archived, "archive add-widget");
+      expect(`${archived.stdout}${archived.stderr}`).not.toMatch(/warn/i);
+    },
+    OPENSPEC_TEST_TIMEOUT,
+  );
+
+  test(
+    "archiving a later change keeps the main spec's header, and publish leaves it alone",
+    async () => {
+      const sandbox = await makeSandbox();
+      proposeChange(sandbox, "add-widget", "ADDED", "The system SHALL render the widget.");
+      archive(sandbox, "add-widget");
+      writePurpose(sandbox);
+      await publishResolve(sandbox, "add-widget");
+
+      proposeChange(sandbox, "tune-widget", "MODIFIED", "The system SHALL render the widget fast.");
+      archive(sandbox, "tune-widget");
+      const archived = fs.readFileSync(mainSpecPath(sandbox), "utf8");
+      await publishResolve(sandbox, "tune-widget");
+
+      expect(archived.startsWith(CANONICAL_HEADER)).toBe(true);
+      expect(archived).toContain("render the widget fast");
+      expect(fs.readFileSync(mainSpecPath(sandbox), "utf8")).toBe(archived);
+      expectOk(sandbox.openspec(["validate", "--specs", "--strict"]), "validate --specs");
+    },
+    OPENSPEC_TEST_TIMEOUT,
+  );
+
+  test(
+    "doctor flags exactly the rules keys OpenSpec ignores",
+    async () => {
+      const sandbox = await makeSandbox();
+      const configPath = path.join(sandbox.companion, "openspec", "config.yaml");
+      fs.appendFileSync(
+        configPath,
+        "  proposal:\n    - Name the customer.\n  implementation:\n    - Run the widget tests.\n  brief:\n    - Keep it short.\n",
+      );
+      const frameworkConfig = path.join(
+        sandbox.companion,
+        `.${FRAMEWORK_NAME}`,
+        "config",
+        "framework.yaml",
+      );
+      fs.mkdirSync(path.dirname(frameworkConfig), { recursive: true });
+      await new ConfigStore(frameworkConfig).save({
+        allowedAgents: [],
+        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
+      });
+      expectOk(sandbox.openspec(["new", "change", "demo"]), "new change");
+
+      const instructions = sandbox.openspec([
+        "instructions",
+        "specs",
+        "--change",
+        "demo",
+        "--json",
+      ]);
+      const ignoredByOpenSpec = [
+        ...instructions.stderr.matchAll(/Unknown artifact ID in rules: "([^"]+)"/g),
+      ].map((match) => match[1]);
+      const report = await collectDoctorReport({
+        cwd: sandbox.companion,
+        globalConfigStore: new GlobalConfigStore(path.join(sandbox.root, "global.yaml")),
+        inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+      });
+
+      expect(ignoredByOpenSpec.toSorted()).toEqual(["brief", "implementation"]);
+      expect(report.openspecRuleWarnings?.map((warning) => warning.key).toSorted()).toEqual(
+        ignoredByOpenSpec.toSorted(),
+      );
+    },
+    OPENSPEC_TEST_TIMEOUT,
+  );
 });

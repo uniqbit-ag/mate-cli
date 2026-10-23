@@ -2,17 +2,23 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
-/* Brand accent (teal) over the Fumadocs neutral preset. */
+/* `dark:` follows the theme toggle's `dark` class, not the system preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Brand accent over the Fumadocs neutral preset: Mate green, Light green in dark mode.
+ * The `--mate-*` colours come from `lib/brand.generated.ts`, set on `:root` by `layout.astro`.
+ */
 @theme {
-  --color-fd-primary: hsl(175, 84%, 30%);
-  --color-fd-primary-foreground: hsl(0, 0%, 100%);
-  --color-fd-ring: hsl(175, 70%, 40%);
+  --color-fd-primary: var(--mate-green);
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-ring: var(--mate-green);
 }
 
 .dark {
-  --color-fd-primary: hsl(172, 66%, 50%);
-  --color-fd-primary-foreground: hsl(180, 80%, 8%);
-  --color-fd-ring: hsl(172, 60%, 45%);
+  --color-fd-primary: var(--mate-light-green);
+  --color-fd-primary-foreground: var(--mate-night);
+  --color-fd-ring: var(--mate-light-green);
 }
 
 /* Landing hero only: a soft accent glow over a faint grid. */

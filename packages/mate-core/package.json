@@ -24,7 +24,8 @@
     "./runtime": "./src/runtime/index.ts",
     "./opencode": "./src/opencode/index.ts",
     "./opencode/tui": "./src/opencode/tui.tsx",
-    "./tui": "./src/tui.ts"
+    "./tui": "./src/tui.ts",
+    "./brand": "./src/brand/index.ts"
   },
   "publishConfig": {
     "access": "public",
