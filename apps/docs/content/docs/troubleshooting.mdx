@@ -211,3 +211,25 @@ mate cap index --tokensave
 Then run `mate doctor` and verify the relevant capability and command are
 selected and installed. TokenSave uses a repo-local `.tokensave` store; Graphify
 and TokenSave cannot be forced together in one command invocation.
+
+## `@mate:` Rows Are Missing
+
+The [Companion Mentions](/docs/capabilities#companion-mentions) plugin adds
+`@mate:` rows to Claude's `@` menu. When they do not appear, check these causes:
+
+- The session was started with plain `claude`. The plugin loads only with
+  `mate claude`.
+- Claude Code is older than 2.1.292. Older versions start normally and ignore
+  the plugin. Check the version with `claude --version`.
+- The plugin is not declared or not installed. `mate doctor` lists the Claude
+  plugins that capabilities contribute and whether each one can load. If
+  `companion-mentions` is not listed, install the plugin as its
+  [package README](https://www.npmjs.com/package/@uniqbit/mate-plugin-companion-mentions)
+  describes.
+- The session runs inside the companion, for example after
+  `mate claude -- --companion`. Claude's own rows already list the companion's
+  files there, so the plugin adds none. A typed `@mate:` mention still attaches.
+- A mention attaches a note asking for a matching Mate version. The plugin found
+  no readable secret policy in the launch, which happens when Mate is older than
+  the plugin. Until that is fixed, it shows no rows and attaches no files.
+  Update Mate to the plugin's version, then start a new `mate claude` session.

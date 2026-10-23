@@ -21,6 +21,19 @@
 - context-mode uses the new contribution, so it now loads in plain `claude` sessions of wrapped repositories too. A companion-scoped `mate claude` passes the same two `--plugin-dir` flags in the same order. In a wrapped repository, `mate claude` passes only Mate's own plugin flag, and the wrap loads context-mode. A missing or broken package still fails `mate claude` before Claude starts. Its Claude package check moved from the Claude adapter into context-mode's own launch preflight, which skips plain sessions. A missing package now names the expected version instead of a bare "no such file" error.
 - Capability preflight hooks receive the kind of session being prepared (`sessionKind`). `RuntimeContributions`, `RuntimeContributionsByRuntime`, `PluginDirectoryContribution` and `SessionKind` are exported as types for dynamic plugin authors.
 
+### Companion Mentions plugin
+
+- New optional package `@uniqbit/mate-plugin-companion-mentions`, published with Mate at the same version and installed separately (see its README). In a session started with `mate claude`, Claude's `@` menu lists Companion Repository files as `@mate:<path>` rows, and a sent `@mate:<path>` mention attaches the file, line ranges included, or a list of a folder's entries. A session inside the companion gets no rows, since Claude already lists those files, but typed mentions still attach. It needs Claude Code 2.1.292 or later and is the first external user of Capability Claude plugin folders.
+- It keeps secret files out of its rows, mentions and folder lists with the companion's secret policy, checking both the path named and where a link leads. `MATE_POLICY_JSON` now carries that policy as compiled rules (`secrets: { guardrails, deny, allow }`) beside `allowedAgents`, read when the session starts, in every runtime and in the projection fallback. Without it, as with an older Mate, the plugin offers no rows and attaches nothing.
+- The release now has publish-only packages: the plugin is published after core and the CLI, at the same version, and is not pinned in the container image's locks. A stable release runs the plugin's tests before it starts.
+
+### Secret-file matching ignores letter case (breaking)
+
+- Every guardrail layer that tests a path or a search glob now matches deny and allow patterns whatever their letter case, on every platform. `.ENV`, `ID_RSA` and `Prod.KEY` are secret files, and `.ENV.EXAMPLE` stays allowed. Before, `.ENV` passed every layer on macOS and Windows, where it names the same file as `.env`. A companion that relies on a differently-cased file not being a secret adds an allow pattern.
+- `**` in a pattern now also crosses folder names that hold a line break.
+- Pattern text that Mate writes into other tools is unchanged: the projected Claude and OpenCode deny rules, `.graphifyignore`, Graphify's `--exclude` and TokenSave's config. Those tools keep their own case rules, and Mate's own checks catch what they miss.
+- `@uniqbit/mate-core/runtime` exports the one rule compiler (`secretRule`, `secretRules`), `isSecretFile` and `policyDocument`, so code outside mate-core evaluates the same rules.
+
 ### Secret guardrails (breaking)
 
 - Agents in Mate-managed sessions can no longer read, write, or edit secret files (`.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`, `id_ecdsa`, `id_ed25519`, `.netrc`, `.pgpass`, `.npmrc`), and shell commands that name one are blocked, as are Grep searches inside a secret file or with a glob aimed at secret files (such as `.env*`). `.env.example`, `.env.sample`, `.env.template`, and `.env.dist` stay readable. The Claude hook and the OpenCode middleware enforce this, and Mate's managed deny rules back it up.

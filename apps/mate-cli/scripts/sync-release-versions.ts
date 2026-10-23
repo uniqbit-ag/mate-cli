@@ -1,6 +1,6 @@
 /**
- * Release hook: keep `@uniqbit/mate-core` and `@uniqbit/mate` at one
- * synchronized version.
+ * Release hook: keep `@uniqbit/mate-core`, `@uniqbit/mate` and
+ * `@uniqbit/mate-plugin-companion-mentions` at one synchronized version.
  *
  * Runs from apps/mate-cli as release-it's `after:bump` hook. release-it bumps
  * only the CLI package.json; this script propagates the new version to the
@@ -19,10 +19,12 @@ const workspaceRoot = process.argv[2]
   : path.resolve(import.meta.dirname, "..", "..", "..");
 const cliRoot = path.join(workspaceRoot, "apps", "mate-cli");
 const coreRoot = path.join(workspaceRoot, "packages", "mate-core");
+const pluginRoot = path.join(workspaceRoot, "packages", "mate-plugin-companion-mentions");
 
 type PackageJson = {
   version: string;
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 };
 
 async function readPackageJson(packageRoot: string): Promise<PackageJson> {
@@ -39,14 +41,18 @@ async function writePackageJson(packageRoot: string, data: PackageJson): Promise
 
 const cli = await readPackageJson(cliRoot);
 const core = await readPackageJson(coreRoot);
+const plugin = await readPackageJson(pluginRoot);
 const version = cli.version;
 
 core.version = version;
+plugin.version = version;
 
 cli.dependencies = { ...cli.dependencies, "@uniqbit/mate-core": version };
+plugin.devDependencies = { ...plugin.devDependencies, "@uniqbit/mate-core": version };
 
 await writePackageJson(coreRoot, core);
 await writePackageJson(cliRoot, cli);
+await writePackageJson(pluginRoot, plugin);
 
 const install = spawnSync("bun", ["install"], { cwd: workspaceRoot, stdio: "inherit" });
 if (install.status !== 0) {
@@ -60,6 +66,7 @@ const add = spawnSync(
     "add",
     path.join(coreRoot, "package.json"),
     path.join(cliRoot, "package.json"),
+    path.join(pluginRoot, "package.json"),
     path.join(workspaceRoot, "bun.lock"),
   ],
   { cwd: workspaceRoot, stdio: "inherit" },

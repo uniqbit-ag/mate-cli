@@ -93,6 +93,7 @@ export {
   companionFrameworkConfigPath,
   emptyCompanionPolicy,
   isCapabilityEnabled,
+  policyDocument,
   readCompanionPolicy,
   type CompanionPolicy,
 } from "./policy";
@@ -126,3 +127,15 @@ export {
   repoLocalRegistryPath,
   type RepoLocalRegistryFile,
 } from "./repo-local";
+export {
+  DEFAULT_SECRET_ALLOW_PATTERNS,
+  DEFAULT_SECRET_DENY_PATTERNS,
+  defaultSecretPolicy,
+  isSecretFile,
+  parseSecretsConfig,
+  secretRule,
+  secretRules,
+  type SecretPolicy,
+  type SecretRule,
+  type SecretRules,
+} from "./secret-patterns";

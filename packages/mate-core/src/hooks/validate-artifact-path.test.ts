@@ -610,6 +610,17 @@ describe("validate-artifact-path secret guardrails", () => {
     expect(result.stderr).not.toContain("supersecret");
   });
 
+  test("blocks Read of a differently-cased .Env", async () => {
+    const { repo } = await wrapped();
+    const result = await evaluate(
+      { tool_name: "Read", tool_input: { file_path: path.join(repo, ".Env") } },
+      {},
+      repo,
+    );
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(path.join(repo, ".Env"));
+  });
+
   test("blocks Write to .env.local", async () => {
     const { repo } = await wrapped();
     const result = await evaluate(
