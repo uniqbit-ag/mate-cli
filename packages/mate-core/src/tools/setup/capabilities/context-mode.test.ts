@@ -12,7 +12,9 @@ import {
 import { applySetupCompatibilities } from "../../setup";
 import type { SessionKind } from "../../../runtime/session-kind";
 import type { LaunchPreflightContext, SetupContext } from "../plugin";
+import { getClaudePluginRoot } from "../../../lib/package-paths";
 import { createClaudePlugin } from "../providers/claude";
+import { inspectClaudePluginFolders } from "../providers/claude-plugin-folders";
 import { createOpenCodePlugin, reconcileOpenCodeContributions } from "../providers/opencode";
 import { CONTEXT_MODE_OPENCODE_GUIDANCE, createContextModePlugin } from "./context-mode";
 
@@ -397,7 +399,50 @@ describe("createContextModePlugin", () => {
       contextMode,
     ]);
 
-    expect(outcome.claudePluginDirectories).toEqual({ directories: [root], warnings: [] });
+    expect(outcome.claudePluginFolders.launch).toEqual([root]);
+    expect(outcome.claudePluginFolders.loadWarnings).toEqual([]);
+  });
+
+  test("a sync pass publishes the package through its own marketplace, unchanged", async () => {
+    const ctx = await makeContext();
+    const root = await writePreinstalledCopy(ctx.companionPath, CONTEXT_MODE_VERSION);
+    await fs.mkdir(path.join(root, ".claude-plugin"), { recursive: true });
+    await fs.writeFile(path.join(root, ".claude-plugin", "plugin.json"), '{"name":"context-mode"}');
+    const shipped = `${JSON.stringify({
+      name: "context-mode",
+      owner: { name: "Mert Koseoğlu" },
+      plugins: [{ name: "context-mode", source: "./" }],
+    })}\n`;
+    await fs.writeFile(path.join(root, ".claude-plugin", "marketplace.json"), shipped);
+    const contextMode = createContextModePlugin({
+      installPackage: async () => {},
+      validatePackage: async () => {},
+    });
+
+    await applySetupCompatibilities(ctx.companionPath, ctx.config, "sync", [
+      createClaudePlugin(),
+      contextMode,
+    ]);
+
+    expect(await fs.readFile(path.join(root, ".claude-plugin", "marketplace.json"), "utf8")).toBe(
+      shipped,
+    );
+    expect(
+      (
+        await inspectClaudePluginFolders(
+          [
+            {
+              pluginId: "context-mode",
+              enabled: true,
+              contributions: { pluginDirectories: [{ path: root }] },
+            },
+          ],
+          { bundledPluginRoot: getClaudePluginRoot(), userMarketplaces: new Map() },
+        )
+      ).report,
+    ).toEqual([
+      { capability: "context-mode", path: root, loadable: true, marketplace: "context-mode" },
+    ]);
   });
 });
 

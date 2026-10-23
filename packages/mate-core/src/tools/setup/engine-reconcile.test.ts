@@ -174,10 +174,8 @@ describe("engine contribution reconciliation", () => {
       disabled.capability,
     ]);
 
-    expect(outcome.claudePluginDirectories).toEqual({
-      directories: [enabled.folder],
-      warnings: [],
-    });
+    expect(outcome.claudePluginFolders.launch).toEqual([enabled.folder]);
+    expect(outcome.claudePluginFolders.loadWarnings).toEqual([]);
   });
 
   test("the pass leaves out Mate's bundled plugin, which the launch passes already", async () => {
@@ -192,8 +190,8 @@ describe("engine contribution reconciliation", () => {
 
     const outcome = await runPlan(companionPath, [fakeProvider("claude", []), declaringBundled]);
 
-    expect(outcome.claudePluginDirectories.directories).toEqual([]);
-    expect(outcome.claudePluginDirectories.warnings).toEqual([
+    expect(outcome.claudePluginFolders.launch).toEqual([]);
+    expect(outcome.claudePluginFolders.loadWarnings).toEqual([
       expect.stringContaining(getClaudePluginRoot()),
     ]);
   });
@@ -217,7 +215,7 @@ describe("engine contribution reconciliation", () => {
       broken,
     ]);
 
-    expect(outcome.claudePluginDirectories.warnings).toHaveLength(1);
+    expect(outcome.claudePluginFolders.loadWarnings).toHaveLength(1);
     expect(outcome.warnings).toEqual([]);
     const written = await Promise.all(
       [".claude/settings.local.json", ".mcp.json", "CLAUDE.md"].map((file) =>
@@ -228,5 +226,53 @@ describe("engine contribution reconciliation", () => {
       expect(content).not.toContain("plugins/acme");
       expect(content).not.toContain("nowhere");
     }
+  });
+
+  test("the pass publishes enabled folders as their own marketplace and withdraws it on disable", async () => {
+    const companionPath = await makeCompanion();
+    const enabled = await pluginFolderCapability("acme", companionPath, true);
+    const disabled = await pluginFolderCapability("beta", companionPath, false);
+    const marketplace = (folder: string) =>
+      fs
+        .readFile(path.join(folder, ".claude-plugin", "marketplace.json"), "utf8")
+        .then((text) => JSON.parse(text) as { name: string })
+        .catch(() => undefined);
+
+    await runPlan(companionPath, [
+      fakeProvider("claude", []),
+      enabled.capability,
+      disabled.capability,
+    ]);
+    const published = await marketplace(enabled.folder);
+    await runPlan(companionPath, [
+      fakeProvider("claude", []),
+      { ...enabled.capability, isEnabled: () => false },
+    ]);
+
+    expect(published?.name).toBe("mate-plugin-acme");
+    expect(await marketplace(disabled.folder)).toBeUndefined();
+    expect(await marketplace(enabled.folder)).toBeUndefined();
+  });
+
+  test("the pass warns of a folder plain sessions cannot load, and leaves its file alone", async () => {
+    const companionPath = await makeCompanion();
+    const { capability, folder } = await pluginFolderCapability("acme", companionPath, true);
+    const foreign = path.join(folder, ".claude-plugin", "marketplace.json");
+    await fs.writeFile(foreign, `{"name":"tools","owner":{"name":"Acme"},"plugins":[]}\n`);
+
+    const outcome = await runPlan(companionPath, [fakeProvider("claude", []), capability]);
+
+    expect(outcome.claudePluginFolders.launch).toEqual([folder]);
+    expect(outcome.claudePluginFolders.loadWarnings).toEqual([]);
+    expect(
+      outcome.claudePluginFolders.publication?.unpublished.map((entry) => entry.warning),
+    ).toEqual([
+      expect.stringMatching(
+        /^acme: Claude plugin folder .* plain `claude` sessions do not load it\.$/,
+      ),
+    ]);
+    expect(await fs.readFile(foreign, "utf8")).toBe(
+      `{"name":"tools","owner":{"name":"Acme"},"plugins":[]}\n`,
+    );
   });
 });

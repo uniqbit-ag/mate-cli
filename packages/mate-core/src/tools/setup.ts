@@ -19,17 +19,18 @@ import {
   type FrameworkConfig,
 } from "../lib/orchestrator/types";
 import { getClaudePluginRoot } from "../lib/package-paths";
+import type { RenderedRuntimeDocuments } from "../runtime/runtime-document-manifest";
 import {
   collectManagedGitignoreEntries,
   writeManagedGitignoreBlock,
 } from "./setup/plugins/gitignore";
 import type { PluginRegistration, SetupContext, SetupScope } from "./setup/plugin";
 import {
-  describeClaudePluginDirectories,
+  inspectClaudePluginFolders,
   type ClaudePluginContributionFailure,
   type ClaudePluginDirectoryReport,
-  type GatheredClaudePluginDirectories,
-} from "./setup/providers/claude";
+  type ClaudePluginFolders,
+} from "./setup/providers/claude-plugin-folders";
 import { getActiveDistribution } from "../distribution";
 import { createUvPlugin } from "./setup/package-managers/uv";
 import type { PackageManagerSetupDeps } from "./setup/package-managers/uv";
@@ -47,8 +48,8 @@ import {
   buildSetupInstallationPlan,
   collectRuntimeContributionInputs,
   executeSetupInstallationPlan,
+  publishRuntimeClaudePluginMarketplaces,
   renderRuntimeDocuments,
-  type RenderedWorkingDocuments,
   type SetupInstallationOutcome,
   type SetupInstallationPlan,
 } from "./setup/engine";
@@ -104,12 +105,29 @@ export async function renderWorkingRuntimeDocuments(
   config: FrameworkConfig,
   repoPath: string,
   plugins: PluginRegistration[] = getActiveDistribution().registry.getAll(),
-): Promise<RenderedWorkingDocuments> {
+): Promise<RenderedRuntimeDocuments> {
   const { plan, ctx } = planSyncPass(companionPath, config, plugins, {
     repoPath,
     target: "working",
   });
   return renderRuntimeDocuments(ctx, plugins, plan);
+}
+
+/**
+ * Publishes the enabled Claude plugin folders for a Working Repository's wrap
+ * pass, before it renders; see {@link publishRuntimeClaudePluginMarketplaces}.
+ */
+export async function publishWorkingClaudePluginMarketplaces(
+  companionPath: string,
+  config: FrameworkConfig,
+  repoPath: string,
+  plugins: PluginRegistration[] = getActiveDistribution().registry.getAll(),
+): Promise<ClaudePluginFolders> {
+  const { plan, ctx } = planSyncPass(companionPath, config, plugins, {
+    repoPath,
+    target: "working",
+  });
+  return publishRuntimeClaudePluginMarketplaces(ctx, plugins, plan);
 }
 
 /** A sync pass's plan and context, for a caller that runs no plugin phase. */
@@ -156,10 +174,13 @@ export async function inspectClaudePluginDirectories(
     }),
   );
   return {
-    plugins: await describeClaudePluginDirectories(
-      inputs.get("claude") ?? [],
-      getClaudePluginRoot(),
-    ),
+    plugins: [
+      ...(
+        await inspectClaudePluginFolders(inputs.get("claude") ?? [], {
+          bundledPluginRoot: getClaudePluginRoot(),
+        })
+      ).report,
+    ],
     failures,
   };
 }
@@ -175,15 +196,15 @@ export async function updateProjectGitignore(
 }
 
 /**
- * Returns the pass's Claude plugin folders and their warnings, for a launch to
- * pass and report; every other caller ignores them.
+ * Returns the pass's Claude plugin folders, for a launch to pass and report;
+ * every other caller ignores them.
  */
 export async function syncCompanionFiles(
   companionPath: string,
   config: FrameworkConfig,
   repoPath?: string,
   options: CompanionSyncOptions = {},
-): Promise<GatheredClaudePluginDirectories> {
+): Promise<ClaudePluginFolders> {
   const outcome = await applySetupCompatibilities(
     companionPath,
     config,
@@ -193,7 +214,7 @@ export async function syncCompanionFiles(
     undefined,
     options,
   );
-  return outcome.claudePluginDirectories;
+  return outcome.claudePluginFolders;
 }
 
 export const setupToolDeps = {

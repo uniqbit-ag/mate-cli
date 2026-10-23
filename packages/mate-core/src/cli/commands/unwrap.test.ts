@@ -169,6 +169,7 @@ describe("runUnwrapCommand", () => {
     const restored = JSON.parse(await fs.readFile(settingsPath, "utf8"));
     expect(restored.enableArtifact).toBe(true);
     expect(restored.permissions.deny).toEqual(["Bash(rm:*)"]);
+    expect("attribution" in restored).toBe(false);
   });
 
   test("a wrap without a user enableArtifact sets it to false", async () => {
@@ -184,6 +185,7 @@ describe("runUnwrapCommand", () => {
       await fs.readFile(path.join(repoPath, ".claude", "settings.local.json"), "utf8"),
     );
     expect(placed.enableArtifact).toBe(false);
+    expect(placed.attribution).toEqual({ commit: "", pr: "", sessionUrl: false });
     expect(placed.permissions.deny).toEqual([
       "EnterPlanMode",
       "DesignSync",

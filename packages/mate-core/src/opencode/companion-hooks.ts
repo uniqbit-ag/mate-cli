@@ -2,6 +2,8 @@ import path from "node:path";
 
 import type { Context } from "@opencode/plugin/promise/plugin";
 
+import { resolveArtifactTarget } from "../runtime/artifact-refusal";
+import { checkCommitAttribution } from "../runtime/commit-attribution-guard";
 import {
   companionForkRefusal,
   syncCompanionUnattended,
@@ -17,7 +19,7 @@ import {
   extractPatchAdditions,
   extractPatchPaths,
   isArtifactPath,
-  normalizeTargetPath,
+  isCompanionTarget,
   shouldBlockArtifactWrite,
   type CompanionContext,
 } from "./companion-policy";
@@ -89,9 +91,7 @@ export async function refuseForkedCompanionWrite(
   env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
   if (!filePath || !isArtifactPath(filePath)) return;
-  if (!normalizeTargetPath(context, filePath).startsWith(path.normalize(context.companionPath))) {
-    return;
-  }
+  if (!isCompanionTarget(context, filePath)) return;
   const refusal = await companionForkRefusal(env, context.companionPath);
   if (refusal) throw new Error(refusal);
 }
@@ -103,7 +103,8 @@ function secretToolCall(
   args: Record<string, unknown>,
 ): SecretToolCall | null {
   const text = (value: unknown) => (typeof value === "string" ? value : "");
-  const target = (value: unknown) => (text(value) ? normalizeTargetPath(context, text(value)) : "");
+  const target = (value: unknown) =>
+    text(value) ? resolveArtifactTarget(text(value), context.repositoryPath) : "";
   switch (tool) {
     case "read":
       return { kind: "read", paths: [target(args.filePath)] };
@@ -135,8 +136,9 @@ function secretToolCall(
 }
 
 /**
- * Rejects when the tool call touches a secret, or would write an artifact
- * outside the companion. Secrets are checked first, as in the Claude hook.
+ * Rejects when the tool call touches a secret, commits with a model co-author
+ * trailer, or would write an artifact outside the companion. Checked in that
+ * order, as in the Claude hook.
  */
 export async function guardToolInput(
   context: CompanionContext,
@@ -153,6 +155,10 @@ export async function guardToolInput(
       companionPath: context.companionPath,
       isCompanionPath: (filePath) => filePath.startsWith(companionRoot),
     });
+    if (refusal) throw new Error(refusal);
+  }
+  if (tool === "bash") {
+    const refusal = checkCommitAttribution(String(args.command ?? ""));
     if (refusal) throw new Error(refusal);
   }
   const filePaths =

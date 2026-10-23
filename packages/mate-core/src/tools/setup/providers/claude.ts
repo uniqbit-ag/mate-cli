@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
-import { MATE_CLAUDE_PLUGIN_NAME } from "../../../lib/package-paths";
+import { getClaudePluginRoot } from "../../../lib/package-paths";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import {
   CLAUDE_LOCAL_CONFIG_DOCUMENT,
@@ -24,6 +24,16 @@ import type { CapabilityContributionInput, ProviderPlugin, SetupContext } from "
 import { projectionRepoRoot, surfaceRoot } from "../surface-target";
 import { mergeDir, pruneEmptyAncestors } from "../utils";
 import { stripSectionFromFile, type RemoveHeadingSectionOptions } from "./agent-file-sections";
+import {
+  claudeUserConfigDir,
+  definesUserClaudeAttribution,
+  isManagedClaudeAttribution,
+  MANAGED_CLAUDE_ATTRIBUTION,
+} from "./claude-attribution";
+import {
+  inspectClaudePluginFolders,
+  type PublishedClaudePluginFolder,
+} from "./claude-plugin-folders";
 import { patchSkillTreeMarkdownFiles } from "./skill-tree";
 import {
   filterClaudeHookGroups,
@@ -219,175 +229,6 @@ function renderManagedClaudeHookGroups(
   return hooks;
 }
 
-/** What Claude reads to load a folder as a plugin, relative to that folder. */
-export const CLAUDE_PLUGIN_MANIFEST = path.join(".claude-plugin", "plugin.json");
-
-/** True when `directory` holds a Claude plugin manifest. */
-async function hasClaudePluginManifest(directory: string): Promise<boolean> {
-  try {
-    return (await fs.stat(path.join(directory, CLAUDE_PLUGIN_MANIFEST))).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/** One pass's Claude plugin folders, for the launch that ran it. */
-export interface GatheredClaudePluginDirectories {
-  /** Absolute folder paths, in Capability registration order, without duplicates. */
-  directories: string[];
-  /** One per entry left out, naming the Capability and the path. */
-  warnings: string[];
-}
-
-/** Why a launch leaves a declared Claude plugin folder out, in the order they are checked. */
-export type ClaudePluginDirectoryProblem =
-  | "not-absolute"
-  | "bundled-mate-plugin"
-  | "missing-manifest"
-  | "mate-plugin-name";
-
-/** How a sync warning words each problem, after the Capability and the folder. */
-const CLAUDE_PLUGIN_DIRECTORY_WARNINGS: Record<ClaudePluginDirectoryProblem, string> = {
-  "not-absolute": "is not an absolute path; it was left out.",
-  "bundled-mate-plugin":
-    "is Mate's bundled plugin, which every managed launch loads already; it was left out.",
-  "missing-manifest": `holds no ${CLAUDE_PLUGIN_MANIFEST}; it was left out.`,
-  "mate-plugin-name": `uses Mate's plugin name ${MATE_CLAUDE_PLUGIN_NAME}; it was left out so it cannot replace Mate's guardrail hooks.`,
-};
-
-/**
- * The `name` a folder's plugin manifest declares; undefined when the manifest
- * does not parse or holds no string `name`.
- */
-async function claudePluginManifestName(directory: string): Promise<string | undefined> {
-  try {
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(directory, CLAUDE_PLUGIN_MANIFEST), "utf8"),
-    ) as { name?: unknown } | null;
-    return typeof manifest?.name === "string" ? manifest.name : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * The first problem that leaves `directory` out, if any. `isBundledPlugin` says
- * it resolves to Mate's bundled plugin, which is named as such rather than as a
- * folder using Mate's plugin name.
- */
-async function claudePluginDirectoryProblem(
-  directory: string,
-  isBundledPlugin: boolean,
-): Promise<ClaudePluginDirectoryProblem | undefined> {
-  if (!path.isAbsolute(directory)) return "not-absolute";
-  if (isBundledPlugin) return "bundled-mate-plugin";
-  if (!(await hasClaudePluginManifest(directory))) return "missing-manifest";
-  return (await claudePluginManifestName(directory)) === MATE_CLAUDE_PLUGIN_NAME
-    ? "mate-plugin-name"
-    : undefined;
-}
-
-/** Enabled Capabilities' declared folders, in registration order. */
-function* enabledClaudePluginDirectories(
-  contributions: CapabilityContributionInput[],
-): Generator<{ capability: string; directory: string }> {
-  for (const input of contributions) {
-    if (!input.enabled) continue;
-    for (const { path: directory } of input.contributions.pluginDirectories ?? []) {
-      yield { capability: input.pluginId, directory };
-    }
-  }
-}
-
-/** One folder however it is spelled: trailing separators and symlinks resolve to one key. */
-async function claudePluginDirectoryKey(directory: string): Promise<string> {
-  if (!path.isAbsolute(directory)) return directory;
-  const resolved = path.resolve(directory);
-  return fs.realpath(resolved).catch(() => resolved);
-}
-
-/**
- * Enabled Capabilities' Claude plugin folders. Launch-only: nothing is written,
- * linked or copied. Dedupes before checking, so each folder warns at most once.
- * The launch passes Mate's bundled plugin (`bundledPluginRoot`) before these, so
- * a folder that resolves to it is left out like a duplicate, but with a warning.
- */
-export async function gatherClaudePluginDirectories(
-  contributions: CapabilityContributionInput[],
-  bundledPluginRoot: string,
-): Promise<GatheredClaudePluginDirectories> {
-  const directories: string[] = [];
-  const warnings: string[] = [];
-  const bundledKey = await claudePluginDirectoryKey(bundledPluginRoot);
-  const seen = new Set<string>();
-  for (const { capability, directory } of enabledClaudePluginDirectories(contributions)) {
-    const key = await claudePluginDirectoryKey(directory);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const problem = await claudePluginDirectoryProblem(directory, key === bundledKey);
-    if (problem) {
-      warnings.push(
-        `${capability}: Claude plugin folder ${directory} ${CLAUDE_PLUGIN_DIRECTORY_WARNINGS[problem]}`,
-      );
-    } else {
-      directories.push(path.resolve(directory));
-    }
-  }
-  return { directories, warnings };
-}
-
-/** One declared Claude plugin folder, as an operator inspects it. */
-export interface ClaudePluginDirectoryReport {
-  capability: string;
-  path: string;
-  /**
-   * `mate claude` passes the folder: an absolute path holding a plugin manifest,
-   * neither Mate's bundled plugin nor using Mate's plugin name.
-   */
-  loadable: boolean;
-  /** Why `mate claude` leaves the folder out; absent when it passes it. */
-  problem?: ClaudePluginDirectoryProblem;
-}
-
-/** A Capability whose contributions could not be read, so its Claude plugin folders are unknown. */
-export interface ClaudePluginContributionFailure {
-  capability: string;
-  reason: string;
-}
-
-/**
- * Every enabled Capability's declared Claude plugin folders, each with its load
- * state, checked against Mate's bundled plugin (`bundledPluginRoot`) as the gather does.
- */
-export async function describeClaudePluginDirectories(
-  contributions: CapabilityContributionInput[],
-  bundledPluginRoot: string,
-): Promise<ClaudePluginDirectoryReport[]> {
-  const reports: ClaudePluginDirectoryReport[] = [];
-  const bundledKey = await claudePluginDirectoryKey(bundledPluginRoot);
-  for (const { capability, directory } of enabledClaudePluginDirectories(contributions)) {
-    const isBundledPlugin = (await claudePluginDirectoryKey(directory)) === bundledKey;
-    const problem = await claudePluginDirectoryProblem(directory, isBundledPlugin);
-    reports.push({
-      capability,
-      path: directory,
-      loadable: problem === undefined,
-      ...(problem ? { problem } : {}),
-    });
-  }
-  return reports;
-}
-
-/**
- * Enabled Capabilities that declare a Claude plugin folder, in registration
- * order. Named from the declarations alone: no folder is checked.
- */
-export function claudePluginCapabilityIds(contributions: CapabilityContributionInput[]): string[] {
-  const ids = new Set<string>();
-  for (const { capability } of enabledClaudePluginDirectories(contributions)) ids.add(capability);
-  return [...ids];
-}
-
 // Reconcile the Mate-managed Claude settings shape (hooks, permissions, MCP
 // servers) on top of whatever already exists in the settings document. Managed
 // groups/entries always lead their arrays so the emitted shape stays stable
@@ -397,6 +238,7 @@ function renderManagedClaudeSettings(
   companionPath: string,
   config: FrameworkConfig,
   contributions: CapabilityContributionInput[] = [],
+  userDefinesAttribution: boolean,
 ): ClaudeSettings {
   // Declared markers and permission entries widen the managed strip set for
   // every registered Capability, enabled or not, so deselection tears down.
@@ -478,6 +320,11 @@ function renderManagedClaudeSettings(
   } else {
     delete settings.mcpServers;
   }
+  /** The document's own value is kept; Mate's yields to one the user scope sets. */
+  if (!("attribution" in existing) || isManagedClaudeAttribution(existing.attribution)) {
+    if (userDefinesAttribution) delete settings.attribution;
+    else settings.attribution = { ...MANAGED_CLAUDE_ATTRIBUTION };
+  }
 
   return settings;
 }
@@ -496,6 +343,8 @@ function renderManagedClaudeSettings(
 function claudeSettingsRegions(
   ctx: SetupContext,
   inputs: CapabilityContributionInput[],
+  repoRoot: string,
+  pluginFolders: readonly PublishedClaudePluginFolder[],
 ): ManagedRegion[] {
   const capabilityHooks = renderManagedClaudeHookGroups(inputs);
   const mateHooks: Record<string, unknown[]> = {
@@ -538,6 +387,7 @@ function claudeSettingsRegions(
       kind: "list",
       values: renderManagedClaudeDenyEntries(ctx.companionPath),
     },
+    ...claudePluginRegions(pluginFolders),
     /**
      * Yields: the document is the user's, so their own `enableArtifact` wins,
      * and unwrapping restores it instead of deleting a key Mate overwrote.
@@ -548,6 +398,49 @@ function claudeSettingsRegions(
       value,
       yields: true,
     })),
+    /**
+     * Placed only while no scope sets attribution: a project-scope value would
+     * lose to this local one, yielding or not. Mate's own earlier value does
+     * not count as the user's.
+     */
+    ...(definesUserClaudeAttribution({ repoRoot })
+      ? []
+      : [
+          {
+            at: ["attribution"],
+            kind: "value",
+            value: { ...MANAGED_CLAUDE_ATTRIBUTION },
+            yields: true,
+          } satisfies ManagedRegion,
+        ]),
+  ];
+}
+
+/**
+ * Each published plugin folder as a local `directory` marketplace and its one
+ * enabled plugin, so a plain session in a trusted folder loads it in place. The
+ * path is the folder as the launch passes it, so the wrap state can name what
+ * the launch must leave to the wrap.
+ */
+function claudePluginRegions(published: readonly PublishedClaudePluginFolder[]): ManagedRegion[] {
+  return [
+    {
+      at: ["extraKnownMarketplaces"],
+      kind: "map",
+      entries: Object.fromEntries(
+        published.map(({ path: folder, marketplace }) => [
+          marketplace,
+          { source: { source: "directory", path: folder } },
+        ]),
+      ),
+    },
+    {
+      at: ["enabledPlugins"],
+      kind: "map",
+      entries: Object.fromEntries(
+        published.map(({ plugin, marketplace }) => [`${plugin}@${marketplace}`, true]),
+      ),
+    },
   ];
 }
 
@@ -562,9 +455,16 @@ export async function renderClaudeWorkingDocuments(
   inputs: CapabilityContributionInput[],
 ): Promise<RenderedRuntimeDocuments> {
   const repoRoot = projectionRepoRoot(ctx);
+  /** Reads the folders only; the pass published them before this render. */
+  const pluginFolders = (
+    await inspectClaudePluginFolders(inputs, { bundledPluginRoot: getClaudePluginRoot() })
+  ).published;
   return {
     documents: [
-      ...renderedDocument(CLAUDE_SETTINGS_DOCUMENT, claudeSettingsRegions(ctx, inputs)),
+      ...renderedDocument(
+        CLAUDE_SETTINGS_DOCUMENT,
+        claudeSettingsRegions(ctx, inputs, repoRoot, pluginFolders),
+      ),
       /**
        * Local scope, not `.mcp.json`: a project-scoped server is inert until a
        * human approves it in a session, which an Unmanaged Session is exactly the
@@ -605,10 +505,17 @@ export async function syncCompanionClaudeSettings(
   companionPath: string,
   config: FrameworkConfig,
   contributions: CapabilityContributionInput[] = [],
+  env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
   const settingsPath = getCompanionClaudeSettingsPath(companionPath);
   const existing = await readClaudeSettings(settingsPath);
-  const settings = renderManagedClaudeSettings(existing, companionPath, config, contributions);
+  const settings = renderManagedClaudeSettings(
+    existing,
+    companionPath,
+    config,
+    contributions,
+    definesUserClaudeAttribution({ userConfigDir: claudeUserConfigDir(env) }),
+  );
 
   await writeClaudeSettings(settingsPath, settings);
 

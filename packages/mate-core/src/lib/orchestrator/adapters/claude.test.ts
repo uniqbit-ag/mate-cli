@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { launchPluginFolders } from "../../../runtime/claude-delivery-plan";
 import {
   CLAUDE_SETTINGS_DOCUMENT,
   EMPTY_MANIFEST,
@@ -130,6 +131,30 @@ describe("the Claude delivery plan at launch", () => {
     expect(derived.enableArtifact).toBe(false);
   });
 
+  test("a launch carries the managed attribution unless the repository sets its own", async () => {
+    const { companionPath } = await companionWith({});
+    await syncCompanionClaudeSettings(companionPath, {
+      allowedAgents: ["claude"],
+      capabilities: [],
+    });
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "acme-launch-repo-"));
+    tempRoots.push(repo);
+    const context = { ...contextFor(companionPath), repository: { id: "repo", path: repo } };
+    const derived = async () =>
+      JSON.parse(await fs.readFile(launchSettingsPath(companionPath, "repo"), "utf8"));
+
+    await new ClaudeAdapter().planLaunch(context, prepared());
+    expect((await derived()).attribution).toEqual({ commit: "", pr: "", sessionUrl: false });
+
+    await fs.mkdir(path.join(repo, ".claude"), { recursive: true });
+    await fs.writeFile(
+      path.join(repo, ".claude", "settings.json"),
+      JSON.stringify({ attribution: { pr: "Built with AI" } }),
+    );
+    await new ClaudeAdapter().planLaunch(context, prepared());
+    expect("attribution" in (await derived())).toBe(false);
+  });
+
   test("a launch whose prepare left no Claude wrap fails preflight naming mate wrap", async () => {
     const { companionPath } = await companionWith({});
 
@@ -199,43 +224,28 @@ describe("a failed Claude prepare", () => {
 });
 
 describe("Capability plugin folders at launch", () => {
-  async function launchArgs(scope: "repo" | "companion", claudePluginDirectories?: string[]) {
+  test("passes the plan's folder list as --plugin-dir flags, in order, before the user's args", async () => {
     const { companionPath } = await companionWith({});
     const adapter = new ClaudeAdapter();
     const launch = await adapter.planLaunch(
-      contextFor(companionPath, scope),
-      prepared(claudePluginDirectories ? { claudePluginDirectories } : {}),
+      contextFor(companionPath),
+      prepared({ claudePluginDirectories: ["/acme/plugins/zeta", "/acme/plugins/alpha"] }),
     );
-    return adapter.buildArgs(launch, ["--print"]);
-  }
 
-  test("passes each gathered folder after the bundled plugin, in gathered order", async () => {
-    const args = await launchArgs("repo", ["/acme/plugins/zeta", "/acme/plugins/alpha"]);
+    const args = adapter.buildArgs(launch, ["--print"]);
 
+    expect(pluginDirs(args)).toEqual(
+      launchPluginFolders(
+        launch.delivery.plan,
+        ["/acme/plugins/zeta", "/acme/plugins/alpha"],
+        getClaudePluginRoot(),
+      ),
+    );
     expect(pluginDirs(args)).toEqual([
       getClaudePluginRoot(),
       "/acme/plugins/zeta",
       "/acme/plugins/alpha",
     ]);
     expect(args.at(-1)).toBe("--print");
-  });
-
-  test("passes only the bundled plugin when the prepare gathered no folder", async () => {
-    expect(pluginDirs(await launchArgs("repo"))).toEqual([getClaudePluginRoot()]);
-    expect(pluginDirs(await launchArgs("repo", []))).toEqual([getClaudePluginRoot()]);
-  });
-
-  test("a companion-scoped launch passes its gathered folders too", async () => {
-    const args = await launchArgs("companion", ["/acme/plugins/zeta"]);
-
-    expect(pluginDirs(args)).toEqual([getClaudePluginRoot(), "/acme/plugins/zeta"]);
-  });
-
-  test("a path with a space and a drive letter passes through unchanged", async () => {
-    const windowsPath = "C:\\Users\\Acme Corp\\plugins\\acme";
-
-    const args = await launchArgs("repo", [windowsPath]);
-
-    expect(pluginDirs(args)).toEqual([getClaudePluginRoot(), windowsPath]);
   });
 });

@@ -23,6 +23,11 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -154,7 +159,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -336,6 +341,18 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
 ]
@@ -448,7 +465,7 @@ exports[`runtime surface golden fixtures setup graphify × opencode 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -727,6 +744,11 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -895,7 +917,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -965,7 +987,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -1129,6 +1151,18 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -1401,6 +1435,11 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -1542,7 +1581,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -1770,6 +1809,18 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
   {
@@ -1891,7 +1942,7 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -2194,6 +2245,11 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -2363,7 +2419,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -2427,7 +2483,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -2640,6 +2696,18 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -2943,6 +3011,11 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -3043,7 +3116,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -3214,6 +3287,18 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
 ]
@@ -3305,7 +3390,7 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -3593,6 +3678,11 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -3712,7 +3802,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -3762,7 +3852,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -3924,6 +4014,18 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -4190,6 +4292,11 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -4293,7 +4400,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -4462,6 +4569,18 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
 ]
@@ -4545,7 +4664,7 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -4824,6 +4943,11 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -4946,7 +5070,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -4994,7 +5118,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -5156,6 +5280,18 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -5421,6 +5557,11 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -5553,7 +5694,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -5738,6 +5879,18 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
         "value": false,
         "yields": true,
       },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
+        "yields": true,
+      },
     ],
   },
 ]
@@ -5837,7 +5990,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 2`] = `
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -6118,6 +6271,11 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -6285,7 +6443,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -6335,7 +6493,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -6513,6 +6671,18 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -6793,6 +6963,11 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -7075,7 +7250,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in <root>/working. Agent-artifacts belong in <root>/companion.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in <root>/working when the exact path is gitignored AND intentionally local-only; otherwise use <root>/companion.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to <root>/working are rejected. The guardrail resolves relative paths against <root>/working and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under <root>/companion. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -7149,7 +7324,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     <rule id="pre-write-classification" severity="critical">Before ANY write, classify the target as product-code or agent-artifact. If unsure, treat it as agent-artifact.</rule>
     <rule id="product-code-location" severity="critical">Product code (README, docs, source, tests) belongs in $MATE_REPO_PATH. Agent-artifacts belong in $MATE_ARTIFACT_PATH.</rule>
     <rule id="local-artifact-exception" severity="critical">Only write artifacts in $MATE_REPO_PATH when the exact path is gitignored AND intentionally local-only; otherwise use $MATE_ARTIFACT_PATH.</rule>
-    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. Classify correctly first.</rule>
+    <rule id="guardrail" severity="critical">Bad artifact writes to $MATE_REPO_PATH are rejected. The guardrail resolves relative paths against $MATE_REPO_PATH and does not follow cd, so write artifacts, including shell redirects and tee, with absolute paths under $MATE_ARTIFACT_PATH. Classify correctly first.</rule>
     <rule id="companion-multi-repository" severity="critical">This Companion Repository may serve multiple Working Repositories. The working-repository path above identifies this session's single primary Working Repository, not the companion's full repository set. The Companion Repository is the shared artifact and context plane; the primary Working Repository is the product-code plane.</rule>
     <rule id="repository-area-scope" severity="critical">For domain modeling, identify the canonical Working Repository and its repository-relative Area first. A checkout basename or Area alone is not a repository identity. Shared context applies only when the Companion Repository's CONTEXT-MAP explicitly maps it to the current repository and Area.</rule>
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: $MATE_WRAPPER_BIN_PATH/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
@@ -7388,6 +7563,18 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
         ],
         "kind": "value",
         "value": false,
+        "yields": true,
+      },
+      {
+        "at": [
+          "attribution",
+        ],
+        "kind": "value",
+        "value": {
+          "commit": "",
+          "pr": "",
+          "sessionUrl": false,
+        },
         "yields": true,
       },
     ],
@@ -7692,6 +7879,11 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -7802,6 +7994,11 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -7913,6 +8110,11 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -8023,6 +8225,11 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -8133,6 +8340,11 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {
@@ -8243,6 +8455,11 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
 "
 ,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "hooks": {
@@ -8454,6 +8671,11 @@ exports[`working repo golden fixtures hub roots set up providers only without co
   },
   "claudeMd": null,
   "claudeSettingsLocal": {
+    "attribution": {
+      "commit": "",
+      "pr": "",
+      "sessionUrl": false,
+    },
     "autoMemoryEnabled": false,
     "enableArtifact": false,
     "permissions": {

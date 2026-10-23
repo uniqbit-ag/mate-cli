@@ -1,0 +1,38 @@
+---
+title: Commit Attribution
+description: How Mate keeps AI co-author trailers out of the commits agents create.
+---
+
+Agents must not credit an AI model as co-author of a commit. Mate enforces this
+in two places, so the trailer is never written and no history has to be rewritten
+to remove it.
+
+## Claude Code's Attribution Is Turned Off
+
+Claude Code tells every session to end commit messages with a
+`Co-Authored-By: Claude` trailer unless its `attribution` setting hides it. Mate's
+managed Claude settings, and the settings a Claude wrap places, hide it. A
+setting of your own wins over Mate's; see
+[Commands](/docs/reference/commands#claude-wrap-then-launch).
+
+## The Commit Is Refused
+
+A guard in the Claude Code hook and the OpenCode middleware refuses a shell
+`git commit` whose message carries a `Co-Authored-By:` trailer naming a model:
+one that mentions Claude, Anthropic, GPT, OpenAI, Codex, Gemini, Copilot, or
+opencode anywhere, in any letter case, so `ChatGPT` counts too. The commit is refused before it exists:
+
+```text
+Mate guardrail: Co-Authored-By trailers that credit an AI model are not allowed in this repository.
+No commit was created. Rerun the same commit without the Co-Authored-By trailer; do not amend or rewrite history to remove it.
+```
+
+The guard runs whatever the attribution setting says, so it also covers a user
+whose own setting adds a model trailer. Human co-author trailers pass.
+
+The guard reads only message text in the command itself: `-m` and `--message`
+values (`-m x`, `-mx`, `-am x`, `--message=x`), `--trailer` values, and the
+heredoc bodies the commit itself reads, such as `-m "$(cat <<'EOF' … EOF)"` or
+`git commit -F - <<'EOF'`. It reads no files, so `git commit -F <file>`,
+`git commit -t <template>`, and messages written in an editor are not checked.
+Only agent tool calls are guarded; your own shell and Git are not.
