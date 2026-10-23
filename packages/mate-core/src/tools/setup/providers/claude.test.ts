@@ -219,14 +219,34 @@ describe("syncCompanionClaudeSettings", () => {
     const deny = (await readCompanionSettings(companionPath)).permissions?.deny ?? [];
     expect(deny).toContain("Read(**/.env)");
     expect(deny).toContain("Edit(**/.env.local)");
-    expect(deny).toContain("Write(**/*.key)");
+    expect(deny).toContain("Edit(**/*.key)");
+    expect(deny.some((entry: string) => entry.startsWith("Write("))).toBe(false);
     expect(deny.some((entry: string) => entry.includes(".env.*)"))).toBe(false);
     expect(deny.some((entry: string) => entry.includes("example"))).toBe(false);
   });
 
+  test("strips legacy Write secret entries and keeps the user entry", async () => {
+    const companionPath = await makeTempDir("mate-companion-secret-legacy-write-");
+    await seedSettings(companionPath, {
+      permissions: { deny: ["Bash(rm:*)", "Write(**/.npmrc)"] },
+    });
+    await syncCompanionClaudeSettings(companionPath, {
+      allowedAgents: ["claude"],
+      capabilities: [],
+    });
+
+    const deny = (await readCompanionSettings(companionPath)).permissions?.deny ?? [];
+    expect(deny).not.toContain("Write(**/.npmrc)");
+    expect(deny).toContain("Bash(rm:*)");
+    expect(deny).toContain("Read(**/.npmrc)");
+    expect(deny).toContain("Edit(**/.npmrc)");
+  });
+
   test("an opt-out strips the secret entries and keeps the fixed and user entries", async () => {
     const companionPath = await makeTempDir("mate-companion-secret-optout-");
-    await seedSettings(companionPath, { permissions: { deny: ["Bash(rm:*)"] } });
+    await seedSettings(companionPath, {
+      permissions: { deny: ["Bash(rm:*)", "Write(**/.env)", "Write(**/.npmrc)"] },
+    });
     const config = { allowedAgents: ["claude"], capabilities: [] };
     await syncCompanionClaudeSettings(companionPath, config);
 

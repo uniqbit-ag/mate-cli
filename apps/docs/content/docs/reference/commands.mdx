@@ -146,8 +146,9 @@ whether plain sessions load each one.
 Mate's managed Claude settings turn off Claude Code features that compete with
 Mate's own workflow: they deny the `EnterPlanMode` and `DesignSync` tools and set
 `enableArtifact: false`, beside `autoMemoryEnabled: false`. Those tool denies are
-fixed. While secret guardrails are on, the managed deny list also carries `Read`,
-`Edit` and `Write` deny rules for the default secret files; see
+fixed. While secret guardrails are on, the managed deny list also carries `Read`
+and `Edit` deny rules for the default secret files (the `Edit` rule also covers
+`Write`); see
 [Secret Guardrails](/docs/concepts/secret-guardrails). `ExitPlanMode` stays
 allowed, so plan mode entered by hand (Shift+Tab) can still be left. A managed
 launch applies these settings through `--settings`, and deny rules from there

@@ -141,12 +141,14 @@ function getAllManagedPermissionEntries(companionPath: string): Set<string> {
  */
 export const MANAGED_CLAUDE_DENY_ENTRIES: readonly string[] = ["EnterPlanMode", "DesignSync"];
 
-const SECRET_DENY_TOOLS = ["Read", "Edit", "Write"] as const;
+const SECRET_DENY_TOOLS = ["Read", "Edit"] as const;
 
 /**
  * Claude deny rules for the default secret files, at any depth. Claude checks
  * deny before allow, so only patterns that can't match an allow-listed file are
- * rendered; the hook enforces the rest of the pattern set.
+ * rendered; the hook enforces the rest of the pattern set. Claude applies
+ * `Edit(...)` rules to every built-in file-editing tool, `Write` included, so
+ * no `Write(...)` rule is rendered: Claude never matches one and warns about it.
  */
 export function renderSecretDenyEntries(): string[] {
   return projectableSecretDenyPatterns().flatMap((pattern) =>
@@ -167,7 +169,14 @@ function renderManagedClaudeDenyEntries(companionPath: string): string[] {
  * an opt-out strips the secret entries instead of keeping them as user entries.
  */
 function getAllManagedDenyEntries(): Set<string> {
-  return new Set([...MANAGED_CLAUDE_DENY_ENTRIES, ...renderSecretDenyEntries()]);
+  return new Set([
+    ...MANAGED_CLAUDE_DENY_ENTRIES,
+    ...renderSecretDenyEntries(),
+    // Legacy secret entries: Claude Code never matched Write() rules for file
+    // permission checks and warns about them, so setup no longer emits them.
+    // Keep them managed so re-running setup strips them from existing installs.
+    ...projectableSecretDenyPatterns().map((pattern) => `Write(**/${pattern})`),
+  ]);
 }
 const MANAGED_CLAUDE_FORCED_SETTINGS = { enableArtifact: false } as const;
 
