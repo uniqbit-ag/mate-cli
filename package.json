@@ -6,6 +6,8 @@
     "packages/*"
   ],
   "scripts": {
+    "brand:generate": "bun scripts/brand/generate.ts",
+    "brand:check": "bun scripts/brand/generate.ts --check",
     "docs": "bun run --filter @uniqbit/mate-docs dev",
     "docs:build": "bun run --filter @uniqbit/mate-docs build",
     "docs:check": "bun run --filter @uniqbit/mate-docs check",

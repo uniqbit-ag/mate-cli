@@ -21,6 +21,13 @@ import {
 import { fixtureTree } from "../../../../../test/studio-vault-fixture";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
 import type { VaultTreeNode } from "../vault";
+import { BRAND_SVGS } from "../../../../brand";
+
+function decodeDataUri(uri: string): string {
+  const prefix = "data:image/svg+xml;base64,";
+  expect(uri).toStartWith(prefix);
+  return Buffer.from(uri.slice(prefix.length), "base64").toString("utf8");
+}
 
 /** Every GET form's attributes, button text, and hidden fields, decoded as the browser submits them. */
 function forms(markup: string) {
@@ -99,8 +106,42 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain("<style>");
     expect(markup).toContain("--accent:");
     expect(markup).toContain("<script>");
-    expect(markup).not.toContain("<link");
-    expect(markup).not.toContain("src=");
+    // Brand images are inlined as data URIs; nothing else is loaded.
+    for (const [, url] of markup.matchAll(/<link\b[^>]*\bhref="([^"]*)"/g)) {
+      expect(url).toStartWith("data:");
+    }
+    for (const [, url] of markup.matchAll(/\bsrc="([^"]*)"/g)) {
+      expect(url).toStartWith("data:");
+    }
+  });
+
+  it("declares the kit favicon as an inline SVG data URI", () => {
+    const markup = renderStudioDocument(page());
+    const head = markup.slice(0, markup.indexOf("</head>"));
+    const icon = head.match(/<link rel="icon" type="image\/svg\+xml" href="([^"]*)">/);
+
+    expect(icon).not.toBeNull();
+    expect(decodeDataUri(icon![1]!)).toBe(BRAND_SVGS.favicon);
+  });
+
+  it("shows the Mate symbol beside the Mate Studio title in both appearances", () => {
+    const markup = renderStudioDocument(selected);
+    const brand = markup.slice(
+      markup.indexOf('<div class="sidebar-brand">'),
+      markup.indexOf("</strong>"),
+    );
+    const images = [...brand.matchAll(/<img class="([^"]*)" src="([^"]*)"/g)].map(
+      ([, className, src]) => ({ className, svg: decodeDataUri(src!) }),
+    );
+
+    expect(images).toEqual([
+      { className: "sidebar-brand-mark brand-symbol-color", svg: BRAND_SVGS.symbolColor },
+      { className: "sidebar-brand-mark brand-symbol-on-dark", svg: BRAND_SVGS.symbolOnDark },
+    ]);
+    expect(brand).toContain("Mate Studio");
+    const style = markup.slice(markup.indexOf("<style>"), markup.indexOf("</style>"));
+    expect(style).toContain(".brand-symbol-color { display: none; }");
+    expect(style).toContain(':root[data-theme="light"] .brand-symbol-color');
   });
 
   it("references no external host", () => {
@@ -700,7 +741,11 @@ describe("terminal view", () => {
     const markup = renderStudioDocument({ ...selected, terminal });
     const sources = [...markup.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1]);
     expect(sources.length).toBeGreaterThan(0);
-    for (const source of sources) expect(source!.startsWith("/studio/terminal/")).toBe(true);
+    for (const source of sources) {
+      // Inline brand images are data URIs, not files.
+      if (source!.startsWith("data:")) continue;
+      expect(source!.startsWith("/studio/terminal/")).toBe(true);
+    }
     expect(markup).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
   });
 
