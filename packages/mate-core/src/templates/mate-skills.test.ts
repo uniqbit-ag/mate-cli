@@ -106,6 +106,13 @@ async function readSkillFrom(root: string, name: string): Promise<string> {
   return fs.readFile(path.join(root, name, "SKILL.md"), "utf8");
 }
 
+function sectionOf(source: string, heading: string): string {
+  const start = source.indexOf(`\n${heading}\n`);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const next = source.indexOf("\n## ", start + heading.length + 2);
+  return source.slice(start, next === -1 ? undefined : next);
+}
+
 async function listSkillNames(root: string): Promise<string[]> {
   const entries = await fs.readdir(root, { withFileTypes: true });
   return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
@@ -445,6 +452,12 @@ describe("bundled Mate pre-explore skills", () => {
         expect(source).toContain(marker);
       }
     }
+  });
+
+  test("never presents dropping async as a simplification", async () => {
+    const source = await readSkillFrom(skillsRoot, "mate-simplify-code");
+    expect(sectionOf(source, "## Red Flags")).toMatch(/Dropping `async`/);
+    expect(source).not.toContain("Unnecessary async wrapper");
   });
 });
 
