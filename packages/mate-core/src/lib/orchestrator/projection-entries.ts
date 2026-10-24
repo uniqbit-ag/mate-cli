@@ -28,6 +28,10 @@ import {
 } from "../../tools/setup/working-repo-local-state";
 import { companionLinkPresent, linkCompanion, unlinkCompanion } from "./projection-companion-link";
 import {
+  reconcileWorkingRepoClaudeCommandLinks,
+  removeWorkingRepoClaudeCommandLinks,
+} from "./projection-claude-commands";
+import {
   reconcileWorkingRepoClaudeSkillLinks,
   removeWorkingRepoClaudeSkillLinks,
 } from "./projection-claude-skills";
@@ -145,6 +149,23 @@ async function writeRuntimeDocumentEntry(
     state,
     warnings: await trackedDocumentWarnings(input.repoPath, documentPath, repositoryId),
   };
+}
+
+/** Links a companion `.claude/` folder's entries when the companion allows Claude. */
+async function writeClaudeLinkEntry(
+  input: ProjectionInput,
+  reconcile: typeof reconcileWorkingRepoClaudeSkillLinks,
+): Promise<ProjectionWriteState> {
+  if (!input.config) return "skipped";
+  const registeredCompanionPaths = input.globalConfigStore
+    ? await input.globalConfigStore.list()
+    : [];
+  return reconcile(
+    input.repoPath,
+    input.companionPath ?? null,
+    input.config.allowedAgents?.includes("claude") ?? false,
+    registeredCompanionPaths,
+  );
 }
 
 function tokensaveEnabled(input: ProjectionInput): boolean {
@@ -297,22 +318,30 @@ function buildEntries(): readonly ProjectionEntry[] {
       scopes: ["wrap"],
       runtime: "claude",
       removeOnUnwrap: true,
-      write: async (input) => {
-        if (!input.config) return "skipped";
-        const registeredCompanionPaths = input.globalConfigStore
-          ? await input.globalConfigStore.list()
-          : [];
-        return reconcileWorkingRepoClaudeSkillLinks(
-          input.repoPath,
-          input.companionPath ?? null,
-          input.config.allowedAgents?.includes("claude") ?? false,
-          registeredCompanionPaths,
-        );
-      },
+      write: (input) => writeClaudeLinkEntry(input, reconcileWorkingRepoClaudeSkillLinks),
       removal: {
         by: "self",
         remove: (input) =>
           removeWorkingRepoClaudeSkillLinks(input.repoPath, input.registeredCompanionPaths ?? []),
+      },
+    },
+    /**
+     * A wrapped repository reaches its companion through
+     * `permissions.additionalDirectories`, from which Claude loads no commands,
+     * so OpenSpec's `/opsx:*` must be linked in like the skills.
+     */
+    {
+      id: "claude-command-links",
+      kind: "merged",
+      path: path.join(".claude", "commands"),
+      scopes: ["wrap"],
+      runtime: "claude",
+      removeOnUnwrap: true,
+      write: (input) => writeClaudeLinkEntry(input, reconcileWorkingRepoClaudeCommandLinks),
+      removal: {
+        by: "self",
+        remove: (input) =>
+          removeWorkingRepoClaudeCommandLinks(input.repoPath, input.registeredCompanionPaths ?? []),
       },
     },
     /**

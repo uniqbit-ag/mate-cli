@@ -203,6 +203,11 @@ change. An `enableArtifact` value you already set in
 `attribution` value, unless one of your Claude settings already sets attribution;
 an `attribution` you set in `.claude/settings.local.json` is left as it is.
 
+The wrap also links each companion skill folder (`.claude/skills/<name>`) and each
+companion command folder, such as OpenSpec's `.claude/commands/opsx/`, into your
+repository's `.claude/`, so `/opsx:*` works in plain `claude` too. A path your
+repository already has wins, and `mate unwrap` removes only the links Mate created.
+
 Each enabled Capability's Claude plugin folder is published as its own local
 marketplace and enabled in `.claude/settings.local.json` (`extraKnownMarketplaces`
 and `enabledPlugins`). Claude Code loads it from the folder itself, without

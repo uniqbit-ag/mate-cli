@@ -666,8 +666,8 @@ const REPORT_CSS = `
     .report-statuses { list-style: none; margin: 0; padding: 0; }
     .status { align-items: baseline; border-bottom: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 0; }
     .status:last-child { border-bottom: 0; }
-    .status-label { font-weight: 600; min-width: 140px; }
-    .status-value { color: var(--tone); }
+    .status-label { font-weight: 600; }
+    .status-value { color: var(--tone); margin-left: auto; text-align: right; }
     .status-detail { color: var(--muted); flex-basis: 100%; font-size: .85rem; padding-left: 22px; }
     .tone-marker { align-self: center; background: var(--tone); display: inline-block; flex: none; height: 10px; width: 10px; }
     .status[data-tone="ok"] { --tone: var(--ok); }
