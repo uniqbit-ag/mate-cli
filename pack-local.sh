@@ -9,24 +9,38 @@
 # tarball (file: dependency) before packing the CLI. All package.json edits
 # are reverted on exit.
 #
-# Usage: ./pack-local.sh [n] [--no-install]
-#   n            local prerelease counter (default 0)
-#   --no-install pack only; print the tarball paths instead of installing
+# Usage: ./pack-local.sh [n] [--no-install] [--core-ref <spec>]
+#   n                 local prerelease counter (default 0)
+#   --no-install      pack only; print the tarball paths instead of installing
+#   --core-ref <spec> the CLI's @uniqbit/mate-core dependency (default: the
+#                     packed core tarball's path on this machine), e.g. a path
+#                     inside a container image the tarballs are copied into
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+USAGE="Usage: ./pack-local.sh [n] [--no-install] [--core-ref <spec>]"
 LOCAL_N="0"
 INSTALL=1
-for ARG in "$@"; do
-  case "$ARG" in
+CORE_REF=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --no-install) INSTALL=0 ;;
-    [0-9]*) LOCAL_N="$ARG" ;;
+    --core-ref)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "$USAGE" >&2
+        exit 1
+      fi
+      CORE_REF="$2"
+      shift
+      ;;
+    [0-9]*) LOCAL_N="$1" ;;
     *)
-      echo "Usage: ./pack-local.sh [n] [--no-install]" >&2
+      echo "$USAGE" >&2
       exit 1
       ;;
   esac
+  shift
 done
 
 if ! command -v node >/dev/null 2>&1; then
@@ -56,9 +70,11 @@ restore() {
 }
 trap restore EXIT
 
-node - "$VERSION" "$CORE_PKG" "$CLI_PKG" "$OUT_DIR" <<'EOF'
+CORE_REF="${CORE_REF:-file:$OUT_DIR/uniqbit-mate-core-$VERSION.tgz}"
+
+node - "$VERSION" "$CORE_PKG" "$CLI_PKG" "$CORE_REF" <<'EOF'
 const fs = require("fs");
-const [version, corePath, cliPath, outDir] = process.argv.slice(2);
+const [version, corePath, cliPath, coreRef] = process.argv.slice(2);
 
 const load = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 const save = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
@@ -69,7 +85,7 @@ save(corePath, core);
 
 const cli = load(cliPath);
 cli.version = version;
-cli.dependencies["@uniqbit/mate-core"] = `file:${outDir}/uniqbit-mate-core-${version}.tgz`;
+cli.dependencies["@uniqbit/mate-core"] = coreRef;
 save(cliPath, cli);
 EOF
 
