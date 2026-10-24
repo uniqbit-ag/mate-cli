@@ -1,5 +1,6 @@
 import { normalizeLanguage, renderNodesToHtml, renderTokens, tokenize } from "@tanstack/highlight";
-import { createThemeCss } from "@tanstack/highlight/theme";
+import { createThemeCss, createThemeRule } from "@tanstack/highlight/theme";
+import githubDark from "@tanstack/highlight/themes/github-dark";
 import githubLight from "@tanstack/highlight/themes/github-light";
 
 /** Sole boundary against `@tanstack/highlight`, so an upstream API break stays a single-file fix. */
@@ -18,7 +19,17 @@ export function highlightInline(code: string, language: string | undefined): str
   return renderNodesToHtml(renderTokens(tokens));
 }
 
-/** Token colours as an inlinable stylesheet; carries no script, font, or external reference. */
+/**
+ * Token colours as an inlinable stylesheet; carries no script, font, or external reference.
+ * Light by default, dark when the reader prefers it, and light again in print.
+ */
 export function highlightStyleBlock(codeBlockSelector: string): string {
-  return createThemeCss({ light: githubLight, codeBlockSelector });
+  const light = createThemeCss({ light: githubLight, codeBlockSelector });
+  return `${light}
+@media (prefers-color-scheme: dark) {
+${createThemeRule(":root", githubDark)}
+}
+@media print {
+${createThemeRule(":root", githubLight)}
+}`;
 }

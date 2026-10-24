@@ -505,6 +505,27 @@ describe("createOpenspecPlugin", () => {
       }
     }
 
+    // The deployed create-report skill documents the optional presentation fields.
+    for (const runtimeDir of [".claude", ".agents"]) {
+      const reportSkill = await fs.readFile(
+        path.join(root, runtimeDir, "skills", "mate-create-report", "SKILL.md"),
+        "utf8",
+      );
+      for (const marker of [
+        "## Presentation Fields",
+        '"tone": "warn"',
+        '"format": "markdown"',
+        '"caption":',
+        "Raw HTML is shown as text",
+        "icon-only print control",
+        "from a CDN",
+        "`class` or `:::`",
+        "`added`, `changed`, and `removed`",
+      ]) {
+        expect(reportSkill).toContain(marker);
+      }
+    }
+
     // Every runtime confirms the commit + tag + push before the first finish
     // call and keeps the deterministic CLI as the publication primitive.
     for (const runtimeDir of [".claude", ".agents"]) {
