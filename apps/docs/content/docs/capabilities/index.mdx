@@ -55,6 +55,9 @@ Capability skills live in two companion skill roots:
 - `.agents/skills/` for every other agent runtime, currently OpenCode.
 
 OpenCode keeps its `/opsx-*` OpenSpec commands in `.opencode/commands/`.
+Claude keeps its `/opsx:*` commands in `.claude/commands/opsx/`. A wrapped working
+repository gets a link to each companion skill folder and command folder under its own
+`.claude/`, because Claude does not load commands from the companion directly.
 Mate only manages the skills it installs, so your own skills and third-party
 skills in `.agents/skills/` stay untouched. Companions created by earlier Mate
 versions kept OpenCode skills in `.opencode/skills/`. Run

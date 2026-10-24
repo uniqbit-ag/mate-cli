@@ -206,14 +206,24 @@ export function copies(manifest: Manifest, runtime?: WrapRuntime): Record<string
   );
 }
 
+/** Narrows link records to one link root, e.g. `.claude/skills/`. */
+export interface LinkScope {
+  prefix?: string;
+}
+
 /** Links Mate created, keyed by repo-relative POSIX path. */
-export function links(manifest: Manifest, runtime?: WrapRuntime): Record<string, LinkRecord> {
+export function links(
+  manifest: Manifest,
+  runtime?: WrapRuntime,
+  scope: LinkScope = {},
+): Record<string, LinkRecord> {
   return Object.fromEntries(
     Object.entries(manifest.links).filter(
-      ([, record]) =>
+      ([key, record]) =>
         isRecord(record) &&
         typeof record.target === "string" &&
-        (!runtime || record.runtime === runtime),
+        (!runtime || record.runtime === runtime) &&
+        key.startsWith(scope.prefix ?? ""),
     ),
   );
 }
@@ -295,14 +305,15 @@ export function withoutDocuments(manifest: Manifest, documentPaths: readonly str
   };
 }
 
-/** Replaces one runtime's records, leaving every other record as it is. */
+/** Replaces one runtime's records under `prefix`, leaving every other record as it is. */
 function replaceRuntimeRecords<T>(
   existing: Readonly<Record<string, T>>,
   runtime: WrapRuntime,
   records: Readonly<Record<string, T>>,
+  prefix = "",
 ): Record<string, T> {
   const kept = Object.entries(existing).filter(
-    ([, record]) => !(isRecord(record) && record.runtime === runtime),
+    ([key, record]) => !(isRecord(record) && record.runtime === runtime && key.startsWith(prefix)),
   );
   return { ...Object.fromEntries(kept), ...records };
 }
@@ -319,8 +330,12 @@ export function withLinks(
   manifest: Manifest,
   runtime: WrapRuntime,
   records: Readonly<Record<string, LinkRecord>>,
+  scope: LinkScope = {},
 ): Manifest {
-  return { ...manifest, links: replaceRuntimeRecords(manifest.links, runtime, records) };
+  return {
+    ...manifest,
+    links: replaceRuntimeRecords(manifest.links, runtime, records, scope.prefix),
+  };
 }
 
 export function manifestPath(repoPath: string): string {
