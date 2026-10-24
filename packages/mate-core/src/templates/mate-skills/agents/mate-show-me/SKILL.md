@@ -107,17 +107,19 @@ A report assembled by this skill carries:
 - `metadata` naming the subject and a neutral repository label, never a local path
 - one `diagram` section for the structure or flow at issue, even when the visual is small
 - use a `mermaid` payload for runtime control flow, call trees, data flow, or component relationships; use `text` only when a sketch or pseudocode is clearer
-- one `diff` section carrying the unified diff, when there is something to diff
-- a short `text` section next to each visual, saying what the reader should notice
+- what changed, when there is something to diff: the complete unified diff in one `diff` section for a small change or when the user asks for it, otherwise a curated overview and excerpts as described in Curating A Large Diff
+- a short Markdown `caption` on each `diagram` and `diff` section, saying what the reader should notice; do not repeat it in a separate `text` section
+- a `text` section only for explanation that belongs to no single visual, with `"format": "markdown"` when it uses Markdown
 
-A `diagram` section carries exactly one payload: `mermaid` for diagram source the report draws as a picture, or `text` for a monospace ASCII sketch or pseudocode block. A `diff` section carries a unified `patch` string.
+A `diagram` section carries exactly one payload: `mermaid` for diagram source the report draws as a picture, or `text` for a monospace ASCII sketch or pseudocode block. A `diff` section carries a unified `patch` string. Both take an optional `caption`, rendered beneath the visual with the Markdown subset described in `mate-create-report`.
 
 ```json
 {
   "id": "structure",
   "title": "Report rendering",
   "type": "diagram",
-  "mermaid": "classDiagram\n  Renderer --> Highlight : uses"
+  "mermaid": "classDiagram\n  Renderer --> Highlight : uses",
+  "caption": "`Renderer` is the only caller of `Highlight`."
 }
 ```
 
@@ -126,23 +128,62 @@ A `diagram` section carries exactly one payload: `mermaid` for diagram source th
   "id": "changes",
   "title": "What changed",
   "type": "diff",
-  "patch": "diff --git a/src/acme.ts b/src/acme.ts\n..."
+  "patch": "diff --git a/src/acme.ts b/src/acme.ts\n...",
+  "caption": "Validation moves **before** rendering."
 }
 ```
 
 If the document fails contract validation, report the diagnostic and correct the document. Do not fall back to hand-written HTML.
 
+## Curating A Large Diff
+
+The reader already has the full diff in git; the report earns its place by choosing what is worth looking at.
+
+- Measure first. Run `git diff --numstat` over the inspected scope and add the added and removed lines of every file; binary files count as zero.
+- At or under 150 changed lines, or whenever the user asks for the full diff, include the complete unified diff in one `diff` section, whatever its size.
+- Above 150 changed lines, curate:
+  - one `table` section with id `changed-files` and the columns File | Added | Removed | Role, listing every changed file in the scope, including tests, snapshots, and generated files. Added and Removed are numbers; Role is a short phrase such as "contract: optional fields" or "snapshot hashes".
+  - one to four focused `diff` sections with ids such as `diff-<topic>`, each making one point and carrying a `caption` that says why its hunks matter. Keep each section under about 60 lines.
+  - a `summary` metric labelled "Changed lines shown" with the value `<shown> of <total>`, where shown counts the `+` and `-` lines in the excerpts and total is the `--numstat` sum.
+- Excerpts stay verbatim. A focused patch is the file's `diff --git`, `---`, and `+++` header followed by one or more whole hunks copied unchanged from `git diff`. Never alter, merge, or invent hunk lines, and never elide lines with `...`. Two hunks of the same file may share a section when they make the same point.
+- Leave supporting files out of the excerpts: tests (`*.test.*`, `*.spec.*`, `__tests__/`), snapshots (`__snapshots__/`, `*.snap`), lockfiles (`bun.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`), generated files (`*.generated.*`), and formatting-only hunks. They still appear in the `changed-files` table. Excerpt them when the change is about them or the user asks for them.
+
+```json
+{
+  "id": "changed-files",
+  "title": "Changed files",
+  "type": "table",
+  "columns": ["File", "Added", "Removed", "Role"],
+  "rows": [
+    ["src/report/contract.ts", 48, 6, "contract: optional fields"],
+    ["src/report/renderer.test.ts", 210, 95, "tests"]
+  ]
+}
+```
+
+```json
+{
+  "id": "diff-contract",
+  "title": "Contract gains optional fields",
+  "type": "diff",
+  "patch": "diff --git a/src/report/contract.ts b/src/report/contract.ts\n--- a/src/report/contract.ts\n+++ b/src/report/contract.ts\n@@ -40,6 +40,8 @@\n...",
+  "caption": "New fields are **optional**, so existing documents still validate."
+}
+```
+
 ## Mermaid Authoring Rules
 
 - Use Mermaid whenever the user asks for a diagram or the subject has meaningful control flow, sequencing, lifecycle, or relationships. A `text` payload is a deliberate fallback, not the default for runtime flows.
 - Pick the diagram type that matches the question: `classDiagram` for structure, `sequenceDiagram` for interaction between components, `stateDiagram-v2` for lifecycles, `flowchart TD` for control flow and call trees.
-- Keep labels short enough to read at report width. A label that needs a sentence belongs in the neighbouring `text` section.
+- Keep labels short enough to read at report width. A label that needs a sentence belongs in the section's `caption`.
 - Do not use ELK-only layouts or math labels. The report loads the single-file mermaid build from a CDN, which does not carry those chunks.
-- Pair each Mermaid visual with a short neighbouring `text` section that calls out the ownership boundary or invariant the reader should notice.
+- To mark nodes, apply the report's theme classes `added`, `changed`, or `removed` with `class a,b added` or `a:::added`. They follow the reader's colour scheme. Never fix a colour with `classDef`, `style`, or `linkStyle`: a fill picked for a white page hides the labels in dark mode, so the dark copy drops those lines.
+- Give each Mermaid visual a short `caption` that calls out the ownership boundary or invariant the reader should notice.
 - Prefer the `text` payload for pseudocode, shallow file trees, or cases where a picture would genuinely obscure the point.
 
 ## Reviewing An Applied Change
 
 - Read the change scope before drawing it, then diagram the structure or flow the change establishes - not the structure it replaced.
 - Take the diff from `git diff` in the Working Repository. Keep only repository-relative paths in the patch, default to the working tree, and ask the user when their intent is a committed range instead.
+- Run `git diff --numstat` over the same scope before choosing between the full diff and a curated report. Every excerpt is whole hunks copied unchanged from that diff.
 - When the inspected scope has no changes, say so and omit the `diff` section. Never invent a patch.

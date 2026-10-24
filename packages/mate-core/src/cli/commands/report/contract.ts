@@ -1,5 +1,7 @@
 import {
   REPORT_DOCUMENT_VERSION,
+  REPORT_STATUS_TONES,
+  REPORT_TEXT_FORMATS,
   type ReportDiagramSection,
   type ReportDiffSection,
   type ReportDocument,
@@ -44,6 +46,21 @@ function requiredString(
     return false;
   }
   return true;
+}
+
+function optionalEnum(
+  value: unknown,
+  allowed: readonly string[],
+  path: string,
+  issues: ReportValidationIssue[],
+): void {
+  if (value === undefined || allowed.includes(value as string)) return;
+  const list = `${allowed.slice(0, -1).join(", ")}${allowed.length > 2 ? "," : ""} or ${allowed.at(-1)}`;
+  issues.push({ path, message: `must be one of ${list}` });
+}
+
+function optionalCaption(value: unknown, path: string, issues: ReportValidationIssue[]): void {
+  if (value !== undefined) requiredString(value, path, issues);
 }
 
 function validateKeyValues(value: unknown, path: string, issues: ReportValidationIssue[]): boolean {
@@ -112,6 +129,7 @@ function validateStatuses(value: unknown, path: string, issues: ReportValidation
     if (item.detail !== undefined && typeof item.detail !== "string") {
       issues.push({ path: `${itemPath}.detail`, message: "must be a string" });
     }
+    optionalEnum(item.tone, REPORT_STATUS_TONES, `${itemPath}.tone`, issues);
   });
   return true;
 }
@@ -209,14 +227,17 @@ function validateSection(value: unknown, path: string, issues: ReportValidationI
       if (typeof value.content !== "string") {
         issues.push({ path: `${path}.content`, message: "must be a string" });
       }
+      optionalEnum(value.format, REPORT_TEXT_FORMATS, `${path}.format`, issues);
       return;
     case "diagram":
       validateDiagram(value, path, issues);
+      optionalCaption(value.caption, `${path}.caption`, issues);
       return;
     case "diff":
       if (typeof value.patch !== "string") {
         issues.push({ path: `${path}.patch`, message: "must be a string" });
       }
+      optionalCaption(value.caption, `${path}.caption`, issues);
       return;
     default:
       issues.push({

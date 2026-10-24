@@ -137,6 +137,15 @@ describe("Studio terminal session running `mate report --input`", () => {
       const csp = served.headers.get("content-security-policy")!;
       expect(csp).toContain("allow-modals");
       expect(csp).toContain(`script-src 'unsafe-inline' ${MERMAID_RUNTIME_URL}`);
+      const directives = csp.split(";").map((directive) => directive.trim());
+      const scriptSources = directives
+        .find((directive) => directive.startsWith("script-src "))!
+        .split(/\s+/)
+        .slice(1);
+      expect(scriptSources).toEqual(["'unsafe-inline'", MERMAID_RUNTIME_URL]);
+      expect(directives).toContain("connect-src 'none'");
+      expect(csp.match(/https?:\/\//g)).toHaveLength(1);
+      expect(html).toContain('aria-label="Print / Save as PDF"');
     } finally {
       await session.server.stop();
     }

@@ -58,7 +58,7 @@ function item(): El {
   return li;
 }
 
-function run(options: { view: boolean; hash?: string; reports?: unknown[] }) {
+function run(options: { view: boolean; hash?: string; reports?: unknown[]; theme?: string }) {
   const shell = new El({
     "data-companion": ACME,
     "data-reports-url": `/api/reports?companion=${ACME}`,
@@ -70,6 +70,7 @@ function run(options: { view: boolean; hash?: string; reports?: unknown[] }) {
     "reports-toast-title": new El(),
     "reports-toast-open": new El(),
     "reports-badge": Object.assign(new El(), { hidden: true }),
+    "studio-theme": new El(),
   };
   if (options.view) {
     Object.assign(elements, {
@@ -112,7 +113,7 @@ function run(options: { view: boolean; hash?: string; reports?: unknown[] }) {
     STUDIO_CLIENT_SCRIPT,
   )(
     documentStub,
-    { getItem: () => null, setItem: () => {} },
+    { getItem: () => options.theme ?? null, setItem: () => {} },
     (callback: () => void) => timers.push(callback),
     () => {},
     (url: string) => {
@@ -231,5 +232,51 @@ describe("hosted reports in the page client", () => {
     r.sources[0]!.onopen!();
     await settle();
     expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_B}`);
+  });
+
+  describe("the report follows Studio's chosen appearance", () => {
+    const shownReport = async (theme?: string) => {
+      const r = run({ view: true, theme, reports: [{ id: ID_A, title: "Report", createdAt: 1 }] });
+      r.sources[0]!.onopen!();
+      await settle();
+      return r;
+    };
+    const toggle = (r: ReturnType<typeof run>) => r.elements["studio-theme"]!.listeners.click!();
+
+    it("passes no scheme when Studio follows the system", async () => {
+      const r = await shownReport();
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}`);
+      expect(r.elements["reports-open"]!.href).toBe(`/studio/reports/${ID_A}`);
+    });
+
+    it("passes the light appearance to the frame and the new-tab link", async () => {
+      const r = await shownReport("light");
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}?scheme=light`);
+      expect(r.elements["reports-open"]!.href).toBe(`/studio/reports/${ID_A}?scheme=light`);
+    });
+
+    it("passes the dark appearance to the frame and the new-tab link", async () => {
+      const r = await shownReport("dark");
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}?scheme=dark`);
+      expect(r.elements["reports-open"]!.href).toBe(`/studio/reports/${ID_A}?scheme=dark`);
+    });
+
+    it("reloads the shown report when the appearance changes", async () => {
+      const r = await shownReport();
+      toggle(r);
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}?scheme=dark`);
+      expect(r.elements["reports-open"]!.href).toBe(`/studio/reports/${ID_A}?scheme=dark`);
+      toggle(r);
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}?scheme=light`);
+      toggle(r);
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}`);
+    });
+
+    it("loads nothing on a toggle while no report is shown", () => {
+      const r = run({ view: true });
+      toggle(r);
+      expect(r.elements["reports-frame"]!.src).toBe("");
+      expect(r.elements["reports-frame"]!.hidden).toBe(true);
+    });
   });
 });

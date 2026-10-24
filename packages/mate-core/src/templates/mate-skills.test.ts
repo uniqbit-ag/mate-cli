@@ -323,16 +323,61 @@ describe("bundled Mate pre-explore skills", () => {
         "Do not use ELK-only layouts or math labels",
         "sequenceDiagram` for interaction",
         "Never commit, push, or create a pull request",
+        "short Markdown `caption` on each `diagram` and `diff` section",
+        '`"format": "markdown"`',
+        '"caption":',
       ]) {
         expect(source).toContain(marker);
       }
       for (const stale of [
+        "a short `text` section next to each visual",
+        "neighbouring `text` section",
         "never open a browser by any other means",
         "writes it into the operating system temporary directory",
         "`mate report` is the only browser surface",
       ]) {
         expect(source).not.toContain(stale);
       }
+    }
+  });
+
+  test("show-me highlights mermaid nodes with theme classes, never fixed colours", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = await readSkillFrom(root, "mate-show-me");
+      for (const marker of [
+        "`added`, `changed`, or `removed`",
+        "Never fix a colour with `classDef`, `style`, or `linkStyle`",
+      ]) {
+        expect(source).toContain(marker);
+      }
+    }
+  });
+
+  test("show-me curates large change diffs into an overview and verbatim excerpts", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = await readSkillFrom(root, "mate-show-me");
+      for (const marker of [
+        "Curating A Large Diff",
+        "git diff --numstat",
+        "150 changed lines",
+        "asks for the full diff",
+        '"id": "changed-files"',
+        "File | Added | Removed | Role",
+        "one to four focused `diff` sections",
+        "Changed lines shown",
+        "copied unchanged",
+        "Never alter, merge, or invent hunk lines",
+        "`*.test.*`",
+        "`__snapshots__/`",
+        "`bun.lock`",
+        "`*.generated.*`",
+        "formatting-only hunks",
+      ]) {
+        expect(source).toContain(marker);
+      }
+      expect(source).not.toContain(
+        "one `diff` section carrying the unified diff, when there is something to diff",
+      );
     }
   });
 

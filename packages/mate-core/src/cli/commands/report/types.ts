@@ -51,10 +51,16 @@ export interface ReportMetric {
   detail?: string;
 }
 
+export const REPORT_STATUS_TONES = ["ok", "warn", "error", "info", "neutral"] as const;
+
+export type ReportStatusTone = (typeof REPORT_STATUS_TONES)[number];
+
 export interface ReportStatus {
   label: string;
   status: string;
   detail?: string;
+  /** Presentation tone; inferred from `status` when absent. */
+  tone?: ReportStatusTone;
 }
 
 export interface ReportSectionBase {
@@ -88,13 +94,21 @@ export interface ReportStatusesSection extends ReportSectionBase {
   items: ReportStatus[];
 }
 
+export const REPORT_TEXT_FORMATS = ["plain", "markdown"] as const;
+
+export type ReportTextFormat = (typeof REPORT_TEXT_FORMATS)[number];
+
 export interface ReportTextSection extends ReportSectionBase {
   type: "text";
   content: string;
+  /** `plain` (default) keeps the text verbatim; `markdown` renders the safe subset. */
+  format?: ReportTextFormat;
 }
 
 export interface ReportDiagramSectionBase extends ReportSectionBase {
   type: "diagram";
+  /** Markdown note rendered beneath the visual. */
+  caption?: string;
 }
 
 export interface ReportMermaidDiagramSection extends ReportDiagramSectionBase {
@@ -114,6 +128,8 @@ export interface ReportDiffSection extends ReportSectionBase {
   type: "diff";
   /** Unified diff as produced by `git diff`. */
   patch: string;
+  /** Markdown note rendered beneath the visual. */
+  caption?: string;
 }
 
 export type ReportSection =

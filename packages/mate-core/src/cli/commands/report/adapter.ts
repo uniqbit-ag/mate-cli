@@ -5,13 +5,21 @@ import type {
   ReportKeyValue,
   ReportMetric,
   ReportSection,
+  ReportStatusTone,
 } from "./types";
 import { REPORT_DOCUMENT_VERSION } from "./types";
 
+/** Collector status strings mapped to tones, so the built-in report never relies on inference. */
+const TOOL_STATUS_TONES: Record<string, ReportStatusTone> = {
+  ok: "ok",
+  "no data": "warn",
+  "no window data": "warn",
+  "not installed": "neutral",
+  "not enabled": "neutral",
+};
+
 export function reportDataToDocument(data: ReportData): ReportDocument {
   const metadata: ReportKeyValue[] = [
-    { label: "Window", value: `Last ${data.days} days` },
-    { label: "Generated", value: data.generatedAt },
     { label: "Working repository", value: data.workingRepoPath },
     { label: "Companion repository", value: data.companionRepoPath },
     { label: "Active agents", value: data.activeAgents.join(", ") || "None" },
@@ -57,6 +65,7 @@ export function reportDataToDocument(data: ReportData): ReportDocument {
       items: data.toolStatus.map((entry) => ({
         label: entry.name,
         status: entry.status,
+        tone: TOOL_STATUS_TONES[entry.status] ?? "neutral",
       })),
     },
   ];
