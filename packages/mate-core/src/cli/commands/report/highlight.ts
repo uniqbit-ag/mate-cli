@@ -21,15 +21,16 @@ export function highlightInline(code: string, language: string | undefined): str
 
 /**
  * Token colours as an inlinable stylesheet; carries no script, font, or external reference.
- * Light by default, dark when the reader prefers it, and light again in print.
+ * Light by default, dark on screen when the reader prefers it or the page sets
+ * `data-scheme="dark"`, and light in print because both dark rules are screen-only.
  */
 export function highlightStyleBlock(codeBlockSelector: string): string {
   const light = createThemeCss({ light: githubLight, codeBlockSelector });
   return `${light}
-@media (prefers-color-scheme: dark) {
-${createThemeRule(":root", githubDark)}
+@media screen and (prefers-color-scheme: dark) {
+${createThemeRule(':root:not([data-scheme="light"])', githubDark)}
 }
-@media print {
-${createThemeRule(":root", githubLight)}
+@media screen {
+${createThemeRule(':root[data-scheme="dark"]', githubDark)}
 }`;
 }

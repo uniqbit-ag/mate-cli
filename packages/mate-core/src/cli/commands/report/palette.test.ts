@@ -43,9 +43,26 @@ describe("report palette", () => {
   test("switches tokens by colour scheme and forces light print", () => {
     const css = paletteCss();
 
-    expect(css).toContain("@media (prefers-color-scheme: dark)");
-    expect(css).toContain(`--bg: ${BRAND_COLORS.night.hex};`);
+    expect(css).toContain(
+      `@media screen and (prefers-color-scheme: dark) { :root:not([data-scheme="light"]) { --ink: ${BRAND_COLORS.cream.hex}; --bg: ${BRAND_COLORS.night.hex};`,
+    );
     expect(css).toContain("@media print { :root { color-scheme: light;");
     expect(css).toContain("--add-bg:");
+  });
+
+  test("lets an explicit scheme override the browser preference on screen only", () => {
+    const css = paletteCss();
+
+    expect(css).toContain(
+      `@media screen { :root[data-scheme="dark"] { color-scheme: dark; --ink: ${BRAND_COLORS.cream.hex};`,
+    );
+    expect(css).toContain(':root[data-scheme="light"] { color-scheme: light; }');
+    // Every dark rule is screen-only, so print falls back to the light and print tokens.
+    const darkRules = css
+      .split("\n")
+      .filter((line) => line.includes(`--bg: ${BRAND_COLORS.night.hex}`));
+    expect(darkRules).toHaveLength(2);
+    for (const rule of darkRules) expect(rule.trim()).toStartWith("@media screen");
+    expect(css.indexOf("@media print")).toBeGreaterThan(css.lastIndexOf("@media screen"));
   });
 });

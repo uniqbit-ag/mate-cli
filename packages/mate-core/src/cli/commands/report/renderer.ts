@@ -573,6 +573,15 @@ const MERMAID_INIT = `(() => {
     })();
   })();`;
 
+/**
+ * Runs before the styles apply: `?scheme=light` or `?scheme=dark` pins the colour scheme
+ * through `data-scheme` on `<html>`; any other value leaves the browser preference in charge.
+ */
+const SCHEME_SCRIPT = `(function () {
+    var scheme = new URLSearchParams(location.search).get("scheme");
+    if (scheme === "light" || scheme === "dark") document.documentElement.dataset.scheme = scheme;
+  })();`;
+
 export function renderHTML(input: RenderInput): string {
   const data = normalize(input);
   const legacy = isReportDocument(input) ? undefined : input;
@@ -600,6 +609,7 @@ export function renderHTML(input: RenderInput): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
+  <script id="report-scheme">${SCHEME_SCRIPT}</script>
   <title>${escapeHTML(data.title)}</title>
   <style>
     ${paletteCss()}
@@ -715,10 +725,12 @@ const VISUAL_SECTION_CSS = `
     .report-diagram svg { height: auto; max-width: 100%; }
     .report-diagram svg * { filter: none !important; }
     .report-diagram .diagram-dark { display: none; }
-    @media (prefers-color-scheme: dark) {
-      .report-diagram .diagram-light { display: none; }
-      .report-diagram .diagram-dark { display: block; }
+    @media screen and (prefers-color-scheme: dark) {
+      :root:not([data-scheme="light"]) .report-diagram .diagram-light { display: none; }
+      :root:not([data-scheme="light"]) .report-diagram .diagram-dark { display: block; }
     }
+    :root[data-scheme="dark"] .report-diagram .diagram-light { display: none; }
+    :root[data-scheme="dark"] .report-diagram .diagram-dark { display: block; }
     .report-diagram .mermaid { font-family: ${MONO}; font-size: .82rem; margin: 0; white-space: pre; }
     .diff-file-group + .diff-file-group { margin-top: 18px; }
     .diff-file { color: var(--muted); font-family: ${MONO}; font-size: .8rem; font-weight: 650; margin: 0 0 8px; }

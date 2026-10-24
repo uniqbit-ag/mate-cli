@@ -379,11 +379,93 @@ describe("renderHTML", () => {
 
     expect(html).toContain('<meta name="color-scheme" content="light dark">');
     expect(html).toContain(
-      `@media (prefers-color-scheme: dark) { :root { --ink: ${BRAND_COLORS.cream.hex}; --bg: ${BRAND_COLORS.night.hex};`,
+      `@media screen and (prefers-color-scheme: dark) { :root:not([data-scheme="light"]) { --ink: ${BRAND_COLORS.cream.hex}; --bg: ${BRAND_COLORS.night.hex};`,
     );
     expect(html).toContain(
       "@media print { :root { color-scheme: light; --ink: #000000; --bg: #FFFFFF;",
     );
+  });
+
+  describe("explicit scheme parameter", () => {
+    const schemeScript = (html: string): string => {
+      const match = html.match(/<script id="report-scheme">([\s\S]*?)<\/script>/);
+      if (!match?.[1]) throw new Error("scheme script missing");
+      return match[1];
+    };
+
+    const runScheme = (html: string, search: string): string | undefined => {
+      const root = { dataset: {} as Record<string, string> };
+      new Function("location", "document", schemeScript(html))(
+        { search },
+        { documentElement: root },
+      );
+      return root.dataset.scheme;
+    };
+
+    test("sets data-scheme before the styles for light or dark only", () => {
+      const html = renderHTML(mixedDocument);
+
+      expect(html.indexOf('<script id="report-scheme">')).toBeLessThan(html.indexOf("<style>"));
+      expect(runScheme(html, "?scheme=light")).toBe("light");
+      expect(runScheme(html, "?scheme=dark")).toBe("dark");
+      expect(runScheme(html, "?scheme=sepia")).toBeUndefined();
+      expect(runScheme(html, "?x=1&scheme=Dark")).toBeUndefined();
+      expect(runScheme(html, "")).toBeUndefined();
+    });
+
+    test("selects the palette that the attribute names", () => {
+      const html = renderHTML(mixedDocument);
+
+      expect(html).toContain(
+        `@media screen { :root[data-scheme="dark"] { color-scheme: dark; --ink: ${BRAND_COLORS.cream.hex};`,
+      );
+      expect(html).toContain(':root[data-scheme="light"] { color-scheme: light; }');
+    });
+
+    test("keeps print dark on white even with data-scheme=dark", () => {
+      const html = renderHTML(
+        makeDocument([
+          { id: "flow", title: "Flow", type: "diagram", mermaid: "graph TD\n  A --> B" },
+        ]),
+      );
+
+      // Every rule that applies the dark tokens is screen-only, so print never sees them.
+      for (const marker of [`--bg: ${BRAND_COLORS.night.hex}`, "--th-background: #0d1117"]) {
+        let at = html.indexOf(marker);
+        expect(at).toBeGreaterThan(-1);
+        while (at > -1) {
+          const opened = html.lastIndexOf("@media", at);
+          expect(html.slice(opened, opened + 13)).toBe("@media screen");
+          at = html.indexOf(marker, at + 1);
+        }
+      }
+      expect(html).toContain(".report-diagram .diagram-dark { display: none !important; }");
+    });
+
+    test("switches highlighting and diagrams with the attribute", () => {
+      const html = renderHTML(
+        makeDocument([
+          { id: "flow", title: "Flow", type: "diagram", mermaid: "graph TD\n  A --> B" },
+        ]),
+      );
+
+      expect(html).toContain(':root:not([data-scheme="light"]) {\n  --th-background: #0d1117;');
+      expect(html).toContain(':root[data-scheme="dark"] {\n  --th-background: #0d1117;');
+      expect(html).toContain(
+        ':root[data-scheme="dark"] .report-diagram .diagram-light { display: none; }',
+      );
+      expect(html).toContain(
+        ':root[data-scheme="dark"] .report-diagram .diagram-dark { display: block; }',
+      );
+    });
+
+    test("leaves a report opened without the parameter on the browser preference", () => {
+      const html = renderHTML(mixedDocument);
+
+      expect(runScheme(html, "")).toBeUndefined();
+      expect(html).toContain(":root { color-scheme: light dark;");
+      expect(html).toContain('<meta name="color-scheme" content="light dark">');
+    });
   });
 
   test("renders statuses with explicit or inferred tones", () => {
@@ -695,7 +777,7 @@ describe("renderHTML captions", () => {
     expect(print).toContain(".report-diagram .diagram-light { display: block !important; }");
     expect(print).toContain(".report-diagram .diagram-dark { display: none !important; }");
     expect(html).toContain(
-      "@media (prefers-color-scheme: dark) {\n      .report-diagram .diagram-light { display: none; }",
+      '@media screen and (prefers-color-scheme: dark) {\n      :root:not([data-scheme="light"]) .report-diagram .diagram-light { display: none; }',
     );
   });
 });
@@ -783,7 +865,8 @@ describe("renderHTML diff sections", () => {
 
     expect(html).toContain("--th-keyword:");
     expect(html).toContain(".th-keyword { color: var(--th-keyword); }");
-    expect(html).not.toContain("<script");
+    // The only script picks the colour scheme; nothing highlights on the client.
+    expect(html.match(/<script[^>]*>/g)).toEqual(['<script id="report-scheme">']);
     expect(html).not.toContain("<link ");
     expect(html).not.toContain("@font-face");
   });

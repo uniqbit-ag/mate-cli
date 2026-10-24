@@ -190,7 +190,6 @@ function Sidebar({ page }: { page: StudioPage }) {
         <img className="sidebar-brand-mark brand-symbol-on-dark" src={SYMBOL_ON_DARK_URI} alt="" />
         <div className="sidebar-brand-copy">
           <strong>{STUDIO_TITLE}</strong>
-          <span>Developer lookup</span>
         </div>
       </div>
       <CompanionSelector inventory={page.inventory} selection={page.selection} />

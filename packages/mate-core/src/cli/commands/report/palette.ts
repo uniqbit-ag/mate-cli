@@ -88,9 +88,16 @@ function declarations(palette: ReportPalette): string {
     .join(" ");
 }
 
+/**
+ * Light by default; dark on screen when the browser prefers it, unless the page sets
+ * `data-scheme="light"`; dark on screen whenever it sets `data-scheme="dark"`. Both dark
+ * rules are screen-only, so print always falls back to the print tokens.
+ */
 export function paletteCss(): string {
   return `:root { color-scheme: light dark; ${declarations(LIGHT_PALETTE)} }
-    @media (prefers-color-scheme: dark) { :root { ${declarations(DARK_PALETTE)} } }
+    @media screen and (prefers-color-scheme: dark) { :root:not([data-scheme="light"]) { ${declarations(DARK_PALETTE)} } }
+    @media screen { :root[data-scheme="dark"] { color-scheme: dark; ${declarations(DARK_PALETTE)} } }
+    :root[data-scheme="light"] { color-scheme: light; }
     @media print { :root { color-scheme: light; ${declarations(PRINT_PALETTE)} } }`;
 }
 
