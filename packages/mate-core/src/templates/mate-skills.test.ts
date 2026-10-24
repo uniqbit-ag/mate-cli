@@ -381,6 +381,37 @@ describe("bundled Mate pre-explore skills", () => {
     }
   });
 
+  test("show-me draws a behaviour change as its resulting flow first", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = await readSkillFrom(root, "mate-show-me");
+      for (const marker of [
+        "alters control flow or behaviour",
+        "`flowchart TD` of the resulting flow",
+        "new steps `added` and modified steps `changed`",
+        "keep it as a `removed` node",
+        "With no argument, review the applied change",
+        "at most two `diagram` sections",
+        '"mermaid": "flowchart TD',
+        "one for a topic or capability report",
+        "When most of the drawn flow is new",
+        "about twelve nodes",
+        "For a change review, Reviewing An Applied Change decides",
+      ]) {
+        expect(source).toContain(marker);
+      }
+      for (const stale of [
+        "one `diagram` section for the structure or flow at issue",
+        "diagram the structure or flow the change establishes",
+        "Draw the flow after the change and mark",
+      ]) {
+        expect(source).not.toContain(stale);
+      }
+      expect(source.indexOf("## Reviewing An Applied Change")).toBeLessThan(
+        source.indexOf("## Assembling The Report"),
+      );
+    }
+  });
+
   test("preserves the upstream simplification guardrails", async () => {
     const source = await readSkill("mate-simplify-code");
     for (const marker of [
