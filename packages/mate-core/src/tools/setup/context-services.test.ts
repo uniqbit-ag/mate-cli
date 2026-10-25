@@ -13,10 +13,19 @@ const claudePlugin = createClaudePlugin();
 const opencodePlugin = createOpenCodePlugin();
 const conciseReportingPolicy =
   "When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.";
-const jsdocBoundary = "Apply this same preference to JSDoc.";
+const commentBoundary =
+  "Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.";
 const rootGuidance = [
   conciseReportingPolicy,
-  "Code comments: JSDoc format only",
+  commentBoundary,
+  "Code comments: sparse and concise",
+  "explain non-obvious intent, constraints, or workarounds",
+  "avoid filler, restating code, or artifact rationale",
+  "Use JSDoc for JS/TS API documentation",
+  "line or ordinary block comments for local implementation notes",
+  "including JSX-supported expression comments",
+  "Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax.",
+  "Do not rewrite unchanged comments or unrelated code for this preference.",
   "Never add a `Co-Authored-By: <model>` trailer",
   "Never commit, push, or open a pull request in the working repo",
   "Never connect to a database (local or remote)",
@@ -129,8 +138,11 @@ describe("ctx.templates.render", () => {
     for (const rule of rootGuidance) expect(claude).not.toContain(rule);
 
     for (const rule of rootGuidance) expect(agents).toContain(rule);
-    expect(agents).toContain(jsdocBoundary);
     for (const guidance of [agents, claude]) {
+      expect(guidance).not.toContain("JSDoc format only");
+      expect(guidance).not.toContain("never `//`");
+      expect(guidance).not.toContain("check comments");
+      expect(guidance).not.toContain("Before reporting JS/TS implementation complete");
       expect(guidance).not.toContain("smallest correct implementation");
       expect(guidance).not.toContain("Claude Code receives");
     }
@@ -142,11 +154,55 @@ describe("ctx.templates.render", () => {
 
     await applySetupCompatibilities(root, config, "sync", [claudePlugin, opencodePlugin]);
     const first = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
+    const firstAgents = await fs.readFile(path.join(root, "AGENTS.md"), "utf8");
     await applySetupCompatibilities(root, config, "sync", [claudePlugin, opencodePlugin]);
     const second = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
 
     expect(second).toBe(first);
     expect(second.match(/@AGENTS\.md/g)).toHaveLength(1);
+    const agents = await fs.readFile(path.join(root, "AGENTS.md"), "utf8");
+    expect(agents).toBe(firstAgents);
+    for (const rule of rootGuidance) expect(countOccurrences(agents, rule)).toBe(1);
+    expect(agents).not.toContain("check comments");
+  });
+
+  test("distribution packaging preserves the shared comment guidance", async () => {
+    const { createMate } = await import("../../create-mate");
+    const { resetActiveDistribution } = await import("../../distribution");
+    const root = await makeTempDir("acme-guidance-");
+    createMate({
+      config: { runtime: "bun", version: "1.0.0", update: { packageName: "@acme/cli" } },
+      plugins: [claudePlugin, opencodePlugin],
+    });
+    try {
+      await applySetupCompatibilities(root, configWith([]), "sync", [claudePlugin, opencodePlugin]);
+      const agents = await fs.readFile(path.join(root, "AGENTS.md"), "utf8");
+      const claude = await fs.readFile(path.join(root, "CLAUDE.md"), "utf8");
+      expect(claude).toContain("@AGENTS.md");
+      for (const rule of rootGuidance) {
+        expect(countOccurrences(agents, rule)).toBe(1);
+        expect(claude).not.toContain(rule);
+      }
+      for (const guidance of [agents, claude]) {
+        expect(guidance).not.toContain("check comments");
+        expect(guidance).not.toContain("JSDoc format only");
+      }
+    } finally {
+      resetActiveDistribution();
+    }
+  });
+
+  test("schemas and skills do not duplicate root policy or require comment verification", async () => {
+    const root = path.join(import.meta.dir, "../../templates");
+    const files = await fs.readdir(root, { recursive: true });
+    for (const file of files.filter((file) =>
+      /(?:schema\.yaml|SKILL\.md|openspec-conventions\.yaml)$/.test(file),
+    )) {
+      const content = await fs.readFile(path.join(root, file), "utf8");
+      expect(content).not.toContain("check comments");
+      expect(content).not.toContain("JSDoc format only");
+      for (const rule of rootGuidance) expect(content).not.toContain(rule);
+    }
   });
 
   test("distribution asset root overrides the core template and data is substituted", async () => {

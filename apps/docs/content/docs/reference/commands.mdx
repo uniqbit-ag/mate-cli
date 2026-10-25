@@ -51,6 +51,20 @@ Run from a companion or a repository that is not linked, it exits non-zero.
 process has no TTY. It can run before a companion is linked; in that context it
 installs only Mate's core requirements.
 
+## Comment Guidance
+
+Shared agent guidance prefers sparse, concise comments explaining non-obvious
+intent, constraints, or workarounds—not filler or restatements of code. Use JSDoc
+for JS/TS API documentation and line or ordinary block comments for local notes,
+including JSX-supported expression comments. Preserve required documentation and
+contract details, tool directives, legal notices, and language-appropriate syntax.
+Concision does not mean terse implementation code or rewriting unchanged comments.
+
+This is guidance, not an automated comment checker or completion gate.
+Repository-owned conventions and unrelated verification requirements are unchanged;
+stricter rules require an explicit repository decision. Existing companions receive
+the wording through normal managed-guidance regeneration.
+
 ## Agent Launch
 
 ```sh
