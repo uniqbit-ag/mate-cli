@@ -19,6 +19,7 @@ import {
   VAULT_FILTER_LIMIT,
 } from "./document";
 import { fixtureTree } from "../../../../../test/studio-vault-fixture";
+import { STUDIO_PREPAINT_SCRIPT } from "./client";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
 import type { VaultTreeNode } from "../vault";
 import { BRAND_SVGS } from "../../../../brand";
@@ -101,18 +102,24 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain("</html>");
   });
 
-  it("carries its styles and its behavior inline", () => {
+  it("carries its styles inline and loads only Studio's own client", () => {
     const markup = renderStudioDocument(page());
     expect(markup).toContain("<style>");
     expect(markup).toContain("--accent:");
-    expect(markup).toContain("<script>");
-    // Brand images are inlined as data URIs; nothing else is loaded.
+    // Brand images are inlined as data URIs; the one file is Studio's client, served by Studio.
     for (const [, url] of markup.matchAll(/<link\b[^>]*\bhref="([^"]*)"/g)) {
       expect(url).toStartWith("data:");
     }
     for (const [, url] of markup.matchAll(/\bsrc="([^"]*)"/g)) {
-      expect(url).toStartWith("data:");
+      expect(url!.startsWith("data:") || url === "/studio/client.js").toBe(true);
     }
+  });
+
+  it("carries one inline script, the pre-paint one, and one reference to Studio's client", () => {
+    const markup = renderStudioDocument(page());
+    const inline = [...markup.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+    expect(inline).toEqual([STUDIO_PREPAINT_SCRIPT]);
+    expect(markup.match(/<script src="\/studio\/client\.js"><\/script>/g)).toHaveLength(1);
   });
 
   it("declares the kit favicon as an inline SVG data URI", () => {
@@ -162,7 +169,7 @@ describe("renderStudioDocument", () => {
     const style = markup.slice(markup.indexOf("<style>"), markup.indexOf("</style>"));
     expect(style).toContain(':root:not([data-theme="dark"])');
     expect(style).not.toContain("&quot;");
-    expect(markup).toContain('THEME_CYCLE = ["system", "dark", "light"]');
+    expect(markup).toContain(STUDIO_PREPAINT_SCRIPT);
     expect(markup).not.toContain("&amp;&amp;");
   });
 
@@ -744,9 +751,15 @@ describe("terminal view", () => {
     for (const source of sources) {
       // Inline brand images are data URIs, not files.
       if (source!.startsWith("data:")) continue;
-      expect(source!.startsWith("/studio/terminal/")).toBe(true);
+      expect(source === "/studio/client.js" || source!.startsWith("/studio/terminal/")).toBe(true);
     }
     expect(markup).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+
+  it("keeps Studio's one client reference when the terminal is enabled", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    expect(markup.match(/src="\/studio\/client\.js"/g)).toHaveLength(1);
+    expect(markup).toContain(STUDIO_PREPAINT_SCRIPT);
   });
 
   it("offers only launchable agents and names the target", () => {
