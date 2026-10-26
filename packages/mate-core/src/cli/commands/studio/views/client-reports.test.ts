@@ -1,6 +1,26 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 
-import { STUDIO_CLIENT_SCRIPT } from "./client";
+import { STUDIO_CLIENT_BUNDLE } from "./studio-client.generated";
+import { startStudioClient } from "./studio-client";
+
+const realSetTimeout = globalThis.setTimeout;
+const restorers: (() => void)[] = [];
+
+/** Installs browser globals for one run of the client; `afterEach` puts the real ones back. */
+function stubBrowser(stubs: Record<string, unknown>): void {
+  for (const [name, value] of Object.entries(stubs)) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+    restorers.push(() => {
+      if (original) Object.defineProperty(globalThis, name, original);
+      else delete (globalThis as Record<string, unknown>)[name];
+    });
+  }
+}
+
+afterEach(() => {
+  while (restorers.length > 0) restorers.pop()!();
+});
 
 const ACME = "4cb87fd83f";
 const BETA = "0123456789";
@@ -99,39 +119,29 @@ function run(options: { view: boolean; hash?: string; reports?: unknown[]; theme
     querySelector: (selector: string) => (selector === "[data-reports-events-url]" ? shell : null),
     querySelectorAll: () => [],
   };
-  const timers: (() => void)[] = [];
   const replaced: string[] = [];
-  new Function(
-    "document",
-    "localStorage",
-    "setTimeout",
-    "clearTimeout",
-    "fetch",
-    "EventSource",
-    "location",
-    "history",
-    STUDIO_CLIENT_SCRIPT,
-  )(
-    documentStub,
-    { getItem: () => options.theme ?? null, setItem: () => {} },
-    (callback: () => void) => timers.push(callback),
-    () => {},
-    (url: string) => {
+  stubBrowser({
+    document: documentStub,
+    localStorage: { getItem: () => options.theme ?? null, setItem: () => {} },
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+    fetch: (url: string) => {
       fetched.push(url);
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ reports: options.reports ?? [] }),
       });
     },
-    EventSourceStub,
-    { href: "http://localhost/", hash: options.hash ?? "", search: "", pathname: "/" },
-    { replaceState: (_s: unknown, _t: string, url: string) => replaced.push(url) },
-  );
+    EventSource: EventSourceStub,
+    location: { href: "http://localhost/", hash: options.hash ?? "", search: "", pathname: "/" },
+    history: { replaceState: (_s: unknown, _t: string, url: string) => replaced.push(url) },
+  });
+  startStudioClient();
   const send = (event: unknown) => sources[0]!.onmessage!({ data: JSON.stringify(event) });
   return { elements, fetched, sources, send, replaced };
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+const settle = () => new Promise((resolve) => realSetTimeout(resolve, 0));
 const published = (companion: string, title = "Quarterly <b>report</b>") => ({
   type: "report-published",
   companion,
@@ -146,21 +156,21 @@ describe("hosted reports in the page client", () => {
     expect(r.sources.map((s) => s.url)).toEqual([
       `/api/vault/changes?companion=${ACME}&scope=reports`,
     ]);
-    expect(STUDIO_CLIENT_SCRIPT).not.toContain("/api/vault/changes");
+    expect(STUDIO_CLIENT_BUNDLE).not.toContain("/api/vault/changes");
   });
 
   it("does nothing without a rendered channel", () => {
-    expect(() =>
-      new Function("document", "EventSource", STUDIO_CLIENT_SCRIPT)(
-        {
-          documentElement: new El(),
-          getElementById: () => null,
-          querySelector: () => null,
-          querySelectorAll: () => [],
-        },
-        class {},
-      ),
-    ).not.toThrow();
+    stubBrowser({
+      document: {
+        documentElement: new El(),
+        getElementById: () => null,
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      },
+      localStorage: { getItem: () => null, setItem: () => {} },
+      EventSource: class {},
+    });
+    expect(() => startStudioClient()).not.toThrow();
   });
 
   it("announces another view's new report with a toast and badge, as text, without navigating", () => {

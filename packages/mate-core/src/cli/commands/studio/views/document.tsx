@@ -12,7 +12,8 @@ import {
   toHref,
 } from "../selection";
 import { REPORTS_ROUTE, VAULT_CHANGES_ROUTE, VAULT_DIR_ROUTE, VAULT_FILTER_ROUTE } from "../routes";
-import { STUDIO_CLIENT_SCRIPT, STUDIO_PREPAINT_SCRIPT } from "./client";
+import { STUDIO_CLIENT_ROUTE } from "../client-asset";
+import { STUDIO_PREPAINT_SCRIPT } from "./client";
 import { CompanionPicker } from "./companion-picker";
 import { CompanionSelector } from "./companion-selector";
 import { Dashboard } from "./dashboard/index";
@@ -100,7 +101,7 @@ export function renderStudioDocument(page: StudioPage): string {
 <script>${STUDIO_PREPAINT_SCRIPT}</script>${terminalHead}
 </head>
 <body>${String(<StudioShell page={page} />)}
-<script>${STUDIO_CLIENT_SCRIPT}</script>${terminalBody}
+<script src="${STUDIO_CLIENT_ROUTE}"></script>${terminalBody}
 </body>
 </html>
 `;

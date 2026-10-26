@@ -37,6 +37,7 @@ import {
   type TerminalConnection,
   type TerminalRegistryOptions,
 } from "./terminal";
+import { studioClientAsset } from "./client-asset";
 import { terminalAsset } from "./terminal-assets";
 import {
   createLaunchResolver,
@@ -434,6 +435,9 @@ export function createStudioFetch(
         }),
       );
     }
+
+    const clientAsset = await studioClientAsset(url.pathname);
+    if (clientAsset) return respond(clientAsset);
 
     if (url.pathname.startsWith("/studio/terminal/") && terminal) {
       const asset = await terminalAsset(url.pathname);

@@ -1,12 +1,34 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 
 import {
   COMPANION_STORAGE_KEY,
-  STUDIO_CLIENT_SCRIPT,
   STUDIO_PREPAINT_SCRIPT,
   THEME_STORAGE_KEY,
   VAULT_TREE_STORAGE_KEY,
 } from "./client";
+import { STUDIO_CLIENT_BUNDLE } from "./studio-client.generated";
+import { startStudioClient } from "./studio-client";
+
+const realSetTimeout = globalThis.setTimeout;
+const settle = () => new Promise((resolve) => realSetTimeout(resolve, 0));
+
+const restorers: (() => void)[] = [];
+
+/** Installs browser globals for one run of the client; `afterEach` puts the real ones back. */
+function stubBrowser(stubs: Record<string, unknown>): void {
+  for (const [name, value] of Object.entries(stubs)) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+    restorers.push(() => {
+      if (original) Object.defineProperty(globalThis, name, original);
+      else delete (globalThis as Record<string, unknown>)[name];
+    });
+  }
+}
+
+afterEach(() => {
+  while (restorers.length > 0) restorers.pop()!();
+});
 
 /** Runs the prepaint script against a stubbed browser and reports where it navigated. */
 function runPrepaint(search: string, stored: Record<string, string> = {}): string[] {
@@ -23,59 +45,6 @@ function runPrepaint(search: string, stored: Record<string, string> = {}): strin
 }
 
 const acmeDigest = "4cb87fd83f";
-
-const scripts = { prepaint: STUDIO_PREPAINT_SCRIPT, client: STUDIO_CLIENT_SCRIPT };
-
-function runClient(clipboard: unknown): {
-  copy: () => void;
-  theme: () => void;
-  toast: () => string;
-} {
-  let copyHandler: (() => void) | undefined;
-  let themeHandler: (() => void) | undefined;
-  const toast = { textContent: "", setAttribute: () => {} };
-  const theme = {
-    textContent: "",
-    setAttribute: () => {},
-    removeAttribute: () => {},
-    addEventListener: (_event: string, handler: () => void) => {
-      themeHandler = handler;
-    },
-  };
-  const copy = {
-    getAttribute: (name: string) => (name === "data-copy" ? "prompt" : "copy"),
-    addEventListener: (_event: string, handler: () => void) => {
-      copyHandler = handler;
-    },
-  };
-  const documentStub = {
-    documentElement: { setAttribute: () => {}, removeAttribute: () => {} },
-    getElementById: (id: string) =>
-      id === "studio-theme" ? theme : id === "studio-toast" ? toast : null,
-    querySelector: () => null,
-    querySelectorAll: (selector: string) => (selector === "[data-copy]" ? [copy] : []),
-  };
-  const store = { getItem: () => null, setItem: () => {} };
-  new Function(
-    "document",
-    "localStorage",
-    "navigator",
-    "setTimeout",
-    "clearTimeout",
-    STUDIO_CLIENT_SCRIPT,
-  )(
-    documentStub,
-    store,
-    clipboard === null ? {} : { clipboard },
-    () => 0,
-    () => {},
-  );
-  return {
-    copy: () => copyHandler?.(),
-    theme: () => themeHandler?.(),
-    toast: () => toast.textContent,
-  };
-}
 
 /** Just enough of an element for the vault browser code: attributes, children, and simple selectors. */
 class FakeElement {
@@ -168,6 +137,60 @@ class FakeElement {
   }
 }
 
+interface Store {
+  values: Record<string, string>;
+  /** When set, every read and write throws, as a blocked web store does. */
+  blocked?: boolean;
+}
+
+function storage(store: Store) {
+  return {
+    getItem: (key: string) => {
+      if (store.blocked) throw new Error("blocked");
+      return store.values[key] ?? null;
+    },
+    setItem: (key: string, value: string) => {
+      if (store.blocked) throw new Error("blocked");
+      store.values[key] = value;
+    },
+  };
+}
+
+/** A page of `FakeElement`s: lookups by id, selector and attribute work as the client expects. */
+function page(elements: FakeElement[], root = new FakeElement()) {
+  const body = new FakeElement({}, elements);
+  const documentStub = {
+    documentElement: root,
+    getElementById: (id: string) => body.querySelector(`[id="${id}"]`),
+    querySelector: (selector: string) => body.querySelector(selector),
+    querySelectorAll: (selector: string) => body.querySelectorAll(selector),
+    importNode: (node: FakeElement) => node,
+  };
+  return { body, root, documentStub };
+}
+
+function runClient(options: {
+  clipboard: unknown;
+  elements?: FakeElement[];
+  store?: Store;
+  extra?: Record<string, unknown>;
+}) {
+  const toast = new FakeElement({ id: "studio-toast" });
+  const theme = new FakeElement({ id: "studio-theme" });
+  const { body, root, documentStub } = page([toast, theme, ...(options.elements ?? [])]);
+  const store = options.store ?? { values: {} };
+  stubBrowser({
+    document: documentStub,
+    localStorage: storage(store),
+    navigator: options.clipboard === null ? {} : { clipboard: options.clipboard },
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+    ...options.extra,
+  });
+  startStudioClient();
+  return { body, root, toast, theme, store };
+}
+
 function runVaultBrowser(options: {
   layout: Record<string, string>;
   tree: FakeElement;
@@ -199,9 +222,9 @@ function runVaultBrowser(options: {
     ...(options.listing ? [options.listing] : []),
     ...(options.editor ? [options.editor] : []),
   ]);
-  const body = new FakeElement({}, [layout]);
   const root = new FakeElement();
   if (options.stored === "hidden") root.setAttribute("data-vault-tree", "hidden");
+  const { body, documentStub } = page([layout], root);
   const stored: Record<string, string> = {};
   const fetched: string[] = [];
   const streamed: string[] = [];
@@ -216,13 +239,6 @@ function runVaultBrowser(options: {
       sources.push(this);
     }
   }
-  const documentStub = {
-    documentElement: root,
-    getElementById: (id: string) => body.querySelector(`[id="${id}"]`),
-    querySelector: (selector: string) => body.querySelector(selector),
-    querySelectorAll: (selector: string) => body.querySelectorAll(selector),
-    importNode: (node: FakeElement) => node,
-  };
   class Parser {
     parseFromString() {
       return answers.shift() ?? options.answer;
@@ -235,28 +251,21 @@ function runVaultBrowser(options: {
       ? Promise.reject(new Error("offline"))
       : Promise.resolve({ ok: true, text: () => Promise.resolve("answer") });
   };
-  new Function(
-    "document",
-    "localStorage",
-    "navigator",
-    "setTimeout",
-    "clearTimeout",
-    "fetch",
-    "DOMParser",
-    "EventSource",
-    "location",
-    STUDIO_CLIENT_SCRIPT,
-  )(
-    documentStub,
-    { getItem: () => null, setItem: (key: string, value: string) => (stored[key] = value) },
-    {},
-    (callback: () => void) => timers.push(callback),
-    () => {},
-    fetchStub,
-    Parser,
-    EventSourceStub,
-    { href: "http://localhost/", assign: (url: string) => navigated.push(url) },
-  );
+  stubBrowser({
+    document: documentStub,
+    localStorage: {
+      getItem: () => null,
+      setItem: (key: string, value: string) => (stored[key] = value),
+    },
+    navigator: {},
+    setTimeout: (callback: () => void) => timers.push(callback),
+    clearTimeout: () => {},
+    fetch: fetchStub,
+    DOMParser: Parser,
+    EventSource: EventSourceStub,
+    location: { href: "http://localhost/", assign: (url: string) => navigated.push(url) },
+  });
+  startStudioClient();
   return {
     body,
     root,
@@ -277,8 +286,6 @@ function runVaultBrowser(options: {
   };
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 function sampleTree(): FakeElement {
   return new FakeElement({ "data-vault-slot": "tree" }, [
     new FakeElement(
@@ -293,24 +300,18 @@ function sampleTree(): FakeElement {
 }
 
 describe("studio browser code", () => {
-  it("is valid JavaScript", () => {
-    for (const source of Object.values(scripts)) {
+  it("ships as valid JavaScript that cannot terminate a script element", () => {
+    for (const source of [STUDIO_PREPAINT_SCRIPT, STUDIO_CLIENT_BUNDLE]) {
       expect(() => new Function(source)).not.toThrow();
-    }
-  });
-
-  it("cannot terminate the element that carries it", () => {
-    for (const source of Object.values(scripts)) {
       expect(source.toLowerCase()).not.toContain("</script");
     }
   });
 
-  it("reaches no external host while allowing the vault event stream", () => {
-    for (const source of Object.values(scripts)) {
+  it("reaches no external host and builds no markup", () => {
+    for (const source of [STUDIO_PREPAINT_SCRIPT, STUDIO_CLIENT_BUNDLE]) {
       expect(source).not.toMatch(/https?:\/\//);
     }
-    expect(STUDIO_CLIENT_SCRIPT).toContain('fetch("/api/vault/save"');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('getAttribute("data-vault-events")');
+    expect(STUDIO_CLIENT_BUNDLE).not.toMatch(/innerHTML|outerHTML|createElement/);
   });
 
   it("opens the vault events address the page rendered, building none", () => {
@@ -324,8 +325,7 @@ describe("studio browser code", () => {
     ]);
     const run = runVaultBrowser({ layout: {}, tree: sampleTree(), editor });
     expect(run.streamed).toEqual([address]);
-    expect(STUDIO_CLIENT_SCRIPT).not.toContain("/api/vault/events?");
-    expect(STUDIO_CLIENT_SCRIPT).not.toContain("/api/vault/events");
+    expect(STUDIO_CLIENT_BUNDLE).not.toContain("/api/vault/events");
   });
 
   it("applies a remembered appearance before the page paints", () => {
@@ -334,10 +334,141 @@ describe("studio browser code", () => {
     expect(STUDIO_PREPAINT_SCRIPT).toContain("try");
   });
 
-  it("cycles the appearance through system, dark, and light", () => {
-    expect(STUDIO_CLIENT_SCRIPT).toContain('["system", "dark", "light"]');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('removeAttribute("data-theme")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('setAttribute("data-theme", next)');
+  it("cycles the appearance through system, dark, and light and remembers each", () => {
+    const run = runClient({ clipboard: null });
+    expect(run.theme.textContent).toBe("Theme: system");
+    expect(run.root.hasAttribute("data-theme")).toBe(false);
+    const click = () => run.theme.listeners.click!();
+    click();
+    expect(run.root.getAttribute("data-theme")).toBe("dark");
+    expect(run.theme.textContent).toBe("Theme: dark");
+    expect(run.store.values[THEME_STORAGE_KEY]).toBe("dark");
+    click();
+    expect(run.root.getAttribute("data-theme")).toBe("light");
+    expect(run.store.values[THEME_STORAGE_KEY]).toBe("light");
+    click();
+    expect(run.root.hasAttribute("data-theme")).toBe(false);
+    expect(run.theme.getAttribute("data-theme-state")).toBe("system");
+    expect(run.store.values[THEME_STORAGE_KEY]).toBe("system");
+  });
+
+  it("starts from the remembered appearance and falls back to system for anything else", () => {
+    const light = runClient({
+      clipboard: null,
+      store: { values: { [THEME_STORAGE_KEY]: "light" } },
+    });
+    expect(light.root.getAttribute("data-theme")).toBe("light");
+    const odd = runClient({ clipboard: null, store: { values: { [THEME_STORAGE_KEY]: "neon" } } });
+    expect(odd.theme.textContent).toBe("Theme: system");
+  });
+
+  it("costs only the preference, never the page, when the web store is blocked", () => {
+    const company = new FakeElement({ "data-companion": acmeDigest });
+    const run = runClient({
+      clipboard: null,
+      elements: [company],
+      store: { values: {}, blocked: true },
+    });
+    expect(() => run.theme.listeners.click!()).not.toThrow();
+    expect(run.root.getAttribute("data-theme")).toBe("dark");
+    expect(run.store.values).toEqual({});
+  });
+
+  it("remembers the companion the served page resolved", () => {
+    const run = runClient({
+      clipboard: null,
+      elements: [new FakeElement({ "data-companion": acmeDigest })],
+    });
+    expect(run.store.values[COMPANION_STORAGE_KEY]).toBe(acmeDigest);
+    const none = runClient({ clipboard: null });
+    expect(none.store.values[COMPANION_STORAGE_KEY]).toBeUndefined();
+  });
+
+  it("switches workflow schema tabs in memory without leaving the page", () => {
+    const tab = (profile: string, selected: boolean) =>
+      new FakeElement({
+        "data-workflow-schema-profile": profile,
+        "aria-selected": selected ? "true" : "false",
+      });
+    const panel = (profile: string) => new FakeElement({ "data-workflow-schema-panel": profile });
+    const [claude, opencode] = [tab("claude", true), tab("opencode", false)];
+    const [claudePanel, opencodePanel] = [panel("claude"), panel("opencode")];
+    runClient({
+      clipboard: null,
+      elements: [
+        new FakeElement({ "data-workflow-schema-root": "" }, [
+          claude,
+          opencode,
+          claudePanel,
+          opencodePanel,
+        ]),
+      ],
+    });
+    expect(claudePanel.getAttribute("data-active")).toBe("true");
+    expect(opencodePanel.getAttribute("data-active")).toBe("false");
+    opencode.listeners.click!();
+    expect(claude.getAttribute("aria-selected")).toBe("false");
+    expect(opencode.getAttribute("aria-selected")).toBe("true");
+    expect(claudePanel.getAttribute("data-active")).toBe("false");
+    expect(opencodePanel.getAttribute("data-active")).toBe("true");
+    expect(opencodePanel.hasAttribute("aria-hidden")).toBe(false);
+  });
+
+  it("switches Skills tabs in memory and hides the inactive panel from assistive technology", () => {
+    const tab = (profile: string, selected: boolean) =>
+      new FakeElement({
+        "data-skill-profile": profile,
+        "aria-selected": selected ? "true" : "false",
+      });
+    const panel = (profile: string) => new FakeElement({ "data-skill-panel": profile });
+    const [claude, opencode] = [tab("claude", true), tab("opencode", false)];
+    const [claudePanel, opencodePanel] = [panel("claude"), panel("opencode")];
+    runClient({
+      clipboard: null,
+      elements: [
+        new FakeElement({ "data-skills-root": "" }, [claude, opencode, claudePanel, opencodePanel]),
+      ],
+    });
+    expect(opencodePanel.getAttribute("aria-hidden")).toBe("true");
+    opencode.listeners.click!();
+    expect(claudePanel.getAttribute("aria-hidden")).toBe("true");
+    expect(opencodePanel.getAttribute("aria-hidden")).toBe("false");
+    expect(opencodePanel.getAttribute("data-active")).toBe("true");
+  });
+
+  it("copies whatever a control carries and confirms it in the page", async () => {
+    const copied: string[] = [];
+    const control = new FakeElement({
+      "data-copy": "the prompt",
+      "data-copy-label": "the prompt text",
+    });
+    const run = runClient({
+      clipboard: { writeText: async (text: string) => void copied.push(text) },
+      elements: [control],
+    });
+    control.listeners.click!();
+    await settle();
+    expect(copied).toEqual(["the prompt"]);
+    expect(run.toast.textContent).toBe("copied the prompt text");
+    expect(run.toast.getAttribute("data-shown")).toBe("true");
+  });
+
+  it("handles an absent or rejected clipboard without breaking other controls", async () => {
+    const control = () => new FakeElement({ "data-copy": "prompt" });
+    const absentControl = control();
+    const unavailable = runClient({ clipboard: null, elements: [absentControl] });
+    expect(() => absentControl.listeners.click!()).not.toThrow();
+    expect(unavailable.toast.textContent).toBe("copying is blocked in this browser");
+    expect(() => unavailable.theme.listeners.click!()).not.toThrow();
+
+    const rejectedControl = control();
+    const rejected = runClient({
+      clipboard: { writeText: async () => Promise.reject(new Error("blocked")) },
+      elements: [rejectedControl],
+    });
+    expect(() => rejectedControl.listeners.click!()).not.toThrow();
+    await settle();
+    expect(rejected.toast.textContent).toBe("copying is blocked in this browser");
   });
 
   it("swaps a deferred tree and listing for the server's answer and wires their forms", async () => {
@@ -402,11 +533,6 @@ describe("studio browser code", () => {
     expect(run.results.hidden).toBe(true);
     expect(run.panel.hasAttribute("data-vault-filtering")).toBe(false);
     expect(run.fetched).toHaveLength(1);
-  });
-
-  it("scans no tree entries per keystroke", () => {
-    expect(STUDIO_CLIENT_SCRIPT).not.toContain('querySelectorAll("[data-vault-entry]")');
-    expect(STUDIO_CLIENT_SCRIPT).not.toContain("function filterTree");
   });
 
   it("attaches one delegated click handler for tree entries and leaves modified clicks alone", () => {
@@ -554,33 +680,6 @@ describe("studio browser code", () => {
     expect(run.toggle.textContent).toBe("Show files");
   });
 
-  it("stores the chosen appearance in the browser only", () => {
-    expect(STUDIO_CLIENT_SCRIPT).toContain("localStorage.setItem(THEME_KEY, theme)");
-    expect(STUDIO_CLIENT_SCRIPT.match(/localStorage/g)).toHaveLength(4);
-  });
-
-  it("remembers the companion the served page resolved", () => {
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelector("[data-companion]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain("localStorage.setItem(COMPANION_KEY, current)");
-    expect(STUDIO_CLIENT_SCRIPT).toContain(`"${COMPANION_STORAGE_KEY}"`);
-  });
-
-  it("switches workflow schema tabs in memory without changing the URL", () => {
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-workflow-schema-root]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-workflow-schema-profile]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-workflow-schema-panel]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('"aria-selected"');
-    expect(STUDIO_CLIENT_SCRIPT).not.toContain("location.search = params.toString()");
-  });
-
-  it("switches Skills tabs in memory without changing the URL", () => {
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-skills-root]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-skill-profile]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-skill-panel]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('getAttribute("data-skill-profile")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('getAttribute("data-skill-panel")');
-  });
-
   it("restores the remembered companion into the URL before the page paints", () => {
     expect(runPrepaint("", { [COMPANION_STORAGE_KEY]: acmeDigest })).toEqual([
       `/?companion=${acmeDigest}`,
@@ -608,32 +707,150 @@ describe("studio browser code", () => {
     expect(runPrepaint("", { [COMPANION_STORAGE_KEY]: "../../etc/passwd" })).toEqual([]);
     expect(runPrepaint("", { [COMPANION_STORAGE_KEY]: "ABCDEF0123" })).toEqual([]);
   });
+});
 
-  it("copies whatever a control carries and confirms it in the page", () => {
-    expect(STUDIO_CLIENT_SCRIPT).toContain('querySelectorAll("[data-copy]")');
-    expect(STUDIO_CLIENT_SCRIPT).toContain("navigator.clipboard.writeText(text)");
-    expect(STUDIO_CLIENT_SCRIPT).toContain('announce("copied " + label)');
-    expect(STUDIO_CLIENT_SCRIPT).toContain('getElementById("studio-toast")');
+describe("the vault editor in the page client", () => {
+  function editorPage(options: {
+    value?: string;
+    fetchResult?: () => Promise<unknown>;
+    stream?: boolean;
+  }) {
+    const editor = new FakeElement({
+      id: "vault-editor",
+      "data-vault-path": "docs/a.md",
+      "data-vault-token": "t1",
+      ...(options.stream ? { "data-vault-events": "/events" } : {}),
+    });
+    editor.value = options.value ?? "hello";
+    const part = (id: string, attributes: Record<string, string> = {}) =>
+      new FakeElement({ id, hidden: "", ...attributes });
+    const save = part("vault-save");
+    const recover = part("vault-recover");
+    const incoming = part("vault-incoming");
+    const incomingContent = part("vault-incoming-content");
+    const status = part("vault-status");
+    const company = new FakeElement({ "data-companion": acmeDigest });
+    const root = new FakeElement({ "data-vault-root": "" }, [
+      editor,
+      save,
+      recover,
+      incoming,
+      incomingContent,
+      status,
+    ]);
+    const { documentStub } = page([company, root]);
+    const posted: { url: string; body: Record<string, unknown> }[] = [];
+    const sources: { onmessage: ((message: { data: string }) => void) | null }[] = [];
+    const handlers: Record<string, (event: unknown) => void> = {};
+    class EventSourceStub {
+      onmessage: ((message: { data: string }) => void) | null = null;
+      constructor() {
+        sources.push(this);
+      }
+    }
+    stubBrowser({
+      document: documentStub,
+      localStorage: { getItem: () => null, setItem: () => {} },
+      navigator: {},
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+      EventSource: EventSourceStub,
+      window: {
+        addEventListener: (name: string, handler: (event: unknown) => void) =>
+          (handlers[name] = handler),
+      },
+      fetch: (url: string, init: { body: string }) => {
+        posted.push({ url, body: JSON.parse(init.body) });
+        return options.fetchResult
+          ? options.fetchResult()
+          : Promise.resolve({ ok: true, status: 200, json: async () => ({ token: "t2" }) });
+      },
+    });
+    startStudioClient();
+    return { editor, save, recover, incoming, incomingContent, status, posted, sources, handlers };
+  }
+
+  it("saves the editor text with the companion, path and token, then adopts the new token", async () => {
+    const run = editorPage({});
+    run.editor.value = "edited";
+    run.save.listeners.click!();
+    await settle();
+    expect(run.posted).toEqual([
+      {
+        url: "/api/vault/save",
+        body: { companion: acmeDigest, path: "docs/a.md", content: "edited", token: "t1" },
+      },
+    ]);
+    expect(run.status.textContent).toBe("saved");
+    expect(run.editor.getAttribute("data-vault-token")).toBe("t2");
+    expect(run.editor.getAttribute("data-vault-original")).toBe("edited");
   });
 
-  it("survives a blocked clipboard without costing the page", () => {
-    expect(STUDIO_CLIENT_SCRIPT).toContain("copying is blocked in this browser");
+  it("refuses a second save while one is in flight", async () => {
+    const run = editorPage({});
+    run.save.listeners.click!();
+    run.save.listeners.click!();
+    await settle();
+    expect(run.posted).toHaveLength(1);
   });
 
-  it("handles an absent or rejected clipboard without breaking other controls", async () => {
-    const unavailable = runClient(null);
-    expect(() => unavailable.copy()).not.toThrow();
-    expect(unavailable.toast()).toBe("copying is blocked in this browser");
-    expect(() => unavailable.theme()).not.toThrow();
-
-    const rejected = runClient({ writeText: async () => Promise.reject(new Error("blocked")) });
-    expect(() => rejected.copy()).not.toThrow();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(rejected.toast()).toBe("copying is blocked in this browser");
+  it("offers the incoming version after a conflict and loads it on recover", async () => {
+    const run = editorPage({
+      fetchResult: () =>
+        Promise.resolve({
+          ok: false,
+          status: 409,
+          json: async () => ({ reason: "changed on disk", content: "theirs", token: "t9" }),
+        }),
+    });
+    run.editor.value = "mine";
+    run.save.listeners.click!();
+    await settle();
+    expect(run.status.textContent).toBe("changed on disk");
+    expect(run.incoming.hidden).toBe(false);
+    expect(run.incomingContent.textContent).toBe("theirs");
+    run.recover.listeners.click!();
+    expect(run.editor.value).toBe("theirs");
+    expect(run.editor.getAttribute("data-vault-token")).toBe("t9");
+    expect(run.incoming.hidden).toBe(true);
+    expect(run.status.textContent).toBe("incoming version loaded into the editor");
   });
 
-  it("renders nothing and assembles no markup", () => {
-    expect(STUDIO_CLIENT_SCRIPT).not.toMatch(/innerHTML|outerHTML|createElement/);
+  it("states a failed save", async () => {
+    const run = editorPage({ fetchResult: () => Promise.reject(new Error("offline")) });
+    run.save.listeners.click!();
+    await settle();
+    expect(run.status.textContent).toBe("save failed");
+  });
+
+  it("follows the file on disk, keeping unsaved text and offering the new version instead", () => {
+    const run = editorPage({ stream: true });
+    const send = (event: unknown) => run.sources[0]!.onmessage!({ data: JSON.stringify(event) });
+    send({ kind: "changed", content: "from disk", token: "t3" });
+    expect(run.editor.value).toBe("from disk");
+    expect(run.status.textContent).toBe("updated from disk");
+    run.editor.value = "typing";
+    send({ kind: "changed", content: "newer", token: "t4" });
+    expect(run.editor.value).toBe("typing");
+    expect(run.incomingContent.textContent).toBe("newer");
+    expect(run.status.textContent).toContain("unsaved content is still in the editor");
+    send({ kind: "removed" });
+    expect(run.status.textContent).toBe("this file no longer exists on disk");
+    send({ kind: "overwritten", content: "old" });
+    expect(run.incomingContent.textContent).toBe("old");
+    run.sources[0]!.onmessage!({ data: "not json" });
+  });
+
+  it("asks the browser to confirm leaving only while the editor is dirty", () => {
+    const run = editorPage({});
+    let prevented = false;
+    const event = { preventDefault: () => (prevented = true), returnValue: "unset" as unknown };
+    run.handlers.beforeunload!(event);
+    expect(prevented).toBe(false);
+    run.editor.value = "changed";
+    run.handlers.beforeunload!(event);
+    expect(prevented).toBe(true);
+    expect(event.returnValue).toBe("");
   });
 });
 
@@ -670,22 +887,15 @@ describe("spec skill actions in the page client", () => {
       }
       detail: unknown;
     }
-    new Function(
-      "document",
-      "localStorage",
-      "navigator",
-      "setTimeout",
-      "clearTimeout",
-      "CustomEvent",
-      STUDIO_CLIENT_SCRIPT,
-    )(
-      documentStub,
-      { getItem: () => null, setItem: () => {} },
-      { clipboard: { writeText: async (text: string) => void copied.push(text) } },
-      () => 0,
-      () => {},
-      FakeEvent,
-    );
+    stubBrowser({
+      document: documentStub,
+      localStorage: { getItem: () => null, setItem: () => {} },
+      navigator: { clipboard: { writeText: async (text: string) => void copied.push(text) } },
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+      CustomEvent: FakeEvent,
+    });
+    startStudioClient();
     const node = (selector: string, attributes: Record<string, string>) => ({
       closest: (query: string) =>
         query === selector ? { getAttribute: (n: string) => attributes[n] ?? null } : null,
@@ -726,11 +936,11 @@ describe("spec skill actions in the page client", () => {
   it("copies the viewed agent's prompt, else Claude's", async () => {
     const opencode = run("opencode");
     opencode.clickCopy();
+    await settle();
+    expect(opencode.copied).toEqual(["Use the mate-show-me skill on spec acme-login."]);
     const claude = run(null);
     claude.clickCopy();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(opencode.copied).toEqual(["Use the mate-show-me skill on spec acme-login."]);
+    await settle();
     expect(claude.copied).toEqual(["/mate-show-me acme-login"]);
   });
 });

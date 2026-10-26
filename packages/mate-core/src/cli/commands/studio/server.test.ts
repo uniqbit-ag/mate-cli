@@ -15,6 +15,7 @@ import {
   type StudioServerDeps,
 } from "./server";
 import { renderStudioDocument, renderVaultView } from "./views/document";
+import { STUDIO_CLIENT_BUNDLE } from "./views/studio-client.generated";
 import type { StudioPage } from "./views/model";
 import { createVaultManager, type VaultManager, type VaultTreeResult } from "./vault";
 
@@ -76,6 +77,37 @@ describe("createStudioFetch", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.text()).toContain("<!doctype html>");
+  });
+
+  test("serves Studio's built client at one fixed path", async () => {
+    const handler = createStudioFetch(deps());
+    const response = await handler(new Request("http://localhost/studio/client.js"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/javascript");
+    expect(response.headers.get("cache-control")).toBe("no-cache");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await response.text()).toBe(STUDIO_CLIENT_BUNDLE);
+
+    const head = await handler(
+      new Request("http://localhost/studio/client.js", { method: "HEAD" }),
+    );
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+  });
+
+  test("serves no other name under the client's route", async () => {
+    const handler = createStudioFetch(deps());
+    for (const pathname of [
+      "/studio/client.js/",
+      "/studio/client.js.map",
+      "/studio/client/main.ts",
+      "/studio/../package.json",
+      "/studio/client.ts",
+    ]) {
+      const response = await handler(new Request(`http://localhost${pathname}`));
+      expect(response.headers.get("content-type") ?? "").not.toContain("javascript");
+    }
   });
 
   test("renders the state the URL names", async () => {
