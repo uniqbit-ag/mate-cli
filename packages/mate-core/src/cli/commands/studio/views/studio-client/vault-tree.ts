@@ -1,5 +1,5 @@
 import { VAULT_TREE_STORAGE_KEY } from "./keys";
-import { failure, fetchMarkup, moveInto, navigate, wireNavigation } from "./page";
+import { failure, fetchMarkup, isPlainClick, moveInto, navigate, wireNavigation } from "./page";
 
 const FILTER_DELAY = 150;
 
@@ -182,22 +182,13 @@ function watchTreeChanges(layout: Element): void {
 function wirePanel(panel: Element): void {
   panel.addEventListener("click", (raw) => {
     const event = raw as MouseEvent;
-    if (
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey
-    ) {
-      return;
-    }
+    if (!isPlainClick(event)) return;
     const target = event.target as Element | null;
     const link =
       target && target.closest ? target.closest<HTMLAnchorElement>("a[data-vault-entry]") : null;
     if (!link) return;
     event.preventDefault();
-    navigate(link.href);
+    navigate(link.href, true);
   });
   panel.addEventListener(
     "toggle",

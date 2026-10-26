@@ -4,7 +4,8 @@ import { wireNavigation } from "./page";
 import { wireReports } from "./reports";
 import { wireSkillTabs, wireWorkflowSchemaTabs } from "./tabs";
 import { wireTheme, wireThemeToggle } from "./theme";
-import { wireUnloadGuard, wireVaultEditor } from "./vault-editor";
+import { wireUnloadGuard } from "./vault-editor";
+import { wireVaultPane } from "./vault-pane";
 import { wireVaultBrowser } from "./vault-tree";
 
 /**
@@ -24,7 +25,7 @@ export function startStudioClient(): void {
   wireDelegatedActions();
   wireUnloadGuard();
   wireNavigation();
-  wireVaultEditor();
+  wireVaultPane();
   wireVaultBrowser();
   wireReports();
 }

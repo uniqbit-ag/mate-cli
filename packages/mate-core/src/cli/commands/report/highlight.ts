@@ -1,4 +1,10 @@
-import { normalizeLanguage, renderNodesToHtml, renderTokens, tokenize } from "@tanstack/highlight";
+import {
+  type HighlightRenderNode,
+  normalizeLanguage,
+  renderNodesToHtml,
+  renderTokens,
+  tokenize,
+} from "@tanstack/highlight";
 import { createThemeCss, createThemeRule } from "@tanstack/highlight/theme";
 import githubDark from "@tanstack/highlight/themes/github-dark";
 import githubLight from "@tanstack/highlight/themes/github-light";
@@ -17,6 +23,18 @@ export function highlightInline(code: string, language: string | undefined): str
   const resolved = resolveHighlightLanguage(language);
   const { tokens } = tokenize(code, { lang: resolved });
   return renderNodesToHtml(renderTokens(tokens));
+}
+
+/**
+ * The same tokens as structure rather than markup, for a renderer that builds elements
+ * and so never holds a markup string. An unknown language yields plain text nodes.
+ */
+export function highlightNodes(
+  code: string,
+  language: string | undefined,
+): ReadonlyArray<HighlightRenderNode> {
+  const { tokens } = tokenize(code, { lang: resolveHighlightLanguage(language) });
+  return renderTokens(tokens);
 }
 
 /**

@@ -46,6 +46,26 @@ function runPrepaint(search: string, stored: Record<string, string> = {}): strin
 
 const acmeDigest = "4cb87fd83f";
 
+/** A session history that records what the client pushes and replaces, and moves `location` with it. */
+function sessionHistory(location: { href: string }) {
+  const calls: { kind: "push" | "replace"; state: unknown; url: string | undefined }[] = [];
+  const stub = {
+    state: null as unknown,
+    scrollRestoration: "auto",
+    pushState(state: unknown, _title: string, url?: string) {
+      calls.push({ kind: "push", state, url });
+      stub.state = state;
+      if (url) location.href = new URL(url, location.href).toString();
+    },
+    replaceState(state: unknown, _title: string, url?: string) {
+      calls.push({ kind: "replace", state, url });
+      stub.state = state;
+      if (url) location.href = new URL(url, location.href).toString();
+    },
+  };
+  return { stub, calls };
+}
+
 /** Just enough of an element for the vault browser code: attributes, children, and simple selectors. */
 class FakeElement {
   attributes = new Map<string, string>();
@@ -255,6 +275,7 @@ function runVaultBrowser(options: {
       ? Promise.reject(new Error("offline"))
       : Promise.resolve({ ok: true, text: () => Promise.resolve("answer") });
   };
+  const location = { href: "http://localhost/", assign: (url: string) => navigated.push(url) };
   stubBrowser({
     document: documentStub,
     localStorage: {
@@ -267,7 +288,8 @@ function runVaultBrowser(options: {
     fetch: fetchStub,
     DOMParser: Parser,
     EventSource: EventSourceStub,
-    location: { href: "http://localhost/", assign: (url: string) => navigated.push(url) },
+    location,
+    history: sessionHistory(location).stub,
   });
   startStudioClient();
   return {
@@ -320,12 +342,8 @@ describe("studio browser code", () => {
 
   it("opens the vault events address the page rendered, building none", () => {
     const address = "/api/vault/events?companion=4cb87fd83f&view=vault&path=docs%2Fa+b.md";
-    const editor = new FakeElement({ "data-vault-root": "" }, [
-      new FakeElement({
-        id: "vault-editor",
-        "data-vault-path": "docs/a b.md",
-        "data-vault-events": address,
-      }),
+    const editor = new FakeElement({ "data-vault-root": "", "data-vault-events": address }, [
+      new FakeElement({ id: "vault-editor", "data-vault-path": "docs/a b.md" }),
     ]);
     const run = runVaultBrowser({ layout: {}, tree: sampleTree(), editor });
     expect(run.streamed).toEqual([address]);
@@ -723,7 +741,6 @@ describe("the vault editor in the page client", () => {
       id: "vault-editor",
       "data-vault-path": "docs/a.md",
       "data-vault-token": "t1",
-      ...(options.stream ? { "data-vault-events": "/events" } : {}),
     });
     editor.value = options.value ?? "hello";
     const part = (id: string, attributes: Record<string, string> = {}) =>
@@ -734,15 +751,12 @@ describe("the vault editor in the page client", () => {
     const incomingContent = part("vault-incoming-content");
     const status = part("vault-status");
     const company = new FakeElement({ "data-companion": acmeDigest });
-    const root = new FakeElement({ "data-vault-root": "" }, [
-      editor,
-      save,
-      recover,
-      incoming,
-      incomingContent,
-      status,
-    ]);
-    const { documentStub } = page([company, root]);
+    const root = new FakeElement(
+      { "data-vault-root": "", ...(options.stream ? { "data-vault-events": "/events" } : {}) },
+      [editor, save, recover, incoming, incomingContent, status],
+    );
+    const layout = new FakeElement({ "data-vault-layout": "" }, [root]);
+    const { documentStub } = page([company, layout]);
     const posted: { url: string; body: Record<string, unknown> }[] = [];
     const sources: { onmessage: ((message: { data: string }) => void) | null }[] = [];
     const handlers: Record<string, (event: unknown) => void> = {};
@@ -756,6 +770,7 @@ describe("the vault editor in the page client", () => {
         (this as Record<string, unknown>)[`on${type}`] = listener;
       }
     }
+    const location = { href: "http://localhost/", assign: () => {} };
     stubBrowser({
       document: documentStub,
       localStorage: { getItem: () => null, setItem: () => {} },
@@ -763,6 +778,8 @@ describe("the vault editor in the page client", () => {
       setTimeout: () => 0,
       clearTimeout: () => {},
       EventSource: EventSourceStub,
+      location,
+      history: sessionHistory(location).stub,
       window: {
         addEventListener: (name: string, handler: (event: unknown) => void) =>
           (handlers[name] = handler),
@@ -950,5 +967,395 @@ describe("spec skill actions in the page client", () => {
     claude.clickCopy();
     await settle();
     expect(claude.copied).toEqual(["/mate-show-me acme-login"]);
+  });
+});
+
+describe("the vault viewer pane in the page client", () => {
+  const PANE_ROUTE = "/api/vault/pane";
+  const base = "http://localhost/";
+  const fileAddress = (path: string, extra = "") =>
+    `${base}?companion=${acmeDigest}&view=vault&path=${path}${extra}`;
+
+  /** A file pane as the server renders it, keyed by the markup string the fetch stub answers with. */
+  function filePane(path: string, mode: "read" | "edit" = "read") {
+    const editing = mode === "edit";
+    const editor = new FakeElement({
+      id: "vault-editor",
+      "data-vault-path": path,
+      "data-vault-token": "t1",
+    });
+    editor.value = `text of ${path}`;
+    const status = new FakeElement({ id: "vault-status" });
+    const root = new FakeElement(
+      {
+        "data-vault-root": "",
+        "data-vault-mode": mode,
+        "data-vault-path": path,
+        "data-vault-events": `/events/${path}`,
+        "data-vault-read-href": fileAddress(path),
+      },
+      editing
+        ? [
+            editor,
+            status,
+            new FakeElement({ id: "vault-save" }),
+            new FakeElement({ id: "vault-recover" }),
+            new FakeElement({ id: "vault-incoming", hidden: "" }),
+            new FakeElement({ id: "vault-incoming-content" }),
+          ]
+        : [status],
+    );
+    const crumb = new FakeElement({ "data-vault-crumb": "", tag: "nav", for: path });
+    const pane = new FakeElement({ "data-vault-pane": "" }, [root]);
+    return { crumb, pane, root, editor, status, doc: new FakeElement({}, [crumb, pane]) };
+  }
+
+  function paneRun(
+    options: {
+      initial?: "read" | "edit";
+      writable?: boolean;
+      confirm?: boolean;
+      /** `fetch` answers for a pane address, else fails; keyed by the `path` it carries. */
+      answers?: Record<string, ReturnType<typeof filePane>>;
+      failing?: boolean;
+    } = {},
+  ) {
+    const first = filePane("a.md", options.initial ?? "read");
+    const treeLinks = ["a.md", "b.md"].map(
+      (entry) =>
+        new FakeElement({
+          "data-vault-entry": entry,
+          tag: "a",
+          ...(entry === "a.md" ? { "aria-current": "page" } : {}),
+        }),
+    );
+    const main = new FakeElement({ "data-vault-main": "" }, [first.crumb, first.pane]);
+    const layout = new FakeElement(
+      {
+        "data-vault-layout": "",
+        "data-vault-pane-route": PANE_ROUTE,
+        "data-vault-scope": acmeDigest,
+      },
+      [new FakeElement({ id: "vault-tree-panel" }, treeLinks), main],
+    );
+    const company = new FakeElement({ "data-companion": acmeDigest });
+    const { documentStub } = page([company, layout]);
+    const docs: Record<string, FakeElement> = {};
+    const answers = options.answers ?? {};
+    const fetched: { url: string; init?: unknown }[] = [];
+    const pending: { url: string; resolve: () => void }[] = [];
+    const navigated: string[] = [];
+    let reloads = 0;
+    let confirms = 0;
+    const handlers: Record<string, (event?: unknown) => void> = {};
+    const sources: { url: string; closed: boolean; onmessage?: (message: unknown) => void }[] = [];
+    class EventSourceStub {
+      record: { url: string; closed: boolean; onmessage?: (message: unknown) => void };
+      constructor(url: string) {
+        this.record = { url, closed: false };
+        sources.push(this.record);
+      }
+      addEventListener(_type: string, listener: (message: unknown) => void) {
+        this.record.onmessage = listener;
+      }
+      close() {
+        this.record.closed = true;
+      }
+    }
+    const location = {
+      href: fileAddress("a.md"),
+      assign: (url: string) => navigated.push(url),
+      reload: () => void (reloads += 1),
+    };
+    const session = sessionHistory(location);
+    const scrolled: number[] = [];
+    const windowStub = {
+      scrollY: 120,
+      scrollTo: (_x: number, y: number) => scrolled.push(y),
+      confirm: () => {
+        confirms += 1;
+        return options.confirm ?? true;
+      },
+      addEventListener: (name: string, handler: (event?: unknown) => void) => {
+        handlers[name] = handler;
+      },
+    };
+    stubBrowser({
+      document: documentStub,
+      localStorage: { getItem: () => null, setItem: () => {} },
+      navigator: {},
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+      EventSource: EventSourceStub,
+      DOMParser: class {
+        parseFromString(markup: string) {
+          return docs[markup];
+        }
+      },
+      location,
+      history: session.stub,
+      window: windowStub,
+      fetch: (url: string, init?: unknown) => {
+        fetched.push({ url, init });
+        if (options.failing) return Promise.reject(new Error("offline"));
+        if (url.startsWith("/api/vault/save")) {
+          return Promise.resolve({ ok: true, status: 200, json: async () => ({ token: "t2" }) });
+        }
+        const path = new URL(url, base).searchParams.get("path") ?? "";
+        const answer = answers[path] ?? filePane(path);
+        docs[url] = answer.doc;
+        return new Promise((resolve) => {
+          pending.push({ url, resolve: () => resolve({ ok: true, text: async () => url }) });
+          if (!options.answers?.["hold"]) pending.at(-1)!.resolve();
+        });
+      },
+    });
+    startStudioClient();
+    const click = (link: Record<string, unknown>, extra: Record<string, unknown> = {}) => {
+      let prevented = false;
+      main.listeners.click!({
+        defaultPrevented: false,
+        button: 0,
+        preventDefault: () => (prevented = true),
+        target: { closest: () => link },
+        ...extra,
+      });
+      return () => prevented;
+    };
+    const currentRoot = () => documentStub.querySelector("[data-vault-root]") as FakeElement;
+    return {
+      first,
+      main,
+      treeLinks,
+      fetched,
+      pending,
+      navigated,
+      handlers,
+      sources,
+      session,
+      scrolled,
+      windowStub,
+      location,
+      click,
+      currentRoot,
+      reloads: () => reloads,
+      confirms: () => confirms,
+      open: () => sources.filter((source) => !source.closed),
+    };
+  }
+
+  const entryLink = (path: string) => ({ href: fileAddress(path) });
+
+  it("opens a file in place: fetches the pane, swaps it, pushes the address, keeps the scroll", async () => {
+    const run = paneRun();
+    const prevented = run.click(entryLink("b.md"));
+    expect(prevented()).toBe(true);
+    await settle();
+    expect(run.fetched.map(({ url }) => url)).toEqual([
+      `${base.slice(0, -1)}${PANE_ROUTE}?companion=${acmeDigest}&view=vault&path=b.md`,
+    ]);
+    expect(run.navigated).toEqual([]);
+    expect(run.currentRoot().getAttribute("data-vault-path")).toBe("b.md");
+    const pushed = run.session.calls.filter(({ kind }) => kind === "push");
+    expect(pushed).toHaveLength(1);
+    expect(pushed[0]!.url).toBe(fileAddress("b.md"));
+    expect(run.location.href).toBe(fileAddress("b.md"));
+    expect(run.scrolled).toEqual([120]);
+    const marked = run.treeLinks.map((link) => link.getAttribute("aria-current"));
+    expect(marked).toEqual([null, "page"]);
+  });
+
+  it("takes manual control of scroll restoration for the vault", () => {
+    const run = paneRun();
+    expect(run.session.stub.scrollRestoration).toBe("manual");
+  });
+
+  it("switches mode through the same swap, and leaves modified clicks to the browser", async () => {
+    const run = paneRun();
+    const edit = { href: fileAddress("a.md", "&mode=edit") };
+    expect(run.click(edit, { metaKey: true })()).toBe(false);
+    expect(run.click(edit, { button: 1 })()).toBe(false);
+    expect(run.fetched).toHaveLength(0);
+    run.click(edit);
+    await settle();
+    expect(run.fetched[0]!.url).toContain("mode=edit");
+    expect(run.session.calls.at(-1)!.url).toBe(fileAddress("a.md", "&mode=edit"));
+  });
+
+  it("keeps exactly one event stream open across file and mode swaps", async () => {
+    const run = paneRun();
+    expect(run.open().map(({ url }) => url)).toEqual(["/events/a.md"]);
+    run.click(entryLink("b.md"));
+    await settle();
+    run.click({ href: fileAddress("b.md", "&mode=edit") });
+    await settle();
+    run.click(entryLink("c.md"));
+    await settle();
+    expect(run.sources).toHaveLength(4);
+    expect(run.open().map(({ url }) => url)).toEqual(["/events/c.md"]);
+  });
+
+  it("asks before leaving unsaved text and leaves everything as it was when declined", async () => {
+    const run = paneRun({ initial: "edit", confirm: false });
+    run.first.editor.value = "typed";
+    run.click(entryLink("b.md"));
+    await settle();
+    expect(run.confirms()).toBe(1);
+    expect(run.fetched).toHaveLength(0);
+    expect(run.session.calls.filter(({ kind }) => kind === "push")).toHaveLength(0);
+    expect(run.location.href).toBe(fileAddress("a.md"));
+    expect(run.first.editor.value).toBe("typed");
+    expect(run.open()).toHaveLength(1);
+  });
+
+  it("proceeds when the viewer confirms, and does not ask when the editor is clean", async () => {
+    const dirtyRun = paneRun({ initial: "edit", confirm: true });
+    dirtyRun.first.editor.value = "typed";
+    dirtyRun.click(entryLink("b.md"));
+    await settle();
+    expect(dirtyRun.confirms()).toBe(1);
+    expect(dirtyRun.currentRoot().getAttribute("data-vault-path")).toBe("b.md");
+    const cleanRun = paneRun({ initial: "edit" });
+    cleanRun.click(entryLink("b.md"));
+    await settle();
+    expect(cleanRun.confirms()).toBe(0);
+  });
+
+  it("guards a mode switch away from edit with unsaved text", async () => {
+    const run = paneRun({ initial: "edit", confirm: false });
+    run.first.editor.value = "typed";
+    run.click({ href: fileAddress("a.md") });
+    await settle();
+    expect(run.confirms()).toBe(1);
+    expect(run.fetched).toHaveLength(0);
+  });
+
+  it("applies only the latest of two swaps", async () => {
+    const run = paneRun({ answers: { hold: filePane("hold") } });
+    run.click(entryLink("b.md"));
+    run.click(entryLink("c.md"));
+    await settle();
+    expect(run.pending).toHaveLength(2);
+    run.pending[1]!.resolve();
+    await settle();
+    run.pending[0]!.resolve();
+    await settle();
+    expect(run.currentRoot().getAttribute("data-vault-path")).toBe("c.md");
+    expect(run.location.href).toBe(fileAddress("c.md"));
+    expect(run.session.calls.filter(({ kind }) => kind === "push")).toHaveLength(1);
+  });
+
+  it("falls back to a normal navigation when the pane cannot be fetched", async () => {
+    const run = paneRun({ failing: true });
+    run.click(entryLink("b.md"));
+    await settle();
+    expect(run.navigated).toEqual([fileAddress("b.md")]);
+    expect(run.session.calls.filter(({ kind }) => kind === "push")).toHaveLength(0);
+  });
+
+  it("leaves a click that is not a file or mode link to the browser", async () => {
+    const run = paneRun();
+    let prevented = false;
+    run.main.listeners.click!({
+      defaultPrevented: false,
+      button: 0,
+      preventDefault: () => (prevented = true),
+      target: { closest: () => null },
+    });
+    await settle();
+    expect(prevented).toBe(false);
+    expect(run.fetched).toHaveLength(0);
+    expect(run.navigated).toEqual([]);
+  });
+
+  it("renders the pane for the address on back and forward, from the entry's remembered scroll", async () => {
+    const run = paneRun();
+    run.click(entryLink("b.md"));
+    await settle();
+    run.scrolled.length = 0;
+    // Back: the browser moves to the first entry, whose state the client recorded.
+    run.session.stub.state = { vaultScope: acmeDigest, vaultScroll: 75 };
+    run.location.href = fileAddress("a.md");
+    run.handlers.popstate!();
+    await settle();
+    expect(run.currentRoot().getAttribute("data-vault-path")).toBe("a.md");
+    expect(run.scrolled).toEqual([75]);
+    expect(run.session.calls.filter(({ kind }) => kind === "push")).toHaveLength(1);
+    expect(run.open().map(({ url }) => url)).toEqual(["/events/a.md"]);
+  });
+
+  it("reloads for a history entry that is not a swappable file", async () => {
+    const run = paneRun();
+    run.session.stub.state = null;
+    run.location.href = `${base}?companion=${acmeDigest}&view=vault&dir=docs`;
+    run.handlers.popstate!();
+    await settle();
+    expect(run.reloads()).toBe(1);
+    expect(run.fetched).toHaveLength(0);
+  });
+
+  it("restores the address and content when back is declined", async () => {
+    const run = paneRun({ initial: "edit", confirm: false });
+    run.first.editor.value = "typed";
+    run.session.stub.state = { vaultScope: acmeDigest, vaultScroll: 0 };
+    run.location.href = fileAddress("z.md");
+    run.handlers.popstate!();
+    await settle();
+    expect(run.fetched).toHaveLength(0);
+    expect(run.reloads()).toBe(0);
+    expect(run.location.href).toBe(fileAddress("a.md"));
+    expect(run.first.editor.value).toBe("typed");
+  });
+
+  it("returns to the rendered file after an applied save, replacing the history entry", async () => {
+    const run = paneRun({ initial: "edit" });
+    run.first.editor.value = "edited";
+    document.getElementById("vault-save")!.listeners.click!();
+    await settle();
+    const replaced = run.session.calls.filter(({ kind }) => kind === "replace");
+    expect(replaced.at(-1)!.url).toBe(fileAddress("a.md"));
+    expect(run.session.calls.filter(({ kind }) => kind === "push")).toHaveLength(0);
+    expect(run.fetched.map(({ url }) => url).at(-1)).toContain(PANE_ROUTE);
+    expect(run.currentRoot().getAttribute("data-vault-mode")).toBe("read");
+    expect(run.scrolled).toEqual([120]);
+    expect(run.open().map(({ url }) => url)).toEqual(["/events/a.md"]);
+  });
+
+  it("keeps the editor and the viewer's text when a save is refused", async () => {
+    const run = paneRun({ initial: "edit" });
+    const real = globalThis.fetch;
+    stubBrowser({
+      fetch: (url: string, init?: unknown) =>
+        url.startsWith("/api/vault/save")
+          ? Promise.resolve({
+              ok: false,
+              status: 409,
+              json: async () => ({ reason: "stale", content: "theirs", token: "t9" }),
+            })
+          : real(url, init as never),
+    });
+    run.first.editor.value = "mine";
+    document.getElementById("vault-save")!.listeners.click!();
+    await settle();
+    expect(run.currentRoot().getAttribute("data-vault-mode")).toBe("edit");
+    expect(run.first.editor.value).toBe("mine");
+    expect(run.fetched.filter(({ url }) => url.includes(PANE_ROUTE))).toHaveLength(0);
+    expect(run.session.calls.filter(({ kind }) => kind === "replace").length).toBe(1);
+  });
+
+  it("refetches the rendered pane when the file changes on disk, and reports removal", async () => {
+    const run = paneRun();
+    const send = (event: unknown) => run.open()[0]!.onmessage!({ data: JSON.stringify(event) });
+    send({ kind: "changed", content: "new", token: "t5" });
+    await settle();
+    expect(run.fetched.map(({ url }) => url)).toEqual([
+      `${base.slice(0, -1)}${PANE_ROUTE}?companion=${acmeDigest}&view=vault&path=a.md`,
+    ]);
+    expect(run.session.calls.filter(({ kind }) => kind === "push")).toHaveLength(0);
+    expect(run.open()).toHaveLength(1);
+    send({ kind: "removed" });
+    expect(document.getElementById("vault-status")!.textContent).toBe(
+      "this file no longer exists on disk",
+    );
   });
 });
