@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { managedBlockMarkers, managedBlockStartPattern } from "../../runtime/managed-block";
 import type {
   InstructionsService,
   McpServerDescriptor,
@@ -63,13 +64,6 @@ async function saveManifest(
 // Managed instruction blocks
 // ---------------------------------------------------------------------------
 
-function blockMarkers(frameworkName: string, blockKey: string): { start: string; end: string } {
-  return {
-    start: `<!-- ${frameworkName}:managed:${blockKey} start -->`,
-    end: `<!-- ${frameworkName}:managed:${blockKey} end -->`,
-  };
-}
-
 export function instructionBlockKey(pluginId: string, content: string): string {
   const hash = crypto.createHash("sha256").update(content).digest("hex").slice(0, 12);
   return `${pluginId}:${hash}`;
@@ -82,7 +76,7 @@ export async function upsertManagedBlock(
   blockKey: string,
   content: string,
 ): Promise<void> {
-  const { start, end } = blockMarkers(frameworkName, blockKey);
+  const { start, end } = managedBlockMarkers(frameworkName, blockKey);
   let existing = "";
   try {
     existing = await fs.readFile(filePath, "utf8");
@@ -113,11 +107,7 @@ export async function removeManagedBlocksForPlugin(
   } catch {
     return;
   }
-  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const keyPattern = new RegExp(
-    `<!-- ${escape(frameworkName)}:managed:(${escape(pluginId)}:[0-9a-f]+) start -->`,
-    "g",
-  );
+  const keyPattern = managedBlockStartPattern(frameworkName, pluginId);
   const keys = [...existing.matchAll(keyPattern)].map((match) => match[1]);
   for (const key of keys) {
     if (keepKeys.has(key)) continue;
@@ -131,7 +121,7 @@ async function removeManagedBlock(
   frameworkName: string,
   blockKey: string,
 ): Promise<void> {
-  const { start, end } = blockMarkers(frameworkName, blockKey);
+  const { start, end } = managedBlockMarkers(frameworkName, blockKey);
   let existing: string;
   try {
     existing = await fs.readFile(filePath, "utf8");

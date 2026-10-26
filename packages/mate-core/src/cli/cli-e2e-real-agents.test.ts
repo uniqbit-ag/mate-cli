@@ -1,6 +1,7 @@
 /** @test-requires sockets, agent binaries */
 
 import { spawn, spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import { accessSync, constants } from "node:fs";
 import fs from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
@@ -10,6 +11,8 @@ import path from "node:path";
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 
 import { readCompanionGitRecord } from "../runtime/companion-git-state";
+import { projectionEnvPath, projectionYamlPath } from "../runtime/projection";
+import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { makeSshStub, stubSshUrl } from "../../../../test/ssh-stub";
 
 // Local-only, opt-in verification that mate's companion-guidance injection ends
@@ -45,6 +48,14 @@ const COMPANION_GUIDANCE_MARKERS = [
   "\n<codebase-exploration-rules",
 ] as const;
 const CONTEXT_MODE_GUIDANCE_MARKER = "\n## Context Mode\n";
+/**
+ * Native memory strips HTML comments, so Claude's companion rules are found by
+ * text: a rule sentence from the template's `MATE:COMPANION` block, and a
+ * sentinel the user wrote into the companion `AGENTS.md`.
+ */
+const COMPANION_RULE_SENTENCE = "Code comments: JSDoc format only";
+const USER_SENTINEL = "ACME-COMPANION-SENTINEL-5d1e";
+const INSTRUCTIONS_MARKER = "<companion-instructions";
 
 function isBinaryOnPath(command: string): boolean {
   const pathEnv = process.env.PATH ?? "";
@@ -148,7 +159,7 @@ async function runMate(
     // what lets `claude`/`opencode` resolve to the actual system install.
     const child = spawn("bun", [path.join(APP_ROOT, "src/cli.ts"), ...args], {
       cwd,
-      env: {
+      env: withoutParentClaudeSession({
         ...process.env,
         HOME: scenario.home,
         PWD: cwd,
@@ -164,7 +175,7 @@ async function runMate(
         MATE_POLICY_JSON: "",
         MATE_DISABLE_OPENCODE_PLUGIN_PREFETCH: "1",
         ...env,
-      },
+      }),
       stdio: "pipe",
     });
 
@@ -512,6 +523,10 @@ interface MockModelServer {
   close(): Promise<void>;
 }
 
+type MockReply = { text: string } | { toolUse: { name: string; input: unknown } };
+type MockResponder = (request: CapturedRequest) => MockReply;
+const replyHi: MockResponder = () => ({ text: "hi" });
+
 function flattenSystemPrompt(body: string): string {
   let parsed: unknown;
   try {
@@ -551,13 +566,63 @@ function countOccurrences(haystack: string, needle: string): number {
   return count;
 }
 
+function streamReply(res: ServerResponse, id: string, reply: MockReply): void {
+  const block =
+    "text" in reply
+      ? {
+          start: { type: "text", text: "" },
+          delta: { type: "text_delta", text: reply.text },
+          stopReason: "end_turn",
+        }
+      : {
+          start: { type: "tool_use", id: `toolu_${id}`, name: reply.toolUse.name, input: {} },
+          delta: { type: "input_json_delta", partial_json: JSON.stringify(reply.toolUse.input) },
+          stopReason: "tool_use",
+        };
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+  const send = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  send("message_start", {
+    type: "message_start",
+    message: {
+      id,
+      type: "message",
+      role: "assistant",
+      model: "mock-model",
+      content: [],
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { input_tokens: 1, output_tokens: 0 },
+    },
+  });
+  send("content_block_start", {
+    type: "content_block_start",
+    index: 0,
+    content_block: block.start,
+  });
+  send("content_block_delta", { type: "content_block_delta", index: 0, delta: block.delta });
+  send("content_block_stop", { type: "content_block_stop", index: 0 });
+  send("message_delta", {
+    type: "message_delta",
+    delta: { stop_reason: block.stopReason, stop_sequence: null },
+    usage: { output_tokens: 1 },
+  });
+  send("message_stop", { type: "message_stop" });
+  res.end();
+}
+
 // Starts a minimal HTTP server that stands in for the real Anthropic Messages
 // API. Claude Code posts to a path containing `/v1/messages`; OpenCode posts
 // to a path containing `/messages` (no `/v1` prefix) — match on either shape.
 // Both `claude --print` and `opencode run` request streaming by default, so a
 // minimal SSE response is required for a real turn to complete; a
 // non-streaming JSON reply is served as a fallback for completeness.
-async function startMockModelServer(): Promise<MockModelServer> {
+async function startMockModelServer(respond: MockResponder = replyHi): Promise<MockModelServer> {
   const requests: CapturedRequest[] = [];
 
   const server = http.createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -582,48 +647,12 @@ async function startMockModelServer(): Promise<MockModelServer> {
         // non-JSON body; fall through to the non-streaming reply below
       }
 
-      requests.push({ url: req.url ?? "", body: raw, model });
+      const captured = { url: req.url ?? "", body: raw, model };
+      requests.push(captured);
+      const reply = respond(captured);
 
       if (streaming) {
-        res.writeHead(200, {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        });
-        const send = (event: string, data: unknown) => {
-          res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-        };
-        send("message_start", {
-          type: "message_start",
-          message: {
-            id: "msg_mock",
-            type: "message",
-            role: "assistant",
-            model: "mock-model",
-            content: [],
-            stop_reason: null,
-            stop_sequence: null,
-            usage: { input_tokens: 1, output_tokens: 0 },
-          },
-        });
-        send("content_block_start", {
-          type: "content_block_start",
-          index: 0,
-          content_block: { type: "text", text: "" },
-        });
-        send("content_block_delta", {
-          type: "content_block_delta",
-          index: 0,
-          delta: { type: "text_delta", text: "hi" },
-        });
-        send("content_block_stop", { type: "content_block_stop", index: 0 });
-        send("message_delta", {
-          type: "message_delta",
-          delta: { stop_reason: "end_turn", stop_sequence: null },
-          usage: { output_tokens: 1 },
-        });
-        send("message_stop", { type: "message_stop" });
-        res.end();
+        streamReply(res, `msg_mock_${requests.length}`, reply);
       } else {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
@@ -656,48 +685,365 @@ async function startMockModelServer(): Promise<MockModelServer> {
   };
 }
 
+/** Includes the messages, tool results too: hook context arrives there, not in the system prompt. */
+function flattenRequest(body: string): string {
+  let parsed: { messages?: Array<{ content?: unknown }> };
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return "";
+  }
+  const messageText = (content: unknown): string => {
+    if (typeof content === "string") return content;
+    if (!Array.isArray(content)) return "";
+    return content
+      .map((block: { text?: unknown; content?: unknown }) =>
+        typeof block?.text === "string" ? block.text : messageText(block?.content),
+      )
+      .join("\n");
+  };
+  return [
+    flattenSystemPrompt(body),
+    ...(parsed.messages ?? []).map((message) => messageText(message.content)),
+  ].join("\n");
+}
+
+function expectExactlyOnce(haystack: string, needle: string, label: string): void {
+  const count = countOccurrences(haystack, needle);
+  if (count !== 1) throw new Error(`${label} (${JSON.stringify(needle)}) appeared ${count} times`);
+}
+
+function assertCompanionRulesOnce(body: string, context: string): void {
+  const request = flattenRequest(body);
+  expectExactlyOnce(request, COMPANION_RULE_SENTENCE, `${context}: MATE:COMPANION rule sentence`);
+  expectExactlyOnce(request, USER_SENTINEL, `${context}: user sentinel`);
+}
+
+/** A user-written section the template does not hold, so only real delivery can carry it. */
+async function addUserSentinel(scenario: E2EScenario): Promise<void> {
+  await fs.appendFile(
+    path.join(scenario.companion, "AGENTS.md"),
+    `\n## Acme notes\n\n- ${USER_SENTINEL}\n`,
+    "utf8",
+  );
+}
+
+/**
+ * The conversation request that carries `prompt`. Only conversation turns
+ * offer tools; Claude Code's session-title request quotes the prompt too.
+ */
+function requestFor(mock: MockModelServer, prompt: string): CapturedRequest {
+  const found = mock.requests.find(
+    (request) =>
+      toolNames(request.body).length > 0 && flattenRequest(request.body).includes(prompt),
+  );
+  if (!found) {
+    throw new Error(
+      `no captured request carries ${JSON.stringify(prompt)} (${mock.requests.length} captured)`,
+    );
+  }
+  return found;
+}
+
 function assertMarkersAppearExactlyOnce(body: string): void {
   const system = flattenSystemPrompt(body);
   for (const marker of COMPANION_GUIDANCE_MARKERS) {
-    expect(countOccurrences(system, marker)).toBe(1);
+    expectExactlyOnce(system, marker, "system prompt guidance marker");
   }
+}
+
+/**
+ * The scenario's own environment for a real `claude`: no `CLAUDE_CODE_*` or
+ * `CLAUDECODE` from a Claude session running this suite, which would otherwise
+ * change what the child loads.
+ */
+function withoutParentClaudeSession(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const clean = { ...env };
+  for (const name of Object.keys(clean)) {
+    if (name === "CLAUDECODE" || name.startsWith("CLAUDE_CODE_")) delete clean[name];
+  }
+  return clean;
+}
+
+async function runPlainClaude(
+  scenario: E2EScenario,
+  cwd: string,
+  args: string[],
+  mock: MockModelServer,
+): Promise<CliRunResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("claude", args, {
+      cwd,
+      env: withoutParentClaudeSession({
+        ...plainEnv(scenario),
+        PWD: cwd,
+        ANTHROPIC_API_KEY: DUMMY_API_KEY,
+        ANTHROPIC_BASE_URL: mock.baseUrl,
+      }),
+      stdio: "pipe",
+    });
+    let stdout = "";
+    let stderr = "";
+    const watchdog = setTimeout(() => child.kill("SIGKILL"), RUN_MATE_WATCHDOG_MS);
+    watchdog.unref?.();
+    child.stdout.on("data", (chunk) => (stdout += chunk.toString()));
+    child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
+    child.on("error", reject);
+    child.on("close", (exitCode) => {
+      clearTimeout(watchdog);
+      resolve({ exitCode: exitCode ?? 1, stdout, stderr });
+    });
+    child.stdin.end();
+  });
+}
+
+const RESUME_SENTINEL = "ACME-RESUME-SENTINEL-9b2c";
+const DELEGATE_PROMPT = "ACME-DELEGATE: start one general-purpose subagent";
+const SUBAGENT_TASK = "ACME-SUBAGENT-TASK: reply with ok";
+
+function toolNames(body: string): string[] {
+  try {
+    const tools = (JSON.parse(body) as { tools?: Array<{ name?: string }> }).tools ?? [];
+    return tools.map((tool) => tool.name ?? "");
+  } catch {
+    return [];
+  }
+}
+
+function isSubagentRequest(request: CapturedRequest): boolean {
+  const text = flattenRequest(request.body);
+  return text.includes(SUBAGENT_TASK) && !text.includes(DELEGATE_PROMPT);
+}
+
+const delegateOnce: MockResponder = (request) => {
+  const text = flattenRequest(request.body);
+  const agentTool = toolNames(request.body).find((name) => name === "Agent" || name === "Task");
+  if (agentTool && text.includes(DELEGATE_PROMPT) && !request.body.includes('"tool_result"')) {
+    return {
+      toolUse: {
+        name: agentTool,
+        input: {
+          description: "acme check",
+          prompt: SUBAGENT_TASK,
+          subagent_type: "general-purpose",
+        },
+      },
+    };
+  }
+  return { text: "ok" };
+};
+
+async function claudeScenario(prefix: string): Promise<E2EScenario> {
+  const scenario = await createScenario(prefix);
+  initWorkingRepoGit(scenario);
+  expect((await setupCompanion(scenario, ["claude"])).exitCode).toBe(0);
+  expect((await linkRepository(scenario)).exitCode).toBe(0);
+  await addUserSentinel(scenario);
+  return scenario;
+}
+
+function mateClaudeEnv(mock: MockModelServer): NodeJS.ProcessEnv {
+  return { ANTHROPIC_API_KEY: DUMMY_API_KEY, ANTHROPIC_BASE_URL: mock.baseUrl };
+}
+
+/** A linked worktree of the working repository, with no `.claude/` and no manifest of its own. */
+async function linkedWorktree(scenario: E2EScenario): Promise<string> {
+  runGit(scenario.working, [
+    "-c",
+    "user.email=mate-e2e@example.com",
+    "-c",
+    "user.name=Mate E2E",
+    "commit",
+    "--allow-empty",
+    "-qm",
+    "initial",
+  ]);
+  const worktree = path.join(scenario.root, "app-worktree");
+  runGit(scenario.working, ["worktree", "add", "-q", worktree]);
+  /** Its `.mate/` names the companion, as in the incident's worktree: registry and projection only. */
+  for (const file of [repoLocalRegistryPath, projectionYamlPath, projectionEnvPath]) {
+    await fs.mkdir(path.dirname(file(worktree)), { recursive: true });
+    await fs.copyFile(file(scenario.working), file(worktree));
+  }
+  await expect(fs.access(path.join(worktree, ".claude"))).rejects.toThrow();
+  await expect(fs.access(path.join(worktree, ".mate", "runtime-documents.json"))).rejects.toThrow();
+  return worktree;
 }
 
 describe.skipIf(!runRealAgentTests || !hasClaude)(
   "real claude agent — system prompt injection",
   () => {
     test("companion guidance markers each appear exactly once in the real system prompt", async () => {
-      const scenario = await createScenario("mate-cli-e2e-real-claude-");
-      initWorkingRepoGit(scenario);
+      const scenario = await claudeScenario("mate-cli-e2e-real-claude-");
       const mock = await startMockModelServer();
 
       try {
-        expect((await setupCompanion(scenario, ["claude"])).exitCode).toBe(0);
-        expect((await linkRepository(scenario)).exitCode).toBe(0);
-
         const result = await runMate(scenario, {
           cwd: scenario.working,
           args: ["claude", "--print", "say hi"],
           input: "y\n",
-          env: {
-            ANTHROPIC_API_KEY: DUMMY_API_KEY,
-            ANTHROPIC_BASE_URL: mock.baseUrl,
-          },
+          env: mateClaudeEnv(mock),
         });
 
         expect(result.exitCode).toBe(0);
-        expect(mock.requests.length).toBeGreaterThan(0);
-        assertMarkersAppearExactlyOnce(mock.requests[0]!.body);
-        expect(
-          countOccurrences(
-            flattenSystemPrompt(mock.requests[0]!.body),
-            CONTEXT_MODE_GUIDANCE_MARKER,
-          ),
-        ).toBe(0);
+        /** The conversation request, not Claude Code's session-title request. */
+        const body = requestFor(mock, "say hi").body;
+        assertMarkersAppearExactlyOnce(body);
+        expect(countOccurrences(flattenSystemPrompt(body), CONTEXT_MODE_GUIDANCE_MARKER)).toBe(0);
+        /** The appended prompt carries them; no hook output adds a second copy. */
+        expectExactlyOnce(
+          flattenSystemPrompt(body),
+          INSTRUCTIONS_MARKER,
+          "mate claude: system prompt",
+        );
+        expectExactlyOnce(flattenRequest(body), INSTRUCTIONS_MARKER, "mate claude: request");
+        assertCompanionRulesOnce(body, "mate claude");
       } finally {
         await mock.close();
       }
     });
+
+    test("a companion-scoped launch gets the rules once, from native memory", async () => {
+      const scenario = await claudeScenario("mate-cli-e2e-real-claude-companion-");
+      const mock = await startMockModelServer();
+
+      try {
+        const result = await runMate(scenario, {
+          cwd: scenario.companion,
+          args: ["claude", "--print", "say hi", "--", "--companion"],
+          input: "y\n",
+          env: mateClaudeEnv(mock),
+        });
+
+        expect(result.exitCode).toBe(0);
+        const body = requestFor(mock, "say hi").body;
+        assertCompanionRulesOnce(body, "companion-scoped launch");
+        expect(countOccurrences(flattenRequest(body), INSTRUCTIONS_MARKER)).toBe(0);
+      } finally {
+        await mock.close();
+      }
+    });
+
+    test("a general-purpose subagent of mate claude gets the rules once", async () => {
+      const scenario = await claudeScenario("mate-cli-e2e-real-claude-subagent-");
+      const mock = await startMockModelServer(delegateOnce);
+
+      try {
+        const result = await runMate(scenario, {
+          cwd: scenario.working,
+          args: ["claude", "--print", DELEGATE_PROMPT],
+          input: "y\n",
+          env: mateClaudeEnv(mock),
+        });
+
+        expect(result.exitCode).toBe(0);
+        const subagent = mock.requests.find(isSubagentRequest);
+        if (!subagent) throw new Error(`no subagent request among ${mock.requests.length}`);
+        expectExactlyOnce(flattenRequest(subagent.body), INSTRUCTIONS_MARKER, "managed subagent");
+        assertCompanionRulesOnce(subagent.body, "managed subagent");
+      } finally {
+        await mock.close();
+      }
+    }, 120_000);
+  },
+);
+
+describe.skipIf(!runRealAgentTests || !hasClaude)(
+  "real claude — plain session in a Claude-wrapped repository",
+  () => {
+    test("a plain claude --print gets the rules once, and so does its subagent", async () => {
+      const scenario = await claudeScenario("mate-cli-e2e-plain-claude-");
+      expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(0);
+      const mock = await startMockModelServer(delegateOnce);
+
+      try {
+        const result = await runPlainClaude(
+          scenario,
+          scenario.working,
+          ["--print", DELEGATE_PROMPT],
+          mock,
+        );
+
+        expect(result.exitCode).toBe(0);
+        const main = requestFor(mock, DELEGATE_PROMPT).body;
+        expectExactlyOnce(flattenRequest(main), INSTRUCTIONS_MARKER, "plain session");
+        assertCompanionRulesOnce(main, "plain session");
+        const subagent = mock.requests.find(isSubagentRequest);
+        if (!subagent) throw new Error(`no subagent request among ${mock.requests.length}`);
+        expectExactlyOnce(flattenRequest(subagent.body), INSTRUCTIONS_MARKER, "plain subagent");
+        assertCompanionRulesOnce(subagent.body, "plain subagent");
+      } finally {
+        await mock.close();
+      }
+    }, 120_000);
+
+    test("a plain session in a linked worktree gets the rules once from the main checkout's wrap", async () => {
+      const scenario = await claudeScenario("mate-cli-e2e-plain-claude-worktree-");
+      expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(0);
+      const worktree = await linkedWorktree(scenario);
+      const mock = await startMockModelServer();
+
+      try {
+        const result = await runPlainClaude(scenario, worktree, ["--print", "say hi"], mock);
+
+        expect(result.exitCode).toBe(0);
+        const body = requestFor(mock, "say hi").body;
+        expectExactlyOnce(flattenRequest(body), INSTRUCTIONS_MARKER, "worktree session");
+        assertCompanionRulesOnce(body, "worktree session");
+      } finally {
+        await mock.close();
+      }
+    }, 120_000);
+
+    /**
+     * T3 resumes a thread with `--resume`, and the hook fires again there.
+     * Claude Code 2.1.309 keeps one copy when the text is unchanged; after the
+     * companion `AGENTS.md` changed, the resumed request holds the earlier copy
+     * from history plus the current one: the accepted cost of covering
+     * conversations that predate the hook.
+     */
+    test("a resumed plain session records its copy count", async () => {
+      const scenario = await claudeScenario("mate-cli-e2e-plain-claude-resume-");
+      expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(0);
+      const mock = await startMockModelServer();
+      const sessionId = crypto.randomUUID();
+      const copiesIn = (prompt: string) => {
+        const request = flattenRequest(requestFor(mock, prompt).body);
+        const counts = {
+          instructions: countOccurrences(request, INSTRUCTIONS_MARKER),
+          firstSentinel: countOccurrences(request, USER_SENTINEL),
+          resumeSentinel: countOccurrences(request, RESUME_SENTINEL),
+        };
+        console.info(`resumed plain session, ${JSON.stringify(prompt)}: ${JSON.stringify(counts)}`);
+        return counts;
+      };
+      const run = async (args: string[]) =>
+        expect((await runPlainClaude(scenario, scenario.working, args, mock)).exitCode).toBe(0);
+
+      try {
+        await run(["--print", "--session-id", sessionId, "say hi"]);
+        await run(["--print", "--resume", sessionId, "say again"]);
+        expect(copiesIn("say again")).toEqual({
+          instructions: 1,
+          firstSentinel: 1,
+          resumeSentinel: 0,
+        });
+
+        /** Only a hook that fires on resume can deliver text written after the first run. */
+        await fs.appendFile(
+          path.join(scenario.companion, "AGENTS.md"),
+          `\n## Acme later\n\n- ${RESUME_SENTINEL}\n`,
+        );
+        await run(["--print", "--resume", sessionId, "say once more"]);
+        expect(copiesIn("say once more")).toEqual({
+          instructions: 2,
+          firstSentinel: 2,
+          resumeSentinel: 1,
+        });
+      } finally {
+        await mock.close();
+      }
+    }, 180_000);
   },
 );
 

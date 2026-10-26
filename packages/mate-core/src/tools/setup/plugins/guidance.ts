@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
+import { companionBlockMarkers } from "../../../runtime/managed-block";
 import { removeGraphifySection } from "../capabilities/graphify-shared";
 
 // Marker names derive from the framework identity, never the invocation name.
@@ -9,7 +10,7 @@ const upperName = () => FRAMEWORK_NAME.toUpperCase();
 
 function allMateStarts(): string[] {
   return [
-    `<!-- ${upperName()}:COMPANION:START -->`,
+    companionBlockMarkers(FRAMEWORK_NAME).start,
     "<!-- COMPANION:GUIDANCE:START -->",
     `<!-- ${upperName()}:COMPANION:GUIDANCE:START -->`,
     `<!-- ${upperName()}:GRAPHIFY:START -->`,
@@ -18,7 +19,7 @@ function allMateStarts(): string[] {
 
 function allMateEnds(): string[] {
   return [
-    `<!-- ${upperName()}:COMPANION:END -->`,
+    companionBlockMarkers(FRAMEWORK_NAME).end,
     "<!-- COMPANION:GUIDANCE:END -->",
     `<!-- ${upperName()}:COMPANION:GUIDANCE:END -->`,
     `<!-- ${upperName()}:GRAPHIFY:END -->`,

@@ -66,9 +66,10 @@ syncing by hand. See [Capabilities](/docs/capabilities) for what each one adds.
 ### Write the team rules
 
 `AGENTS.md` holds the instructions every agent reads. It starts with Mate's
-defaults. Replace them with your team's conventions: architecture boundaries,
-testing expectations, review rules, and anything an agent keeps getting wrong.
-Mate creates `AGENTS.md` only when it is missing and never overwrites it.
+defaults in a `MATE:COMPANION` block. Add your team's conventions below that
+block: architecture boundaries, testing expectations, review rules, and
+anything an agent keeps getting wrong. At every launch Mate refreshes only its
+block and keeps your text.
 
 </Step>
 <Step>

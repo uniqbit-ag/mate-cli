@@ -9,22 +9,13 @@ import {
 import { hasLaunchEnvironment, resolveCompanionRuntime } from "../runtime/env";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
 import { mateVersion } from "../runtime/install";
+import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import type { HookEnv } from "./validate-artifact-path";
 
 export interface BannerOutcome {
   exitCode: number;
   stdout: string;
 }
-
-/**
- * Marks the copy a wrap inlines into the Working Repository's settings. A
- * managed launch loads the plugin's own copy *and* that document, and both
- * registrations resolve to the same command against the same environment, so
- * nothing inside the process tells them apart. The flag is what keeps the
- * banner from printing twice in exactly the session that is configured
- * correctly — the projected copy defers, the launch's own copy prints.
- */
-export const PROJECTED_BANNER_FLAG = "--projected";
 
 /**
  * Resolves in-process from either source — no subprocess in either branch.
@@ -37,7 +28,7 @@ export async function buildBanner(
   argv: readonly string[] = [],
   syncOptions: UnattendedSyncOptions = {},
 ): Promise<BannerOutcome> {
-  if (argv.includes(PROJECTED_BANNER_FLAG) && hasLaunchEnvironment(env)) {
+  if (argv.includes(PROJECTED_FLAG) && hasLaunchEnvironment(env)) {
     return { exitCode: 0, stdout: "" };
   }
 

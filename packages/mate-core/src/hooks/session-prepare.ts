@@ -12,6 +12,7 @@ import {
   type PrepareRun,
   type PrepareRunner,
 } from "../runtime/session-prepare-runner";
+import { instructionHookPayload, readHookInput } from "./companion-instructions";
 import type { HookEnv } from "./validate-artifact-path";
 
 export interface SessionPrepareHookOutcome {
@@ -37,11 +38,9 @@ export const sessionPrepareHookDeps: SessionPrepareHookDeps = {
   timeoutMs: PREPARE_TIMEOUT_MS,
 };
 
-const INERT: SessionPrepareHookOutcome = { exitCode: 0, stdout: "" };
-
 /** `systemMessage` only: the model must never be told to repair the companion. */
 function operatorMessage(lines: string[]): SessionPrepareHookOutcome {
-  if (lines.length === 0) return INERT;
+  if (lines.length === 0) return { exitCode: 0, stdout: "" };
   return { exitCode: 0, stdout: `${JSON.stringify({ systemMessage: lines.join("\n") })}\n` };
 }
 
@@ -68,20 +67,28 @@ export async function runSessionPrepareHook(
   cwd: string = process.cwd(),
   deps: SessionPrepareHookDeps = sessionPrepareHookDeps,
 ): Promise<SessionPrepareHookOutcome> {
-  if (hasLaunchEnvironment(env)) return INERT;
+  return operatorMessage(await prepareNotes(env, cwd, deps));
+}
+
+async function prepareNotes(
+  env: HookEnv,
+  cwd: string,
+  deps: SessionPrepareHookDeps,
+): Promise<string[]> {
+  if (hasLaunchEnvironment(env)) return [];
   const projectDir = env.CLAUDE_PROJECT_DIR || cwd;
   const projection = resolveProjection(projectDir);
-  if (!projection) return INERT;
+  if (!projection) return [];
   const plan = unmanagedClaudeDelivery(projection.repoRoot);
   const reconciles = plan.reconcile === "prepare-hook";
   const syncs = plan.gitSync === "prepare-hook";
-  if (!reconciles && !syncs) return INERT;
+  if (!reconciles && !syncs) return [];
 
   const mateBin = deps.mateBin();
   if (!mateBin) {
-    return operatorMessage([
+    return [
       `mate: session prepare skipped: ${runtimeDirectoryPath()} is missing; run \`mate\` once to repair it.`,
-    ]);
+    ];
   }
 
   const local = reconciles
@@ -90,12 +97,40 @@ export async function runSessionPrepareHook(
   if (syncs) deps.startSync(mateBin, projectDir);
 
   const verdict = local.ok ? "warning" : "failed";
-  return operatorMessage(local.notes.map((note) => `mate: session prepare ${verdict}: ${note}`));
+  return local.notes.map((note) => `mate: session prepare ${verdict}: ${note}`);
 }
 
-/** Plugin-shim entry. */
-export async function run(): Promise<number> {
-  const outcome = await runSessionPrepareHook(process.env);
-  if (outcome.stdout) process.stdout.write(outcome.stdout);
+/**
+ * The prepare, then the main thread's Companion Instructions: Claude Code runs
+ * an event's hooks in parallel, and the prepare rewrites the companion's
+ * `AGENTS.md` and `CLAUDE.md`, so a separate instruction hook could read them
+ * stale or half written. Only the wrap's `--projected` copy delivers them.
+ */
+export async function runSessionStartHook(
+  env: HookEnv,
+  cwd: string,
+  argv: readonly string[],
+  input: unknown,
+  deps: SessionPrepareHookDeps = sessionPrepareHookDeps,
+): Promise<SessionPrepareHookOutcome> {
+  const notes = await prepareNotes(env, cwd, deps);
+  const { hookSpecificOutput, systemMessage } = instructionHookPayload(env, cwd, argv, input) ?? {};
+  const messages = systemMessage ? [...notes, systemMessage] : notes;
+  if (!hookSpecificOutput) return operatorMessage(messages);
+  const output = {
+    hookSpecificOutput,
+    ...(messages.length > 0 ? { systemMessage: messages.join("\n") } : {}),
+  };
+  return { exitCode: 0, stdout: `${JSON.stringify(output)}\n` };
+}
+
+/** Plugin-shim entry. Ignores stdout errors, so a closed pipe cannot crash it with `EPIPE`. */
+export async function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+  const input = await readHookInput();
+  const outcome = await runSessionStartHook(process.env, process.cwd(), argv, input);
+  if (outcome.stdout) {
+    process.stdout.on("error", () => {});
+    process.stdout.write(outcome.stdout);
+  }
   return outcome.exitCode;
 }

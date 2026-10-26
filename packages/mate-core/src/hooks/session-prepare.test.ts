@@ -8,7 +8,12 @@ import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { manifestPath } from "../runtime/runtime-document-manifest";
 import type { PrepareRequest, PrepareRun } from "../runtime/session-prepare-runner";
-import { runSessionPrepareHook, type SessionPrepareHookDeps } from "./session-prepare";
+import { PROJECTED_FLAG } from "../runtime/projected-flag";
+import {
+  runSessionPrepareHook,
+  runSessionStartHook,
+  type SessionPrepareHookDeps,
+} from "./session-prepare";
 
 const tempRoots: string[] = [];
 
@@ -163,5 +168,64 @@ describe("session-prepare hook", () => {
     expect(outcome.exitCode).toBe(0);
     expect(outcome.stdout).toContain("run `mate` once");
     expect(order).toEqual([]);
+  });
+});
+
+describe("session-start hook", () => {
+  const sessionStart = { hook_event_name: "SessionStart", source: "startup" };
+
+  function companionOf(repo: string): string {
+    const companion = path.join(path.dirname(repo), "acme-companion");
+    fs.mkdirSync(companion, { recursive: true });
+    fs.writeFileSync(path.join(companion, "AGENTS.md"), "## Git\n\nACME-STALE\n");
+    return companion;
+  }
+
+  /** Claude Code runs an event's hooks in parallel, so only this order keeps the read off a rewrite. */
+  test("the wrap's copy delivers the instructions the local phase left", async () => {
+    const repo = projectedRepo("claude");
+    const companion = companionOf(repo);
+    const { deps } = fakeDeps();
+    const local = deps.runner;
+    deps.runner = (bin, dir) => async (request) => {
+      fs.writeFileSync(path.join(companion, "AGENTS.md"), "## Git\n\nACME-REFRESHED\n");
+      return local(bin, dir)(request);
+    };
+
+    const outcome = await runSessionStartHook({}, repo, [PROJECTED_FLAG], sessionStart, deps);
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { hookEventName: string; additionalContext: string };
+    };
+    expect(payload.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-REFRESHED");
+    expect(payload.hookSpecificOutput.additionalContext).not.toContain("ACME-STALE");
+  });
+
+  test("prepare notes and the instructions share one output", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps } = fakeDeps({ ok: true, notes: ["acme shadowed"] });
+
+    const outcome = await runSessionStartHook({}, repo, [PROJECTED_FLAG], sessionStart, deps);
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+      systemMessage: string;
+    };
+    expect(outcome.exitCode).toBe(0);
+    expect(payload.systemMessage).toBe("mate: session prepare warning: acme shadowed");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
+  });
+
+  test("the plugin's bare copy prepares but leaves the instructions to the wrap's", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook({}, repo, [], sessionStart, deps);
+
+    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
+    expect(order).toEqual(["local", "sync"]);
   });
 });

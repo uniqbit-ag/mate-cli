@@ -52,6 +52,7 @@ import {
   mateBannerHookGroups,
   mateGuardHookGroups,
   mateGuidanceHookGroups,
+  mateInstructionHookGroups,
   mateSessionPrepareHookGroups,
 } from "./claude-plugin-hooks";
 import { getSetupRootTemplates } from "./utils";
@@ -331,10 +332,15 @@ function renderManagedClaudeSettings(
 
 /**
  * Loaded by a managed session beside the launch's plugin. Mate hooks here run
- * twice there, inertly: guard is input-pure, guidance/prepare yield under a
- * launch env, banner is `--projected`. Capability groups run once: the launch
- * omits them from `--settings`. A launch passes no `--add-dir`; it relies on
- * `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` for companion `CLAUDE.md`.
+ * twice there, inertly: guard is input-pure, guidance/instructions/prepare
+ * yield under a launch env, banner, prepare and the instruction copy are `--projected`.
+ * Capability groups run once: the launch omits them from `--settings`.
+ *
+ * `permissions.additionalDirectories` grants companion file access only:
+ * Claude Code loads no `CLAUDE.md` from a settings directory, whatever
+ * `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` says. The prepare and
+ * instruction hooks here and the launch's appended prompt deliver the
+ * companion's rules instead.
  *
  * Unlike {@link renderManagedClaudeSettings}, this carries no
  * `autoMemoryEnabled: false`. Whether a Wrap should leave the user's choice
@@ -354,6 +360,7 @@ function claudeSettingsRegions(
       ...mateGuidanceHookGroups(),
       ...mateSessionPrepareHookGroups(),
     ],
+    SubagentStart: mateInstructionHookGroups(),
   };
   const events = [...new Set([...Object.keys(mateHooks), ...Object.keys(capabilityHooks)])];
   return [
@@ -369,12 +376,14 @@ function claudeSettingsRegions(
      * repository as a Managed Session — silently, since looking managed is
      * exactly what makes the guidance hook emit nothing. Guidance must be the
      * projection's to give in an Unmanaged Session, so no `MATE_*` key may
-     * survive here.
+     * survive here. It sets no entry of its own: the
+     * `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` an earlier wrap set is
+     * reverted from the manifest, so a user's own value stays.
      */
     {
       at: ["env"],
       kind: "map",
-      entries: { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1" },
+      entries: {},
       stripPrefix: "MATE_",
     },
     {

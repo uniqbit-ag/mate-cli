@@ -165,14 +165,19 @@ function applyRegion(document: Record<string, unknown>, region: ManagedRegion): 
     return;
   }
   if (region.kind === "map") {
-    const found = isRecord(container[key]) ? (container[key] as Record<string, unknown>) : {};
+    const present = isRecord(container[key]);
+    const found = present ? (container[key] as Record<string, unknown>) : {};
     /** Keys an older Mate wrote here, dropped before this Mate's own are set. */
     const existing = region.stripPrefix
       ? Object.fromEntries(
           Object.entries(found).filter(([name]) => !name.startsWith(region.stripPrefix!)),
         )
       : found;
-    container[key] = { ...existing, ...region.entries };
+    const next = { ...existing, ...region.entries };
+    /** A map only stripped is not created, and one stripped bare is not left as `{}`. */
+    if (Object.keys(next).length > 0) container[key] = next;
+    else if (present && Object.keys(found).length > 0) delete container[key];
+    else if (!present) pruneEmptyContainers(document, region.at);
     return;
   }
   const existing = Array.isArray(container[key]) ? (container[key] as unknown[]) : [];
@@ -212,10 +217,14 @@ function revertRegion(document: Record<string, unknown>, region: ManagedRegion):
     }
   }
 
-  /** An emptied container Mate created is not left behind as `{}`. */
-  for (let depth = region.at.length - 1; depth > 0; depth -= 1) {
-    const parent = containerFor(document, region.at.slice(0, depth), false);
-    const parentKey = region.at[depth - 1];
+  pruneEmptyContainers(document, region.at);
+}
+
+/** An emptied container Mate created is not left behind as `{}`. */
+function pruneEmptyContainers(document: Record<string, unknown>, at: string[]): void {
+  for (let depth = at.length - 1; depth > 0; depth -= 1) {
+    const parent = containerFor(document, at.slice(0, depth), false);
+    const parentKey = at[depth - 1];
     const node = parent?.[parentKey];
     if (parent && isRecord(node) && Object.keys(node).length === 0) delete parent[parentKey];
   }

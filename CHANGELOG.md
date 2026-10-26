@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Companion instructions reach Claude sessions
+
+- The companion `AGENTS.md` now reaches every Claude session in a Working Repository once. `mate claude` appends it to the system prompt after the companion guidance. Plain `claude` sessions, Agent SDK sessions that load the project's settings, and linked worktrees that hold the repository's `.mate/` folder get it from the wrap's `SessionStart` session-prepare hook once preparation finishes; subagents get it from a `SubagentStart` hook, except Explore, Plan and forks. A companion-scoped launch loads the file natively, as before.
+- The delivered text is the companion `AGENTS.md` without the `mate:managed` blocks other runtimes own, plus the Claude blocks from the companion `CLAUDE.md`, with `$MATE_REPO_PATH`, `$MATE_REPO_ID`, `$MATE_ARTIFACT_PATH` and `$MATE_WRAPPER_BIN_PATH` filled and block-level HTML comments removed the way Claude Code removes them. It is limited to 9,000 characters: a longer file keeps the `MATE:COMPANION` block whole and as many whole `##` sections as fit, and ends with a line naming the sections left out and the file's path. A `MATE:COMPANION` block that leaves no room for that line is still delivered whole, and the hooks ask you to shorten it.
+- When the arguments forwarded to `mate claude` resume or continue a conversation, it passes `--system-prompt-snapshot off`, so that conversation gets the current text; a fresh session keeps Claude Code's default snapshot. Your own `--system-prompt-snapshot` wins, and your own `--append-system-prompt` now follows Mate's text in the same flag instead of replacing it.
+- A missing companion `AGENTS.md` fails `mate claude` from a Working Repository before Claude starts. In a plain session the hooks state the fact in one line and never block the session.
+- Neither the wrap nor the launch sets `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` any more: Claude Code applies it only to `--add-dir` directories, so it never delivered the companion rules. A re-wrap removes the copy an earlier wrap wrote and keeps a value you set yourself.
+- `mate doctor` warns when the companion `CLAUDE.md` holds text besides `@AGENTS.md` and Mate-managed blocks, since that text reaches only sessions started in the companion.
+
 ### Capabilities can ship Claude plugins
 
 - A Capability, built-in or dynamic, can declare Claude Code plugin folders as `pluginDirectories: [{ path }]` under its `claude` Runtime Contribution. `mate claude` passes each enabled folder as `--plugin-dir`, after Mate's own plugin.
@@ -18,6 +27,7 @@
   - for plain sessions, the marketplace that publishes it, or why it is not published (`marketplace` and `unpublishedReason` in `--json`).
 
   When a Capability's contributions fail to load, doctor names the Capability and the error, still reports everything else, and exits non-zero.
+
 - context-mode uses the new contribution, so it now loads in plain `claude` sessions of wrapped repositories too. A companion-scoped `mate claude` passes the same two `--plugin-dir` flags in the same order. In a wrapped repository, `mate claude` passes only Mate's own plugin flag, and the wrap loads context-mode. A missing or broken package still fails `mate claude` before Claude starts. Its Claude package check moved from the Claude adapter into context-mode's own launch preflight, which skips plain sessions. A missing package now names the expected version instead of a bare "no such file" error.
 - Capability preflight hooks receive the kind of session being prepared (`sessionKind`). `RuntimeContributions`, `RuntimeContributionsByRuntime`, `PluginDirectoryContribution` and `SessionKind` are exported as types for dynamic plugin authors.
 

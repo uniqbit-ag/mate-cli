@@ -62,9 +62,18 @@ async function withPath<T>(value: string, fn: () => Promise<T> | T): Promise<T> 
 
 const CLAUDE_WRAP = wrapStateOf(withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, []));
 
+/** These tests pin flags and environment; the instructions' own content is `claude.test.ts`'s. */
+const STUB_INSTRUCTIONS = (input: { companionPath: string }) => ({
+  kind: "available" as const,
+  source: path.join(input.companionPath, "AGENTS.md"),
+  text: "<companion-instructions>stub</companion-instructions>",
+  omitted: [],
+  oversized: false,
+});
+
 /** As a launch hands the context over: planned by the adapter after a prepare that wrapped for Claude. */
 function planClaude(context: AdapterContext, claudePluginDirectories?: string[]) {
-  return new ClaudeAdapter().planLaunch(context, {
+  return new ClaudeAdapter(STUB_INSTRUCTIONS).planLaunch(context, {
     ok: true,
     mode: "attended",
     runtime: "claude",
@@ -148,13 +157,15 @@ afterEach(async () => {
 
 describe("LaunchAdapter.prepareLaunch", () => {
   test("builds the Claude invocation without rewriting the model base URL", async () => {
-    const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
-      prepareClaudeLaunch(makeContext(), ["--print", "hello"]),
+    /** Unset around the call: a session wrapped by an older Mate exports the variable itself. */
+    const launch = await withEnv(
+      { ANTHROPIC_BASE_URL: undefined, CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: undefined },
+      () => prepareClaudeLaunch(makeContext(), ["--print", "hello"]),
     );
 
     expect(launch.command).toBe("claude");
     expect(launch.args[0]).toBe("--append-system-prompt");
-    expect(launch.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("1");
+    expect(launch.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBeUndefined();
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
 
@@ -652,6 +663,8 @@ describe("Claude companion settings launch flags", () => {
     const broken = await makeTempDir("mate-claude-plugin-broken-");
     expect(() => validateClaudePluginAssets(broken)).toThrow(/plugin\.json/);
     expect(() => validateClaudePluginAssets(broken)).toThrow(/validate-artifact-path\.mjs/);
+    /** The plugin's copy is the only subagent delivery in a managed-repo session. */
+    expect(() => validateClaudePluginAssets(broken)).toThrow(/companion-instructions\.mjs/);
   });
 });
 

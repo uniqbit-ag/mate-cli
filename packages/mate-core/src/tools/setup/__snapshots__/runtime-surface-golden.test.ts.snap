@@ -176,7 +176,15 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
 3. Use grep/glob/read only after graphify was tried.</order>
 <notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
 <post-edit>After code changes, run mate cap index --graphify.</post-edit>
-</codebase-exploration-rules>"
+</codebase-exploration-rules>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -185,9 +193,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -240,8 +246,25 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -252,9 +275,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -934,7 +955,15 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
 3. Use grep/glob/read only after graphify was tried.</order>
 <notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
 <post-edit>After code changes, run mate cap index --graphify.</post-edit>
-</codebase-exploration-rules>"
+</codebase-exploration-rules>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -943,9 +972,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -1052,8 +1079,25 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -1064,9 +1108,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -1595,7 +1637,15 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
 1. tokensave_context first.
 2. Use grep/glob/read only after tokensave is empty or irrelevant.</order>
 <post-edit>After code changes, run mate cap index --tokensave.</post-edit>
-</codebase-exploration-rules>"
+</codebase-exploration-rules>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -1604,9 +1654,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -1671,8 +1719,25 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -1723,9 +1788,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -2433,7 +2496,15 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
 1. tokensave_context first.
 2. Use grep/glob/read only after tokensave is empty or irrelevant.</order>
 <post-edit>After code changes, run mate cap index --tokensave.</post-edit>
-</codebase-exploration-rules>"
+</codebase-exploration-rules>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -2442,9 +2513,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -2560,8 +2629,25 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -2612,9 +2698,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -3122,7 +3206,15 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
   </mandatory-rules>
-</companion-policy>"
+</companion-policy>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -3133,9 +3225,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
     "--plugin-dir",
     "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -3188,8 +3278,25 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -3200,9 +3307,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -3808,7 +3913,15 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
   </mandatory-rules>
-</companion-policy>"
+</companion-policy>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -3819,9 +3932,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     "--plugin-dir",
     "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -3917,8 +4028,25 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -3929,9 +4057,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -4406,7 +4532,15 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
   </mandatory-rules>
-</companion-policy>"
+</companion-policy>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -4415,9 +4549,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -4470,8 +4602,25 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -4482,9 +4631,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -5076,7 +5223,15 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     <rule id="wrapper-only-cli-execution" severity="critical">For every CLI declared in cli-tools, invoke the exact path in its invokeAs attribute. Correct: <wrapper-bin>/openspec status ... . Incorrect: openspec status ... . Do not run bare openspec or graphify commands and do not rely on PATH, aliases, or shell functions. If the exact wrapper path is unavailable, stop and report it.</rule>
     <rule id="secret-handling" severity="critical">Never read, print, copy, or write secret files (.env, .env.*, keys, certificates, credential files such as .npmrc or .netrc) or secret values. To learn which variables exist, read only the example files (.env.example, .env.sample, .env.template, .env.dist). Refer to a secret by its variable name only. Do not print environment variables that may hold secrets. When a secret must be set or rotated, ask the user to do it instead of writing it yourself. Guarded calls are blocked; the companion's framework.yaml secrets block is the user's switch, not yours.</rule>
   </mandatory-rules>
-</companion-policy>"
+</companion-policy>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -5085,9 +5240,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -5183,8 +5336,25 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -5195,9 +5365,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -5702,7 +5870,15 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository. areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
     <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing only publishes an already-archived change: archiving is a precondition, and running publish on a still-active change is an error that names openspec archive as the missing step. Publish never archives and never applies delta specs itself, so archive first — by the archive workflow or an already-synced flow such as openspec-sync-specs — and then publish. Publish also refuses to run anywhere but the companion's default branch.</rule>
   </mandatory-rules>
-</companion-policy>"
+</companion-policy>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -5711,9 +5887,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -5766,8 +5940,25 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -5778,9 +5969,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -6451,7 +6640,15 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     <rule id="openspec-scope" severity="critical">In OpenSpec, the frontmatter repository identifies the Working Repository. areas are repository-relative paths within that repository. Canonical specs use repository plus flat areas; change artifacts use paired scopes entries. In a monorepo, an Area normally stops at the package root. A cross-repository change may declare multiple scopes, but each resulting spec remains owned by one repository, and each requirement must bind its Area explicitly.</rule>
     <rule id="openspec-publish" severity="critical">Archiving an OpenSpec change is a local operation and publishes nothing. Publish through the mate-artifact-publish skill: it lists candidates with mate artifact pending --json, takes an explicit user selection, confirms the commit, tag, and push, then runs mate artifact publish "<name>" --json per selected change. That command is the only sanctioned publication; never hand-commit or hand-tag one. Publishing only publishes an already-archived change: archiving is a precondition, and running publish on a still-active change is an error that names openspec archive as the missing step. Publish never archives and never applies delta specs itself, so archive first — by the archive workflow or an already-synced flow such as openspec-sync-specs — and then publish. Publish also refuses to run anywhere but the companion's default branch.</rule>
   </mandatory-rules>
-</companion-policy>"
+</companion-policy>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -6460,9 +6657,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -6560,8 +6755,25 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -6572,9 +6784,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -7269,7 +7479,15 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
 3. Use grep/glob/read only after tokensave and graphify were tried.</order>
 <notes>Dirty graph files are expected. Use wiki/index.md for broad navigation; GRAPH_REPORT.md only if query/path/explain fall short.</notes>
 <post-edit>After code changes, run mate cap index.</post-edit>
-</codebase-exploration-rules>"
+</codebase-exploration-rules>
+
+<companion-instructions source="<root>/companion/AGENTS.md">
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
+- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
+- Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
+- Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
+</companion-instructions>"
 ,
     "--setting-sources",
     "user,project,local",
@@ -7280,9 +7498,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     "--plugin-dir",
     "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -7403,8 +7619,25 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -7455,9 +7688,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
