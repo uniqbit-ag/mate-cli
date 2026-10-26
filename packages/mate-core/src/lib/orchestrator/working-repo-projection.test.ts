@@ -303,6 +303,27 @@ describe("the projection round-trip", () => {
     );
   });
 
+  test("a wrap links the companion's /opsx commands and unwrapping removes only that link", async () => {
+    const { repoPath, companionPath, repository } = await makeSeededRepo("projection-commands-");
+    const opsx = path.join(companionPath, ".claude", "commands", "opsx");
+    await fs.mkdir(opsx, { recursive: true });
+    await fs.writeFile(path.join(opsx, "propose.md"), "propose\n", "utf8");
+    const userCommand = path.join(repoPath, ".claude", "commands", "deploy.md");
+    await fs.mkdir(path.dirname(userCommand), { recursive: true });
+    await fs.writeFile(userCommand, "deploy\n", "utf8");
+    const before = await snapshot(repoPath);
+
+    await projectEveryScope(repoPath, companionPath, repository);
+    expect(
+      await fs.readFile(path.join(repoPath, ".claude", "commands", "opsx", "propose.md"), "utf8"),
+    ).toBe("propose\n");
+
+    await unproject({ repoPath, registeredCompanionPaths: [companionPath] });
+
+    expect(await snapshot(repoPath)).toEqual(before);
+    expect(await fs.readFile(path.join(opsx, "propose.md"), "utf8")).toBe("propose\n");
+  });
+
   test("unprojecting twice removes nothing further and leaves the tree unchanged", async () => {
     const { repoPath, companionPath, repository } = await makeSeededRepo("projection-twice-");
     await projectEveryScope(repoPath, companionPath, repository);

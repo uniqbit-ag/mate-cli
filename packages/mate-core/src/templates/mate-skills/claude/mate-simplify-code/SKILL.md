@@ -19,21 +19,12 @@ Simplify code by reducing complexity while preserving exact behavior. The goal i
 
 - Inspect the requested scope and its callers, callees, and tests before editing. Use the available code-graph tools before broad source scans.
 - Keep the refactor limited to the requested scope; do not make unrelated cleanup changes.
-- Run the relevant tests after each simplification. Do not modify tests merely to make a refactor pass.
+- Do not modify tests merely to make a refactor pass.
 - Format touched files with the project's own formatter — detect it first (see Principle 2); never run a formatter the project has not adopted.
 - Run `mate cap index --tokensave` after code changes.
 - Never commit, push, or create a pull request unless the user explicitly asks.
 
-## When to Use
-
-- After a feature is working and tests pass, but the implementation feels heavier than it needs to be
-- During code review when readability or complexity issues are flagged
-- When you encounter deeply nested logic, long functions, or unclear names
-- When refactoring code written under time pressure
-- When consolidating related logic scattered across files
-- After merging changes that introduced duplication or inconsistency
-
-**When NOT to use:**
+## When NOT to Use
 
 - Code is already clean and readable — don't simplify for the sake of it
 - You don't understand what the code does yet — comprehend before you simplify
@@ -75,25 +66,29 @@ Simplification that breaks project consistency is not simplification — it's ch
 
 Detect the formatter before formatting anything — first match wins:
 
-| Signal in the repo                                                                | Formatter to run                                                                 |
-| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `format` / `fmt` script in `package.json`, `Makefile`, `justfile`, `Taskfile.yml` | Run that script — it encodes the project's intent and needs no further detection |
-| `biome.json` / `biome.jsonc`                                                      | `biome format --write`                                                           |
-| `.oxfmtrc.json`, or `oxfmt` in devDependencies                                    | `oxfmt`                                                                          |
-| `dprint.json` / `.dprint.jsonc`                                                   | `dprint fmt`                                                                     |
-| `.prettierrc*`, `prettier.config.*`, or a `prettier` key in `package.json`        | `prettier --write`                                                               |
-| `rustfmt.toml`, or any Cargo crate                                                | `cargo fmt`                                                                      |
-| `[tool.ruff]` in `pyproject.toml`                                                 | `ruff format`                                                                    |
-| `[tool.black]` in `pyproject.toml`                                                | `black`                                                                          |
-| Go module                                                                         | `gofmt -w` (or `goimports -w` if already used)                                   |
-| Only `.editorconfig`, or no signal at all                                         | Do not format — match the surrounding style by hand                              |
+| Signal in the repo                                                                | Formatter to run                                                    |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `format` / `fmt` script in `package.json`, `Makefile`, `justfile`, `Taskfile.yml` | That script decides — narrow it to your files (see the rules below) |
+| `biome.json` / `biome.jsonc`                                                      | `biome format --write`                                              |
+| `.oxfmtrc.json`, or `oxfmt` in devDependencies                                    | `oxfmt`                                                             |
+| `dprint.json` / `.dprint.jsonc`                                                   | `dprint fmt`                                                        |
+| `.prettierrc*`, `prettier.config.*`, or a `prettier` key in `package.json`        | `prettier --write`                                                  |
+| `rustfmt.toml`, or any Cargo crate                                                | `cargo fmt`                                                         |
+| `[tool.ruff]` in `pyproject.toml`                                                 | `ruff format`                                                       |
+| `[tool.black]` in `pyproject.toml`                                                | `black`                                                             |
+| Go module                                                                         | `gofmt -w` (or `goimports -w` if already used)                      |
+| Only `.editorconfig`, or no signal at all                                         | Do not format — match the surrounding style by hand                 |
 
 Rules:
 
 - Invoke the project's pinned local binary through its package manager or runner, inferred from the lockfile (`bun`, `pnpm`, `yarn`, `npm`) — never a global install and never an `npx`-downloaded version, which may differ from the one that formatted the committed code.
+- **A script decides the tool, not the paths.** Read the script to learn the tool, its config, and its flags, then run that tool on your files only. Scripts usually hard-code their own paths, so passing a file to them adds it to the run instead of narrowing it. If the script chains several steps, run only its formatting steps, each narrowed to your files — a lint `--fix` step is not formatting.
+- In a monorepo, use the script from the nearest package manifest above the files that defines one — often only the repository root does.
+- If a `format` script cannot be narrowed, do not run it: it rewrites files outside the scope, and reverting those with `git checkout` would also discard any uncommitted work in them. Match the surrounding style by hand and report it.
 - If several formatters are configured, the `format` script decides. If there is no script and the signals conflict, ask which is canonical instead of picking one.
 - Format only the files you changed. A repo-wide format pass is a separate change with its own diff.
-- If the formatter rewrites far more than the lines you touched, its config disagrees with the committed code. Stop, revert the formatting, and report it — do not fold that drift into a simplification change.
+- Before running any formatter, save a copy of each file you are about to format to a temporary directory (`$TMPDIR`) — never inside the repository, where a backup can be committed. Git cannot tell a formatter's hunks apart from uncommitted work already in the file; the copy can.
+- If the formatter rewrites far more than the lines you touched, its config disagrees with the committed code. Stop, restore the copies you saved — never `git checkout` the file, which would also discard uncommitted work — match the surrounding style by hand, and report it. Do not fold that drift into a simplification change.
 
 ### 3. Prefer Clarity Over Cleverness
 
@@ -137,6 +132,7 @@ Simplification has a failure mode: over-simplification. Watch for these traps:
 - **Combining unrelated logic** — two simple functions merged into one complex function is not simpler
 - **Removing "unnecessary" abstraction** — some abstractions exist for extensibility or testability, not complexity
 - **Optimizing for line count** — fewer lines is not the goal; easier comprehension is
+- **Stripping return type annotations** — leave them; exported ones are contracts, and inference can silently widen the type
 
 ### 5. Scope to What Changed
 
@@ -160,6 +156,16 @@ BEFORE SIMPLIFYING, ANSWER:
 
 If you can't answer these, you're not ready to simplify. Read more context first.
 
+**When no test exercises the scope**, the safety net that Step 3 relies on is missing. Pick one, and report the missing coverage either way:
+
+- Write characterization tests first. They pin the current behavior, including its quirks, and are never edited later to fit the refactor.
+- In a type-checked project, restrict the pass to changes the type checker verifies on its own, and leave every other candidate in the report:
+  - Rename locals, or remove unused locals whose initializer has no side effects. A call, `await`, `new`, or getter in the initializer can have one, and removing it changes behavior the checker cannot see.
+  - Skip a rename when the local also supplies an object key (`{ user }`), a JSX prop, or a string lookup — renaming it changes data, and the checker cannot see that.
+  - Unexport a symbol only after it clears every box of the pre-removal checklist. The checker catches a broken importer, but not a framework or config that resolves the symbol by name.
+
+Without a type checker, only characterization tests remain.
+
 ### Step 2: Identify Simplification Opportunities
 
 #### Step 2a: Mechanical pre-scan (required)
@@ -181,7 +187,8 @@ PRE-SCAN THE REQUESTED SCOPE:
 
 Do not skip the pre-scan because the file "looks clean". Judgment applies to the
 candidates it produces, not to whether to produce them. Report candidates you
-deliberately leave alone, with the reason.
+deliberately leave alone, with the reason. Every "report it" in this skill means an entry
+in the final [Report](#report), under its bucket.
 
 **A pre-scan hit is a question, not a verdict.** These tools find symbols nothing
 _imports_; they cannot see symbols resolved by name — framework exports, reflective
@@ -292,11 +299,6 @@ design decision rather than a behavior-preserving edit. Both collide with Princi
 Describe the change and the affected files, then stop and let the user decide — the
 same treatment the prop-drilling case gets under React guidance.
 
-**When the pre-scan flags a symbol you cannot prove is unreferenced, leave it and say
-so.** An export you were unsure about and kept costs a line of explanation. An export
-you removed on a guess costs a production incident. Unverifiable candidates are
-reported, not acted on.
-
 ```
 BEFORE REMOVING ANY export, ALL MUST HOLD:
 [ ] Not framework-resolved (checked against the list above)
@@ -310,7 +312,7 @@ Any box unchecked → report the candidate, do not touch it.
 
 ### Step 3: Apply Changes Incrementally
 
-Make one simplification at a time. Run tests after each change. **Submit refactoring changes separately from feature or bug fix changes.** A PR that refactors and adds a feature is two PRs — split them.
+Make one simplification at a time and run tests after each change, so a failure points to the change that caused it. **Submit refactoring changes separately from feature or bug fix changes.** A PR that refactors and adds a feature is two PRs — split them.
 
 ```
 FOR EACH SIMPLIFICATION:
@@ -322,9 +324,7 @@ FOR EACH SIMPLIFICATION:
 4. If either fails → revert and reconsider
 ```
 
-Avoid batching multiple simplifications into a single untested change. If something breaks, you need to know which simplification caused it.
-
-**The Rule of 500:** If a refactoring would touch more than 500 lines, invest in automation (codemods or AST transforms) rather than making the changes by hand. Manual edits at that scale are error-prone and exhausting to review.
+**The Rule of 500:** If a refactoring would touch more than 500 lines, stop and propose it — the scope, the approach (codemod or AST transform included), and the affected files — instead of applying it, unless the user explicitly asked for that scope. A change that size is no longer scoped to what changed (Principle 5), and manual edits at that scale are error-prone and exhausting to review.
 
 ### Step 4: Verify the Result
 
@@ -334,29 +334,40 @@ Then step back and evaluate the whole:
 
 ```
 COMPARE BEFORE AND AFTER:
-- Is the simplified version genuinely easier to understand?
-- Did you introduce any new patterns inconsistent with the codebase?
-- Is the diff clean and reviewable?
-- Would a teammate approve this change?
+- Is the simplified version genuinely easier to understand and review?
+- Did you introduce any pattern inconsistent with the surrounding code?
 ```
 
-If the "simplified" version is harder to understand or review, revert. Not every simplification attempt succeeds.
+If either answer is wrong, revert. Not every simplification attempt succeeds.
+
+## Report
+
+End every pass with one report. Every pre-scan candidate lands in exactly one bucket,
+and each entry names the file, the candidate, and the reason. A candidate you could not
+verify goes under **Unsure**, never into the code: an export kept on doubt costs a line
+of explanation, one removed on a guess costs an incident.
+
+**Group the noise, itemize the decisions.** Candidates under **Left alone on purpose**
+that share a tool and a reason collapse into one line with a count and the threshold or
+rule that dismissed them (for example, "14 complexity hits below nesting depth 3"). Every
+candidate in the other buckets gets its own entry.
+
+- **Applied** — what changed, and the check that proved it (type checker, tests)
+- **Not applied — changes behavior** — what the fix would alter: ordering, concurrency,
+  mutation, error surface, or name resolution
+- **Unsure** — what you could not verify, and which evidence is missing
+- **Propose-only** — API reshapes and refactors past the Rule of 500: the proposed change
+  and the files it would touch
+- **Left alone on purpose** — candidates not worth changing, with the reason
+
+Close with anything that limited the pass: missing test coverage, or formatter drift you
+reverted.
 
 ## Language-Specific Guidance
 
 ### TypeScript / JavaScript
 
 ```typescript
-// SIMPLIFY: Unnecessary async wrapper
-// Before
-async function getUser(id: string): Promise<User> {
-  return await userService.findById(id);
-}
-// After
-function getUser(id: string): Promise<User> {
-  return userService.findById(id);
-}
-
 // SIMPLIFY: Verbose conditional assignment
 // Before
 let displayName: string;
@@ -454,15 +465,12 @@ function UserBadge({ user }: Props) {
 
 ## Common Rationalizations
 
-| Rationalization                                      | Reality                                                                                                                                               |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "It's working, no need to touch it"                  | Working code that's hard to read will be hard to fix when it breaks. Simplifying now saves time on every future change.                               |
-| "Fewer lines is always simpler"                      | A 1-line nested ternary is not simpler than a 5-line if/else. Simplicity is about comprehension speed, not line count.                                |
-| "I'll just quickly simplify this unrelated code too" | Unscoped simplification creates noisy diffs and risks regressions in code you didn't intend to change. Stay focused.                                  |
-| "The types make it self-documenting"                 | Types document structure, not intent. A well-named function explains _why_ better than a type signature explains _what_.                              |
-| "This abstraction might be useful later"             | Don't preserve speculative abstractions. If it's not used now, it's complexity without value. Remove it and re-add when needed.                       |
-| "The original author must have had a reason"         | Maybe. Check git blame — apply Chesterton's Fence. But accumulated complexity often has no reason; it's just the residue of iteration under pressure. |
-| "I'll refactor while adding this feature"            | Separate refactoring from feature work. Mixed changes are harder to review, revert, and understand in history.                                        |
+| Rationalization                              | Reality                                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| "Fewer lines is always simpler"              | A 1-line nested ternary is not simpler than a 5-line if/else. Simplicity is about comprehension speed, not line count.               |
+| "This abstraction might be useful later"     | Speculative abstractions are complexity without value. If nothing uses it now, remove it under the dead-code and export rules above. |
+| "The original author must have had a reason" | Maybe. Check git blame — apply Chesterton's Fence. But accumulated complexity often has no reason; it's the residue of iteration.    |
+| "I'll refactor while adding this feature"    | Separate refactoring from feature work. Mixed changes are harder to review, revert, and understand in history.                       |
 
 ## Red Flags
 
@@ -471,36 +479,34 @@ function UserBadge({ user }: Props) {
 - Renaming things to match your preferences rather than project conventions
 - Removing error handling because "it makes the code cleaner"
 - Simplifying code you don't fully understand
-- Batching many simplifications into one large, hard-to-review commit
-- Refactoring code outside the scope of the current task without being asked
+- Touching code outside the requested scope without being asked
 - Deleting an export because a tool reported it unused, without checking whether the
   framework resolves it by name (`page.tsx`, `route.ts`, stories, config-referenced files)
 - Acting on a pre-scan candidate you could not verify — report it instead
+- Applying a propose-only row (module collapse, barrel deletion) without user sign-off
 - Treating a green test run as proof a visibility change was safe without a type check
 - Unexporting a symbol whose only importer is a test, then editing the test to match
-- Applying a propose-only row (module collapse, barrel deletion) without user sign-off
 - Trusting "the compiler would catch it" in a project the type checker does not cover
+- Dropping `async` or `return await` as a "simplification" — it changes how errors and stack traces surface
 
 ## Verification
 
 After completing a simplification pass:
 
 - [ ] All existing tests pass without modification
+- [ ] Type checker passes, if the project has one
 - [ ] Build succeeds with no new warnings
-- [ ] The project's own formatter was detected and run on the touched files — no formatter the project has not adopted was used
-- [ ] Formatting touched only the changed files (no repo-wide reformat mixed in)
+- [ ] The project's own formatter ran on the touched files only
 - [ ] Linter passes (no style regressions)
 - [ ] Each simplification is a reviewable, incremental change
-- [ ] The diff is clean — no unrelated changes mixed in
+- [ ] The diff holds nothing outside the requested scope
 - [ ] Simplified code follows project conventions (checked against CLAUDE.md or equivalent)
 - [ ] No error handling was removed or weakened
 - [ ] No dead code was left behind (unused imports, unreachable branches)
-- [ ] The Step 2a pre-scan was run, and every candidate is either fixed or explained
-- [ ] Export surface matches actual consumers — nothing exported without a caller outside its file
-- [ ] Type checker passes — no unexport broke an importer
+- [ ] Every removed `export` cleared the pre-removal checklist
 - [ ] No framework-resolved export was unexported, renamed, or deleted
-- [ ] Every removed `export` cleared all boxes of the pre-removal checklist
 - [ ] No test was edited to accommodate a visibility change
 - [ ] Propose-only findings were reported, not applied
+- [ ] Every pre-scan candidate appears in the Report, itemized or counted in a grouped line
 - [ ] Behavior is bit-for-bit identical: same inputs, outputs, side effects, error paths
 - [ ] A teammate or review agent would approve the change as a net improvement

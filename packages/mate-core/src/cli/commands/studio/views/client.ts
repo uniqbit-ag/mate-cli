@@ -71,9 +71,12 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
   }
 
   var theme = readTheme();
+  /** Set by the Reports view to reload the shown report in the new appearance. */
+  var onThemeChange = null;
 
   function applyTheme(next) {
     theme = next;
+    if (onThemeChange) onThemeChange();
     var root = document.documentElement;
     if (next === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", next);
@@ -594,7 +597,7 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
     function show(id) {
       if (!frame) return;
       shown = id;
-      var src = ${JSON.stringify(REPORT_VIEW_PREFIX)} + id;
+      var src = ${JSON.stringify(REPORT_VIEW_PREFIX)} + id + (theme === "system" ? "" : "?scheme=" + theme);
       frame.src = src;
       frame.hidden = false;
       if (open) { open.href = src; open.hidden = false; }
@@ -637,6 +640,7 @@ export const STUDIO_CLIENT_SCRIPT = `(function () {
       clearTimeout(toastTimeout);
       toastTimeout = setTimeout(function () { toast.setAttribute("data-shown", "false"); }, 10000);
     }
+    onThemeChange = function () { if (shown) show(shown); };
     var events = new EventSource(shell.getAttribute("data-reports-events-url"));
     events.onopen = refreshList;
     events.onmessage = function (message) {

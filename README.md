@@ -1,4 +1,9 @@
-# Mate
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-kit/readme/mate-horizontal-on-dark.svg">
+    <img alt="Mate" src="assets/logo-kit/readme/mate-horizontal-color.svg" width="320">
+  </picture>
+</h1>
 
 Coding agents that already know your project.
 

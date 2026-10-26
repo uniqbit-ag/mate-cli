@@ -51,6 +51,20 @@ Run from a companion or a repository that is not linked, it exits non-zero.
 process has no TTY. It can run before a companion is linked; in that context it
 installs only Mate's core requirements.
 
+## Comment Guidance
+
+Shared agent guidance prefers sparse, concise comments explaining non-obvious
+intent, constraints, or workarounds—not filler or restatements of code. Use JSDoc
+for JS/TS API documentation and line or ordinary block comments for local notes,
+including JSX-supported expression comments. Preserve required documentation and
+contract details, tool directives, legal notices, and language-appropriate syntax.
+Concision does not mean terse implementation code or rewriting unchanged comments.
+
+This is guidance, not an automated comment checker or completion gate.
+Repository-owned conventions and unrelated verification requirements are unchanged;
+stricter rules require an explicit repository decision. Existing companions receive
+the wording through normal managed-guidance regeneration.
+
 ## Agent Launch
 
 ```sh
@@ -146,8 +160,9 @@ whether plain sessions load each one.
 Mate's managed Claude settings turn off Claude Code features that compete with
 Mate's own workflow: they deny the `EnterPlanMode` and `DesignSync` tools and set
 `enableArtifact: false`, beside `autoMemoryEnabled: false`. Those tool denies are
-fixed. While secret guardrails are on, the managed deny list also carries `Read`,
-`Edit` and `Write` deny rules for the default secret files; see
+fixed. While secret guardrails are on, the managed deny list also carries `Read`
+and `Edit` deny rules for the default secret files (the `Edit` rule also covers
+`Write`); see
 [Secret Guardrails](/docs/concepts/secret-guardrails). `ExitPlanMode` stays
 allowed, so plan mode entered by hand (Shift+Tab) can still be left. A managed
 launch applies these settings through `--settings`, and deny rules from there
@@ -201,6 +216,11 @@ change. An `enableArtifact` value you already set in
 `.claude/settings.local.json` is left as it is. The wrap also places the managed
 `attribution` value, unless one of your Claude settings already sets attribution;
 an `attribution` you set in `.claude/settings.local.json` is left as it is.
+
+The wrap also links each companion skill folder (`.claude/skills/<name>`) and each
+companion command folder, such as OpenSpec's `.claude/commands/opsx/`, into your
+repository's `.claude/`, so `/opsx:*` works in plain `claude` too. A path your
+repository already has wins, and `mate unwrap` removes only the links Mate created.
 
 Each enabled Capability's Claude plugin folder is published as its own local
 marketplace and enabled in `.claude/settings.local.json` (`extraKnownMarketplaces`

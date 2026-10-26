@@ -9,6 +9,7 @@
  *
  *   bun scripts/build.ts --tag mate-appliance:local
  *   bun scripts/build.ts --platform linux/amd64 --mate-version 0.17.0
+ *   bun scripts/build.ts --tag mate-appliance:local-base --label ai.mate.local-inputs=<digest>
  */
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -19,6 +20,20 @@ import { CONTAINER_ROOT, readImageInputs } from "../src/image-inputs";
 function option(argv: string[], name: string): string | null {
   const index = argv.indexOf(`--${name}`);
   return index === -1 ? null : (argv[index + 1] ?? null);
+}
+
+/** Every `--label key=value`, passed through to the build in the order given. */
+export function labelArgs(argv: string[]): string[] {
+  const labels: string[] = [];
+  argv.forEach((arg, index) => {
+    if (arg !== "--label") return;
+    const label = argv[index + 1];
+    if (label === undefined || !/^[^=]+=/.test(label)) {
+      throw new Error(`build: --label needs key=value, got ${label ?? "nothing"}`);
+    }
+    labels.push("--label", label);
+  });
+  return labels;
 }
 
 export function buildArgs(
@@ -92,6 +107,7 @@ function main(argv: string[]): number {
     ...(runtime === "podman" ? ["--format", "docker"] : []),
     ...(platform ? ["--platform", platform] : []),
     ...buildArgs(inputs, mateVersion),
+    ...labelArgs(argv),
     "--file",
     path.join(CONTAINER_ROOT, "Dockerfile"),
     "--tag",

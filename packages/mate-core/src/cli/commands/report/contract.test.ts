@@ -6,6 +6,7 @@ import {
   ReportValidationError,
   validateReportDocument,
 } from "./contract";
+import { renderJSON } from "./renderer";
 import { REPORT_DOCUMENT_VERSION, type ReportDocument } from "./types";
 
 const validDocument: ReportDocument = {
@@ -128,5 +129,68 @@ describe("ReportDocument contract", () => {
         sections: [{ ...validDocument.sections[0], type: "html" }],
       }),
     ).toThrow(/one of metadata/);
+  });
+
+  test("keeps a document without presentation fields valid and unchanged", () => {
+    const document: ReportDocument = {
+      ...validDocument,
+      sections: [
+        ...validDocument.sections,
+        { id: "states", title: "States", type: "statuses", items: [{ label: "A", status: "ok" }] },
+        { id: "flow", title: "Flow", type: "diagram", mermaid: "graph TD\n  A --> B" },
+        { id: "patch", title: "Patch", type: "diff", patch: "@@ -1 +1 @@\n-a\n+b" },
+      ],
+    };
+
+    expect(getReportDocumentIssues(document)).toEqual([]);
+    expect(JSON.parse(renderJSON(document))).toEqual(document);
+  });
+
+  test("accepts the optional presentation fields", () => {
+    const document: ReportDocument = {
+      ...validDocument,
+      sections: [
+        {
+          id: "states",
+          title: "States",
+          type: "statuses",
+          items: [{ label: "A", status: "ok", tone: "warn" }],
+        },
+        { id: "notes", title: "Notes", type: "text", content: "- one", format: "markdown" },
+        { id: "plain", title: "Plain", type: "text", content: "one", format: "plain" },
+        { id: "flow", title: "Flow", type: "diagram", text: "A -> B", caption: "The **flow**." },
+        { id: "patch", title: "Patch", type: "diff", patch: "", caption: "Nothing yet." },
+      ],
+    };
+
+    expect(validateReportDocument(document)).toEqual(document);
+    expect(JSON.parse(renderJSON(document))).toEqual(document);
+  });
+
+  test("rejects invalid presentation field values with their paths", () => {
+    const issues = getReportDocumentIssues({
+      ...validDocument,
+      sections: [
+        {
+          id: "states",
+          title: "States",
+          type: "statuses",
+          items: [{ label: "A", status: "ok", tone: "red" }],
+        },
+        { id: "notes", title: "Notes", type: "text", content: "x", format: "html" },
+        { id: "flow", title: "Flow", type: "diagram", text: "A", caption: 3 },
+        { id: "patch", title: "Patch", type: "diff", patch: "", caption: "  " },
+      ],
+    });
+
+    expect(issues).toEqual([
+      {
+        path: "sections[0].items[0].tone",
+        message: "must be one of ok, warn, error, info, or neutral",
+      },
+      { path: "sections[1].format", message: "must be one of plain or markdown" },
+      { path: "sections[2].caption", message: "must be a non-empty string" },
+      { path: "sections[3].caption", message: "must be a non-empty string" },
+    ]);
   });
 });

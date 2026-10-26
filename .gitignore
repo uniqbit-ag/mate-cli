@@ -16,3 +16,6 @@ __pycache__/
 .build/
 # Claude Code writes a mod's types beside it on first load
 packages/mate-plugin-companion-mentions/claude-plugin/.claude-plugin/types/
+
+# local appliance test setup (apps/mate-container/scripts/local-up.ts)
+apps/mate-container/.local/

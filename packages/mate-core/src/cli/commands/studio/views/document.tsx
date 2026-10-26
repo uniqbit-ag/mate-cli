@@ -34,8 +34,18 @@ import {
   TerminalSidebar,
 } from "./terminal";
 import { TERMINAL_SCRIPTS, TERMINAL_STYLESHEET } from "../terminal-assets";
+import { BRAND_SVGS } from "../../../../brand/svg.generated";
 
 const STUDIO_TITLE = "Mate Studio";
+
+/** Base64 rather than URI-encoded, so the SVG namespace URL never reads as a page reference. */
+function svgDataUri(svg: string): string {
+  return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+}
+
+const FAVICON_URI = svgDataUri(BRAND_SVGS.favicon);
+const SYMBOL_COLOR_URI = svgDataUri(BRAND_SVGS.symbolColor);
+const SYMBOL_ON_DARK_URI = svgDataUri(BRAND_SVGS.symbolOnDark);
 
 const VIEW_DETAILS = {
   dashboard: {
@@ -85,6 +95,7 @@ export function renderStudioDocument(page: StudioPage): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${STUDIO_TITLE}</title>
+<link rel="icon" type="image/svg+xml" href="${FAVICON_URI}">
 <style>${STUDIO_STYLES}</style>
 <script>${STUDIO_PREPAINT_SCRIPT}</script>${terminalHead}
 </head>
@@ -174,10 +185,11 @@ function Sidebar({ page }: { page: StudioPage }) {
   return (
     <aside className="rail studio-sidebar" id="studio-rail">
       <div className="sidebar-brand">
-        <span className="sidebar-brand-mark">M</span>
+        {/* Both versions ship; the stylesheet shows the one matching the appearance. */}
+        <img className="sidebar-brand-mark brand-symbol-color" src={SYMBOL_COLOR_URI} alt="" />
+        <img className="sidebar-brand-mark brand-symbol-on-dark" src={SYMBOL_ON_DARK_URI} alt="" />
         <div className="sidebar-brand-copy">
           <strong>{STUDIO_TITLE}</strong>
-          <span>Developer lookup</span>
         </div>
       </div>
       <CompanionSelector inventory={page.inventory} selection={page.selection} />

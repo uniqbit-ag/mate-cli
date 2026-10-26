@@ -6,6 +6,12 @@
     "packages/*"
   ],
   "scripts": {
+    "appliance:local": "bun apps/mate-container/scripts/local-up.ts up",
+    "appliance:local:down": "bun apps/mate-container/scripts/local-up.ts down",
+    "appliance:local:reset": "bun apps/mate-container/scripts/local-up.ts reset",
+    "appliance:local:logs": "bun apps/mate-container/scripts/local-up.ts logs",
+    "brand:generate": "bun scripts/brand/generate.ts",
+    "brand:check": "bun scripts/brand/generate.ts --check",
     "docs": "bun run --filter @uniqbit/mate-docs dev",
     "docs:build": "bun run --filter @uniqbit/mate-docs build",
     "docs:check": "bun run --filter @uniqbit/mate-docs check",
