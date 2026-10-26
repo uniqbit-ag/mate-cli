@@ -73,7 +73,7 @@ function save(node: HTMLTextAreaElement): void {
 /** Applies a version the file stream reports; a dirty editor keeps its text and offers the new one. */
 function followStream(node: HTMLTextAreaElement, eventsUrl: string): void {
   const events = new EventSource(eventsUrl);
-  events.onmessage = (message) => {
+  events.addEventListener("message", (message) => {
     let event: IncomingVersion;
     try {
       event = JSON.parse(message.data);
@@ -98,7 +98,7 @@ function followStream(node: HTMLTextAreaElement, eventsUrl: string): void {
     node.setAttribute("data-vault-original", node.value);
     if (event.token) node.setAttribute("data-vault-token", event.token);
     status("updated from disk");
-  };
+  });
 }
 
 export function wireVaultEditor(): void {

@@ -112,6 +112,10 @@ function run(options: { view: boolean; hash?: string; reports?: unknown[]; theme
     constructor(url: string) {
       sources.push(Object.assign(this, { url }));
     }
+    /** Records the listener where the tests drive it, as `on<type>`. */
+    addEventListener(type: string, listener: (event: any) => void) {
+      (this as Record<string, unknown>)[`on${type}`] = listener;
+    }
   }
   const documentStub = {
     documentElement: new El(),

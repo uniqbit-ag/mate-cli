@@ -107,8 +107,8 @@ export function wireReports(): void {
     if (shown) show(shown);
   });
   const events = new EventSource(shell.getAttribute("data-reports-events-url")!);
-  events.onopen = refreshList;
-  events.onmessage = (message) => {
+  events.addEventListener("open", refreshList);
+  events.addEventListener("message", (message) => {
     let event;
     try {
       event = JSON.parse(message.data);
@@ -118,5 +118,5 @@ export function wireReports(): void {
     if (!event || event.type !== "report-published" || event.companion !== current) return;
     if (list) refreshList();
     else announceReport(event);
-  };
+  });
 }

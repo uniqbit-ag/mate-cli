@@ -238,6 +238,10 @@ function runVaultBrowser(options: {
       streamed.push(url);
       sources.push(this);
     }
+    /** Records the listener where the tests drive it, as `on<type>`. */
+    addEventListener(type: string, listener: (event: any) => void) {
+      (this as Record<string, unknown>)[`on${type}`] = listener;
+    }
   }
   class Parser {
     parseFromString() {
@@ -746,6 +750,10 @@ describe("the vault editor in the page client", () => {
       onmessage: ((message: { data: string }) => void) | null = null;
       constructor() {
         sources.push(this);
+      }
+      /** Records the listener where the tests drive it, as `on<type>`. */
+      addEventListener(type: string, listener: (event: any) => void) {
+        (this as Record<string, unknown>)[`on${type}`] = listener;
       }
     }
     stubBrowser({

@@ -162,7 +162,7 @@ function watchTreeChanges(layout: Element): void {
   const url = layout.getAttribute("data-vault-changes-url");
   if (!url || typeof EventSource === "undefined") return;
   const changes = new EventSource(url);
-  changes.onmessage = (message) => {
+  changes.addEventListener("message", (message) => {
     let event;
     try {
       event = JSON.parse(message.data);
@@ -176,7 +176,7 @@ function watchTreeChanges(layout: Element): void {
       latestGeneration = event.generation;
     }
     showStale();
-  };
+  });
 }
 
 function wirePanel(panel: Element): void {
