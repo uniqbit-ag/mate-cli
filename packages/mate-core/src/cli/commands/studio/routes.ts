@@ -5,6 +5,8 @@ export const STUDIO_HOSTNAME = "127.0.0.1";
 export const VAULT_DIR_ROUTE = "/api/vault/dir";
 /** Name-filter matches over the whole listed tree, as an HTML fragment. */
 export const VAULT_FILTER_ROUTE = "/api/vault/filter";
+/** The open file's breadcrumb and pane as an HTML fragment, for opening a file in place. */
+export const VAULT_PANE_ROUTE = "/api/vault/pane";
 /** Server-sent listing generations: a newer one marks the displayed tree stale. */
 export const VAULT_CHANGES_ROUTE = "/api/vault/changes";
 

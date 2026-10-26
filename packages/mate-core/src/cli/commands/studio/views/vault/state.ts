@@ -6,15 +6,13 @@ export async function vaultState(
   manager: VaultManager,
   companionPath: string,
   sel: StudioVaultSelection,
-  options: { tree: "prefetch" | "await" },
+  options: { tree: "prefetch" | "await" | "skip" },
 ): Promise<StudioVaultPage> {
   let tree: VaultTreeResult | null = null;
   let failure: string | null = null;
   try {
-    tree =
-      options.tree === "prefetch"
-        ? await manager.prefetch(companionPath, sel.refresh)
-        : await manager.tree(companionPath, sel.refresh);
+    if (options.tree === "prefetch") tree = await manager.prefetch(companionPath, sel.refresh);
+    else if (options.tree === "await") tree = await manager.tree(companionPath, sel.refresh);
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
   }

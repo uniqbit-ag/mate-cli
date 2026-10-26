@@ -6,7 +6,15 @@ interface IncomingVersion {
   kind?: string;
 }
 
-function status(message: string): void {
+/** What a mounted viewer asks of the pane that hosts it. */
+export interface ViewerHooks {
+  /** A save was applied: the file should be shown rendered. */
+  saved: () => void;
+  /** The file changed on disk while shown rendered: show its current content. */
+  changed: () => void;
+}
+
+export function status(message: string): void {
   const node = document.getElementById("vault-status");
   if (node) node.textContent = message;
 }
@@ -33,7 +41,7 @@ function acceptIncoming(event: IncomingVersion): void {
   status("incoming version loaded into the editor");
 }
 
-function save(node: HTMLTextAreaElement): void {
+function save(node: HTMLTextAreaElement, hooks: ViewerHooks): void {
   if (pendingSave()) return;
   const companion = document.querySelector("[data-companion]");
   const body = {
@@ -57,6 +65,7 @@ function save(node: HTMLTextAreaElement): void {
         node.setAttribute("data-vault-token", result.token || "");
         node.setAttribute("data-vault-original", node.value);
         status("saved");
+        hooks.saved();
         return true;
       }),
     )
@@ -70,9 +79,17 @@ function save(node: HTMLTextAreaElement): void {
   setPendingSave(request);
 }
 
+/** The one stream the mounted file holds open, closed only by `unmountViewer`. */
+let stream: EventSource | null = null;
+
 /** Applies a version the file stream reports; a dirty editor keeps its text and offers the new one. */
-function followStream(node: HTMLTextAreaElement, eventsUrl: string): void {
+function followStream(
+  eventsUrl: string,
+  node: HTMLTextAreaElement | null,
+  hooks: ViewerHooks,
+): void {
   const events = new EventSource(eventsUrl);
+  stream = events;
   events.addEventListener("message", (message) => {
     let event: IncomingVersion;
     try {
@@ -80,13 +97,17 @@ function followStream(node: HTMLTextAreaElement, eventsUrl: string): void {
     } catch {
       return;
     }
+    if (event.kind === "removed") {
+      status("this file no longer exists on disk");
+      return;
+    }
+    if (!node) {
+      hooks.changed();
+      return;
+    }
     if (event.kind === "overwritten") {
       setIncoming(event);
       status("a version was overwritten; its content is available below");
-      return;
-    }
-    if (event.kind === "removed") {
-      status("this file no longer exists on disk");
       return;
     }
     if (dirty()) {
@@ -101,25 +122,37 @@ function followStream(node: HTMLTextAreaElement, eventsUrl: string): void {
   });
 }
 
-export function wireVaultEditor(): void {
-  setPendingSave(null);
-  const node = editor();
-  const root = document.querySelector("[data-vault-root]");
-  if (!node || !root) return;
-  node.setAttribute("data-vault-original", node.value);
-  const saveButton = document.getElementById("vault-save");
-  if (saveButton) saveButton.addEventListener("click", () => save(node));
-  const recover = document.getElementById("vault-recover");
-  if (recover) {
-    recover.addEventListener("click", () => {
-      acceptIncoming({
-        content: recover.getAttribute("data-vault-content") || "",
-        token: recover.getAttribute("data-vault-token") || "",
-      });
-    });
+/** Closes the file's event stream and forgets the save record; the pane's own nodes go with the pane. */
+export function unmountViewer(): void {
+  if (stream) {
+    if (typeof stream.close === "function") stream.close();
+    stream = null;
   }
-  const eventsUrl = node.getAttribute("data-vault-events");
-  if (eventsUrl && typeof EventSource !== "undefined") followStream(node, eventsUrl);
+  setPendingSave(null);
+}
+
+/** Binds whatever file pane is on screen, opening exactly one event stream for its file. */
+export function mountViewer(hooks: ViewerHooks): void {
+  unmountViewer();
+  const root = document.querySelector("[data-vault-root]");
+  if (!root) return;
+  const node = editor();
+  if (node) {
+    node.setAttribute("data-vault-original", node.value);
+    const saveButton = document.getElementById("vault-save");
+    if (saveButton) saveButton.addEventListener("click", () => save(node, hooks));
+    const recover = document.getElementById("vault-recover");
+    if (recover) {
+      recover.addEventListener("click", () => {
+        acceptIncoming({
+          content: recover.getAttribute("data-vault-content") || "",
+          token: recover.getAttribute("data-vault-token") || "",
+        });
+      });
+    }
+  }
+  const eventsUrl = root.getAttribute("data-vault-events");
+  if (eventsUrl && typeof EventSource !== "undefined") followStream(eventsUrl, node, hooks);
 }
 
 /** Asks the browser to confirm leaving while the editor holds unsaved text. */

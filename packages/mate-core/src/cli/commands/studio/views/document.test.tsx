@@ -15,6 +15,7 @@ import {
   renderStudioDocument,
   renderVaultChildren,
   renderVaultMatches,
+  renderVaultPane,
   renderVaultView,
   VAULT_FILTER_LIMIT,
 } from "./document";
@@ -262,7 +263,12 @@ describe("renderStudioDocument", () => {
   it("presents the Vault view and an opened file", () => {
     const markup = renderStudioDocument({
       ...selected,
-      selection: { ...selected.selection, view: "vault", openPath: "docs/note.md" },
+      selection: {
+        ...selected.selection,
+        view: "vault",
+        openPath: "docs/note.md",
+        mode: "edit",
+      },
       payload: null,
       vault: {
         tree: [
@@ -291,6 +297,8 @@ describe("renderStudioDocument", () => {
     );
     expect(markup).toContain("# note");
     expect(markup).toContain("Save");
+    expect(markup).toContain('data-vault-mode="edit"');
+    expect(markup).toContain('id="vault-mode-read"');
     expect(markup).not.toMatch(/<textarea[^>]*readonly/i);
   });
 
@@ -337,6 +345,7 @@ describe("renderStudioDocument", () => {
         ...selected.selection,
         view: "vault",
         openPath: null,
+        mode: "read",
         openDir: null,
         ...selection,
       },
@@ -539,6 +548,101 @@ describe("renderStudioDocument", () => {
     });
   });
 
+  describe("vault read and edit modes", () => {
+    const notePage = (mode: "read" | "edit", writable: boolean, content = "# Note\n\n[b](b.md)") =>
+      ({
+        ...selected,
+        selection: { ...selected.selection, view: "vault", openPath: "docs/note.md", mode },
+        payload: null,
+        vault: {
+          tree: [
+            {
+              name: "docs",
+              path: "docs",
+              kind: "directory",
+              children: [
+                { name: "note.md", path: "docs/note.md", kind: "file" },
+                { name: "b.md", path: "docs/b.md", kind: "file" },
+              ],
+            },
+          ],
+          open: { path: "docs/note.md", content, token: "t" },
+          refusal: null,
+          incoming: null,
+          overwritten: null,
+          watching: true,
+          warning: null,
+        },
+        writable,
+      }) as StudioPage;
+
+    const addressOf = (href: string | undefined) =>
+      parse(new URL(href!.replaceAll("&amp;", "&"), "http://localhost:1/"));
+
+    it("shows a file rendered by default with an Edit control that names the edit address", () => {
+      const markup = renderStudioDocument(notePage("read", true));
+      expect(markup).toContain("<h1>Note</h1>");
+      expect(markup).not.toContain("<textarea");
+      expect(markup).not.toContain("# Note");
+      expect(markup).toContain('data-vault-mode="read"');
+      const edit = /<a[^>]*id="vault-mode-edit"[^>]*href="([^"]*)"/.exec(markup)?.[1];
+      expect(addressOf(edit)).toMatchObject({ openPath: "docs/note.md", mode: "edit" });
+    });
+
+    it("leads a rendered note link to the other note in read", () => {
+      const markup = renderStudioDocument(notePage("read", true));
+      const body = markup.slice(markup.indexOf("markdown-body"));
+      const href = /<a[^>]*href="([^"]*)"[^>]*data-vault-entry="docs\/b\.md"/.exec(body)?.[1];
+      expect(addressOf(href)).toMatchObject({ openPath: "docs/b.md", mode: "read" });
+    });
+
+    it("offers Read from edit and addresses the read pane for a save to return to", () => {
+      const markup = renderStudioDocument(notePage("edit", true));
+      const read = /<a[^>]*id="vault-mode-read"[^>]*href="([^"]*)"/.exec(markup)?.[1];
+      expect(addressOf(read)).toMatchObject({ mode: "read" });
+      expect(markup).toContain(`data-vault-pane-url="/api/vault/pane?companion=${digest}`);
+      expect(markup).not.toMatch(/data-vault-pane-url="[^"]*mode=edit/);
+      expect(markup).toContain("data-vault-read-href=");
+    });
+
+    it("carries the events address on the pane root in both modes", () => {
+      for (const mode of ["read", "edit"] as const) {
+        expect(renderStudioDocument(notePage(mode, true))).toContain(
+          `data-vault-events="/api/vault/events?companion=${digest}&amp;view=vault&amp;path=docs%2Fnote.md"`,
+        );
+      }
+    });
+
+    it("renders raw html in a file as text", () => {
+      const markup = renderStudioDocument(notePage("read", true, "<script>alert(1)</script>"));
+      expect(markup).not.toContain("<script>alert");
+      expect(markup).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    });
+
+    it("renders the breadcrumb and pane as a swappable fragment", () => {
+      const fragment = renderVaultPane(notePage("read", true));
+      expect(fragment).toContain("data-vault-crumb");
+      expect(fragment).toContain("data-vault-pane");
+      expect(fragment).toContain("<h1>Note</h1>");
+      expect(fragment).not.toContain("vault-tree-panel");
+      expect(fragment).not.toContain("<html");
+    });
+
+    it("marks file opens from the listing for in-place navigation, and folders not", () => {
+      const base = notePage("read", true);
+      const folder = {
+        ...base,
+        selection: { ...base.selection, openPath: null, openDir: "docs" },
+        vault: { ...base.vault!, open: null },
+      } as StudioPage;
+      const listing = forms(renderVaultView(folder));
+      const fileForm = listing.find(({ body }) => body.includes("docs/b.md"));
+      const folderForm = listing.find(({ body }) => body.includes("vault-icon-folder"));
+      expect(fileForm?.attrs).toContain("data-vault-open");
+      expect(folderForm?.attrs).not.toContain("data-vault-open");
+    });
+  });
+
   it("renders refused vault paths without an editor", () => {
     const markup = renderStudioDocument({
       ...selected,
@@ -559,25 +663,32 @@ describe("renderStudioDocument", () => {
     expect(markup).not.toContain('id="vault-editor"');
   });
 
-  it("omits saving controls in read-only mode", () => {
-    const markup = renderStudioDocument({
-      ...selected,
-      selection: { ...selected.selection, view: "vault", openPath: "note.md" },
-      payload: null,
-      vault: {
-        tree: [{ name: "note.md", path: "note.md", kind: "file" }],
-        open: { path: "note.md", content: "one", token: "one" },
-        refusal: null,
-        incoming: null,
-        overwritten: null,
-        watching: true,
-        warning: null,
-      },
-      writable: false,
-    });
-    expect(markup).not.toContain('id="vault-save"');
-    expect(markup).toContain("Start Studio with --writable");
-    expect(markup).toMatch(/<textarea[^>]*id="vault-editor"[^>]*readonly/i);
+  it("omits saving controls and the raw view in read-only mode", () => {
+    const readOnly = (mode: "read" | "edit") =>
+      renderStudioDocument({
+        ...selected,
+        selection: { ...selected.selection, view: "vault", openPath: "note.md", mode },
+        payload: null,
+        vault: {
+          tree: [{ name: "note.md", path: "note.md", kind: "file" }],
+          open: { path: "note.md", content: "# one", token: "one" },
+          refusal: null,
+          incoming: null,
+          overwritten: null,
+          watching: true,
+          warning: null,
+        },
+        writable: false,
+      });
+    for (const markup of [readOnly("read"), readOnly("edit")]) {
+      expect(markup).not.toContain('id="vault-save"');
+      expect(markup).not.toContain("<textarea");
+      expect(markup).not.toContain('id="vault-mode-edit"');
+      expect(markup).not.toContain("data-vault-mode-link");
+      expect(markup).toContain("Start Studio with --writable");
+      expect(markup).toContain("<h1>one</h1>");
+      expect(markup).toContain('data-vault-mode="read"');
+    }
   });
 
   it("renders the two pre-explore choices without offering documentation mode or skip copy", () => {

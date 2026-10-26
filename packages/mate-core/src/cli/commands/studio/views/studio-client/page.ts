@@ -77,11 +77,43 @@ function askBeforeNavigation(): boolean {
   return !dirty() || window.confirm("Discard unsaved changes?");
 }
 
-/** Leaves for `url` once any save has settled, unless the viewer keeps unsaved changes. */
-export function navigate(url: string): void {
-  (savePromise ?? Promise.resolve(true)).then((allowed) => {
-    if (allowed && askBeforeNavigation()) location.assign(url);
+/**
+ * The one check every departure from the shown state goes through: a save in flight settles
+ * first, then unsaved text is confirmed. Resolves true when the departure may proceed.
+ */
+export function guard(): Promise<boolean> {
+  return (savePromise ?? Promise.resolve(true)).then((allowed) => allowed && askBeforeNavigation());
+}
+
+/** Set by the vault: shows `url` without replacing the document, or returns false to leave it to the browser. */
+let showInPlace: ((url: string) => boolean) | null = null;
+
+export function setInPlaceNavigation(show: ((url: string) => boolean) | null): void {
+  showInPlace = show;
+}
+
+/**
+ * Leaves for `url` once any save has settled, unless the viewer keeps unsaved changes.
+ * `inPlace` is for a control that opens a file of the vault and may leave the document alone.
+ */
+export function navigate(url: string, inPlace = false): void {
+  void guard().then((allowed) => {
+    if (!allowed) return;
+    if (inPlace && showInPlace && showInPlace(url)) return;
+    location.assign(url);
   });
+}
+
+/** True for a click the browser would treat as an ordinary same-tab follow of a link. */
+export function isPlainClick(event: MouseEvent): boolean {
+  return !(
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  );
 }
 
 function navigationUrl(form: HTMLFormElement, submitter?: HTMLElement | null): string {
@@ -100,7 +132,10 @@ export function wireNavigation(scope?: ParentNode): void {
     .forEach((form) => {
       form.addEventListener("submit", (event) => {
         event.preventDefault();
-        navigate(navigationUrl(form, (event as SubmitEvent).submitter));
+        navigate(
+          navigationUrl(form, (event as SubmitEvent).submitter),
+          form.hasAttribute("data-vault-open"),
+        );
       });
       form.querySelectorAll("select").forEach((select) => {
         select.addEventListener("change", () => {

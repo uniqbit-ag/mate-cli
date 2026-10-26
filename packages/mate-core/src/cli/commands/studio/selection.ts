@@ -18,6 +18,7 @@ export const VIEW_PARAM = "view";
 export const REFRESH_PARAM = "refresh";
 export const FILE_PARAM = "path";
 export const DIR_PARAM = "dir";
+export const MODE_PARAM = "mode";
 
 /** Every URL parameter Studio names; no other module writes one out. */
 export const STUDIO_PARAMS: readonly string[] = [
@@ -26,6 +27,7 @@ export const STUDIO_PARAMS: readonly string[] = [
   REFRESH_PARAM,
   FILE_PARAM,
   DIR_PARAM,
+  MODE_PARAM,
 ];
 
 /** Filled into a prompt when no change is named, so a prompt is never half-written. */
@@ -42,9 +44,14 @@ interface SelectionBase {
   refresh: boolean;
 }
 
+/** An open file is read rendered or edited raw; read is every other value. */
+export type VaultMode = "read" | "edit";
+
 export interface StudioVaultSelection extends SelectionBase {
   view: "vault";
   openPath: string | null;
+  /** Only meaningful with an open file, and only where the write path is reached. */
+  mode: VaultMode;
   /** A folder of the listed tree; never looked up on disk. */
   openDir: string | null;
 }
@@ -109,6 +116,7 @@ function readVault(params: URLSearchParams): StudioVaultSelection {
     ...readBase(params),
     view: "vault",
     openPath: readText(params.get(FILE_PARAM)),
+    mode: params.get(MODE_PARAM) === "edit" ? "edit" : "read",
     openDir: readText(params.get(DIR_PARAM)),
   };
 }
@@ -128,7 +136,7 @@ export function parseVaultSelection(url: URL): StudioVaultSelection {
 /** Drops the vault's target. */
 export function switchView(selection: StudioSelection, view: StudioView): StudioSelection {
   const base = { companionDigest: selection.companionDigest, refresh: false };
-  if (view === "vault") return { ...base, view, openPath: null, openDir: null };
+  if (view === "vault") return { ...base, view, openPath: null, mode: "read", openDir: null };
   return { ...base, view };
 }
 
@@ -146,6 +154,7 @@ export function openFile(selection: StudioSelection, path: string): StudioVaultS
     refresh: false,
     view: "vault",
     openPath: path,
+    mode: "read",
     openDir: null,
   };
 }
@@ -157,8 +166,14 @@ export function openFolder(selection: StudioSelection, dir: string | null): Stud
     refresh: false,
     view: "vault",
     openPath: null,
+    mode: "read",
     openDir: dir,
   };
+}
+
+/** The open file in the other mode; a selection with no open file is returned as it is. */
+export function withMode(selection: StudioVaultSelection, mode: VaultMode): StudioVaultSelection {
+  return selection.openPath ? { ...selection, mode, refresh: false } : selection;
 }
 
 export function refresh(selection: StudioSelection): StudioSelection {
@@ -174,6 +189,9 @@ export function toFields(selection: StudioSelection): SelectionField[] {
   if (selection.view !== "dashboard") fields.push({ name: VIEW_PARAM, value: selection.view });
   if (selection.view === "vault") {
     if (selection.openPath) fields.push({ name: FILE_PARAM, value: selection.openPath });
+    if (selection.openPath && selection.mode === "edit") {
+      fields.push({ name: MODE_PARAM, value: "edit" });
+    }
     if (selection.openDir) fields.push({ name: DIR_PARAM, value: selection.openDir });
   }
   if (selection.refresh) fields.push({ name: REFRESH_PARAM, value: "1" });
