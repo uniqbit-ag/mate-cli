@@ -1,6 +1,6 @@
 // Deliver the companion guidance to a Claude session Mate did not launch.
 import { buildProjectedGuidance } from "../runtime/projected-guidance";
-import type { HookEnv } from "./validate-artifact-path";
+import type { HookEnv } from "./hook-io";
 
 export interface GuidanceOutcome {
   exitCode: number;

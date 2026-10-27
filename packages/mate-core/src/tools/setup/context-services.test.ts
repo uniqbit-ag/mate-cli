@@ -505,4 +505,29 @@ describe("managed block writes", () => {
     expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
     expect(await fs.readFile(file, "utf8")).toContain("A rule.");
   });
+
+  test("a sweep that empties a symlinked file keeps the link and empties its target", async () => {
+    const { dir, file, reader } = await fileWithReader(
+      "<!-- mate:managed:acme:abc123 start -->\nA rule.\n<!-- mate:managed:acme:abc123 end -->\n",
+    );
+    await reader.close();
+    const link = path.join(dir, "LINKED.md");
+    await fs.symlink(file, link);
+
+    await removeManagedBlocksForPlugin(link, "mate", "acme");
+
+    expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(file, "utf8")).toBe("");
+  });
+
+  test("a sweep that empties a plain file deletes it", async () => {
+    const { file, reader } = await fileWithReader(
+      "<!-- mate:managed:acme:abc123 start -->\nA rule.\n<!-- mate:managed:acme:abc123 end -->\n",
+    );
+    await reader.close();
+
+    await removeManagedBlocksForPlugin(file, "mate", "acme");
+
+    expect(await fs.stat(file).catch(() => null)).toBeNull();
+  });
 });

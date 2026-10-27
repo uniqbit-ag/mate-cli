@@ -33,6 +33,27 @@ describe("writeAtomicThroughLink", () => {
     expect(await fs.readFile(file, "utf8")).toBe("new\n");
   });
 
+  test("a read-only file is refused and left as it was", async () => {
+    const file = path.join(await tempDir(), "AGENTS.md");
+    await fs.writeFile(file, "old\n", { mode: 0o444 });
+
+    await expect(writeAtomicThroughLink(file, "new\n")).rejects.toMatchObject({ code: "EACCES" });
+    expect(await fs.readFile(file, "utf8")).toBe("old\n");
+  });
+
+  test("a hardlinked file is written in place, so every link sees the new text", async () => {
+    const dir = await tempDir();
+    const file = path.join(dir, "AGENTS.md");
+    const sibling = path.join(dir, "acme-AGENTS.md");
+    await fs.writeFile(file, "old\n");
+    await fs.link(file, sibling);
+
+    await writeAtomicThroughLink(file, "new\n");
+
+    expect(await fs.readFile(sibling, "utf8")).toBe("new\n");
+    expect((await fs.stat(file)).ino).toBe((await fs.stat(sibling)).ino);
+  });
+
   test("a dangling link stays a link and its target is created", async () => {
     const dir = await tempDir();
     const target = path.join(dir, "target.md");

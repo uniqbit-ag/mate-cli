@@ -3,11 +3,14 @@
  * and block-level HTML comments as Claude Code's memory loading reads them.
  */
 
+/** A block quote, or a list item whose content starts `width` columns into its parent's. */
+type Container = { kind: "quote" } | { kind: "item"; width: number };
+
 interface Fence {
   char: string;
   length: number;
-  /** The content column of the list items the fence opened in; 0 at the top level. */
-  indent: number;
+  /** The containers the fence opened in, outermost first; a line that leaves one ends the fence. */
+  containers: readonly Container[];
 }
 
 const FENCE_OPEN = /^(`{3,}|~{3,})(.*)$/;
@@ -26,45 +29,90 @@ function indentation(text: string, from: number): { column: number; rest: string
   return { column, rest: text.slice(index) };
 }
 
-/** The open list items' content columns, innermost last, carried from line to line. */
-interface ListContext {
-  items: readonly number[];
-  /** A paragraph is open, so a less indented line may continue it lazily. */
+/** Where a line's text stands: `rest` starts at `column`; the innermost container's content starts at `base`. */
+interface Position {
+  column: number;
+  rest: string;
+  base: number;
+}
+
+/** CommonMark: `>` after up to three spaces of indentation, and one optional space that belongs to the marker. */
+function afterQuoteMarker({ column, rest, base }: Position): Position | null {
+  if (column - base > 3 || !rest.startsWith(">")) return null;
+  const marker = column + 1;
+  const after = indentation(rest.slice(1), marker);
+  return { ...after, base: after.column > marker ? marker + 1 : marker };
+}
+
+/** The open containers a line continues, outermost first. A blank line continues list items, never a quote. */
+function continueContainers(
+  line: string,
+  containers: readonly Container[],
+): { matched: Container[]; at: Position } {
+  let at: Position = { ...indentation(line, 0), base: 0 };
+  const matched: Container[] = [];
+  for (const container of containers) {
+    if (container.kind === "quote") {
+      const next = afterQuoteMarker(at);
+      if (!next) break;
+      at = next;
+    } else {
+      if (at.rest !== "" && at.column < at.base + container.width) break;
+      at = { ...at, base: at.base + container.width };
+    }
+    matched.push(container);
+  }
+  return { matched, at };
+}
+
+/** The open containers carried from line to line. */
+interface ContainerContext {
+  containers: readonly Container[];
+  /** A paragraph is open, so a line that leaves its containers may continue it lazily. */
   paragraph: boolean;
   /** The innermost item opened on a blank line, so a blank line next ends it. */
   emptyItem: boolean;
 }
 
-const TOP_LEVEL: ListContext = { items: [], paragraph: false, emptyItem: false };
+const TOP_LEVEL: ContainerContext = { containers: [], paragraph: false, emptyItem: false };
 
 /** CommonMark: a line that starts a block, so it ends a paragraph rather than continuing it. */
 const INTERRUPTS = /^(?:`{3,}|~{3,}|#{1,6}(?:[ \t]|$)|>|<!--|(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$))/;
 const THEMATIC_BREAK = /^(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
 
 /**
- * Tracks only as much of CommonMark's list items as placing a fence needs. A
- * backtick fence's info string may hold no backtick, so ```` ```a``` ```` is
- * inline code.
+ * Tracks only as much of CommonMark's block quotes and list items as placing a
+ * fence needs. A backtick fence's info string may hold no backtick, so
+ * ```` ```a``` ```` is inline code.
  */
 function lineBlock(
   line: string,
-  context: ListContext,
-): { fence: Fence | null; context: ListContext } {
-  if (BLANK.test(line)) {
-    const items = context.emptyItem ? context.items.slice(0, -1) : context.items;
-    return { fence: null, context: { items, paragraph: false, emptyItem: false } };
+  context: ContainerContext,
+): { fence: Fence | null; context: ContainerContext } {
+  const { matched, at } = continueContainers(line, context.containers);
+  const continues = matched.length === context.containers.length;
+  let { column, rest, base } = at;
+  if (rest === "") {
+    const containers = continues && context.emptyItem ? matched.slice(0, -1) : matched;
+    return { fence: null, context: { containers, paragraph: false, emptyItem: false } };
   }
-  let { column, rest } = indentation(line, 0);
-  let items = context.items.filter((content) => content <= column);
-  let base = items.at(-1) ?? 0;
-  if (items.length < context.items.length) {
+  if (!continues) {
     const starts = INTERRUPTS.test(rest) || THEMATIC_BREAK.test(rest);
     const lazy = context.paragraph && !(column - base <= 3 && starts);
     if (lazy) return { fence: null, context };
   }
-  let paragraph = context.paragraph && items.length === context.items.length;
+  let containers = matched;
+  let paragraph = context.paragraph && continues;
 
   while (column - base <= 3 && !THEMATIC_BREAK.test(rest)) {
+    const quoted = afterQuoteMarker({ column, rest, base });
+    if (quoted) {
+      containers = [...containers, { kind: "quote" }];
+      ({ column, rest, base } = quoted);
+      paragraph = false;
+      if (rest === "") return { fence: null, context: { containers, paragraph, emptyItem: false } };
+      continue;
+    }
     const marker = LIST_MARKER.exec(rest);
     if (!marker) break;
     const markerEnd = column + marker[0].length;
@@ -76,44 +124,54 @@ function lineBlock(
       break;
     }
     const content = gap > 4 || after.rest === "" ? markerEnd + 1 : after.column;
-    items = [...items, content];
+    containers = [...containers, { kind: "item", width: content - base }];
     base = content;
     paragraph = false;
-    if (after.rest === "") return { fence: null, context: { items, paragraph, emptyItem: true } };
+    if (after.rest === "") {
+      return { fence: null, context: { containers, paragraph, emptyItem: true } };
+    }
     column = after.column;
     rest = after.rest;
   }
 
   if (column - base > 3) {
-    return { fence: null, context: { items, paragraph, emptyItem: false } };
+    return { fence: null, context: { containers, paragraph, emptyItem: false } };
   }
   const match = FENCE_OPEN.exec(rest);
   const run = match?.[1];
   if (run && !(run.startsWith("`") && match[2]!.includes("`"))) {
-    const fence = { char: run[0]!, length: run.length, indent: base };
-    return { fence, context: { items, paragraph: false, emptyItem: false } };
+    const fence = { char: run[0]!, length: run.length, containers };
+    return { fence, context: { containers, paragraph: false, emptyItem: false } };
   }
   paragraph = !THEMATIC_BREAK.test(rest) && !/^#{1,6}(?:[ \t]|$)/.test(rest);
-  return { fence: null, context: { items, paragraph, emptyItem: false } };
+  return { fence: null, context: { containers, paragraph, emptyItem: false } };
 }
 
-/** `ends`: a line indented less than the list item's content ends the item, and the fence with it. */
+/** `ends`: a line that leaves one of the fence's containers ends it; fenced code never continues lazily. */
 function fenceLine(line: string, fence: Fence): "content" | "close" | "ends" {
-  if (BLANK.test(line)) return "content";
-  const { column, rest } = indentation(line, 0);
-  if (column < fence.indent) return "ends";
-  const match = column - fence.indent <= 3 ? FENCE_CLOSE.exec(rest) : null;
+  const { matched, at } = continueContainers(line, fence.containers);
+  if (matched.length < fence.containers.length) return "ends";
+  if (at.rest === "") return "content";
+  const match = at.column - at.base <= 3 ? FENCE_CLOSE.exec(at.rest) : null;
   return match !== null && match[1]!.startsWith(fence.char) && match[1]!.length >= fence.length
     ? "close"
     : "content";
 }
 
-/** CommonMark: an ATX heading may be indented by up to three spaces. */
-const HEADING = /^ {0,3}##(?!#)\s+(.*\S)\s*$/;
+/** CommonMark: an ATX heading may be indented by up to three spaces, and be empty. */
+const HEADING = /^ {0,3}##(?:[ \t]+(.*))?$/;
+/** CommonMark: a closing run of `#`s, after a space or tab, is no part of the heading. */
+const CLOSING_SEQUENCE = /(?:^|[ \t]+)#+[ \t]*$/;
+
+function headingText(line: string): string | null {
+  const match = HEADING.exec(line);
+  if (!match) return null;
+  return (match[1] ?? "").replace(CLOSING_SEQUENCE, "").trim();
+}
 
 export interface ScannedLine {
   text: string;
-  /** The heading text when the line opens a top-level (`##`) section: outside fenced code, and outside list items, whose scope it would otherwise leave. */
+  /** The heading text, `""` when empty, when the line opens a top-level (`##`) section: outside fenced code, list items and block quotes, whose scope it would otherwise leave. */
   heading: string | null;
   /** Inside fenced code, where blank lines are content. */
   fenced: boolean;
@@ -145,12 +203,12 @@ export function scanLinesWithoutComments(text: string): ScannedLine[] {
 
   const emit = (line: string): void => {
     const next = lineBlock(line, list);
-    const heading = next.context.items.length === 0 ? (HEADING.exec(line)?.[1] ?? null) : null;
+    const heading = next.context.containers.length === 0 ? headingText(line) : null;
     lines.push({ text: line, heading, fenced: false, offset });
     list = next.context;
     state = next.fence ? { in: "fence", fence: next.fence } : PROSE;
   };
-  /** A comment's lines are one HTML block: it ends the list items it is indented less than. */
+  /** A comment's lines are one HTML block: it ends the containers it leaves. */
   const enterComment = (line: string): void => {
     list = { ...lineBlock(line, list).context, paragraph: false };
   };
@@ -199,5 +257,10 @@ export function joinLines(lines: readonly ScannedLine[]): string {
     if (!(blank && afterBlank)) kept.push(blank ? "" : line.text);
     afterBlank = blank;
   }
-  return kept.join("\n").trim();
+  return trimBlankLines(kept.join("\n"));
+}
+
+/** Drops the blank lines around a text but no indentation: an indented fence opener keeps its meaning. */
+export function trimBlankLines(text: string): string {
+  return text.replace(/^(?:[ \t]*\n)+/, "").trimEnd();
 }

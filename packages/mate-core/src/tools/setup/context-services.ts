@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { managedBlockMarkers, managedBlockStartPattern } from "../../runtime/managed-block";
-import { writeAtomicThroughLink } from "../../runtime/write-atomic";
+import { removeEmptiedFile, writeAtomicThroughLink } from "../../runtime/write-atomic";
 import type {
   InstructionsService,
   McpServerDescriptor,
@@ -138,7 +138,7 @@ async function removeManagedBlock(
   const after = existing.slice(endIdx + end.length).replace(/^\n+/, "\n");
   const next = (before + after).replace(/^\n+/, "");
   if (!next.trim()) {
-    await fs.unlink(filePath).catch(() => {});
+    await removeEmptiedFile(filePath).catch(() => {});
     return;
   }
   await writeAtomicThroughLink(filePath, next);

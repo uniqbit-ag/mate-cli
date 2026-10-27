@@ -4,7 +4,7 @@ import path from "node:path";
 import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
 import {
-  companionBlockMarkers,
+  findCompanionBlock,
   findManagedBlocks,
   managedBlockPluginId,
   stripManagedBlocks,
@@ -113,11 +113,13 @@ interface Segment {
 }
 
 const UNTITLED = "text before the first section";
+/** An empty `##` heading still opens a section, which the omission line must name. */
+const EMPTY_HEADING = "untitled section";
 
 function splitSections(text: string, source: string): Segment[] {
   const sections: { name: string; lines: ScannedLine[] }[] = [{ name: UNTITLED, lines: [] }];
   for (const line of scanLinesWithoutComments(text)) {
-    if (line.heading !== null) sections.push({ name: line.heading, lines: [] });
+    if (line.heading !== null) sections.push({ name: line.heading || EMPTY_HEADING, lines: [] });
     sections.at(-1)!.lines.push(line);
   }
   return sections.map(({ name, lines }) => ({
@@ -131,19 +133,17 @@ function splitSections(text: string, source: string): Segment[] {
 
 /** The block's markers are found before the scan, which would strip them as comments. */
 function segmentAgents(text: string, source: string): Segment[] {
-  const { start, end } = companionBlockMarkers(FRAMEWORK_NAME);
-  const startIndex = text.indexOf(start);
-  const endIndex = startIndex === -1 ? -1 : text.indexOf(end, startIndex);
-  if (endIndex === -1) return splitSections(text, source).filter((part) => part.text.length > 0);
+  const found = findCompanionBlock(text, FRAMEWORK_NAME);
+  if (!found) return splitSections(text, source).filter((part) => part.text.length > 0);
 
-  const before = splitSections(text.slice(0, startIndex), source);
-  const after = splitSections(text.slice(endIndex + end.length), source);
+  const before = splitSections(text.slice(0, found.start), source);
+  const after = splitSections(text.slice(found.end), source);
   /** The text after the block, up to the next heading, continues the section the block opened in. */
   const enclosing = before.at(-1)!;
   after[0] = { ...after[0]!, name: enclosing.name, section: enclosing.section };
   const block: Segment = {
     name: `${FRAMEWORK_NAME.toUpperCase()}:COMPANION block`,
-    text: joinLines(scanLinesWithoutComments(text.slice(startIndex, endIndex + end.length))),
+    text: joinLines(scanLinesWithoutComments(text.slice(found.start, found.end))),
     required: true,
     source,
     section: {},
@@ -275,20 +275,41 @@ function fit(
     length = next;
   }
 
-  const chosen = segments.filter((part) => kept.has(part));
-  const omitted = sections.filter((parts) => !kept.has(parts[0]!));
-  const names = omitted.map((parts) => parts[0]!.name);
-  const body = render(source, chosen);
-  const closing =
-    omitted.length > 0
-      ? closingLine(
-          names,
-          fullTextSources(source, omitted.flat()),
-          COMPANION_INSTRUCTIONS_BUDGET - body.length - "\n\n".length,
-        )
-      : undefined;
-  const text = render(source, chosen, closing);
-  return { text, omitted: names, oversized: text.length > COMPANION_INSTRUCTIONS_BUDGET };
+  const build = (): { text: string; omitted: string[] } => {
+    const chosen = segments.filter((part) => kept.has(part));
+    const omitted = sections.filter((parts) => !kept.has(parts[0]!));
+    const names = omitted.map((parts) => parts[0]!.name);
+    const body = render(source, chosen);
+    const closing =
+      omitted.length > 0
+        ? closingLine(
+            names,
+            fullTextSources(source, omitted.flat()),
+            COMPANION_INSTRUCTIONS_BUDGET - body.length - "\n\n".length,
+          )
+        : undefined;
+    return { text: render(source, chosen, closing), omitted: names };
+  };
+
+  let result = build();
+  /**
+   * The reserve names every section; a dropped one may still fit beside the
+   * real, shorter line. Each section added shortens that line, so the pass
+   * repeats until none is added.
+   */
+  for (let added = true; added;) {
+    added = false;
+    for (const parts of sections) {
+      if (result.text.length > COMPANION_INSTRUCTIONS_BUDGET || kept.has(parts[0]!)) continue;
+      for (const part of parts) kept.add(part);
+      const next = build();
+      if (next.text.length <= COMPANION_INSTRUCTIONS_BUDGET) {
+        result = next;
+        added = true;
+      } else for (const part of parts) kept.delete(part);
+    }
+  }
+  return { ...result, oversized: result.text.length > COMPANION_INSTRUCTIONS_BUDGET };
 }
 
 export function buildCompanionInstructions(

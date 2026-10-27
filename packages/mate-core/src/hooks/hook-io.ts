@@ -1,5 +1,6 @@
 /** Stdin and stdout of a Claude hook shim. */
-import type { HookEnv } from "./validate-artifact-path";
+
+export type HookEnv = Record<string, string | undefined>;
 
 /** One run of a hook shim: its environment, directory, shim arguments and stdin payload. */
 export interface HookCall {
@@ -30,13 +31,13 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** The hook payload on stdin; input that is not JSON reads as no event. */
-export async function readHookInput(): Promise<unknown> {
+/** The hook payload on stdin; input that is not JSON reads as `null`, no event. */
+async function readHookInput(): Promise<unknown> {
   const raw = await readStdin();
   try {
     return JSON.parse(raw) as unknown;
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -59,7 +60,7 @@ export async function runHook(
 }
 
 /** Swallows stdout errors: a parent that stopped reading would otherwise end the write in an uncaught `EPIPE`. */
-export function writeHookStdout(stdout: string): void {
+function writeHookStdout(stdout: string): void {
   if (!stdout) return;
   process.stdout.on("error", () => {});
   process.stdout.write(stdout);

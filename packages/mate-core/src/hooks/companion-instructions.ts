@@ -12,8 +12,7 @@ import { FRAMEWORK_NAME } from "../runtime/framework";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveProjection } from "../runtime/projection";
 import { managedSessionKind, type SessionKind } from "../runtime/session-kind";
-import { errorText, hookOutcome, runHook, type HookCall } from "./hook-io";
-import type { HookEnv } from "./validate-artifact-path";
+import { errorText, hookOutcome, runHook, type HookCall, type HookEnv } from "./hook-io";
 
 export interface InstructionHookPayload {
   hookSpecificOutput?: { hookEventName: InstructionEvent; additionalContext: string };
@@ -24,6 +23,14 @@ export interface InstructionHookInput {
   hook_event_name?: string;
   agent_type?: string;
   cwd?: string;
+}
+
+/** A hook run, with the shim arguments already read. */
+export interface InstructionHookCall extends Omit<HookCall, "argv"> {
+  /** The copy a wrap carries, marked `--projected`. */
+  projected: boolean;
+  /** Where the projection resolves; the event's `cwd` when unset. */
+  directory?: string;
 }
 
 export interface InstructionHookDeps {
@@ -63,9 +70,8 @@ function sessionKind(env: HookEnv): SessionKind {
  * reading the Checkout's manifest: a linked worktree runs the main checkout's
  * wrapped settings and has none of its own.
  */
-function ownsEvent(event: InstructionEvent, kind: SessionKind, argv: readonly string[]): boolean {
+function ownsEvent(event: InstructionEvent, kind: SessionKind, projected: boolean): boolean {
   const owners = planClaudeInstructions(kind, true);
-  const projected = argv.includes(PROJECTED_FLAG);
   if (event === "SessionStart") return owners.main === "wrap-session-hook" && projected;
   if (owners.subagents === "plugin-subagent-hook") return !projected;
   if (owners.subagents === "wrap-subagent-hook") return projected;
@@ -107,26 +113,23 @@ function oversizeMessage(source: string): string {
 }
 
 function evaluate(
-  { env, cwd, argv }: HookCall,
+  { env, cwd, projected, directory }: InstructionHookCall,
   input: InstructionHookInput,
   deps: InstructionHookDeps,
 ): InstructionHookPayload | null {
+  const resolve = deps.resolveProjection ?? resolveProjection;
+  const read = deps.read ?? buildCompanionInstructions;
   const event = input.hook_event_name;
   if (event !== "SessionStart" && event !== "SubagentStart") return null;
   if (event === "SubagentStart" && SKIPPED_AGENTS.has(input.agent_type ?? "")) return null;
 
   const kind = sessionKind(env);
-  if (!ownsEvent(event, kind, argv)) return null;
+  if (!ownsEvent(event, kind, projected)) return null;
 
-  const reader = readerInput(
-    env,
-    kind,
-    input.cwd || cwd,
-    deps.resolveProjection ?? resolveProjection,
-  );
+  const reader = readerInput(env, kind, directory || input.cwd || cwd, resolve);
   if (!reader) return null;
 
-  const result = (deps.read ?? buildCompanionInstructions)(reader);
+  const result = read(reader);
   if (result.kind === "unavailable") {
     const line = companionInstructionsUnavailableLine(result);
     return instructionOutput(event, line, line);
@@ -159,7 +162,7 @@ function failure(error: unknown): InstructionHookPayload {
  * would stall a `-p` or SDK session.
  */
 export function instructionHookPayload(
-  call: HookCall,
+  call: InstructionHookCall,
   deps: InstructionHookDeps = {},
 ): InstructionHookPayload | null {
   try {
@@ -173,7 +176,14 @@ export function instructionHookPayload(
 export function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   return runHook(
     (input) =>
-      hookOutcome(instructionHookPayload({ env: process.env, cwd: process.cwd(), argv, input })),
+      hookOutcome(
+        instructionHookPayload({
+          env: process.env,
+          cwd: process.cwd(),
+          projected: argv.includes(PROJECTED_FLAG),
+          input,
+        }),
+      ),
     (error) => hookOutcome(failure(error)),
   );
 }

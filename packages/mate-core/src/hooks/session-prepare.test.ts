@@ -271,6 +271,106 @@ describe("session-start hook", () => {
     expect(payload.hookSpecificOutput.additionalContext).toBe("ACME-INJECTED");
   });
 
+  test("input that is not JSON runs no prepare and stays silent", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: null },
+      deps,
+    );
+
+    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
+    expect(order).toEqual([]);
+  });
+
+  test("input that is a JSON array runs no prepare and stays silent", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: [] },
+      deps,
+    );
+
+    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
+    expect(order).toEqual([]);
+  });
+
+  /** A Git fast-forward replaces the companion's files in place, so it must not overlap the read. */
+  test("the sync starts only after the instructions are read", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+    deps.instructions = {
+      read: () => {
+        order.push("read");
+        return {
+          kind: "available",
+          source: "/acme/AGENTS.md",
+          text: "ACME-READ",
+          omitted: [],
+          oversized: false,
+        };
+      },
+    };
+
+    await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
+
+    expect(order).toEqual(["local", "read", "sync"]);
+  });
+
+  test("a sync that fails to start is reported and the instructions still go out", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps } = fakeDeps();
+    deps.startSync = () => {
+      throw new Error("spawn refused");
+    };
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+      systemMessage: string;
+    };
+    expect(outcome.exitCode).toBe(0);
+    expect(payload.systemMessage).toBe("mate: session prepare failed: spawn refused");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
+  });
+
+  test("the instructions are read from the folder the prepare ran in", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "acme-elsewhere-")));
+    tempRoots.push(elsewhere);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook(
+      {
+        env: { CLAUDE_PROJECT_DIR: repo },
+        cwd: elsewhere,
+        argv: [PROJECTED_FLAG],
+        input: { ...sessionStart, cwd: elsewhere },
+      },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(order).toContain("local");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
+  });
+
   /** A second prepare would hold the lock and rewrite `AGENTS.md` while the wrap's copy reads it. */
   test("the plugin's bare copy leaves the prepare and the instructions to the wrap's", async () => {
     const repo = projectedRepo("claude");

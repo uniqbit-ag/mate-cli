@@ -13,8 +13,7 @@ import { FRAMEWORK_NAME } from "../runtime/framework";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
 import { mateVersion } from "../runtime/install";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
-import { errorText, hookOutcome, runHook, type HookOutcome } from "./hook-io";
-import type { HookEnv } from "./validate-artifact-path";
+import { errorText, hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
 
 /**
  * Resolves in-process from either source — no subprocess in either branch.

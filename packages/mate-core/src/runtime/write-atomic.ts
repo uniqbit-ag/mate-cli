@@ -66,6 +66,8 @@ async function resolveLinkEnd(filePath: string): Promise<string> {
 /**
  * As `writeAtomic`, through a symlink: the link stays and its target is
  * replaced, or created when the link dangles. An existing file keeps its mode.
+ * A read-only file is refused, as a plain write would refuse it. A hardlinked
+ * file is written in place: replacing it would split it from its other links.
  */
 export async function writeAtomicThroughLink(
   filePath: string,
@@ -73,5 +75,17 @@ export async function writeAtomicThroughLink(
 ): Promise<void> {
   const target = await resolveLinkEnd(filePath);
   const existing = await fs.stat(target).catch(() => null);
+  if (existing && existing.nlink > 1) return fs.writeFile(target, contents, "utf8");
+  if (existing) await fs.access(target, fs.constants.W_OK);
   await replaceViaTemp(target, contents, existing ? existing.mode & 0o7777 : undefined, true);
+}
+
+/**
+ * Deletes a file its writer left without content. A symlink stays: deleting it
+ * would leave the old text in its target, so the target is emptied instead.
+ */
+export async function removeEmptiedFile(filePath: string): Promise<void> {
+  const entry = await fs.lstat(filePath);
+  if (entry.isSymbolicLink()) await writeAtomicThroughLink(filePath, "");
+  else await fs.unlink(filePath);
 }

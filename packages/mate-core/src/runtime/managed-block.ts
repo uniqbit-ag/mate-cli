@@ -3,7 +3,7 @@
  * `runtime/` because hooks may import nothing outside it.
  */
 
-import { fencedRanges } from "./markdown-scan";
+import { fencedRanges, trimBlankLines } from "./markdown-scan";
 
 export interface ManagedBlockMarkers {
   start: string;
@@ -52,16 +52,47 @@ export interface ManagedBlock {
   body: string;
 }
 
+/** A marker quoted in a code fence is an example, not a block. */
+function inFence(fenced: readonly [number, number][], index: number): boolean {
+  return fenced.some(([from, to]) => index >= from && index < to);
+}
+
+/** The first `marker` at or after `from` outside a code fence, or -1. */
+function indexOutsideFence(
+  text: string,
+  marker: string,
+  from: number,
+  fenced: readonly [number, number][],
+): number {
+  let index = text.indexOf(marker, from);
+  while (index !== -1 && inFence(fenced, index)) {
+    index = text.indexOf(marker, index + marker.length);
+  }
+  return index;
+}
+
+/** Offsets of the first `MATE:COMPANION` block, markers included; `null` without one. */
+export function findCompanionBlock(
+  text: string,
+  frameworkName: string,
+): { start: number; end: number } | null {
+  const { start, end } = companionBlockMarkers(frameworkName);
+  const fenced = fencedRanges(text);
+  const startIndex = indexOutsideFence(text, start, 0, fenced);
+  if (startIndex === -1) return null;
+  const endIndex = indexOutsideFence(text, end, startIndex + start.length, fenced);
+  return endIndex === -1 ? null : { start: startIndex, end: endIndex + end.length };
+}
+
 export function findManagedBlocks(text: string, frameworkName: string): ManagedBlock[] {
   const blocks: ManagedBlock[] = [];
   const fenced = fencedRanges(text);
   for (const match of text.matchAll(managedBlockStartPattern(frameworkName))) {
-    /* A marker quoted in a code fence is an example, not a block. */
-    if (fenced.some(([from, to]) => match.index >= from && match.index < to)) continue;
+    if (inFence(fenced, match.index)) continue;
     const key = match[1]!;
     const { start, end } = managedBlockMarkers(frameworkName, key);
     const bodyStart = match.index + start.length;
-    const endIndex = text.indexOf(end, bodyStart);
+    const endIndex = indexOutsideFence(text, end, bodyStart, fenced);
     if (endIndex === -1) continue;
     const previous = blocks.at(-1);
     if (previous && match.index < previous.end) continue;
@@ -69,7 +100,7 @@ export function findManagedBlocks(text: string, frameworkName: string): ManagedB
       key,
       start: match.index,
       end: endIndex + end.length,
-      body: text.slice(bodyStart, endIndex).trim(),
+      body: trimBlankLines(text.slice(bodyStart, endIndex)),
     });
   }
   return blocks;

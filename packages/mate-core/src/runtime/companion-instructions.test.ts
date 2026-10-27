@@ -30,6 +30,10 @@ const MANAGED_BLOCK = [
   "<!-- MATE:COMPANION:END -->",
 ].join("\n");
 
+/** The block's markers quoted as an example in fenced code. */
+const FENCED_MARKERS =
+  "```md\n<!-- MATE:COMPANION:START -->\nexample\n<!-- MATE:COMPANION:END -->\n```";
+
 function managedBlock(key: string, body: string): string {
   const { start, end } = managedBlockMarkers("mate", key);
   return `${start}\n${body}\n${end}`;
@@ -241,6 +245,77 @@ describe("buildCompanionInstructions comments and fences", () => {
     expect(text(build(dir))).toContain("```html\n<!-- keep me -->\n```");
   });
 
+  test("block markers quoted in fenced code are an example, not the block", () => {
+    const dir = companion({
+      agents: `## Setup\n\n${FENCED_MARKERS}\n\n## After example\n\n- After rule.\n\n${MANAGED_BLOCK}\n\n## Git\n\n- Git rule.\n`,
+    });
+
+    const delivered = text(build(dir));
+
+    expect(delivered).toContain(FENCED_MARKERS);
+    expect(delivered).toContain("## After example\n\n- After rule.");
+    expect(delivered).toContain(RULE);
+    expect(delivered).toContain("## Git\n\n- Git rule.");
+    expect(delivered.split("<!-- MATE:COMPANION:START -->")).toHaveLength(2);
+  });
+
+  test("an oversized block after a fenced example of its markers is kept whole", () => {
+    const body = "- Block rule.\n".repeat(680);
+    const dir = companion({
+      agents: `## Setup\n\n${FENCED_MARKERS}\n\n<!-- MATE:COMPANION:START -->\n\n${body}\n<!-- MATE:COMPANION:END -->\n`,
+    });
+
+    const result = build(dir);
+
+    expect(text(result)).toContain(body.trim());
+    expect(result.kind === "available" && result.oversized).toBe(true);
+  });
+
+  test("an oversized block after a block-quoted fenced example of its markers is kept whole", () => {
+    const body = "- Block rule.\n".repeat(680);
+    const quoted = FENCED_MARKERS.split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+    const dir = companion({
+      agents: `## Setup\n\n${quoted}\n\n<!-- MATE:COMPANION:START -->\n\n${body}\n<!-- MATE:COMPANION:END -->\n`,
+    });
+
+    const result = build(dir);
+
+    expect(text(result)).toContain(body.trim());
+    expect(result.kind === "available" && result.oversized).toBe(true);
+  });
+
+  test("a fence in a block quote ends with the quote, so it hides no later block", () => {
+    const dir = companion({
+      agents: `## Setup\n\n> \`\`\`md\n> unclosed example\n\n${MANAGED_BLOCK}\n\n## Git\n\n- Git rule.\n`,
+    });
+
+    const delivered = text(build(dir));
+
+    expect(delivered).toContain(RULE);
+    expect(delivered).not.toContain("<!-- MATE:COMPANION:START -->");
+  });
+
+  test("a fence nested in a list inside a block quote is still fenced", () => {
+    const quoted = ["- Example:", "", ...FENCED_MARKERS.split("\n").map((line) => `  ${line}`)]
+      .map((line) => `> ${line}`.trimEnd())
+      .join("\n");
+    const dir = companion({ agents: `## Setup\n\n${quoted}\n\n${MANAGED_BLOCK}\n` });
+
+    const delivered = text(build(dir));
+
+    expect(delivered).toContain(RULE);
+    expect(delivered.split("<!-- MATE:COMPANION:START -->")).toHaveLength(2);
+  });
+
+  test("an indented fence that opens a section's text keeps its indentation", () => {
+    const fence = "   ```sh\n   echo acme\n   ```";
+    const dir = companion({ agents: `${fence}\n\n${MANAGED_BLOCK}\n` });
+
+    expect(text(build(dir))).toContain(fence);
+  });
+
   test("a heading inside fenced code opens no section, whichever fence encloses it", () => {
     const code = [
       "## Code",
@@ -347,6 +422,30 @@ describe("buildCompanionInstructions comments and fences", () => {
 
     expect(result.kind === "available" && result.omitted).toEqual(["Big"]);
     expect(text(result)).toContain("Git rule.\n    ## Four spaces is no heading");
+  });
+
+  test("an empty ## heading opens a section, as CommonMark reads it", () => {
+    const big = "- Big rule.\n".repeat(800);
+    for (const heading of ["##", "##  ", "## #"]) {
+      const dir = companion({
+        agents: `${MANAGED_BLOCK}\n\n## Git\n\nGit rule.\n\n${heading}\n\n${big}`,
+      });
+
+      const result = build(dir);
+
+      expect(result.kind === "available" && result.omitted).toEqual(["untitled section"]);
+      expect(text(result)).toContain("## Git\n\nGit rule.");
+    }
+  });
+
+  test("a ## heading's closing #s are no part of its name", () => {
+    const dir = companion({
+      agents: `${MANAGED_BLOCK}\n\n## Git\n\nGit rule.\n\n## Big ##\n\n${"- Big rule.\n".repeat(800)}`,
+    });
+
+    const result = build(dir);
+
+    expect(result.kind === "available" && result.omitted).toEqual(["Big"]);
   });
 
   test("a ## heading inside a list item opens no section, so dropping its section drops it too", () => {
@@ -495,6 +594,23 @@ describe("buildCompanionInstructions budget", () => {
     );
   });
 
+  test("a section that fits beside the real omission line is kept", () => {
+    const heading = `Keep ${"k".repeat(70)}`;
+    const huge = section("Huge", 12_000);
+    const probe = text(
+      build(companion({ agents: `${MANAGED_BLOCK}\n\n## ${heading}\n\nx\n\n${huge}\n` })),
+    );
+    /** Five characters under the budget: the omission line for every name would not fit. */
+    const keep = `## ${heading}\n\n${"x".repeat(1 + COMPANION_INSTRUCTIONS_BUDGET - probe.length - 5)}`;
+
+    const result = build(companion({ agents: `${MANAGED_BLOCK}\n\n${keep}\n\n${huge}\n` }));
+    const delivered = text(result);
+
+    expect(delivered.length).toBe(COMPANION_INSTRUCTIONS_BUDGET - 5);
+    expect(delivered).toContain(keep);
+    expect(result.kind === "available" && result.omitted).toEqual(["Huge"]);
+  });
+
   test("never cuts a section in the middle", () => {
     const dir = companion({ agents: `${MANAGED_BLOCK}\n\n${section("Huge", 12_000)}\n` });
 
@@ -548,6 +664,41 @@ describe("buildCompanionInstructions budget", () => {
     });
 
     expect(text(build(dir))).not.toContain("Quoted rule.");
+  });
+
+  test("ignores a managed block quoted inside a block-quoted code fence in CLAUDE.md", () => {
+    const quoted = ["```md", managedBlock("context-mode:abc123", "- Quoted rule."), "```"]
+      .join("\n")
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+    const dir = companion({ agents: MANAGED_BLOCK, claude: `@AGENTS.md\n\n${quoted}\n` });
+
+    expect(text(build(dir))).not.toContain("Quoted rule.");
+  });
+
+  test("a CLAUDE.md block whose body quotes its end marker in a fence keeps its later rules", () => {
+    const { end } = managedBlockMarkers("mate", "context-mode:abc123");
+    const body = ["- First rule.", "", "```md", end, "```", "", "- Later rule."].join("\n");
+    const dir = companion({
+      agents: MANAGED_BLOCK,
+      claude: `@AGENTS.md\n\n${managedBlock("context-mode:abc123", body)}\n`,
+    });
+
+    const delivered = text(build(dir));
+
+    expect(delivered).toContain("- First rule.");
+    expect(delivered).toContain("- Later rule.");
+  });
+
+  test("a CLAUDE.md block that opens with an indented fence keeps its indentation", () => {
+    const fence = "   ```sh\n   echo acme\n   ```";
+    const dir = companion({
+      agents: MANAGED_BLOCK,
+      claude: `@AGENTS.md\n\n${managedBlock("context-mode:abc123", fence)}\n`,
+    });
+
+    expect(text(build(dir))).toContain(fence);
   });
 
   test("a CLAUDE.md block survives when the last AGENTS.md section is dropped", () => {

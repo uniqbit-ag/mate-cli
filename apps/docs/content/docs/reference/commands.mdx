@@ -150,12 +150,13 @@ and names the document that failed.
 The companion's own rules, its `AGENTS.md`, reach every Claude session in a
 Working Repository once:
 
-- `mate claude`, plain `claude`, Agent SDK sessions that load the project's
-  settings, such as T3, and linked worktrees that hold the repository's `.mate/`
-  folder all get them from the wrap's `SessionStart` session-prepare hook, after
-  it prepares the session, so they read the companion files the preparation
-  refreshed. The system prompt holds none of them, so a conversation resumed
-  through the other launcher holds one copy, not two. A fresh worktree without
+- `mate claude`, plain `claude`, Agent SDK sessions that load local settings
+  (`settingSources` includes `local`, where the wrap lives), such as T3, and
+  linked worktrees that hold the repository's `.mate/` folder all get them from
+  the wrap's `SessionStart` session-prepare hook, after it prepares the session,
+  so they read the companion files the preparation refreshed. The system prompt
+  holds none of them, so a conversation resumed through the other launcher holds
+  one copy, not two. A fresh worktree without
   `.mate/` gets nothing, and no notice says so. A worktree nested inside the main
   checkout, as `claude --worktree` creates under `.claude/worktrees/`, uses the
   main checkout's `.mate/`, so its rules name the main checkout's path. A session
@@ -266,9 +267,10 @@ an `attribution` you set in `.claude/settings.local.json` is left as it is.
 Earlier versions also set `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` in the
 `env` block of `.claude/settings.local.json`. Claude Code applies it only to
 directories passed with `--add-dir`, so it never loaded the companion `CLAUDE.md`
-there. The next wrap pass removes the value Mate wrote and keeps one you set
-yourself. If you pass your own `--add-dir` in a wrapped repository and relied on
-Mate's value, set the variable in your own settings.
+there. The next wrap pass removes the value Mate recorded, even if you had set
+the same value yourself, and keeps one you set after it. If you pass your own
+`--add-dir` in a wrapped repository and relied on Mate's value, set the variable
+in your own settings.
 
 The wrap also links each companion skill folder (`.claude/skills/<name>`) and each
 companion command folder, such as OpenSpec's `.claude/commands/opsx/`, into your

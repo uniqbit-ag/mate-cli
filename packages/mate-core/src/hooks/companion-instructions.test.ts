@@ -6,7 +6,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import type { CompanionInstructions } from "../runtime/companion-instructions";
 import { writeProjectionPair } from "../runtime/projection";
-import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import {
   instructionHookPayload,
@@ -89,19 +88,19 @@ const subagentStart = (agentType = "general-purpose"): InstructionHookInput => (
   agent_type: agentType,
 });
 
-/** The plugin's copies run bare; both copies the wrap carries hold the flag. */
-const PLUGIN: readonly string[] = [];
-const WRAPPED: readonly string[] = [PROJECTED_FLAG];
+/** The plugin's copies run bare; both copies the wrap carries hold `--projected`. */
+const PLUGIN = false;
+const WRAPPED = true;
 const BOTH_COPIES = [PLUGIN, WRAPPED];
 
 function outcome(
   env: Record<string, string | undefined>,
   cwd: string,
-  argv: readonly string[],
+  projected: boolean,
   input: unknown,
   deps?: InstructionHookDeps,
 ): HookOutcome {
-  return hookOutcome(instructionHookPayload({ env, cwd, argv, input }, deps));
+  return hookOutcome(instructionHookPayload({ env, cwd, projected, input }, deps));
 }
 
 function parsed(stdout: string): {
@@ -256,8 +255,8 @@ describe("companion-instructions hook under a launch environment", () => {
     const { MATE_ARTIFACT_PATH: _companion, ...partial } = launchEnv;
 
     for (const input of [sessionStart(), subagentStart()]) {
-      const argv = input.hook_event_name === "SessionStart" ? WRAPPED : PLUGIN;
-      expect(outcome(partial, repoRoot, argv, input).stdout).toBe("");
+      const projected = input.hook_event_name === "SessionStart" ? WRAPPED : PLUGIN;
+      expect(outcome(partial, repoRoot, projected, input).stdout).toBe("");
     }
   });
 
@@ -283,9 +282,9 @@ describe("companion-instructions hook under a launch environment", () => {
     const { repoRoot, launchEnv } = wrappedRepo();
     const { MATE_REPO_PATH: _path, MATE_REPO_ID: _id, ...companionEnv } = launchEnv;
 
-    for (const argv of BOTH_COPIES) {
+    for (const projected of BOTH_COPIES) {
       for (const input of [sessionStart(), subagentStart()]) {
-        expect(outcome(companionEnv, repoRoot, argv, input).stdout).toBe("");
+        expect(outcome(companionEnv, repoRoot, projected, input).stdout).toBe("");
       }
     }
   });
@@ -313,9 +312,9 @@ describe("companion-instructions hook where nothing resolves", () => {
   test("a session in the companion itself resolves no projection, so both copies are silent", () => {
     const { companionPath } = wrappedRepo();
 
-    for (const argv of BOTH_COPIES) {
-      expect(outcome({}, companionPath, argv, sessionStart()).stdout).toBe("");
-      expect(outcome({}, companionPath, argv, subagentStart()).stdout).toBe("");
+    for (const projected of BOTH_COPIES) {
+      expect(outcome({}, companionPath, projected, sessionStart()).stdout).toBe("");
+      expect(outcome({}, companionPath, projected, subagentStart()).stdout).toBe("");
     }
   });
 
