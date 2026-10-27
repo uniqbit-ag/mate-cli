@@ -10,19 +10,15 @@ import {
   stripManagedBlocks,
   type ManagedBlock,
 } from "./managed-block";
-import { joinLines, scanLines, type ScannedLine } from "./markdown-scan";
+import { joinLines, scanLinesWithoutComments, type ScannedLine } from "./markdown-scan";
 
 /**
  * Companion Instructions: the companion's own `AGENTS.md`, rendered for one
- * Agent Runtime and one session. Read-only and runtime-neutral, so the launch
- * adapter and the session hooks deliver the same text.
- *
- * Claude Code loads no memory from a directory granted through settings, so a
- * Working Repository session gets these only when Mate inlines them. The text
- * mirrors what native loading of the companion `CLAUDE.md` (`@AGENTS.md`)
- * yields: block-level HTML comments stripped, `AGENTS.override.md` not read. `@` lines stay
- * literal, because expanding an import outside the project needs an approval a
- * hook or `-p` session never gets.
+ * Claude session. Read-only. The text mirrors what native loading of the
+ * companion `CLAUDE.md` (`@AGENTS.md`) yields: block-level HTML comments
+ * stripped, `AGENTS.override.md` not read. `@` lines stay literal, because
+ * expanding an import outside the project needs an approval a hook or `-p`
+ * session never gets.
  */
 
 export const COMPANION_INSTRUCTIONS_TAG = "companion-instructions";
@@ -33,19 +29,13 @@ export const COMPANION_INSTRUCTIONS_TAG = "companion-instructions";
  */
 export const COMPANION_INSTRUCTIONS_BUDGET = 9_000;
 
-export type InstructionRuntime = "claude" | "opencode";
-
-/** The companion file each runtime's surface writes its `mate:managed` blocks to. */
-const BLOCK_FILE: Record<InstructionRuntime, string> = {
-  claude: "CLAUDE.md",
-  opencode: "AGENTS.md",
-};
+/** Where the Claude Runtime Surface writes its `mate:managed` blocks; those in `AGENTS.md` are OpenCode's. */
+const CLAUDE_BLOCK_FILE = "CLAUDE.md";
 
 export interface CompanionInstructionsInput {
   companionPath: string;
   repository: { id: string; path: string };
   wrapperBinPath: string;
-  runtime: InstructionRuntime;
 }
 
 export type CompanionInstructions =
@@ -111,10 +101,6 @@ function fillPlaceholders(text: string, input: CompanionInstructionsInput): stri
   );
 }
 
-function tidy(text: string): string {
-  return joinLines(scanLines(text));
-}
-
 interface Segment {
   /** The `##` heading, or a description for text no heading introduces. */
   name: string;
@@ -122,13 +108,15 @@ interface Segment {
   /** The `MATE:COMPANION` block: always kept whole. */
   required: boolean;
   source: string;
+  /** Shared by the two halves of a section the block sits in, so they are kept or omitted together. */
+  section: object;
 }
 
 const UNTITLED = "text before the first section";
 
 function splitSections(text: string, source: string): Segment[] {
   const sections: { name: string; lines: ScannedLine[] }[] = [{ name: UNTITLED, lines: [] }];
-  for (const line of scanLines(text)) {
+  for (const line of scanLinesWithoutComments(text)) {
     if (line.heading !== null) sections.push({ name: line.heading, lines: [] });
     sections.at(-1)!.lines.push(line);
   }
@@ -137,6 +125,7 @@ function splitSections(text: string, source: string): Segment[] {
     text: joinLines(lines),
     required: false,
     source,
+    section: {},
   }));
 }
 
@@ -145,21 +134,21 @@ function segmentAgents(text: string, source: string): Segment[] {
   const { start, end } = companionBlockMarkers(FRAMEWORK_NAME);
   const startIndex = text.indexOf(start);
   const endIndex = startIndex === -1 ? -1 : text.indexOf(end, startIndex);
+  if (endIndex === -1) return splitSections(text, source).filter((part) => part.text.length > 0);
 
-  const parts: Segment[] =
-    endIndex === -1
-      ? splitSections(text, source)
-      : [
-          ...splitSections(text.slice(0, startIndex), source),
-          {
-            name: `${FRAMEWORK_NAME.toUpperCase()}:COMPANION block`,
-            text: tidy(text.slice(startIndex, endIndex + end.length)),
-            required: true,
-            source,
-          },
-          ...splitSections(text.slice(endIndex + end.length), source),
-        ];
-  return parts.filter((part) => part.text.length > 0);
+  const before = splitSections(text.slice(0, startIndex), source);
+  const after = splitSections(text.slice(endIndex + end.length), source);
+  /** The text after the block, up to the next heading, continues the section the block opened in. */
+  const enclosing = before.at(-1)!;
+  after[0] = { ...after[0]!, name: enclosing.name, section: enclosing.section };
+  const block: Segment = {
+    name: `${FRAMEWORK_NAME.toUpperCase()}:COMPANION block`,
+    text: joinLines(scanLinesWithoutComments(text.slice(startIndex, endIndex + end.length))),
+    required: true,
+    source,
+    section: {},
+  };
+  return [...before, block, ...after].filter((part) => part.text.length > 0);
 }
 
 function segmentBlocks(
@@ -170,25 +159,22 @@ function segmentBlocks(
   return blocks
     .map((block) => ({
       name: `${path.basename(source)} block ${managedBlockPluginId(block.key)}`,
-      text: tidy(fillPlaceholders(block.body, input)),
+      text: joinLines(scanLinesWithoutComments(fillPlaceholders(block.body, input))),
       required: false,
       source,
+      section: {},
     }))
     .filter((part) => part.text.length > 0);
 }
 
-/** A block marker names no runtime; the file it sits in does. */
 function segment(
   agents: string,
   source: string,
   input: CompanionInstructionsInput,
   deps: CompanionInstructionsDeps,
 ): Segment[] {
-  const blockFile = BLOCK_FILE[input.runtime];
-  if (blockFile === "AGENTS.md") return segmentAgents(fillPlaceholders(agents, input), source);
-
   const own = stripManagedBlocks(agents, FRAMEWORK_NAME);
-  const blockSource = path.join(input.companionPath, blockFile);
+  const blockSource = path.join(input.companionPath, CLAUDE_BLOCK_FILE);
   const read = readText(blockSource, deps);
   const blocks = "text" in read ? findManagedBlocks(read.text, FRAMEWORK_NAME) : [];
   return [
@@ -249,14 +235,26 @@ function fullTextSources(source: string, parts: readonly Segment[]): string[] {
  * appears once the full listing passes the cap, has at most as many digits as
  * the whole.
  */
-function omissionReserve(optional: readonly Segment[], source: string): number {
-  const listed = optional.map((part) => omissionName(part.name)).join(", ").length;
-  const more = listed > OMISSION_NAMES_CAP ? ` and ${optional.length} more`.length : 0;
-  const fixed = omissionLine("", fullTextSources(source, optional)).length;
+function omissionReserve(sections: readonly Segment[][], source: string): number {
+  const listed = sections.map((parts) => omissionName(parts[0]!.name)).join(", ").length;
+  const more = listed > OMISSION_NAMES_CAP ? ` and ${sections.length} more`.length : 0;
+  const fixed = omissionLine("", fullTextSources(source, sections.flat())).length;
   return fixed + Math.min(listed, OMISSION_NAMES_CAP) + more;
 }
 
-/** The omission line's worst case is reserved before any segment is added, so adding the real line never pushes a fitting result over. */
+/** The segments other than the block, grouped by section in document order. */
+function optionalSections(segments: readonly Segment[]): Segment[][] {
+  const sections = new Map<object, Segment[]>();
+  for (const part of segments) {
+    if (part.required) continue;
+    const parts = sections.get(part.section);
+    if (parts) parts.push(part);
+    else sections.set(part.section, [part]);
+  }
+  return [...sections.values()];
+}
+
+/** The omission line's worst case is reserved before any section is added, so adding the real line never pushes a fitting result over. */
 function fit(
   source: string,
   segments: readonly Segment[],
@@ -266,34 +264,31 @@ function fit(
     return { text: whole, omitted: [], oversized: false };
   }
 
-  const optional = segments.filter((part) => !part.required);
-  const reserve = "#".repeat(omissionReserve(optional, source));
+  const sections = optionalSections(segments);
+  const reserve = "#".repeat(omissionReserve(sections, source));
   const kept = new Set<Segment>(segments.filter((part) => part.required));
   let length = render(source, [...kept], reserve).length;
-  for (const part of optional) {
-    const next = length + part.text.length + "\n\n".length;
+  for (const parts of sections) {
+    const next = parts.reduce((sum, part) => sum + part.text.length + "\n\n".length, length);
     if (next > COMPANION_INSTRUCTIONS_BUDGET) continue;
-    kept.add(part);
+    for (const part of parts) kept.add(part);
     length = next;
   }
 
   const chosen = segments.filter((part) => kept.has(part));
-  const omitted = optional.filter((part) => !kept.has(part));
+  const omitted = sections.filter((parts) => !kept.has(parts[0]!));
+  const names = omitted.map((parts) => parts[0]!.name);
   const body = render(source, chosen);
   const closing =
     omitted.length > 0
       ? closingLine(
-          omitted.map((part) => part.name),
-          fullTextSources(source, omitted),
+          names,
+          fullTextSources(source, omitted.flat()),
           COMPANION_INSTRUCTIONS_BUDGET - body.length - "\n\n".length,
         )
       : undefined;
   const text = render(source, chosen, closing);
-  return {
-    text,
-    omitted: omitted.map((part) => part.name),
-    oversized: text.length > COMPANION_INSTRUCTIONS_BUDGET,
-  };
+  return { text, omitted: names, oversized: text.length > COMPANION_INSTRUCTIONS_BUDGET };
 }
 
 export function buildCompanionInstructions(
@@ -317,7 +312,7 @@ export function companionClaudeMdHasOwnText(
 ): boolean {
   const read = readText(path.join(companionPath, "CLAUDE.md"), deps);
   if (!("text" in read)) return false;
-  return scanLines(stripManagedBlocks(read.text, FRAMEWORK_NAME)).some((line) => {
+  return scanLinesWithoutComments(stripManagedBlocks(read.text, FRAMEWORK_NAME)).some((line) => {
     const trimmed = line.text.trim();
     return trimmed !== "" && trimmed !== "@AGENTS.md" && trimmed !== "@./AGENTS.md";
   });

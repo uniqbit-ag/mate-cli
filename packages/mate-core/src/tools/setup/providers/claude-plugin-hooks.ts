@@ -13,13 +13,10 @@ import { hookGroupKey, type ClaudeHookGroup } from "./claude-format";
  *
  * A managed session loads the Working Repository's settings as its `local`
  * source *alongside* the plugin, so every group carried over runs twice there;
- * a plain session may load both too, through `--plugin-dir`. All of them
- * survive that: the guard, whose verdict is a function of the tool input
- * alone; the guidance hook, which yields nothing when a launch environment is
- * present and so cannot double the prompt the launch already appended; and the
- * banner, the prepare and the SubagentStart instruction hook, whose carried
- * copies are marked so each copy can tell which of the two it is and the plan
- * names one owner.
+ * a plain session may load both too, through `--plugin-dir`. The guard is
+ * input-pure, the guidance hook yields under a launch environment, and the
+ * banner, prepare and SubagentStart instruction copies carried here hold
+ * `PROJECTED_FLAG`, so one copy of each acts.
  *
  * The wiring is read from the installed plugin, but every command names
  * `<mate home>/runtime/claude-plugin`, so a reinstall or Node switch does not
@@ -129,9 +126,9 @@ export function mateInstructionHookGroups(
 /**
  * The session-prepare `SessionStart` group, resolved the same way. Its declared
  * `timeout` sits above the shim's own bound, so Claude Code never kills a
- * prepare the shim has not given up on. Inert under a launch environment. It
- * carries `PROJECTED_FLAG` because it alone prepares and then delivers the
- * main thread's instructions; the plugin's copy stays inert.
+ * prepare the shim has not given up on. It carries `PROJECTED_FLAG`: this copy
+ * alone prepares, which it skips under a launch environment, and then delivers
+ * the main thread's instructions; the plugin's copy stays inert.
  */
 export function mateSessionPrepareHookGroups(
   commandRoot: string = runtimeClaudePluginRoot(),

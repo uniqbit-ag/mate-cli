@@ -6,3 +6,8 @@
  * session with no launch environment.
  */
 export type SessionKind = "managed-repo" | "managed-companion" | "unmanaged";
+
+/** A managed launch's kind: with a Working Repository, or companion-scoped. */
+export function managedSessionKind(withRepository: boolean): SessionKind {
+  return withRepository ? "managed-repo" : "managed-companion";
+}

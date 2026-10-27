@@ -3,6 +3,7 @@ import fs from "node:fs";
 
 import { unmanagedClaudeDelivery } from "../runtime/claude-delivery-plan";
 import { hasLaunchEnvironment } from "../runtime/env";
+import { FRAMEWORK_NAME } from "../runtime/framework";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveProjection } from "../runtime/projection";
 import { runtimeDirectoryPath, runtimeMateBin } from "../runtime/runtime-directory";
@@ -13,8 +14,8 @@ import {
   type PrepareRun,
   type PrepareRunner,
 } from "../runtime/session-prepare-runner";
-import { instructionHookPayload } from "./companion-instructions";
-import { hookOutcome, runHook, type HookOutcome } from "./hook-io";
+import { instructionHookPayload, type InstructionHookDeps } from "./companion-instructions";
+import { errorText, hookOutcome, runHook, type HookCall, type HookOutcome } from "./hook-io";
 import type { HookEnv } from "./validate-artifact-path";
 
 export interface SessionPrepareHookDeps {
@@ -23,6 +24,8 @@ export interface SessionPrepareHookDeps {
   runner: (mateBin: string, repoPath: string) => PrepareRunner;
   startSync: (mateBin: string, repoPath: string) => void;
   timeoutMs: number;
+  /** The main thread's instruction read, after the prepare. */
+  instructions?: InstructionHookDeps;
 }
 
 export const sessionPrepareHookDeps: SessionPrepareHookDeps = {
@@ -38,10 +41,6 @@ export const sessionPrepareHookDeps: SessionPrepareHookDeps = {
 /** `systemMessage` only: the model must never be told to repair the companion. */
 function operatorMessage(lines: string[]): HookOutcome {
   return hookOutcome(lines.length > 0 ? { systemMessage: lines.join("\n") } : null);
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 async function runLocalPhase(
@@ -79,7 +78,7 @@ async function guardedPrepareNotes(
   try {
     return await prepareNotes(env, cwd, deps);
   } catch (error) {
-    return [`mate: session prepare failed: ${errorText(error)}`];
+    return [`${FRAMEWORK_NAME}: session prepare failed: ${errorText(error)}`];
   }
 }
 
@@ -100,7 +99,7 @@ async function prepareNotes(
   const mateBin = deps.mateBin();
   if (!mateBin) {
     return [
-      `mate: session prepare skipped: ${runtimeDirectoryPath()} is missing; run \`mate\` once to repair it.`,
+      `${FRAMEWORK_NAME}: session prepare skipped: ${runtimeDirectoryPath()} is missing; run \`${FRAMEWORK_NAME}\` once to repair it.`,
     ];
   }
 
@@ -110,34 +109,29 @@ async function prepareNotes(
   if (syncs) deps.startSync(mateBin, projectDir);
 
   const verdict = local.ok ? "warning" : "failed";
-  return local.notes.map((note) => `mate: session prepare ${verdict}: ${note}`);
+  return local.notes.map((note) => `${FRAMEWORK_NAME}: session prepare ${verdict}: ${note}`);
 }
 
 /**
- * The prepare, then the main thread's Companion Instructions: Claude Code runs
- * an event's hooks in parallel, and the prepare rewrites the companion's
- * `AGENTS.md` and `CLAUDE.md`, so a separate instruction hook could read them
- * stale or half written. Only a wrap's copy does either: a plugin copy loaded
- * through `--plugin-dir` would hold the companion lock and rewrite them while
- * the wrap's copy reads them. A wrap from before the group carried
- * `PROJECTED_FLAG` registered it bare, so a bare copy counts as the wrap's
- * unless Claude Code exported `CLAUDE_PLUGIN_ROOT`, which it does for plugin
- * hooks only. That test needs no manifest, so a linked worktree served by the
- * main checkout's settings is covered too.
+ * The prepare, then the main thread's Companion Instructions, in one hook:
+ * Claude Code runs an event's hooks in parallel, and the prepare rewrites the
+ * files the instructions are read from. Only the wrap's copy runs either. Older
+ * wraps registered it bare, so a bare copy counts as the wrap's unless
+ * `CLAUDE_PLUGIN_ROOT`, set for plugin hooks only, marks it as the plugin's.
  */
 export async function runSessionStartHook(
-  env: HookEnv,
-  cwd: string,
-  argv: readonly string[],
-  input: unknown,
+  call: HookCall,
   deps: SessionPrepareHookDeps = sessionPrepareHookDeps,
 ): Promise<HookOutcome> {
+  const { env, cwd } = call;
+  let { argv } = call;
   if (!argv.includes(PROJECTED_FLAG)) {
     if (env.CLAUDE_PLUGIN_ROOT) return operatorMessage([]);
     argv = [...argv, PROJECTED_FLAG];
   }
   const notes = await guardedPrepareNotes(env, cwd, deps);
-  const { hookSpecificOutput, systemMessage } = instructionHookPayload(env, cwd, argv, input) ?? {};
+  const { hookSpecificOutput, systemMessage } =
+    instructionHookPayload({ ...call, argv }, deps.instructions) ?? {};
   const messages = systemMessage ? [...notes, systemMessage] : notes;
   if (!hookSpecificOutput) return operatorMessage(messages);
   return hookOutcome({
@@ -149,7 +143,8 @@ export async function runSessionStartHook(
 /** Plugin-shim entry; exits zero even when reading its input fails. */
 export function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   return runHook(
-    (input) => runSessionStartHook(process.env, process.cwd(), argv, input),
-    (error) => operatorMessage([`mate: session start hook failed: ${errorText(error)}`]),
+    (input) => runSessionStartHook({ env: process.env, cwd: process.cwd(), argv, input }),
+    (error) =>
+      operatorMessage([`${FRAMEWORK_NAME}: session start hook failed: ${errorText(error)}`]),
   );
 }

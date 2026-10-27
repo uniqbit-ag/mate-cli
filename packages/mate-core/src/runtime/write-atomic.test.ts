@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
-import { writeAtomicThroughLink } from "./write-atomic";
+import { writeAtomic, writeAtomicThroughLink } from "./write-atomic";
 
 const tempRoots: string[] = [];
 
@@ -90,5 +90,19 @@ describe("writeAtomicThroughLink", () => {
     }
 
     expect(modeWhileWritten).toBe(0o600);
+  });
+});
+
+describe("writeAtomic", () => {
+  test("a requested mode stays subject to the umask", async () => {
+    const file = path.join(await tempDir(), "launcher");
+    const previousUmask = process.umask(0o077);
+    try {
+      await writeAtomic(file, "#!/bin/sh\n", 0o755);
+    } finally {
+      process.umask(previousUmask);
+    }
+
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o700);
   });
 });

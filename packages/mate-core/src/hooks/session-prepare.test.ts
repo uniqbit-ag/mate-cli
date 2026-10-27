@@ -192,7 +192,10 @@ describe("session-start hook", () => {
       return local(bin, dir)(request);
     };
 
-    const outcome = await runSessionStartHook({}, repo, [PROJECTED_FLAG], sessionStart, deps);
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
 
     const payload = JSON.parse(outcome.stdout) as {
       hookSpecificOutput: { hookEventName: string; additionalContext: string };
@@ -207,7 +210,10 @@ describe("session-start hook", () => {
     companionOf(repo);
     const { deps } = fakeDeps({ ok: true, notes: ["acme shadowed"] });
 
-    const outcome = await runSessionStartHook({}, repo, [PROJECTED_FLAG], sessionStart, deps);
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
 
     const payload = JSON.parse(outcome.stdout) as {
       hookSpecificOutput: { additionalContext: string };
@@ -226,7 +232,10 @@ describe("session-start hook", () => {
       throw new Error("disk on fire");
     };
 
-    const outcome = await runSessionStartHook({}, repo, [PROJECTED_FLAG], sessionStart, deps);
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
 
     const payload = JSON.parse(outcome.stdout) as {
       hookSpecificOutput: { additionalContext: string };
@@ -237,6 +246,31 @@ describe("session-start hook", () => {
     expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
   });
 
+  test("the instruction read is injected through the hook's deps", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps } = fakeDeps();
+    deps.instructions = {
+      read: () => ({
+        kind: "available",
+        source: "/acme/AGENTS.md",
+        text: "ACME-INJECTED",
+        omitted: [],
+        oversized: false,
+      }),
+    };
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(payload.hookSpecificOutput.additionalContext).toBe("ACME-INJECTED");
+  });
+
   /** A second prepare would hold the lock and rewrite `AGENTS.md` while the wrap's copy reads it. */
   test("the plugin's bare copy leaves the prepare and the instructions to the wrap's", async () => {
     const repo = projectedRepo("claude");
@@ -244,10 +278,7 @@ describe("session-start hook", () => {
     const { deps, order } = fakeDeps();
 
     const outcome = await runSessionStartHook(
-      { CLAUDE_PLUGIN_ROOT: "/acme/plugin" },
-      repo,
-      [],
-      sessionStart,
+      { env: { CLAUDE_PLUGIN_ROOT: "/acme/plugin" }, cwd: repo, argv: [], input: sessionStart },
       deps,
     );
 
@@ -260,7 +291,10 @@ describe("session-start hook", () => {
     companionOf(repo);
     const { deps, order } = fakeDeps();
 
-    const outcome = await runSessionStartHook({}, repo, [], sessionStart, deps);
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [], input: sessionStart },
+      deps,
+    );
 
     const payload = JSON.parse(outcome.stdout) as {
       hookSpecificOutput: { additionalContext: string };

@@ -51,7 +51,6 @@ function build(companionPath: string): CompanionInstructions {
     companionPath,
     repository: { id: "acme", path: "/work/app" },
     wrapperBinPath: "/install/acme/wrappers/bin",
-    runtime: "claude",
   });
 }
 
@@ -505,6 +504,35 @@ describe("buildCompanionInstructions budget", () => {
     expect(delivered).toContain("Sections not included here: Huge.");
   });
 
+  test("a block inside a section keeps that section's text around it, in order", () => {
+    const agents = `## Rules\n\nACME-HEAD\n\n${MANAGED_BLOCK}\n\nACME-TAIL\n\n## Git\n\n- Rebase.\n`;
+    const result = build(companion({ agents }));
+    const delivered = text(result);
+
+    expect(delivered.indexOf("ACME-HEAD")).toBeLessThan(delivered.indexOf(RULE));
+    expect(delivered.indexOf(RULE)).toBeLessThan(delivered.indexOf("ACME-TAIL"));
+    expect(result.kind === "available" && result.omitted).toEqual([]);
+  });
+
+  test("a section the block splits is omitted whole and named once", () => {
+    const tail = section("Ignored", 9_000).replace("## Ignored\n\n", "");
+    const agents = `## Rules\n\nACME-HEAD\n\n${MANAGED_BLOCK}\n\n${tail}\n\n## Git\n\n- Rebase.\n`;
+    const dir = companion({ agents });
+
+    const result = build(dir);
+    const delivered = text(result);
+
+    expect(delivered.length).toBeLessThanOrEqual(COMPANION_INSTRUCTIONS_BUDGET);
+    expect(delivered).toContain(RULE);
+    expect(delivered).not.toContain("ACME-HEAD");
+    expect(delivered).not.toContain("Ignored rule.");
+    expect(delivered).toContain("- Rebase.");
+    expect(result.kind === "available" && result.omitted).toEqual(["Rules"]);
+    expect(delivered).toContain(
+      `Sections not included here: Rules. Full text: ${path.join(dir, "AGENTS.md")}`,
+    );
+  });
+
   test("ignores a managed block quoted inside a code fence in CLAUDE.md", () => {
     const dir = companion({
       agents: MANAGED_BLOCK,
@@ -756,7 +784,6 @@ describe("buildCompanionInstructions availability", () => {
       companionPath: "/acme",
       repository: { id: "acme", path: "/work/app" },
       wrapperBinPath: "/install/acme/wrappers/bin",
-      runtime: "claude" as const,
     };
 
     const delivered = text(buildCompanionInstructions(input, deps));

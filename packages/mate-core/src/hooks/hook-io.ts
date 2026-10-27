@@ -1,8 +1,21 @@
 /** Stdin and stdout of a Claude hook shim. */
+import type { HookEnv } from "./validate-artifact-path";
+
+/** One run of a hook shim: its environment, directory, shim arguments and stdin payload. */
+export interface HookCall {
+  env: HookEnv;
+  cwd: string;
+  argv: readonly string[];
+  input: unknown;
+}
 
 export interface HookOutcome {
   exitCode: number;
   stdout: string;
+}
+
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** A hook's JSON output line, or nothing. Always exit zero: a hook must never block the session. */

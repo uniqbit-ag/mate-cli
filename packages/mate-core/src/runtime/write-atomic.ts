@@ -14,15 +14,25 @@ export async function writeAtomic(
   contents: string | Buffer,
   mode?: number,
 ): Promise<void> {
+  await replaceViaTemp(target, contents, mode, false);
+}
+
+/** `exactMode`: chmod past the umask, so a replaced file keeps the mode it had. */
+async function replaceViaTemp(
+  target: string,
+  contents: string | Buffer,
+  mode: number | undefined,
+  exactMode: boolean,
+): Promise<void> {
   const tempPath = `${target}.${crypto.randomUUID()}.tmp`;
   try {
-    /* Created with the mode so private contents are never readable; chmod then overrides the umask. */
+    /** Created with the mode, so private contents are never readable at a wider one. */
     await fs.writeFile(
       tempPath,
       contents,
       mode === undefined ? "utf8" : { encoding: "utf8", mode },
     );
-    if (mode !== undefined) await fs.chmod(tempPath, mode);
+    if (exactMode && mode !== undefined) await fs.chmod(tempPath, mode);
     await fs.rename(tempPath, target);
   } catch (error) {
     await fs.rm(tempPath, { force: true }).catch(() => {});
@@ -63,5 +73,5 @@ export async function writeAtomicThroughLink(
 ): Promise<void> {
   const target = await resolveLinkEnd(filePath);
   const existing = await fs.stat(target).catch(() => null);
-  await writeAtomic(target, contents, existing ? existing.mode & 0o7777 : undefined);
+  await replaceViaTemp(target, contents, existing ? existing.mode & 0o7777 : undefined, true);
 }

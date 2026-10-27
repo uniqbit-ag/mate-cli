@@ -137,7 +137,7 @@ const COMMENT: ScanState = { in: "comment" };
  * prose, inside fenced code, or never closed stays. The rest of a closing line
  * is still part of the HTML block, so it opens no heading and no fence.
  */
-export function scanLines(text: string): ScannedLine[] {
+export function scanLinesWithoutComments(text: string): ScannedLine[] {
   const lines: ScannedLine[] = [];
   let state = PROSE;
   let list = TOP_LEVEL;
@@ -186,7 +186,7 @@ export function scanLines(text: string): ScannedLine[] {
 
 /** Offsets `[start, end)` of the lines inside fenced code. */
 export function fencedRanges(text: string): [number, number][] {
-  return scanLines(text)
+  return scanLinesWithoutComments(text)
     .filter((line) => line.fenced)
     .map((line) => [line.offset, line.offset + line.text.length]);
 }

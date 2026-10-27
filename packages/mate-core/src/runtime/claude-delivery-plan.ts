@@ -34,21 +34,12 @@ export interface ClaudeDeliveryPlan {
     readonly owner: "launch-flag" | "wrap" | "none";
     readonly launchExclude: readonly string[];
   };
-  /**
-   * Companion Instructions, per thread kind. Separate from `dirAccess`: Claude
-   * Code loads no memory file from a directory granted through settings, so
-   * the wrap's access delivers no instructions.
-   */
+  /** Companion Instructions, per thread kind; `dirAccess` through settings loads no memory file. */
   readonly instructions: ClaudeInstructionOwners;
 }
 
 export interface ClaudeInstructionOwners {
-  /**
-   * `wrap-session-hook`: the wrap's session-prepare hook, once it has prepared.
-   * One channel for a launch and a plain session alike: a conversation resumed
-   * through the other launcher would otherwise hold a copy in its recorded
-   * system prompt and get another from the hook.
-   */
+  /** `wrap-session-hook`: the wrap's session-prepare hook, once it has prepared, for a launch and a plain session alike. */
   readonly main: "native-memory" | "wrap-session-hook" | "none";
   /** `plugin-subagent-hook`: the bundled plugin's SubagentStart copy; `wrap-subagent-hook`: the wrap's. */
   readonly subagents: "plugin-subagent-hook" | "native-memory" | "wrap-subagent-hook" | "none";

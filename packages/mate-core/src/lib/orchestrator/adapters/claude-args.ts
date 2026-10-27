@@ -9,8 +9,8 @@ function flagArgs(args: readonly string[]): readonly string[] {
 
 /**
  * The operator's own `--append-system-prompt` values, lifted out of `args`:
- * Claude keeps only the last such flag, so each would replace the policy and
- * the instructions instead of following them. A trailing flag without a value
+ * Claude keeps only the last such flag, so each would replace Mate's Agent
+ * Guidance instead of following it. A trailing flag without a value
  * stays, for Claude to reject. `boundary` is where a lifted flag stood before
  * an argument that is no flag: a variadic option such as `--add-dir` before
  * it would otherwise read that argument as its own value, so Mate's flag goes

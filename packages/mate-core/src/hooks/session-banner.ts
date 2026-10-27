@@ -1,5 +1,7 @@
-// Show the active Mate companion paths in Claude Code, and repair the
-// companion's Git state before the session reads it.
+/**
+ * Show the active Mate companion paths in Claude Code, and repair the
+ * companion's Git state before the session reads it.
+ */
 import { unmanagedClaudeDelivery } from "../runtime/claude-delivery-plan";
 import {
   syncCompanionUnattended,
@@ -7,10 +9,11 @@ import {
   type UnattendedSyncOptions,
 } from "../runtime/companion-sync";
 import { hasLaunchEnvironment, resolveCompanionRuntime } from "../runtime/env";
+import { FRAMEWORK_NAME } from "../runtime/framework";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
 import { mateVersion } from "../runtime/install";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
-import { hookOutcome, type HookOutcome } from "./hook-io";
+import { errorText, hookOutcome, runHook, type HookOutcome } from "./hook-io";
 import type { HookEnv } from "./validate-artifact-path";
 
 /**
@@ -66,9 +69,13 @@ export async function buildBanner(
   return hookOutcome({ systemMessage: lines.join("\n") });
 }
 
-// Plugin-shim entry.
-export async function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
-  const outcome = await buildBanner(process.env, process.cwd(), argv);
-  if (outcome.stdout) process.stdout.write(outcome.stdout);
-  return outcome.exitCode;
+/** Plugin-shim entry; exits zero even when the banner fails. */
+export function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+  return runHook(
+    () => buildBanner(process.env, process.cwd(), argv),
+    (error) =>
+      hookOutcome({
+        systemMessage: `${FRAMEWORK_NAME}: session banner failed: ${errorText(error)}`,
+      }),
+  );
 }

@@ -1,4 +1,4 @@
-/** Delivers the Companion Instructions to a Claude main thread or subagent the launch flags miss. */
+/** Delivers the Companion Instructions to a Claude main thread or subagent. */
 import { planClaudeInstructions } from "../runtime/claude-delivery-plan";
 import {
   COMPANION_INSTRUCTIONS_BUDGET,
@@ -11,8 +11,8 @@ import { MATE_ENV, hasLaunchEnvironment } from "../runtime/env";
 import { FRAMEWORK_NAME } from "../runtime/framework";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveProjection } from "../runtime/projection";
-import type { SessionKind } from "../runtime/session-kind";
-import { hookOutcome, runHook, type HookOutcome } from "./hook-io";
+import { managedSessionKind, type SessionKind } from "../runtime/session-kind";
+import { errorText, hookOutcome, runHook, type HookCall } from "./hook-io";
 import type { HookEnv } from "./validate-artifact-path";
 
 export interface InstructionHookPayload {
@@ -23,7 +23,6 @@ export interface InstructionHookPayload {
 export interface InstructionHookInput {
   hook_event_name?: string;
   agent_type?: string;
-  source?: string;
   cwd?: string;
 }
 
@@ -41,7 +40,7 @@ const SKIPPED_AGENTS = new Set(["Explore", "Plan", "fork"]);
 
 type InstructionEvent = "SessionStart" | "SubagentStart";
 
-const INPUT_FIELDS = ["hook_event_name", "agent_type", "source", "cwd"] as const;
+const INPUT_FIELDS = ["hook_event_name", "agent_type", "cwd"] as const;
 
 function normalizeInput(raw: unknown): InstructionHookInput {
   const input: InstructionHookInput = {};
@@ -55,7 +54,7 @@ function normalizeInput(raw: unknown): InstructionHookInput {
 
 function sessionKind(env: HookEnv): SessionKind {
   if (!hasLaunchEnvironment(env)) return "unmanaged";
-  return env[MATE_ENV.repositoryPath] ? "managed-repo" : "managed-companion";
+  return managedSessionKind(Boolean(env[MATE_ENV.repositoryPath]));
 }
 
 /**
@@ -80,7 +79,7 @@ function launchReaderInput(env: HookEnv): CompanionInstructionsInput | null {
   const repoPath = env[MATE_ENV.repositoryPath];
   const wrapperBinPath = env[MATE_ENV.wrapperBinPath];
   if (!companionPath || !id || !repoPath || !wrapperBinPath) return null;
-  return { companionPath, repository: { id, path: repoPath }, wrapperBinPath, runtime: "claude" };
+  return { companionPath, repository: { id, path: repoPath }, wrapperBinPath };
 }
 
 /** The environment always wins: a managed session never reads the projection. */
@@ -98,7 +97,6 @@ function readerInput(
     /** A linked worktree on a projection copied from the main checkout names itself, not that checkout. */
     repository: { id: projection.repositoryId, path: projection.repoRoot },
     wrapperBinPath: projection.wrapperBinPath,
-    runtime: "claude",
   };
 }
 
@@ -109,9 +107,7 @@ function oversizeMessage(source: string): string {
 }
 
 function evaluate(
-  env: HookEnv,
-  cwd: string,
-  argv: readonly string[],
+  { env, cwd, argv }: HookCall,
   input: InstructionHookInput,
   deps: InstructionHookDeps,
 ): InstructionHookPayload | null {
@@ -151,44 +147,33 @@ function instructionOutput(
 }
 
 function failure(error: unknown): InstructionHookPayload {
-  const message = error instanceof Error ? error.message : String(error);
-  return { systemMessage: `${FRAMEWORK_NAME}: companion instructions hook failed: ${message}` };
+  return {
+    systemMessage: `${FRAMEWORK_NAME}: companion instructions hook failed: ${errorText(error)}`,
+  };
 }
 
 /**
- * Its own hook output, apart from the policy's: Claude Code caps each output
- * at 10,000 characters. A missing `AGENTS.md` is stated as a fact, never as an
- * instruction to stop: a SessionStart hook cannot block, and a pause would
- * stall a `-p` or SDK session.
+ * Its own hook output, apart from the Agent Guidance's: Claude Code caps each
+ * output at 10,000 characters. A missing `AGENTS.md` is stated as a fact, never
+ * as an instruction to stop: a SessionStart hook cannot block, and a pause
+ * would stall a `-p` or SDK session.
  */
 export function instructionHookPayload(
-  env: HookEnv,
-  cwd: string,
-  argv: readonly string[],
-  input: unknown,
+  call: HookCall,
   deps: InstructionHookDeps = {},
 ): InstructionHookPayload | null {
   try {
-    return evaluate(env, cwd, argv, normalizeInput(input), deps);
+    return evaluate(call, normalizeInput(call.input), deps);
   } catch (error) {
     return failure(error);
   }
 }
 
-export function buildInstructionHookOutput(
-  env: HookEnv,
-  cwd: string,
-  argv: readonly string[],
-  input: unknown,
-  deps: InstructionHookDeps = {},
-): HookOutcome {
-  return hookOutcome(instructionHookPayload(env, cwd, argv, input, deps));
-}
-
 /** Plugin-shim entry; exits zero even when reading its input fails. */
 export function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   return runHook(
-    (input) => buildInstructionHookOutput(process.env, process.cwd(), argv, input),
+    (input) =>
+      hookOutcome(instructionHookPayload({ env: process.env, cwd: process.cwd(), argv, input })),
     (error) => hookOutcome(failure(error)),
   );
 }

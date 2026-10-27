@@ -11,7 +11,7 @@ import {
 } from "../../../runtime/claude-delivery-plan";
 import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
 import { resolveSecretPolicy } from "../../../runtime/policy";
-import type { SessionKind } from "../../../runtime/session-kind";
+import { managedSessionKind } from "../../../runtime/session-kind";
 import { NOT_WRAPPED } from "../../../runtime/wrap-state";
 import { writeAtomic } from "../../../runtime/write-atomic";
 import {
@@ -107,7 +107,7 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
    */
   async planLaunch(context: AdapterContext, prepared: PrepareResult): Promise<ClaudeLaunchContext> {
     const { repository, companionPath } = context;
-    const kind: SessionKind = repository ? "managed-repo" : "managed-companion";
+    const kind = managedSessionKind(Boolean(repository));
     const wrap = prepared.wrapState ?? NOT_WRAPPED;
     if (repository && !wrap.runtimes.has("claude")) {
       throw new LaunchPreflightError(
@@ -155,8 +155,8 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
 
   /**
    * Plan in, flags out; decides nothing. `--append-system-prompt` is
-   * unconditional: no settings document can carry it. It holds the policy
-   * only; the Companion Instructions come from the wrap's session hook.
+   * unconditional: no settings document can carry it. It holds the Agent
+   * Guidance alone; the Companion Instructions come from the wrap's session hook.
    * `--plugin-dir` passes the folders `launchPluginFolders` names, from the
    * running install's bundled plugin.
    */
@@ -176,12 +176,12 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
     const mcpConfigArgs =
       plan.mcp === "mcp-config" && mcpConfigPath ? ["--mcp-config", mcpConfigPath] : [];
 
-    const policy = buildCompanionGuidance({
+    const guidance = buildCompanionGuidance({
       ...context,
       secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
     });
     const { args: passthrough, prompts, boundary } = liftAppendedPrompts(args);
-    const promptArgs = [APPEND_PROMPT_FLAG, [policy, ...prompts].filter(Boolean).join("\n\n")];
+    const promptArgs = [APPEND_PROMPT_FLAG, [guidance, ...prompts].filter(Boolean).join("\n\n")];
     const launchArgs = [...settingsArgs, ...mcpConfigArgs, ...pluginDirArgs];
 
     if (boundary === undefined) {

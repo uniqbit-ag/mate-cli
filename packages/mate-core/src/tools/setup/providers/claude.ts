@@ -5,6 +5,7 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { getClaudePluginRoot } from "../../../lib/package-paths";
+import { writeAtomicThroughLink } from "../../../runtime/write-atomic";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import {
   CLAUDE_LOCAL_CONFIG_DOCUMENT,
@@ -340,16 +341,14 @@ function renderManagedClaudeSettings(
 }
 
 /**
- * Loaded by a managed session beside the launch's plugin. Mate hooks here run
- * twice there, inertly: guard is input-pure, guidance/instructions/prepare
- * yield under a launch env, banner, prepare and the instruction copy are `--projected`.
- * Capability groups run once: the launch omits them from `--settings`.
+ * Loaded by a managed session beside the launch's plugin, so each Mate hook
+ * here runs twice there: the guard is input-pure, guidance yields under a
+ * launch env, and the banner, prepare and instruction copies carry
+ * `--projected`, so one copy of each acts. Capability groups run once: the
+ * launch omits them from `--settings`.
  *
- * `permissions.additionalDirectories` grants companion file access only:
- * Claude Code loads no `CLAUDE.md` from a settings directory, whatever
- * `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` says. The prepare and
- * instruction hooks here and the launch's appended prompt deliver the
- * companion's rules instead.
+ * `permissions.additionalDirectories` grants companion file access only; it
+ * loads no `CLAUDE.md`.
  *
  * Unlike {@link renderManagedClaudeSettings}, this carries no
  * `autoMemoryEnabled: false`. Whether a Wrap should leave the user's choice
@@ -672,7 +671,7 @@ async function configureClaude(companionPath: string): Promise<void> {
   try {
     await fs.access(agentsMdDest);
   } catch {
-    await fs.copyFile(agentsMdSrc, agentsMdDest);
+    await writeAtomicThroughLink(agentsMdDest, await fs.readFile(agentsMdSrc));
   }
 
   const claudeMdSrc = path.join(getSetupRootTemplates(), "TEMPLATE_CLAUDE.md");
@@ -680,7 +679,7 @@ async function configureClaude(companionPath: string): Promise<void> {
   try {
     await fs.access(claudeMdDest);
   } catch {
-    await fs.copyFile(claudeMdSrc, claudeMdDest);
+    await writeAtomicThroughLink(claudeMdDest, await fs.readFile(claudeMdSrc));
   }
 }
 

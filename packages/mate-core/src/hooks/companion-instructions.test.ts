@@ -8,7 +8,12 @@ import type { CompanionInstructions } from "../runtime/companion-instructions";
 import { writeProjectionPair } from "../runtime/projection";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
-import { buildInstructionHookOutput, type InstructionHookInput } from "./companion-instructions";
+import {
+  instructionHookPayload,
+  type InstructionHookDeps,
+  type InstructionHookInput,
+} from "./companion-instructions";
+import { hookOutcome, type HookOutcome } from "./hook-io";
 
 const tempRoots: string[] = [];
 const RULE = "Code comments: JSDoc format only, never `//`.";
@@ -74,7 +79,8 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
-const sessionStart = (source = "startup"): InstructionHookInput => ({
+/** `source` is part of Claude Code's payload; the hook reads past it. */
+const sessionStart = (source = "startup"): InstructionHookInput & { source: string } => ({
   hook_event_name: "SessionStart",
   source,
 });
@@ -87,6 +93,16 @@ const subagentStart = (agentType = "general-purpose"): InstructionHookInput => (
 const PLUGIN: readonly string[] = [];
 const WRAPPED: readonly string[] = [PROJECTED_FLAG];
 const BOTH_COPIES = [PLUGIN, WRAPPED];
+
+function outcome(
+  env: Record<string, string | undefined>,
+  cwd: string,
+  argv: readonly string[],
+  input: unknown,
+  deps?: InstructionHookDeps,
+): HookOutcome {
+  return hookOutcome(instructionHookPayload({ env, cwd, argv, input }, deps));
+}
 
 function parsed(stdout: string): {
   hookSpecificOutput?: { hookEventName: string; additionalContext: string };
@@ -101,7 +117,7 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
     (source) => {
       const { repoRoot } = wrappedRepo();
 
-      const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, sessionStart(source));
+      const result = outcome({}, repoRoot, WRAPPED, sessionStart(source));
 
       expect(result.exitCode).toBe(0);
       const output = parsed(result.stdout).hookSpecificOutput!;
@@ -118,13 +134,13 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
   test("a plugin SessionStart copy without a launch stays silent: the wrap's copy owns it", () => {
     const { repoRoot } = wrappedRepo();
 
-    expect(buildInstructionHookOutput({}, repoRoot, PLUGIN, sessionStart()).stdout).toBe("");
+    expect(outcome({}, repoRoot, PLUGIN, sessionStart()).stdout).toBe("");
   });
 
   test("the wrap's SubagentStart copy emits for a general-purpose subagent", () => {
     const { repoRoot } = wrappedRepo();
 
-    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, subagentStart());
+    const result = outcome({}, repoRoot, WRAPPED, subagentStart());
 
     const output = parsed(result.stdout).hookSpecificOutput!;
     expect(output.hookEventName).toBe("SubagentStart");
@@ -134,13 +150,13 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
   test("a plugin SubagentStart copy without a launch stays silent: the wrap's owns it", () => {
     const { repoRoot } = wrappedRepo();
 
-    expect(buildInstructionHookOutput({}, repoRoot, PLUGIN, subagentStart()).stdout).toBe("");
+    expect(outcome({}, repoRoot, PLUGIN, subagentStart()).stdout).toBe("");
   });
 
   test.each(["Explore", "Plan", "fork"])("a %s subagent gets no copy", (agentType) => {
     const { repoRoot } = wrappedRepo();
 
-    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, subagentStart(agentType));
+    const result = outcome({}, repoRoot, WRAPPED, subagentStart(agentType));
 
     expect(result.stdout).toBe("");
   });
@@ -149,7 +165,7 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
     const { repoRoot } = wrappedRepo();
     const elsewhere = tempDir("acme-unwrapped-");
 
-    const fromInput = buildInstructionHookOutput({}, elsewhere, WRAPPED, {
+    const fromInput = outcome({}, elsewhere, WRAPPED, {
       ...sessionStart(),
       cwd: repoRoot,
     });
@@ -161,7 +177,7 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
     const mainCheckout = tempDir("acme-main-checkout-");
     const { repoRoot } = wrappedRepo({ projectedRepositoryPath: mainCheckout });
 
-    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, sessionStart());
+    const result = outcome({}, repoRoot, WRAPPED, sessionStart());
 
     const context = parsed(result.stdout).hookSpecificOutput!.additionalContext;
     expect(context).toContain(`${SENTINEL} in ${repoRoot}`);
@@ -171,7 +187,7 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
   test("a missing AGENTS.md gives one factual context line and a system message", () => {
     const { repoRoot, companionPath } = wrappedRepo({ agentsMd: false });
 
-    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, sessionStart());
+    const result = outcome({}, repoRoot, WRAPPED, sessionStart());
 
     const line = `Companion instructions unavailable: ${path.join(companionPath, "AGENTS.md")} not found`;
     const output = parsed(result.stdout);
@@ -192,7 +208,7 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
       oversized: true,
     });
 
-    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, sessionStart(), {
+    const result = outcome({}, repoRoot, WRAPPED, sessionStart(), {
       read: oversized,
     });
 
@@ -210,7 +226,7 @@ describe("companion-instructions hook under a launch environment", () => {
   test("the wrap's SessionStart copy delivers the main thread's instructions, as in a plain session", () => {
     const { repoRoot, launchEnv } = wrappedRepo();
 
-    const result = buildInstructionHookOutput(launchEnv, repoRoot, WRAPPED, sessionStart());
+    const result = outcome(launchEnv, repoRoot, WRAPPED, sessionStart());
 
     const output = parsed(result.stdout).hookSpecificOutput!;
     expect(output.hookEventName).toBe("SessionStart");
@@ -221,13 +237,13 @@ describe("companion-instructions hook under a launch environment", () => {
   test("the plugin's SessionStart copy is silent, so a launch gets one copy", () => {
     const { repoRoot, launchEnv } = wrappedRepo();
 
-    expect(buildInstructionHookOutput(launchEnv, repoRoot, PLUGIN, sessionStart()).stdout).toBe("");
+    expect(outcome(launchEnv, repoRoot, PLUGIN, sessionStart()).stdout).toBe("");
   });
 
   test("the plugin's SubagentStart copy emits in a launch with a Working Repository", () => {
     const { repoRoot, launchEnv } = wrappedRepo();
 
-    const result = buildInstructionHookOutput(launchEnv, repoRoot, PLUGIN, subagentStart());
+    const result = outcome(launchEnv, repoRoot, PLUGIN, subagentStart());
 
     const output = parsed(result.stdout).hookSpecificOutput!;
     expect(output.hookEventName).toBe("SubagentStart");
@@ -241,7 +257,7 @@ describe("companion-instructions hook under a launch environment", () => {
 
     for (const input of [sessionStart(), subagentStart()]) {
       const argv = input.hook_event_name === "SessionStart" ? WRAPPED : PLUGIN;
-      expect(buildInstructionHookOutput(partial, repoRoot, argv, input).stdout).toBe("");
+      expect(outcome(partial, repoRoot, argv, input).stdout).toBe("");
     }
   });
 
@@ -249,7 +265,7 @@ describe("companion-instructions hook under a launch environment", () => {
     const { repoRoot, launchEnv } = wrappedRepo();
     const elsewhere = tempDir("acme-no-projection-");
 
-    const result = buildInstructionHookOutput(launchEnv, elsewhere, PLUGIN, subagentStart());
+    const result = outcome(launchEnv, elsewhere, PLUGIN, subagentStart());
 
     expect(parsed(result.stdout).hookSpecificOutput!.additionalContext).toContain(
       `${SENTINEL} in ${repoRoot}`,
@@ -259,9 +275,7 @@ describe("companion-instructions hook under a launch environment", () => {
   test("the wrap's SubagentStart copy is silent, so a managed subagent gets one copy", () => {
     const { repoRoot, launchEnv } = wrappedRepo();
 
-    expect(buildInstructionHookOutput(launchEnv, repoRoot, WRAPPED, subagentStart()).stdout).toBe(
-      "",
-    );
+    expect(outcome(launchEnv, repoRoot, WRAPPED, subagentStart()).stdout).toBe("");
   });
 
   /** Run where a projection resolves, so silence can only come from the owners being native memory. */
@@ -271,7 +285,7 @@ describe("companion-instructions hook under a launch environment", () => {
 
     for (const argv of BOTH_COPIES) {
       for (const input of [sessionStart(), subagentStart()]) {
-        expect(buildInstructionHookOutput(companionEnv, repoRoot, argv, input).stdout).toBe("");
+        expect(outcome(companionEnv, repoRoot, argv, input).stdout).toBe("");
       }
     }
   });
@@ -279,9 +293,7 @@ describe("companion-instructions hook under a launch environment", () => {
   test("a missing AGENTS.md in a managed subagent is still reported", () => {
     const { repoRoot, launchEnv } = wrappedRepo({ agentsMd: false });
 
-    const output = parsed(
-      buildInstructionHookOutput(launchEnv, repoRoot, PLUGIN, subagentStart()).stdout,
-    );
+    const output = parsed(outcome(launchEnv, repoRoot, PLUGIN, subagentStart()).stdout);
 
     expect(output.hookSpecificOutput!.additionalContext).toStartWith(
       "Companion instructions unavailable:",
@@ -294,26 +306,24 @@ describe("companion-instructions hook where nothing resolves", () => {
   test("no projection: silent", () => {
     const dir = tempDir("acme-no-projection-");
 
-    expect(buildInstructionHookOutput({}, dir, WRAPPED, sessionStart()).stdout).toBe("");
-    expect(buildInstructionHookOutput({}, dir, WRAPPED, subagentStart()).stdout).toBe("");
+    expect(outcome({}, dir, WRAPPED, sessionStart()).stdout).toBe("");
+    expect(outcome({}, dir, WRAPPED, subagentStart()).stdout).toBe("");
   });
 
   test("a session in the companion itself resolves no projection, so both copies are silent", () => {
     const { companionPath } = wrappedRepo();
 
     for (const argv of BOTH_COPIES) {
-      expect(buildInstructionHookOutput({}, companionPath, argv, sessionStart()).stdout).toBe("");
-      expect(buildInstructionHookOutput({}, companionPath, argv, subagentStart()).stdout).toBe("");
+      expect(outcome({}, companionPath, argv, sessionStart()).stdout).toBe("");
+      expect(outcome({}, companionPath, argv, subagentStart()).stdout).toBe("");
     }
   });
 
   test("an event it does not handle: silent", () => {
     const { repoRoot } = wrappedRepo();
 
-    expect(
-      buildInstructionHookOutput({}, repoRoot, WRAPPED, { hook_event_name: "Stop" }).stdout,
-    ).toBe("");
-    expect(buildInstructionHookOutput({}, repoRoot, WRAPPED, {}).stdout).toBe("");
+    expect(outcome({}, repoRoot, WRAPPED, { hook_event_name: "Stop" }).stdout).toBe("");
+    expect(outcome({}, repoRoot, WRAPPED, {}).stdout).toBe("");
   });
 });
 
@@ -321,7 +331,7 @@ describe("companion-instructions hook on a malformed payload or a failing reader
   test("a non-string cwd reads as absent: exit zero and the process cwd's instructions", () => {
     const { repoRoot } = wrappedRepo();
 
-    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, {
+    const result = outcome({}, repoRoot, WRAPPED, {
       hook_event_name: "SessionStart",
       cwd: 42,
     });
@@ -333,17 +343,17 @@ describe("companion-instructions hook on a malformed payload or a failing reader
   test("other non-string fields and non-object payloads read as absent", () => {
     const { repoRoot } = wrappedRepo();
 
-    const noEvent = buildInstructionHookOutput({}, repoRoot, WRAPPED, { hook_event_name: 7 });
+    const noEvent = outcome({}, repoRoot, WRAPPED, { hook_event_name: 7 });
     expect(noEvent).toEqual({ exitCode: 0, stdout: "" });
 
-    const noAgent = buildInstructionHookOutput({}, repoRoot, WRAPPED, {
+    const noAgent = outcome({}, repoRoot, WRAPPED, {
       hook_event_name: "SubagentStart",
       agent_type: ["Explore"],
     });
     expect(parsed(noAgent.stdout).hookSpecificOutput!.additionalContext).toContain(SENTINEL);
 
     for (const payload of [null, "SessionStart", 42]) {
-      expect(buildInstructionHookOutput({}, repoRoot, WRAPPED, payload)).toEqual({
+      expect(outcome({}, repoRoot, WRAPPED, payload)).toEqual({
         exitCode: 0,
         stdout: "",
       });
@@ -356,7 +366,7 @@ describe("companion-instructions hook on a malformed payload or a failing reader
       throw new Error("disk on fire");
     };
 
-    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, sessionStart(), {
+    const result = outcome({}, repoRoot, WRAPPED, sessionStart(), {
       read: throwing,
     });
 
