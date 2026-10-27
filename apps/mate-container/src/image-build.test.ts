@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { labelArgs } from "../scripts/build";
 import { findContainerRuntime, TEST_BASE_IMAGE } from "./container-runtime";
 import { CONTAINER_ROOT, readImageInputs } from "./image-inputs";
 
@@ -212,5 +213,23 @@ describe("the recipe itself", () => {
     // And it asserts their absence rather than only avoiding them.
     expect(dockerfile).toContain("test ! -e /root/.mate");
     expect(dockerfile).toContain("test ! -e /home/mate/.mate");
+  });
+});
+
+describe("the build script's labels", () => {
+  test("passes every --label through as a build label, in order", () => {
+    expect(
+      labelArgs(["--tag", "x", "--label", "ai.mate.a=1", "--label", "ai.mate.b=two=2"]),
+    ).toEqual(["--label", "ai.mate.a=1", "--label", "ai.mate.b=two=2"]);
+  });
+
+  test("adds nothing when no label is named", () => {
+    expect(labelArgs(["--tag", "x"])).toEqual([]);
+  });
+
+  test("refuses a label that is not key=value", () => {
+    expect(() => labelArgs(["--label", "novalue"])).toThrow(/key=value/);
+    expect(() => labelArgs(["--label"])).toThrow(/key=value/);
+    expect(() => labelArgs(["--label", "=x"])).toThrow(/key=value/);
   });
 });

@@ -151,6 +151,13 @@ describe("Mate OpenCode TUI plugin", () => {
     }
   });
 
+  test("renders the mate version line in the brand accent, Mate green", async () => {
+    const { MATE_VERSION_COLOR } = await import("./tui");
+    const { BRAND_COLORS } = await import("../brand");
+
+    expect(MATE_VERSION_COLOR).toBe(BRAND_COLORS.mateGreen.hex);
+  });
+
   test("claims nothing when neither the environment nor a projection resolves", async () => {
     const bare = await fs.mkdtemp(path.join(os.tmpdir(), "mate-tui-unwrapped-"));
     tempRoots.push(bare);

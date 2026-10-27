@@ -83,13 +83,41 @@ A \`diff\` section carries a unified diff patch as produced by \`git diff\`. The
 
 A report carrying a mermaid payload loads the pinned, integrity-checked diagram runtime from a CDN; a report without one does not. Offline, each diagram stays readable as its source. Otherwise the page stays a single self-contained file.
 
+## Presentation Fields
+
+These fields are optional. A document without them stays valid and renders with the defaults.
+
+- \`tone\` on a status item: \`ok\`, \`warn\`, \`error\`, \`info\`, or \`neutral\`. It sets the marker's colour and shape. When absent, the tone is inferred from well-known status words such as \`passed\`, \`stale\`, or \`failed\`, and any other text is \`neutral\`.
+
+  \`\`\`json
+  { "label": "Build", "status": "flaky", "tone": "warn" }
+  \`\`\`
+
+- \`format\` on a \`text\` section: \`plain\` (default, shown verbatim with its line breaks) or \`markdown\`.
+
+  \`\`\`json
+  { "id": "notes", "title": "Notes", "type": "text", "format": "markdown", "content": "- **Renderer** owns layout\\n- See \`highlight.ts\`" }
+  \`\`\`
+
+- \`caption\` on a \`diagram\` or \`diff\` section: a non-empty Markdown note shown beneath the visual, in the same section and without a heading of its own.
+
+  \`\`\`json
+  { "id": "changes", "title": "Changes", "type": "diff", "patch": "...", "caption": "Moves validation into \`contract.ts\`." }
+  \`\`\`
+
+Markdown supports paragraphs, \`#\` headings, one-level \`-\`, \`*\`, or \`1.\` lists, \`**strong**\`, \`*emphasis*\`, \`\` \`code\` \`\`, fenced code blocks with syntax highlighting, and \`[text](https://…)\` links. Raw HTML is shown as text, links other than \`http\` or \`https\` are shown as plain text, and any other syntax stays literal.
+
+The page follows the reader's colour scheme: Mate brand colours on white in light mode, and on a dark background in dark mode, with highlighted code and mermaid diagrams following the same scheme. It always prints as dark text on white.
+
+To mark mermaid nodes, apply the theme classes \`added\`, \`changed\`, and \`removed\` with \`class\` or \`:::\`; they follow the colour scheme. Lines that fix a colour with \`classDef\`, \`style\`, or \`linkStyle\` are dropped from the dark copy, because a fill chosen for a white page hides the labels there.
+
 ## Invocation
 
 1. Serialize the complete document to a temporary file or pipe it to stdin.
 2. Run \`mate report --input <file-or->\`.
 3. Add \`--json\` when the caller needs normalized JSON instead of browser delivery.
 
-The CLI chooses the delivery surface; deliver only through \`mate report\`, never a hand-written file, server, or browser launch. Inside a Studio terminal it hosts the report in Studio and prints a full link only when Studio has a public address, otherwise it tells the operator to open Studio → Reports; relay that output. Elsewhere, or when Studio is unreachable, it writes self-contained HTML to a unique OS temporary directory and opens it in the default browser. The report includes a visible "Print / Save as PDF" control that calls the browser's native print dialog. If HTML delivery fails, the CLI warns on stderr and emits the complete report document as JSON on stdout.
+The CLI chooses the delivery surface; deliver only through \`mate report\`, never a hand-written file, server, or browser launch. Inside a Studio terminal it hosts the report in Studio and prints a full link only when Studio has a public address, otherwise it tells the operator to open Studio → Reports; relay that output. Elsewhere, or when Studio is unreachable, it writes self-contained HTML to a unique OS temporary directory and opens it in the default browser. The report header carries an icon-only print control, named "Print / Save as PDF", that calls the browser's native print dialog. If HTML delivery fails, the CLI warns on stderr and emits the complete report document as JSON on stdout.
 
 The built-in \`mate report\` path collects Mate usage data and adapts it to the same contract and renderer.
 `;

@@ -6,6 +6,7 @@
  * does not accept it, so the jsx-key rules cannot be satisfied — only suppressed.
  * Arrays render through `.map`: Solid re-runs it whole on a store change, fine for a few lines.
  */
+import { BRAND_ACCENT } from "../brand/palette";
 import { mateVersion } from "../runtime/install";
 import { readContext, readStalenessLines } from "./companion-policy";
 
@@ -47,7 +48,8 @@ export const STALENESS_POLL_MS = 5_000;
 
 type SessionNotes = { lines: string[] };
 
-const MIDNIGHT_PURPLE_BRIGHT = "#c084fc";
+/** The `mate v<version>` line uses the brand accent, which reads on light and dark themes alike. */
+export const MATE_VERSION_COLOR = BRAND_ACCENT;
 const MATE_VERSION = process.env.MATE_VERSION ?? mateVersion();
 
 function SessionContext({
@@ -72,7 +74,7 @@ function SessionContext({
       paddingBottom={sidebar ? 1 : 0}
       flexShrink={0}
     >
-      <text fg={MIDNIGHT_PURPLE_BRIGHT}>mate v{MATE_VERSION}</text>
+      <text fg={MATE_VERSION_COLOR}>mate v{MATE_VERSION}</text>
       <text fg={text.muted}>repo: {context.repositoryPath}</text>
       <text fg={text.muted}>mate: {context.companionPath}</text>
       {notes.lines.map((note) => (

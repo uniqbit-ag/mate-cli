@@ -1,6 +1,7 @@
 ---
 import { ClientRouter } from "astro:transitions";
 import { withBase } from "@/lib/base";
+import { BRAND } from "@/lib/brand.generated";
 
 interface Props {
   title?: string;
@@ -17,6 +18,14 @@ const {
 
 const pageUrl = new URL(Astro.url.pathname, Astro.site).href;
 const ogImage = new URL(withBase("/og.png"), Astro.site).href;
+/** The brand palette as custom properties; `styles/global.css` maps theme roles onto them. */
+const brandVariables = `:root {
+  --mate-ink: ${BRAND.ink};
+  --mate-green: ${BRAND.mateGreen};
+  --mate-cream: ${BRAND.cream};
+  --mate-light-green: ${BRAND.lightGreen};
+  --mate-night: ${BRAND.night};
+}`;
 ---
 
 <html lang="en">
@@ -25,7 +34,11 @@ const ogImage = new URL(withBase("/og.png"), Astro.site).href;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
+    <link rel="icon" href={withBase("/brand/favicon.ico")} sizes="any" />
+    <link rel="icon" href={withBase("/brand/favicon.svg")} type="image/svg+xml" />
+    <link rel="apple-touch-icon" href={withBase("/brand/apple-touch-icon.png")} />
+    <meta name="theme-color" content={BRAND.ink} />
+    <style is:inline set:html={brandVariables} />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Mate" />
     <meta property="og:title" content={title} />

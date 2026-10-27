@@ -15,12 +15,21 @@ import {
   renderStudioDocument,
   renderVaultChildren,
   renderVaultMatches,
+  renderVaultPane,
   renderVaultView,
   VAULT_FILTER_LIMIT,
 } from "./document";
 import { fixtureTree } from "../../../../../test/studio-vault-fixture";
+import { STUDIO_PREPAINT_SCRIPT } from "./client";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
 import type { VaultTreeNode } from "../vault";
+import { BRAND_SVGS } from "../../../../brand";
+
+function decodeDataUri(uri: string): string {
+  const prefix = "data:image/svg+xml;base64,";
+  expect(uri).toStartWith(prefix);
+  return Buffer.from(uri.slice(prefix.length), "base64").toString("utf8");
+}
 
 /** Every GET form's attributes, button text, and hidden fields, decoded as the browser submits them. */
 function forms(markup: string) {
@@ -94,13 +103,53 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain("</html>");
   });
 
-  it("carries its styles and its behavior inline", () => {
+  it("carries its styles inline and loads only Studio's own client", () => {
     const markup = renderStudioDocument(page());
     expect(markup).toContain("<style>");
     expect(markup).toContain("--accent:");
-    expect(markup).toContain("<script>");
-    expect(markup).not.toContain("<link");
-    expect(markup).not.toContain("src=");
+    // Brand images are inlined as data URIs; the one file is Studio's client, served by Studio.
+    for (const [, url] of markup.matchAll(/<link\b[^>]*\bhref="([^"]*)"/g)) {
+      expect(url).toStartWith("data:");
+    }
+    for (const [, url] of markup.matchAll(/\bsrc="([^"]*)"/g)) {
+      expect(url!.startsWith("data:") || url === "/studio/client.js").toBe(true);
+    }
+  });
+
+  it("carries one inline script, the pre-paint one, and one reference to Studio's client", () => {
+    const markup = renderStudioDocument(page());
+    const inline = [...markup.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+    expect(inline).toEqual([STUDIO_PREPAINT_SCRIPT]);
+    expect(markup.match(/<script src="\/studio\/client\.js"><\/script>/g)).toHaveLength(1);
+  });
+
+  it("declares the kit favicon as an inline SVG data URI", () => {
+    const markup = renderStudioDocument(page());
+    const head = markup.slice(0, markup.indexOf("</head>"));
+    const icon = head.match(/<link rel="icon" type="image\/svg\+xml" href="([^"]*)">/);
+
+    expect(icon).not.toBeNull();
+    expect(decodeDataUri(icon![1]!)).toBe(BRAND_SVGS.favicon);
+  });
+
+  it("shows the Mate symbol beside the Mate Studio title in both appearances", () => {
+    const markup = renderStudioDocument(selected);
+    const brand = markup.slice(
+      markup.indexOf('<div class="sidebar-brand">'),
+      markup.indexOf("</strong>"),
+    );
+    const images = [...brand.matchAll(/<img class="([^"]*)" src="([^"]*)"/g)].map(
+      ([, className, src]) => ({ className, svg: decodeDataUri(src!) }),
+    );
+
+    expect(images).toEqual([
+      { className: "sidebar-brand-mark brand-symbol-color", svg: BRAND_SVGS.symbolColor },
+      { className: "sidebar-brand-mark brand-symbol-on-dark", svg: BRAND_SVGS.symbolOnDark },
+    ]);
+    expect(brand).toContain("Mate Studio");
+    const style = markup.slice(markup.indexOf("<style>"), markup.indexOf("</style>"));
+    expect(style).toContain(".brand-symbol-color { display: none; }");
+    expect(style).toContain(':root[data-theme="light"] .brand-symbol-color');
   });
 
   it("references no external host", () => {
@@ -121,7 +170,7 @@ describe("renderStudioDocument", () => {
     const style = markup.slice(markup.indexOf("<style>"), markup.indexOf("</style>"));
     expect(style).toContain(':root:not([data-theme="dark"])');
     expect(style).not.toContain("&quot;");
-    expect(markup).toContain('THEME_CYCLE = ["system", "dark", "light"]');
+    expect(markup).toContain(STUDIO_PREPAINT_SCRIPT);
     expect(markup).not.toContain("&amp;&amp;");
   });
 
@@ -214,7 +263,12 @@ describe("renderStudioDocument", () => {
   it("presents the Vault view and an opened file", () => {
     const markup = renderStudioDocument({
       ...selected,
-      selection: { ...selected.selection, view: "vault", openPath: "docs/note.md" },
+      selection: {
+        ...selected.selection,
+        view: "vault",
+        openPath: "docs/note.md",
+        mode: "edit",
+      },
       payload: null,
       vault: {
         tree: [
@@ -243,6 +297,8 @@ describe("renderStudioDocument", () => {
     );
     expect(markup).toContain("# note");
     expect(markup).toContain("Save");
+    expect(markup).toContain('data-vault-mode="edit"');
+    expect(markup).toContain('id="vault-mode-read"');
     expect(markup).not.toMatch(/<textarea[^>]*readonly/i);
   });
 
@@ -289,6 +345,7 @@ describe("renderStudioDocument", () => {
         ...selected.selection,
         view: "vault",
         openPath: null,
+        mode: "read",
         openDir: null,
         ...selection,
       },
@@ -491,6 +548,101 @@ describe("renderStudioDocument", () => {
     });
   });
 
+  describe("vault read and edit modes", () => {
+    const notePage = (mode: "read" | "edit", writable: boolean, content = "# Note\n\n[b](b.md)") =>
+      ({
+        ...selected,
+        selection: { ...selected.selection, view: "vault", openPath: "docs/note.md", mode },
+        payload: null,
+        vault: {
+          tree: [
+            {
+              name: "docs",
+              path: "docs",
+              kind: "directory",
+              children: [
+                { name: "note.md", path: "docs/note.md", kind: "file" },
+                { name: "b.md", path: "docs/b.md", kind: "file" },
+              ],
+            },
+          ],
+          open: { path: "docs/note.md", content, token: "t" },
+          refusal: null,
+          incoming: null,
+          overwritten: null,
+          watching: true,
+          warning: null,
+        },
+        writable,
+      }) as StudioPage;
+
+    const addressOf = (href: string | undefined) =>
+      parse(new URL(href!.replaceAll("&amp;", "&"), "http://localhost:1/"));
+
+    it("shows a file rendered by default with an Edit control that names the edit address", () => {
+      const markup = renderStudioDocument(notePage("read", true));
+      expect(markup).toContain("<h1>Note</h1>");
+      expect(markup).not.toContain("<textarea");
+      expect(markup).not.toContain("# Note");
+      expect(markup).toContain('data-vault-mode="read"');
+      const edit = /<a[^>]*id="vault-mode-edit"[^>]*href="([^"]*)"/.exec(markup)?.[1];
+      expect(addressOf(edit)).toMatchObject({ openPath: "docs/note.md", mode: "edit" });
+    });
+
+    it("leads a rendered note link to the other note in read", () => {
+      const markup = renderStudioDocument(notePage("read", true));
+      const body = markup.slice(markup.indexOf("markdown-body"));
+      const href = /<a[^>]*href="([^"]*)"[^>]*data-vault-entry="docs\/b\.md"/.exec(body)?.[1];
+      expect(addressOf(href)).toMatchObject({ openPath: "docs/b.md", mode: "read" });
+    });
+
+    it("offers Read from edit and addresses the read pane for a save to return to", () => {
+      const markup = renderStudioDocument(notePage("edit", true));
+      const read = /<a[^>]*id="vault-mode-read"[^>]*href="([^"]*)"/.exec(markup)?.[1];
+      expect(addressOf(read)).toMatchObject({ mode: "read" });
+      expect(markup).toContain(`data-vault-pane-url="/api/vault/pane?companion=${digest}`);
+      expect(markup).not.toMatch(/data-vault-pane-url="[^"]*mode=edit/);
+      expect(markup).toContain("data-vault-read-href=");
+    });
+
+    it("carries the events address on the pane root in both modes", () => {
+      for (const mode of ["read", "edit"] as const) {
+        expect(renderStudioDocument(notePage(mode, true))).toContain(
+          `data-vault-events="/api/vault/events?companion=${digest}&amp;view=vault&amp;path=docs%2Fnote.md"`,
+        );
+      }
+    });
+
+    it("renders raw html in a file as text", () => {
+      const markup = renderStudioDocument(notePage("read", true, "<script>alert(1)</script>"));
+      expect(markup).not.toContain("<script>alert");
+      expect(markup).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    });
+
+    it("renders the breadcrumb and pane as a swappable fragment", () => {
+      const fragment = renderVaultPane(notePage("read", true));
+      expect(fragment).toContain("data-vault-crumb");
+      expect(fragment).toContain("data-vault-pane");
+      expect(fragment).toContain("<h1>Note</h1>");
+      expect(fragment).not.toContain("vault-tree-panel");
+      expect(fragment).not.toContain("<html");
+    });
+
+    it("marks file opens from the listing for in-place navigation, and folders not", () => {
+      const base = notePage("read", true);
+      const folder = {
+        ...base,
+        selection: { ...base.selection, openPath: null, openDir: "docs" },
+        vault: { ...base.vault!, open: null },
+      } as StudioPage;
+      const listing = forms(renderVaultView(folder));
+      const fileForm = listing.find(({ body }) => body.includes("docs/b.md"));
+      const folderForm = listing.find(({ body }) => body.includes("vault-icon-folder"));
+      expect(fileForm?.attrs).toContain("data-vault-open");
+      expect(folderForm?.attrs).not.toContain("data-vault-open");
+    });
+  });
+
   it("renders refused vault paths without an editor", () => {
     const markup = renderStudioDocument({
       ...selected,
@@ -511,25 +663,32 @@ describe("renderStudioDocument", () => {
     expect(markup).not.toContain('id="vault-editor"');
   });
 
-  it("omits saving controls in read-only mode", () => {
-    const markup = renderStudioDocument({
-      ...selected,
-      selection: { ...selected.selection, view: "vault", openPath: "note.md" },
-      payload: null,
-      vault: {
-        tree: [{ name: "note.md", path: "note.md", kind: "file" }],
-        open: { path: "note.md", content: "one", token: "one" },
-        refusal: null,
-        incoming: null,
-        overwritten: null,
-        watching: true,
-        warning: null,
-      },
-      writable: false,
-    });
-    expect(markup).not.toContain('id="vault-save"');
-    expect(markup).toContain("Start Studio with --writable");
-    expect(markup).toMatch(/<textarea[^>]*id="vault-editor"[^>]*readonly/i);
+  it("omits saving controls and the raw view in read-only mode", () => {
+    const readOnly = (mode: "read" | "edit") =>
+      renderStudioDocument({
+        ...selected,
+        selection: { ...selected.selection, view: "vault", openPath: "note.md", mode },
+        payload: null,
+        vault: {
+          tree: [{ name: "note.md", path: "note.md", kind: "file" }],
+          open: { path: "note.md", content: "# one", token: "one" },
+          refusal: null,
+          incoming: null,
+          overwritten: null,
+          watching: true,
+          warning: null,
+        },
+        writable: false,
+      });
+    for (const markup of [readOnly("read"), readOnly("edit")]) {
+      expect(markup).not.toContain('id="vault-save"');
+      expect(markup).not.toContain("<textarea");
+      expect(markup).not.toContain('id="vault-mode-edit"');
+      expect(markup).not.toContain("data-vault-mode-link");
+      expect(markup).toContain("Start Studio with --writable");
+      expect(markup).toContain("<h1>one</h1>");
+      expect(markup).toContain('data-vault-mode="read"');
+    }
   });
 
   it("renders the two pre-explore choices without offering documentation mode or skip copy", () => {
@@ -700,8 +859,18 @@ describe("terminal view", () => {
     const markup = renderStudioDocument({ ...selected, terminal });
     const sources = [...markup.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1]);
     expect(sources.length).toBeGreaterThan(0);
-    for (const source of sources) expect(source!.startsWith("/studio/terminal/")).toBe(true);
+    for (const source of sources) {
+      // Inline brand images are data URIs, not files.
+      if (source!.startsWith("data:")) continue;
+      expect(source === "/studio/client.js" || source!.startsWith("/studio/terminal/")).toBe(true);
+    }
     expect(markup).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+
+  it("keeps Studio's one client reference when the terminal is enabled", () => {
+    const markup = renderStudioDocument({ ...selected, terminal });
+    expect(markup.match(/src="\/studio\/client\.js"/g)).toHaveLength(1);
+    expect(markup).toContain(STUDIO_PREPAINT_SCRIPT);
   });
 
   it("offers only launchable agents and names the target", () => {

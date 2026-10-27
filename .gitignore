@@ -14,3 +14,6 @@ __pycache__/
 .vitest/
 
 .build/
+
+# local appliance test setup (apps/mate-container/scripts/local-up.ts)
+apps/mate-container/.local/

@@ -15,6 +15,7 @@ import {
   type StudioServerDeps,
 } from "./server";
 import { renderStudioDocument, renderVaultView } from "./views/document";
+import { STUDIO_CLIENT_BUNDLE } from "./views/studio-client.generated";
 import type { StudioPage } from "./views/model";
 import { createVaultManager, type VaultManager, type VaultTreeResult } from "./vault";
 
@@ -76,6 +77,37 @@ describe("createStudioFetch", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.text()).toContain("<!doctype html>");
+  });
+
+  test("serves Studio's built client at one fixed path", async () => {
+    const handler = createStudioFetch(deps());
+    const response = await handler(new Request("http://localhost/studio/client.js"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/javascript");
+    expect(response.headers.get("cache-control")).toBe("no-cache");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await response.text()).toBe(STUDIO_CLIENT_BUNDLE);
+
+    const head = await handler(
+      new Request("http://localhost/studio/client.js", { method: "HEAD" }),
+    );
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+  });
+
+  test("serves no other name under the client's route", async () => {
+    const handler = createStudioFetch(deps());
+    for (const pathname of [
+      "/studio/client.js/",
+      "/studio/client.js.map",
+      "/studio/client/main.ts",
+      "/studio/../package.json",
+      "/studio/client.ts",
+    ]) {
+      const response = await handler(new Request(`http://localhost${pathname}`));
+      expect(response.headers.get("content-type") ?? "").not.toContain("javascript");
+    }
   });
 
   test("renders the state the URL names", async () => {
@@ -681,6 +713,68 @@ describe("createStudioFetch", () => {
       expect(refused.status).toBe(403);
       expect(await refused.text()).toContain("--writable");
       handler.close();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("serves the open file's pane as a fragment, in the mode the write path allows", async () => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-pane-")));
+    try {
+      await fs.writeFile(path.join(root, "note.md"), "# Heading\n\nbody");
+      const digest = companionDigest(root);
+      const vault = createVaultManager({ watch: () => ({ close() {} }) });
+      const handlerFor = (writable: boolean) =>
+        createStudioFetch(
+          {
+            collectStudioInventory: async () => ({
+              companions: [{ path: root, health: "ready", pairings: [] }],
+            }),
+            assembleCompanionPayload: async (companionPath) => ({
+              companionPath,
+              changes: [],
+              specs: [],
+              topology: null,
+              warnings: [],
+            }),
+            renderDocument: () => "unused",
+            vault,
+          },
+          { writable },
+        );
+      const pane = async (handler: ReturnType<typeof handlerFor>, query: string) => {
+        const response = (await handler(
+          new Request(`http://localhost/api/vault/pane?companion=${digest}&view=vault&${query}`),
+        ))!;
+        return { response, markup: await response.text() };
+      };
+
+      const read = await pane(handlerFor(true), "path=note.md");
+      expect(read.response.status).toBe(200);
+      expect(read.response.headers.get("content-type")).toContain("text/html");
+      expect(read.markup).toContain("<h1>Heading</h1>");
+      expect(read.markup).toContain("data-vault-crumb");
+      expect(read.markup).not.toContain("<textarea");
+
+      const edit = await pane(handlerFor(true), "path=note.md&mode=edit");
+      expect(edit.markup).toContain("<textarea");
+      expect(edit.markup).toContain("# Heading");
+
+      const locked = await pane(handlerFor(false), "path=note.md&mode=edit");
+      expect(locked.response.status).toBe(200);
+      expect(locked.markup).toContain("<h1>Heading</h1>");
+      expect(locked.markup).not.toContain("<textarea");
+      expect(locked.markup).not.toContain("vault-save");
+
+      const refused = await pane(handlerFor(true), "path=..%2Foutside.md");
+      expect(refused.response.status).toBe(200);
+      expect(refused.markup).toContain("File refused");
+
+      const unknown = (await handlerFor(true)(
+        new Request("http://localhost/api/vault/pane?companion=0000000000&view=vault&path=note.md"),
+      ))!;
+      expect(unknown.status).toBe(400);
+      vault.stop();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

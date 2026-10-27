@@ -49,6 +49,9 @@ describe("published core package", () => {
       "opencode/index.ts",
       "opencode/tui.tsx",
       "tui.ts",
+      "brand/index.ts",
+      "brand/art.generated.ts",
+      "brand/svg.generated.ts",
     ]) {
       await expect(fs.stat(path.join(extracted, "package", "src", entry))).resolves.toBeDefined();
     }

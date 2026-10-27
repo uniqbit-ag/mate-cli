@@ -1,6 +1,26 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 
-import { STUDIO_CLIENT_SCRIPT } from "./client";
+import { STUDIO_CLIENT_BUNDLE } from "./studio-client.generated";
+import { startStudioClient } from "./studio-client";
+
+const realSetTimeout = globalThis.setTimeout;
+const restorers: (() => void)[] = [];
+
+/** Installs browser globals for one run of the client; `afterEach` puts the real ones back. */
+function stubBrowser(stubs: Record<string, unknown>): void {
+  for (const [name, value] of Object.entries(stubs)) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, name);
+    Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+    restorers.push(() => {
+      if (original) Object.defineProperty(globalThis, name, original);
+      else delete (globalThis as Record<string, unknown>)[name];
+    });
+  }
+}
+
+afterEach(() => {
+  while (restorers.length > 0) restorers.pop()!();
+});
 
 const ACME = "4cb87fd83f";
 const BETA = "0123456789";
@@ -58,7 +78,7 @@ function item(): El {
   return li;
 }
 
-function run(options: { view: boolean; hash?: string; reports?: unknown[] }) {
+function run(options: { view: boolean; hash?: string; reports?: unknown[]; theme?: string }) {
   const shell = new El({
     "data-companion": ACME,
     "data-reports-url": `/api/reports?companion=${ACME}`,
@@ -70,6 +90,7 @@ function run(options: { view: boolean; hash?: string; reports?: unknown[] }) {
     "reports-toast-title": new El(),
     "reports-toast-open": new El(),
     "reports-badge": Object.assign(new El(), { hidden: true }),
+    "studio-theme": new El(),
   };
   if (options.view) {
     Object.assign(elements, {
@@ -91,6 +112,10 @@ function run(options: { view: boolean; hash?: string; reports?: unknown[] }) {
     constructor(url: string) {
       sources.push(Object.assign(this, { url }));
     }
+    /** Records the listener where the tests drive it, as `on<type>`. */
+    addEventListener(type: string, listener: (event: any) => void) {
+      (this as Record<string, unknown>)[`on${type}`] = listener;
+    }
   }
   const documentStub = {
     documentElement: new El(),
@@ -98,39 +123,29 @@ function run(options: { view: boolean; hash?: string; reports?: unknown[] }) {
     querySelector: (selector: string) => (selector === "[data-reports-events-url]" ? shell : null),
     querySelectorAll: () => [],
   };
-  const timers: (() => void)[] = [];
   const replaced: string[] = [];
-  new Function(
-    "document",
-    "localStorage",
-    "setTimeout",
-    "clearTimeout",
-    "fetch",
-    "EventSource",
-    "location",
-    "history",
-    STUDIO_CLIENT_SCRIPT,
-  )(
-    documentStub,
-    { getItem: () => null, setItem: () => {} },
-    (callback: () => void) => timers.push(callback),
-    () => {},
-    (url: string) => {
+  stubBrowser({
+    document: documentStub,
+    localStorage: { getItem: () => options.theme ?? null, setItem: () => {} },
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+    fetch: (url: string) => {
       fetched.push(url);
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ reports: options.reports ?? [] }),
       });
     },
-    EventSourceStub,
-    { href: "http://localhost/", hash: options.hash ?? "", search: "", pathname: "/" },
-    { replaceState: (_s: unknown, _t: string, url: string) => replaced.push(url) },
-  );
+    EventSource: EventSourceStub,
+    location: { href: "http://localhost/", hash: options.hash ?? "", search: "", pathname: "/" },
+    history: { replaceState: (_s: unknown, _t: string, url: string) => replaced.push(url) },
+  });
+  startStudioClient();
   const send = (event: unknown) => sources[0]!.onmessage!({ data: JSON.stringify(event) });
   return { elements, fetched, sources, send, replaced };
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+const settle = () => new Promise((resolve) => realSetTimeout(resolve, 0));
 const published = (companion: string, title = "Quarterly <b>report</b>") => ({
   type: "report-published",
   companion,
@@ -145,21 +160,21 @@ describe("hosted reports in the page client", () => {
     expect(r.sources.map((s) => s.url)).toEqual([
       `/api/vault/changes?companion=${ACME}&scope=reports`,
     ]);
-    expect(STUDIO_CLIENT_SCRIPT).not.toContain("/api/vault/changes");
+    expect(STUDIO_CLIENT_BUNDLE).not.toContain("/api/vault/changes");
   });
 
   it("does nothing without a rendered channel", () => {
-    expect(() =>
-      new Function("document", "EventSource", STUDIO_CLIENT_SCRIPT)(
-        {
-          documentElement: new El(),
-          getElementById: () => null,
-          querySelector: () => null,
-          querySelectorAll: () => [],
-        },
-        class {},
-      ),
-    ).not.toThrow();
+    stubBrowser({
+      document: {
+        documentElement: new El(),
+        getElementById: () => null,
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      },
+      localStorage: { getItem: () => null, setItem: () => {} },
+      EventSource: class {},
+    });
+    expect(() => startStudioClient()).not.toThrow();
   });
 
   it("announces another view's new report with a toast and badge, as text, without navigating", () => {
@@ -231,5 +246,51 @@ describe("hosted reports in the page client", () => {
     r.sources[0]!.onopen!();
     await settle();
     expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_B}`);
+  });
+
+  describe("the report follows Studio's chosen appearance", () => {
+    const shownReport = async (theme?: string) => {
+      const r = run({ view: true, theme, reports: [{ id: ID_A, title: "Report", createdAt: 1 }] });
+      r.sources[0]!.onopen!();
+      await settle();
+      return r;
+    };
+    const toggle = (r: ReturnType<typeof run>) => r.elements["studio-theme"]!.listeners.click!();
+
+    it("passes no scheme when Studio follows the system", async () => {
+      const r = await shownReport();
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}`);
+      expect(r.elements["reports-open"]!.href).toBe(`/studio/reports/${ID_A}`);
+    });
+
+    it("passes the light appearance to the frame and the new-tab link", async () => {
+      const r = await shownReport("light");
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}?scheme=light`);
+      expect(r.elements["reports-open"]!.href).toBe(`/studio/reports/${ID_A}?scheme=light`);
+    });
+
+    it("passes the dark appearance to the frame and the new-tab link", async () => {
+      const r = await shownReport("dark");
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}?scheme=dark`);
+      expect(r.elements["reports-open"]!.href).toBe(`/studio/reports/${ID_A}?scheme=dark`);
+    });
+
+    it("reloads the shown report when the appearance changes", async () => {
+      const r = await shownReport();
+      toggle(r);
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}?scheme=dark`);
+      expect(r.elements["reports-open"]!.href).toBe(`/studio/reports/${ID_A}?scheme=dark`);
+      toggle(r);
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}?scheme=light`);
+      toggle(r);
+      expect(r.elements["reports-frame"]!.src).toBe(`/studio/reports/${ID_A}`);
+    });
+
+    it("loads nothing on a toggle while no report is shown", () => {
+      const r = run({ view: true });
+      toggle(r);
+      expect(r.elements["reports-frame"]!.src).toBe("");
+      expect(r.elements["reports-frame"]!.hidden).toBe(true);
+    });
   });
 });

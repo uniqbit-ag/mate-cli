@@ -5,8 +5,8 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -58,52 +58,36 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -179,8 +163,8 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
 </codebase-exploration-rules>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -306,52 +290,36 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -384,8 +352,8 @@ exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -747,8 +715,8 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -800,52 +768,36 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -958,8 +910,8 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
 </codebase-exploration-rules>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -1139,52 +1091,36 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -1452,8 +1388,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -1538,52 +1474,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -1640,8 +1560,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
 </codebase-exploration-rules>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -1816,52 +1736,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -1915,8 +1819,8 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -2283,8 +2187,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -2369,52 +2273,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -2499,8 +2387,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
 </codebase-exploration-rules>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -2726,52 +2614,36 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -3077,8 +2949,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -3115,52 +2987,36 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -3209,8 +3065,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
 </companion-policy>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -3336,52 +3192,36 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -3414,8 +3254,8 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -3757,8 +3597,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 1
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -3803,52 +3643,36 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -3916,8 +3740,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
 </companion-policy>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -4086,52 +3910,36 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -4400,8 +4208,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -4438,52 +4246,36 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -4535,8 +4327,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
 </companion-policy>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -4660,52 +4452,36 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -4738,8 +4514,8 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -5072,8 +4848,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -5110,52 +4886,36 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -5226,8 +4986,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
 </companion-policy>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -5394,52 +5154,36 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -5707,8 +5451,8 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -5759,59 +5503,43 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
   "claudeSkills": {
     "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
-    "mate-create-report/SKILL.md": "04ac157043b8",
+    "mate-create-report/SKILL.md": "7db1adecbc1a",
     "mate-domain-modeling/SKILL.md": "722d0e5a972d",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
@@ -5820,8 +5548,8 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "44c4d5e064dc",
-    "mate-show-me/SKILL.md": "7bda10cae936",
-    "mate-simplify-code/SKILL.md": "6fff7fff920c",
+    "mate-show-me/SKILL.md": "857241dffc44",
+    "mate-simplify-code/SKILL.md": "9e3186d08c52",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
     "openspec-explore/SKILL.md": "477fdec2cdb0",
@@ -5873,8 +5601,8 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
 </companion-policy>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -6012,52 +5740,36 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -6090,8 +5802,8 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -6128,7 +5840,7 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     ".openspec-target": "38700dfad571",
     "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
-    "mate-create-report/SKILL.md": "04ac157043b8",
+    "mate-create-report/SKILL.md": "7db1adecbc1a",
     "mate-domain-modeling/SKILL.md": "722d0e5a972d",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
@@ -6137,8 +5849,8 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "44c4d5e064dc",
-    "mate-show-me/SKILL.md": "7bda10cae936",
-    "mate-simplify-code/SKILL.md": "6fff7fff920c",
+    "mate-show-me/SKILL.md": "857241dffc44",
+    "mate-simplify-code/SKILL.md": "9e3186d08c52",
     "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
     "openspec-archive-change/SKILL.md": "ad2463670c0f",
     "openspec-explore/SKILL.md": "214bba092ffa",
@@ -6442,8 +6154,8 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -6494,59 +6206,43 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
   "claudeSkills": {
     "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
-    "mate-create-report/SKILL.md": "04ac157043b8",
+    "mate-create-report/SKILL.md": "7db1adecbc1a",
     "mate-domain-modeling/SKILL.md": "722d0e5a972d",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
@@ -6555,8 +6251,8 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "44c4d5e064dc",
-    "mate-show-me/SKILL.md": "7bda10cae936",
-    "mate-simplify-code/SKILL.md": "6fff7fff920c",
+    "mate-show-me/SKILL.md": "857241dffc44",
+    "mate-simplify-code/SKILL.md": "9e3186d08c52",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
     "openspec-explore/SKILL.md": "477fdec2cdb0",
@@ -6586,7 +6282,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     ".openspec-target": "38700dfad571",
     "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
-    "mate-create-report/SKILL.md": "04ac157043b8",
+    "mate-create-report/SKILL.md": "7db1adecbc1a",
     "mate-domain-modeling/SKILL.md": "722d0e5a972d",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
@@ -6595,8 +6291,8 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "5ac966ca1e48",
     "mate-openspec-backfill/SKILL.md": "44c4d5e064dc",
-    "mate-show-me/SKILL.md": "7bda10cae936",
-    "mate-simplify-code/SKILL.md": "6fff7fff920c",
+    "mate-show-me/SKILL.md": "857241dffc44",
+    "mate-simplify-code/SKILL.md": "9e3186d08c52",
     "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
     "openspec-archive-change/SKILL.md": "ad2463670c0f",
     "openspec-explore/SKILL.md": "214bba092ffa",
@@ -6643,8 +6339,8 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
 </companion-policy>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -6827,52 +6523,36 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -7140,8 +6820,8 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -7267,52 +6947,36 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -7334,7 +6998,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 ,
     "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
-    "mate-create-report/SKILL.md": "04ac157043b8",
+    "mate-create-report/SKILL.md": "7db1adecbc1a",
     "mate-domain-modeling/SKILL.md": "722d0e5a972d",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
@@ -7345,8 +7009,8 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-openspec-backfill/SKILL.md": "44c4d5e064dc",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
-    "mate-show-me/SKILL.md": "7bda10cae936",
-    "mate-simplify-code/SKILL.md": "6fff7fff920c",
+    "mate-show-me/SKILL.md": "857241dffc44",
+    "mate-simplify-code/SKILL.md": "9e3186d08c52",
     "openspec-apply-change/SKILL.md": "b023edd228ab",
     "openspec-archive-change/SKILL.md": "890bada99035",
     "openspec-explore/SKILL.md": "477fdec2cdb0",
@@ -7412,7 +7076,7 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     ".openspec-target": "38700dfad571",
     "mate-artifact-publish/SKILL.md": "9ae069fc6d0d",
     "mate-artifact-publish/references/openspec.md": "b5c986ed9bdc",
-    "mate-create-report/SKILL.md": "04ac157043b8",
+    "mate-create-report/SKILL.md": "7db1adecbc1a",
     "mate-domain-modeling/SKILL.md": "722d0e5a972d",
     "mate-domain-modeling/references/ADR-FORMAT.md": "824b87e87d9b",
     "mate-domain-modeling/references/CONTEXT-FORMAT.md": "172622594277",
@@ -7423,8 +7087,8 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-openspec-backfill/SKILL.md": "44c4d5e064dc",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
-    "mate-show-me/SKILL.md": "7bda10cae936",
-    "mate-simplify-code/SKILL.md": "6fff7fff920c",
+    "mate-show-me/SKILL.md": "857241dffc44",
+    "mate-simplify-code/SKILL.md": "9e3186d08c52",
     "openspec-apply-change/SKILL.md": "c657f1b4e9eb",
     "openspec-archive-change/SKILL.md": "ad2463670c0f",
     "openspec-explore/SKILL.md": "214bba092ffa",
@@ -7482,8 +7146,8 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
 </codebase-exploration-rules>
 
 <companion-instructions source="<root>/companion/AGENTS.md">
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`<root>/working\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -7740,52 +7404,36 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           "DesignSync",
           "Read(**/.env)",
           "Edit(**/.env)",
-          "Write(**/.env)",
           "Read(**/.env.local)",
           "Edit(**/.env.local)",
-          "Write(**/.env.local)",
           "Read(**/.env.development)",
           "Edit(**/.env.development)",
-          "Write(**/.env.development)",
           "Read(**/.env.production)",
           "Edit(**/.env.production)",
-          "Write(**/.env.production)",
           "Read(**/.env.test)",
           "Edit(**/.env.test)",
-          "Write(**/.env.test)",
           "Read(**/.env.*.local)",
           "Edit(**/.env.*.local)",
-          "Write(**/.env.*.local)",
           "Read(**/*.pem)",
           "Edit(**/*.pem)",
-          "Write(**/*.pem)",
           "Read(**/*.key)",
           "Edit(**/*.key)",
-          "Write(**/*.key)",
           "Read(**/*.p12)",
           "Edit(**/*.p12)",
-          "Write(**/*.p12)",
           "Read(**/*.pfx)",
           "Edit(**/*.pfx)",
-          "Write(**/*.pfx)",
           "Read(**/id_rsa)",
           "Edit(**/id_rsa)",
-          "Write(**/id_rsa)",
           "Read(**/id_ecdsa)",
           "Edit(**/id_ecdsa)",
-          "Write(**/id_ecdsa)",
           "Read(**/id_ed25519)",
           "Edit(**/id_ed25519)",
-          "Write(**/id_ed25519)",
           "Read(**/.netrc)",
           "Edit(**/.netrc)",
-          "Write(**/.netrc)",
           "Read(**/.pgpass)",
           "Edit(**/.pgpass)",
-          "Write(**/.pgpass)",
           "Read(**/.npmrc)",
           "Edit(**/.npmrc)",
-          "Write(**/.npmrc)",
         ],
       },
       {
@@ -8092,8 +7740,8 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -8128,52 +7776,36 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -8207,8 +7839,8 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -8243,52 +7875,36 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -8322,8 +7938,8 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -8359,52 +7975,36 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -8438,8 +8038,8 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -8474,52 +8074,36 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -8553,8 +8137,8 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -8589,52 +8173,36 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -8668,8 +8236,8 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -8721,52 +8289,36 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },
@@ -8920,52 +8472,36 @@ exports[`working repo golden fixtures hub roots set up providers only without co
         "DesignSync",
         "Read(**/.env)",
         "Edit(**/.env)",
-        "Write(**/.env)",
         "Read(**/.env.local)",
         "Edit(**/.env.local)",
-        "Write(**/.env.local)",
         "Read(**/.env.development)",
         "Edit(**/.env.development)",
-        "Write(**/.env.development)",
         "Read(**/.env.production)",
         "Edit(**/.env.production)",
-        "Write(**/.env.production)",
         "Read(**/.env.test)",
         "Edit(**/.env.test)",
-        "Write(**/.env.test)",
         "Read(**/.env.*.local)",
         "Edit(**/.env.*.local)",
-        "Write(**/.env.*.local)",
         "Read(**/*.pem)",
         "Edit(**/*.pem)",
-        "Write(**/*.pem)",
         "Read(**/*.key)",
         "Edit(**/*.key)",
-        "Write(**/*.key)",
         "Read(**/*.p12)",
         "Edit(**/*.p12)",
-        "Write(**/*.p12)",
         "Read(**/*.pfx)",
         "Edit(**/*.pfx)",
-        "Write(**/*.pfx)",
         "Read(**/id_rsa)",
         "Edit(**/id_rsa)",
-        "Write(**/id_rsa)",
         "Read(**/id_ecdsa)",
         "Edit(**/id_ecdsa)",
-        "Write(**/id_ecdsa)",
         "Read(**/id_ed25519)",
         "Edit(**/id_ed25519)",
-        "Write(**/id_ed25519)",
         "Read(**/.netrc)",
         "Edit(**/.netrc)",
-        "Write(**/.netrc)",
         "Read(**/.pgpass)",
         "Edit(**/.pgpass)",
-        "Write(**/.pgpass)",
         "Read(**/.npmrc)",
         "Edit(**/.npmrc)",
-        "Write(**/.npmrc)",
       ],
     },
   },

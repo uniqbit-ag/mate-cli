@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { renderHTML, renderJSON, renderMarkdown } from "./renderer";
+import { BRAND_COLORS } from "../../../brand";
+import { DARK_PALETTE, LIGHT_PALETTE } from "./palette";
+import { inferTone, renderHTML, renderJSON, renderMarkdown } from "./renderer";
 import { REPORT_DOCUMENT_VERSION, type ReportData, type ReportDocument } from "./types";
 
 const makeReport = (overrides: Partial<ReportData> = {}): ReportData => ({
@@ -133,6 +135,78 @@ describe("renderMarkdown", () => {
   });
 });
 
+describe("renderMarkdown layout", () => {
+  test("puts the metadata on one line under the title", () => {
+    const md = renderMarkdown(makeReport());
+
+    expect(
+      md.startsWith(
+        "# Token Usage Report\n\nLast 7 days · Generated 2025-01-15T12:00:00Z · Working repository: /tmp/work",
+      ),
+    ).toBe(true);
+    expect(md).not.toContain("| Field");
+  });
+
+  test("lists summary, key-value, and statuses instead of two-column tables", () => {
+    const md = renderMarkdown({
+      ...mixedDocument,
+      summary: [{ label: "Count", value: 3, detail: "since Monday" }],
+      sections: [
+        {
+          id: "pairs",
+          title: "Pairs",
+          type: "key-value",
+          items: [{ label: "Key", value: "Value" }],
+        },
+        {
+          id: "checks",
+          title: "Checks",
+          type: "statuses",
+          items: [
+            { label: "Build", status: "Failed", detail: "exit 1" },
+            { label: "Docs", status: "ok", tone: "warn" },
+          ],
+        },
+        {
+          id: "table",
+          title: "Table",
+          type: "table",
+          columns: ["Name", "Count"],
+          rows: [["a", 1]],
+        },
+      ],
+    });
+
+    expect(md).toContain("## Summary\n\n- **Count:** 3 — since Monday");
+    expect(md).toContain("## Pairs\n\n- **Key:** Value");
+    expect(md).toContain("- [error] **Build:** Failed — exit 1\n- [warn] **Docs:** ok");
+    expect(md).toContain("| Name | Count |");
+    expect(md).not.toContain("| Metric");
+    expect(md).not.toContain("| Status");
+  });
+
+  test("emits Markdown text verbatim and captions after fenced visuals", () => {
+    const md = renderMarkdown({
+      ...mixedDocument,
+      sections: [
+        {
+          id: "notes",
+          title: "Notes",
+          type: "text",
+          format: "markdown",
+          content: "- **one**\n- two",
+        },
+        { id: "flow", title: "Flow", type: "diagram", mermaid: "graph TD", caption: "The *flow*." },
+        { id: "patch", title: "Patch", type: "diff", patch: "@@ -1 +1 @@", caption: "One hunk." },
+      ],
+    });
+
+    expect(md).toContain("## Notes\n\n- **one**\n- two");
+    expect(md).toContain("```mermaid\ngraph TD\n```\n\nThe *flow*.");
+    expect(md).toContain("```diff\n@@ -1 +1 @@\n```\n\nOne hunk.");
+  });
+});
+
 describe("renderJSON", () => {
   test("serializes report data as JSON", () => {
     const data = makeReport();
@@ -167,13 +241,51 @@ describe("renderHTML", () => {
 
     expect(html).toContain('<meta name="viewport"');
     expect(html).toContain("<style>");
-    expect(html).toContain('<section id="summary">');
+    expect(html).toContain('<section id="summary" class="report-summary"');
     expect(html).toContain('<section id="spending">');
     expect(html).toContain('<section id="savings">');
     expect(html).toContain('<section id="tool-status">');
     expect(html).toContain("claude-sonnet-5");
     expect(html).toContain("tokensave");
     expect(html).not.toContain("https://");
+    expect(html).not.toContain("src=");
+  });
+
+  test("shows the header as the title with one muted metadata line", () => {
+    const html = renderHTML(makeReport());
+
+    expect(html).toContain('<svg class="report-symbol"');
+    expect(html).toContain("<h1>Token Usage Report</h1>");
+    expect(html).toContain(
+      '<p class="report-meta"><span>Last 7 days</span><span>Generated 2025-01-15T12:00:00Z</span><span>Working repository: /tmp/work</span>',
+    );
+    expect(html).not.toContain('<th scope="col">Field</th>');
+  });
+
+  test("renders the summary as tiles rather than a table", () => {
+    const html = renderHTML(makeReport());
+
+    expect(html).toContain(
+      '<div class="tile"><p class="tile-value">$37.50</p><p class="tile-label">Total spending</p></div>',
+    );
+    expect(html).not.toContain('<th scope="col">Metric</th>');
+  });
+
+  test("drops card styling in favour of rules", () => {
+    const html = renderHTML(makeReport());
+
+    expect(html).not.toContain("box-shadow");
+    expect(html).not.toContain("border-radius: 14px");
+    expect(html).toContain("border-bottom: 1px solid var(--rule)");
+  });
+
+  test("right-aligns numeric-looking columns and keeps text columns left", () => {
+    const html = renderHTML(makeReport());
+
+    expect(html).toContain('<td>claude-sonnet-5</td><td class="num">100.0K</td>');
+    expect(html).toContain('<th scope="col">Model</th><th scope="col" class="num">Input</th>');
+    expect(html).toContain('<td class="num">$12.50</td>');
+    expect(html).toContain(".num { font-variant-numeric: tabular-nums; text-align: right; }");
   });
 
   test("shows explicit messages for empty collections", () => {
@@ -211,46 +323,259 @@ describe("renderHTML", () => {
   });
 
   test("renders generic mixed sections, print control, and print styles", () => {
-    const document: ReportDocument = {
-      version: REPORT_DOCUMENT_VERSION,
-      title: "Mixed <Report>",
-      generatedAt: "2026-01-01T00:00:00Z",
-      metadata: [{ label: "Owner", value: "acme" }],
-      summary: [{ label: "Count", value: 3 }],
-      sections: [
-        {
-          id: "metadata",
-          title: "Metadata",
-          type: "metadata",
-          items: [{ label: "Tag", value: "<tag>" }],
-        },
-        { id: "metrics", title: "Metrics", type: "metrics", items: [{ label: "Score", value: 9 }] },
-        {
-          id: "pairs",
-          title: "Pairs",
-          type: "key-value",
-          items: [{ label: "Key", value: "Value" }],
-        },
-        { id: "table", title: "Table", type: "table", columns: ["Name"], rows: [["<name>"]] },
-        {
-          id: "statuses",
-          title: "Statuses",
-          type: "statuses",
-          items: [{ label: "Build", status: "ok" }],
-        },
-        { id: "text", title: "Text", type: "text", content: "Line one\nLine two" },
-        { id: "empty", title: "Empty", type: "table", columns: ["Value"], rows: [] },
-      ],
-    };
-    const html = renderHTML(document);
+    const html = renderHTML(mixedDocument);
 
     expect(html).toContain("Mixed &lt;Report&gt;");
     expect(html).toContain("&lt;name&gt;");
-    expect(html).toContain("Print / Save as PDF");
-    expect(html).toContain("window.print()");
+    expect(html).toContain(
+      '<dl class="report-kv"><div><dt>Tag</dt><dd>&lt;tag&gt;</dd></div></dl>',
+    );
+    expect(html).toContain('<p class="tile-value">9</p><p class="tile-label">Score</p>');
+    expect(html).toContain('<li class="status" data-tone="ok">');
+    expect(html).toContain('<p class="report-text">Line one<br>Line two</p>');
     expect(html).toContain("@media print");
-    expect(html).toContain(".print-control, .interactive-only");
+    expect(html).toContain(
+      ".print-control, .interactive-only, .report-index { display: none !important; }",
+    );
     expect(html).toContain("No data available");
+  });
+
+  test("renders an icon-only, named print control in the header", () => {
+    const html = renderHTML(mixedDocument);
+    const button = /<button[^>]*>(.*?)<\/button>/s.exec(html);
+
+    expect(button?.[0]).toContain('aria-label="Print / Save as PDF"');
+    expect(button?.[0]).toContain('title="Print / Save as PDF"');
+    expect(button?.[0]).toContain('onclick="window.print()"');
+    expect(button?.[1]).toMatch(/^<svg [^>]*aria-hidden="true"/);
+    expect(button?.[1].replace(/<[^>]+>/g, "")).toBe("");
+    expect(html).toContain(".print-control:focus-visible { outline:");
+    expect(html.indexOf("<h1>")).toBeLessThan(html.indexOf("<button"));
+    expect(html.indexOf("<button")).toBeLessThan(html.indexOf('class="report-meta"'));
+  });
+
+  test("carries an index only when there are more than four sections", () => {
+    const html = renderHTML(mixedDocument);
+    const short = renderHTML({ ...mixedDocument, sections: mixedDocument.sections.slice(0, 4) });
+
+    expect(html).toContain('<nav class="report-index interactive-only" aria-label="Sections">');
+    expect(html).toContain('<li><a href="#metadata">Metadata</a></li>');
+    expect(html).toContain('<li><a href="#empty">Empty</a></li>');
+    expect(short).not.toContain("report-index interactive-only");
+  });
+
+  test("lets sections flow across printed pages and keeps small units whole", () => {
+    const html = renderHTML(mixedDocument);
+
+    expect(html).not.toContain("section { break-inside: avoid-page");
+    expect(html).toContain(".report-header, h2, .diff-file { break-after: avoid-page; }");
+    expect(html).toContain(".report-caption { break-before: avoid-page; }");
+    expect(html).toContain("tr, .tile, .status,");
+    expect(html).toContain("thead { display: table-header-group; }");
+  });
+
+  test("follows the colour scheme and prints dark on white", () => {
+    const html = renderHTML(mixedDocument);
+
+    expect(html).toContain('<meta name="color-scheme" content="light dark">');
+    expect(html).toContain(
+      `@media screen and (prefers-color-scheme: dark) { :root:not([data-scheme="light"]) { --ink: ${BRAND_COLORS.cream.hex}; --bg: ${BRAND_COLORS.night.hex};`,
+    );
+    expect(html).toContain(
+      "@media print { :root { color-scheme: light; --ink: #000000; --bg: #FFFFFF;",
+    );
+  });
+
+  describe("explicit scheme parameter", () => {
+    const schemeScript = (html: string): string => {
+      const match = html.match(/<script id="report-scheme">([\s\S]*?)<\/script>/);
+      if (!match?.[1]) throw new Error("scheme script missing");
+      return match[1];
+    };
+
+    const runScheme = (html: string, search: string): string | undefined => {
+      const root = { dataset: {} as Record<string, string> };
+      new Function("location", "document", schemeScript(html))(
+        { search },
+        { documentElement: root },
+      );
+      return root.dataset.scheme;
+    };
+
+    test("sets data-scheme before the styles for light or dark only", () => {
+      const html = renderHTML(mixedDocument);
+
+      expect(html.indexOf('<script id="report-scheme">')).toBeLessThan(html.indexOf("<style>"));
+      expect(runScheme(html, "?scheme=light")).toBe("light");
+      expect(runScheme(html, "?scheme=dark")).toBe("dark");
+      expect(runScheme(html, "?scheme=sepia")).toBeUndefined();
+      expect(runScheme(html, "?x=1&scheme=Dark")).toBeUndefined();
+      expect(runScheme(html, "")).toBeUndefined();
+    });
+
+    test("selects the palette that the attribute names", () => {
+      const html = renderHTML(mixedDocument);
+
+      expect(html).toContain(
+        `@media screen { :root[data-scheme="dark"] { color-scheme: dark; --ink: ${BRAND_COLORS.cream.hex};`,
+      );
+      expect(html).toContain(':root[data-scheme="light"] { color-scheme: light; }');
+    });
+
+    test("keeps print dark on white even with data-scheme=dark", () => {
+      const html = renderHTML(
+        makeDocument([
+          { id: "flow", title: "Flow", type: "diagram", mermaid: "graph TD\n  A --> B" },
+        ]),
+      );
+
+      // Every rule that applies the dark tokens is screen-only, so print never sees them.
+      for (const marker of [`--bg: ${BRAND_COLORS.night.hex}`, "--th-background: #0d1117"]) {
+        let at = html.indexOf(marker);
+        expect(at).toBeGreaterThan(-1);
+        while (at > -1) {
+          const opened = html.lastIndexOf("@media", at);
+          expect(html.slice(opened, opened + 13)).toBe("@media screen");
+          at = html.indexOf(marker, at + 1);
+        }
+      }
+      expect(html).toContain(".report-diagram .diagram-dark { display: none !important; }");
+    });
+
+    test("switches highlighting and diagrams with the attribute", () => {
+      const html = renderHTML(
+        makeDocument([
+          { id: "flow", title: "Flow", type: "diagram", mermaid: "graph TD\n  A --> B" },
+        ]),
+      );
+
+      expect(html).toContain(':root:not([data-scheme="light"]) {\n  --th-background: #0d1117;');
+      expect(html).toContain(':root[data-scheme="dark"] {\n  --th-background: #0d1117;');
+      expect(html).toContain(
+        ':root[data-scheme="dark"] .report-diagram .diagram-light { display: none; }',
+      );
+      expect(html).toContain(
+        ':root[data-scheme="dark"] .report-diagram .diagram-dark { display: block; }',
+      );
+    });
+
+    test("leaves a report opened without the parameter on the browser preference", () => {
+      const html = renderHTML(mixedDocument);
+
+      expect(runScheme(html, "")).toBeUndefined();
+      expect(html).toContain(":root { color-scheme: light dark;");
+      expect(html).toContain('<meta name="color-scheme" content="light dark">');
+    });
+  });
+
+  test("renders statuses with explicit or inferred tones", () => {
+    const html = renderHTML({
+      ...mixedDocument,
+      sections: [
+        {
+          id: "checks",
+          title: "Checks",
+          type: "statuses",
+          items: [
+            { label: "Lint", status: "ok", tone: "warn" },
+            { label: "Build", status: "Failed", detail: "exit <1>" },
+            { label: "Docs", status: "not installed" },
+          ],
+        },
+      ],
+    });
+
+    expect(html).toContain(
+      '<li class="status" data-tone="warn"><span class="tone-marker" aria-hidden="true"></span><span class="status-label">Lint</span>',
+    );
+    expect(html).toContain(
+      '<li class="status" data-tone="error"><span class="tone-marker" aria-hidden="true"></span><span class="status-label">Build</span><span class="status-value">Failed</span><span class="status-detail">exit &lt;1&gt;</span>',
+    );
+    expect(html).toContain(
+      'data-tone="neutral"><span class="tone-marker" aria-hidden="true"></span><span class="status-label">Docs</span>',
+    );
+    expect(html).toContain('.status[data-tone="warn"] .tone-marker { clip-path:');
+  });
+
+  test("renders text by format", () => {
+    const html = renderHTML({
+      ...mixedDocument,
+      sections: [
+        { id: "plain", title: "Plain", type: "text", content: "*not emphasis* <b>" },
+        {
+          id: "rich",
+          title: "Rich",
+          type: "text",
+          format: "markdown",
+          content: "- `one`\n- [two](javascript:alert(1))\n\n```ts\nconst a = 1;\n```",
+        },
+      ],
+    });
+
+    expect(html).toContain('<p class="report-text">*not emphasis* &lt;b&gt;</p>');
+    expect(html).toContain(
+      '<div class="report-text report-markdown"><ul><li><code>one</code></li>',
+    );
+    expect(html).not.toContain("href=");
+    expect(html).toContain('<span class="th-token th-keyword">const</span>');
+    expect(html).toContain("--th-keyword:");
+  });
+});
+
+const mixedDocument: ReportDocument = {
+  version: REPORT_DOCUMENT_VERSION,
+  title: "Mixed <Report>",
+  generatedAt: "2026-01-01T00:00:00Z",
+  metadata: [{ label: "Owner", value: "acme" }],
+  summary: [{ label: "Count", value: 3 }],
+  sections: [
+    {
+      id: "metadata",
+      title: "Metadata",
+      type: "metadata",
+      items: [{ label: "Tag", value: "<tag>" }],
+    },
+    { id: "metrics", title: "Metrics", type: "metrics", items: [{ label: "Score", value: 9 }] },
+    {
+      id: "pairs",
+      title: "Pairs",
+      type: "key-value",
+      items: [{ label: "Key", value: "Value" }],
+    },
+    { id: "table", title: "Table", type: "table", columns: ["Name"], rows: [["<name>"]] },
+    {
+      id: "statuses",
+      title: "Statuses",
+      type: "statuses",
+      items: [{ label: "Build", status: "ok" }],
+    },
+    { id: "text", title: "Text", type: "text", content: "Line one\nLine two" },
+    { id: "empty", title: "Empty", type: "table", columns: ["Value"], rows: [] },
+  ],
+};
+
+describe("renderHTML numeric columns", () => {
+  test("aligns number cells right and leaves mixed columns left", () => {
+    const html = renderHTML({
+      ...mixedDocument,
+      sections: [
+        {
+          id: "t",
+          title: "T",
+          type: "table",
+          columns: ["Name", "Count", "Mixed"],
+          rows: [
+            ["a", 1, "12"],
+            ["b", null, "n/a value"],
+          ],
+        },
+      ],
+    });
+
+    expect(html).toContain(
+      '<th scope="col">Name</th><th scope="col" class="num">Count</th><th scope="col">Mixed</th>',
+    );
+    expect(html).toContain('<td>b</td><td class="num">N/A</td><td>n/a value</td>');
   });
 });
 
@@ -301,10 +626,71 @@ describe("renderHTML diagram sections", () => {
       /<script id="mermaid-runtime" src="https:\/\/cdn\.jsdelivr\.net\/npm\/mermaid@\d+\.\d+\.\d+\/dist\/mermaid\.min\.js" integrity="sha384-[A-Za-z0-9+\/=]+" crossorigin="anonymous"><\/script>/,
     );
     expect(html).toContain('securityLevel: "strict"');
-    expect(html).toContain("startOnLoad: true");
+    expect(html).toContain("startOnLoad: false");
+    expect(html).toContain('theme: "base"');
+    expect(html).toContain('"scheme":"light"');
+    expect(html).toContain(`"primaryTextColor":"${BRAND_COLORS.cream.hex}"`);
+    expect(html).toContain("await mermaid.render(id");
     expect(html).toContain('<div class="report-diagram"><pre class="mermaid">');
     expect(html).toContain("Renderer --&gt; Highlight : &quot;uses&quot;");
     expect(html).not.toContain("Renderer --> Highlight");
+  });
+
+  test("drops fixed colours from the dark copy so labels stay readable", () => {
+    const source = [
+      "flowchart TD",
+      "  a[Old] --> b[New]",
+      "  classDef fresh fill:#E4F3EA,stroke:#1F5C41",
+      "  style a fill:#fff",
+      "  linkStyle 0 stroke:#000",
+      "  classDef plain stroke-dasharray: 4",
+      "  class b fresh",
+    ].join("\n");
+    const html = renderHTML(
+      makeDocument([{ id: "flow", title: "Flow", type: "diagram", mermaid: source }]),
+    );
+
+    const dark = [
+      "flowchart TD",
+      "  a[Old] --&gt; b[New]",
+      "  classDef plain stroke-dasharray: 4",
+      "  class b fresh",
+    ].join("\n");
+    expect(html).toContain(`<pre class="mermaid" data-dark-source="${dark}">`);
+    expect(html).toContain("node.dataset.darkSource ?? node.textContent");
+  });
+
+  test("keeps a single source when the diagram fixes no colour", () => {
+    const html = renderHTML(
+      makeDocument([
+        { id: "flow", title: "Flow", type: "diagram", mermaid: "graph TD\n  A --> B" },
+      ]),
+    );
+
+    expect(html).not.toContain("data-dark-source");
+  });
+
+  test("styles the added, changed, and removed node classes from each palette", () => {
+    const html = renderHTML(
+      makeDocument([
+        { id: "flow", title: "Flow", type: "diagram", mermaid: "graph TD\n  A --> B" },
+      ]),
+    );
+
+    expect(html).toContain(
+      `.node.added rect, .node.added polygon, .node.added circle, .node.added ellipse, .node.added path { fill: ${LIGHT_PALETTE.addBg} !important; stroke: ${LIGHT_PALETTE.ok} !important; }`,
+    );
+    expect(html).toContain(`.node.removed rect`);
+    expect(html).toContain(
+      `fill: ${DARK_PALETTE.addBg} !important; stroke: ${DARK_PALETTE.ok} !important;`,
+    );
+    expect(html).toContain(
+      `fill: ${DARK_PALETTE.hunkBg} !important; stroke: ${DARK_PALETTE.info} !important;`,
+    );
+    expect(html).toContain(
+      `fill: ${DARK_PALETTE.delBg} !important; stroke: ${DARK_PALETTE.error} !important;`,
+    );
+    expect(html).toContain('"themeCSS":');
   });
 
   test("omits the diagram runtime when no section carries mermaid", () => {
@@ -346,6 +732,53 @@ describe("renderHTML diagram sections", () => {
     expect(rendered).not.toContain("@import");
     expect(rendered).not.toContain("@font-face");
     expect(rendered).not.toMatch(/\s(?:src|href)=/);
+  });
+});
+
+describe("renderHTML captions", () => {
+  test("renders a caption beneath the visual without its own heading", () => {
+    const html = renderHTML(
+      makeDocument([
+        {
+          id: "flow",
+          title: "Flow",
+          type: "diagram",
+          mermaid: "graph TD\n  A --> B",
+          caption: "The **renderer** calls `highlight` <now>.",
+        },
+        {
+          id: "changes",
+          title: "Changes",
+          type: "diff",
+          patch: MULTI_FILE_PATCH,
+          caption: "Bumps the count.",
+        },
+      ]),
+    );
+
+    expect(html).toContain(
+      '</pre></div><div class="report-caption report-markdown"><p>The <strong>renderer</strong> calls <code>highlight</code> &lt;now&gt;.</p></div></section>',
+    );
+    expect(html).toContain(
+      '<div class="report-caption report-markdown"><p>Bumps the count.</p></div></section>',
+    );
+    expect(html.match(/<h2>/g)).toHaveLength(2);
+  });
+
+  test("gives diagrams a white background in print", () => {
+    const html = renderHTML(
+      makeDocument([
+        { id: "flow", title: "Flow", type: "diagram", mermaid: "graph TD\n  A --> B" },
+      ]),
+    );
+
+    const print = html.slice(html.lastIndexOf("@media print {"));
+    expect(print).toContain(".report-diagram { background: #fff; }");
+    expect(print).toContain(".report-diagram .diagram-light { display: block !important; }");
+    expect(print).toContain(".report-diagram .diagram-dark { display: none !important; }");
+    expect(html).toContain(
+      '@media screen and (prefers-color-scheme: dark) {\n      :root:not([data-scheme="light"]) .report-diagram .diagram-light { display: none; }',
+    );
   });
 });
 
@@ -432,7 +865,8 @@ describe("renderHTML diff sections", () => {
 
     expect(html).toContain("--th-keyword:");
     expect(html).toContain(".th-keyword { color: var(--th-keyword); }");
-    expect(html).not.toContain("<script");
+    // The only script picks the colour scheme; nothing highlights on the client.
+    expect(html.match(/<script[^>]*>/g)).toEqual(['<script id="report-scheme">']);
     expect(html).not.toContain("<link ");
     expect(html).not.toContain("@font-face");
   });
@@ -464,5 +898,25 @@ describe("visual sections round-trip", () => {
     );
 
     expect(md).toContain("No data available.");
+  });
+});
+
+describe("inferTone", () => {
+  test("an explicit tone wins over the status word", () => {
+    expect(inferTone({ label: "Build", status: "ok", tone: "warn" })).toBe("warn");
+  });
+
+  test("maps well-known status words case-insensitively", () => {
+    expect(inferTone({ label: "A", status: "Failed" })).toBe("error");
+    expect(inferTone({ label: "A", status: "Passed" })).toBe("ok");
+    expect(inferTone({ label: "A", status: "stale" })).toBe("warn");
+    expect(inferTone({ label: "A", status: "missing" })).toBe("error");
+    expect(inferTone({ label: "A", status: "  OK  " })).toBe("ok");
+    expect(inferTone({ label: "A", status: "In Progress" })).toBe("info");
+  });
+
+  test("falls back to neutral for any other text", () => {
+    expect(inferTone({ label: "A", status: "not installed" })).toBe("neutral");
+    expect(inferTone({ label: "A", status: "ok-ish" })).toBe("neutral");
   });
 });

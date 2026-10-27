@@ -8,6 +8,10 @@
 # (`docker compose logs mate`), or pin one below. It still has no user
 # accounts, so publish it on a loopback address as below, or put a reverse
 # proxy with TLS in front of it.
+#
+# Contributors: to run this appliance with the Mate on your working tree,
+# use `bun run appliance:local` from the repository root. README.md in this
+# directory walks through it.
 
 services:
   mate:

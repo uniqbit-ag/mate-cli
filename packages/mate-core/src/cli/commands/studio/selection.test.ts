@@ -16,6 +16,7 @@ import {
   toFields,
   toHref,
   toSearchParams,
+  withMode,
 } from "./selection";
 
 const inventory: StudioInventory = {
@@ -77,8 +78,16 @@ describe("parse", () => {
       view: "vault",
       refresh: false,
       openPath: "docs/note.md",
+      mode: "read",
       openDir: "docs",
     });
+  });
+
+  it("reads the mode of an open file, and only edit is a mode", () => {
+    expect(parse(at("?view=vault&path=a.md&mode=edit"))).toMatchObject({ mode: "edit" });
+    expect(parse(at("?view=vault&path=a.md&mode=read"))).toMatchObject({ mode: "read" });
+    expect(parse(at("?view=vault&path=a.md&mode=bogus"))).toMatchObject({ mode: "read" });
+    expect(parse(at("?view=vault&path=a.md"))).toMatchObject({ mode: "read" });
   });
 
   it("drops parameters the view does not have", () => {
@@ -133,6 +142,7 @@ describe("parseVaultSelection", () => {
       view: "vault",
       refresh: false,
       openPath: "docs/a.md",
+      mode: "read",
       openDir: "docs",
     });
   });
@@ -143,6 +153,7 @@ describe("parseVaultSelection", () => {
       view: "vault",
       refresh: true,
       openPath: null,
+      mode: "read",
       openDir: null,
     });
   });
@@ -154,6 +165,7 @@ describe("serializing a selection", () => {
     view: "vault",
     refresh: false,
     openPath: null,
+    mode: "read",
     openDir: "docs",
   };
 
@@ -174,6 +186,23 @@ describe("serializing a selection", () => {
     expect(toHref(openFile(vault, "docs/b.md"))).toBe(
       `/?companion=${acme}&view=vault&path=docs%2Fb.md`,
     );
+  });
+
+  it("writes the mode only for an open file in edit", () => {
+    const editing = withMode(openFile(vault, "docs/b.md"), "edit");
+    expect(toHref(editing)).toBe(`/?companion=${acme}&view=vault&path=docs%2Fb.md&mode=edit`);
+    expect(toHref(withMode(editing, "read"))).toBe(
+      `/?companion=${acme}&view=vault&path=docs%2Fb.md`,
+    );
+    expect(toHref({ ...vault, mode: "edit" })).toBe(`/?companion=${acme}&view=vault&dir=docs`);
+    expect(withMode(vault, "edit")).toBe(vault);
+  });
+
+  it("starts every opened file and folder in read", () => {
+    const editing = withMode(openFile(vault, "docs/b.md"), "edit");
+    expect(openFile(editing, "docs/c.md").mode).toBe("read");
+    expect(openFolder(editing, "docs").mode).toBe("read");
+    expect(switchView(editing, "vault")).toMatchObject({ mode: "read" });
   });
 
   it("lists fields in the same order as the search parameters", () => {
@@ -197,6 +226,7 @@ describe("moves", () => {
     view: "vault",
     refresh: true,
     openPath: "docs/a.md",
+    mode: "read",
     openDir: null,
   };
   const vaultDir: StudioSelection = {
@@ -204,6 +234,7 @@ describe("moves", () => {
     view: "vault",
     refresh: false,
     openPath: null,
+    mode: "read",
     openDir: "docs",
   };
   const refreshed: StudioSelection = { ...dashboard, view: "specs", refresh: true };
@@ -222,12 +253,26 @@ describe("moves", () => {
     [
       "switching to the vault opens nothing",
       switchView(dashboard, "vault"),
-      { companionDigest: acme, view: "vault", refresh: false, openPath: null, openDir: null },
+      {
+        companionDigest: acme,
+        view: "vault",
+        refresh: false,
+        openPath: null,
+        mode: "read",
+        openDir: null,
+      },
     ],
     [
       "switching to the vault from the vault drops the target",
       switchView(vaultDir, "vault"),
-      { companionDigest: acme, view: "vault", refresh: false, openPath: null, openDir: null },
+      {
+        companionDigest: acme,
+        view: "vault",
+        refresh: false,
+        openPath: null,
+        mode: "read",
+        openDir: null,
+      },
     ],
     [
       "switching view clears a refresh",
@@ -237,7 +282,14 @@ describe("moves", () => {
     [
       "switching companion keeps the view and drops the vault's target",
       switchCompanion(vaultFile, beta),
-      { companionDigest: beta, view: "vault", refresh: false, openPath: null, openDir: null },
+      {
+        companionDigest: beta,
+        view: "vault",
+        refresh: false,
+        openPath: null,
+        mode: "read",
+        openDir: null,
+      },
     ],
     [
       "switching companion keeps a plain view",
@@ -247,7 +299,14 @@ describe("moves", () => {
     [
       "switching to no companion keeps the view",
       switchCompanion(vaultDir, null),
-      { companionDigest: null, view: "vault", refresh: false, openPath: null, openDir: null },
+      {
+        companionDigest: null,
+        view: "vault",
+        refresh: false,
+        openPath: null,
+        mode: "read",
+        openDir: null,
+      },
     ],
     [
       "opening a file drops the open folder",
@@ -257,6 +316,7 @@ describe("moves", () => {
         view: "vault",
         refresh: false,
         openPath: "docs/b.md",
+        mode: "read",
         openDir: null,
       },
     ],
@@ -268,18 +328,33 @@ describe("moves", () => {
         view: "vault",
         refresh: false,
         openPath: "docs/b.md",
+        mode: "read",
         openDir: null,
       },
     ],
     [
       "opening a folder drops the open file",
       openFolder(vaultFile, "docs/a"),
-      { companionDigest: acme, view: "vault", refresh: false, openPath: null, openDir: "docs/a" },
+      {
+        companionDigest: acme,
+        view: "vault",
+        refresh: false,
+        openPath: null,
+        mode: "read",
+        openDir: "docs/a",
+      },
     ],
     [
       "opening the root drops every target",
       openFolder(vaultDir, null),
-      { companionDigest: acme, view: "vault", refresh: false, openPath: null, openDir: null },
+      {
+        companionDigest: acme,
+        view: "vault",
+        refresh: false,
+        openPath: null,
+        mode: "read",
+        openDir: null,
+      },
     ],
     ["refreshing keeps the vault's target", refresh(vaultDir), { ...vaultDir, refresh: true }],
     ["refreshing keeps a plain view", refresh(dashboard), { ...dashboard, refresh: true }],

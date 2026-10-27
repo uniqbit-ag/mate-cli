@@ -28,6 +28,7 @@ export type ProjectionEntryId =
   | "openspec-store-exclude"
   | "openspec-store-pointer"
   | "claude-skill-links"
+  | "claude-command-links"
   | "workspace-document"
   | "capability-excludes"
   | "claude-working-settings"

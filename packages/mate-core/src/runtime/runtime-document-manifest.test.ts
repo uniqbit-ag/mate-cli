@@ -267,6 +267,32 @@ describe("serializeManifest", () => {
     });
   });
 
+  test("a prefix scopes withLinks and links to one link root", () => {
+    const manifest = withLinks(parseManifest(FIXTURES.documentsAndLinks), "claude", {
+      ".claude/skills/acme": { runtime: "claude", target: "/acme/.claude/skills/acme" },
+      ".claude/commands/opsx": { runtime: "claude", target: "/acme/.claude/commands/opsx" },
+    });
+
+    const commands = withLinks(
+      manifest,
+      "claude",
+      { ".claude/commands/team": { runtime: "claude", target: "/acme/.claude/commands/team" } },
+      { prefix: ".claude/commands/" },
+    );
+    expect(links(commands)).toEqual({
+      ".claude/skills/acme": { runtime: "claude", target: "/acme/.claude/skills/acme" },
+      ".claude/commands/team": { runtime: "claude", target: "/acme/.claude/commands/team" },
+    });
+
+    const skills = withLinks(manifest, "claude", {}, { prefix: ".claude/skills/" });
+    expect(links(skills)).toEqual({
+      ".claude/commands/opsx": { runtime: "claude", target: "/acme/.claude/commands/opsx" },
+    });
+    expect(links(manifest, "claude", { prefix: ".claude/commands/" })).toEqual({
+      ".claude/commands/opsx": { runtime: "claude", target: "/acme/.claude/commands/opsx" },
+    });
+  });
+
   test("records documents built by edits in the earlier writer's shape", () => {
     const built = withCopies(
       withDocument(
