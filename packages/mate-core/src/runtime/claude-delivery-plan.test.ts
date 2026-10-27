@@ -47,7 +47,7 @@ function expected(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan {
       reconcile: "attended-prepare",
       gitSync: "launch-preflight",
       plugins: { owner: "launch-flag", launchExclude: wrap.carriedClaudePluginDirectories },
-      instructions: { main: "append-prompt", subagents: "plugin-subagent-hook" },
+      instructions: { main: "wrap-session-hook", subagents: "plugin-subagent-hook" },
     };
   }
   if (kind === "managed-companion") {
@@ -248,5 +248,14 @@ describe("launchPluginFolders", () => {
 
   test.each(CASES)("%s", (_label, kind, wrap, gathered, folders) => {
     expect(launchPluginFolders(planClaudeDelivery(kind, wrap), gathered, BUNDLED)).toEqual(folders);
+  });
+});
+
+describe("the main thread's Companion Instructions channel", () => {
+  /** A conversation resumed through the other launcher would otherwise hold a copy from each channel. */
+  test("a launch and a Claude-wrapped plain session share one channel", () => {
+    expect(planClaudeInstructions("managed-repo", true).main).toBe(
+      planClaudeInstructions("unmanaged", true).main,
+    );
   });
 });

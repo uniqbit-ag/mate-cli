@@ -505,6 +505,23 @@ describe("buildCompanionInstructions budget", () => {
     expect(delivered).toContain("Sections not included here: Huge.");
   });
 
+  test("ignores a managed block quoted inside a code fence in CLAUDE.md", () => {
+    const dir = companion({
+      agents: MANAGED_BLOCK,
+      claude: [
+        "@AGENTS.md",
+        "",
+        "Deprecated example, do not follow:",
+        "",
+        "```md",
+        managedBlock("context-mode:abc123", "- Quoted rule."),
+        "```",
+      ].join("\n"),
+    });
+
+    expect(text(build(dir))).not.toContain("Quoted rule.");
+  });
+
   test("a CLAUDE.md block survives when the last AGENTS.md section is dropped", () => {
     /** No heading of its own, so only its own segment keeps it apart from the section before it. */
     const dir = companion({

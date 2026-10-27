@@ -3,6 +3,7 @@ import fs from "node:fs";
 
 import { unmanagedClaudeDelivery } from "../runtime/claude-delivery-plan";
 import { hasLaunchEnvironment } from "../runtime/env";
+import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveProjection } from "../runtime/projection";
 import { runtimeDirectoryPath, runtimeMateBin } from "../runtime/runtime-directory";
 import {
@@ -116,7 +117,13 @@ async function prepareNotes(
  * The prepare, then the main thread's Companion Instructions: Claude Code runs
  * an event's hooks in parallel, and the prepare rewrites the companion's
  * `AGENTS.md` and `CLAUDE.md`, so a separate instruction hook could read them
- * stale or half written. Only the wrap's `--projected` copy delivers them.
+ * stale or half written. Only a wrap's copy does either: a plugin copy loaded
+ * through `--plugin-dir` would hold the companion lock and rewrite them while
+ * the wrap's copy reads them. A wrap from before the group carried
+ * `PROJECTED_FLAG` registered it bare, so a bare copy counts as the wrap's
+ * unless Claude Code exported `CLAUDE_PLUGIN_ROOT`, which it does for plugin
+ * hooks only. That test needs no manifest, so a linked worktree served by the
+ * main checkout's settings is covered too.
  */
 export async function runSessionStartHook(
   env: HookEnv,
@@ -125,6 +132,10 @@ export async function runSessionStartHook(
   input: unknown,
   deps: SessionPrepareHookDeps = sessionPrepareHookDeps,
 ): Promise<HookOutcome> {
+  if (!argv.includes(PROJECTED_FLAG)) {
+    if (env.CLAUDE_PLUGIN_ROOT) return operatorMessage([]);
+    argv = [...argv, PROJECTED_FLAG];
+  }
   const notes = await guardedPrepareNotes(env, cwd, deps);
   const { hookSpecificOutput, systemMessage } = instructionHookPayload(env, cwd, argv, input) ?? {};
   const messages = systemMessage ? [...notes, systemMessage] : notes;

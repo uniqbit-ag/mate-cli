@@ -1,38 +1,10 @@
 /** Reads the operator's `claude` arguments as tokens, for where Mate's appended prompt goes. */
 
 export const APPEND_PROMPT_FLAG = "--append-system-prompt";
-export const SNAPSHOT_FLAG = "--system-prompt-snapshot";
-const RESUME_FLAGS = new Set(["--resume", "--continue", "--from-pr", "--teleport"]);
-/** The main command's short flags that take a value: Claude reads the rest of a cluster as that value, so `-dc` is a debug filter. */
-const VALUE_SHORT_FLAGS = new Set(["d", "n", "w"]);
 
 function flagArgs(args: readonly string[]): readonly string[] {
   const terminator = args.indexOf("--");
   return terminator === -1 ? args : args.slice(0, terminator);
-}
-
-function shortFlagsResume(arg: string): boolean {
-  if (!/^-[A-Za-z]/.test(arg)) return false;
-  for (const letter of arg.slice(1)) {
-    if (letter === "r" || letter === "c") return true;
-    if (VALUE_SHORT_FLAGS.has(letter) || !/^[A-Za-z]$/.test(letter)) return false;
-  }
-  return false;
-}
-
-function resumesConversation(flags: readonly string[]): boolean {
-  return flags.some((arg) =>
-    arg.startsWith("--") ? RESUME_FLAGS.has(arg.split("=")[0]!) : shortFlagsResume(arg),
-  );
-}
-
-function setsSnapshotMode(flags: readonly string[]): boolean {
-  return flags.some((arg) => arg === SNAPSHOT_FLAG || arg.startsWith(`${SNAPSHOT_FLAG}=`));
-}
-
-/** A resumed or continued conversation that leaves the snapshot mode to Mate. */
-export function needsSnapshotOff(flags: readonly string[]): boolean {
-  return resumesConversation(flags) && !setsSnapshotMode(flags);
 }
 
 /**
@@ -46,7 +18,6 @@ export function needsSnapshotOff(flags: readonly string[]): boolean {
  */
 export function liftAppendedPrompts(args: readonly string[]): {
   args: string[];
-  flags: string[];
   prompts: string[];
   boundary?: number;
 } {
@@ -73,7 +44,6 @@ export function liftAppendedPrompts(args: readonly string[]): {
   );
   return {
     args: passthrough,
-    flags: kept,
     prompts,
     ...(boundary === undefined ? {} : { boundary }),
   };

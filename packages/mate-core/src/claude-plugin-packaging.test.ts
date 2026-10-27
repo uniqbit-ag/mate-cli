@@ -222,7 +222,12 @@ describe("packed Claude plugin", () => {
     expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-SHIM-SENTINEL");
 
     /** The plugin's bare copy never owns the main thread, so a session loading both gets one copy. */
-    const bare = runShim("session-prepare.mjs", input, withoutLaunchEnvironment(), repo);
+    const bare = runShim(
+      "session-prepare.mjs",
+      input,
+      { ...withoutLaunchEnvironment(), CLAUDE_PLUGIN_ROOT: pluginRoot },
+      repo,
+    );
     expect(bare.exitCode).toBe(0);
     expect(bare.stdout).not.toContain("ACME-SHIM-SENTINEL");
   });

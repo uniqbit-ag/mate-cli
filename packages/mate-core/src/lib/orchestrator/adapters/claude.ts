@@ -10,11 +10,6 @@ import {
   type ClaudeDeliveryPlan,
 } from "../../../runtime/claude-delivery-plan";
 import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
-import {
-  buildCompanionInstructions,
-  companionInstructionsUnavailableLine,
-  type InstructionReader,
-} from "../../../runtime/companion-instructions";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import type { SessionKind } from "../../../runtime/session-kind";
 import { NOT_WRAPPED } from "../../../runtime/wrap-state";
@@ -25,20 +20,11 @@ import {
 } from "../../../tools/setup/providers/claude";
 import { definesUserClaudeAttribution } from "../../../tools/setup/providers/claude-attribution";
 import type { ClaudeSettings } from "../../../tools/setup/providers/claude-format";
-import {
-  getClaudePluginRoot,
-  getWrapperBinPath,
-  validateClaudePluginAssets,
-} from "../../package-paths";
+import { getClaudePluginRoot, validateClaudePluginAssets } from "../../package-paths";
 import type { PrepareResult } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
 import { type AdapterContext, LaunchAdapter } from "./base";
-import {
-  APPEND_PROMPT_FLAG,
-  SNAPSHOT_FLAG,
-  liftAppendedPrompts,
-  needsSnapshotOff,
-} from "./claude-args";
+import { APPEND_PROMPT_FLAG, liftAppendedPrompts } from "./claude-args";
 
 /** The paths are present only where the plan names that channel and the file exists. */
 interface ClaudeDelivery {
@@ -52,35 +38,6 @@ interface ClaudeLaunchContext extends AdapterContext {
   delivery: ClaudeDelivery;
   /** The Capability plugin folders this launch's own prepare gathered, in order. */
   pluginDirectories: readonly string[];
-  /** Present when the plan gives the main thread's Companion Instructions to the appended prompt. */
-  instructions?: string;
-}
-
-/**
- * Read after the prepare's companion file sync, which recreates `AGENTS.md`
- * and repairs its markers, so a failure here is real: the launch stops rather
- * than start a session without the companion's rules.
- */
-function readLaunchInstructions(
-  read: InstructionReader,
-  plan: ClaudeDeliveryPlan,
-  companionPath: string,
-  repository: AdapterContext["repository"],
-): string | undefined {
-  if (plan.instructions.main !== "append-prompt" || !repository) return undefined;
-  const result = read({
-    companionPath,
-    repository,
-    /** The same path the launch materializes as `MATE_WRAPPER_BIN_PATH`. */
-    wrapperBinPath: getWrapperBinPath(),
-    runtime: "claude",
-  });
-  if (result.kind === "unavailable") {
-    throw new LaunchPreflightError(
-      `${FRAMEWORK_NAME}: ${companionInstructionsUnavailableLine(result)}.`,
-    );
-  }
-  return result.text;
 }
 
 /** Where a launch with a Working Repository writes its derived `--settings`; git-ignored. */
@@ -143,10 +100,6 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
   readonly toolName = "claude";
   readonly interactive = true;
 
-  constructor(private readonly readInstructions: InstructionReader = buildCompanionInstructions) {
-    super();
-  }
-
   /**
    * Plans from the wrap state the prepare's pass left, never a fresh read. A
    * repository left without a Claude wrap fails preflight: the plan would defer
@@ -162,12 +115,6 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
       );
     }
     const plan = planClaudeDelivery(kind, wrap);
-    const instructions = readLaunchInstructions(
-      this.readInstructions,
-      plan,
-      companionPath,
-      repository,
-    );
     const mcpConfigPath = getCompanionClaudeMcpConfigPath(companionPath);
     const settingsPath = await settingsPathFor(plan, companionPath, repository);
     const delivery: ClaudeDelivery = {
@@ -179,7 +126,6 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
       ...context,
       delivery,
       pluginDirectories: prepared.claudePluginDirectories ?? [],
-      ...(instructions ? { instructions } : {}),
     };
   }
 
@@ -209,9 +155,8 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
 
   /**
    * Plan in, flags out; decides nothing. `--append-system-prompt` is
-   * unconditional: no settings document can carry it. A resumed or continued
-   * conversation gets `--system-prompt-snapshot off`, so it reads the current
-   * Companion Instructions rather than the ones recorded at its start.
+   * unconditional: no settings document can carry it. It holds the policy
+   * only; the Companion Instructions come from the wrap's session hook.
    * `--plugin-dir` passes the folders `launchPluginFolders` names, from the
    * running install's bundled plugin.
    */
@@ -235,14 +180,8 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
       ...context,
       secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
     });
-    const { args: passthrough, flags, prompts, boundary } = liftAppendedPrompts(args);
-    const snapshotArgs =
-      context.instructions && needsSnapshotOff(flags) ? [SNAPSHOT_FLAG, "off"] : [];
-    const promptArgs = [
-      APPEND_PROMPT_FLAG,
-      [policy, context.instructions ?? "", ...prompts].filter(Boolean).join("\n\n"),
-      ...snapshotArgs,
-    ];
+    const { args: passthrough, prompts, boundary } = liftAppendedPrompts(args);
+    const promptArgs = [APPEND_PROMPT_FLAG, [policy, ...prompts].filter(Boolean).join("\n\n")];
     const launchArgs = [...settingsArgs, ...mcpConfigArgs, ...pluginDirArgs];
 
     if (boundary === undefined) {

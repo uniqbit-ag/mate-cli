@@ -53,7 +53,7 @@ const CONTEXT_MODE_GUIDANCE_MARKER = "\n## Context Mode\n";
  * text: a rule sentence from the template's `MATE:COMPANION` block, and a
  * sentinel the user wrote into the companion `AGENTS.md`.
  */
-const COMPANION_RULE_SENTENCE = "Code comments: JSDoc format only";
+const COMPANION_RULE_SENTENCE = "Code comments: sparse and concise";
 const USER_SENTINEL = "ACME-COMPANION-SENTINEL-5d1e";
 const INSTRUCTIONS_MARKER = "<companion-instructions";
 
@@ -890,12 +890,8 @@ describe.skipIf(!runRealAgentTests || !hasClaude)(
         const body = requestFor(mock, "say hi").body;
         assertMarkersAppearExactlyOnce(body);
         expect(countOccurrences(flattenSystemPrompt(body), CONTEXT_MODE_GUIDANCE_MARKER)).toBe(0);
-        /** The appended prompt carries them; no hook output adds a second copy. */
-        expectExactlyOnce(
-          flattenSystemPrompt(body),
-          INSTRUCTIONS_MARKER,
-          "mate claude: system prompt",
-        );
+        /** The wrap's session hook carries them, as in a plain session; the appended prompt holds none. */
+        expect(countOccurrences(flattenSystemPrompt(body), INSTRUCTIONS_MARKER)).toBe(0);
         expectExactlyOnce(flattenRequest(body), INSTRUCTIONS_MARKER, "mate claude: request");
         assertCompanionRulesOnce(body, "mate claude");
       } finally {
@@ -1042,6 +1038,50 @@ describe.skipIf(!runRealAgentTests || !hasClaude)(
         await mock.close();
       }
     }, 180_000);
+
+    /** One channel for both launchers: a conversation moved between them holds the current text once. */
+    test.each([
+      ["mate claude", "claude"],
+      ["claude", "mate claude"],
+    ] as const)(
+      "a conversation started with %s and resumed with %s holds one copy",
+      async (first, second) => {
+        const scenario = await claudeScenario("mate-cli-e2e-cross-launcher-resume-");
+        expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(
+          0,
+        );
+        const mock = await startMockModelServer();
+        const sessionId = crypto.randomUUID();
+        const launch = async (launcher: string, args: string[]) => {
+          const result =
+            launcher === "mate claude"
+              ? await runMate(scenario, {
+                  cwd: scenario.working,
+                  args: ["claude", ...args],
+                  input: "y\n",
+                  env: mateClaudeEnv(mock),
+                })
+              : await runPlainClaude(scenario, scenario.working, args, mock);
+          expect(result.exitCode).toBe(0);
+        };
+
+        try {
+          await launch(first, ["--print", "--session-id", sessionId, "say hi"]);
+          await fs.appendFile(
+            path.join(scenario.companion, "AGENTS.md"),
+            `\n## Acme later\n\n- ${RESUME_SENTINEL}\n`,
+          );
+          await launch(second, ["--print", "--resume", sessionId, "say again"]);
+
+          const body = requestFor(mock, "say again").body;
+          expect(countOccurrences(flattenSystemPrompt(body), INSTRUCTIONS_MARKER)).toBe(0);
+          expect(countOccurrences(flattenRequest(body), RESUME_SENTINEL)).toBe(1);
+        } finally {
+          await mock.close();
+        }
+      },
+      240_000,
+    );
   },
 );
 

@@ -237,14 +237,35 @@ describe("session-start hook", () => {
     expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
   });
 
-  test("the plugin's bare copy prepares but leaves the instructions to the wrap's", async () => {
+  /** A second prepare would hold the lock and rewrite `AGENTS.md` while the wrap's copy reads it. */
+  test("the plugin's bare copy leaves the prepare and the instructions to the wrap's", async () => {
     const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook(
+      { CLAUDE_PLUGIN_ROOT: "/acme/plugin" },
+      repo,
+      [],
+      sessionStart,
+      deps,
+    );
+
+    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
+    expect(order).toEqual([]);
+  });
+
+  test("a bare copy from an older wrap delivers in a worktree with no manifest of its own", async () => {
+    const repo = projectedRepo(null);
     companionOf(repo);
     const { deps, order } = fakeDeps();
 
     const outcome = await runSessionStartHook({}, repo, [], sessionStart, deps);
 
-    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
-    expect(order).toEqual(["local", "sync"]);
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(order).toEqual([]);
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
   });
 });

@@ -150,28 +150,22 @@ and names the document that failed.
 The companion's own rules, its `AGENTS.md`, reach every Claude session in a
 Working Repository once:
 
-- `mate claude` appends them to the system prompt after the companion guidance,
-  in one `--append-system-prompt` flag; a `--append-system-prompt` of your own
-  follows them there instead of replacing them. When the forwarded arguments
-  resume or continue a conversation (`--resume`, `--continue`, `--from-pr`,
-  `--teleport`, or a short flag that resumes or continues, such as `-r`, `-c`,
-  `-rID` or `-pc`), it also passes `--system-prompt-snapshot off`, so that
-  conversation gets the current text; a fresh session keeps Claude Code's default
-  snapshot, and so keeps working on Claude Code builds that predate the flag (the
-  flag needs Claude Code 2.1.267 or later). Your own `--system-prompt-snapshot`
-  argument wins; an argument after a further `--` is prompt text, not a flag.
-- Plain `claude`, Agent SDK sessions that load the project's settings, such as
-  T3, and linked worktrees that hold the repository's `.mate/` folder get them
-  from the wrap's `SessionStart` session-prepare hook, after it prepares the
-  session, so they read the companion files the preparation refreshed. A fresh worktree without `.mate/`
-  gets nothing, and no notice says so. A worktree nested inside the main checkout,
-  as `claude --worktree` creates under `.claude/worktrees/`, uses the main
-  checkout's `.mate/`, so its rules name the main checkout's path. A plain session that also loads the Mate
-  plugin still gets one copy. The hook also fires after compaction and on
-  resume: a resumed conversation holds one copy while the delivered text is
-  unchanged, since Claude Code collapses identical hook context, and gains a
-  copy each time the text changes, whether in `AGENTS.md` or in the Claude
-  blocks of the companion `CLAUDE.md`.
+- `mate claude`, plain `claude`, Agent SDK sessions that load the project's
+  settings, such as T3, and linked worktrees that hold the repository's `.mate/`
+  folder all get them from the wrap's `SessionStart` session-prepare hook, after
+  it prepares the session, so they read the companion files the preparation
+  refreshed. The system prompt holds none of them, so a conversation resumed
+  through the other launcher holds one copy, not two. A fresh worktree without
+  `.mate/` gets nothing, and no notice says so. A worktree nested inside the main
+  checkout, as `claude --worktree` creates under `.claude/worktrees/`, uses the
+  main checkout's `.mate/`, so its rules name the main checkout's path. A session
+  that also loads the Mate plugin still gets one copy. The hook also fires after
+  compaction and on resume: a resumed conversation holds one copy while the
+  delivered text is unchanged, since Claude Code collapses identical hook
+  context, and gains a copy each time the text changes, whether in `AGENTS.md` or
+  in the Claude blocks of the companion `CLAUDE.md`. A launch's own
+  `--append-system-prompt` still follows the companion guidance in Mate's single
+  flag instead of replacing it.
 - Subagents get them from a `SubagentStart` hook, except the built-in Explore
   and Plan agents, which skip project memory, and forks, which inherit the
   parent's context and so already hold them.
@@ -190,9 +184,8 @@ whole and as many whole `##` sections as fit, never splitting fenced code or a l
 with a line naming the sections left out and the file's path. If the
 `MATE:COMPANION` block leaves no room within the limit for that line, the hooks
 show a message asking to shorten it, and Claude Code may deliver the text as a
-file preview. A missing `AGENTS.md` stops `mate claude`
-before Claude starts; a plain session starts anyway and shows a notice naming the
-file.
+file preview. A missing `AGENTS.md` never stops a session: the session starts
+anyway and shows a notice naming the file.
 
 There is no launch-only mode for Claude any more: every `mate claude` from a
 Working Repository writes the wrap's git-excluded documents and may write the

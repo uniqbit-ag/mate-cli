@@ -62,18 +62,9 @@ async function withPath<T>(value: string, fn: () => Promise<T> | T): Promise<T> 
 
 const CLAUDE_WRAP = wrapStateOf(withDocument(EMPTY_MANIFEST, CLAUDE_SETTINGS_DOCUMENT, []));
 
-/** These tests pin flags and environment; the instructions' own content is `claude.test.ts`'s. */
-const STUB_INSTRUCTIONS = (input: { companionPath: string }) => ({
-  kind: "available" as const,
-  source: path.join(input.companionPath, "AGENTS.md"),
-  text: "<companion-instructions>stub</companion-instructions>",
-  omitted: [],
-  oversized: false,
-});
-
 /** As a launch hands the context over: planned by the adapter after a prepare that wrapped for Claude. */
 function planClaude(context: AdapterContext, claudePluginDirectories?: string[]) {
-  return new ClaudeAdapter(STUB_INSTRUCTIONS).planLaunch(context, {
+  return new ClaudeAdapter().planLaunch(context, {
     ok: true,
     mode: "attended",
     runtime: "claude",

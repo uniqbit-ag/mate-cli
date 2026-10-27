@@ -130,7 +130,8 @@ export function mateInstructionHookGroups(
  * The session-prepare `SessionStart` group, resolved the same way. Its declared
  * `timeout` sits above the shim's own bound, so Claude Code never kills a
  * prepare the shim has not given up on. Inert under a launch environment. It
- * then delivers the main thread's instructions, so it carries `PROJECTED_FLAG`.
+ * carries `PROJECTED_FLAG` because it alone prepares and then delivers the
+ * main thread's instructions; the plugin's copy stays inert.
  */
 export function mateSessionPrepareHookGroups(
   commandRoot: string = runtimeClaudePluginRoot(),

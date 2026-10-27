@@ -29,6 +29,7 @@ export interface InstructionHookInput {
 
 export interface InstructionHookDeps {
   read?: InstructionReader;
+  resolveProjection?: typeof resolveProjection;
 }
 
 /**
@@ -72,7 +73,7 @@ function ownsEvent(event: InstructionEvent, kind: SessionKind, argv: readonly st
   return false;
 }
 
-/** A launch sets every path, so a managed subagent needs no projection under its cwd. */
+/** A launch sets every path; a partial one is not completed from a projection, which may name another repository. */
 function launchReaderInput(env: HookEnv): CompanionInstructionsInput | null {
   const companionPath = env[MATE_ENV.companionPath];
   const id = env[MATE_ENV.repositoryId];
@@ -82,24 +83,21 @@ function launchReaderInput(env: HookEnv): CompanionInstructionsInput | null {
   return { companionPath, repository: { id, path: repoPath }, wrapperBinPath, runtime: "claude" };
 }
 
+/** The environment always wins: a managed session never reads the projection. */
 function readerInput(
   env: HookEnv,
   kind: SessionKind,
   cwd: string,
+  resolve: typeof resolveProjection,
 ): CompanionInstructionsInput | null {
-  const launched = launchReaderInput(env);
-  if (launched) return launched;
-  const projection = resolveProjection(cwd);
+  if (kind !== "unmanaged") return launchReaderInput(env);
+  const projection = resolve(cwd);
   if (!projection) return null;
-  /** A linked worktree on a projection copied from the main checkout names itself, not that checkout. */
-  const projectedRepoPath = kind === "unmanaged" ? projection.repoRoot : projection.repositoryPath;
   return {
-    companionPath: env[MATE_ENV.companionPath] || projection.companionPath,
-    repository: {
-      id: env[MATE_ENV.repositoryId] || projection.repositoryId,
-      path: env[MATE_ENV.repositoryPath] || projectedRepoPath,
-    },
-    wrapperBinPath: env[MATE_ENV.wrapperBinPath] || projection.wrapperBinPath,
+    companionPath: projection.companionPath,
+    /** A linked worktree on a projection copied from the main checkout names itself, not that checkout. */
+    repository: { id: projection.repositoryId, path: projection.repoRoot },
+    wrapperBinPath: projection.wrapperBinPath,
     runtime: "claude",
   };
 }
@@ -124,7 +122,12 @@ function evaluate(
   const kind = sessionKind(env);
   if (!ownsEvent(event, kind, argv)) return null;
 
-  const reader = readerInput(env, kind, input.cwd || cwd);
+  const reader = readerInput(
+    env,
+    kind,
+    input.cwd || cwd,
+    deps.resolveProjection ?? resolveProjection,
+  );
   if (!reader) return null;
 
   const result = (deps.read ?? buildCompanionInstructions)(reader);

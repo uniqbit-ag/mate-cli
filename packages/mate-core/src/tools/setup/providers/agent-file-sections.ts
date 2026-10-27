@@ -3,6 +3,8 @@
 
 import fs from "node:fs/promises";
 
+import { writeAtomicThroughLink } from "../../../runtime/write-atomic";
+
 export interface RemoveHeadingSectionOptions {
   /** Matches the heading line that opens the section to remove. */
   isHeading(line: string): boolean;
@@ -73,6 +75,6 @@ export async function stripSectionFromFile(
   if (!stripped.trim()) {
     await fs.unlink(filePath);
   } else {
-    await fs.writeFile(filePath, stripped, "utf8");
+    await writeAtomicThroughLink(filePath, stripped);
   }
 }

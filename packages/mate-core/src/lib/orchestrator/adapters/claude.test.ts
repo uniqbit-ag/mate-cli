@@ -260,15 +260,10 @@ function flagValue(args: string[], flag: string): string | undefined {
   return index === -1 ? undefined : args[index + 1];
 }
 
-function occurrences(text: string, needle: string): number {
-  return text.split(needle).length - 1;
-}
-
 /** Claude's options that read values up to the next argument starting with `-`. */
 const VARIADIC = new Set(["--add-dir", "--allowedTools", "--mcp-config", "--tools"]);
 const SINGLE = new Set([
   "--append-system-prompt",
-  "--system-prompt-snapshot",
   "--setting-sources",
   "--settings",
   "--plugin-dir",
@@ -298,23 +293,25 @@ describe("Companion Instructions at launch", () => {
     return { adapter, launch, companionPath };
   }
 
-  test("a fresh launch with a repository appends them once, after the policy, and keeps the default snapshot", async () => {
-    const { adapter, launch, companionPath } = await repoLaunch();
+  /** The wrap's session hook delivers them; a copy in the prompt would double on a resume through plain `claude`. */
+  test.each([[["--print"]], [["--resume"]], [["--continue"]], [["-r", "abc"]]])(
+    "a launch with a repository leaves them to the wrap's session hook and passes no snapshot flag, for %p",
+    async (passthrough) => {
+      const { adapter, launch, companionPath } = await repoLaunch();
 
-    const args = adapter.buildArgs(launch, ["--print"]);
+      const args = adapter.buildArgs(launch, passthrough);
 
-    const prompt = flagValue(args, "--append-system-prompt")!;
-    expect(occurrences(prompt, "<companion-instructions")).toBe(1);
-    expect(prompt.indexOf("<companion-instructions")).toBeGreaterThan(
-      prompt.indexOf("<companion-policy"),
-    );
-    expect(prompt).toContain(COMPANION_RULE);
-    expect(prompt).toContain(`source="${path.join(companionPath, "AGENTS.md")}"`);
-    expect(args).not.toContain("--system-prompt-snapshot");
-    expect(args.at(-1)).toBe("--print");
-  });
+      const prompt = flagValue(args, "--append-system-prompt")!;
+      expect(prompt).toContain("<companion-policy");
+      expect(prompt).not.toContain("<companion-instructions");
+      expect(prompt).not.toContain(COMPANION_RULE);
+      expect(prompt).not.toContain(path.join(companionPath, "AGENTS.md"));
+      expect(args).not.toContain("--system-prompt-snapshot");
+      expect(args.slice(-passthrough.length)).toEqual(passthrough);
+    },
+  );
 
-  test("a companion-scoped launch appends none and leaves snapshots alone, even on a resume", async () => {
+  test("a companion-scoped launch appends none either", async () => {
     const { companionPath } = await companionWith({});
     const adapter = new ClaudeAdapter();
     const launch = await adapter.planLaunch(contextFor(companionPath, "companion"), prepared());
@@ -326,91 +323,10 @@ describe("Companion Instructions at launch", () => {
   });
 
   test.each([
-    [["--resume"]],
-    [["--resume", "abc"]],
-    [["--resume=abc"]],
-    [["-r"]],
-    [["-rabc"]],
-    [["--continue"]],
-    [["-c"]],
-    [["-pc"]],
-    [["--from-pr", "12"]],
-    [["--teleport"]],
-  ])(
-    "a resumed or continued conversation %p gets snapshots off once, right after the prompt",
-    async (passthrough) => {
-      const { adapter, launch } = await repoLaunch();
-
-      const args = adapter.buildArgs(launch, passthrough);
-
-      const prompt = args.indexOf("--append-system-prompt");
-      expect(args.slice(prompt + 2, prompt + 4)).toEqual(["--system-prompt-snapshot", "off"]);
-      expect(occurrences(args.join("\0"), "--system-prompt-snapshot")).toBe(1);
-      expect(args.slice(-passthrough.length)).toEqual(passthrough);
-    },
-  );
-
-  test.each([
-    [["--resume", "--system-prompt-snapshot", "on"]],
-    [["--resume", "--system-prompt-snapshot=on"]],
-  ])("the user's own snapshot setting %p wins on a resume", async (passthrough) => {
-    const { adapter, launch } = await repoLaunch();
-
-    const args = adapter.buildArgs(launch, passthrough);
-
-    expect(args.filter((arg) => arg.startsWith("--system-prompt-snapshot"))).toHaveLength(1);
-    expect(args.slice(-passthrough.length)).toEqual(passthrough);
-    expect(args).not.toContain("off");
-  });
-
-  test("a snapshot flag after `--` is prompt text, so a resume still gets snapshots off", async () => {
-    const { adapter, launch } = await repoLaunch();
-    const passthrough = ["--resume", "--", "--system-prompt-snapshot=on"];
-
-    const args = adapter.buildArgs(launch, passthrough);
-
-    expect(flagValue(args, "--system-prompt-snapshot")).toBe("off");
-    expect(args.slice(-passthrough.length)).toEqual(passthrough);
-  });
-
-  test.each([
-    [["-p"]],
-    [["-d", "api"]],
-    [["--model", "sonnet"]],
-    [["-dc"]],
-    [["-pdc"]],
-    [["-wc"]],
-    [["-nr"]],
-  ])(
-    "a fresh session with the flags %p gets no snapshot flag: a value-taking short flag ends the cluster",
-    async (passthrough) => {
-      const { adapter, launch } = await repoLaunch();
-
-      const args = adapter.buildArgs(launch, passthrough);
-
-      expect(args).not.toContain("--system-prompt-snapshot");
-      expect(args.slice(-passthrough.length)).toEqual(passthrough);
-    },
-  );
-
-  test.each([[["--", "--system-prompt-snapshot=on"]], [["--print", "--", "--resume"]]])(
-    "a fresh session whose prompt text %p mentions a flag gets no snapshot flag",
-    async (passthrough) => {
-      const { adapter, launch } = await repoLaunch();
-
-      const args = adapter.buildArgs(launch, passthrough);
-
-      expect(args).not.toContain("--system-prompt-snapshot");
-      expect(args).not.toContain("off");
-      expect(args.slice(-passthrough.length)).toEqual(passthrough);
-    },
-  );
-
-  test.each([
     [["--append-system-prompt", "ACME-OWN-PROMPT", "--print"]],
     [["--append-system-prompt=ACME-OWN-PROMPT", "--print"]],
   ])(
-    "the operator's own appended prompt %p follows the instructions in Mate's single flag",
+    "the operator's own appended prompt %p follows the policy in Mate's single flag",
     async (passthrough) => {
       const { adapter, launch } = await repoLaunch();
 
@@ -420,7 +336,7 @@ describe("Companion Instructions at launch", () => {
       const prompt = flagValue(args, "--append-system-prompt")!;
       expect(prompt.endsWith("\n\nACME-OWN-PROMPT")).toBe(true);
       expect(prompt.indexOf("ACME-OWN-PROMPT")).toBeGreaterThan(
-        prompt.indexOf("<companion-instructions"),
+        prompt.indexOf("<companion-policy"),
       );
       expect(args.at(-1)).toBe("--print");
     },
@@ -470,13 +386,12 @@ describe("Companion Instructions at launch", () => {
     },
   );
 
-  test("a launch with a repository fails before Claude starts when AGENTS.md is missing", async () => {
+  test("a launch with a repository does not read AGENTS.md; the session hook reports a missing one", async () => {
     const { companionPath } = await companionWith({}, { agentsMd: false });
 
-    const failure = new ClaudeAdapter().planLaunch(contextFor(companionPath), prepared());
+    const launch = new ClaudeAdapter().planLaunch(contextFor(companionPath), prepared());
 
-    await expect(failure).rejects.toBeInstanceOf(LaunchPreflightError);
-    await expect(failure).rejects.toThrow(path.join(companionPath, "AGENTS.md"));
+    await expect(launch).resolves.toBeDefined();
   });
 
   test("a companion-scoped launch does not need AGENTS.md", async () => {

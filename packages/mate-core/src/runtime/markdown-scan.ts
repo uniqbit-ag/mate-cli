@@ -117,6 +117,8 @@ export interface ScannedLine {
   heading: string | null;
   /** Inside fenced code, where blank lines are content. */
   fenced: boolean;
+  /** Where the source line starts in the scanned text. */
+  offset: number;
 }
 
 /** CommonMark: an HTML block opens on a line that begins, after up to three spaces, with `<!--`. */
@@ -144,7 +146,7 @@ export function scanLines(text: string): ScannedLine[] {
   const emit = (line: string): void => {
     const next = lineBlock(line, list);
     const heading = next.context.items.length === 0 ? (HEADING.exec(line)?.[1] ?? null) : null;
-    lines.push({ text: line, heading, fenced: false });
+    lines.push({ text: line, heading, fenced: false, offset });
     list = next.context;
     state = next.fence ? { in: "fence", fence: next.fence } : PROSE;
   };
@@ -154,14 +156,14 @@ export function scanLines(text: string): ScannedLine[] {
   };
   const emitAfterClose = (line: string, close: number): void => {
     const rest = line.slice(close + 3).replace(CLOSED_COMMENT, "");
-    lines.push({ text: rest, heading: null, fenced: false });
+    lines.push({ text: rest, heading: null, fenced: false, offset });
     state = PROSE;
   };
 
   for (const raw of text.split("\n")) {
     const inFence = state.in === "fence" ? fenceLine(raw, state.fence) : "ends";
     if (inFence !== "ends") {
-      lines.push({ text: raw, heading: null, fenced: true });
+      lines.push({ text: raw, heading: null, fenced: true, offset });
       if (inFence === "close") state = PROSE;
     } else if (state.in === "comment") {
       const close = raw.indexOf("-->");
@@ -180,6 +182,13 @@ export function scanLines(text: string): ScannedLine[] {
     offset += raw.length + 1;
   }
   return lines;
+}
+
+/** Offsets `[start, end)` of the lines inside fenced code. */
+export function fencedRanges(text: string): [number, number][] {
+  return scanLines(text)
+    .filter((line) => line.fenced)
+    .map((line) => [line.offset, line.offset + line.text.length]);
 }
 
 export function joinLines(lines: readonly ScannedLine[]): string {

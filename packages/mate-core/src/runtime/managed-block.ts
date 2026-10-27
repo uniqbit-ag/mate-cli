@@ -3,6 +3,8 @@
  * `runtime/` because hooks may import nothing outside it.
  */
 
+import { fencedRanges } from "./markdown-scan";
+
 export interface ManagedBlockMarkers {
   start: string;
   end: string;
@@ -52,7 +54,10 @@ export interface ManagedBlock {
 
 export function findManagedBlocks(text: string, frameworkName: string): ManagedBlock[] {
   const blocks: ManagedBlock[] = [];
+  const fenced = fencedRanges(text);
   for (const match of text.matchAll(managedBlockStartPattern(frameworkName))) {
+    /* A marker quoted in a code fence is an example, not a block. */
+    if (fenced.some(([from, to]) => match.index >= from && match.index < to)) continue;
     const key = match[1]!;
     const { start, end } = managedBlockMarkers(frameworkName, key);
     const bodyStart = match.index + start.length;

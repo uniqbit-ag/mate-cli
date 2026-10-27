@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { companionBlockMarkers } from "../../../runtime/managed-block";
+import { writeAtomicThroughLink } from "../../../runtime/write-atomic";
 import { removeGraphifySection } from "../capabilities/graphify-shared";
 
 // Marker names derive from the framework identity, never the invocation name.
@@ -58,7 +59,7 @@ export async function stripGuidanceBlock(filePath: string): Promise<void> {
 
   content = removeGraphifySection(content);
 
-  await fs.writeFile(filePath, content ? content + "\n" : "", "utf8");
+  await writeAtomicThroughLink(filePath, content ? content + "\n" : "");
 }
 
 /**
@@ -128,5 +129,6 @@ export async function refreshFromTemplate(
   if (normalizedOptions.ensureParentDir) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
   }
-  await fs.writeFile(filePath, result, "utf8");
+  /** A session-start hook may read the file while another session's prepare rewrites it. */
+  await writeAtomicThroughLink(filePath, result);
 }

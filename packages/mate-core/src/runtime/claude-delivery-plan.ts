@@ -43,8 +43,13 @@ export interface ClaudeDeliveryPlan {
 }
 
 export interface ClaudeInstructionOwners {
-  /** `append-prompt`: the launch's `--append-system-prompt`; `wrap-session-hook`: the wrap's session-prepare hook, once it has prepared. */
-  readonly main: "append-prompt" | "native-memory" | "wrap-session-hook" | "none";
+  /**
+   * `wrap-session-hook`: the wrap's session-prepare hook, once it has prepared.
+   * One channel for a launch and a plain session alike: a conversation resumed
+   * through the other launcher would otherwise hold a copy in its recorded
+   * system prompt and get another from the hook.
+   */
+  readonly main: "native-memory" | "wrap-session-hook" | "none";
   /** `plugin-subagent-hook`: the bundled plugin's SubagentStart copy; `wrap-subagent-hook`: the wrap's. */
   readonly subagents: "plugin-subagent-hook" | "native-memory" | "wrap-subagent-hook" | "none";
 }
@@ -77,7 +82,7 @@ export function planClaudeInstructions(
 ): ClaudeInstructionOwners {
   switch (kind) {
     case "managed-repo":
-      return { main: "append-prompt", subagents: "plugin-subagent-hook" };
+      return { main: "wrap-session-hook", subagents: "plugin-subagent-hook" };
     case "managed-companion":
       return { main: "native-memory", subagents: "native-memory" };
     case "unmanaged":

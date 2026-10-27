@@ -32,17 +32,6 @@ const NOTHING_GATHERED = { launch: [], loadWarnings: [], published: [], report: 
  * only the checks against the install and the agent process are stubbed.
  */
 class TestClaudeAdapter extends ClaudeAdapter {
-  /** The fake companion holds no `AGENTS.md`; the instructions' content is `claude.test.ts`'s. */
-  constructor() {
-    super((input) => ({
-      kind: "available",
-      source: `${input.companionPath}/AGENTS.md`,
-      text: "<companion-instructions>stub</companion-instructions>",
-      omitted: [],
-      oversized: false,
-    }));
-  }
-
   readonly validateLaunch = mock(
     async (..._args: Parameters<ClaudeAdapter["validateLaunch"]>) => {},
   );
@@ -991,42 +980,6 @@ describe("the Claude delivery plan at launch", () => {
     for (const derived of [alphaSettings, betaSettings]) {
       expect(JSON.parse(await fs.readFile(derived, "utf8"))).toEqual({});
     }
-  });
-
-  /**
-   * The attended prepare's companion file sync recreates `AGENTS.md`, so the
-   * adapter's own reader has to run after it: read earlier, a launch would fail
-   * on the very file the prepare was about to write.
-   */
-  test("reads the Companion Instructions after the companion file sync that creates AGENTS.md", async () => {
-    const companionPath = await fs.mkdtemp(path.join(os.tmpdir(), "acme-launch-instructions-"));
-    tempRoots.push(companionPath);
-    const agentsMd = path.join(companionPath, "AGENTS.md");
-    const adapter = new ClaudeAdapter();
-    const run = spyOn(adapter, "run").mockResolvedValue({ exitCode: 0, stdout: "ok", stderr: "" });
-    const { launcher } = createLauncher(adapter, []);
-    const resolve = launcher.resolveConfig;
-    launcher.resolveConfig = async () => ({ ...(await resolve()), companionPath });
-    sessionPrepareDeps.syncCompanionFiles = mock(async () => {
-      await fs.writeFile(
-        agentsMd,
-        "<!-- MATE:COMPANION:START -->\n\n- Acme rule 9d2c\n\n<!-- MATE:COMPANION:END -->\n",
-        "utf8",
-      );
-      return NOTHING_GATHERED;
-    });
-    sessionPrepareDeps.projectLaunch = mock(async () => projectedNothing());
-    spyOn(CompanionStore.prototype, "getRepository").mockResolvedValue({
-      id: "repo",
-      path: "/tmp/repo",
-    });
-    await expect(fs.access(agentsMd)).rejects.toThrow();
-
-    await (await launcher.prepare(makeRequest())).execute();
-
-    const [context, args] = run.mock.calls[0]!;
-    const built = adapter.buildArgs(context, args);
-    expect(built[built.indexOf("--append-system-prompt") + 1]).toContain("Acme rule 9d2c");
   });
 });
 

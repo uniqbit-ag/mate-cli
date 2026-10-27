@@ -206,12 +206,22 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
 });
 
 describe("companion-instructions hook under a launch environment", () => {
-  test("both SessionStart copies are silent: the appended prompt owns the main thread", () => {
+  /** The channel a plain session uses, so a conversation resumed through the other launcher holds one copy. */
+  test("the wrap's SessionStart copy delivers the main thread's instructions, as in a plain session", () => {
     const { repoRoot, launchEnv } = wrappedRepo();
 
-    for (const argv of BOTH_COPIES) {
-      expect(buildInstructionHookOutput(launchEnv, repoRoot, argv, sessionStart()).stdout).toBe("");
-    }
+    const result = buildInstructionHookOutput(launchEnv, repoRoot, WRAPPED, sessionStart());
+
+    const output = parsed(result.stdout).hookSpecificOutput!;
+    expect(output.hookEventName).toBe("SessionStart");
+    expect(output.additionalContext).toContain(RULE);
+    expect(output.additionalContext).toContain(`${SENTINEL} in ${repoRoot}`);
+  });
+
+  test("the plugin's SessionStart copy is silent, so a launch gets one copy", () => {
+    const { repoRoot, launchEnv } = wrappedRepo();
+
+    expect(buildInstructionHookOutput(launchEnv, repoRoot, PLUGIN, sessionStart()).stdout).toBe("");
   });
 
   test("the plugin's SubagentStart copy emits in a launch with a Working Repository", () => {
@@ -223,6 +233,16 @@ describe("companion-instructions hook under a launch environment", () => {
     expect(output.hookEventName).toBe("SubagentStart");
     expect(output.additionalContext).toContain(RULE);
     expect(output.additionalContext).toContain(`${SENTINEL} in ${repoRoot}`);
+  });
+
+  test("a partial launch environment is not completed from a projection that names another companion", () => {
+    const { repoRoot, launchEnv } = wrappedRepo();
+    const { MATE_ARTIFACT_PATH: _companion, ...partial } = launchEnv;
+
+    for (const input of [sessionStart(), subagentStart()]) {
+      const argv = input.hook_event_name === "SessionStart" ? WRAPPED : PLUGIN;
+      expect(buildInstructionHookOutput(partial, repoRoot, argv, input).stdout).toBe("");
+    }
   });
 
   test("a managed subagent outside any projection reads the launch environment", () => {

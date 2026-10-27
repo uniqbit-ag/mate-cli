@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { managedBlockMarkers, managedBlockStartPattern } from "../../runtime/managed-block";
+import { writeAtomicThroughLink } from "../../runtime/write-atomic";
 import type {
   InstructionsService,
   McpServerDescriptor,
@@ -87,7 +88,8 @@ export async function upsertManagedBlock(
   if (existing.includes(start)) return;
   const separator = existing.length === 0 || existing.endsWith("\n\n") ? "" : "\n";
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, existing + (existing ? separator : "") + block, "utf8");
+  /** A session-start hook may read the file while another session's prepare rewrites it. */
+  await writeAtomicThroughLink(filePath, existing + (existing ? separator : "") + block);
 }
 
 /**
@@ -139,7 +141,7 @@ async function removeManagedBlock(
     await fs.unlink(filePath).catch(() => {});
     return;
   }
-  await fs.writeFile(filePath, next, "utf8");
+  await writeAtomicThroughLink(filePath, next);
 }
 
 // ---------------------------------------------------------------------------
