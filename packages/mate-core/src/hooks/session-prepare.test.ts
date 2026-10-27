@@ -218,6 +218,25 @@ describe("session-start hook", () => {
     expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
   });
 
+  test("a prepare that throws exits zero and still delivers the instructions", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps } = fakeDeps();
+    deps.mateBin = () => {
+      throw new Error("disk on fire");
+    };
+
+    const outcome = await runSessionStartHook({}, repo, [PROJECTED_FLAG], sessionStart, deps);
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+      systemMessage: string;
+    };
+    expect(outcome.exitCode).toBe(0);
+    expect(payload.systemMessage).toBe("mate: session prepare failed: disk on fire");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
+  });
+
   test("the plugin's bare copy prepares but leaves the instructions to the wrap's", async () => {
     const repo = projectedRepo("claude");
     companionOf(repo);

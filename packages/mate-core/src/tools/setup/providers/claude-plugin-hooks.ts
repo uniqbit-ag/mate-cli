@@ -49,14 +49,21 @@ function readPluginHookWiring(pluginRoot: string): PluginHookWiring {
   return {};
 }
 
-function resolveCommands(group: ClaudeHookGroup, pluginRoot: string): ClaudeHookGroup {
+function mapCommands(
+  group: ClaudeHookGroup,
+  rewrite: (command: string) => string,
+): ClaudeHookGroup {
   return {
     ...group,
     hooks: (group.hooks ?? []).map((hook) => ({
       ...hook,
-      ...(hook.command ? { command: hook.command.split(PLUGIN_ROOT_TOKEN).join(pluginRoot) } : {}),
+      ...(hook.command ? { command: rewrite(hook.command) } : {}),
     })),
   };
+}
+
+function resolveCommands(group: ClaudeHookGroup, pluginRoot: string): ClaudeHookGroup {
+  return mapCommands(group, (command) => command.split(PLUGIN_ROOT_TOKEN).join(pluginRoot));
 }
 
 function runsShim(group: ClaudeHookGroup, shim: string): boolean {
@@ -100,17 +107,11 @@ export function mateGuidanceHookGroups(
 export function mateBannerHookGroups(
   commandRoot: string = runtimeClaudePluginRoot(),
 ): ClaudeHookGroup[] {
-  return projected(groupsFor("SessionStart", BANNER_HOOK_SHIM, commandRoot));
+  return withProjectedFlag(groupsFor("SessionStart", BANNER_HOOK_SHIM, commandRoot));
 }
 
-function projected(groups: ClaudeHookGroup[]): ClaudeHookGroup[] {
-  return groups.map((group) => ({
-    ...group,
-    hooks: (group.hooks ?? []).map((hook) => ({
-      ...hook,
-      ...(hook.command ? { command: `${hook.command} ${PROJECTED_FLAG}` } : {}),
-    })),
-  }));
+function withProjectedFlag(groups: ClaudeHookGroup[]): ClaudeHookGroup[] {
+  return groups.map((group) => mapCommands(group, (command) => `${command} ${PROJECTED_FLAG}`));
 }
 
 /**
@@ -122,7 +123,7 @@ function projected(groups: ClaudeHookGroup[]): ClaudeHookGroup[] {
 export function mateInstructionHookGroups(
   commandRoot: string = runtimeClaudePluginRoot(),
 ): ClaudeHookGroup[] {
-  return projected(groupsFor("SubagentStart", INSTRUCTIONS_HOOK_SHIM, commandRoot));
+  return withProjectedFlag(groupsFor("SubagentStart", INSTRUCTIONS_HOOK_SHIM, commandRoot));
 }
 
 /**
@@ -134,7 +135,7 @@ export function mateInstructionHookGroups(
 export function mateSessionPrepareHookGroups(
   commandRoot: string = runtimeClaudePluginRoot(),
 ): ClaudeHookGroup[] {
-  return projected(groupsFor("SessionStart", PREPARE_HOOK_SHIM, commandRoot));
+  return withProjectedFlag(groupsFor("SessionStart", PREPARE_HOOK_SHIM, commandRoot));
 }
 
 function mateOwnHookGroups(commandRoot: string): ClaudeHookGroup[] {

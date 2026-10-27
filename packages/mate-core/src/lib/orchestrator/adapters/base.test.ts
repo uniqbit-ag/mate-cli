@@ -169,6 +169,14 @@ describe("LaunchAdapter.prepareLaunch", () => {
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
   });
 
+  test("the operator's own additional-directories memory variable passes through unchanged", async () => {
+    const launch = await withEnv({ CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "0" }, () =>
+      prepareClaudeLaunch(makeContext(), ["--print", "hello"]),
+    );
+
+    expect(launch.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("0");
+  });
+
   test("an unrecognized capability leaves the OpenCode invocation and PATH untouched", async () => {
     const binDir = await makeTempDir("mate-launch-bin-");
 

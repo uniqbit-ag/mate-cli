@@ -192,7 +192,9 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
       oversized: true,
     });
 
-    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, sessionStart(), oversized);
+    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, sessionStart(), {
+      read: oversized,
+    });
 
     const output = parsed(result.stdout);
     expect(output.hookSpecificOutput!.additionalContext).toBe(text);
@@ -334,7 +336,9 @@ describe("companion-instructions hook on a malformed payload or a failing reader
       throw new Error("disk on fire");
     };
 
-    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, sessionStart(), throwing);
+    const result = buildInstructionHookOutput({}, repoRoot, WRAPPED, sessionStart(), {
+      read: throwing,
+    });
 
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({

@@ -10,12 +10,8 @@ import { hasLaunchEnvironment, resolveCompanionRuntime } from "../runtime/env";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
 import { mateVersion } from "../runtime/install";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
+import { hookOutcome, type HookOutcome } from "./hook-io";
 import type { HookEnv } from "./validate-artifact-path";
-
-export interface BannerOutcome {
-  exitCode: number;
-  stdout: string;
-}
 
 /**
  * Resolves in-process from either source — no subprocess in either branch.
@@ -27,13 +23,11 @@ export async function buildBanner(
   cwd: string = process.cwd(),
   argv: readonly string[] = [],
   syncOptions: UnattendedSyncOptions = {},
-): Promise<BannerOutcome> {
-  if (argv.includes(PROJECTED_FLAG) && hasLaunchEnvironment(env)) {
-    return { exitCode: 0, stdout: "" };
-  }
+): Promise<HookOutcome> {
+  if (argv.includes(PROJECTED_FLAG) && hasLaunchEnvironment(env)) return hookOutcome(null);
 
   const { context, projection } = resolveCompanionRuntime(env, cwd);
-  if (!context.repositoryPath || !context.companionPath) return { exitCode: 0, stdout: "" };
+  if (!context.repositoryPath || !context.companionPath) return hookOutcome(null);
 
   /**
    * Repaired before the session reads the companion, so its first reads are
@@ -69,7 +63,7 @@ export async function buildBanner(
   /** `systemMessage` only: the model must never be told to run the command. */
   for (const note of gitNotes) lines.push(`  ${note}`);
 
-  return { exitCode: 0, stdout: JSON.stringify({ systemMessage: lines.join("\n") }) + "\n" };
+  return hookOutcome({ systemMessage: lines.join("\n") });
 }
 
 // Plugin-shim entry.

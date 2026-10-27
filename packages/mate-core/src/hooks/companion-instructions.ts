@@ -12,12 +12,8 @@ import { FRAMEWORK_NAME } from "../runtime/framework";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveProjection } from "../runtime/projection";
 import type { SessionKind } from "../runtime/session-kind";
+import { hookOutcome, runHook, type HookOutcome } from "./hook-io";
 import type { HookEnv } from "./validate-artifact-path";
-
-export interface InstructionHookOutcome {
-  exitCode: number;
-  stdout: string;
-}
 
 export interface InstructionHookPayload {
   hookSpecificOutput?: { hookEventName: InstructionEvent; additionalContext: string };
@@ -29,6 +25,10 @@ export interface InstructionHookInput {
   agent_type?: string;
   source?: string;
   cwd?: string;
+}
+
+export interface InstructionHookDeps {
+  read?: InstructionReader;
 }
 
 /**
@@ -115,7 +115,7 @@ function evaluate(
   cwd: string,
   argv: readonly string[],
   input: InstructionHookInput,
-  read: InstructionReader,
+  deps: InstructionHookDeps,
 ): InstructionHookPayload | null {
   const event = input.hook_event_name;
   if (event !== "SessionStart" && event !== "SubagentStart") return null;
@@ -127,7 +127,7 @@ function evaluate(
   const reader = readerInput(env, kind, input.cwd || cwd);
   if (!reader) return null;
 
-  const result = read(reader);
+  const result = (deps.read ?? buildCompanionInstructions)(reader);
   if (result.kind === "unavailable") {
     const line = companionInstructionsUnavailableLine(result);
     return instructionOutput(event, line, line);
@@ -147,10 +147,6 @@ function instructionOutput(
   };
 }
 
-function emit(output: InstructionHookPayload | null): InstructionHookOutcome {
-  return { exitCode: 0, stdout: output ? `${JSON.stringify(output)}\n` : "" };
-}
-
 function failure(error: unknown): InstructionHookPayload {
   const message = error instanceof Error ? error.message : String(error);
   return { systemMessage: `${FRAMEWORK_NAME}: companion instructions hook failed: ${message}` };
@@ -167,10 +163,10 @@ export function instructionHookPayload(
   cwd: string,
   argv: readonly string[],
   input: unknown,
-  read: InstructionReader = buildCompanionInstructions,
+  deps: InstructionHookDeps = {},
 ): InstructionHookPayload | null {
   try {
-    return evaluate(env, cwd, argv, normalizeInput(input), read);
+    return evaluate(env, cwd, argv, normalizeInput(input), deps);
   } catch (error) {
     return failure(error);
   }
@@ -181,40 +177,15 @@ export function buildInstructionHookOutput(
   cwd: string,
   argv: readonly string[],
   input: unknown,
-  read: InstructionReader = buildCompanionInstructions,
-): InstructionHookOutcome {
-  return emit(instructionHookPayload(env, cwd, argv, input, read));
+  deps: InstructionHookDeps = {},
+): HookOutcome {
+  return hookOutcome(instructionHookPayload(env, cwd, argv, input, deps));
 }
 
-async function readStdin(): Promise<string> {
-  if (process.stdin.isTTY) return "";
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-/** The hook payload on stdin; input that is not JSON reads as no event. */
-export async function readHookInput(): Promise<unknown> {
-  const raw = await readStdin();
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    return {};
-  }
-}
-
-/** Swallows stdout errors: a parent that stopped reading would otherwise end the write in an uncaught `EPIPE`. */
-export async function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
-  let outcome: InstructionHookOutcome;
-  try {
-    const input = await readHookInput();
-    outcome = buildInstructionHookOutput(process.env, process.cwd(), argv, input);
-  } catch (error) {
-    outcome = emit(failure(error));
-  }
-  if (outcome.stdout) {
-    process.stdout.on("error", () => {});
-    process.stdout.write(outcome.stdout);
-  }
-  return outcome.exitCode;
+/** Plugin-shim entry; exits zero even when reading its input fails. */
+export function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+  return runHook(
+    (input) => buildInstructionHookOutput(process.env, process.cwd(), argv, input),
+    (error) => hookOutcome(failure(error)),
+  );
 }

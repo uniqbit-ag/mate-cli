@@ -1009,13 +1009,11 @@ describe.skipIf(!runRealAgentTests || !hasClaude)(
       const sessionId = crypto.randomUUID();
       const copiesIn = (prompt: string) => {
         const request = flattenRequest(requestFor(mock, prompt).body);
-        const counts = {
+        return {
           instructions: countOccurrences(request, INSTRUCTIONS_MARKER),
           firstSentinel: countOccurrences(request, USER_SENTINEL),
           resumeSentinel: countOccurrences(request, RESUME_SENTINEL),
         };
-        console.info(`resumed plain session, ${JSON.stringify(prompt)}: ${JSON.stringify(counts)}`);
-        return counts;
       };
       const run = async (args: string[]) =>
         expect((await runPlainClaude(scenario, scenario.working, args, mock)).exitCode).toBe(0);

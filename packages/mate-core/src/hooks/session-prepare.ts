@@ -12,13 +12,9 @@ import {
   type PrepareRun,
   type PrepareRunner,
 } from "../runtime/session-prepare-runner";
-import { instructionHookPayload, readHookInput } from "./companion-instructions";
+import { instructionHookPayload } from "./companion-instructions";
+import { hookOutcome, runHook, type HookOutcome } from "./hook-io";
 import type { HookEnv } from "./validate-artifact-path";
-
-export interface SessionPrepareHookOutcome {
-  exitCode: number;
-  stdout: string;
-}
 
 export interface SessionPrepareHookDeps {
   /** The runtime-directory launcher; `null` until a `mate` run wrote it. */
@@ -39,9 +35,12 @@ export const sessionPrepareHookDeps: SessionPrepareHookDeps = {
 };
 
 /** `systemMessage` only: the model must never be told to repair the companion. */
-function operatorMessage(lines: string[]): SessionPrepareHookOutcome {
-  if (lines.length === 0) return { exitCode: 0, stdout: "" };
-  return { exitCode: 0, stdout: `${JSON.stringify({ systemMessage: lines.join("\n") })}\n` };
+function operatorMessage(lines: string[]): HookOutcome {
+  return hookOutcome(lines.length > 0 ? { systemMessage: lines.join("\n") } : null);
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function runLocalPhase(
@@ -53,7 +52,7 @@ async function runLocalPhase(
   try {
     return await pending;
   } catch (error) {
-    return { ok: false, notes: [error instanceof Error ? error.message : String(error)] };
+    return { ok: false, notes: [errorText(error)] };
   }
 }
 
@@ -66,8 +65,21 @@ export async function runSessionPrepareHook(
   env: HookEnv,
   cwd: string = process.cwd(),
   deps: SessionPrepareHookDeps = sessionPrepareHookDeps,
-): Promise<SessionPrepareHookOutcome> {
-  return operatorMessage(await prepareNotes(env, cwd, deps));
+): Promise<HookOutcome> {
+  return operatorMessage(await guardedPrepareNotes(env, cwd, deps));
+}
+
+/** A prepare that throws becomes a note, so the instructions after it still go out. */
+async function guardedPrepareNotes(
+  env: HookEnv,
+  cwd: string,
+  deps: SessionPrepareHookDeps,
+): Promise<string[]> {
+  try {
+    return await prepareNotes(env, cwd, deps);
+  } catch (error) {
+    return [`mate: session prepare failed: ${errorText(error)}`];
+  }
 }
 
 async function prepareNotes(
@@ -112,25 +124,21 @@ export async function runSessionStartHook(
   argv: readonly string[],
   input: unknown,
   deps: SessionPrepareHookDeps = sessionPrepareHookDeps,
-): Promise<SessionPrepareHookOutcome> {
-  const notes = await prepareNotes(env, cwd, deps);
+): Promise<HookOutcome> {
+  const notes = await guardedPrepareNotes(env, cwd, deps);
   const { hookSpecificOutput, systemMessage } = instructionHookPayload(env, cwd, argv, input) ?? {};
   const messages = systemMessage ? [...notes, systemMessage] : notes;
   if (!hookSpecificOutput) return operatorMessage(messages);
-  const output = {
+  return hookOutcome({
     hookSpecificOutput,
     ...(messages.length > 0 ? { systemMessage: messages.join("\n") } : {}),
-  };
-  return { exitCode: 0, stdout: `${JSON.stringify(output)}\n` };
+  });
 }
 
-/** Plugin-shim entry. Ignores stdout errors, so a closed pipe cannot crash it with `EPIPE`. */
-export async function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
-  const input = await readHookInput();
-  const outcome = await runSessionStartHook(process.env, process.cwd(), argv, input);
-  if (outcome.stdout) {
-    process.stdout.on("error", () => {});
-    process.stdout.write(outcome.stdout);
-  }
-  return outcome.exitCode;
+/** Plugin-shim entry; exits zero even when reading its input fails. */
+export function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+  return runHook(
+    (input) => runSessionStartHook(process.env, process.cwd(), argv, input),
+    (error) => operatorMessage([`mate: session start hook failed: ${errorText(error)}`]),
+  );
 }
