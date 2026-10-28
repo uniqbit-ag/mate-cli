@@ -70,7 +70,10 @@ export interface RenderedRuntimeDocuments {
 
 function nonEmpty(region: ManagedRegion): boolean {
   if (region.kind === "list") return region.values.length > 0;
-  if (region.kind === "map") return Object.keys(region.entries).length > 0;
+  /** A stripping map still heals what an older Mate left, with no entry of its own. */
+  if (region.kind === "map") {
+    return Object.keys(region.entries).length > 0 || region.stripPrefix !== undefined;
+  }
   return true;
 }
 

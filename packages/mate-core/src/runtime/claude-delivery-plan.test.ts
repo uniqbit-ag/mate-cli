@@ -4,6 +4,7 @@ import {
   launchPassesClaudePluginFolders,
   launchPluginFolders,
   planClaudeDelivery,
+  planClaudeInstructions,
   type ClaudeDeliveryPlan,
 } from "./claude-delivery-plan";
 import {
@@ -46,6 +47,7 @@ function expected(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan {
       reconcile: "attended-prepare",
       gitSync: "launch-preflight",
       plugins: { owner: "launch-flag", launchExclude: wrap.carriedClaudePluginDirectories },
+      instructions: { main: "wrap-session-hook", subagents: "plugin-subagent-hook" },
     };
   }
   if (kind === "managed-companion") {
@@ -56,6 +58,7 @@ function expected(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan {
       reconcile: "none",
       gitSync: "launch-preflight",
       plugins: { owner: "launch-flag", launchExclude: [] },
+      instructions: { main: "native-memory", subagents: "native-memory" },
     };
   }
   return wrap.runtimes.has("claude")
@@ -66,6 +69,7 @@ function expected(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan {
         reconcile: "prepare-hook",
         gitSync: "prepare-hook",
         plugins: { owner: "wrap", launchExclude: [] },
+        instructions: { main: "wrap-session-hook", subagents: "wrap-subagent-hook" },
       }
     : {
         hooks: { owner: "none", launchSettingsExclude: [] },
@@ -74,6 +78,7 @@ function expected(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan {
         reconcile: "none",
         gitSync: "banner",
         plugins: { owner: "none", launchExclude: [] },
+        instructions: { main: "none", subagents: "none" },
       };
 }
 
@@ -104,9 +109,35 @@ describe("planClaudeDelivery", () => {
       reconcile: plan.reconcile,
       gitSync: plan.gitSync,
       plugins: plan.plugins.owner,
+      instructions: plan.instructions,
     };
     expect(Object.keys(plan).sort()).toEqual(Object.keys(owners).sort());
-    for (const owner of Object.values(owners)) expect(typeof owner).toBe("string");
+    const { instructions, ...channels } = owners;
+    for (const owner of Object.values(channels)) expect(typeof owner).toBe("string");
+    expect(Object.keys(instructions as object).sort()).toEqual(["main", "subagents"]);
+    for (const owner of Object.values(instructions as object)) expect(typeof owner).toBe("string");
+  });
+
+  test.each(CASES)(
+    "%s, %s, never counts directory access as instruction delivery",
+    (kind, _label, wrap) => {
+      const plan = planClaudeDelivery(kind, wrap);
+      /** Claude Code loads no memory from a settings-granted directory. */
+      if (plan.dirAccess === "wrap") {
+        expect(plan.instructions.main).not.toBe("native-memory");
+        expect(plan.instructions.subagents).not.toBe("native-memory");
+      }
+      expect(plan.instructions.main === "none").toBe(plan.instructions.subagents === "none");
+    },
+  );
+
+  test("a hook reads the instruction owners without a wrap state", () => {
+    expect(planClaudeInstructions("unmanaged", true)).toEqual(
+      planClaudeDelivery("unmanaged", WRAPS["Claude-wrapped"]!).instructions,
+    );
+    expect(planClaudeInstructions("unmanaged", false)).toEqual(
+      planClaudeDelivery("unmanaged", WRAPS["not wrapped"]!).instructions,
+    );
   });
 
   test("only a managed launch passes plugin folders by launch flag", () => {
@@ -217,5 +248,14 @@ describe("launchPluginFolders", () => {
 
   test.each(CASES)("%s", (_label, kind, wrap, gathered, folders) => {
     expect(launchPluginFolders(planClaudeDelivery(kind, wrap), gathered, BUNDLED)).toEqual(folders);
+  });
+});
+
+describe("the main thread's Companion Instructions channel", () => {
+  /** A conversation resumed through the other launcher would otherwise hold a copy from each channel. */
+  test("a launch and a Claude-wrapped plain session share one channel", () => {
+    expect(planClaudeInstructions("managed-repo", true).main).toBe(
+      planClaudeInstructions("unmanaged", true).main,
+    );
   });
 });

@@ -810,6 +810,109 @@ describe("doctor OpenSpec rules keys", () => {
   });
 });
 
+describe("doctor companion CLAUDE.md text", () => {
+  async function companionWithClaudeMd(
+    claudeMd: string | null,
+  ): Promise<{ root: string; globalConfigStore: GlobalConfigStore }> {
+    const root = await makeTempDir("doctor-claude-md-");
+    const localConfigPath = path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+    await fs.mkdir(path.dirname(localConfigPath), { recursive: true });
+    await new ConfigStore(localConfigPath).save({ allowedAgents: ["claude"], capabilities: [] });
+    if (claudeMd !== null) await fs.writeFile(path.join(root, "CLAUDE.md"), claudeMd, "utf8");
+    return { root, globalConfigStore: new GlobalConfigStore(path.join(root, "config.yaml")) };
+  }
+
+  const options = (root: string, globalConfigStore: GlobalConfigStore) => ({
+    cwd: root,
+    globalConfigStore,
+    inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+  });
+
+  async function doctorJson(root: string, globalConfigStore: GlobalConfigStore) {
+    const output = await captureStdout(() =>
+      runDoctorCommand(["--json"], options(root, globalConfigStore)),
+    );
+    return JSON.parse(output) as {
+      companionInstructionWarnings?: Array<{ file: string; message: string }>;
+    };
+  }
+
+  const MANAGED = [
+    "<!-- mate:managed:context-mode:abc123 start -->",
+    "## Context Mode",
+    "",
+    "Use it.",
+    "<!-- mate:managed:context-mode:abc123 end -->",
+  ].join("\n");
+
+  test("warns about a user-written section, naming the file, and keeps the exit code", async () => {
+    const { root, globalConfigStore } = await companionWithClaudeMd(
+      `@AGENTS.md\n\n${MANAGED}\n\n## Team notes\n\nAlways rebase.\n`,
+    );
+    const previousExitCode = process.exitCode;
+    process.exitCode = 0;
+
+    try {
+      const output = await captureStdout(() =>
+        runDoctorCommand([], options(root, globalConfigStore)),
+      );
+
+      expect(output).toContain("Companion Instructions");
+      expect(output).toContain(path.join(root, "CLAUDE.md"));
+      expect(output).toContain("does not reach Working Repository sessions");
+      expect(output).toContain(path.join(root, "AGENTS.md"));
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = previousExitCode;
+    }
+  });
+
+  test("JSON carries the same warning", async () => {
+    const { root, globalConfigStore } = await companionWithClaudeMd(
+      "@AGENTS.md\n\nAlways rebase.\n",
+    );
+
+    expect((await doctorJson(root, globalConfigStore)).companionInstructionWarnings).toEqual([
+      {
+        file: path.join(root, "CLAUDE.md"),
+        message: expect.stringContaining("does not reach Working Repository sessions"),
+      },
+    ]);
+  });
+
+  test("a Working Repository is checked against its resolved companion, not its own CLAUDE.md", async () => {
+    const root = await makeTempDir("doctor-claude-md-working-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath);
+    await fs.writeFile(path.join(repoPath, "CLAUDE.md"), "Repository notes.\n", "utf8");
+    await fs.writeFile(path.join(companionPath, "CLAUDE.md"), "@AGENTS.md\n\nAlways rebase.\n");
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand(["--json"], { ...options(repoPath, globalConfigStore), env: {} }),
+    );
+
+    expect(JSON.parse(output).companionInstructionWarnings).toEqual([
+      {
+        file: path.join(companionPath, "CLAUDE.md"),
+        message: expect.stringContaining("does not reach Working Repository sessions"),
+      },
+    ]);
+  });
+
+  test("a template-shaped CLAUDE.md, or none, is quiet", async () => {
+    for (const claudeMd of [null, "@AGENTS.md\n", `@AGENTS.md\n\n${MANAGED}\n<!-- a note -->\n`]) {
+      const { root, globalConfigStore } = await companionWithClaudeMd(claudeMd);
+
+      expect(
+        (await doctorJson(root, globalConfigStore)).companionInstructionWarnings,
+      ).toBeUndefined();
+    }
+  });
+});
+
 describe("contributed Claude plugins", () => {
   /**
    * A companion with `capabilities` enabled for Claude; context-mode's folder

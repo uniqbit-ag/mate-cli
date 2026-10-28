@@ -12,6 +12,8 @@
     "appliance:local:logs": "bun apps/mate-container/scripts/local-up.ts logs",
     "brand:generate": "bun scripts/brand/generate.ts",
     "brand:check": "bun scripts/brand/generate.ts --check",
+    "studio-client:build": "bun scripts/studio-client/build.ts",
+    "studio-client:check": "bun scripts/studio-client/build.ts --check",
     "docs": "bun run --filter @uniqbit/mate-docs dev",
     "docs:build": "bun run --filter @uniqbit/mate-docs build",
     "docs:check": "bun run --filter @uniqbit/mate-docs check",

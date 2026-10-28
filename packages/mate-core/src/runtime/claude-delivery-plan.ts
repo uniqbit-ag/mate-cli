@@ -34,6 +34,15 @@ export interface ClaudeDeliveryPlan {
     readonly owner: "launch-flag" | "wrap" | "none";
     readonly launchExclude: readonly string[];
   };
+  /** Companion Instructions, per thread kind; `dirAccess` through settings loads no memory file. */
+  readonly instructions: ClaudeInstructionOwners;
+}
+
+export interface ClaudeInstructionOwners {
+  /** `wrap-session-hook`: the wrap's session-prepare hook, once it has prepared, for a launch and a plain session alike. */
+  readonly main: "native-memory" | "wrap-session-hook" | "none";
+  /** `plugin-subagent-hook`: the bundled plugin's SubagentStart copy; `wrap-subagent-hook`: the wrap's. */
+  readonly subagents: "plugin-subagent-hook" | "native-memory" | "wrap-subagent-hook" | "none";
 }
 
 /**
@@ -46,7 +55,32 @@ export function launchPassesClaudePluginFolders(kind: SessionKind): boolean {
 }
 
 export function planClaudeDelivery(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan {
-  return { ...planChannels(kind, wrap), plugins: planPlugins(kind, wrap) };
+  return {
+    ...planChannels(kind, wrap),
+    plugins: planPlugins(kind, wrap),
+    instructions: planClaudeInstructions(kind, wrap.runtimes.has("claude")),
+  };
+}
+
+/**
+ * The instruction owners alone, for a hook that knows its wrap without reading
+ * one: a wrap-carried hook runs only because a Claude wrap installed it, maybe
+ * the main checkout's, so it must not gate on this Checkout's manifest.
+ */
+export function planClaudeInstructions(
+  kind: SessionKind,
+  wrappedForClaude: boolean,
+): ClaudeInstructionOwners {
+  switch (kind) {
+    case "managed-repo":
+      return { main: "wrap-session-hook", subagents: "plugin-subagent-hook" };
+    case "managed-companion":
+      return { main: "native-memory", subagents: "native-memory" };
+    case "unmanaged":
+      return wrappedForClaude
+        ? { main: "wrap-session-hook", subagents: "wrap-subagent-hook" }
+        : { main: "none", subagents: "none" };
+  }
 }
 
 /**
@@ -75,7 +109,10 @@ function planPlugins(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan["pl
   }
 }
 
-function planChannels(kind: SessionKind, wrap: WrapState): Omit<ClaudeDeliveryPlan, "plugins"> {
+function planChannels(
+  kind: SessionKind,
+  wrap: WrapState,
+): Omit<ClaudeDeliveryPlan, "plugins" | "instructions"> {
   switch (kind) {
     case "managed-repo":
       return {

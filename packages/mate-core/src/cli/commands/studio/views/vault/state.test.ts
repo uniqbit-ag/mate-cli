@@ -9,6 +9,7 @@ const selection: StudioVaultSelection = {
   view: "vault",
   refresh: false,
   openPath: null,
+  mode: "read",
   openDir: null,
 };
 
@@ -43,6 +44,23 @@ function memoryVault(
 }
 
 describe("vaultState", () => {
+  test("lists no tree when asked to skip it, and still opens the file", async () => {
+    let listings = 0;
+    const counting = memoryVault({
+      prefetch: async () => ((listings += 1), listed),
+      tree: async () => ((listings += 1), listed),
+    });
+    const state = await vaultState(
+      counting,
+      "/companions/acme",
+      { ...selection, openPath: "note.md" },
+      { tree: "skip" },
+    );
+    expect(listings).toBe(0);
+    expect(state.tree).toBeNull();
+    expect(state.open?.path).toBe("note.md");
+  });
+
   test("includes an already collected tree and its watch status", async () => {
     expect(
       await vaultState(memoryVault(), "/companions/acme", selection, { tree: "prefetch" }),

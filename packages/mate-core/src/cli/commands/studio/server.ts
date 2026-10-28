@@ -18,6 +18,7 @@ import {
   VAULT_CHANGES_ROUTE,
   VAULT_DIR_ROUTE,
   VAULT_FILTER_ROUTE,
+  VAULT_PANE_ROUTE,
 } from "./routes";
 import {
   COMPANION_DIGEST_PATTERN,
@@ -37,6 +38,7 @@ import {
   type TerminalConnection,
   type TerminalRegistryOptions,
 } from "./terminal";
+import { studioClientAsset } from "./client-asset";
 import { terminalAsset } from "./terminal-assets";
 import {
   createLaunchResolver,
@@ -143,6 +145,11 @@ async function renderVaultView(page: StudioPage): Promise<string> {
   return views.renderVaultView(page);
 }
 
+async function renderVaultPane(page: StudioPage): Promise<string> {
+  const views = await import("./views/document");
+  return views.renderVaultPane(page);
+}
+
 async function renderVaultChildren(page: StudioPage): Promise<string | null> {
   const views = await import("./views/document");
   return views.renderVaultChildren(page);
@@ -158,10 +165,15 @@ async function collectVaultState(
   vault: VaultManager,
   companionPath: string,
   selection: StudioVaultSelection,
-  options: { tree: "prefetch" | "await" },
+  options: { tree: "prefetch" | "await" | "skip" },
 ): Promise<StudioVaultPage> {
   const { vaultState } = await import("./views/vault/state");
   return vaultState(vault, companionPath, selection, options);
+}
+
+/** A pane is never a refresh, so the listing it skips is not asked to be rebuilt. */
+function plainSelection(selection: StudioVaultSelection): StudioVaultSelection {
+  return { ...selection, refresh: false };
 }
 
 function html(body: string): Response {
@@ -435,6 +447,9 @@ export function createStudioFetch(
       );
     }
 
+    const clientAsset = await studioClientAsset(url.pathname);
+    if (clientAsset) return respond(clientAsset);
+
     if (url.pathname.startsWith("/studio/terminal/") && terminal) {
       const asset = await terminalAsset(url.pathname);
       if (asset) return respond(asset);
@@ -512,6 +527,32 @@ export function createStudioFetch(
       return respond(
         new Response(
           await renderVaultView({
+            inventory: collected,
+            selection,
+            companion,
+            payload: null,
+            error: null,
+            collectedAt: null,
+            writable,
+            vault: state,
+            terminal: null,
+          }),
+          { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
+        ),
+      );
+    }
+
+    if (url.pathname === VAULT_PANE_ROUTE) {
+      const collected = await inventory();
+      const selection = parseVaultSelection(url);
+      const companion = resolveCompanion(collected, selection.companionDigest);
+      if (!companion) return respond(json({ reason: "no registered companion was selected" }, 400));
+      const state = await collectVaultState(vault, companion.path, plainSelection(selection), {
+        tree: "skip",
+      });
+      return respond(
+        new Response(
+          await renderVaultPane({
             inventory: collected,
             selection,
             companion,

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -61,23 +61,37 @@ afterAll(async () => {
   );
 });
 
+/** An empty override unsets the variable, since `hasLaunchEnvironment` counts "" as present. */
+function shimEnvironment(env: Record<string, string>): Record<string, string | undefined> {
+  const merged: Record<string, string | undefined> = { ...process.env, ...env };
+  for (const [name, value] of Object.entries(env)) if (value === "") delete merged[name];
+  return merged;
+}
+
+function runShimRaw(
+  shim: string,
+  input: string,
+  env: Record<string, string> = {},
+  cwd?: string,
+  argv: readonly string[] = [],
+): { exitCode: number; stdout: string; stderr: string } {
+  const result = spawnSync("node", [path.join(pluginRoot, "hooks", shim), ...argv], {
+    input,
+    encoding: "utf8",
+    env: shimEnvironment(env),
+    cwd,
+  });
+  return { exitCode: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
+}
+
 function runShim(
   shim: string,
   payload: unknown,
   env: Record<string, string> = {},
   cwd?: string,
+  argv: readonly string[] = [],
 ): { exitCode: number; stdout: string; stderr: string } {
-  const merged: Record<string, string | undefined> = { ...process.env, ...env };
-  /** An empty override unsets the variable: `hasLaunchEnvironment` counts "" as present. */
-  for (const [name, value] of Object.entries(env)) if (value === "") delete merged[name];
-
-  const result = spawnSync("node", [path.join(pluginRoot, "hooks", shim)], {
-    input: JSON.stringify(payload),
-    encoding: "utf8",
-    env: merged,
-    cwd,
-  });
-  return { exitCode: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
+  return runShimRaw(shim, JSON.stringify(payload), env, cwd, argv);
 }
 
 /** The harness may itself run under a Mate launch; an unmanaged shim must not inherit it. */
@@ -113,14 +127,28 @@ describe("packed Claude plugin", () => {
 
     const wiring = JSON.parse(
       await fs.readFile(path.join(pluginRoot, "hooks", "hooks.json"), "utf8"),
-    ) as { hooks: Record<string, unknown> };
-    expect(Object.keys(wiring.hooks).sort()).toEqual(["PreToolUse", "SessionStart"]);
+    ) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
+    expect(Object.keys(wiring.hooks).sort()).toEqual([
+      "PreToolUse",
+      "SessionStart",
+      "SubagentStart",
+    ]);
+    const commands = (event: string) =>
+      wiring.hooks[event]!.flatMap((group) => group.hooks.map((h) => h.command));
+    /** The main thread's copy comes from the prepare hook, after it prepares: an event's hooks run in parallel. */
+    expect(
+      commands("SessionStart").filter((c) => c.includes("companion-instructions.mjs")),
+    ).toEqual([]);
+    expect(commands("SubagentStart")).toEqual([
+      'node "${CLAUDE_PLUGIN_ROOT}/hooks/companion-instructions.mjs"',
+    ]);
 
     for (const shim of [
       "validate-artifact-path.mjs",
       "session-banner.mjs",
       "session-guidance.mjs",
       "session-prepare.mjs",
+      "companion-instructions.mjs",
     ]) {
       const stat = await fs.stat(path.join(pluginRoot, "hooks", shim));
       expect(stat.isFile()).toBe(true);
@@ -171,6 +199,71 @@ describe("packed Claude plugin", () => {
     );
     expect(blocked.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
     expect(blocked.exitCode).toBe(2);
+  });
+
+  test("the wrap-carried session-prepare shim delivers the companion AGENTS.md from inside the install", async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-instructions-"));
+    tempRoots.push(repo);
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await fs.writeFile(path.join(companion, "AGENTS.md"), "## Git\n\nACME-SHIM-SENTINEL\n");
+    await wrapRepo(repo, companion);
+    const input = { hook_event_name: "SessionStart", source: "startup" };
+
+    const carried = runShim("session-prepare.mjs", input, withoutLaunchEnvironment(), repo, [
+      "--projected",
+    ]);
+
+    expect(carried.exitCode).toBe(0);
+    expect(carried.stderr).toBe("");
+    const payload = JSON.parse(carried.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-SHIM-SENTINEL");
+
+    /** The plugin's bare copy never owns the main thread, so a session loading both gets one copy. */
+    const bare = runShim(
+      "session-prepare.mjs",
+      input,
+      { ...withoutLaunchEnvironment(), CLAUDE_PLUGIN_ROOT: pluginRoot },
+      repo,
+    );
+    expect(bare.exitCode).toBe(0);
+    expect(bare.stdout).not.toContain("ACME-SHIM-SENTINEL");
+  });
+
+  test("the companion-instructions shim reads input that is not JSON as no event", () => {
+    const result = runShimRaw(
+      "companion-instructions.mjs",
+      "not json",
+      withoutLaunchEnvironment(),
+      undefined,
+      ["--projected"],
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("");
+  });
+
+  test("the companion-instructions shim exits zero when its output pipe is closed", async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-closed-pipe-"));
+    tempRoots.push(repo);
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await fs.writeFile(path.join(companion, "AGENTS.md"), "## Git\n\nACME-SHIM-SENTINEL\n");
+    await wrapRepo(repo, companion);
+
+    const child = spawn(
+      "node",
+      [path.join(pluginRoot, "hooks", "companion-instructions.mjs"), "--projected"],
+      { cwd: repo, env: shimEnvironment(withoutLaunchEnvironment()), stdio: "pipe" },
+    );
+    child.stdout.destroy();
+    child.stdin.end(JSON.stringify({ hook_event_name: "SubagentStart", agent_type: "acme" }));
+
+    const exitCode = await new Promise<number | null>((resolve) => child.on("close", resolve));
+    expect(exitCode).toBe(0);
   });
 
   test("session-prepare shim is inert under a launch environment", () => {

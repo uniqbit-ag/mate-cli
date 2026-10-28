@@ -19,6 +19,7 @@ import {
   copies,
   documents,
   readManifest,
+  renderedDocument,
   updateManifest,
   withCopies,
   type RenderedRuntimeDocument,
@@ -324,6 +325,42 @@ function yieldingDocument(key: string, value: unknown): RenderedRuntimeDocument[
     },
   ];
 }
+
+/**
+ * A map region that only heals: it sets nothing of its own but still strips
+ * the prefix an older Mate wrote, so it must not be dropped as empty.
+ */
+describe("a map region with no entries of its own", () => {
+  const STRIPPING = renderedDocument(CLAUDE_SETTINGS_DOCUMENT, [
+    { at: ["env"], kind: "map", entries: {}, stripPrefix: "MATE_" },
+  ]);
+
+  test("is rendered, and strips the prefix while keeping the user's keys", async () => {
+    expect(STRIPPING).toHaveLength(1);
+    const repoPath = await makeRepo("runtime-document-strip-only-");
+    const target = path.join(repoPath, ".claude", "settings.local.json");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, `${JSON.stringify({ env: { MATE_REPO_PATH: "/x", ACME: "1" } })}\n`);
+
+    await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, STRIPPING);
+
+    expect(JSON.parse(await fs.readFile(target, "utf8"))).toEqual({ env: { ACME: "1" } });
+  });
+
+  test("adds no empty map where there was none, and a second pass is current", async () => {
+    const repoPath = await makeRepo("runtime-document-strip-only-absent-");
+    const target = path.join(repoPath, ".claude", "settings.local.json");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, `${JSON.stringify({ model: "acme" }, null, 2)}\n`);
+
+    await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, STRIPPING);
+
+    expect(JSON.parse(await fs.readFile(target, "utf8"))).toEqual({ model: "acme" });
+    expect(await placeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT, STRIPPING)).toBe(
+      "current",
+    );
+  });
+});
 
 describe("a yielding region", () => {
   test("a key the repository sets is left alone and not recorded", async () => {

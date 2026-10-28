@@ -6,6 +6,7 @@ import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
+import { companionClaudeMdHasOwnText } from "../../runtime/companion-instructions";
 import { getActiveDistribution } from "../../distribution";
 import { hasOpenspecCapability } from "../../lib/orchestrator/capabilities";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
@@ -99,6 +100,8 @@ export interface DoctorReport {
   engineRequirement?: { range: string; ok: boolean; detail: string };
   /** Present when the companion's `openspec/config.yaml` has `rules` keys OpenSpec ignores. */
   openspecRuleWarnings?: Array<{ key: string; message: string }>;
+  /** Present when the companion `CLAUDE.md` holds text no Working Repository session receives. */
+  companionInstructionWarnings?: Array<{ file: string; message: string }>;
   /**
    * Enabled Capabilities' Claude plugin folders, which load only with `mate claude`; absent when
    * none. `problem` names why `mate claude` leaves a folder out: `not-absolute`,
@@ -338,6 +341,19 @@ async function collectOpenSpecRuleWarnings(
     }));
 }
 
+function collectCompanionInstructionWarnings(
+  companionPath: string,
+): NonNullable<DoctorReport["companionInstructionWarnings"]> {
+  if (!companionClaudeMdHasOwnText(companionPath)) return [];
+  const file = path.join(companionPath, "CLAUDE.md");
+  return [
+    {
+      file,
+      message: `${file} holds text besides @AGENTS.md and Mate-managed blocks. That text does not reach Working Repository sessions, only sessions started in the companion. Move rules meant for every session into ${path.join(companionPath, "AGENTS.md")}.`,
+    },
+  ];
+}
+
 export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<DoctorReport> {
   const cwd = path.resolve(deps.cwd ?? process.cwd());
   const pathValue = deps.pathValue ?? process.env.PATH ?? "";
@@ -383,6 +399,11 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
   ) {
     const warnings = await collectOpenSpecRuleWarnings(root.rootPath);
     if (warnings.length > 0) report.openspecRuleWarnings = warnings;
+  }
+
+  if (root.rootPath && (kind === "working" || kind === "companion")) {
+    const warnings = collectCompanionInstructionWarnings(root.rootPath);
+    if (warnings.length > 0) report.companionInstructionWarnings = warnings;
   }
 
   if (root.rootPath && root.config && (kind === "working" || kind === "companion")) {
@@ -588,6 +609,15 @@ function renderHumanReport(report: DoctorReport): void {
       "OpenSpec Config",
       renderList(
         report.openspecRuleWarnings.map((warning) => warning.message),
+        "",
+      ),
+    );
+  }
+  if (report.companionInstructionWarnings) {
+    printSection(
+      "Companion Instructions",
+      renderList(
+        report.companionInstructionWarnings.map((warning) => warning.message),
         "",
       ),
     );

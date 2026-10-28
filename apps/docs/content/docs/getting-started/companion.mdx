@@ -132,11 +132,16 @@ acme-companion/
 └── .gitignore                    # Mate-managed block for local-only files
 ```
 
-`AGENTS.md` starts with Mate's default instructions. Edit it to describe your
-own team's rules: Mate creates it only when it is missing and never overwrites
-it. Mate's own skills, agent settings, and the managed `.gitignore` block are
-refreshed at every launch; OpenSpec's generated skills and commands are
-refreshed only by setup and `mate companion update`. Commit these files with
-the rest of the companion.
+`AGENTS.md` starts with Mate's default instructions, inside a `MATE:COMPANION`
+block. Add your own team's rules below that block: at every launch Mate
+refreshes only the block and keeps your text. Mate's own skills, agent
+settings, and the managed `.gitignore` block are refreshed at every launch too;
+OpenSpec's generated skills and commands are refreshed only by setup and
+`mate companion update`. Commit these files with the rest of the companion.
+
+Put rules every session should follow in `AGENTS.md`. Claude sessions in your
+repositories receive `AGENTS.md`, plus the blocks Mate manages in `CLAUDE.md`;
+other text you add to `CLAUDE.md` reaches only sessions started in the companion
+itself, and `mate doctor` warns about it.
 
 Next: [Quickstart](/docs/getting-started/quickstart) to launch your first agent.

@@ -10,13 +10,22 @@ import {
   type StudioView,
   switchView,
   toHref,
+  withMode,
 } from "../selection";
-import { REPORTS_ROUTE, VAULT_CHANGES_ROUTE, VAULT_DIR_ROUTE, VAULT_FILTER_ROUTE } from "../routes";
-import { STUDIO_CLIENT_SCRIPT, STUDIO_PREPAINT_SCRIPT } from "./client";
+import {
+  REPORTS_ROUTE,
+  VAULT_CHANGES_ROUTE,
+  VAULT_DIR_ROUTE,
+  VAULT_FILTER_ROUTE,
+  VAULT_PANE_ROUTE,
+} from "../routes";
+import { STUDIO_CLIENT_ROUTE } from "../client-asset";
+import { STUDIO_PREPAINT_SCRIPT } from "./client";
 import { CompanionPicker } from "./companion-picker";
 import { CompanionSelector } from "./companion-selector";
 import { Dashboard } from "./dashboard/index";
 import { CompanionError } from "./error";
+import { MarkdownView } from "./markdown";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
 import type { VaultTreeNode } from "../vault";
 import { Reports } from "./reports/index";
@@ -100,7 +109,7 @@ export function renderStudioDocument(page: StudioPage): string {
 <script>${STUDIO_PREPAINT_SCRIPT}</script>${terminalHead}
 </head>
 <body>${String(<StudioShell page={page} />)}
-<script>${STUDIO_CLIENT_SCRIPT}</script>${terminalBody}
+<script src="${STUDIO_CLIENT_ROUTE}"></script>${terminalBody}
 </body>
 </html>
 `;
@@ -318,6 +327,18 @@ export function renderVaultView(page: StudioPage): string {
   );
 }
 
+/** The open file's breadcrumb and pane, for the page to swap in without a reload. */
+export function renderVaultPane(page: StudioPage): string {
+  const { selection, vault } = page;
+  if (!vault || selection.view !== "vault") return "";
+  return String(
+    <>
+      <VaultBreadcrumb page={page} selection={selection} />
+      <VaultPane page={page} selection={selection} vault={vault} />
+    </>,
+  );
+}
+
 /** A folder's entries, for a folder the page did not expand; `null` when the listed tree lacks it. */
 export function renderVaultChildren(page: StudioPage): string | null {
   const { selection, vault } = page;
@@ -449,11 +470,12 @@ function Vault({ page, selection }: { page: StudioPage; selection: StudioVaultSe
         <p className="empty">No vault state collected.</p>
       </section>
     );
-  const showListing = !vault.open && !vault.refusal;
   return (
     <section
       className="vault-layout"
       data-vault-layout
+      data-vault-pane-route={VAULT_PANE_ROUTE}
+      data-vault-scope={selection.companionDigest ?? ""}
       data-vault-view={vault.tree === null ? toHref(selection, "/api/vault/view") : undefined}
       data-vault-refresh-url={toHref(refresh(selection), "/api/vault/view")}
       data-vault-filter-url={toHref(plain(selection), VAULT_FILTER_ROUTE)}
@@ -479,7 +501,7 @@ function Vault({ page, selection }: { page: StudioPage; selection: StudioVaultSe
         <div id="vault-filter-results" data-vault-filter-results hidden />
         <VaultTreeSlot vault={vault} selection={selection} />
       </aside>
-      <div className="vault-main">
+      <div className="vault-main" data-vault-main>
         <div className="vault-bar">
           <button
             type="button"
@@ -493,8 +515,7 @@ function Vault({ page, selection }: { page: StudioPage; selection: StudioVaultSe
           </button>
           <VaultBreadcrumb page={page} selection={selection} />
         </div>
-        {showListing ? <VaultListingSlot selection={selection} vault={vault} /> : null}
-        {showListing ? null : <VaultEditor page={page} selection={selection} vault={vault} />}
+        <VaultPane page={page} selection={selection} vault={vault} />
       </div>
     </section>
   );
@@ -659,7 +680,7 @@ function VaultBreadcrumb({
     ? (segments(page.companion.path).at(-1) ?? "companion")
     : "companion";
   return (
-    <nav className="vault-breadcrumb" aria-label="Breadcrumb">
+    <nav className="vault-breadcrumb" aria-label="Breadcrumb" data-vault-crumb>
       <ol>
         <li>
           {parts.length === 0 ? (
@@ -780,7 +801,7 @@ function VaultListingEntry({
     );
   }
   return (
-    <form method="get" action="/" className="vault-row" data-studio-navigation>
+    <form method="get" action="/" className="vault-row" data-studio-navigation data-vault-open>
       <SelectionFields selection={openFile(selection, node.path)} />
       <button type="submit">
         <FileIcon />
@@ -790,7 +811,29 @@ function VaultListingEntry({
   );
 }
 
-function VaultEditor({
+/** What the in-place navigation swaps: the listing, or the open file read or edited. */
+function VaultPane({
+  page,
+  selection,
+  vault,
+}: {
+  page: StudioPage;
+  selection: StudioVaultSelection;
+  vault: StudioVaultPage;
+}) {
+  const showListing = !vault.open && !vault.refusal && !selection.openPath;
+  return (
+    <div data-vault-pane>
+      {showListing ? (
+        <VaultListingSlot selection={selection} vault={vault} />
+      ) : (
+        <VaultFile page={page} selection={selection} vault={vault} />
+      )}
+    </div>
+  );
+}
+
+function VaultFile({
   page,
   selection,
   vault,
@@ -809,46 +852,86 @@ function VaultEditor({
       </div>
     );
   }
+  const { open } = vault;
+  // Without the write path a file is only ever read, whatever the address names.
+  const editing = page.writable && selection.mode === "edit";
+  const readAddress = withMode(selection, "read");
   return (
     <div
       className="panel vault-editor-panel"
       data-vault-root
+      data-vault-mode={editing ? "edit" : "read"}
       data-vault-writable={page.writable ? "true" : "false"}
+      data-vault-path={open.path}
+      data-vault-events={toHref(openFile(selection, open.path), "/api/vault/events")}
+      data-vault-pane-url={toHref(readAddress, VAULT_PANE_ROUTE)}
+      data-vault-read-href={toHref(readAddress)}
     >
       <div className="section-header">
         <div>
-          <h3>{segments(vault.open.path).at(-1) ?? vault.open.path}</h3>
+          <h3>{segments(open.path).at(-1) ?? open.path}</h3>
           <p className="section-note">
-            {page.writable
-              ? "Changes stay in the editor until you save."
-              : "Read-only mode. Start Studio with --writable to save."}
+            {!page.writable
+              ? "Read-only mode. Start Studio with --writable to edit."
+              : editing
+                ? "Changes stay in the editor until you save."
+                : "Rendered view."}
           </p>
         </div>
-        {page.writable ? (
-          <button type="button" id="vault-save">
-            Save
-          </button>
-        ) : null}
+        <div className="vault-actions">
+          {editing ? (
+            <>
+              <button type="button" id="vault-save">
+                Save
+              </button>
+              <a
+                className="vault-mode-link"
+                id="vault-mode-read"
+                href={toHref(readAddress)}
+                data-vault-mode-link
+              >
+                Read
+              </a>
+            </>
+          ) : page.writable ? (
+            <a
+              className="vault-mode-link"
+              id="vault-mode-edit"
+              href={toHref(withMode(selection, "edit"))}
+              data-vault-mode-link
+            >
+              Edit
+            </a>
+          ) : null}
+        </div>
       </div>
-      <textarea
-        id="vault-editor"
-        data-vault-editor
-        data-vault-path={vault.open.path}
-        data-vault-events={toHref(openFile(selection, vault.open.path), "/api/vault/events")}
-        data-vault-token={vault.open.token}
-        {...(page.writable ? {} : { readOnly: true })}
-        spellCheck={false}
-      >
-        {vault.open.content}
-      </textarea>
+      {editing ? (
+        <textarea
+          id="vault-editor"
+          data-vault-editor
+          data-vault-path={open.path}
+          data-vault-token={open.token}
+          spellCheck={false}
+        >
+          {open.content}
+        </textarea>
+      ) : (
+        <MarkdownView
+          source={open.content}
+          path={open.path}
+          hrefFor={(target) => toHref(openFile(selection, target))}
+        />
+      )}
       <p id="vault-status" className="note" aria-live="polite" />
-      <div id="vault-incoming" className="vault-incoming" hidden>
-        <strong id="vault-incoming-title">Incoming version</strong>
-        <pre id="vault-incoming-content" />
-        <button type="button" id="vault-recover">
-          Put incoming content back
-        </button>
-      </div>
+      {editing ? (
+        <div id="vault-incoming" className="vault-incoming" hidden>
+          <strong id="vault-incoming-title">Incoming version</strong>
+          <pre id="vault-incoming-content" />
+          <button type="button" id="vault-recover">
+            Put incoming content back
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -154,14 +154,24 @@ afterEach(async () => {
 
 describe("LaunchAdapter.prepareLaunch", () => {
   test("builds the Claude invocation without rewriting the model base URL", async () => {
-    const launch = await withEnv("ANTHROPIC_BASE_URL", undefined, () =>
-      prepareClaudeLaunch(makeContext(), ["--print", "hello"]),
+    /** Unset around the call: a session wrapped by an older Mate exports the variable itself. */
+    const launch = await withEnv(
+      { ANTHROPIC_BASE_URL: undefined, CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: undefined },
+      () => prepareClaudeLaunch(makeContext(), ["--print", "hello"]),
     );
 
     expect(launch.command).toBe("claude");
     expect(launch.args[0]).toBe("--append-system-prompt");
-    expect(launch.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("1");
+    expect(launch.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBeUndefined();
     expect(launch.env.ANTHROPIC_BASE_URL).toBeUndefined();
+  });
+
+  test("the operator's own additional-directories memory variable passes through unchanged", async () => {
+    const launch = await withEnv({ CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "0" }, () =>
+      prepareClaudeLaunch(makeContext(), ["--print", "hello"]),
+    );
+
+    expect(launch.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("0");
   });
 
   test("an unrecognized capability leaves the OpenCode invocation and PATH untouched", async () => {
@@ -717,6 +727,8 @@ describe("Claude companion settings launch flags", () => {
     const broken = await makeTempDir("mate-claude-plugin-broken-");
     expect(() => validateClaudePluginAssets(broken)).toThrow(/plugin\.json/);
     expect(() => validateClaudePluginAssets(broken)).toThrow(/validate-artifact-path\.mjs/);
+    /** The plugin's copy is the only subagent delivery in a managed-repo session. */
+    expect(() => validateClaudePluginAssets(broken)).toThrow(/companion-instructions\.mjs/);
   });
 });
 

@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { applySetupCompatibilities } from "../setup";
+import { removeManagedBlocksForPlugin, upsertManagedBlock } from "./context-services";
 import type { CapabilityPlugin, McpServerDescriptor, Plugin } from "./plugin";
 import { createClaudePlugin } from "./providers/claude";
 import { createOpenCodePlugin } from "./providers/opencode";
@@ -458,5 +459,75 @@ describe("ctx.mcp.register", () => {
 
     const afterOpencode = await readJson(path.join(root, ".opencode", "opencode.json"));
     expect(afterOpencode.mcp?.["acme-kb"]).toBeUndefined();
+  });
+});
+
+describe("managed block writes", () => {
+  async function fileWithReader(content: string) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "acme-managed-block-"));
+    tempRoots.push(dir);
+    const file = path.join(dir, "CLAUDE.md");
+    await fs.writeFile(file, content, "utf8");
+    return { dir, file, reader: await fs.open(file, "r") };
+  }
+
+  /** A session-start hook reads these files while another session's prepare rewrites them. */
+  test("an upsert leaves a reader that already holds the file a whole copy of it", async () => {
+    const { file, reader } = await fileWithReader("@AGENTS.md\n");
+
+    await upsertManagedBlock(file, "mate", "acme:abc123", "## Acme\n\nA rule.");
+
+    expect(await reader.readFile("utf8")).toBe("@AGENTS.md\n");
+    expect(await fs.readFile(file, "utf8")).toContain("A rule.");
+    await reader.close();
+  });
+
+  test("a sweep leaves a reader that already holds the file a whole copy of it", async () => {
+    const original =
+      "@AGENTS.md\n\n<!-- mate:managed:acme:abc123 start -->\nA rule.\n<!-- mate:managed:acme:abc123 end -->\n\n## Notes\n";
+    const { file, reader } = await fileWithReader(original);
+
+    await removeManagedBlocksForPlugin(file, "mate", "acme");
+
+    expect(await reader.readFile("utf8")).toBe(original);
+    expect(await fs.readFile(file, "utf8")).not.toContain("A rule.");
+    await reader.close();
+  });
+
+  test("a symlinked file keeps its link", async () => {
+    const { dir, file, reader } = await fileWithReader("@AGENTS.md\n");
+    await reader.close();
+    const link = path.join(dir, "LINKED.md");
+    await fs.symlink(file, link);
+
+    await upsertManagedBlock(link, "mate", "acme:abc123", "A rule.");
+
+    expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(file, "utf8")).toContain("A rule.");
+  });
+
+  test("a sweep that empties a symlinked file keeps the link and empties its target", async () => {
+    const { dir, file, reader } = await fileWithReader(
+      "<!-- mate:managed:acme:abc123 start -->\nA rule.\n<!-- mate:managed:acme:abc123 end -->\n",
+    );
+    await reader.close();
+    const link = path.join(dir, "LINKED.md");
+    await fs.symlink(file, link);
+
+    await removeManagedBlocksForPlugin(link, "mate", "acme");
+
+    expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(file, "utf8")).toBe("");
+  });
+
+  test("a sweep that empties a plain file deletes it", async () => {
+    const { file, reader } = await fileWithReader(
+      "<!-- mate:managed:acme:abc123 start -->\nA rule.\n<!-- mate:managed:acme:abc123 end -->\n",
+    );
+    await reader.close();
+
+    await removeManagedBlocksForPlugin(file, "mate", "acme");
+
+    expect(await fs.stat(file).catch(() => null)).toBeNull();
   });
 });

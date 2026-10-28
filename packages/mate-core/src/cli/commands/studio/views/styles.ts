@@ -360,6 +360,35 @@ html[data-agent-viewed] [data-studio-action] { display: none; }
 #vault-editor { display: block; width: 100%; min-height: 62vh; resize: vertical; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--prompt-bg); color: var(--prompt-text); font-family: var(--mono); font-size: .86rem; line-height: 1.6; }
 #vault-editor:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 #vault-editor[readonly] { cursor: default; opacity: .85; }
+.vault-actions { display: flex; align-items: center; gap: 8px; }
+.vault-mode-link { display: inline-block; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; text-decoration: none; }
+.vault-mode-link:hover { background: var(--panel-soft); color: var(--accent); }
+.markdown-body { padding: 4px 2px; line-height: 1.65; overflow-wrap: anywhere; }
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body h1, .markdown-body h2 { padding-bottom: .3em; border-bottom: 1px solid var(--border); }
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 { margin: 1.4em 0 .6em; line-height: 1.25; }
+.markdown-body p, .markdown-body ul, .markdown-body ol, .markdown-body blockquote, .markdown-body pre, .markdown-body .md-table { margin: 0 0 1em; }
+.markdown-body ul, .markdown-body ol { padding-left: 2em; }
+.markdown-body li > ul, .markdown-body li > ol { margin: .25em 0 0; }
+.markdown-body li.md-task { list-style: none; margin-left: -1.4em; }
+.markdown-body li.md-task input { margin: 0 .5em 0 0; vertical-align: middle; }
+.markdown-body blockquote { padding: 0 1em; border-left: .25em solid var(--border); color: var(--muted); }
+.markdown-body code { padding: .15em .35em; border-radius: 6px; background: var(--panel-soft); font-family: var(--mono); font-size: .86em; }
+.markdown-body pre { overflow: auto; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; line-height: 1.5; }
+.markdown-body pre code { padding: 0; background: transparent; font-size: .84rem; }
+.markdown-body hr { height: 1px; margin: 1.5em 0; border: 0; background: var(--border); }
+.markdown-body .md-table { overflow-x: auto; }
+.markdown-body table { border-collapse: collapse; }
+.markdown-body th, .markdown-body td { padding: 6px 13px; border: 1px solid var(--border); }
+.markdown-body th { background: var(--panel-soft); }
+.markdown-body .md-raw { color: var(--muted); font-family: var(--mono); font-size: .86rem; white-space: pre-wrap; }
+.markdown-body pre.md-fence { background: var(--panel-soft); color: var(--text); }
+.md-fence .th-comment, .md-fence .th-meta { color: var(--muted); }
+.md-fence .th-keyword, .md-fence .th-operator, .md-fence .th-command { color: var(--info); }
+.md-fence .th-string, .md-fence .th-inserted { color: var(--done); }
+.md-fence .th-number, .md-fence .th-literal, .md-fence .th-attr { color: var(--warn); }
+.md-fence .th-function, .md-fence .th-type, .md-fence .th-tag, .md-fence .th-property, .md-fence .th-selector, .md-fence .th-heading { color: var(--accent); }
+.md-fence .th-deleted { color: var(--bad); }
 .vault-incoming { display: grid; gap: 8px; margin-top: 16px; padding: 12px; border: 1px solid var(--warn); border-radius: 8px; background: var(--warn-soft); }
 .vault-incoming pre { max-height: 220px; overflow: auto; margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: .78rem; }
 @media (max-width: 800px) { .vault-layout { grid-template-columns: 1fr; } .vault-tree-panel { position: static; max-height: 50vh; } }
