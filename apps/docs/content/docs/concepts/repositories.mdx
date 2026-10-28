@@ -56,6 +56,18 @@ working-repository metadata. Mate also adds `.mate/` to `.git/info/exclude`.
 This makes the link machine-local without requiring a tracked `.gitignore`
 change.
 
+Git reads exclude lines only from the Git folder that all worktrees of a clone
+share. In a worktree, Mate therefore writes its exclude lines there, and every
+worktree of the clone sees them. A submodule keeps its own exclude file. When
+Mate removes a line in one worktree, it keeps any line that another worktree of
+the clone still needs, and names that worktree.
+
+Because the lines are shared, a line one worktree needs also hides matching
+files in every other worktree. While any worktree carries Mate's OpenSpec
+pointer, `/openspec/` is excluded for all of them, so a new untracked file under
+`openspec/`, such as a change proposal, does not show in `git status` in any
+worktree. Use `git status --ignored` to see it, or `git add -f` to stage it.
+
 Mate searches upward from the current directory for this registry, so commands
 can run from a subdirectory of the working repository.
 

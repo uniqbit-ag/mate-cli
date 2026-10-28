@@ -5,12 +5,15 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { addWorktree, initRepo } from "../../../test/git-checkouts";
 import { generatedHeader } from "../../runtime/projection";
 import {
   OPENSPEC_POINTER_EXCLUDE,
   pointerIgnoreProblem,
   readStorePointer,
+  reconcileStorePointerExclude,
   removeStorePointer,
+  removeStorePointerExclude,
   storePointerIneligibility,
   writeStorePointer,
 } from "./projection-openspec-store";
@@ -145,5 +148,51 @@ describe("removeStorePointer", () => {
     await fs.writeFile(pointerPath(repo), "schema: spec-driven\n");
     expect(await removeStorePointer(repo)).toBe("absent");
     expect(await fs.readFile(pointerPath(repo), "utf8")).toBe("schema: spec-driven\n");
+  });
+});
+
+describe("the pointer line across Checkouts of one clone", () => {
+  async function clone(): Promise<{ main: string; worktree: string; excludePath: string }> {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "openspec-clone-")));
+    tempRoots.push(root);
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme-feature"));
+    await reconcileStorePointerExclude(main);
+    await writeStorePointer(main, "acme-companion");
+    return { main, worktree, excludePath: path.join(main, ".git", "info", "exclude") };
+  }
+
+  test("an ineligible worktree keeps a sibling's line and warns", async () => {
+    const { worktree, excludePath } = await clone();
+    await fs.mkdir(path.join(worktree, "openspec", "changes"), { recursive: true });
+
+    const report = await reconcileStorePointerExclude(worktree);
+
+    expect(await fs.readFile(excludePath, "utf8")).toContain(`${OPENSPEC_POINTER_EXCLUDE}\n`);
+    expect(report).toMatchObject({ state: "current" });
+    expect(typeof report === "object" && report.warnings?.[0]).toContain(
+      path.join(worktree, "openspec"),
+    );
+  });
+
+  test("cleanup keeps the line another Checkout's pointer needs", async () => {
+    const { main, worktree, excludePath } = await clone();
+    await writeStorePointer(worktree, "acme-companion");
+    await removeStorePointer(main);
+
+    expect(await removeStorePointerExclude(main)).toMatchObject({
+      state: "retained",
+      keptFor: [worktree],
+    });
+    expect(await fs.readFile(excludePath, "utf8")).toContain(`${OPENSPEC_POINTER_EXCLUDE}\n`);
+    expect(await pointerIgnoreProblem(worktree)).toBeNull();
+  });
+
+  test("the last Checkout with a pointer removes the line", async () => {
+    const { main, excludePath } = await clone();
+    await removeStorePointer(main);
+
+    expect(await removeStorePointerExclude(main)).toBe("removed");
+    expect(await fs.readFile(excludePath, "utf8")).not.toContain(OPENSPEC_POINTER_EXCLUDE);
   });
 });

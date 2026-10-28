@@ -20,7 +20,9 @@ import {
   type ProjectionEntryPresence,
   type ProjectionInput,
   type ProjectionRemovalInput,
+  type ProjectionRemovalReport,
   type ProjectionRemovalResult,
+  type ProjectionRemoveState,
   type ProjectionResult,
   type ProjectionScope,
   type ProjectionWriteReport,
@@ -58,6 +60,20 @@ function outcome(
     ...(error ? { error } : {}),
     ...(entry.degradable ? { degradable: true } : {}),
     ...(entry.runtime ? { runtime: entry.runtime } : {}),
+  };
+}
+
+/** One outcome shape for both forms a removal may return; empty reports are omitted. */
+function removalOutcome(
+  entry: ProjectionEntry,
+  removed: ProjectionRemoveState | ProjectionRemovalReport,
+): ProjectionEntryOutcome {
+  if (typeof removed === "string") return outcome(entry, removed);
+  const { state, kept, keptFor, warnings = [] } = removed;
+  return {
+    ...outcome(entry, state),
+    ...(kept.length > 0 ? { kept, keptFor } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
@@ -120,7 +136,7 @@ export async function unproject(input: ProjectionRemovalInput): Promise<Projecti
     }
     try {
       // oxlint-disable-next-line no-await-in-loop -- reverse catalogue order is the contract
-      const removed = outcome(entry, await removal.remove(input));
+      const removed = removalOutcome(entry, await removal.remove(input));
       outcomes.push(removal.retains ? { ...removed, retains: removal.retains } : removed);
     } catch (error) {
       outcomes.push(outcome(entry, "failed", toError(error)));
@@ -144,7 +160,8 @@ async function removeWorkingRepositoryUnwrapEntries(
     if (!entry.removeOnUnwrap || removal.by !== "self") continue;
     try {
       // oxlint-disable-next-line no-await-in-loop -- each removal rewrites the manifest
-      outcomes.push(outcome(entry, await removal.remove({ repoPath, registeredCompanionPaths }))); // react-doctor-disable-line react-doctor/async-await-in-loop
+      const removed = await removal.remove({ repoPath, registeredCompanionPaths }); // react-doctor-disable-line react-doctor/async-await-in-loop
+      outcomes.push(removalOutcome(entry, removed));
     } catch (error) {
       outcomes.push(outcome(entry, "failed", toError(error)));
     }
@@ -202,9 +219,31 @@ export async function projectWorkingRepository(
   };
 }
 
+/** Shared exclude lines an unwrap left for other Checkouts of the clone. */
+export interface UnwrapKeptLines {
+  lines: number;
+  keptFor: string[];
+}
+
 export type UnwrapResult =
-  | { kind: "unwrapped" | "absent"; documents: string[]; copies: string[] }
+  | {
+      kind: "unwrapped" | "absent";
+      documents: string[];
+      copies: string[];
+      kept?: UnwrapKeptLines;
+    }
   | { kind: "failed"; document: string; error: Error };
+
+function keptLines(outcomes: ProjectionEntryOutcome[]): { kept?: UnwrapKeptLines } {
+  const keeping = outcomes.filter((entry) => entry.kept && entry.keptFor);
+  if (keeping.length === 0) return {};
+  return {
+    kept: {
+      lines: keeping.reduce((sum, entry) => sum + (entry.kept?.length ?? 0), 0),
+      keptFor: [...new Set(keeping.flatMap((entry) => entry.keptFor ?? []))],
+    },
+  };
+}
 
 /**
  * The inverse of a wrap's runtime documents: runtime documents and
@@ -238,9 +277,13 @@ export async function unwrapWorkingRuntimeDocuments(
         error: failure.error ?? new Error("wrap entry removal failed"),
       };
     }
-    return outcomes.some((entry) => entry.state === "removed")
-      ? { kind: "unwrapped", documents: [], copies }
-      : { kind: "absent", documents: [], copies: [] };
+    const removedAny = outcomes.some((entry) => entry.state === "removed");
+    return {
+      kind: removedAny ? "unwrapped" : "absent",
+      documents: [],
+      copies: removedAny ? copies : [],
+      ...keptLines(outcomes),
+    };
   }
 
   /**
@@ -262,7 +305,7 @@ export async function unwrapWorkingRuntimeDocuments(
       error: failure.error ?? new Error("wrap entry removal failed"),
     };
   }
-  return { kind: "unwrapped", documents: removed, copies };
+  return { kind: "unwrapped", documents: removed, copies, ...keptLines(outcomes) };
 }
 
 /**

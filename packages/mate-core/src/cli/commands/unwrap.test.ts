@@ -207,6 +207,49 @@ describe("runUnwrapCommand", () => {
     expect(captured.out.join("\n")).toContain("Not wrapped: app");
   });
 
+  test("says how many copy lines it kept and for which worktree", async () => {
+    const { repoPath, repository } = await makeLinkedRepo("mate-unwrap-kept-");
+
+    const captured = capture();
+    try {
+      await runUnwrapCommand([], repoPath, {
+        findRepoLocalLinkedRepository: async () => repository,
+        unwrapWorkingRuntimeDocuments: async () => ({
+          kind: "unwrapped",
+          documents: [],
+          copies: [".opencode/commands/acme.md"],
+          kept: { lines: 2, keptFor: ["/acme-feature"] },
+        }),
+      });
+    } finally {
+      captured.restore();
+    }
+
+    expect(captured.out).toContain("  Kept: 2 copy exclude lines still needed by /acme-feature");
+  });
+
+  test("names kept copy lines even when this repository was not wrapped", async () => {
+    const { repoPath, repository } = await makeLinkedRepo("mate-unwrap-absent-kept-");
+
+    const captured = capture();
+    try {
+      await runUnwrapCommand([], repoPath, {
+        findRepoLocalLinkedRepository: async () => repository,
+        unwrapWorkingRuntimeDocuments: async () => ({
+          kind: "absent",
+          documents: [],
+          copies: [],
+          kept: { lines: 1, keptFor: ["/acme-feature"] },
+        }),
+      });
+    } finally {
+      captured.restore();
+    }
+
+    expect(captured.out).toContain("Not wrapped: app");
+    expect(captured.out).toContain("  Kept: 1 copy exclude lines still needed by /acme-feature");
+  });
+
   test("refuses a directory that is not a linked working repository", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-unwrap-unlinked-"));
     tempRoots.push(root);

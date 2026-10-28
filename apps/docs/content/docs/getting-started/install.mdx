@@ -47,8 +47,10 @@ gets local metadata at:
 ```
 
 Mate adds `.mate/` to `.git/info/exclude`, so these machine-local pointers do
-not need to be committed. The repo-local registry is the source of truth when
-Mate resolves a working repository.
+not need to be committed. In a Git worktree, Mate writes to the exclude file in
+the clone's shared Git folder, the only one Git reads for every worktree of the
+clone. The repo-local registry is the source of truth when Mate resolves a
+working repository.
 
 Linking builds a dependency plan from the selected companion configuration,
 checks which requirements are already available, installs missing requirements,

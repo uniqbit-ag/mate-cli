@@ -9,7 +9,8 @@ import { mateHome } from "./runtime-directory";
 /**
  * Per-companion lock under `<mate home>/locks/`, outside the companion's tree;
  * repos share a companion, so a per-repo lock would race pulls. Re-entrant per
- * async call chain, not per process.
+ * async call chain, not per process. The same mechanism locks any other path
+ * under a namespace of its own.
  */
 
 export interface CompanionLockOptions {
@@ -25,18 +26,23 @@ export interface CompanionLockOptions {
 
 export type CompanionLockResult<T> = { acquired: true; value: T } | { acquired: false };
 
-function companionKey(companionPath: string): string {
-  let resolved = path.resolve(companionPath);
+function pathKey(keyPath: string): string {
+  let resolved = path.resolve(keyPath);
   try {
     resolved = fsSync.realpathSync(resolved);
   } catch {
-    /* an unresolvable companion is still keyed by its spelling */
+    /* an unresolvable path is still keyed by its spelling */
   }
   return crypto.createHash("sha256").update(resolved).digest("hex").slice(0, 32);
 }
 
 export function companionLockPath(companionPath: string, homeDir?: string): string {
-  return path.join(mateHome(homeDir), "locks", `${companionKey(companionPath)}.lock`);
+  return path.join(mateHome(homeDir), "locks", `${pathKey(companionPath)}.lock`);
+}
+
+/** A lock on any path, in a namespace of its own so it never collides with a companion's. */
+function pathLockPath(namespace: string, keyPath: string, homeDir?: string): string {
+  return path.join(mateHome(homeDir), "locks", namespace, `${pathKey(keyPath)}.lock`);
 }
 
 const heldLocks = new AsyncLocalStorage<ReadonlySet<string>>();
@@ -88,12 +94,29 @@ async function tryAcquire(lockPath: string): Promise<boolean> {
  * bounded wait, or at once with `wait: false`. A caller already holding it in
  * this call chain runs `task` directly.
  */
-export async function withCompanionLock<T>(
+export function withCompanionLock<T>(
   companionPath: string,
   options: CompanionLockOptions,
   task: () => Promise<T>,
 ): Promise<CompanionLockResult<T>> {
-  const lockPath = companionLockPath(companionPath, options.homeDir);
+  return withLockFile(companionLockPath(companionPath, options.homeDir), options, task);
+}
+
+/** As {@link withCompanionLock}, for the lock file {@link pathLockPath} names. */
+export function withPathLock<T>(
+  namespace: string,
+  keyPath: string,
+  options: CompanionLockOptions,
+  task: () => Promise<T>,
+): Promise<CompanionLockResult<T>> {
+  return withLockFile(pathLockPath(namespace, keyPath, options.homeDir), options, task);
+}
+
+async function withLockFile<T>(
+  lockPath: string,
+  options: CompanionLockOptions,
+  task: () => Promise<T>,
+): Promise<CompanionLockResult<T>> {
   const held = heldLocks.getStore() ?? new Set<string>();
   if (held.has(lockPath)) return { acquired: true, value: await task() };
 

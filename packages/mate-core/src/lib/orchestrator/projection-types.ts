@@ -1,6 +1,7 @@
 import type { GlobalConfigStore } from "./global-config-store";
 import type { ProjectionFile } from "../../runtime/projection";
 import type { RenderedRuntimeDocument, WrapRuntime } from "../../runtime/runtime-document-manifest";
+import type { ExcludeEditResult } from "../../tools/setup/working-repo-local-state";
 import type { CompanionSource, FrameworkConfig, LinkedRepository } from "./types";
 
 /**
@@ -82,6 +83,33 @@ export interface ProjectionWriteReport {
 }
 
 /**
+ * What a `self` removal may return instead of a bare state, when it kept
+ * shared exclude lines another Checkout of the clone still needs: `retained`
+ * when it kept everything it would have removed, `removed` when only part.
+ */
+export interface ProjectionRemovalReport {
+  state: "removed" | "retained";
+  /** The kept lines. */
+  kept: string[];
+  /** Paths of the Checkouts that still need them. */
+  keptFor: string[];
+  warnings?: string[];
+}
+
+/** What a `self` removal returns. */
+export type ProjectionSelfRemoval = "removed" | "absent" | ProjectionRemovalReport;
+
+/** A shared exclude-file edit as a removal outcome. */
+export function excludeRemovalReport(result: ExcludeEditResult): ProjectionSelfRemoval {
+  if (result.kept.length === 0) return result.changed ? "removed" : "absent";
+  return {
+    state: result.changed ? "removed" : "retained",
+    kept: result.kept,
+    keptFor: result.keptFor,
+  };
+}
+
+/**
  * Every entry names its inverse. `self` removes its own path, `entry` is covered
  * by another entry's removal, `retained` is deliberately left behind and says
  * why — so a path is never merely absent from removal.
@@ -89,7 +117,7 @@ export interface ProjectionWriteReport {
 export type ProjectionEntryRemoval =
   | {
       readonly by: "self";
-      remove(input: ProjectionRemovalInput): Promise<"removed" | "absent">;
+      remove(input: ProjectionRemovalInput): Promise<ProjectionSelfRemoval>;
       /** What removing this path deliberately leaves outside the repository, named in the outcome. */
       readonly retains?: string;
     }
@@ -139,6 +167,10 @@ export interface ProjectionEntryOutcome {
   changed?: ProjectionChangedPaths;
   /** Present only on a removal that leaves something outside the repository behind. */
   retains?: string;
+  /** Present only on a removal that kept shared exclude lines for other Checkouts. */
+  kept?: string[];
+  /** The paths of those Checkouts. */
+  keptFor?: string[];
 }
 
 export interface ProjectionResult {
