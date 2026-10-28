@@ -8,7 +8,7 @@ import {
   syncCompanionUnattended,
   type UnattendedSyncOutcome,
 } from "../../runtime/companion-sync";
-import type { SessionKind } from "../../runtime/session-kind";
+import { managedSessionKind, type SessionKind } from "../../runtime/session-kind";
 import type { WrapState } from "../../runtime/wrap-state";
 import { syncCompanionFiles } from "../../tools/setup";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
@@ -228,7 +228,7 @@ function publicationWarnings(folders: ClaudePluginFolders | undefined): string[]
 /** Attended is a managed launch, with or without a Working Repository; the rest serve plain sessions. */
 function sessionKindOf(input: PrepareSessionInput): SessionKind {
   if (input.mode !== "attended") return "unmanaged";
-  return input.repository ? "managed-repo" : "managed-companion";
+  return managedSessionKind(Boolean(input.repository));
 }
 
 function runtimesOf(input: PrepareSessionInput): PrepareRuntime[] {

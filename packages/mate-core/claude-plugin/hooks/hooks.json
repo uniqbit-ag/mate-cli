@@ -1,5 +1,5 @@
 {
-  "description": "Mate hooks \u2014 PreToolUse artifact-path and secret guardrail, SessionStart banner, companion guidance and session prepare",
+  "description": "Mate hooks \u2014 PreToolUse artifact-path and secret guardrail, SessionStart banner, companion guidance, session prepare then companion instructions, SubagentStart companion instructions",
   "hooks": {
     "PreToolUse": [
       {
@@ -35,6 +35,16 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-prepare.mjs\"",
             "timeout": 45
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/companion-instructions.mjs\""
           }
         ]
       }

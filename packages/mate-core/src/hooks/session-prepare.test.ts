@@ -8,7 +8,12 @@ import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { manifestPath } from "../runtime/runtime-document-manifest";
 import type { PrepareRequest, PrepareRun } from "../runtime/session-prepare-runner";
-import { runSessionPrepareHook, type SessionPrepareHookDeps } from "./session-prepare";
+import { PROJECTED_FLAG } from "../runtime/projected-flag";
+import {
+  runSessionPrepareHook,
+  runSessionStartHook,
+  type SessionPrepareHookDeps,
+} from "./session-prepare";
 
 const tempRoots: string[] = [];
 
@@ -163,5 +168,238 @@ describe("session-prepare hook", () => {
     expect(outcome.exitCode).toBe(0);
     expect(outcome.stdout).toContain("run `mate` once");
     expect(order).toEqual([]);
+  });
+});
+
+describe("session-start hook", () => {
+  const sessionStart = { hook_event_name: "SessionStart", source: "startup" };
+
+  function companionOf(repo: string): string {
+    const companion = path.join(path.dirname(repo), "acme-companion");
+    fs.mkdirSync(companion, { recursive: true });
+    fs.writeFileSync(path.join(companion, "AGENTS.md"), "## Git\n\nACME-STALE\n");
+    return companion;
+  }
+
+  /** Claude Code runs an event's hooks in parallel, so only this order keeps the read off a rewrite. */
+  test("the wrap's copy delivers the instructions the local phase left", async () => {
+    const repo = projectedRepo("claude");
+    const companion = companionOf(repo);
+    const { deps } = fakeDeps();
+    const local = deps.runner;
+    deps.runner = (bin, dir) => async (request) => {
+      fs.writeFileSync(path.join(companion, "AGENTS.md"), "## Git\n\nACME-REFRESHED\n");
+      return local(bin, dir)(request);
+    };
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { hookEventName: string; additionalContext: string };
+    };
+    expect(payload.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-REFRESHED");
+    expect(payload.hookSpecificOutput.additionalContext).not.toContain("ACME-STALE");
+  });
+
+  test("prepare notes and the instructions share one output", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps } = fakeDeps({ ok: true, notes: ["acme shadowed"] });
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+      systemMessage: string;
+    };
+    expect(outcome.exitCode).toBe(0);
+    expect(payload.systemMessage).toBe("mate: session prepare warning: acme shadowed");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
+  });
+
+  test("a prepare that throws exits zero and still delivers the instructions", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps } = fakeDeps();
+    deps.mateBin = () => {
+      throw new Error("disk on fire");
+    };
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+      systemMessage: string;
+    };
+    expect(outcome.exitCode).toBe(0);
+    expect(payload.systemMessage).toBe("mate: session prepare failed: disk on fire");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
+  });
+
+  test("the instruction read is injected through the hook's deps", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps } = fakeDeps();
+    deps.instructions = {
+      read: () => ({
+        kind: "available",
+        source: "/acme/AGENTS.md",
+        text: "ACME-INJECTED",
+        omitted: [],
+        oversized: false,
+      }),
+    };
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(payload.hookSpecificOutput.additionalContext).toBe("ACME-INJECTED");
+  });
+
+  test("input that is not JSON runs no prepare and stays silent", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: null },
+      deps,
+    );
+
+    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
+    expect(order).toEqual([]);
+  });
+
+  test("input that is a JSON array runs no prepare and stays silent", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: [] },
+      deps,
+    );
+
+    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
+    expect(order).toEqual([]);
+  });
+
+  /** A Git fast-forward replaces the companion's files in place, so it must not overlap the read. */
+  test("the sync starts only after the instructions are read", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+    deps.instructions = {
+      read: () => {
+        order.push("read");
+        return {
+          kind: "available",
+          source: "/acme/AGENTS.md",
+          text: "ACME-READ",
+          omitted: [],
+          oversized: false,
+        };
+      },
+    };
+
+    await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
+
+    expect(order).toEqual(["local", "read", "sync"]);
+  });
+
+  test("a sync that fails to start is reported and the instructions still go out", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps } = fakeDeps();
+    deps.startSync = () => {
+      throw new Error("spawn refused");
+    };
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+      systemMessage: string;
+    };
+    expect(outcome.exitCode).toBe(0);
+    expect(payload.systemMessage).toBe("mate: session prepare failed: spawn refused");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
+  });
+
+  test("the instructions are read from the folder the prepare ran in", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "acme-elsewhere-")));
+    tempRoots.push(elsewhere);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook(
+      {
+        env: { CLAUDE_PROJECT_DIR: repo },
+        cwd: elsewhere,
+        argv: [PROJECTED_FLAG],
+        input: { ...sessionStart, cwd: elsewhere },
+      },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(order).toContain("local");
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
+  });
+
+  /** A second prepare would hold the lock and rewrite `AGENTS.md` while the wrap's copy reads it. */
+  test("the plugin's bare copy leaves the prepare and the instructions to the wrap's", async () => {
+    const repo = projectedRepo("claude");
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook(
+      { env: { CLAUDE_PLUGIN_ROOT: "/acme/plugin" }, cwd: repo, argv: [], input: sessionStart },
+      deps,
+    );
+
+    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
+    expect(order).toEqual([]);
+  });
+
+  test("a bare copy from an older wrap delivers in a worktree with no manifest of its own", async () => {
+    const repo = projectedRepo(null);
+    companionOf(repo);
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionStartHook(
+      { env: {}, cwd: repo, argv: [], input: sessionStart },
+      deps,
+    );
+
+    const payload = JSON.parse(outcome.stdout) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(order).toEqual([]);
+    expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
   });
 });

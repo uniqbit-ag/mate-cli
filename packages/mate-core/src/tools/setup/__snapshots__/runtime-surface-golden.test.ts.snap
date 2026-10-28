@@ -5,8 +5,8 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -169,9 +169,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 2`] = `
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -224,8 +222,25 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -236,9 +251,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -331,8 +344,8 @@ exports[`runtime surface golden fixtures setup graphify × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -694,8 +707,8 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -895,9 +908,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 2`] =
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -1004,8 +1015,25 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -1016,9 +1044,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -1346,8 +1372,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -1524,9 +1550,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 2`] = `
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -1591,8 +1615,25 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -1643,9 +1684,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -1756,8 +1795,8 @@ exports[`runtime surface golden fixtures setup tokensave × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -2124,8 +2163,8 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -2330,9 +2369,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 2`] 
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -2448,8 +2485,25 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -2500,9 +2554,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -2865,8 +2917,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -2989,9 +3041,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 2`] = `
     "--plugin-dir",
     "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -3044,8 +3094,25 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -3056,9 +3123,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -3149,8 +3214,8 @@ exports[`runtime surface golden fixtures setup context-mode × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -3492,8 +3557,8 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 1
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -3643,9 +3708,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 2
     "--plugin-dir",
     "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -3741,8 +3804,25 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -3753,9 +3833,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -4082,8 +4160,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -4207,9 +4285,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 2`] = `
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -4262,8 +4338,25 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -4274,9 +4367,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -4367,8 +4458,8 @@ exports[`runtime surface golden fixtures setup react-doctor × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -4701,8 +4792,8 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -4845,9 +4936,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 2
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -4943,8 +5032,25 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -4955,9 +5061,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -5283,8 +5387,8 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -5439,9 +5543,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 2`] = `
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
 }
 `;
 
@@ -5494,8 +5596,25 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -5506,9 +5625,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -5613,8 +5730,8 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -5965,8 +6082,8 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -6156,9 +6273,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 2`] =
     "--plugin-dir",
     "<claude-plugin>",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -6256,8 +6371,25 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -6268,9 +6400,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -6610,8 +6740,8 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -6944,9 +7074,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
     "--plugin-dir",
     "<root>/companion/.mate/plugins/.local/node_modules/context-mode",
   ],
-  "claudeEnv": {
-    "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-  },
+  "claudeEnv": {},
   "opencodeArgs": [
     "<root>/working",
     "--standalone",
@@ -7067,8 +7195,25 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
           {
             "hooks": [
               {
-                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs"",
+                "command": "node "<runtime-claude-plugin>/hooks/session-prepare.mjs" --projected",
                 "timeout": 45,
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SubagentStart",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -7119,9 +7264,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
         "at": [
           "env",
         ],
-        "entries": {
-          "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD": "1",
-        },
+        "entries": {},
         "kind": "map",
         "stripPrefix": "MATE_",
       },
@@ -7509,8 +7652,8 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -7608,8 +7751,8 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -7707,8 +7850,8 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -7807,8 +7950,8 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -7906,8 +8049,8 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.
@@ -8005,8 +8148,8 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
   "agentsMd": 
 "<!-- MATE:COMPANION:START -->
 
-- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to JSDoc.
-- Code comments: JSDoc format only (\`/** ... */\`), never \`//\`. Sparse — only non-obvious invariants or constraints, never restated artifact rationale.
+- When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision. Apply this same preference to comments and JSDoc, not implementation code; retain necessary contract details.
+- Code comments: sparse and concise — explain non-obvious intent, constraints, or workarounds; avoid filler, restating code, or artifact rationale. Use JSDoc for JS/TS API documentation; line or ordinary block comments for local implementation notes, including JSX-supported expression comments. Preserve required documentation, tool directives, legal notices, generated files, and language-appropriate syntax. Do not rewrite unchanged comments or unrelated code for this preference.
 - Never add a \`Co-Authored-By: <model>\` trailer or model-attribution footer to commit messages.
 - Never commit, push, or open a pull request in the working repo (\`$MATE_REPO_PATH\`) unless the user explicitly asks for it.
 - Never connect to a database (local or remote), touch live/external systems (deploys, infra), or take destructive/irreversible actions without asking the user first.

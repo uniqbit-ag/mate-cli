@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { PROJECTED_BANNER_FLAG } from "../../../hooks/session-banner";
 import { getClaudePluginRoot } from "../../../lib/package-paths";
+import { PROJECTED_FLAG } from "../../../runtime/projected-flag";
 import { runtimeClaudePluginRoot } from "../../../runtime/runtime-directory";
 import { hookGroupKey, type ClaudeHookGroup } from "./claude-format";
 
@@ -12,12 +12,11 @@ import { hookGroupKey, type ClaudeHookGroup } from "./claude-format";
  * all, so the working-target settings document has to carry it instead.
  *
  * A managed session loads the Working Repository's settings as its `local`
- * source *alongside* the plugin, so every group carried over runs twice there.
- * All three survive that: the guard, whose verdict is a function of the tool
- * input alone; the guidance hook, which yields nothing when a launch
- * environment is present and so cannot double the prompt the launch already
- * appended; and the banner, whose carried copy is marked so it defers to the
- * launch's.
+ * source *alongside* the plugin, so every group carried over runs twice there;
+ * a plain session may load both too, through `--plugin-dir`. The guard is
+ * input-pure, the guidance hook yields under a launch environment, and the
+ * banner, prepare and SubagentStart instruction copies carried here hold
+ * `PROJECTED_FLAG`, so one copy of each acts.
  *
  * The wiring is read from the installed plugin, but every command names
  * `<mate home>/runtime/claude-plugin`, so a reinstall or Node switch does not
@@ -28,6 +27,7 @@ const GUARD_HOOK_SHIM = "validate-artifact-path.mjs";
 const GUIDANCE_HOOK_SHIM = "session-guidance.mjs";
 const BANNER_HOOK_SHIM = "session-banner.mjs";
 const PREPARE_HOOK_SHIM = "session-prepare.mjs";
+const INSTRUCTIONS_HOOK_SHIM = "companion-instructions.mjs";
 const PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}";
 
 interface PluginHookWiring {
@@ -46,14 +46,21 @@ function readPluginHookWiring(pluginRoot: string): PluginHookWiring {
   return {};
 }
 
-function resolveCommands(group: ClaudeHookGroup, pluginRoot: string): ClaudeHookGroup {
+function mapCommands(
+  group: ClaudeHookGroup,
+  rewrite: (command: string) => string,
+): ClaudeHookGroup {
   return {
     ...group,
     hooks: (group.hooks ?? []).map((hook) => ({
       ...hook,
-      ...(hook.command ? { command: hook.command.split(PLUGIN_ROOT_TOKEN).join(pluginRoot) } : {}),
+      ...(hook.command ? { command: rewrite(hook.command) } : {}),
     })),
   };
+}
+
+function resolveCommands(group: ClaudeHookGroup, pluginRoot: string): ClaudeHookGroup {
+  return mapCommands(group, (command) => command.split(PLUGIN_ROOT_TOKEN).join(pluginRoot));
 }
 
 function runsShim(group: ClaudeHookGroup, shim: string): boolean {
@@ -90,31 +97,43 @@ export function mateGuidanceHookGroups(
 
 /**
  * The banner's `SessionStart` group, resolved the same way and carrying
- * `PROJECTED_BANNER_FLAG`. Without the marker the carried command would be
+ * `PROJECTED_FLAG`. Without the marker the carried command would be
  * byte-identical to the plugin's, and a managed session — which loads both —
  * would print the banner twice.
  */
 export function mateBannerHookGroups(
   commandRoot: string = runtimeClaudePluginRoot(),
 ): ClaudeHookGroup[] {
-  return groupsFor("SessionStart", BANNER_HOOK_SHIM, commandRoot).map((group) => ({
-    ...group,
-    hooks: (group.hooks ?? []).map((hook) => ({
-      ...hook,
-      ...(hook.command ? { command: `${hook.command} ${PROJECTED_BANNER_FLAG}` } : {}),
-    })),
-  }));
+  return withProjectedFlag(groupsFor("SessionStart", BANNER_HOOK_SHIM, commandRoot));
+}
+
+function withProjectedFlag(groups: ClaudeHookGroup[]): ClaudeHookGroup[] {
+  return groups.map((group) => mapCommands(group, (command) => `${command} ${PROJECTED_FLAG}`));
+}
+
+/**
+ * The `SubagentStart` instruction group, resolved the same way and carrying
+ * `PROJECTED_FLAG`: a session that loads both this copy and the plugin's,
+ * through a launch or `--plugin-dir`, would otherwise deliver the instructions
+ * twice.
+ */
+export function mateInstructionHookGroups(
+  commandRoot: string = runtimeClaudePluginRoot(),
+): ClaudeHookGroup[] {
+  return withProjectedFlag(groupsFor("SubagentStart", INSTRUCTIONS_HOOK_SHIM, commandRoot));
 }
 
 /**
  * The session-prepare `SessionStart` group, resolved the same way. Its declared
  * `timeout` sits above the shim's own bound, so Claude Code never kills a
- * prepare the shim has not given up on. Inert under a launch environment.
+ * prepare the shim has not given up on. It carries `PROJECTED_FLAG`: this copy
+ * alone prepares, which it skips under a launch environment, and then delivers
+ * the main thread's instructions; the plugin's copy stays inert.
  */
 export function mateSessionPrepareHookGroups(
   commandRoot: string = runtimeClaudePluginRoot(),
 ): ClaudeHookGroup[] {
-  return groupsFor("SessionStart", PREPARE_HOOK_SHIM, commandRoot);
+  return withProjectedFlag(groupsFor("SessionStart", PREPARE_HOOK_SHIM, commandRoot));
 }
 
 function mateOwnHookGroups(commandRoot: string): ClaudeHookGroup[] {
@@ -123,6 +142,7 @@ function mateOwnHookGroups(commandRoot: string): ClaudeHookGroup[] {
     ...mateGuidanceHookGroups(commandRoot),
     ...mateBannerHookGroups(commandRoot),
     ...mateSessionPrepareHookGroups(commandRoot),
+    ...mateInstructionHookGroups(commandRoot),
   ];
 }
 

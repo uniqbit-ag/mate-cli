@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
+import { companionBlockMarkers } from "../../../runtime/managed-block";
+import { writeAtomicThroughLink } from "../../../runtime/write-atomic";
 import { removeGraphifySection } from "../capabilities/graphify-shared";
 
 // Marker names derive from the framework identity, never the invocation name.
@@ -9,7 +11,7 @@ const upperName = () => FRAMEWORK_NAME.toUpperCase();
 
 function allMateStarts(): string[] {
   return [
-    `<!-- ${upperName()}:COMPANION:START -->`,
+    companionBlockMarkers(FRAMEWORK_NAME).start,
     "<!-- COMPANION:GUIDANCE:START -->",
     `<!-- ${upperName()}:COMPANION:GUIDANCE:START -->`,
     `<!-- ${upperName()}:GRAPHIFY:START -->`,
@@ -18,7 +20,7 @@ function allMateStarts(): string[] {
 
 function allMateEnds(): string[] {
   return [
-    `<!-- ${upperName()}:COMPANION:END -->`,
+    companionBlockMarkers(FRAMEWORK_NAME).end,
     "<!-- COMPANION:GUIDANCE:END -->",
     `<!-- ${upperName()}:COMPANION:GUIDANCE:END -->`,
     `<!-- ${upperName()}:GRAPHIFY:END -->`,
@@ -57,7 +59,7 @@ export async function stripGuidanceBlock(filePath: string): Promise<void> {
 
   content = removeGraphifySection(content);
 
-  await fs.writeFile(filePath, content ? content + "\n" : "", "utf8");
+  await writeAtomicThroughLink(filePath, content ? content + "\n" : "");
 }
 
 /**
@@ -127,5 +129,6 @@ export async function refreshFromTemplate(
   if (normalizedOptions.ensureParentDir) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
   }
-  await fs.writeFile(filePath, result, "utf8");
+  /** A session-start hook may read the file while another session's prepare rewrites it. */
+  await writeAtomicThroughLink(filePath, result);
 }

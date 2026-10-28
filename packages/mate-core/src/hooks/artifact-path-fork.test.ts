@@ -12,7 +12,8 @@ import { COMPANION_SYNC_COMMAND } from "../runtime/companion-sync";
 import { mateVersion } from "../runtime/install";
 import { computeProjectionStamp, writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
-import { evaluate, type HookEnv, type HookOutcome } from "./validate-artifact-path";
+import type { HookEnv } from "./hook-io";
+import { evaluate, type HookOutcome } from "./validate-artifact-path";
 
 const tempRoots: string[] = [];
 const REGISTRY_CONTENT = "companions: []\n";

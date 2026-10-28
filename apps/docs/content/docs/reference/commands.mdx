@@ -51,6 +51,12 @@ Run from a companion or a repository that is not linked, it exits non-zero.
 process has no TTY. It can run before a companion is linked; in that context it
 installs only Mate's core requirements.
 
+`mate doctor` also warns when the companion `CLAUDE.md` holds text besides
+`@AGENTS.md` and Mate-managed blocks. Claude sessions in your repositories receive
+the companion `AGENTS.md`, not that text, so the warning names the file and
+suggests moving shared rules into `AGENTS.md`. The warning appears in the JSON
+output too and does not change the exit status.
+
 ## Comment Guidance
 
 Shared agent guidance prefers sparse, concise comments explaining non-obvious
@@ -141,6 +147,47 @@ access to the companion directory come from the wrap, so each loads once. A
 companion-scoped launch has no wrap, so it passes every plugin folder itself. If the wrap fails, the launch stops before Claude starts
 and names the document that failed.
 
+The companion's own rules, its `AGENTS.md`, reach every Claude session in a
+Working Repository once:
+
+- `mate claude`, plain `claude`, Agent SDK sessions that load local settings
+  (`settingSources` includes `local`, where the wrap lives), such as T3, and
+  linked worktrees that hold the repository's `.mate/` folder all get them from
+  the wrap's `SessionStart` session-prepare hook, after it prepares the session,
+  so they read the companion files the preparation refreshed. The system prompt
+  holds none of them, so a conversation resumed through the other launcher holds
+  one copy, not two. A fresh worktree without
+  `.mate/` gets nothing, and no notice says so. A worktree nested inside the main
+  checkout, as `claude --worktree` creates under `.claude/worktrees/`, uses the
+  main checkout's `.mate/`, so its rules name the main checkout's path. A session
+  that also loads the Mate plugin still gets one copy. The hook also fires after
+  compaction and on resume: a resumed conversation holds one copy while the
+  delivered text is unchanged, since Claude Code collapses identical hook
+  context, and gains a copy each time the text changes, whether in `AGENTS.md` or
+  in the Claude blocks of the companion `CLAUDE.md`. A launch's own
+  `--append-system-prompt` still follows the companion guidance in Mate's single
+  flag instead of replacing it.
+- Subagents get them from a `SubagentStart` hook, except the built-in Explore
+  and Plan agents, which skip project memory, and forks, which inherit the
+  parent's context and so already hold them.
+- A companion-scoped launch loads the companion `CLAUDE.md` and its `@AGENTS.md`
+  import natively, so Mate adds nothing there.
+
+Mate removes the `mate:managed` blocks other runtimes own, adds the Claude blocks
+from the companion `CLAUDE.md`, fills the `$MATE_REPO_PATH`, `$MATE_REPO_ID`,
+`$MATE_ARTIFACT_PATH` and `$MATE_WRAPPER_BIN_PATH` placeholders for the session's
+repository, and drops block-level HTML comments the way Claude Code does: a
+comment that opens a line and is closed later goes, while a `<!--` inside a line
+of prose, inside fenced code, or never closed stays as text. `@` lines stay as
+written. Other text in the companion `CLAUDE.md` is not included. The rules are
+limited to 9,000 characters: a longer `AGENTS.md` keeps the `MATE:COMPANION` block
+whole and as many whole `##` sections as fit, never splitting fenced code or a list item, and ends
+with a line naming the sections left out and the file's path. If the
+`MATE:COMPANION` block leaves no room within the limit for that line, the hooks
+show a message asking to shorten it, and Claude Code may deliver the text as a
+file preview. A missing `AGENTS.md` never stops a session: the session starts
+anyway and shows a notice naming the file.
+
 There is no launch-only mode for Claude any more: every `mate claude` from a
 Working Repository writes the wrap's git-excluded documents and may write the
 repository's entry in `~/.claude.json`. A companion-scoped launch
@@ -207,8 +254,8 @@ after upgrading. If you uninstalled Mate, run `mate unwrap` (or `mate` once afte
 reinstalling).
 
 For Claude it writes `.claude/settings.local.json` regions (the artifact-path
-guard, banner, guidance and session-prepare hooks, every enabled Capability's
-hooks, permissions, the secret-file deny rules while secret guardrails are on, and
+guard, banner, guidance and session-prepare hooks, the
+subagent companion-instructions hook, every enabled Capability's hooks, permissions, the secret-file deny rules while secret guardrails are on, and
 the same disabled features as a managed launch: the `EnterPlanMode` and
 `DesignSync` deny entries and `enableArtifact: false`) and the repository's MCP
 servers into `~/.claude.json`. That file is rewritten only when the servers
@@ -216,6 +263,14 @@ change. An `enableArtifact` value you already set in
 `.claude/settings.local.json` is left as it is. The wrap also places the managed
 `attribution` value, unless one of your Claude settings already sets attribution;
 an `attribution` you set in `.claude/settings.local.json` is left as it is.
+
+Earlier versions also set `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` in the
+`env` block of `.claude/settings.local.json`. Claude Code applies it only to
+directories passed with `--add-dir`, so it never loaded the companion `CLAUDE.md`
+there. The next wrap pass removes the value Mate recorded, even if you had set
+the same value yourself, and keeps one you set after it. If you pass your own
+`--add-dir` in a wrapped repository and relied on Mate's value, set the variable
+in your own settings.
 
 The wrap also links each companion skill folder (`.claude/skills/<name>`) and each
 companion command folder, such as OpenSpec's `.claude/commands/opsx/`, into your

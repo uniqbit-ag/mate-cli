@@ -20,8 +20,7 @@ import { readCompanionRuntimeContext } from "../runtime/env";
 import { companionLinkPath } from "../runtime/repo-local";
 import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
 import { stripHeredocBodies } from "../runtime/shell-heredoc";
-
-export type HookEnv = Record<string, string | undefined>;
+import type { HookEnv } from "./hook-io";
 
 export interface HookOutcome {
   exitCode: number;

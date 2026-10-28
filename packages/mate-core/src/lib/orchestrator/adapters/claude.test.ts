@@ -35,13 +35,18 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-/** A companion that is a real directory holding `settings`. */
-async function companionWith(settings: object) {
+const COMPANION_RULE = "Code comments: JSDoc format only, never `//`.";
+const AGENTS_MD = `<!-- MATE:COMPANION:START -->\n\n- ${COMPANION_RULE}\n\n<!-- MATE:COMPANION:END -->\n`;
+
+async function companionWith(settings: object, options: { agentsMd?: boolean } = {}) {
   const companionPath = await fs.mkdtemp(path.join(os.tmpdir(), "acme-launch-plan-"));
   tempRoots.push(companionPath);
   const settingsPath = path.join(companionPath, ".claude", "settings.local.json");
   await fs.mkdir(path.dirname(settingsPath), { recursive: true });
   await fs.writeFile(settingsPath, JSON.stringify(settings), "utf8");
+  if (options.agentsMd !== false) {
+    await fs.writeFile(path.join(companionPath, "AGENTS.md"), AGENTS_MD, "utf8");
+  }
   return { companionPath, settingsPath };
 }
 
@@ -247,5 +252,165 @@ describe("Capability plugin folders at launch", () => {
       "/acme/plugins/alpha",
     ]);
     expect(args.at(-1)).toBe("--print");
+  });
+});
+
+function flagValue(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  return index === -1 ? undefined : args[index + 1];
+}
+
+/** Claude's options that read values up to the next argument starting with `-`. */
+const VARIADIC = new Set(["--add-dir", "--allowedTools", "--mcp-config", "--tools"]);
+const SINGLE = new Set([
+  "--append-system-prompt",
+  "--setting-sources",
+  "--settings",
+  "--plugin-dir",
+]);
+
+function positionalPrompt(args: string[]): string[] {
+  const positionals: string[] = [];
+  let variadic = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "--") return [...positionals, ...args.slice(index + 1)];
+    if (arg.startsWith("-")) {
+      variadic = VARIADIC.has(arg);
+      if (SINGLE.has(arg)) index += 1;
+    } else if (!variadic) {
+      positionals.push(arg);
+    }
+  }
+  return positionals;
+}
+
+describe("Companion Instructions at launch", () => {
+  async function repoLaunch() {
+    const { companionPath } = await companionWith({});
+    const adapter = new ClaudeAdapter();
+    const launch = await adapter.planLaunch(contextFor(companionPath), prepared());
+    return { adapter, launch, companionPath };
+  }
+
+  /** The wrap's session hook delivers them; a copy in the prompt would double on a resume through plain `claude`. */
+  test.each([[["--print"]], [["--resume"]], [["--continue"]], [["-r", "abc"]]])(
+    "a launch with a repository leaves them to the wrap's session hook and passes no snapshot flag, for %p",
+    async (passthrough) => {
+      const { adapter, launch, companionPath } = await repoLaunch();
+
+      const args = adapter.buildArgs(launch, passthrough);
+
+      const prompt = flagValue(args, "--append-system-prompt")!;
+      expect(prompt).toContain("<companion-policy");
+      expect(prompt).not.toContain("<companion-instructions");
+      expect(prompt).not.toContain(COMPANION_RULE);
+      expect(prompt).not.toContain(path.join(companionPath, "AGENTS.md"));
+      expect(args).not.toContain("--system-prompt-snapshot");
+      expect(args.slice(-passthrough.length)).toEqual(passthrough);
+    },
+  );
+
+  test("a companion-scoped launch appends none either", async () => {
+    const { companionPath } = await companionWith({});
+    const adapter = new ClaudeAdapter();
+    const launch = await adapter.planLaunch(contextFor(companionPath, "companion"), prepared());
+
+    const args = adapter.buildArgs(launch, ["--resume"]);
+
+    expect(flagValue(args, "--append-system-prompt")).not.toContain("<companion-instructions");
+    expect(args).not.toContain("--system-prompt-snapshot");
+  });
+
+  test.each([
+    [["--append-system-prompt", "ACME-OWN-PROMPT", "--print"]],
+    [["--append-system-prompt=ACME-OWN-PROMPT", "--print"]],
+  ])(
+    "the operator's own appended prompt %p follows the policy in Mate's single flag",
+    async (passthrough) => {
+      const { adapter, launch } = await repoLaunch();
+
+      const args = adapter.buildArgs(launch, passthrough);
+
+      expect(args.filter((arg) => arg.startsWith("--append-system-prompt"))).toHaveLength(1);
+      const prompt = flagValue(args, "--append-system-prompt")!;
+      expect(prompt.endsWith("\n\nACME-OWN-PROMPT")).toBe(true);
+      expect(prompt.indexOf("ACME-OWN-PROMPT")).toBeGreaterThan(
+        prompt.indexOf("<companion-policy"),
+      );
+      expect(args.at(-1)).toBe("--print");
+    },
+  );
+
+  test.each([
+    [["--print", "--add-dir", "/tmp/acme-extra", "--append-system-prompt", "ACME", "say hi"]],
+    [["--allowedTools", "Read", "--append-system-prompt=ACME", "say hi"]],
+    [
+      [
+        "--mcp-config",
+        "acme.json",
+        "--append-system-prompt",
+        "A",
+        "--append-system-prompt",
+        "B",
+        "say hi",
+      ],
+    ],
+    [["--resume", "--tools", "Read", "--append-system-prompt", "ACME", "say hi"]],
+  ])(
+    "lifting the operator's appended prompt from %p leaves the initial prompt a prompt",
+    async (passthrough) => {
+      const { adapter, launch } = await repoLaunch();
+
+      const args = adapter.buildArgs(launch, passthrough);
+
+      expect(positionalPrompt(passthrough)).toEqual(["say hi"]);
+      expect(positionalPrompt(args)).toEqual(["say hi"]);
+      expect(args.filter((arg) => arg.startsWith("--append-system-prompt"))).toHaveLength(1);
+      expect(flagValue(args, "--append-system-prompt")).toMatch(/\n\n(ACME|A\n\nB)$/);
+    },
+  );
+
+  test.each([
+    [["--", "--append-system-prompt", "ACME-OWN-PROMPT"]],
+    [["--print", "--append-system-prompt"]],
+  ])(
+    "an appended prompt that is prompt text or lacks its value, %p, stays as passed",
+    async (passthrough) => {
+      const { adapter, launch } = await repoLaunch();
+
+      const args = adapter.buildArgs(launch, passthrough);
+
+      expect(flagValue(args, "--append-system-prompt")).not.toContain("ACME-OWN-PROMPT");
+      expect(args.slice(-passthrough.length)).toEqual(passthrough);
+    },
+  );
+
+  test("a launch with a repository does not read AGENTS.md; the session hook reports a missing one", async () => {
+    const { companionPath } = await companionWith({}, { agentsMd: false });
+
+    const launch = new ClaudeAdapter().planLaunch(contextFor(companionPath), prepared());
+
+    await expect(launch).resolves.toBeDefined();
+  });
+
+  test("a companion-scoped launch does not need AGENTS.md", async () => {
+    const { companionPath } = await companionWith({}, { agentsMd: false });
+
+    const launch = new ClaudeAdapter().planLaunch(
+      contextFor(companionPath, "companion"),
+      prepared(),
+    );
+
+    await expect(launch).resolves.toBeDefined();
+  });
+
+  test("no launch sets the additional-directories memory variable", async () => {
+    const { companionPath } = await companionWith({});
+    const adapter = new ClaudeAdapter();
+    for (const scope of ["repo", "companion"] as const) {
+      const launch = await adapter.planLaunch(contextFor(companionPath, scope), prepared());
+      expect(adapter.extendEnvironment(launch)).toEqual({});
+    }
   });
 });

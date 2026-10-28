@@ -11,7 +11,7 @@ import {
 } from "../../../runtime/claude-delivery-plan";
 import { hookGroupKey, type ClaudeHookGroup } from "../../../runtime/claude-hook-group";
 import { resolveSecretPolicy } from "../../../runtime/policy";
-import type { SessionKind } from "../../../runtime/session-kind";
+import { managedSessionKind } from "../../../runtime/session-kind";
 import { NOT_WRAPPED } from "../../../runtime/wrap-state";
 import { writeAtomic } from "../../../runtime/write-atomic";
 import {
@@ -24,6 +24,7 @@ import { getClaudePluginRoot, validateClaudePluginAssets } from "../../package-p
 import type { PrepareResult } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
 import { type AdapterContext, LaunchAdapter } from "./base";
+import { APPEND_PROMPT_FLAG, liftAppendedPrompts } from "./claude-args";
 
 /** The paths are present only where the plan names that channel and the file exists. */
 interface ClaudeDelivery {
@@ -106,7 +107,7 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
    */
   async planLaunch(context: AdapterContext, prepared: PrepareResult): Promise<ClaudeLaunchContext> {
     const { repository, companionPath } = context;
-    const kind: SessionKind = repository ? "managed-repo" : "managed-companion";
+    const kind = managedSessionKind(Boolean(repository));
     const wrap = prepared.wrapState ?? NOT_WRAPPED;
     if (repository && !wrap.runtimes.has("claude")) {
       throw new LaunchPreflightError(
@@ -150,8 +151,10 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
 
   /**
    * Plan in, flags out; decides nothing. `--append-system-prompt` is
-   * unconditional: no settings document can carry it. `--plugin-dir` passes
-   * the folders `launchPluginFolders` names, from the running install's bundled plugin.
+   * unconditional: no settings document can carry it. It holds the Agent
+   * Guidance alone; the Companion Instructions come from the wrap's session hook.
+   * `--plugin-dir` passes the folders `launchPluginFolders` names, from the
+   * running install's bundled plugin.
    */
   buildArgs(context: ClaudeLaunchContext, args: string[]): string[] {
     const { plan, settingsPath, mcpConfigPath } = context.delivery;
@@ -169,23 +172,23 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
     const mcpConfigArgs =
       plan.mcp === "mcp-config" && mcpConfigPath ? ["--mcp-config", mcpConfigPath] : [];
 
+    const guidance = buildCompanionGuidance({
+      ...context,
+      secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
+    });
+    const { args: passthrough, prompts, boundary } = liftAppendedPrompts(args);
+    const promptArgs = [APPEND_PROMPT_FLAG, [guidance, ...prompts].filter(Boolean).join("\n\n")];
+    const launchArgs = [...settingsArgs, ...mcpConfigArgs, ...pluginDirArgs];
+
+    if (boundary === undefined) {
+      return [...addDirArgs, ...promptArgs, ...launchArgs, ...passthrough];
+    }
     return [
       ...addDirArgs,
-      "--append-system-prompt",
-      buildCompanionGuidance({
-        ...context,
-        secretGuardrails: resolveSecretPolicy(context.companionPath).guardrails,
-      }),
-      ...settingsArgs,
-      ...mcpConfigArgs,
-      ...pluginDirArgs,
-      ...args,
+      ...launchArgs,
+      ...passthrough.slice(0, boundary),
+      ...promptArgs,
+      ...passthrough.slice(boundary),
     ];
-  }
-
-  extendEnvironment(_context: ClaudeLaunchContext): NodeJS.ProcessEnv {
-    return {
-      CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: "1",
-    };
   }
 }

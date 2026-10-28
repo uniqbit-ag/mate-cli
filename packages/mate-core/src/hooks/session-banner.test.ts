@@ -11,7 +11,8 @@ import {
   writeProjectionPair,
 } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
-import { buildBanner, PROJECTED_BANNER_FLAG } from "./session-banner";
+import { PROJECTED_FLAG } from "../runtime/projected-flag";
+import { buildBanner } from "./session-banner";
 
 const tempRoots: string[] = [];
 const REGISTRY_CONTENT = "companions: []\n";
@@ -157,12 +158,12 @@ describe("session-banner hook module", () => {
    * settings, and both register the same resolved command — so the copy the
    * wrap carried is flagged, and defers rather than doubling the banner.
    */
-  describe(`the ${PROJECTED_BANNER_FLAG} copy a wrap carries`, () => {
+  describe(`the ${PROJECTED_FLAG} copy a wrap carries`, () => {
     test("defers to the launch's own copy under a Mate environment", async () => {
       const result = await buildBanner(
         { MATE_REPO_PATH: "/work/acme", MATE_ARTIFACT_PATH: "/companions/acme-companion" },
         "/work/acme",
-        [PROJECTED_BANNER_FLAG],
+        [PROJECTED_FLAG],
       );
 
       expect(result).toEqual({ exitCode: 0, stdout: "" });
@@ -174,7 +175,7 @@ describe("session-banner hook module", () => {
       fs.mkdirSync(companion, { recursive: true });
       wrapRepo(repoRoot, companion, currentStamp());
 
-      const message = bannerMessage(await buildBanner({}, repoRoot, [PROJECTED_BANNER_FLAG]));
+      const message = bannerMessage(await buildBanner({}, repoRoot, [PROJECTED_FLAG]));
 
       expect(message).toContain(repoRoot);
       expect(message).toContain(companion);

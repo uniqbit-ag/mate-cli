@@ -15,6 +15,15 @@ import { refreshRuntimeDirectory } from "../../lib/runtime-directory-refresh";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../../runtime/artifact-refusal";
 import { syncCompanionUnattended } from "../../runtime/companion-sync";
 import { MATE_ENV } from "../../runtime/env-names";
+import { readProjectionFile, writeProjectionPair } from "../../runtime/projection";
+import { repoLocalRegistryPath } from "../../runtime/repo-local";
+import {
+  CLAUDE_SETTINGS_DOCUMENT,
+  documentRegions,
+  readManifest,
+  updateManifest,
+  withDocument,
+} from "../../runtime/runtime-document-manifest";
 import { cleanupWorkingRepository } from "./working-repo-cleanup";
 import type { ClaudeHookGroup, ClaudeSettings } from "./providers/claude-format";
 
@@ -307,7 +316,8 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     const env = ((await readSettings(repoPath)) as { env?: Record<string, string> }).env ?? {};
     expect(Object.keys(env).filter((name) => name.startsWith("MATE_"))).toEqual([]);
     expect(env.ACME_TOKEN).toBe("keep-me");
-    expect(env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBe("1");
+    /** Claude Code ignores it for settings directories; the instruction hooks deliver instead. */
+    expect(env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD).toBeUndefined();
 
     /** The payoff: with the block healed, guidance actually crosses over. */
     const guidance = hookCommands(await readSettings(repoPath), "SessionStart").find((command) =>
@@ -464,5 +474,141 @@ describe("a wrapped Working Repository with an empty Mate environment", () => {
     );
     expect(inert.exitCode).toBe(0);
     expect(inert.stderr).toBe("");
+  }, 20000);
+});
+
+const COMPANION_RULE = "Code comments: JSDoc format only, never `//`.";
+const SENTINEL = "ACME-SENTINEL-41c9";
+
+async function writeCompanionAgentsMd(companionPath: string): Promise<void> {
+  await fs.writeFile(
+    path.join(companionPath, "AGENTS.md"),
+    `<!-- MATE:COMPANION:START -->\n\n- ${COMPANION_RULE}\n\n<!-- MATE:COMPANION:END -->\n\n## Notes\n\n${SENTINEL}\n`,
+    "utf8",
+  );
+}
+
+function instructionsFrom(stdout: string): string {
+  return (JSON.parse(stdout) as { hookSpecificOutput: { additionalContext: string } })
+    .hookSpecificOutput.additionalContext;
+}
+
+function settingsEnv(settings: ClaudeSettings | null): Record<string, string> {
+  return ((settings as { env?: Record<string, string> } | null)?.env ?? {}) as Record<
+    string,
+    string
+  >;
+}
+
+const MEMORY_VARIABLE = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
+
+describe("Companion Instructions in a wrapped Working Repository", () => {
+  test("the wrap-carried commands deliver them with an empty Mate environment", async () => {
+    const fixture = await makeCompanionAndRepo("mate-m3-instructions-", []);
+    await writeCompanionAgentsMd(fixture.companionPath);
+
+    await runWrapCommand(["--companion", fixture.companionPath], fixture.repoPath);
+    const settings = await readSettings(fixture.repoPath);
+
+    /** The prepare delivers the main thread's copy once it is done: an event's hooks run in parallel. */
+    expect(
+      hookCommands(settings, "SessionStart").filter((command) =>
+        command.includes("companion-instructions"),
+      ),
+    ).toEqual([]);
+    const main = hookCommands(settings, "SessionStart").filter((command) =>
+      command.includes("session-prepare"),
+    );
+    expect(main).toHaveLength(1);
+    /** The flag marks the wrap's copy as the owner; the plugin's bare copy never emits here. */
+    expect(main[0]).toEndWith(" --projected");
+    const emitted = runHookCommand(
+      main[0]!,
+      { hook_event_name: "SessionStart", source: "startup" },
+      fixture.repoPath,
+      settingsEnv(settings),
+    );
+    expect(emitted.exitCode).toBe(0);
+    expect(instructionsFrom(emitted.stdout)).toContain(COMPANION_RULE);
+    expect(instructionsFrom(emitted.stdout)).toContain(SENTINEL);
+
+    const subagent = hookCommands(settings, "SubagentStart");
+    expect(subagent).toHaveLength(1);
+    expect(subagent[0]).toEndWith(" --projected");
+    const delegated = runHookCommand(
+      subagent[0]!,
+      { hook_event_name: "SubagentStart", agent_type: "general-purpose" },
+      fixture.repoPath,
+      settingsEnv(settings),
+    );
+    expect(instructionsFrom(delegated.stdout)).toContain(SENTINEL);
+  }, 20000);
+
+  test("a linked worktree with no .claude/ and no manifest gets them from the main checkout's settings", async () => {
+    const fixture = await makeCompanionAndRepo("mate-m3-worktree-instructions-", []);
+    await writeCompanionAgentsMd(fixture.companionPath);
+    await runWrapCommand(["--companion", fixture.companionPath], fixture.repoPath);
+    const git = (...args: string[]) =>
+      spawnSync("git", ["-c", "user.name=acme", "-c", "user.email=acme@example.test", ...args], {
+        cwd: fixture.repoPath,
+        stdio: "ignore",
+      });
+    git("commit", "-q", "--allow-empty", "-m", "init");
+    const worktree = path.join(path.dirname(fixture.repoPath), "worktree");
+    git("worktree", "add", "-q", worktree);
+
+    /** The worktree's own `.mate/` names it, as a share of the repository link would. */
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(worktree)), { recursive: true });
+    await fs.copyFile(repoLocalRegistryPath(fixture.repoPath), repoLocalRegistryPath(worktree));
+    const projected = readProjectionFile(fixture.repoPath)!;
+    writeProjectionPair(worktree, {
+      ...projected,
+      projection: { ...projected.projection, repositoryPath: worktree },
+    });
+    expect(fsSync.existsSync(path.join(worktree, ".claude"))).toBe(false);
+    expect(documentRegions(await readManifest(worktree), CLAUDE_SETTINGS_DOCUMENT)).toBeFalsy();
+
+    /** Claude Code runs the main checkout's settings in a worktree without its own. */
+    const settings = await readSettings(fixture.repoPath);
+    const main = hookCommands(settings, "SessionStart").find((command) =>
+      command.includes("session-prepare"),
+    )!;
+    const emitted = runHookCommand(
+      main,
+      { hook_event_name: "SessionStart", source: "startup", cwd: worktree },
+      worktree,
+      settingsEnv(settings),
+    );
+    expect(instructionsFrom(emitted.stdout)).toContain(SENTINEL);
+  }, 20000);
+
+  test("a re-wrap takes back the memory variable an earlier wrap set, and keeps a user's own", async () => {
+    const fixture = await makeCompanionAndRepo("mate-m3-memory-variable-", []);
+    await runWrapCommand(["--companion", fixture.companionPath], fixture.repoPath);
+
+    /** What an earlier Mate left: the entry in the file, and recorded as its own. */
+    const settingsPath = path.join(fixture.repoPath, ".claude", "settings.local.json");
+    const settings = (await readSettings(fixture.repoPath)) as Record<string, unknown>;
+    settings.env = { ...settingsEnv(settings as ClaudeSettings), [MEMORY_VARIABLE]: "1" };
+    await fs.writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+    await updateManifest(fixture.repoPath, (manifest) =>
+      withDocument(manifest, CLAUDE_SETTINGS_DOCUMENT, [
+        ...(documentRegions(manifest, CLAUDE_SETTINGS_DOCUMENT) ?? []).filter(
+          (region) => region.at.join(".") !== "env",
+        ),
+        { at: ["env"], kind: "map", entries: { [MEMORY_VARIABLE]: "1" }, stripPrefix: "MATE_" },
+      ]),
+    );
+
+    await runWrapCommand(["--companion", fixture.companionPath], fixture.repoPath);
+    const rewrapped = await readSettings(fixture.repoPath);
+    expect(settingsEnv(rewrapped)[MEMORY_VARIABLE]).toBeUndefined();
+    expect("env" in (rewrapped as object)).toBe(false);
+
+    /** Set by the user after Mate stopped writing it: not Mate's to take back. */
+    const own = { ...(rewrapped as object), env: { [MEMORY_VARIABLE]: "1" } };
+    await fs.writeFile(settingsPath, `${JSON.stringify(own, null, 2)}\n`, "utf8");
+    await runWrapCommand(["--companion", fixture.companionPath], fixture.repoPath);
+    expect(settingsEnv(await readSettings(fixture.repoPath))[MEMORY_VARIABLE]).toBe("1");
   }, 20000);
 });
