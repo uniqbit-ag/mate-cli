@@ -25,6 +25,7 @@
   },
   "scripts": {
     "test": "CI=1 bun ../../test/run-isolated.ts ./src ./test ./claude-plugin/tests/companion.test.ts",
+    "test:hooks": "claude plugin validate --strict claude-plugin && claude plugin test claude-plugin",
     "lint": "oxlint src/ test/ claude-plugin/hooks/",
     "lint:fix": "oxlint src/ test/ claude-plugin/hooks/ --fix",
     "format": "oxfmt src/ test/ claude-plugin/",

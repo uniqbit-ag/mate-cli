@@ -13,6 +13,7 @@ import {
   resolveProjection,
 } from "../../../runtime/projection";
 import { readCompanionRuntimeContext } from "../../../runtime/env";
+import { resolveSessionContext } from "../../../runtime/session-context";
 import { companionFrameworkConfigPath, policyDocument } from "../../../runtime/policy";
 import {
   defaultSecretPolicy,
@@ -473,6 +474,23 @@ describe("launch policy document", () => {
         }),
       ]),
     );
+  });
+
+  test("equals what the session context query reports for the same companion", async () => {
+    const companionPath = await companionWith(
+      'allowedAgents:\n  - claude\n  - opencode\nsecrets:\n  deny: ["*.tfstate"]\n',
+    );
+    const context = { ...makeContext(), companionPath };
+    const repoRoot = await makeTempDir("mate-launch-policy-repo-");
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(repoRoot)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(repoRoot), "companions: []\n", "utf8");
+    const repository = { id: "app", path: repoRoot };
+    await project("session", { repoPath: repoRoot, companionPath, repository });
+
+    const query = resolveSessionContext(repoRoot);
+    const launch = await prepareClaudeLaunch(context, []);
+
+    expect(query.ok && query.context.policyJson).toBe(launch.env.MATE_POLICY_JSON!);
   });
 });
 

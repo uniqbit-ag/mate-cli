@@ -20,6 +20,7 @@
     "before:init": [
       "bun run test",
       "bun run --cwd ../../packages/mate-plugin-companion-mentions test",
+      "bun run --cwd ../../packages/mate-plugin-companion-mentions test:hooks",
       "bun run typecheck"
     ],
     "after:bump": [

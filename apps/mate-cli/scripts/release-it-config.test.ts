@@ -298,6 +298,23 @@ describe("stable release-it config", () => {
     );
   });
 
+  test("runs the companion-mentions plugin's hook suites on Claude's test kit in stable releases", async () => {
+    const config = JSON.parse(await fs.readFile(stableReleaseConfigPath, "utf8")) as ReleaseConfig;
+    const pluginPackage = JSON.parse(
+      await fs.readFile(
+        path.join(repoRoot, "packages", "mate-plugin-companion-mentions", "package.json"),
+        "utf8",
+      ),
+    ) as { scripts?: Record<string, string> };
+
+    expect(config.hooks?.["before:init"]).toContain(
+      "bun run --cwd ../../packages/mate-plugin-companion-mentions test:hooks",
+    );
+    expect(pluginPackage.scripts?.["test:hooks"]).toBe(
+      "claude plugin validate --strict claude-plugin && claude plugin test claude-plugin",
+    );
+  });
+
   test("ignores canary tags when selecting the previous release tag", async () => {
     const config = JSON.parse(await fs.readFile(stableReleaseConfigPath, "utf8")) as ReleaseConfig;
     const tagExclude = config.git?.tagExclude;
@@ -498,6 +515,17 @@ describe("sync-release-versions", () => {
       );
     }
 
+    const manifestPath = path.join(
+      workspaceDir,
+      "packages/mate-plugin-companion-mentions/claude-plugin/.claude-plugin/plugin.json",
+    );
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(
+      manifestPath,
+      `${JSON.stringify({ name: "mate-companion-mentions", version: "1.4.0", author: { name: "A" } }, null, 2)}\n`,
+      "utf8",
+    );
+
     const result = spawnSync("bun", [syncScriptPath, workspaceDir], {
       cwd: workspaceDir,
       encoding: "utf8",
@@ -522,6 +550,11 @@ describe("sync-release-versions", () => {
     expect(cli.dependencies["@uniqbit/mate-core"]).toBe("1.5.0-canary.2");
     expect(plugin.version).toBe("1.5.0-canary.2");
     expect(plugin.devDependencies["@uniqbit/mate-core"]).toBe("1.5.0-canary.2");
+    expect(JSON.parse(await fs.readFile(manifestPath, "utf8"))).toEqual({
+      name: "mate-companion-mentions",
+      version: "1.5.0-canary.2",
+      author: { name: "A" },
+    });
 
     // The touched manifests are staged so they land in the release commit.
     const staged = execFileSync("git", ["diff", "--cached", "--name-only"], {
@@ -531,6 +564,9 @@ describe("sync-release-versions", () => {
     expect(staged).toContain("apps/mate-cli/package.json");
     expect(staged).toContain("packages/mate-core/package.json");
     expect(staged).toContain("packages/mate-plugin-companion-mentions/package.json");
+    expect(staged).toContain(
+      "packages/mate-plugin-companion-mentions/claude-plugin/.claude-plugin/plugin.json",
+    );
   });
 });
 

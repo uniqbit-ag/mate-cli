@@ -5,10 +5,8 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Publish order matters: core must exist on the registry before the CLI that
 # pins it, so a partially failed publish never leaves a released @uniqbit/mate
-# referencing an unpublished package version. The companion-mentions plugin is
-# last: nothing published earlier depends on it, so a failure only it can hit,
-# such as a missing trusted publisher, cannot hold back core or the CLI, and a
-# retry completes it. The order must match RELEASE_PACKAGES in
+# referencing an unpublished package version. The plugin goes last so its
+# failure cannot hold back core or the CLI. Must match RELEASE_PACKAGES in
 # apps/mate-container/src/image-pins.ts.
 PACKAGE_NAMES=(
   "@uniqbit/mate-core"

@@ -64,15 +64,10 @@ export function parseSecretsConfig(value: unknown): SecretPolicy {
   };
 }
 
-/**
- * One compiled secret pattern, in a form any JavaScript consumer can evaluate:
- * build `new RegExp(source, flags)` and test it against the subject the rule
- * names. mate's own matching evaluates the same rules, so the two never differ.
- */
+/** Evaluate as `new RegExp(source, flags)` against `subject`; mate matches with the same rules, so consumers never differ. */
 export interface SecretRule {
   /** The pattern as configured, for messages. */
   pattern: string;
-  /** ECMAScript regular expression source. */
   source: string;
   /** Regular expression flags; `i`, since macOS and Windows ignore letter case. */
   flags: string;
@@ -89,18 +84,70 @@ export interface SecretRules {
 
 const compiled = new Map<string, { rule: SecretRule; regExp: RegExp }>();
 
+/** POSIX bracket classes, as gitignore's matcher knows them; letter case is ignored anyway. */
+const POSIX_CLASSES: Readonly<Record<string, string>> = {
+  alnum: "a-z0-9",
+  alpha: "a-z",
+  blank: " \\t",
+  cntrl: "\\x00-\\x1f\\x7f",
+  digit: "0-9",
+  graph: "!-~",
+  lower: "a-z",
+  print: " -~",
+  punct: "!-\\/:-@\\[-`{-~",
+  space: "\\s",
+  upper: "a-z",
+  xdigit: "0-9a-f",
+};
+
+const escapeRegExp = (char: string) => char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Regex source never matching `/`, and the closing `]` index; null when unclosed, so `[` is literal. */
+function bracket(body: string, start: number): { source: string; end: number } | null {
+  let i = start + 1;
+  const negated = body[i] === "!" || body[i] === "^";
+  if (negated) i++;
+  let members = "";
+  for (let first = true; i < body.length; i++, first = false) {
+    const char = body[i];
+    if (char === "]" && !first) {
+      return { source: negated ? `[^/${members}]` : `(?!/)[${members}]`, end: i };
+    }
+    if (char === "[" && body[i + 1] === ":") {
+      const close = body.indexOf(":]", i + 2);
+      const named = close === -1 ? undefined : POSIX_CLASSES[body.slice(i + 2, close)];
+      if (named === undefined) return null;
+      members += named;
+      i = close + 1;
+    } else if (char === "\\" && i + 1 < body.length) {
+      // An escaped `-` is a member, never a range.
+      const escaped = body[++i];
+      members += escaped === "-" ? "\\-" : escapeRegExp(escaped);
+    } else {
+      members += escapeRegExp(char);
+    }
+  }
+  return null;
+}
+
 /**
- * The only secret pattern compiler. Gitignore-style subset: `*` and `?` stay
- * inside a segment, `**` crosses them. Letter case is ignored.
+ * gitignore syntax, case-insensitive. A trailing `/` matches the folder and
+ * everything in it; without one only files match. A leading `!` is literal
+ * (list allowed files under `allow`).
  */
 function compile(pattern: string): { rule: SecretRule; regExp: RegExp } {
   const cached = compiled.get(pattern);
   if (cached) return cached;
   let source = "";
-  const body = pattern.replace(/^\/+/, "");
+  const folder = /[^/]\/+$/.test(pattern);
+  const body = pattern.replace(/^\/+/, "").replace(/\/+$/, "");
   for (let i = 0; i < body.length; i++) {
     const char = body[i];
-    if (char === "*" && body[i + 1] === "*") {
+    const set = char === "[" ? bracket(body, i) : null;
+    if (set) {
+      source += set.source;
+      i = set.end;
+    } else if (char === "*" && body[i + 1] === "*") {
       // `**/` matches zero or more whole segments; a bare `**` matches anything.
       // `[\s\S]`, not `.`, so a name holding a line break is crossed too.
       if (body[i + 2] === "/") {
@@ -114,19 +161,22 @@ function compile(pattern: string): { rule: SecretRule; regExp: RegExp } {
       source += "[^/]*";
     } else if (char === "?") {
       source += "[^/]";
+    } else if (char === "\\" && i + 1 < body.length) {
+      source += escapeRegExp(body[++i]);
     } else {
-      source += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+      source += escapeRegExp(char);
     }
   }
-  // A slash-free pattern matches the file name; one with a slash matches the
-  // trailing segments of the path, since the repository root is not known here.
-  const subject = body.includes("/") ? "path" : "name";
-  const rule: SecretRule = {
-    pattern,
-    source: subject === "path" ? `(?:^|/)${source}$` : `^${source}$`,
-    flags: "i",
-    subject,
-  };
+  // A slash-free pattern matches the file name; one with a slash, or naming a
+  // folder, matches the trailing segments of the path, since the repository
+  // root is not known here.
+  const subject = folder || body.includes("/") ? "path" : "name";
+  let anchored: string;
+  if (body === "") anchored = "(?!)";
+  else if (folder) anchored = `(?:^|/)${source}(?:/[\\s\\S]*)?$`;
+  else if (subject === "path") anchored = `(?:^|/)${source}$`;
+  else anchored = `^${source}$`;
+  const rule: SecretRule = { pattern, source: anchored, flags: "i", subject };
   const entry = { rule, regExp: new RegExp(rule.source, rule.flags) };
   compiled.set(pattern, entry);
   return entry;
@@ -144,12 +194,27 @@ export function secretRules(policy: SecretPolicy): SecretRules {
   };
 }
 
-function normalizePath(filePath: string): string {
-  return filePath.replaceAll("\\", "/").replace(/\/+$/, "");
+export interface SecretPathOptions {
+  /**
+   * Whether `\\` separates folders, as on Windows; elsewhere it is part of a
+   * name, so `public\\server.key` is one file, not `public/server.key`.
+   * Defaults to the platform Mate runs on.
+   */
+  windows?: boolean;
 }
 
-export function matchesSecretPattern(filePath: string, patterns: readonly string[]): boolean {
-  const normalized = normalizePath(filePath);
+const IS_WINDOWS = process.platform === "win32";
+
+function normalizePath(filePath: string, { windows = IS_WINDOWS }: SecretPathOptions): string {
+  return (windows ? filePath.replaceAll("\\", "/") : filePath).replace(/\/+$/, "");
+}
+
+export function matchesSecretPattern(
+  filePath: string,
+  patterns: readonly string[],
+  options: SecretPathOptions = {},
+): boolean {
+  const normalized = normalizePath(filePath, options);
   if (!normalized) return false;
   const name = normalized.slice(normalized.lastIndexOf("/") + 1);
   return patterns.some((pattern) => {
@@ -159,9 +224,14 @@ export function matchesSecretPattern(filePath: string, patterns: readonly string
 }
 
 /** A path is a secret file when it matches a deny pattern and no allow pattern. */
-export function isSecretFile(filePath: string, policy: SecretPolicy): boolean {
+export function isSecretFile(
+  filePath: string,
+  policy: SecretPolicy,
+  options: SecretPathOptions = {},
+): boolean {
   return (
-    matchesSecretPattern(filePath, policy.deny) && !matchesSecretPattern(filePath, policy.allow)
+    matchesSecretPattern(filePath, policy.deny, options) &&
+    !matchesSecretPattern(filePath, policy.allow, options)
   );
 }
 
@@ -191,18 +261,78 @@ export function projectableSecretDenyPatterns(): string[] {
 /** Ordinary files a broad glob also matches; a glob matching one is not aimed at secrets. */
 const ORDINARY_SAMPLES = ["index.ts", "README.md", "config.json"];
 
+/** Most alternatives a search glob's `{a,b}` groups are expanded to. */
+const BRACE_LIMIT = 64;
+
+/** A glob's `{a,b}` alternatives, as ripgrep expands them; the glob itself past {@link BRACE_LIMIT}. */
+function braceAlternatives(glob: string): string[] {
+  let depth = 0;
+  let open = -1;
+  const commas: number[] = [];
+  for (let i = 0; i < glob.length; i++) {
+    const char = glob[i];
+    if (char === "\\") i++;
+    else if (char === "{" && depth++ === 0) open = i;
+    else if (char === "," && depth === 1) commas.push(i);
+    else if (char === "}" && depth > 0 && --depth === 0) {
+      if (commas.length === 0) {
+        open = -1;
+        continue;
+      }
+      const cuts = [open, ...commas, i];
+      const before = glob.slice(0, open);
+      const after = glob.slice(i + 1);
+      const expanded = cuts
+        .slice(1)
+        .flatMap((cut, k) => braceAlternatives(before + glob.slice(cuts[k] + 1, cut) + after));
+      return expanded.length > BRACE_LIMIT ? [glob] : expanded;
+    }
+  }
+  return [glob];
+}
+
+/** A file name a glob or pattern matches: each wildcard filled with `x`, a set with its first member. */
+function sampleName(glob: string): string {
+  let sample = "";
+  for (let i = 0; i < glob.length; i++) {
+    const char = glob[i];
+    const set = char === "[" ? bracket(glob, i) : null;
+    if (set) {
+      const negated = glob[i + 1] === "!" || glob[i + 1] === "^";
+      const first = glob[i + (negated ? 2 : 1)];
+      sample += negated || first === "[" || first === "\\" ? "x" : first;
+      i = set.end;
+    } else if (char === "*" || char === "?") {
+      while (glob[i + 1] === "*") i++;
+      sample += "x";
+    } else if (char === "\\" && i + 1 < glob.length) {
+      sample += glob[++i];
+    } else {
+      sample += char;
+    }
+  }
+  return sample;
+}
+
 /**
- * Whether a search glob is aimed at secret files: it matches a sample name of
- * some deny pattern that the policy still treats as secret, and no ordinary
- * file. `.env*` and `*.key` are; `**\/*` and `*.ts` are not. A heuristic for
- * search tools, which take a glob rather than a path.
+ * Heuristic for search tools. An `{a,b}` alternative is aimed at secrets when
+ * it matches no ordinary file and, wildcards filled in, names a secret file or
+ * matches a deny pattern's sample name. `**\/*`, `*.ts` and `!` exclusions are not.
  */
 export function globTargetsSecretFiles(glob: string, policy: SecretPolicy): boolean {
   const pattern = glob.trim();
-  if (!pattern) return false;
-  if (ORDINARY_SAMPLES.some((sample) => matchesSecretPattern(sample, [pattern]))) return false;
-  return policy.deny.some((deny) => {
-    const sample = deny.slice(deny.lastIndexOf("/") + 1).replace(/[*?]+/g, "x");
-    return isSecretFile(sample, policy) && matchesSecretPattern(sample, [pattern]);
+  if (!pattern || pattern.startsWith("!")) return false;
+  return braceAlternatives(pattern).some((alternative) => {
+    if (ORDINARY_SAMPLES.some((sample) => matchesSecretPattern(sample, [alternative]))) {
+      return false;
+    }
+    if (isSecretFile(sampleName(alternative), policy)) return true;
+    return policy.deny.some((deny) => {
+      const trimmed = deny.replace(/\/+$/, "");
+      const sample = sampleName(trimmed.slice(trimmed.lastIndexOf("/") + 1));
+      return (
+        sample !== "" && isSecretFile(sample, policy) && matchesSecretPattern(sample, [alternative])
+      );
+    });
   });
 }

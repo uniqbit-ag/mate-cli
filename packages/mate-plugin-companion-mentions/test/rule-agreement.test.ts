@@ -3,7 +3,11 @@
  * to one answer. mate-core is imported here, in tests only: the mod itself
  * never imports it.
  */
-import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   DEFAULT_SECRET_ALLOW_PATTERNS,
@@ -11,13 +15,18 @@ import {
   defaultSecretPolicy,
   isSecretFile,
   parseSecretsConfig,
+  companionFrameworkConfigPath,
   policyDocument,
+  repoLocalRegistryPath,
+  resolveSessionContext,
   secretRule,
   secretRules,
+  sessionContextReply,
+  writeProjectionPair,
   type SecretPolicy,
 } from "@uniqbit/mate-core/runtime";
 
-import { parsePolicy, secretMatch } from "../claude-plugin/hooks/companion.ts";
+import { parseContext, parsePolicy, secretMatch } from "../claude-plugin/hooks/companion.ts";
 import { DEFAULT_ALLOW, DEFAULT_DENY, RULES, policyJson } from "../claude-plugin/tests/policy.ts";
 
 const policies: [string, SecretPolicy][] = [
@@ -38,6 +47,7 @@ const paths = [
   "notes/.ENV",
   "notes\\.env",
   "notes\\sub\\.env.local",
+  "secrets\\token.txt",
   ".env.example",
   ".ENV.EXAMPLE",
   ".env.test",
@@ -67,8 +77,9 @@ describe("the mod and mate agree on secret files", () => {
       const parsed = parsePolicy(policyDocument({ allowedAgents: ["claude"], secrets: policy }));
       if ("error" in parsed) throw new Error(parsed.error);
       for (const path of paths) {
+        // The mod is handed `/`-separated paths, in which a `\\` is part of a name.
         const mod = secretMatch(parsed.policy, path) !== undefined;
-        const mate = policy.guardrails && isSecretFile(path, policy);
+        const mate = policy.guardrails && isSecretFile(path, policy, { windows: false });
         expect({ path, secret: mod }).toEqual({ path, secret: mate });
       }
     });
@@ -93,5 +104,75 @@ describe("the hook suites' policy fixture", () => {
       allowedAgents: ["claude"],
       secrets: secretRules(policy),
     });
+  });
+});
+
+const tempRoots: string[] = [];
+afterEach(() => {
+  for (const dir of tempRoots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+/** A wrapped repository whose companion's `framework.yaml` holds `config`. */
+function wrappedRepo(config: string): { repoRoot: string; companionPath: string } {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mentions-context-")));
+  tempRoots.push(root);
+  const repoRoot = path.join(root, "acme-app");
+  const companionPath = path.join(root, "acme");
+  fs.mkdirSync(path.dirname(companionFrameworkConfigPath(companionPath)), { recursive: true });
+  fs.writeFileSync(companionFrameworkConfigPath(companionPath), config, "utf8");
+  fs.mkdirSync(path.dirname(repoLocalRegistryPath(repoRoot)), { recursive: true });
+  fs.writeFileSync(repoLocalRegistryPath(repoRoot), "companions: []\n", "utf8");
+  writeProjectionPair(repoRoot, {
+    stamp: "stamp",
+    projection: {
+      version: "0.0.0",
+      companionPath,
+      repositoryPath: repoRoot,
+      repositoryId: "acme-app",
+      wrapperBinPath: "/w",
+      reactDoctorBinPath: "/r",
+      graphifyOut: "/g",
+    },
+  });
+  return { repoRoot, companionPath };
+}
+
+describe("the mod reads what mate session context prints", () => {
+  const configs: [string, string, SecretPolicy][] = [
+    ["the defaults", "allowedAgents: [claude]\n", defaultSecretPolicy()],
+    [
+      "companion patterns",
+      'secrets:\n  deny: ["*.tfstate", "/secrets/**"]\n  allow: [".env.test"]\n',
+      parseSecretsConfig({ deny: ["*.tfstate", "/secrets/**"], allow: [".env.test"] }),
+    ],
+    [
+      "guardrails off",
+      "secrets:\n  guardrails: false\n",
+      parseSecretsConfig({ guardrails: false }),
+    ],
+  ];
+
+  for (const [label, config, policy] of configs) {
+    test(`under ${label}`, () => {
+      const { repoRoot, companionPath } = wrappedRepo(config);
+      const printed = JSON.stringify(sessionContextReply(resolveSessionContext(repoRoot)));
+
+      const context = parseContext(printed);
+      if ("reason" in context) throw new Error(context.reason);
+      expect(context.root).toBe(companionPath);
+      for (const file of paths) {
+        const mod = secretMatch(context.policy, file) !== undefined;
+        const mate = policy.guardrails && isSecretFile(file, policy);
+        expect({ file, secret: mod }).toEqual({ file, secret: mate });
+      }
+    });
+  }
+
+  test("reads a refusal mate prints as no companion", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mentions-context-bare-"));
+    tempRoots.push(dir);
+    const printed = JSON.stringify(sessionContextReply(resolveSessionContext(dir)));
+    const context = parseContext(printed);
+    expect("reason" in context && context.reason).toContain("no mate companion");
   });
 });

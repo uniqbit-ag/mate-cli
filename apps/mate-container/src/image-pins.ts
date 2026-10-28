@@ -13,9 +13,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * Publish order: core precedes the CLI that pins it; the plugin, which nothing
- * published earlier depends on, comes last. `image` marks a package the image
- * locks must pin; a publish-only package is packed and published without one.
+ * Publish order: core before the CLI that pins it; the plugin, which nothing
+ * depends on, last. `image`: the image locks must pin the package.
  */
 export const RELEASE_PACKAGES = [
   { name: "@uniqbit/mate-core", dir: "packages/mate-core", image: true },

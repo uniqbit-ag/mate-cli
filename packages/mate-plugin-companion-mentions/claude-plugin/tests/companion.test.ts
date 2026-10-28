@@ -6,6 +6,9 @@ import {
   isAbsolute,
   isInside,
   joinPath,
+  launcherFolder,
+  launcherPath,
+  parseContext,
   parseMention,
   parsePolicy,
   queryOf,
@@ -15,9 +18,8 @@ import {
   secretMatch,
   toEntries,
 } from "../hooks/companion.ts";
-import { RULES, policyJson, type PolicyOptions } from "./policy.ts";
+import { RULES, contextReply, policyJson, type PolicyOptions } from "./policy.ts";
 
-/** The policy mate would hand over with `options`, parsed. */
 function policyOf(options: PolicyOptions = {}): SecretPolicy {
   const parsed = parsePolicy(policyJson(options));
   if ("error" in parsed) throw new Error(parsed.error);
@@ -303,6 +305,13 @@ describe("secret files", () => {
   test("count for nothing with guardrails off", () => {
     expect(secretMatch(policyOf({ guardrails: false }), ".env")).toBeUndefined();
   });
+
+  test("read a backslash as part of a name, as mate does outside Windows", () => {
+    const allowed = policyOf({ allow: ["secrets/**"] });
+    expect(secretMatch(allowed, "secrets\\server.key")).toBe("*.key");
+    expect(secretMatch(allowed, "secrets/server.key")).toBeUndefined();
+    expect(secretMatch(defaults, "notes\\.env")).toBeUndefined();
+  });
 });
 
 describe("paths", () => {
@@ -320,6 +329,12 @@ describe("paths", () => {
       "Notes/A.md",
     );
     expect(relativeInside("/c-old/a.md", "/c")).toBeUndefined();
+  });
+
+  test("keep a backslash as part of a name under a companion that is no Windows path", () => {
+    expect(relativeInside("/c/public\\server.key", "/c")).toBe("public\\server.key");
+    expect(relativeInside("/c\\x/a.md", "/c")).toBeUndefined();
+    expect(relativeInside("\\\\server\\share\\c\\a.md", "\\\\server\\share\\c")).toBe("a.md");
   });
 
   test("take a drive's root as a companion", () => {
@@ -361,5 +376,100 @@ describe("folder notes", () => {
     expect(folderNote("@mate:x", "/c/x", [], 2)).toBe(
       "@mate:x is the folder /c/x in the mate companion repo. It is empty.",
     );
+  });
+});
+
+describe("mate's launcher", () => {
+  test("is in the Mate home, not on PATH", () => {
+    expect(launcherPath("/home/me")).toBe("/home/me/.mate/runtime/bin/mate");
+    expect(launcherPath("/home/me/")).toBe("/home/me/.mate/runtime/bin/mate");
+  });
+
+  test("is mate.cmd for a Windows home", () => {
+    expect(launcherPath("C:\\Users\\me")).toBe("C:\\Users\\me\\.mate\\runtime\\bin\\mate.cmd");
+  });
+
+  test("runs from its own folder, which no repository controls", () => {
+    expect(launcherFolder("/home/me")).toBe("/home/me/.mate/runtime/bin");
+    expect(launcherFolder("C:\\Users\\me")).toBe("C:\\Users\\me\\.mate\\runtime\\bin");
+  });
+});
+
+describe("mate's session context answer", () => {
+  test("gives the companion and its policy", () => {
+    const parsed = parseContext(contextReply("/companions/acme", { deny: ["*.tfstate"] }));
+    expect("root" in parsed && parsed.root).toBe("/companions/acme");
+    expect("policy" in parsed && secretMatch(parsed.policy, "infra/acme.tfstate")).toBe(
+      "*.tfstate",
+    );
+    expect("policyJson" in parsed && parsed.policyJson).toBe(policyJson({ deny: ["*.tfstate"] }));
+  });
+
+  test("tolerates surrounding whitespace", () => {
+    expect(parseContext(`\n${contextReply("/c")}\n`)).toHaveProperty("root", "/c");
+  });
+
+  const reply = (value: unknown) => JSON.stringify(value);
+  const failures: [string, string, string][] = [
+    ["no JSON, as from a mate without the command", "", "has no `session context` command"],
+    ["a JSON value that is no object", "[1]", "no reply object"],
+    ["an unknown protocol", reply({ protocol: 2, companionPath: "/c" }), "protocol 2"],
+    ["no protocol", reply({ companionPath: "/c", policyJson: policyJson() }), "protocol undefined"],
+    [
+      "not-wrapped",
+      reply({ protocol: 1, error: { code: "not-wrapped", message: "x" } }),
+      "no mate companion",
+    ],
+    [
+      "companion-missing",
+      reply({ protocol: 1, error: { code: "companion-missing", message: "x" } }),
+      "`mate doctor`",
+    ],
+    [
+      "companion-not-registered",
+      reply({
+        protocol: 1,
+        error: { code: "companion-not-registered", message: "/c is not registered." },
+      }),
+      "mate refused the companion (companion-not-registered: /c is not registered)",
+    ],
+    [
+      "repository-not-linked",
+      reply({ protocol: 1, error: { code: "repository-not-linked", message: "no link" } }),
+      "mate refused the companion (repository-not-linked: no link)",
+    ],
+    [
+      "another error code",
+      reply({ protocol: 1, error: { code: "usage", message: "bad" } }),
+      "failed (usage: bad)",
+    ],
+    [
+      "a relative companion",
+      reply({ protocol: 1, companionPath: "c", policyJson: policyJson() }),
+      "no absolute companion",
+    ],
+    ["no policy", reply({ protocol: 1, companionPath: "/c" }), "policyJson is not set"],
+    [
+      "a policy without secret rules",
+      reply({ protocol: 1, companionPath: "/c", policyJson: '{"allowedAgents":[]}' }),
+      "holds no secret policy",
+    ],
+  ];
+  for (const [name, stdout, cause] of failures) {
+    test(`fails for ${name}`, () => {
+      const parsed = parseContext(stdout);
+      expect("reason" in parsed && parsed.reason).toContain(cause);
+    });
+  }
+
+  test("names a matching mate version when the policy is unknown", () => {
+    for (const stdout of [
+      "",
+      reply({ protocol: 2 }),
+      reply({ protocol: 1, companionPath: "/c" }),
+    ]) {
+      const parsed = parseContext(stdout);
+      expect("reason" in parsed && parsed.reason).toContain("mate version");
+    }
   });
 });

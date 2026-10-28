@@ -1,5 +1,6 @@
 {
   "name": "mate-companion-mentions",
+  "version": "0.18.5",
   "description": "@mate:<path> mentions: find and attach files from the mate companion repo in the @ menu.",
   "author": {
     "name": "Kevin Tornquist"

@@ -128,6 +128,16 @@ export {
   type RepoLocalRegistryFile,
 } from "./repo-local";
 export {
+  SESSION_CONTEXT_PROTOCOL,
+  resolveSessionContext,
+  sessionContextFailure,
+  sessionContextReply,
+  type SessionContext,
+  type SessionContextError,
+  type SessionContextErrorCode,
+  type SessionContextResult,
+} from "./session-context";
+export {
   DEFAULT_SECRET_ALLOW_PATTERNS,
   DEFAULT_SECRET_DENY_PATTERNS,
   defaultSecretPolicy,

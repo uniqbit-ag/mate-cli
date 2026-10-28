@@ -1,6 +1,5 @@
 // Pure helpers for `@mate:` mentions: no `$`, so tests import them directly.
 
-/** What a companion mention starts with, after the `@`. */
 export const PREFIX = "mate:";
 
 /** One file or folder of the companion repo, relative to its root and `/`-separated; a folder's ends in `/`. */
@@ -18,19 +17,16 @@ export type Child = { name: string; isDir: boolean };
  */
 const MANAGED = [".mate/", ".opencode/", ".claude/", ".agents/", ".graphify/"];
 
-/** What a drive path starts with: `C:`. */
 const DRIVE = /^[a-zA-Z]:/;
 
-/** The last part of a path, without a trailing separator. */
 export function baseName(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, "");
   return trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1);
 }
 
-/** One rule of the secret policy, compiled: tested against a file's name or its path. */
 type SecretRule = { pattern: string; regExp: RegExp; subject: "name" | "path" };
 
-/** The companion's secret policy, as mate hands it over in `$MATE_POLICY_JSON`. */
+/** The companion's secret policy, as mate hands it over in its policy document. */
 export type SecretPolicy = {
   guardrails: boolean;
   deny: readonly SecretRule[];
@@ -45,8 +41,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const STATELESS_FLAGS = /^[imsuv]*$/;
 
 /** A `deny` or `allow` list of mate's compiled rules, or why it is unusable. */
-function rulesOf(value: unknown, list: "deny" | "allow"): SecretRule[] | string {
-  if (!Array.isArray(value)) return `$MATE_POLICY_JSON's secret policy has no ${list} list`;
+function rulesOf(value: unknown, list: "deny" | "allow", subject: string): SecretRule[] | string {
+  if (!Array.isArray(value)) return `${subject}'s secret policy has no ${list} list`;
   const rules: SecretRule[] = [];
   for (const rule of value) {
     if (
@@ -57,7 +53,7 @@ function rulesOf(value: unknown, list: "deny" | "allow"): SecretRule[] | string 
       !STATELESS_FLAGS.test(rule.flags) ||
       (rule.subject !== "name" && rule.subject !== "path")
     ) {
-      return `$MATE_POLICY_JSON holds a malformed ${list} rule`;
+      return `${subject} holds a malformed ${list} rule`;
     }
     try {
       rules.push({
@@ -66,47 +62,124 @@ function rulesOf(value: unknown, list: "deny" | "allow"): SecretRule[] | string 
         subject: rule.subject,
       });
     } catch {
-      return `$MATE_POLICY_JSON's ${list} rule for \`${rule.pattern}\` does not compile`;
+      return `${subject}'s ${list} rule for \`${rule.pattern}\` does not compile`;
     }
   }
   return rules;
 }
 
 /**
- * The secret policy in a `$MATE_POLICY_JSON` value, or why there is none:
- * unset, not JSON, no `secrets` object, or a rule that is malformed or does
- * not compile. mate compiles the rules; this only evaluates them.
+ * mate compiles the rules; this only evaluates them. `subject` names the
+ * document's source, for errors.
  */
 export function parsePolicy(
   json: string | undefined,
+  subject = "$MATE_POLICY_JSON",
 ): { policy: SecretPolicy } | { error: string } {
-  if (!json) return { error: "$MATE_POLICY_JSON is not set" };
+  if (!json) return { error: `${subject} is not set` };
   let document: unknown;
   try {
     document = JSON.parse(json);
   } catch {
-    return { error: "$MATE_POLICY_JSON is not JSON" };
+    return { error: `${subject} is not JSON` };
   }
   const secrets = isRecord(document) ? document.secrets : undefined;
-  if (!isRecord(secrets)) return { error: "$MATE_POLICY_JSON holds no secret policy" };
+  if (!isRecord(secrets)) return { error: `${subject} holds no secret policy` };
   if (typeof secrets.guardrails !== "boolean") {
-    return { error: "$MATE_POLICY_JSON's secret policy has no guardrails setting" };
+    return { error: `${subject}'s secret policy has no guardrails setting` };
   }
-  const deny = rulesOf(secrets.deny, "deny");
+  const deny = rulesOf(secrets.deny, "deny", subject);
   if (typeof deny === "string") return { error: deny };
-  const allow = rulesOf(secrets.allow, "allow");
+  const allow = rulesOf(secrets.allow, "allow", subject);
   if (typeof allow === "string") return { error: allow };
   return { policy: { guardrails: secrets.guardrails, deny, allow } };
 }
 
+const CONTEXT_PROTOCOL = 1;
+
+/** Why a session has no companion, after "was not attached: ". */
+export const NO_COMPANION =
+  "this session has no mate companion. `mate doctor` shows how this repository is linked";
+
+/** What every reason that leaves the secret policy unknown ends with. */
+export const UPDATE_MATE =
+  "so mate's secret policy is unknown. A mate version that matches the mate-companion-mentions plugin fixes this";
+
+/** A session's companion and its secret policy, always from one source. */
+export type SessionContext = { root: string; policyJson: string; policy: SecretPolicy };
+
+/** Why a session has no usable context, worded to follow "was not attached: ". */
+export type ContextFailure = { reason: string };
+
+/**
+ * Not `PATH`, so a GUI-started Claude finds it and a repository cannot put
+ * another `mate` first.
+ */
+export function launcherPath(home: string): string {
+  return DRIVE.test(home)
+    ? `${home.replace(/[\\/]+$/, "")}\\.mate\\runtime\\bin\\mate.cmd`
+    : joinPath(home, ".mate/runtime/bin/mate");
+}
+
+/**
+ * The launcher runs from its own folder: Bun reads `bunfig.toml` from its
+ * working directory, so a cloned repository's `preload` could forge its answer.
+ */
+export function launcherFolder(home: string): string {
+  const launcher = launcherPath(home);
+  return launcher.slice(0, Math.max(launcher.lastIndexOf("/"), launcher.lastIndexOf("\\")));
+}
+
+/**
+ * Reads `mate session context --json`. Anything but protocol 1 with an
+ * absolute companion and a parsable policy fails closed. A mate without the
+ * command prints no JSON.
+ */
+export function parseContext(stdout: string): SessionContext | ContextFailure {
+  let reply: unknown;
+  try {
+    reply = JSON.parse(stdout.trim());
+  } catch {
+    return { reason: `the installed mate has no \`session context\` command, ${UPDATE_MATE}` };
+  }
+  if (!isRecord(reply)) {
+    return { reason: `\`mate session context\` printed no reply object, ${UPDATE_MATE}` };
+  }
+  if (reply.protocol !== CONTEXT_PROTOCOL) {
+    return {
+      reason: `\`mate session context\` answered protocol ${JSON.stringify(reply.protocol)}, which this plugin does not know, ${UPDATE_MATE}`,
+    };
+  }
+  if (isRecord(reply.error)) {
+    const { code, message } = reply.error;
+    if (code === "not-wrapped" || code === "companion-missing") return { reason: NO_COMPANION };
+    const detail = typeof message === "string" ? `: ${message.replace(/\.$/, "")}` : "";
+    return {
+      reason:
+        code === "companion-not-registered" || code === "repository-not-linked"
+          ? `mate refused the companion (${code}${detail})`
+          : `\`mate session context\` failed (${String(code)}${detail})`,
+    };
+  }
+  const root = reply.companionPath;
+  if (typeof root !== "string" || !isAbsolute(root)) {
+    return { reason: `\`mate session context\` named no absolute companion path, ${UPDATE_MATE}` };
+  }
+  const policyJson = typeof reply.policyJson === "string" ? reply.policyJson : undefined;
+  const parsed = parsePolicy(policyJson, "`mate session context`'s policyJson");
+  if ("error" in parsed) return { reason: `${parsed.error}, ${UPDATE_MATE}` };
+  return { root, policyJson: policyJson!, policy: parsed.policy };
+}
+
 /**
  * The deny pattern a companion-relative path matches (`.env.*`) when no allow
- * rule does, or undefined; always undefined with guardrails off. Paths are
- * read as mate reads them: `\` as `/`, trailing slashes trimmed.
+ * rule does, or undefined; always undefined with guardrails off. `rel` is
+ * `/`-separated, as {@link relativeInside} and git give it, so a `\` in it is
+ * part of a name, as mate reads it outside Windows; trailing slashes are trimmed.
  */
 export function secretMatch(policy: SecretPolicy, rel: string): string | undefined {
   if (!policy.guardrails) return undefined;
-  const path = slashed(rel);
+  const path = rel.replace(/\/+$/, "");
   if (path === "") return undefined;
   const name = path.slice(path.lastIndexOf("/") + 1);
   const matches = (rule: SecretRule) => rule.regExp.test(rule.subject === "name" ? name : path);
@@ -203,7 +276,6 @@ function score(rel: string, query: string): number {
   return -1;
 }
 
-/** The best matches in `pool`: by score, then folders first, then shorter paths. */
 function search(pool: readonly Entry[], query: string, limit: number): Entry[] {
   const scored: { entry: Entry; score: number }[] = [];
   for (const entry of pool) {
@@ -240,20 +312,10 @@ function childrenOf(inside: readonly Entry[], folder: string, rest: string): Ent
 }
 
 /**
- * The entries to offer for a query, best first, at most `limit`.
- *
- * - After `@mate:`, a query whose folder part names a folder (`openspec/`,
- *   `openspec/ch`, or none for the top) lists what is directly in it whose
- *   name holds the rest: exact names, then prefixes, then the others; folders
- *   first, then by name. When nothing there matches, its whole tree is searched.
- * - Any other `@mate:` query searches every path: exact name, name prefix,
- *   name part, path part, then letters in order; on a tie folders first, then
- *   shorter paths.
- * - After a bare `@`, where the engine's own rows lead, only names holding
- *   the query count, and an empty query offers nothing.
- *
- * mate's own folders (`.mate/`, `.claude/`, ...) are searched only for a
- * query starting with `.`, and listed last.
+ * The entries to offer for a query, best first, at most `limit`. An `@mate:`
+ * query naming a folder (`openspec/ch`) lists its direct children, falling back
+ * to its whole tree; a bare `@` matches names only, since the engine's own rows
+ * lead.
  */
 export function rank(
   entries: readonly Entry[],
@@ -318,9 +380,14 @@ export function joinPath(root: string, rel: string): string {
   return rel === "" ? root : root.replace(/[\\/]+$/, "") + "/" + rel;
 }
 
-/** `\` as `/`, trailing slashes trimmed. */
-function slashed(path: string): string {
-  return path.replaceAll("\\", "/").replace(/\/+$/, "");
+/** A drive (`C:\x`) or share (`\\server\x`) path, where `\` separates folders. */
+function isWindowsPath(path: string): boolean {
+  return DRIVE.test(path) || path.startsWith("\\\\");
+}
+
+/** `\` as `/` when `windows` (elsewhere it is part of a name), trailing slashes trimmed. */
+function slashed(path: string, windows: boolean): string {
+  return (windows ? path.replaceAll("\\", "/") : path).replace(/\/+$/, "");
 }
 
 /** How a path compares: Windows-style paths (`C:/x`, or the drive `C:` itself) ignore letter case. */
@@ -330,16 +397,17 @@ function compareKey(path: string): string {
 
 /**
  * `path` relative to `root`, `/`-separated (`''` for `root` itself), or
- * undefined when it is outside `root`.
+ * undefined when it is outside `root`. `\` separates folders only under a
+ * Windows `root`.
  */
 export function relativeInside(path: string, root: string): string | undefined {
-  const p = slashed(path);
-  const r = slashed(root);
+  const windows = isWindowsPath(root);
+  const p = slashed(path, windows);
+  const r = slashed(root, windows);
   if (compareKey(p) === compareKey(r)) return "";
   return compareKey(p).startsWith(`${compareKey(r)}/`) ? p.slice(r.length + 1) : undefined;
 }
 
-/** Whether `path` is `root` or inside it. */
 export function isInside(path: string, root: string): boolean {
   return relativeInside(path, root) !== undefined;
 }

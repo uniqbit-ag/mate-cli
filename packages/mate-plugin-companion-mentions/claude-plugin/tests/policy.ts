@@ -1,6 +1,5 @@
-// The launch policy mate hands the mod in $MATE_POLICY_JSON, for the tests.
-// The rules are mate's own compiled form; test/rule-agreement.test.ts checks
-// them against mate-core, so they cannot drift from what mate sends.
+// mate's compiled rules; test/rule-agreement.test.ts checks them against
+// mate-core, so they cannot drift from what mate sends.
 
 export type FixtureRule = {
   pattern: string;
@@ -69,5 +68,16 @@ export function policyJson({
       deny: rules([...DEFAULT_DENY, ...deny]),
       allow: rules([...DEFAULT_ALLOW, ...allow]),
     },
+  });
+}
+
+/** What `mate session context --json` prints for a companion at `root`, as mate writes it. */
+export function contextReply(root: string, options: PolicyOptions = {}): string {
+  return JSON.stringify({
+    protocol: 1,
+    companionPath: root,
+    repositoryPath: "/work/app",
+    repositoryId: "app",
+    policyJson: policyJson(options),
   });
 }

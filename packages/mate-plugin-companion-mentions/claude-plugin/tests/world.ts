@@ -1,6 +1,5 @@
-// A fake machine for the hook tests: a disk with links, git, the session and
-// the engine's own mention read. Tests use paths of their own, so none depends
-// on what the mod kept from another.
+// A fake machine for the hook tests. Tests use paths of their own, so none
+// depends on what the mod kept from another.
 
 import { mock } from "claude-code/testing";
 import type { FsEntry, On, PromptMentionResult } from "claude-code";
@@ -30,10 +29,34 @@ export type Git =
   | { exitCode: number }
   | "throw";
 
+/**
+ * What `mate session context` does: print `stdout` and exit (0 when absent),
+ * fail to start (`missing`), or run past its timeout (`timeout`).
+ */
+export type MateAnswer = { stdout: string; exitCode?: number } | "missing" | "timeout";
+
+export type MateRun = { argv: string[]; cwd?: string; timeoutMs?: number };
+
+/** The launcher in the default home, `/home/me`. */
+export const LAUNCHER = "/home/me/.mate/runtime/bin/mate";
+
+/** What a Mate without the folder in its projections answers. */
+export const NOT_WRAPPED: MateAnswer = {
+  stdout: JSON.stringify({ protocol: 1, error: { code: "not-wrapped", message: "no projection" } }),
+  exitCode: 1,
+};
+
 export type Setup = {
   /** What is on disk, by absolute path; every folder above a path is there too. */
   disk?: Record<string, Node>;
+  /** Over `HOME=/home/me`. */
   env?: Record<string, string>;
+  /**
+   * What `mate session context` answers, by its `--repo` folder; a folder not
+   * listed answers not-wrapped. The world hands back this record, so a test
+   * can change an answer mid-session.
+   */
+  mate?: Record<string, MateAnswer>;
   /** `$.session.root()`; `/work/app` when absent. */
   sessionRoot?: string;
   /** The main working tree's root, as `$.session.repo()` answers; no repository when absent. */
@@ -44,6 +67,8 @@ export type Setup = {
   mentionResult?: PromptMentionResult;
   /** Folders that are there but cannot be listed. */
   unlistable?: string[];
+  /** Runs after each `fs.stat` answers, with the disk to change: a link repointed mid-lookup. */
+  afterStat?: (path: string, disk: Record<string, Node>) => void;
 };
 
 export type Read = { path: string; offset?: number; limit?: number };
@@ -56,7 +81,6 @@ function trim(path: string): string {
   return path.length > 1 ? path.replace(/\/+$/, "") : path;
 }
 
-/** How git exits: its code, what it printed, and whether that was cut short. */
 function exited(exitCode: number, stdout: string, isStdoutTruncated = false) {
   return {
     value: { exitCode, stdout, stderr: "", isStdoutTruncated, isStderrTruncated: false },
@@ -75,7 +99,9 @@ export function world(on: On, setup: Setup) {
   }
   const reads: Read[] = [];
   const runs: string[][] = [];
-  mock.env(on, setup.env ?? {});
+  const mateRuns: MateRun[] = [];
+  const mate: Record<string, MateAnswer> = setup.mate ?? {};
+  mock.env(on, { HOME: "/home/me", ...setup.env });
   const clock = mock.clock(on);
 
   /** Where a path lands, every link followed; undefined past ten hops. */
@@ -112,12 +138,19 @@ export function world(on: On, setup: Setup) {
 
   on("fs.stat", ($, e) => {
     const path = trim(e.path);
+    try {
+      return stat(path, e.resolve);
+    } finally {
+      setup.afterStat?.(path, disk);
+    }
+  });
+  const stat = (path: string, resolve: boolean | undefined) => {
     const linked = isLink(disk[path]);
     const landed = existing(path);
     if (landed === undefined) {
       return linked
-        ? { value: { kind: "other", size: 0, mtimeMs: 0, isLink: true } }
-        : { deny: `ENOENT: ${e.path}` };
+        ? { value: { kind: "other" as const, size: 0, mtimeMs: 0, isLink: true } }
+        : { deny: `ENOENT: ${path}` };
     }
     const kind = kindAt(landed)!;
     return {
@@ -126,10 +159,10 @@ export function world(on: On, setup: Setup) {
         size: 0,
         mtimeMs: 0,
         isLink: linked,
-        ...(e.resolve ? { realPath: landed } : {}),
+        ...(resolve ? { realPath: landed } : {}),
       },
     };
-  });
+  };
   on("fs.exists", ($, e) => ({ value: existing(e.path) !== undefined }));
   on("fs.read", ($, e) => {
     const landed = existing(e.path);
@@ -156,6 +189,14 @@ export function world(on: On, setup: Setup) {
   let hasStalled = false;
   let killGit: (() => void) | undefined;
   on("process.run", ($, e) => {
+    if (e.argv[0]?.endsWith("/.mate/runtime/bin/mate")) {
+      mateRuns.push({ argv: [...e.argv], cwd: e.init?.cwd, timeoutMs: e.init?.timeoutMs });
+      const repo = e.argv[e.argv.indexOf("--repo") + 1] ?? "";
+      const answer = mate[repo] ?? NOT_WRAPPED;
+      if (answer === "missing") return { deny: `spawn ${e.argv[0]} ENOENT` };
+      if (answer === "timeout") return { deny: "process timed out after 5000 ms" };
+      return exited(answer.exitCode ?? 0, answer.stdout);
+    }
     runs.push([...e.argv]);
     const git = setup.git?.[e.init?.cwd ?? ""] ?? { exitCode: 128 };
     if (git === "throw") return { deny: "spawn git ENOENT" };
@@ -187,5 +228,5 @@ export function world(on: On, setup: Setup) {
     return setup.mentionResult ?? { type: "file" };
   });
 
-  return { disk, reads, runs, clock, killGit: () => killGit?.() };
+  return { disk, reads, runs, mate, mateRuns, clock, killGit: () => killGit?.() };
 }

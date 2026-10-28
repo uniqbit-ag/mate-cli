@@ -1,7 +1,7 @@
 import { describe, expect, test } from "claude-code/testing";
 import type { Engine, Plugin } from "claude-code/testing";
 import type { PromptAutocompleteInput, PromptAutocompleteResult } from "claude-code";
-import { policyJson } from "./policy.ts";
+import { contextReply, policyJson } from "./policy.ts";
 import { world } from "./world.ts";
 
 // Each test has a companion of its own, so none sees a file list the mod kept
@@ -27,7 +27,6 @@ async function texts($: Engine, token: string): Promise<string[]> {
 
 const gitList = (...files: string[]) => ({ files });
 
-/** A managed launch's environment for the companion at `root`. */
 const env = (root: string) => ({ MATE_ARTIFACT_PATH: root, MATE_POLICY_JSON: policyJson() });
 
 /** A plugin above the mod that answers its first `@` lookup itself, 5 ms in, abandoning the mod's. */
@@ -219,6 +218,23 @@ describe("@ rows", () => {
     });
     expect(await texts($, "@mate:")).toEqual(["@mate:.env.example ", "@mate:a.md "]);
     expect(await texts($, "@mate:.env")).toEqual(["@mate:.env.example "]);
+  });
+
+  test("a plain session offers the rows a launch offers", async ($, on) => {
+    const files = [".env", ".ENV", "keys/ID_RSA", ".env.example", "a.md", "infra/acme.tfstate"];
+    const { mateRuns } = world(on, {
+      sessionRoot: "/work/plain-secret",
+      disk: { "/c/plain-secret": null },
+      git: { "/c/plain-secret": gitList(...files) },
+      mate: {
+        "/work/plain-secret": { stdout: contextReply("/c/plain-secret", { deny: ["*.tfstate"] }) },
+      },
+    });
+    // A folder that holds only secret files is not offered either.
+    expect(await texts($, "@mate:")).toEqual(["@mate:.env.example ", "@mate:a.md "]);
+    expect(await texts($, "@mate:acme")).toEqual([]);
+    expect(await texts($, "@mate:.env")).toEqual(["@mate:.env.example "]);
+    expect(mateRuns).toHaveLength(1);
   });
 
   test("a link is offered only when a mention would attach what it leads to", async ($, on) => {

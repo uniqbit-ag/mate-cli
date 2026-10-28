@@ -1,8 +1,6 @@
 /**
- * The companion-mentions dynamic plugin: a Capability whose only effect is
- * the Claude Code mod in `claude-plugin/`, which a managed `mate claude`
- * launch loads with `--plugin-dir`. It writes no file and contributes nothing
- * to other runtimes. Type-only imports from mate-core, as the loader requires.
+ * A Capability whose only effect is the Claude Code mod in `claude-plugin/`.
+ * Type-only imports from mate-core, as the loader requires.
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +9,6 @@ import type { CapabilityPlugin } from "@uniqbit/mate-core";
 
 const PACKAGE_NAME = "@uniqbit/mate-plugin-companion-mentions";
 
-/** The mod's folder beside `src/`; `path.join` leaves no trailing separator. */
 const pluginRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "claude-plugin");
 
 /** Accepts no configuration, so a typo shows instead of being ignored. */

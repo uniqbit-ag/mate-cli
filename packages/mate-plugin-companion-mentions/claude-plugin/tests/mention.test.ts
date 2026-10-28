@@ -1,7 +1,7 @@
 import { describe, expect, test } from "claude-code/testing";
 import type { Engine } from "claude-code/testing";
 import type { PromptMentionInput } from "claude-code";
-import { type PolicyOptions, policyJson } from "./policy.ts";
+import { type PolicyOptions, contextReply, policyJson } from "./policy.ts";
 import { type Setup, world } from "./world.ts";
 
 const ROOT = "/companions/app";
@@ -92,6 +92,51 @@ describe("@mate: mentions", () => {
     expect((await mention($, "mate:vault")).context?.[0]).toBe(
       `@mate:vault is the folder ${ROOT}/vault in the mate companion repo. It holds:\n- keys/\n- plan.md`,
     );
+  });
+
+  test("a folder's list judges each linked entry where it leads", async ($, on) => {
+    const root = "/companions/linked";
+    world(on, {
+      env: { MATE_ARTIFACT_PATH: root, MATE_POLICY_JSON: policyJson({ deny: ["secrets/**"] }) },
+      disk: {
+        [`${root}/secrets/customer-production.json`]: "{}",
+        [`${root}/AGENTS.md`]: "agents",
+        [`${root}/docs/a.md`]: "a",
+        [`${root}/vault/customer-production.json`]: {
+          link: `${root}/secrets/customer-production.json`,
+        },
+        [`${root}/vault/outside.txt`]: { link: "/etc/passwd" },
+        [`${root}/vault/dangling.md`]: { link: `${root}/missing.md` },
+        [`${root}/vault/latest.md`]: { link: `${root}/AGENTS.md` },
+        [`${root}/vault/docs`]: { link: `${root}/docs` },
+        [`${root}/vault/plan.md`]: "plan",
+        "/etc/passwd": "root",
+      },
+    });
+    expect((await mention($, "mate:vault/customer-production.json")).context?.[0]).toContain(
+      "secret files (`secrets/**`)",
+    );
+    expect((await mention($, "mate:vault")).context?.[0]).toBe(
+      `@mate:vault is the folder ${root}/vault in the mate companion repo. It holds:\n- docs/\n- latest.md\n- plan.md`,
+    );
+  });
+
+  test("a linked folder is listed where its check looked, even when the link moves", async ($, on) => {
+    const root = "/companions/moving";
+    world(on, {
+      env: { MATE_ARTIFACT_PATH: root, MATE_POLICY_JSON: policyJson({ deny: ["secrets/**"] }) },
+      disk: {
+        [`${root}/docs/a.md`]: "a",
+        [`${root}/secrets/customer-production.json`]: "{}",
+        [`${root}/shelf`]: { link: `${root}/docs` },
+      },
+      afterStat: (path, disk) => {
+        if (path === `${root}/shelf`) disk[path] = { link: `${root}/secrets` };
+      },
+    });
+    const note = (await mention($, "mate:shelf")).context?.[0] ?? "";
+    expect(note).toContain("- a.md");
+    expect(note).not.toContain("customer-production.json");
   });
 
   test("a folder lists at most 200 names, then how many more", async ($, on) => {
@@ -218,6 +263,52 @@ describe("@mate: mentions", () => {
     const result = await mention($, "mate:AGENTS.md");
     expect(reads).toEqual([]);
     expect(result.context?.[0]).toContain("no mate companion");
-    expect(result.context?.[0]).toContain("`mate claude`");
+    expect(result.context?.[0]).toContain("`mate doctor`");
+  });
+});
+
+describe("@mate: mentions in a plain session", () => {
+  /** The same companion as `setup`, named by Mate instead of the launch. */
+  const plain: Setup = {
+    disk: setup.disk,
+    mate: { "/work/app": { stdout: contextReply(ROOT, { deny: ["*.tfstate"] }) } },
+  };
+
+  test("attach a file as a launch does", async ($, on) => {
+    const { reads, mateRuns } = world(on, plain);
+    const result = await mention($, "mate:openspec/config.yaml");
+    expect(reads.map((read) => read.path)).toEqual([`${ROOT}/openspec/config.yaml`]);
+    expect(result.context).toEqual([
+      `@mate:openspec/config.yaml is the file ${ROOT}/openspec/config.yaml in the mate companion repo.`,
+    ]);
+    expect(mateRuns).toHaveLength(1);
+  });
+
+  test("refuse the secret files a launch refuses", async ($, on) => {
+    const { reads } = world(on, plain);
+    for (const [name, pattern] of [
+      ["mate:.env", ".env"],
+      ["mate:.ENV", ".env"],
+      ["mate:notes.md", ".env"],
+      ["mate:infra/acme.tfstate", "*.tfstate"],
+    ] as const) {
+      expect((await mention($, name)).context).toEqual([
+        `@${name} was not attached: mate keeps secret files (\`${pattern}\`) away from Claude.`,
+      ]);
+    }
+    expect(reads).toEqual([]);
+  });
+
+  test("attach an allowed example file", async ($, on) => {
+    const { reads } = world(on, plain);
+    await mention($, "mate:.env.example");
+    expect(reads.map((read) => read.path)).toEqual([`${ROOT}/.env.example`]);
+  });
+
+  test("leave secret files out of a folder's list", async ($, on) => {
+    world(on, plain);
+    const listed = (await mention($, "mate:vault/")).context?.[0] ?? "";
+    expect(listed).toContain("- plan.md");
+    expect(listed).not.toContain(".env");
   });
 });

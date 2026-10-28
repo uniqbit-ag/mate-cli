@@ -68,9 +68,73 @@ describe("isSecretFile", () => {
     expect(isSecretFile("vault/a\nb/token.txt", policy)).toBe(true);
   });
 
-  test("normalizes Windows separators", () => {
-    expect(isSecretFile("acme\\certs\\server.key", defaults)).toBe(true);
-    expect(isSecretFile("notes\\.env", defaults)).toBe(true);
+  test("reads a backslash as a separator on Windows", () => {
+    const windows = { windows: true };
+    expect(isSecretFile("acme\\certs\\server.key", defaults, windows)).toBe(true);
+    expect(isSecretFile("notes\\.env", defaults, windows)).toBe(true);
+    const allowed = parseSecretsConfig({ allow: ["public/**"] });
+    expect(isSecretFile("public\\server.key", allowed, windows)).toBe(false);
+  });
+
+  test("reads a backslash as part of the name elsewhere", () => {
+    const posix = { windows: false };
+    const allowed = parseSecretsConfig({ allow: ["public/**"] });
+    expect(isSecretFile("public\\server.key", allowed, posix)).toBe(true);
+    expect(isSecretFile("public/server.key", allowed, posix)).toBe(false);
+    expect(isSecretFile("acme\\certs\\server.key", defaults, posix)).toBe(true);
+    expect(isSecretFile("notes\\.env", defaults, posix)).toBe(false);
+  });
+});
+
+describe("gitignore syntax", () => {
+  const secret = (pattern: string, filePath: string) =>
+    isSecretFile(filePath, parseSecretsConfig({ deny: [pattern] }));
+
+  test("a character class matches one character of its set", () => {
+    expect(secret("secret[0-9].txt", "acme/secret1.txt")).toBe(true);
+    expect(secret("secret[0-9].txt", "acme/secretx.txt")).toBe(false);
+    expect(secret("secret[0-9].txt", "acme/secret12.txt")).toBe(false);
+    expect(secret("vault[ab].json", "VAULTB.json")).toBe(true);
+    expect(secret("key[!a-c].txt", "keyd.txt")).toBe(true);
+    expect(secret("key[!a-c].txt", "keyb.txt")).toBe(false);
+    expect(secret("key[^a-c].txt", "keyb.txt")).toBe(false);
+    expect(secret("k[]]y.txt", "k]y.txt")).toBe(true);
+    expect(secret("k[[:digit:]]y.txt", "k7y.txt")).toBe(true);
+    expect(secret("k[a\\-z]y.txt", "k-y.txt")).toBe(true);
+    expect(secret("k[a\\-z]y.txt", "kby.txt")).toBe(false);
+  });
+
+  test("a character class never matches a slash", () => {
+    expect(secret("a[!x]b", "a/b")).toBe(false);
+    expect(secret("dir/a[/]b", "dir/a/b")).toBe(false);
+  });
+
+  test("an unclosed bracket is a literal character", () => {
+    expect(secret("secret[1.txt", "secret[1.txt")).toBe(true);
+    expect(secret("secret[1.txt", "secret1.txt")).toBe(false);
+  });
+
+  test("a backslash escapes the next character", () => {
+    expect(secret("\\#secret", "#secret")).toBe(true);
+    expect(secret("star\\*.txt", "star*.txt")).toBe(true);
+    expect(secret("star\\*.txt", "starx.txt")).toBe(false);
+    expect(secret("\\[x].txt", "[x].txt")).toBe(true);
+  });
+
+  test("a trailing slash protects a folder of that name and everything in it", () => {
+    expect(secret("private/", "acme/private/token.txt")).toBe(true);
+    expect(secret("private/", "private/deep/token.txt")).toBe(true);
+    expect(secret("private/", "acme/private")).toBe(true);
+    expect(secret("private/", "acme/private.txt")).toBe(false);
+    expect(secret("private/", "acme/notprivate/token.txt")).toBe(false);
+    expect(secret("config/private/", "repo/config/private/a.yaml")).toBe(true);
+    expect(secret("config/private/", "repo/private/a.yaml")).toBe(false);
+  });
+
+  test("an allow pattern with a trailing slash allows everything in the folder", () => {
+    const policy = parseSecretsConfig({ allow: ["fixtures/"] });
+    expect(isSecretFile("test/fixtures/fake.key", policy)).toBe(false);
+    expect(isSecretFile("test/other/fake.key", policy)).toBe(true);
   });
 });
 
@@ -115,12 +179,10 @@ describe("secretRule", () => {
   });
 });
 
-/**
- * What a consumer outside mate-core does with the rules: build each regular
- * expression from its source and flags, and test the subject the rule names.
- */
+/** Evaluates rules as a consumer outside mate-core does. */
 function evaluate(rules: readonly SecretRule[], filePath: string): boolean {
-  const normalized = filePath.replaceAll("\\", "/").replace(/\/+$/, "");
+  const slashed = process.platform === "win32" ? filePath.replaceAll("\\", "/") : filePath;
+  const normalized = slashed.replace(/\/+$/, "");
   if (!normalized) return false;
   const name = normalized.slice(normalized.lastIndexOf("/") + 1);
   return rules.some((rule) =>
@@ -146,8 +208,24 @@ describe("secretRules", () => {
         allow: [".env.test", "config/**/prod.example.yaml"],
       }),
     ],
+    [
+      "gitignore syntax",
+      parseSecretsConfig({
+        deny: ["secret[0-9].txt", "private/", "k[!a]y.txt", "\\#x"],
+        allow: ["private/ok/"],
+      }),
+    ],
   ];
   const paths = [
+    "secret1.txt",
+    "secretx.txt",
+    "acme/private/token.txt",
+    "acme/private",
+    "acme/private/ok/token.txt",
+    "kby.txt",
+    "kay.txt",
+    "#x",
+    "public\\server.key",
     ".env",
     "notes/.ENV",
     "notes\\.env",
@@ -267,9 +345,27 @@ describe("globTargetsSecretFiles", () => {
     },
   );
 
-  test.each(["", "*", "**/*", "*.ts", "*.md", ".env.example", "src/**"])("%s is not", (glob) => {
-    expect(globTargetsSecretFiles(glob, defaults)).toBe(false);
+  test.each([
+    "server.key",
+    ".env.local",
+    "**/.env.local",
+    "certs/*.key",
+    "certs/server.KEY",
+    "**/id_rsa",
+    "*.{key,pem}",
+    "{src,certs}/*.key",
+    "*.[k]ey",
+    "**/{*.ts,.env}",
+  ])("%s, naming a secret file, is aimed at one", (glob) => {
+    expect(globTargetsSecretFiles(glob, defaults)).toBe(true);
   });
+
+  test.each(["", "*", "**/*", "*.ts", "*.md", ".env.example", "src/**", "*.{ts,tsx}", "!*.key"])(
+    "%s is not",
+    (glob) => {
+      expect(globTargetsSecretFiles(glob, defaults)).toBe(false);
+    },
+  );
 
   test("follows the policy's extra patterns", () => {
     const policy = parseSecretsConfig({ deny: ["*.secret"], allow: [".npmrc"] });

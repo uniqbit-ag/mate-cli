@@ -217,8 +217,13 @@ and TokenSave cannot be forced together in one command invocation.
 The [Companion Mentions](/docs/capabilities#companion-mentions) plugin adds
 `@mate:` rows to Claude's `@` menu. When they do not appear, check these causes:
 
-- The session was started with plain `claude`. The plugin loads only with
-  `mate claude`.
+- The session was started with plain `claude` in a repository that Mate has not
+  wrapped, or Mate does not publish the plugin to plain sessions. Run `mate wrap`
+  or start the session with `mate claude`, and check the Plain Sessions column of
+  `mate doctor`. See
+  [A Capability's Claude Plugin Does Not Load In Plain `claude`](/docs/troubleshooting#a-capabilitys-claude-plugin-does-not-load-in-plain-claude).
+- Claude Code does not trust the repository folder. A plain session loads the
+  plugin only after you accept Claude Code's trust dialog for that folder.
 - Claude Code is older than 2.1.292. Older versions start normally and ignore
   the plugin. Check the version with `claude --version`.
 - The plugin is not declared or not installed. `mate doctor` lists the Claude
@@ -229,7 +234,23 @@ The [Companion Mentions](/docs/capabilities#companion-mentions) plugin adds
 - The session runs inside the companion, for example after
   `mate claude -- --companion`. Claude's own rows already list the companion's
   files there, so the plugin adds none. A typed `@mate:` mention still attaches.
+- A mention attaches a note saying that Mate refused the companion: it is not
+  registered in your Mate configuration (`companion-not-registered`), or it does
+  not link this repository (`repository-not-linked`). This happens when a cloned
+  repository carries another machine's projection. `mate wrap` alone fixes
+  neither. Run `mate companion link` in the repository and pick your companion:
+  it registers the companion and links the repository. Then run `mate wrap`, or
+  start a session with `mate claude`, so the repository's projection names that
+  companion. A companion you already use but Mate does not list is registered
+  with `mate companion register <path>`.
 - A mention attaches a note asking for a matching Mate version. The plugin found
-  no readable secret policy in the launch, which happens when Mate is older than
-  the plugin. Until that is fixed, it shows no rows and attaches no files.
-  Update Mate to the plugin's version, then start a new `mate claude` session.
+  no readable secret policy, which happens when Mate is older than the plugin. In
+  a plain session it also happens when Mate's launcher at
+  `~/.mate/runtime/bin/mate` is missing or has no `session context` command.
+  Until that is fixed, the plugin shows no rows and attaches no files. Update
+  Mate to the plugin's version, then start a new session.
+- In a plain session, a mention attaches a note pointing to `mate doctor`:
+  `mate session context` did not answer within 5 seconds, or named a companion
+  and then exited with a failure status, so the plugin does not use the answer.
+  Run `mate doctor` to check the installation. Updating Mate alone may not fix
+  it.

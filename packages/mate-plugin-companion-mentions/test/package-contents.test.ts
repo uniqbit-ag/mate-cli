@@ -43,6 +43,7 @@ describe("the published package", () => {
       "README.md",
       "src/index.ts",
       "claude-plugin/.claude-plugin/plugin.json",
+      "claude-plugin/.claude-plugin/marketplace.json",
       "claude-plugin/hooks/hooks.json",
       "claude-plugin/hooks/register.ts",
       "claude-plugin/hooks/companion.ts",
@@ -62,5 +63,45 @@ describe("the published package", () => {
         file === "bunfig.toml",
     );
     expect(unexpected).toEqual([]);
+  });
+});
+
+const manifestDir = path.join(packageRoot, "claude-plugin", ".claude-plugin");
+const readJson = (file: string) =>
+  JSON.parse(fs.readFileSync(path.join(manifestDir, file), "utf8"));
+
+/** Claude Code's marketplace name rules, as Mate checks them before publishing a folder. */
+const RESERVED_MARKETPLACE_NAMES = [
+  "claude-plugins-official",
+  "inline",
+  "builtin",
+  "skills-dir",
+  "synced",
+  "github",
+  "npm",
+];
+
+describe("the shipped marketplace file", () => {
+  const marketplace = readJson("marketplace.json");
+  const manifest = readJson("plugin.json");
+
+  test("has a valid, unreserved name that is not in Mate's own form", () => {
+    expect(marketplace.name).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+    expect(RESERVED_MARKETPLACE_NAMES).not.toContain(marketplace.name);
+    expect(marketplace.name.startsWith("claudeai-")).toBe(false);
+    expect(marketplace.owner.name).not.toBe("Mate");
+    expect(marketplace.name.startsWith("mate-plugin-")).toBe(false);
+  });
+
+  test("lists one plugin, the manifest's, in place", () => {
+    expect(marketplace.plugins).toHaveLength(1);
+    expect(marketplace.plugins[0].name).toBe(manifest.name);
+    expect(marketplace.plugins[0].source).toBe("./");
+    expect(marketplace.plugins[0].version).toBeUndefined();
+  });
+
+  test("leaves the version to the manifest, which declares the package's", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8"));
+    expect(manifest.version).toBe(pkg.version);
   });
 });

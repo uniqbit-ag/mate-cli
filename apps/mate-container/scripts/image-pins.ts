@@ -43,7 +43,6 @@ const defaultDeps: EntryDeps = {
   stderr: (text) => process.stderr.write(text),
 };
 
-/** Release packages the image locks must pin; publish-only packages need none. */
 const IMAGE_PINNED = RELEASE_PACKAGES.filter(({ image }) => image).map(({ name }) => name);
 
 function roots(workspaceArg: string | undefined): { containerRoot: string; workspaceRoot: string } {
