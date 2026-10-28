@@ -1,11 +1,6 @@
 // Deliver the companion guidance to a Claude session Mate did not launch.
 import { buildProjectedGuidance } from "../runtime/projected-guidance";
-import type { HookEnv } from "./hook-io";
-
-export interface GuidanceOutcome {
-  exitCode: number;
-  stdout: string;
-}
+import { hookOutcome, type HookEnv, type HookOutcome } from "./hook-io";
 
 /**
  * `SessionStart.additionalContext` is the file-based form of the managed
@@ -17,19 +12,16 @@ export interface GuidanceOutcome {
  * Emits nothing rather than a note when no companion resolves: an unwrapped
  * repository must read exactly as it did before the hook existed.
  */
-export function buildSessionGuidance(env: HookEnv, cwd: string = process.cwd()): GuidanceOutcome {
+export function buildSessionGuidance(env: HookEnv, cwd: string = process.cwd()): HookOutcome {
   const guidance = buildProjectedGuidance(env, cwd);
-  if (!guidance) return { exitCode: 0, stdout: "" };
+  if (!guidance) return hookOutcome(null);
 
-  return {
-    exitCode: 0,
-    stdout: `${JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "SessionStart",
-        additionalContext: guidance,
-      },
-    })}\n`,
-  };
+  return hookOutcome({
+    hookSpecificOutput: {
+      hookEventName: "SessionStart",
+      additionalContext: guidance,
+    },
+  });
 }
 
 // Plugin-shim entry.

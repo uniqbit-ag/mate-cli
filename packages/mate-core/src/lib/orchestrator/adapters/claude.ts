@@ -122,11 +122,7 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
       ...(plan.mcp === "mcp-config" && existsSync(mcpConfigPath) ? { mcpConfigPath } : {}),
       ...(settingsPath ? { settingsPath } : {}),
     };
-    return {
-      ...context,
-      delivery,
-      pluginDirectories: prepared.claudePluginDirectories ?? [],
-    };
+    return { ...context, delivery, pluginDirectories: prepared.claudePluginDirectories ?? [] };
   }
 
   /** A failed Claude wrap pass names the entry that failed. */

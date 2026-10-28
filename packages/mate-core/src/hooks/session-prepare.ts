@@ -167,8 +167,8 @@ export async function runSessionStartHook(
   deps: SessionPrepareHookDeps = sessionPrepareHookDeps,
 ): Promise<HookOutcome> {
   const { env, cwd, input } = call;
-  if (!input || typeof input !== "object" || Array.isArray(input)) return operatorMessage([]);
-  if (!isWrapCopy(call)) return operatorMessage([]);
+  if (!input || typeof input !== "object" || Array.isArray(input)) return hookOutcome(null);
+  if (!isWrapCopy(call)) return hookOutcome(null);
   const prepared = await guardedPrepare(env, cwd, deps);
   const { hookSpecificOutput, systemMessage } =
     instructionHookPayload(
