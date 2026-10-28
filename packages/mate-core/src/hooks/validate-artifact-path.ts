@@ -1,25 +1,17 @@
-// Block artifact writes outside the companion framework path.
-//
-// Artifact-like files may be written in the working repository only when the
-// target path is already ignored by git. That keeps local-only scratch files
-// possible without weakening the default repo split.
-//
-// Editing a file that already exists is always allowed: the guard exists to
-// stop new agent artifacts from landing in the working repo, not to freeze
-// files that are already part of it.
-import { spawnSync } from "node:child_process";
-import fs from "node:fs";
+// Claude Code adapter of the Tool Guard (`runtime/tool-guard.ts`); verdicts are
+// the guard's. Name kept for the plugin hook shim and existing wraps.
 import os from "node:os";
 import path from "node:path";
 
-import { artifactRefusal, resolveArtifactTarget } from "../runtime/artifact-refusal";
-import { checkCommitAttribution } from "../runtime/commit-attribution-guard";
-import { gitEnvironment } from "../runtime/companion-git";
-import { companionForkRefusal } from "../runtime/companion-sync";
 import { readCompanionRuntimeContext } from "../runtime/env";
-import { companionLinkPath } from "../runtime/repo-local";
-import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
-import { stripHeredocBodies } from "../runtime/shell-heredoc";
+import {
+  checkToolCall,
+  contentText,
+  guardFailureMessage,
+  pathText,
+  singleWrite,
+  type GuardedToolCall,
+} from "../runtime/tool-guard";
 import type { HookEnv } from "./hook-io";
 
 export interface HookOutcome {
@@ -27,270 +19,44 @@ export interface HookOutcome {
   stderr: string;
 }
 
-const KNOWN_ARTIFACT_BASENAMES = new Set([
-  "CLAUDE.md",
-  "CONTEXT.md",
-  "design.md",
-  "explore-brief.md",
-  "proposal.md",
-  "spec.md",
-  "tasks.md",
-]);
-
-const ARTIFACT_PATH_MARKERS = [
-  "/changes/",
-  "/openspec/",
-  "/specs/",
-  "/docs/adr/",
-  "/docs/adrs/",
-  "/docs/decisions/",
-  "/docs/prd/",
-];
-
-/** `[ \t]`, not `\s`: a redirect or `tee` names its target on its own line. */
-const MD_REDIRECT_PATTERN = />{1,2}[ \t]*([^\s;|&<>]+\.md)\b/g;
-const MD_TEE_PATTERN = /\btee[ \t]+(?:-a[ \t]+)?([^\s;|&<>]+\.md)\b/g;
-
-export function artifactLikePath(filePath: string): boolean {
-  if (!filePath) return false;
-
-  const basename = path.basename(filePath);
-  const normalized = "/" + filePath.replaceAll("\\", "/").replace(/^\/+/, "");
-  if (KNOWN_ARTIFACT_BASENAMES.has(basename)) return true;
-
-  if (ARTIFACT_PATH_MARKERS.some((marker) => normalized.includes(marker))) return true;
-
-  if (basename.endsWith(".md") && basename !== "README.md") return true;
-
-  return false;
-}
-
 /**
- * Resolved once per evaluation: the companion may come from the launch
- * environment or from the Working Repository's Projection Root, and every
- * path check below is relative to whichever resolved.
+ * Claude Code's own config/state directory: Agent Runtime state, never Mate
+ * artifacts. Not normalised: `link/..` would name another folder than Claude Code's.
  */
-interface GuardContext {
-  env: HookEnv;
-  /** As resolved, for the operator: the message names the path they configured. */
-  companion: string;
-  /** Followed through every link, so filesystem identity decides the verdict. */
-  companionReal: string;
-  companionLink: string;
-  repoRoot: string;
-}
-
-/**
- * The target's real path, resolved as far as it exists — a path being written
- * does not yet, so the deepest existing ancestor is resolved and the rest
- * appended.
- */
-function realPath(target: string): string {
-  const absolute = path.resolve(target);
-  const trailing: string[] = [];
-  let current = absolute;
-  for (;;) {
-    try {
-      return path.join(fs.realpathSync(current), ...trailing);
-    } catch {
-      const parent = path.dirname(current);
-      if (parent === current) return absolute;
-      trailing.unshift(path.basename(current));
-      current = parent;
-    }
-  }
-}
-
-function guardContext(env: HookEnv, cwd: string): GuardContext | null {
-  const resolved = readCompanionRuntimeContext(env, cwd);
-  if (!resolved.companionPath) return null;
-  const repoRoot = resolved.repositoryPath || cwd;
-  return {
-    env,
-    companion: path.normalize(resolved.companionPath),
-    companionReal: realPath(resolved.companionPath),
-    companionLink: companionLinkPath(repoRoot),
-    repoRoot,
-  };
-}
-
-// Claude Code's own config/state directory (plan files, settings, todos).
-// Writes there are agent-runtime state, never Mate artifacts.
 function claudeConfigRoot(env: HookEnv): string {
   const configured = env.CLAUDE_CONFIG_DIR;
-  if (configured) return path.normalize(configured);
-  return path.normalize(path.join(env.HOME || os.homedir(), ".claude"));
+  if (configured) return configured;
+  return `${env.HOME || os.homedir()}${path.sep}.claude`;
 }
 
-function isUnder(target: string, root: string): boolean {
-  const relative = path.relative(path.normalize(root), path.normalize(target));
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-/**
- * Under the Projection Root's companion link, or under the companion it lands
- * in — the second answers for a link the operator made, and for the first once
- * its target exists.
- */
-function isCompanionPath(target: string, ctx: GuardContext): boolean {
-  return isUnder(target, ctx.companionLink) || isUnder(realPath(target), ctx.companionReal);
-}
-
-function isGitignored(target: string, ctx: GuardContext): boolean {
-  const root = ctx.repoRoot;
-  if (!isUnder(target, root)) return false;
-
-  const relPath = path.relative(root, target);
-  const result = spawnSync("git", ["-C", root, "check-ignore", "--no-index", "-q", "--", relPath], {
-    stdio: "ignore",
-    env: gitEnvironment(),
-  });
-  return result.status === 0;
-}
-
-// A file already tracked in the working repo is product code being edited,
-// not a new agent artifact (e.g. packaged SKILL.md/spec.md template sources).
-function isGitTracked(target: string, ctx: GuardContext): boolean {
-  const root = ctx.repoRoot;
-  if (!isUnder(target, root)) return false;
-
-  const relPath = path.relative(root, target);
-  const result = spawnSync("git", ["-C", root, "ls-files", "--error-unmatch", "--", relPath], {
-    stdio: "ignore",
-    env: gitEnvironment(),
-  });
-  return result.status === 0;
-}
-
-function isProductDocumentationPath(target: string, ctx: GuardContext): boolean {
-  const root = ctx.repoRoot;
-  if (!isUnder(target, root)) return false;
-
-  const relPath = path.relative(root, target);
-  const parts = relPath.split(path.sep).filter(Boolean);
-  for (const [index, part] of parts.entries()) {
-    if (part === ".storybook" || part === "storybook") return true;
-
-    if (part !== "docs") continue;
-
-    const docsRoot = path.join(root, ...parts.slice(0, index + 1));
-    if (fs.existsSync(path.join(docsRoot, "package.json"))) return true;
-  }
-
-  return false;
-}
-
-function blockWrite(target: string, resolved: string, ctx: GuardContext): HookOutcome {
-  const refusal = artifactRefusal({
-    target,
-    resolved,
-    companion: ctx.companion,
-    repoRoot: ctx.repoRoot,
-  });
-  return { exitCode: 2, stderr: `${refusal}\n` };
-}
-
-function checkFilePath(
-  filePath: string,
-  ctx: GuardContext,
-  allowExisting = false,
-): HookOutcome | null {
-  if (!filePath) return null;
-
-  const normalized = resolveArtifactTarget(filePath, ctx.repoRoot);
-  if (isCompanionPath(normalized, ctx)) return null;
-
-  if (isUnder(normalized, claudeConfigRoot(ctx.env))) return null;
-
-  if (allowExisting && fs.existsSync(normalized) && fs.statSync(normalized).isFile()) return null;
-
-  if (isProductDocumentationPath(normalized, ctx)) return null;
-
-  if (!artifactLikePath(filePath)) return null;
-
-  if (
-    isUnder(normalized, ctx.repoRoot) &&
-    (isGitignored(normalized, ctx) || isGitTracked(normalized, ctx))
-  ) {
-    return null;
-  }
-
-  return blockWrite(filePath, normalized, ctx);
-}
-
-/**
- * The fork refusal, unlike the path refusal, is not a function of the tool
- * input alone: it depends on companion Git state, which a Managed Launch may
- * have settled on purpose (`--no-git`, a non-automatic Git policy). So it is
- * gated on the absence of a launch environment, and the path refusal keeps its
- * input-only verdict and its double-load tolerance untouched.
- */
-async function checkForkedCompanion(
-  filePath: string,
-  ctx: GuardContext,
-): Promise<HookOutcome | null> {
-  if (!filePath || !artifactLikePath(filePath)) return null;
-  if (!isCompanionPath(resolveArtifactTarget(filePath, ctx.repoRoot), ctx)) return null;
-
-  const refusal = await companionForkRefusal(ctx.env, ctx.companion);
-  return refusal ? { exitCode: 2, stderr: `${refusal}\n` } : null;
-}
-
-/** Heredoc bodies are what a command writes, not what it runs: they are not scanned. */
-export function commandMatches(command: string): string[] {
-  const targets: string[] = [];
-  const commandText = stripHeredocBodies(command);
-  for (const pattern of [MD_REDIRECT_PATTERN, MD_TEE_PATTERN]) {
-    const matcher = new RegExp(pattern.source, pattern.flags);
-    for (const match of commandText.matchAll(matcher)) {
-      const target = match[1].trim().replace(/^["']+|["']+$/g, "");
-      if (target) targets.push(target);
-    }
-  }
-  return targets;
-}
-
-/** Claude tool payloads in the shape the shared secret guard reads. */
-function secretToolCall(
+/** Claude tool payloads in the Tool Guard's shape; null for a tool it does not guard. */
+function claudeToolCall(
   toolName: string,
   toolInput: Record<string, unknown>,
-  ctx: GuardContext,
-): SecretToolCall | null {
-  const text = (value: unknown) => (typeof value === "string" ? value : "");
-  const target = (value: unknown) =>
-    text(value) ? resolveArtifactTarget(text(value), ctx.repoRoot) : "";
+): GuardedToolCall | null {
   switch (toolName) {
     case "Read":
-      return { kind: "read", paths: [target(toolInput.file_path)] };
+      return { kind: "read", paths: [pathText(toolInput.file_path)] };
     case "Write":
-      return {
-        kind: "write",
-        writes: [{ path: target(toolInput.file_path), content: text(toolInput.content) }],
-      };
+      return singleWrite(toolInput.file_path, contentText(toolInput.content), "create");
     case "Edit":
-      return {
-        kind: "write",
-        writes: [{ path: target(toolInput.file_path), content: text(toolInput.new_string) }],
-      };
+      return singleWrite(toolInput.file_path, contentText(toolInput.new_string), "edit");
     case "MultiEdit": {
       const edits = Array.isArray(toolInput.edits) ? toolInput.edits : [];
       const content = edits
-        .map((edit) => (edit && typeof edit === "object" ? text(edit.new_string) : ""))
+        .map((edit) => (edit && typeof edit === "object" ? contentText(edit.new_string) : ""))
         .join("\n");
-      return { kind: "write", writes: [{ path: target(toolInput.file_path), content }] };
+      return singleWrite(toolInput.file_path, content, "edit");
     }
     case "NotebookEdit":
-      return {
-        kind: "write",
-        writes: [{ path: target(toolInput.notebook_path), content: text(toolInput.new_source) }],
-      };
+      return singleWrite(toolInput.notebook_path, contentText(toolInput.new_source), "edit");
     case "Bash":
-      return { kind: "shell", command: text(toolInput.command) };
+      return { kind: "shell", command: pathText(toolInput.command) };
     case "Grep":
       return {
         kind: "search",
-        paths: [target(toolInput.path)],
-        globs: [text(toolInput.glob)],
+        paths: [pathText(toolInput.path)],
+        globs: [pathText(toolInput.glob)],
       };
     default:
       return null;
@@ -299,17 +65,26 @@ function secretToolCall(
 
 /**
  * Fails open only when no Mate context resolves from either source; in a
- * wrapped Working Repository the guard runs without a launch.
+ * wrapped Working Repository the guard runs without a launch. Otherwise errors
+ * fail closed as exit 2; an uncaught one (exit 1) would let the call run.
  */
 export async function evaluate(
   payload: unknown,
   env: HookEnv,
   cwd: string = process.cwd(),
 ): Promise<HookOutcome> {
+  try {
+    return await judge(payload, env, cwd);
+  } catch (error) {
+    return { exitCode: 2, stderr: `${guardFailureMessage(error)}\n` };
+  }
+}
+
+async function judge(payload: unknown, env: HookEnv, cwd: string): Promise<HookOutcome> {
   const allow: HookOutcome = { exitCode: 0, stderr: "" };
 
-  const ctx = guardContext(env, cwd);
-  if (!ctx) return allow;
+  const resolved = readCompanionRuntimeContext(env, cwd);
+  if (!resolved.companionPath) return allow;
 
   const input = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
   const toolName = typeof input.tool_name === "string" ? input.tool_name : "";
@@ -318,42 +93,17 @@ export async function evaluate(
       ? (input.tool_input as Record<string, unknown>)
       : {};
 
-  /** Secrets first: a secret refusal wins over every artifact-placement verdict. */
-  const secretCall = secretToolCall(toolName, toolInput, ctx);
-  if (secretCall) {
-    const refusal = await checkSecretAccess(secretCall, {
-      companionPath: ctx.companion,
-      isCompanionPath: (target) => isCompanionPath(target, ctx),
-    });
-    if (refusal) return { exitCode: 2, stderr: `${refusal}\n` };
-  }
+  const call = claudeToolCall(toolName, toolInput);
+  if (!call) return allow;
 
-  if (toolName === "Write" || toolName === "Edit" || toolName === "MultiEdit") {
-    const filePath = String(toolInput.file_path ?? "");
-    /** The path refusal wins when both apply: its message is not replaced. */
-    const outcome = checkFilePath(filePath, ctx, toolName === "Edit" || toolName === "MultiEdit");
-    return outcome ?? (await checkForkedCompanion(filePath, ctx)) ?? allow;
-  }
-
-  if (toolName === "Bash") {
-    const command = String(toolInput.command ?? "");
-    const attribution = checkCommitAttribution(command);
-    if (attribution) return { exitCode: 2, stderr: `${attribution}\n` };
-
-    const targets = commandMatches(command);
-    for (const target of targets) {
-      const outcome = checkFilePath(target, ctx);
-      if (outcome) return outcome;
-    }
-    for (const target of targets) {
-      // oxlint-disable-next-line no-await-in-loop -- the first refusal wins
-      const outcome = await checkForkedCompanion(target, ctx);
-      if (outcome) return outcome;
-    }
-    return allow;
-  }
-
-  return allow;
+  const refusal = await checkToolCall(call, {
+    companionPath: resolved.companionPath,
+    repositoryPath: resolved.repositoryPath,
+    workingDirectory: cwd,
+    runtimeStateRoots: [claudeConfigRoot(env)],
+    env,
+  });
+  return refusal ? { exitCode: 2, stderr: `${refusal.message}\n` } : allow;
 }
 
 async function readStdin(): Promise<string> {
@@ -364,7 +114,10 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-// Plugin-shim entry: read the hook payload from stdin, evaluate, report.
+/**
+ * Plugin-shim entry. Non-JSON input names no tool, so it is allowed; Claude
+ * Code always sends JSON. Any later error fails closed.
+ */
 export async function run(): Promise<number> {
   let payload: unknown = {};
   try {
@@ -372,7 +125,12 @@ export async function run(): Promise<number> {
   } catch {
     payload = {};
   }
-  const outcome = await evaluate(payload, process.env);
+  let outcome: HookOutcome;
+  try {
+    outcome = await evaluate(payload, process.env);
+  } catch (error) {
+    outcome = { exitCode: 2, stderr: `${guardFailureMessage(error)}\n` };
+  }
   if (outcome.stderr) process.stderr.write(outcome.stderr);
   return outcome.exitCode;
 }

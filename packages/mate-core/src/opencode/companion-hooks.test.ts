@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 
 import { createTempDir, withEnv } from "../../../../test/fixtures";
-import { guardToolInput, registerCompanionHooks } from "./companion-hooks";
+import { guardToolInput, patchWrites, registerCompanionHooks } from "./companion-hooks";
 import { readContext, type CompanionContext } from "./companion-policy";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
@@ -212,6 +212,207 @@ describe("OpenCode companion hooks", () => {
     ).resolves.toBeUndefined();
     await expect(guardToolInput(context, "bash", undefined)).resolves.toBeUndefined();
   });
+
+  test("judges a malformed path or command rather than nothing", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-malformed-");
+    const context = await launchContext(companion, repo);
+
+    await expect(guardToolInput(context, "write", { filePath: ["notes.md"] })).rejects.toThrow(
+      ARTIFACT_REFUSAL_HEADLINE,
+    );
+    await expect(guardToolInput(context, "read", { filePath: [".env"] })).rejects.toThrow(
+      "secret files are off-limits",
+    );
+    await expect(guardToolInput(context, "bash", { command: ["cat .env"] })).rejects.toThrow(
+      "secret files are off-limits",
+    );
+    await expect(guardToolInput(context, "write", { filePath: null })).resolves.toBeUndefined();
+  });
+});
+
+describe("patchWrites reads a patch as OpenCode does", () => {
+  const patch = (...lines: string[]) => ["*** Begin Patch", ...lines, "*** End Patch"].join("\n");
+
+  test("a moved file is an edit of its source and a create of its destination", () => {
+    expect(
+      patchWrites(patch("*** Update File: a.ts", "*** Move to: b.md", "@@", "-x", "+y")),
+    ).toEqual([
+      { path: "a.ts", content: "", mode: "edit" },
+      { path: "b.md", content: "y", mode: "create" },
+    ]);
+  });
+
+  test("a context line that looks like a header stays in its section", () => {
+    expect(
+      patchWrites(
+        patch("*** Update File: /c/notes.md", "@@", " *** Update File: src/main.ts", "+token"),
+      ),
+    ).toEqual([{ path: "/c/notes.md", content: "token", mode: "edit" }]);
+  });
+
+  test("an added line that looks like a header stays in its section", () => {
+    expect(patchWrites(patch("*** Add File: a.md", "+*** Delete File: b.ts", "+x"))).toEqual([
+      { path: "a.md", content: "*** Delete File: b.ts\nx", mode: "create" },
+    ]);
+  });
+
+  test("a move directive counts only right after its Update File line", () => {
+    expect(
+      patchWrites(patch("*** Update File: a.ts", "@@", "-x", "*** Move to: b.md", "+y")),
+    ).toEqual([{ path: "a.ts", content: "y", mode: "edit" }]);
+    expect(
+      patchWrites(patch("*** Update File: a.ts", "*** End of File", "*** Move to: b.md", "@@")),
+    ).toEqual([
+      { path: "a.ts", content: "", mode: "edit" },
+      { path: "b.md", content: "", mode: "create" },
+    ]);
+  });
+
+  test("several sections, with the envelope and an environment line", () => {
+    expect(
+      patchWrites(
+        [
+          "  *** Begin Patch",
+          "*** Environment ID: dev",
+          "*** Add File: a.md",
+          "+a",
+          "   *** Delete File: b.md  ",
+          "*** Update File: c.ts",
+          "@@ fn",
+          " ctx",
+          "+c",
+          "*** End of File",
+          "*** End Patch",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      { path: "a.md", content: "a", mode: "create" },
+      { path: "b.md", content: "", mode: "edit" },
+      { path: "c.ts", content: "c", mode: "edit" },
+    ]);
+  });
+
+  test("a patch wrapped in a heredoc is read inside it", () => {
+    expect(patchWrites(`cat <<'EOF'\n${patch("*** Add File: a.md", "+a")}\nEOF`)).toEqual([
+      { path: "a.md", content: "a", mode: "create" },
+    ]);
+  });
+});
+
+describe("OpenCode reaches the Tool Guard's verdict", () => {
+  const refusalOf = (pending: Promise<void>) =>
+    pending.then(
+      () => "",
+      (error: Error) => error.message,
+    );
+
+  test("refuses a bash redirect into a Markdown file of the working repository", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-redirect-");
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "bash", { command: "cat > notes/handoff.md <<'EOF'\nx\nEOF" }),
+    ).rejects.toThrow(ARTIFACT_REFUSAL_HEADLINE);
+    await expect(
+      guardToolInput(context, "bash", { command: "echo ok > build.log" }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("allows an edit of a Markdown file the working repository tracks", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-tracked-");
+    await fs.writeFile(path.join(repo, "guide.md"), "# Guide\n", "utf8");
+    spawnSync("git", ["add", "guide.md"], { cwd: repo, stdio: "ignore" });
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "edit", { filePath: path.join(repo, "guide.md"), newString: "x" }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("allows a patch that updates or deletes an existing untracked file", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-patch-existing-");
+    await fs.writeFile(path.join(repo, "notes.md"), "old\n", "utf8");
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText: "*** Update File: notes.md\n@@\n-old\n+new",
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      guardToolInput(context, "apply_patch", { patchText: "*** Delete File: notes.md" }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("judges a patch move at its destination, as a new file", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-patch-move-");
+    await fs.writeFile(path.join(repo, "draft.ts"), "x\n", "utf8");
+    const context = await launchContext(companion, repo);
+
+    const refusal = await refusalOf(
+      guardToolInput(context, "apply_patch", {
+        patchText: "*** Update File: draft.ts\n*** Move to: notes/plan.md\n@@\n-x\n+y",
+      }),
+    );
+    expect(refusal).toContain(ARTIFACT_REFUSAL_HEADLINE);
+    expect(refusal).toContain(` resolved:  ${path.join(repo, "notes", "plan.md")}`);
+  });
+
+  test("judges a patch move at its source too", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-patch-move-source-");
+    await fs.mkdir(path.join(repo, "certs"), { recursive: true });
+    await fs.writeFile(path.join(repo, "certs", "server.key"), "x\n", "utf8");
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText:
+          "*** Begin Patch\n*** Update File: certs/server.key\n*** Move to: public.txt\n@@\n-x\n+x\n*** End Patch",
+      }),
+    ).rejects.toThrow("secret files are off-limits");
+  });
+
+  test("a hunk's context line is content, never a section header", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-patch-context-");
+    const GITHUB_TOKEN = ["ghp", "wWPw5k4aXcaT4fNP0UcnZwJUVFk6LO0pINUx"].join("_");
+    const notes = path.join(companion, "notes.md");
+    await fs.writeFile(notes, "*** Update File: src/main.ts\n", "utf8");
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText: `*** Begin Patch\n*** Update File: ${notes}\n@@\n *** Update File: src/main.ts\n+token: ${GITHUB_TOKEN}\n*** End Patch`,
+      }),
+    ).rejects.toThrow("@secretlint/secretlint-rule-github");
+  });
+
+  test("refuses a write to a sibling folder whose name starts with the companion's", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-sibling-");
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "write", { filePath: `${companion}-old/notes.md`, content: "x" }),
+    ).rejects.toThrow(ARTIFACT_REFUSAL_HEADLINE);
+  });
+
+  test("allows writes to OpenCode's own configuration folders", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-state-");
+    const configured = await makeTempDir("mate-opencode-config-dir-");
+    const xdg = await makeTempDir("mate-opencode-xdg-");
+    const context = await launchContext(companion, repo);
+    const env = { ...process.env, OPENCODE_CONFIG_DIR: configured, XDG_CONFIG_HOME: xdg };
+
+    for (const filePath of [
+      path.join(configured, "plans", "next.md"),
+      path.join(xdg, "opencode", "plans", "next.md"),
+    ]) {
+      // oxlint-disable-next-line no-await-in-loop -- one target per assertion
+      await expect(guardToolInput(context, "write", { filePath }, env)).resolves.toBeUndefined();
+    }
+    await expect(
+      guardToolInput(context, "write", { filePath: path.join(xdg, "plans", "next.md") }, env),
+    ).rejects.toThrow(ARTIFACT_REFUSAL_HEADLINE);
+  });
 });
 
 describe("OpenCode commit-attribution guard", () => {
@@ -317,5 +518,95 @@ describe("OpenCode secret guardrails", () => {
         content: GITHUB_TOKEN,
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("a patch move scans what the moved file will hold", () => {
+  const GITHUB_TOKEN = ["ghp", "wWPw5k4aXcaT4fNP0UcnZwJUVFk6LO0pINUx"].join("_");
+  const movePatch = (source: string, destination: string) =>
+    `*** Begin Patch\n*** Update File: ${source}\n*** Move to: ${destination}\n@@\n token: ${GITHUB_TOKEN}\n-old\n+new\n*** End Patch`;
+
+  test("a secret kept as a context line is refused at a companion destination", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-move-content-");
+    await fs.writeFile(path.join(repo, "source.txt"), `token: ${GITHUB_TOKEN}\nold\n`, "utf8");
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText: movePatch("source.txt", path.join(companion, "moved.txt")),
+      }),
+    ).rejects.toThrow("@secretlint/secretlint-rule-github");
+  });
+
+  test("the same move to product code is not scanned", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-move-product-");
+    await fs.writeFile(path.join(repo, "source.txt"), `token: ${GITHUB_TOKEN}\nold\n`, "utf8");
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText: movePatch("source.txt", path.join(repo, "src", "moved.txt")),
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("a move into the companion whose source cannot be read is refused", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-move-missing-");
+    await fs.mkdir(path.join(repo, "folder"), { recursive: true });
+    const context = await launchContext(companion, repo);
+
+    for (const source of ["missing.txt", "folder"]) {
+      // oxlint-disable-next-line no-await-in-loop -- one source at a time
+      await expect(
+        guardToolInput(context, "apply_patch", {
+          patchText: movePatch(source, path.join(companion, "moved.txt")),
+        }),
+      ).rejects.toThrow("could not be checked for secrets");
+    }
+  });
+
+  test("secretlint directives the move removes from the source cannot hide an added token", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-move-disable-");
+    await fs.writeFile(path.join(repo, "disabled.txt"), "// secretlint-disable\nold\n", "utf8");
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText: `*** Begin Patch\n*** Update File: disabled.txt\n*** Move to: ${path.join(companion, "active.txt")}\n@@\n-// secretlint-disable\n-old\n+token: ${GITHUB_TOKEN}\n*** End Patch`,
+      }),
+    ).rejects.toThrow("@secretlint/secretlint-rule-github");
+  });
+
+  test("an earlier section's added lines count for the file it moves", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-move-prior-");
+    await fs.writeFile(path.join(repo, "prior-update.txt"), "old\n", "utf8");
+    const context = await launchContext(companion, repo);
+
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText: `*** Begin Patch\n*** Update File: prior-update.txt\n@@\n-old\n+token: ${GITHUB_TOKEN}\n*** Update File: prior-update.txt\n*** Move to: ${path.join(companion, "updated.txt")}\n@@\n token: ${GITHUB_TOKEN}\n+new\n*** End Patch`,
+      }),
+    ).rejects.toThrow("@secretlint/secretlint-rule-github");
+    // So do a later section's lines for the destination, and sections that spell the file otherwise.
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText: `*** Begin Patch\n*** Update File: ./prior-update.txt\n@@\n-old\n+token: ${GITHUB_TOKEN}\n*** Update File: prior-update.txt\n*** Move to: ${path.join(companion, "updated.txt")}\n@@\n-old\n+new\n*** End Patch`,
+      }),
+    ).rejects.toThrow("@secretlint/secretlint-rule-github");
+    await expect(
+      guardToolInput(context, "apply_patch", {
+        patchText: `*** Begin Patch\n*** Update File: prior-update.txt\n*** Move to: ${path.join(companion, "updated.txt")}\n@@\n-old\n+new\n*** Update File: ${path.join(companion, "updated.txt")}\n@@\n-new\n+token: ${GITHUB_TOKEN}\n*** End Patch`,
+      }),
+    ).rejects.toThrow("@secretlint/secretlint-rule-github");
+  });
+});
+
+describe("OpenCode fails closed when the guard itself fails", () => {
+  test("an unexpected error blocks the call with a message that says so", async () => {
+    const { repo, companion } = await setupRepoFixture("mate-opencode-guard-error-");
+    const context = await launchContext(companion, repo);
+
+    const failure = guardToolInput(context, "write", { filePath: "no\u0000tes.md", content: "x" });
+    await expect(failure).rejects.toThrow(/^Mate guardrail could not check this call: /);
   });
 });

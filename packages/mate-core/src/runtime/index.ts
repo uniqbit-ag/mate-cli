@@ -149,3 +149,11 @@ export {
   type SecretRule,
   type SecretRules,
 } from "./secret-patterns";
+export {
+  checkToolCall,
+  type GuardedToolCall,
+  type ToolGuardCheck,
+  type ToolGuardRefusal,
+  type ToolGuardScope,
+  type WriteMode,
+} from "./tool-guard";

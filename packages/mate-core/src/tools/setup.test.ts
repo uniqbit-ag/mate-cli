@@ -940,6 +940,29 @@ describe("executeSetup", () => {
     ).resolves.toBeNull();
   });
 
+  test("setup run from a companion path with a link before `..` writes where that path leads", async () => {
+    const root = await fs.realpath(await makeTempDir("mate-setup-link-"));
+    const real = path.join(root, "outside", "companion");
+    await fs.mkdir(path.join(root, "outside", "sub"), { recursive: true });
+    await fs.mkdir(real, { recursive: true });
+    await fs.symlink(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    await installOpenSpecStub(root);
+
+    await executeSetup(
+      { allowedAgents: ["claude"], capabilities: [{ name: "openspec" }], git: "auto" },
+      { cwd: `${path.join(root, "forward")}/../companion`, globalConfigStore },
+    );
+
+    const persisted = await new ConfigStore(
+      path.join(real, ".mate", "config", "framework.yaml"),
+    ).load();
+    expect(persisted.git).toBe("auto");
+    await expect(fs.access(path.join(root, "companion"))).rejects.toThrow();
+  });
+
   test("setup persists git auto mode selection", async () => {
     const root = await makeTempDir("mate-setup-git-mode-");
     const globalConfigStore = new GlobalConfigStore(

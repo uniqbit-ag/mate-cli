@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { writeProjectionPair, type MateProjection } from "../runtime/projection";
-import { companionLinkPath, repoLocalRegistryPath } from "../runtime/repo-local";
+import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { evaluate } from "./validate-artifact-path";
 
 const tempRoots: string[] = [];
@@ -150,60 +150,7 @@ describe("validate-artifact-path hook module", () => {
     ).toBe(2);
   });
 
-  test("allows writes under the companion path", async () => {
-    const repo = await makeTempDir("mate-hook-companion-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-
-    const result = await evaluate(
-      { tool_name: "Write", tool_input: { file_path: path.join(companion, "design.md") } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(0);
-  });
-
-  test("allows non-artifact source writes to the working repo", async () => {
-    const repo = await makeTempDir("mate-hook-source-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-
-    const result = await evaluate(
-      { tool_name: "Write", tool_input: { file_path: path.join(repo, "src", "index.ts") } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(0);
-  });
-
-  test("allows README.md writes to the working repo", async () => {
-    const repo = await makeTempDir("mate-hook-readme-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-
-    const result = await evaluate(
-      { tool_name: "Write", tool_input: { file_path: path.join(repo, "README.md") } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(0);
-  });
-
-  test("allows gitignored working-repo artifact paths", async () => {
-    const repo = await makeTempDir("mate-hook-ignored-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-    await fs.mkdir(path.join(repo, "scratch"), { recursive: true });
-    await fs.writeFile(path.join(repo, ".gitignore"), "scratch/*.md\n", "utf8");
-
-    const result = await evaluate(
-      { tool_name: "Write", tool_input: { file_path: path.join(repo, "scratch", "note.md") } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(0);
-  });
-
-  test("blocks non-gitignored working-repo artifact paths", async () => {
+  test("an artifact refusal is exit 2 with the message and a trailing newline", async () => {
     const repo = await makeTempDir("mate-hook-blocked-");
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
@@ -215,129 +162,7 @@ describe("validate-artifact-path hook module", () => {
     );
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
-  });
-
-  test("notes the companion CLAUDE.md location when blocking CLAUDE.md", async () => {
-    const repo = await makeTempDir("mate-hook-claudemd-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-
-    const result = await evaluate(
-      { tool_name: "Write", tool_input: { file_path: path.join(repo, "CLAUDE.md") } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain(`${companion}/CLAUDE.md`);
-  });
-
-  test("explains a relative redirect after cd into the companion", async () => {
-    const repo = await makeTempDir("mate-hook-cd-");
-    const companion = await makeTempDir("mate-hook-cd-companion-");
-    await initGitRepo(repo);
-
-    const result = await evaluate(
-      { tool_name: "Bash", tool_input: { command: `cd ${companion} && cat > notes/handoff.md` } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain(` resolved:  ${path.join(repo, "notes", "handoff.md")}`);
-    expect(result.stderr).toContain("Relative paths resolve against the working repository");
-    expect(result.stderr).toContain("`cd` is not followed");
-    expect(result.stderr).toContain(` suggested: ${path.join(companion, "notes", "handoff.md")}`);
-  });
-
-  test("suggests a companion path for an absolute in-repo target", async () => {
-    const repo = await makeTempDir("mate-hook-abs-");
-    const companion = await makeTempDir("mate-hook-abs-companion-");
-    await initGitRepo(repo);
-
-    const result = await evaluate(
-      { tool_name: "Write", tool_input: { file_path: path.join(repo, "scratch", "plan.md") } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain(` suggested: ${path.join(companion, "scratch", "plan.md")}`);
-    expect(result.stderr).not.toContain("resolved:");
-    expect(result.stderr).not.toContain("Relative paths resolve");
-  });
-
-  test("suggests nothing for a target outside the working repo", async () => {
-    const repo = await makeTempDir("mate-hook-out-");
-    const companion = await makeTempDir("mate-hook-out-companion-");
-    const elsewhere = await makeTempDir("mate-hook-out-elsewhere-");
-    await initGitRepo(repo);
-
-    const result = await evaluate(
-      {
-        tool_name: "Bash",
-        tool_input: { command: `echo x > ${path.join(elsewhere, "notes.md")}` },
-      },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain(` companion: ${companion}`);
-    expect(result.stderr).not.toContain("suggested:");
-  });
-
-  describe("heredoc bodies", () => {
-    async function bashVerdict(command: string): Promise<number> {
-      const repo = await makeTempDir("mate-hook-heredoc-");
-      const companion = await makeTempDir("mate-hook-heredoc-companion-");
-      await initGitRepo(repo);
-      const result = await evaluate(
-        { tool_name: "Bash", tool_input: { command } },
-        { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-      );
-      return result.exitCode;
-    }
-
-    test("ignores redirect-like text in a heredoc body", async () => {
-      const command = [
-        "cat >> src/app.ts <<'EOF'",
-        "const files = roots.flatMap((root) =>",
-        '  ["CLAUDE.md", "AGENTS.md"].map((name) => path.join(root, name)),',
-        ");",
-        "echo notes > scratch/plan.md",
-        "EOF",
-      ].join("\n");
-      expect(await bashVerdict(command)).toBe(0);
-    });
-
-    test("still judges a redirect after the heredoc marker", async () => {
-      expect(await bashVerdict("cat <<'EOF' > notes/x.md\nbody\nEOF")).toBe(2);
-    });
-
-    test("still judges a redirect before the heredoc marker", async () => {
-      expect(await bashVerdict("cat > notes/x.md <<EOF\nbody\nEOF")).toBe(2);
-    });
-
-    test("still judges a redirect after the heredoc ends", async () => {
-      expect(await bashVerdict("cat <<EOF | sort\nbody\nEOF\necho x > notes/x.md")).toBe(2);
-    });
-
-    test("does not pair a line-end redirect with a later line", async () => {
-      expect(await bashVerdict("node -e 'a =>\nnotes.md'")).toBe(0);
-    });
-
-    test("does not pair a line-end tee with a later line", async () => {
-      expect(await bashVerdict("echo hi | tee\nnotes.md")).toBe(0);
-    });
-  });
-
-  test("allows gitignored bash tee targets in the working repo", async () => {
-    const repo = await makeTempDir("mate-hook-bash-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-    await fs.mkdir(path.join(repo, "scratch"), { recursive: true });
-    await fs.writeFile(path.join(repo, ".gitignore"), "scratch/*.md\n", "utf8");
-
-    const result = await evaluate(
-      { tool_name: "Bash", tool_input: { command: "printf hello | tee scratch/note.md" } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(0);
+    expect(result.stderr.endsWith("\n")).toBe(true);
   });
 
   test("blocks bash redirects that create working-repo artifacts", async () => {
@@ -353,107 +178,7 @@ describe("validate-artifact-path hook module", () => {
     expect(result.exitCode).toBe(2);
   });
 
-  test("allows product documentation and storybook paths", async () => {
-    const repo = await makeTempDir("mate-hook-docs-allow-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await fs.mkdir(path.join(repo, "apps", "docs"), { recursive: true });
-    await fs.writeFile(path.join(repo, "apps", "docs", "package.json"), "{}\n", "utf8");
-    await fs.mkdir(path.join(repo, "docs"), { recursive: true });
-    await fs.writeFile(path.join(repo, "docs", "package.json"), "{}\n", "utf8");
-    await initGitRepo(repo);
-
-    for (const filePath of [
-      path.join(repo, "apps", "docs", "content", "docs", "index.mdx"),
-      path.join(repo, "docs", "content", "index.mdx"),
-      path.join(repo, ".storybook", "preview.ts"),
-      path.join(repo, "storybook", "intro.mdx"),
-    ]) {
-      const result = await evaluate(
-        { tool_name: "Write", tool_input: { file_path: filePath } },
-        { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-      );
-      expect(result.exitCode).toBe(0);
-    }
-  });
-
-  test("still blocks artifact folders under product docs", async () => {
-    const repo = await makeTempDir("mate-hook-docs-block-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await fs.mkdir(path.join(repo, "apps", "docs-without-package"), { recursive: true });
-    await initGitRepo(repo);
-
-    for (const filePath of [
-      path.join(repo, "apps", "docs-without-package", "guide.md"),
-      path.join(repo, "docs", "usage.md"),
-      path.join(repo, "docs", "decisions", "ADR-001.md"),
-      path.join(repo, "docs", "prd", "new-feature.md"),
-      path.join(repo, "docs", "usage", "tasks.md"),
-    ]) {
-      const result = await evaluate(
-        { tool_name: "Write", tool_input: { file_path: filePath } },
-        { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-      );
-      expect(result.exitCode).toBe(2);
-      expect(result.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
-    }
-  });
-
-  test("allows editing files already tracked in the working repo (product code)", async () => {
-    const repo = await makeTempDir("mate-hook-tracked-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-    const skillPath = path.join(repo, "src", "templates", "skills", "SKILL.md");
-    await fs.mkdir(path.dirname(skillPath), { recursive: true });
-    await fs.writeFile(skillPath, "packaged skill template\n", "utf8");
-    spawnSync("git", ["add", "."], { cwd: repo, stdio: "ignore" });
-    spawnSync(
-      "git",
-      ["-c", "user.name=Mate", "-c", "user.email=mate@example.test", "commit", "-qm", "initial"],
-      { cwd: repo, stdio: "ignore" },
-    );
-
-    const result = await evaluate(
-      { tool_name: "Edit", tool_input: { file_path: skillPath } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-    );
-    expect(result.exitCode).toBe(0);
-  });
-
-  test("an inherited GIT_DIR does not change the tracked-path answer", async () => {
-    const repo = await makeTempDir("mate-hook-git-dir-");
-    const elsewhere = await makeTempDir("mate-hook-elsewhere-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-    await initGitRepo(elsewhere);
-    const docPath = path.join(repo, "notes", "acme.md");
-    await fs.mkdir(path.dirname(docPath), { recursive: true });
-    await fs.writeFile(docPath, "tracked\n", "utf8");
-    spawnSync("git", ["add", "."], { cwd: repo, stdio: "ignore" });
-    spawnSync(
-      "git",
-      ["-c", "user.name=Mate", "-c", "user.email=mate@example.test", "commit", "-qm", "initial"],
-      { cwd: repo, stdio: "ignore" },
-    );
-
-    const previous = process.env.GIT_DIR;
-    process.env.GIT_DIR = path.join(elsewhere, ".git");
-    try {
-      const result = await evaluate(
-        { tool_name: "Write", tool_input: { file_path: docPath } },
-        { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-      );
-      expect(result.exitCode).toBe(0);
-    } finally {
-      if (previous === undefined) delete process.env.GIT_DIR;
-      else process.env.GIT_DIR = previous;
-    }
-  });
-
-  test("allows editing existing working-repo artifact files, but still blocks Write", async () => {
+  test("Edit and MultiEdit translate to edits and Write to a create", async () => {
     const repo = await makeTempDir("mate-hook-existing-");
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
@@ -462,24 +187,14 @@ describe("validate-artifact-path hook module", () => {
     await fs.mkdir(path.dirname(notePath), { recursive: true });
     await fs.writeFile(notePath, "existing untracked artifact\n", "utf8");
     const env = { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo };
+    const verdict = async (tool_name: string, tool_input: Record<string, unknown>) =>
+      (await evaluate({ tool_name, tool_input }, env)).exitCode;
 
-    expect(
-      (await evaluate({ tool_name: "Edit", tool_input: { file_path: notePath } }, env)).exitCode,
-    ).toBe(0);
-    expect(
-      (await evaluate({ tool_name: "Write", tool_input: { file_path: notePath } }, env)).exitCode,
-    ).toBe(2);
-    expect(
-      (
-        await evaluate(
-          {
-            tool_name: "Edit",
-            tool_input: { file_path: path.join(repo, "scratch", "missing.md") },
-          },
-          env,
-        )
-      ).exitCode,
-    ).toBe(2);
+    expect(await verdict("Edit", { file_path: notePath })).toBe(0);
+    expect(await verdict("MultiEdit", { file_path: notePath, edits: [{ new_string: "x" }] })).toBe(
+      0,
+    );
+    expect(await verdict("Write", { file_path: notePath })).toBe(2);
   });
 
   test("allows writes into Claude Code's own config directory (plan files)", async () => {
@@ -529,49 +244,27 @@ describe("validate-artifact-path hook module", () => {
     ).toBe(2);
   });
 
-  test("treats a write through the companion link as a companion write", async () => {
-    const repo = await makeTempDir("mate-hook-link-");
+  test("a config directory spelled with `link/..` is the folder the kernel reaches", async () => {
+    const repo = await makeTempDir("mate-hook-config-link-");
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
     await initGitRepo(repo);
-    await wrapRepo(repo, companion);
-    await fs.symlink(companion, companionLinkPath(repo), "dir");
+    const root = await makeTempDir("mate-hook-config-link-root-");
+    // `forward` leads to `other/sub`, so `forward/../claude` is `other/claude`.
+    await fs.mkdir(path.join(root, "other", "sub"), { recursive: true });
+    await fs.mkdir(path.join(root, "other", "claude"));
+    await fs.symlink(path.join(root, "other", "sub"), path.join(root, "forward"));
+    const env = {
+      MATE_ARTIFACT_PATH: companion,
+      MATE_REPO_PATH: repo,
+      CLAUDE_CONFIG_DIR: `${path.join(root, "forward")}/../claude`,
+    };
+    const writeTo = (filePath: string) =>
+      evaluate({ tool_name: "Write", tool_input: { file_path: filePath } }, env, repo);
 
-    const throughLink = path.join(
-      companionLinkPath(repo),
-      "openspec",
-      "changes",
-      "acme",
-      "proposal.md",
-    );
-    expect(
-      (await evaluate({ tool_name: "Write", tool_input: { file_path: throughLink } }, {}, repo))
-        .exitCode,
-    ).toBe(0);
-    expect(
-      (
-        await evaluate(
-          { tool_name: "Write", tool_input: { file_path: path.join(repo, "proposal.md") } },
-          {},
-          repo,
-        )
-      ).exitCode,
-    ).toBe(2);
-  });
-
-  test("judges an operator's own link by where it lands", async () => {
-    const repo = await makeTempDir("mate-hook-operator-link-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-    await fs.symlink(companion, path.join(repo, "artifacts"), "dir");
-
-    const result = await evaluate(
-      { tool_name: "Write", tool_input: { file_path: path.join(repo, "artifacts", "design.md") } },
-      { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-      repo,
-    );
-    expect(result.exitCode).toBe(0);
+    expect((await writeTo(path.join(root, "other", "claude", "plans", "p.md"))).exitCode).toBe(0);
+    // The normalised spelling names another folder, which is not Claude Code's.
+    expect((await writeTo(path.join(root, "claude", "plans", "p.md"))).exitCode).toBe(2);
   });
 
   test("tolerates malformed payloads", async () => {
@@ -580,6 +273,25 @@ describe("validate-artifact-path hook module", () => {
     expect(
       (await evaluate({ tool_name: "Write" }, { MATE_ARTIFACT_PATH: "/tmp/companion" })).exitCode,
     ).toBe(0);
+  });
+
+  test("judges a malformed path or command rather than nothing", async () => {
+    const repo = await makeTempDir("mate-hook-malformed-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    const env = { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo };
+    const outcome = (toolName: string, toolInput: Record<string, unknown>) =>
+      evaluate({ tool_name: toolName, tool_input: toolInput }, env, repo);
+
+    expect((await outcome("Write", { file_path: ["notes.md"] })).exitCode).toBe(2);
+    expect((await outcome("Read", { file_path: [".env"] })).stderr).toContain(
+      "secret files are off-limits",
+    );
+    expect((await outcome("Bash", { command: ["cat .env"] })).stderr).toContain(
+      "secret files are off-limits",
+    );
+    expect((await outcome("Write", { file_path: null })).exitCode).toBe(0);
   });
 });
 

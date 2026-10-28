@@ -1,20 +1,12 @@
-import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { evaluate } from "../hooks/validate-artifact-path";
-import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
-import {
-  buildArtifactError,
-  readContext,
-  shouldBlockArtifactWrite,
-  type CompanionContext,
-} from "./companion-policy";
+import { readContext } from "./companion-policy";
 
 const tempRoots: string[] = [];
 
@@ -22,10 +14,6 @@ async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
   tempRoots.push(dir);
   return dir;
-}
-
-async function initGitRepo(root: string): Promise<void> {
-  spawnSync("git", ["init", "-q"], { cwd: root, stdio: "ignore" });
 }
 
 async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> {
@@ -111,131 +99,5 @@ describe("readContext", () => {
     expect(context.companionPath).toBe("");
     expect(context.repositoryPath).toBe("");
     expect(context.agentsMd).toBe("");
-  });
-});
-
-function makeContext(repo: string, companion: string): CompanionContext {
-  return {
-    frameworkName: "mate",
-    companionPath: companion,
-    graphifyEnabled: false,
-    gitAutoModeEnabled: false,
-    repositoryPath: repo,
-    repositoryId: "app",
-    policyJson: "{}",
-    agentsMd: "",
-    stalenessLines: [],
-  };
-}
-
-describe("OpenCode companion policy", () => {
-  test("allows gitignored artifact writes in the working repository", async () => {
-    const repo = await makeTempDir("mate-opencode-ignored-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-    await fs.mkdir(path.join(repo, "scratch"), { recursive: true });
-    await fs.writeFile(path.join(repo, ".gitignore"), "scratch/*.md\n", "utf8");
-
-    const context = makeContext(repo, companion);
-    expect(shouldBlockArtifactWrite(context, path.join(repo, "scratch", "note.md"))).toBe(false);
-  });
-
-  test("blocks non-gitignored artifact writes in the working repository", async () => {
-    const repo = await makeTempDir("mate-opencode-blocked-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await initGitRepo(repo);
-
-    const context = makeContext(repo, companion);
-    expect(shouldBlockArtifactWrite(context, path.join(repo, "scratch", "note.md"))).toBe(true);
-    expect(buildArtifactError(context, path.join(repo, "scratch", "note.md"))).toContain(
-      ARTIFACT_REFUSAL_HEADLINE,
-    );
-  });
-
-  test("refuses with the same message as the Claude hook", async () => {
-    const repo = await makeTempDir("mate-opencode-parity-");
-    const companion = await makeTempDir("mate-opencode-parity-companion-");
-    await initGitRepo(repo);
-
-    const context = makeContext(repo, companion);
-    for (const target of ["notes/handoff.md", path.join(repo, "scratch", "plan.md"), "CLAUDE.md"]) {
-      // oxlint-disable-next-line no-await-in-loop -- one target at a time
-      const claude = await evaluate(
-        { tool_name: "Write", tool_input: { file_path: target } },
-        { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
-      );
-      expect(claude.exitCode).toBe(2);
-      expect(buildArtifactError(context, target)).toBe(claude.stderr.replace(/\n$/, ""));
-    }
-  });
-
-  test("suggests no path for a target outside the working repository", async () => {
-    const repo = await makeTempDir("mate-opencode-outside-");
-    const companion = await makeTempDir("mate-opencode-outside-companion-");
-    const elsewhere = await makeTempDir("mate-opencode-outside-elsewhere-");
-    await initGitRepo(repo);
-
-    const context = makeContext(repo, companion);
-    const target = path.join(elsewhere, "notes.md");
-    expect(shouldBlockArtifactWrite(context, target)).toBe(true);
-    const message = buildArtifactError(context, target);
-    expect(message).toContain(companion);
-    expect(message).not.toContain("suggested:");
-  });
-
-  test("allows product documentation and storybook paths in the working repository", async () => {
-    const repo = await makeTempDir("mate-opencode-docs-allow-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await fs.mkdir(path.join(repo, "apps", "docs"), { recursive: true });
-    await fs.writeFile(path.join(repo, "apps", "docs", "package.json"), "{}\n", "utf8");
-    await fs.mkdir(path.join(repo, "docs"), { recursive: true });
-    await fs.writeFile(path.join(repo, "docs", "package.json"), "{}\n", "utf8");
-    await initGitRepo(repo);
-
-    const context = makeContext(repo, companion);
-    expect(
-      shouldBlockArtifactWrite(
-        context,
-        path.join(repo, "apps", "docs", "content", "docs", "index.mdx"),
-      ),
-    ).toBe(false);
-    expect(shouldBlockArtifactWrite(context, path.join(repo, "docs", "content", "index.mdx"))).toBe(
-      false,
-    );
-    expect(shouldBlockArtifactWrite(context, path.join(repo, ".storybook", "preview.ts"))).toBe(
-      false,
-    );
-    expect(shouldBlockArtifactWrite(context, path.join(repo, "storybook", "intro.mdx"))).toBe(
-      false,
-    );
-  });
-
-  test("still blocks artifact folders under product docs", async () => {
-    const repo = await makeTempDir("mate-opencode-docs-block-");
-    const companion = path.join(repo, "companion");
-    await fs.mkdir(companion, { recursive: true });
-    await fs.mkdir(path.join(repo, "apps", "docs-without-package"), { recursive: true });
-    await initGitRepo(repo);
-
-    const context = makeContext(repo, companion);
-    expect(
-      shouldBlockArtifactWrite(
-        context,
-        path.join(repo, "apps", "docs-without-package", "guide.md"),
-      ),
-    ).toBe(true);
-    expect(shouldBlockArtifactWrite(context, path.join(repo, "docs", "usage.md"))).toBe(true);
-    expect(
-      shouldBlockArtifactWrite(context, path.join(repo, "docs", "decisions", "ADR-001.md")),
-    ).toBe(true);
-    expect(
-      shouldBlockArtifactWrite(context, path.join(repo, "docs", "prd", "new-feature.md")),
-    ).toBe(true);
-    expect(shouldBlockArtifactWrite(context, path.join(repo, "docs", "usage", "tasks.md"))).toBe(
-      true,
-    );
   });
 });

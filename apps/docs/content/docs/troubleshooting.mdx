@@ -157,10 +157,110 @@ Rewrite to the suggested absolute path and retry.
 
 The guardrail resolves a relative path against the working repository, even after
 a `cd` into the companion in the same shell command. `resolved:` shows the path it
-judged, and appears only for a relative target. `suggested:` is the matching
+judged, and appears only for a relative target. Links are followed before `..`,
+as the system does, so `back/../notes.md` is judged where it lands when `back`
+is a link. On a filesystem that ignores letter case (the macOS default), a path
+spelled in another case is the same folder: `ACME-COMPANION/notes.md` is in the
+companion `acme-companion`. `suggested:` is the matching
 companion path, offered only when the target lies inside the working repository.
-Write artifacts with absolute companion paths. A path that is gitignored, or a file
-already tracked, stays writable in the working repository.
+`companion:` is the configured companion path normalised, or, when a link before
+a `..` in it leads elsewhere, the folder the system reaches; the companion's
+`framework.yaml` and its Git state are read there too. This holds for the
+companion path the guard gets from the launch environment or a projection. A
+companion path stored in Mate's registries is still normalised before Mate
+follows it, and a launch whose companion path leads to a missing folder uses the
+normalised one instead, so avoid a companion path written with `..` through a
+link.
+Write artifacts with absolute companion paths.
+
+A session without a Working Repository, such as `mate claude -- --companion`,
+gets the same check: an artifact written outside the companion is refused, in
+Claude Code and OpenCode alike. A relative path then resolves against the
+session's folder, which for a companion-scoped launch is the companion, and the
+refusal says so. Of the exemptions below, those that need a Working Repository
+(a file its Git ignores or tracks, its product documentation) do not apply in
+such a session; the others do.
+
+Claude Code and OpenCode give the same verdict for the same call. Counted as an
+artifact: `CLAUDE.md`, `CONTEXT.md`, `design.md`, `explore-brief.md`,
+`proposal.md`, `spec.md`, `tasks.md`, anything under an `openspec/`, `changes/`,
+`specs/`, `docs/adr/`, `docs/adrs/`, `docs/decisions/` or `docs/prd/` folder,
+and any other Markdown file except `README.md`. Letter case does not matter:
+`NOTES.MD` and `Spec.MD` count, `README.MD` does not. The guardrail refuses an
+artifact that a call would create in the working repository:
+
+- a whole-file write (Claude `Write`, OpenCode `write`), even over an existing file;
+- an edit of a file that does not exist yet;
+- a file a patch adds, and the destination of a patch's move. A move is judged
+  at both ends: its source counts as an edit, so moving a secret file away, or
+  a companion file out while the companion's history has forked, is refused;
+- a shell redirect (`>`, `>>`, `>|`, `2>`, `&>`) that names a Markdown file,
+  quoted or not (`> "notes dir/handoff.md"`), with quotes and backslashes read
+  as Bash reads them;
+- a Markdown file operand of `tee` (`tee -a README.md notes.md` judges both
+  files). `tee` counts where it runs as a command: at the start of a command,
+  after `|`, `;`, `&&`, `||`, `&` or `(`, behind `NAME=value` assignments, or
+  behind `sudo`, `env`, `command`, `exec`, `nohup`, `nice`, `time`, `stdbuf`
+  or `xargs`, past the options of theirs that take a value (`sudo --user bob`,
+  `nice -n 5`) and inside the command line of `env -S "…"`. An option the
+  guardrail does not know is read as taking no value. As an argument
+  (`grep tee notes.md`) `tee` writes nothing.
+
+A command substitution or process substitution (`$(…)`, backticks, `<(…)`,
+`>(…)`) is never read as a file name, but the command inside it is read the
+same way, and the `tee` operands after it still count. A `#` comment hides the
+rest of its line from the artifact check, inside a substitution too. The secret
+check reads comments like any other text and errs toward refusing, so
+`git status # leave server.key alone` is refused there; see
+[Secret Guardrails](/docs/concepts/secret-guardrails). An ANSI-C string `$'…'`
+is read as Bash reads it (`\'` does not end it). A heredoc body is not read as
+commands when its marker reads as one both on its own line and in the whole
+command, with the delimiter taken as Bash takes it (`<<E"OF"` ends at `EOF`,
+`<<EOF+` at `EOF+`). Otherwise the lines after the marker are read as commands
+too: when the marker sits in a quote that spans lines, or in arithmetic
+(`$((1<<2))`), or its delimiter holds `$` or a backtick. A command that nests
+substitutions more than 64 levels deep is refused unread:
+
+```text
+Mate guardrail: this shell command nests substitutions more than 64 levels deep, too deep to check, so it is blocked.
+Split it into smaller commands.
+```
+
+Reading shell commands is best effort. The guardrail catches redirects, `tee`
+and the common wrappers above, but it does not expand variables (`> "$OUT"`),
+globs or `~`, does not follow a `cd`, judges only Markdown targets in shell
+commands, and cannot see a write a command hides: through a variable, `eval`,
+`python -c`, a script, or any program that writes files itself. It is a
+guardrail that keeps an agent on the documented path, not a sandbox.
+
+If the guardrail itself fails on a call, it refuses the call instead of letting
+it run unchecked, in Claude Code and OpenCode alike:
+
+```text
+Mate guardrail could not check this call: <the error>
+```
+
+Retry the call; if it keeps failing, report the error. A companion write the
+secret scan cannot run on is refused as well, with its own message.
+
+It allows:
+
+- anything in the companion, reached through its link in the working
+  repository or its own path. A folder whose name merely starts with the
+  companion's, such as `acme-old` beside `acme`, is not the companion;
+- an edit of an existing file, including a patch's update or delete;
+- a file Git ignores or already tracks;
+- product documentation: a `docs` folder that holds a `package.json`, and
+  `storybook` or `.storybook` folders;
+- the agent's own configuration folder: `CLAUDE_CONFIG_DIR` or `~/.claude` for
+  Claude Code; `~/.config/opencode` (or `$XDG_CONFIG_HOME/opencode`) and
+  `OPENCODE_CONFIG_DIR` for OpenCode. A path written under that folder counts
+  even when a link takes it elsewhere, so a `CLAUDE.md` or skill linked there
+  from a dotfiles repository stays editable, unless the write lands in the
+  working repository: a link from that folder into the working repository is
+  judged where the write lands. On a filesystem that ignores letter case, the
+  folder spelled in another case counts too. A configured folder is followed
+  as written, so `link/..` in it means the folder the system reaches.
 
 ## Commit Refused For A Co-Authored-By Trailer
 

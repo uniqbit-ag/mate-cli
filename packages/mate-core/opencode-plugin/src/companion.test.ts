@@ -4,7 +4,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
-import { extractPatchPaths, readContext } from "../../src/opencode";
+import { readContext } from "../../src/opencode";
+import { patchWrites } from "../../src/opencode/companion-hooks";
 import { runtimeDirectoryPath, runtimeWrapperBinPath } from "../../src/runtime/runtime-directory";
 
 import { registerCompanion } from "./companion";
@@ -279,24 +280,35 @@ describe("OpenCode companion registration", () => {
     );
   });
 
-  test("extractPatchPaths parses marker lines from patchText", () => {
-    const patchText = `*** Add File: openspec/changes/foo/spec.md
-+++ b/openspec/changes/foo/spec.md
-some content
+  test("patchWrites reads each file section of a patch as a create or an edit", () => {
+    const patchText = `*** Begin Patch
+*** Add File: openspec/changes/foo/spec.md
++# Spec
 *** Update File: src/main.ts
---- a/src/main.ts
-+++ b/src/main.ts
-more content
+@@
+-old
++new
+*** Update File: src/draft.ts
+*** Move to: notes/plan.md
+@@
+-x
++y
 *** Delete File: old/tasks.md
+*** End Patch
 `;
 
-    const paths = extractPatchPaths(patchText);
-    expect(paths).toEqual(["openspec/changes/foo/spec.md", "src/main.ts", "old/tasks.md"]);
+    expect(patchWrites(patchText)).toEqual([
+      { path: "openspec/changes/foo/spec.md", content: "# Spec", mode: "create" },
+      { path: "src/main.ts", content: "new", mode: "edit" },
+      { path: "src/draft.ts", content: "", mode: "edit" },
+      { path: "notes/plan.md", content: "y", mode: "create" },
+      { path: "old/tasks.md", content: "", mode: "edit" },
+    ]);
   });
 
-  test("extractPatchPaths returns empty array for patch without markers", () => {
+  test("patchWrites returns no writes for a patch without file sections", () => {
     const patchText = "--- a/foo.txt\n+++ b/foo.txt\n@@ -1 +1 @@\n";
-    expect(extractPatchPaths(patchText)).toEqual([]);
+    expect(patchWrites(patchText)).toEqual([]);
   });
 });
 

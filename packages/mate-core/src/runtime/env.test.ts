@@ -257,3 +257,37 @@ describe("isManagedCompanionContext", () => {
     expect(isManagedCompanionContext(missingCompanion)).toBe(false);
   });
 });
+
+describe("a companion path with a link before `..`", () => {
+  /** `forward` links to `outside/sub`, so `forward/../companion` is `outside/companion`. */
+  function linkedCompanions() {
+    const root = fs.realpathSync(makeTempDir("env-link-"));
+    const real = path.join(root, "outside", "companion");
+    const decoy = path.join(root, "companion");
+    fs.mkdirSync(path.join(root, "outside", "sub"), { recursive: true });
+    fs.symlinkSync(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    for (const [dir, config] of [
+      [real, "git: auto\n"],
+      [decoy, "git: manual\n"],
+    ] as const) {
+      fs.mkdirSync(path.dirname(companionFrameworkConfigPath(dir)), { recursive: true });
+      fs.writeFileSync(companionFrameworkConfigPath(dir), config, "utf8");
+    }
+    return { real, configured: `${path.join(root, "forward")}/../companion` };
+  }
+
+  test("from the launch environment resolves to where it leads", () => {
+    const { real, configured } = linkedCompanions();
+    expect(readCompanionRuntimeContext({ MATE_ARTIFACT_PATH: configured }).companionPath).toBe(
+      real,
+    );
+  });
+
+  test("from a projection resolves to where it leads, and its policy is read there", () => {
+    const { real, configured } = linkedCompanions();
+    const { repoRoot } = makeProjectedRepo({ companionPath: configured });
+    const context = readCompanionRuntimeContext({}, repoRoot);
+    expect(context.companionPath).toBe(real);
+    expect(context.gitAutoModeEnabled).toBe(true);
+  });
+});

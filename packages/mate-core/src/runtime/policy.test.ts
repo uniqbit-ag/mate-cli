@@ -86,6 +86,32 @@ describe("readCompanionPolicy", () => {
   test("treats any git mode other than auto as disabled", () => {
     expect(readCompanionPolicy(makeCompanion("git: manual\n")).gitAutoMode).toBe(false);
   });
+
+  test("reads the config where the companion path lands, following a link before `..`", () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "companion-policy-link-")));
+    tempRoots.push(root);
+    const real = path.join(root, "outside", "companion");
+    const decoy = path.join(root, "companion");
+    fs.mkdirSync(path.join(root, "outside", "sub"), { recursive: true });
+    fs.symlinkSync(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    for (const [dir, config] of [
+      [real, "git: auto\nsecrets:\n  deny: [private.txt]\n"],
+      [decoy, "secrets:\n  guardrails: false\n"],
+    ]) {
+      fs.mkdirSync(path.join(dir, ".mate", "config"), { recursive: true });
+      fs.writeFileSync(path.join(dir, ".mate", "config", "framework.yaml"), config, "utf8");
+    }
+    const configured = `${path.join(root, "forward")}/../companion`;
+
+    // Read as the kernel opens it; `fs.realpathSync` would normalise first.
+    expect(fs.readFileSync(companionFrameworkConfigPath(configured), "utf8")).toBe(
+      fs.readFileSync(path.join(real, ".mate", "config", "framework.yaml"), "utf8"),
+    );
+    const policy = readCompanionPolicy(configured);
+    expect(policy.gitAutoMode).toBe(true);
+    expect(policy.secrets.guardrails).toBe(true);
+    expect(isSecretFile("private.txt", resolveSecretPolicy(configured))).toBe(true);
+  });
 });
 
 describe("resolveSecretPolicy", () => {

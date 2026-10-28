@@ -34,8 +34,10 @@ export const emptyCompanionPolicy = (): CompanionPolicy => ({
   secrets: defaultSecretPolicy(),
 });
 
+/** Not normalised: the kernel must follow a link before `..`, or a `link/..` companion reads a decoy. */
 export function companionFrameworkConfigPath(companionPath: string): string {
-  return path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+  const config = path.join(`.${FRAMEWORK_NAME}`, "config", "framework.yaml");
+  return companionPath ? `${companionPath}${path.sep}${config}` : config;
 }
 
 function stringList(value: unknown): string[] {

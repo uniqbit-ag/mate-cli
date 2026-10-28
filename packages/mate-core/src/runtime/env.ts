@@ -1,5 +1,6 @@
 import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
+import { canonicalPath } from "./physical-path";
 import { isCapabilityEnabled, policyDocument, readCompanionPolicy } from "./policy";
 import { resolveProjection, type ResolvedProjection } from "./projection";
 
@@ -8,7 +9,8 @@ export { MATE_ENV, type MateEnvVariable } from "./env-names";
 /**
  * Normalized companion runtime context. Values come from the Mate launch
  * environment when it is present, and from the durable projection at the
- * Projection Root otherwise.
+ * Projection Root otherwise. The companion path is canonical
+ * ({@link canonicalPath}): a `link/..` spelling names where it leads.
  */
 export type CompanionRuntimeContext = {
   frameworkName: string;
@@ -32,7 +34,7 @@ export function hasLaunchEnvironment(env: Record<string, string | undefined>): b
 function fromEnvironment(env: Record<string, string | undefined>): CompanionRuntimeContext {
   return {
     frameworkName: env[MATE_ENV.frameworkName] ?? FRAMEWORK_NAME,
-    companionPath: env[MATE_ENV.companionPath] ?? "",
+    companionPath: canonicalPath(env[MATE_ENV.companionPath] ?? ""),
     repositoryPath: env[MATE_ENV.repositoryPath] ?? "",
     repositoryId: env[MATE_ENV.repositoryId] ?? "",
     policyJson: env[MATE_ENV.policyJson] ?? "{}",
@@ -66,12 +68,13 @@ export function resolveCompanionRuntime(
   const projection = resolveProjection(cwd);
   if (!projection) return { context: fromEnvironment(env), projection: null };
 
-  const policy = readCompanionPolicy(projection.companionPath);
+  const companionPath = canonicalPath(projection.companionPath);
+  const policy = readCompanionPolicy(companionPath);
   return {
     projection,
     context: {
       frameworkName: FRAMEWORK_NAME,
-      companionPath: projection.companionPath,
+      companionPath,
       repositoryPath: projection.repositoryPath,
       repositoryId: projection.repositoryId,
       policyJson: policyDocument(policy),
