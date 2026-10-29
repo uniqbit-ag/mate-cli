@@ -10,6 +10,7 @@ import {
   cloneAt,
   cloneOf,
   gitExcludePath,
+  isDirectory,
   otherCheckouts,
   readGitLayout,
   sameClone,
@@ -367,5 +368,18 @@ describe("sameClone", () => {
     );
 
     expect(sameClone(main, moved)).toBe(false);
+  });
+});
+
+describe("a path that runs through a file", () => {
+  test("reads as no Git layout and no Checkout", async () => {
+    const root = await tempRoot();
+    const blocker = path.join(root, "not-a-directory");
+    await fs.writeFile(blocker, "");
+    const inside = path.join(blocker, "repo");
+
+    expect(readGitLayout(inside)).toBeNull();
+    expect(checkoutRootOf(inside)).toBeNull();
+    expect(isDirectory(inside)).toBe(false);
   });
 });

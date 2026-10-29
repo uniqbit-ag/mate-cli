@@ -11,6 +11,7 @@ import { readCompanionRegistrySync } from "../../runtime/companion-registry-read
 import { readProjectionFile } from "../../runtime/projection";
 import { repoLocalRegistryPath } from "../../runtime/repo-local";
 import { CompanionRegistryStore } from "./companion-registry-store";
+import { entryAtCheckout } from "./registry-checkouts";
 import { normalizeLinkedRepository } from "./repo-local-store";
 import { GlobalConfigStore } from "./global-config-store";
 import {
@@ -557,5 +558,20 @@ describe("CompanionResolver by clone", () => {
     const resolver = await resolverFor(root, [companionPath]);
 
     expect((await resolver.resolveWithDiagnostics(path.join(root, "acme-2"))).match).toBeNull();
+  });
+});
+
+describe("entryAtCheckout", () => {
+  test("names the root of the other Checkout of the clone holding the folder", async () => {
+    const root = await tempRoot();
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme-fix"));
+    const nested = path.join(worktree, "src");
+    await fs.mkdir(nested);
+    const entry = { id: "acme", path: main };
+
+    expect(entryAtCheckout(entry, nested)).toEqual({ id: "acme", path: worktree });
+    expect(entryAtCheckout(entry, main)).toBe(entry);
+    expect(entryAtCheckout(entry, initRepo(path.join(root, "other")))).toBe(entry);
   });
 });

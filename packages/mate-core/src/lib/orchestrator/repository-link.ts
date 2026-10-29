@@ -365,7 +365,15 @@ export class CompanionResolver {
     if (matches.length === 0) return { match: null, ambiguousMatches: [], failures: [] };
 
     if (matches.length === 1 && options.write !== false) {
-      await writeRepoLocalCache(matched[0]!.folder, matches[0]!);
+      const { folder } = matched[0]!;
+      /** Best-effort like the backfill: a Checkout that can't be written still resolves. */
+      await writeRepoLocalCache(folder, matches[0]!).catch((error: unknown) =>
+        console.error(
+          `${FRAMEWORK_NAME}: warning: failed to write the repository link in ${folder}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        ),
+      );
     }
 
     return resolvedTo(matches);

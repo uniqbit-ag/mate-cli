@@ -2972,3 +2972,100 @@ describe("openspec wrapper e2e", () => {
     expect(JSON.parse(list.stdout).root.path).toBe(scenario.companion);
   });
 });
+
+describe("worktree Checkouts (share-repository-link-across-worktrees)", () => {
+  /** A linked clone with one commit, so `git worktree add` has a branch to check out. */
+  async function linkedClone(prefix: string): Promise<E2EScenario> {
+    const scenario = await createScenario(prefix);
+    initWorkingRepoGit(scenario);
+    await fs.writeFile(path.join(scenario.working, "README.md"), "# app\n", "utf8");
+    runGit(scenario.working, ["add", "README.md"]);
+    runGit(scenario.working, [
+      "-c",
+      "user.email=mate-e2e@example.com",
+      "-c",
+      "user.name=Mate E2E",
+      "commit",
+      "-qm",
+      "initial",
+    ]);
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+    return scenario;
+  }
+
+  async function addWorktree(
+    scenario: E2EScenario,
+    folder: string,
+    branch: string,
+  ): Promise<string> {
+    runGit(scenario.working, ["worktree", "add", "-q", "-b", branch, folder]);
+    return fs.realpath(folder);
+  }
+
+  async function registryText(scenario: E2EScenario): Promise<string> {
+    return fs.readFile(path.join(scenario.companion, ".mate", "config", "registry.yaml"), "utf8");
+  }
+
+  test("mate claude in a nested worktree starts Claude in the worktree, naming it in MATE_REPO_PATH", async () => {
+    const scenario = await linkedClone("mate-cli-e2e-worktree-launch-");
+    const capturePath = await writeAdapterStub(scenario, "claude");
+    const worktree = await addWorktree(
+      scenario,
+      path.join(scenario.working, ".claude", "worktrees", "feature"),
+      "feature",
+    );
+    const registry = await registryText(scenario);
+
+    const result = await runMate(scenario, {
+      cwd: worktree,
+      args: ["claude", "--print", "hello"],
+      input: "y\n",
+      env: { MATE_E2E_CAPTURE_PATH: capturePath },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as {
+      cwd: string;
+      env: Record<string, string | null>;
+    };
+    expect(capture.cwd).toBe(worktree);
+    expect(capture.env.MATE_REPO_PATH).toBe(worktree);
+    expect(capture.env.MATE_REPO_ID).toBe("app");
+    expect(await registryText(scenario)).toBe(registry);
+  });
+
+  test("two concurrent mate session prepare runs adopt one new worktree once", async () => {
+    const scenario = await linkedClone("mate-cli-e2e-worktree-prepare-");
+    expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(0);
+    const worktree = await addWorktree(scenario, path.join(scenario.root, "app-fix"), "fix");
+    const registry = await registryText(scenario);
+
+    const runs = await Promise.all(
+      [0, 1].map(() =>
+        runMate(scenario, {
+          cwd: worktree,
+          args: ["session", "prepare", "--repo", worktree, "--json"],
+        }),
+      ),
+    );
+
+    for (const run of runs) expect(run.exitCode).toBe(0);
+    const link = parse(
+      await fs.readFile(path.join(worktree, ".mate", "config", "registry.yaml"), "utf8"),
+    ) as { repository: { id: string; path: string }; companions: { path: string }[] };
+    expect(link.repository).toEqual({ id: "app", path: worktree });
+    expect(link.companions.map((pointer) => pointer.path)).toEqual([scenario.companion]);
+    const projection = parse(
+      await fs.readFile(path.join(worktree, ".mate", "projection.yaml"), "utf8"),
+    ) as { repositoryPath: string; repositoryId: string };
+    expect(projection).toMatchObject({ repositoryPath: worktree, repositoryId: "app" });
+    expect(await fs.readlink(path.join(worktree, ".mate", "companion"))).toBe(scenario.companion);
+    expect(await registryText(scenario)).toBe(registry);
+    /** One run wrapped it, or both did; a run that found the lock held left the wrap to the other. */
+    const settings = JSON.parse(
+      await fs.readFile(path.join(worktree, ".claude", "settings.local.json"), "utf8"),
+    ) as { hooks?: { SessionStart?: unknown[] } };
+    expect(JSON.stringify(settings.hooks?.SessionStart ?? [])).toContain("session-prepare");
+  });
+});

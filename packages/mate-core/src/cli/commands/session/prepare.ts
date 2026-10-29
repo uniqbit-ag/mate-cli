@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
+import { adoptCheckout, lookUpAdoption } from "../../../lib/orchestrator/checkout-adoption";
 import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repository-link";
 import { prepareSession, type PrepareResult } from "../../../lib/orchestrator/session-prepare";
 import { readProjectionFile } from "../../../runtime/projection";
@@ -49,6 +50,8 @@ export function parseSessionPrepareArgs(
 
 export const sessionPrepareCommandDeps = {
   findRepoLocalLinkedRepository,
+  lookUpAdoption: (folder: string) => lookUpAdoption(folder),
+  adoptCheckout: (...args: Parameters<typeof adoptCheckout>) => adoptCheckout(...args),
   prepareSession,
   resolveLinkedCompanions: launchAmbiguityDeps.resolveLinkedCompanions,
 };
@@ -85,14 +88,27 @@ export async function runSessionPrepareCommand(
   if ("error" in parsed) return fail(parsed.error, true);
 
   const deps = sessionPrepareCommandDeps;
-  const repository = await deps.findRepoLocalLinkedRepository(parsed.repo);
+  let repository = await deps.findRepoLocalLinkedRepository(parsed.repo);
   const wrapped = repository ? (await readWrapState(repository.path)).runtimes : new Set();
-  const runtimes = WRAP_RUNTIMES.filter((runtime) => wrapped.has(runtime));
-  if (!repository || runtimes.length === 0) {
-    return fail(`${parsed.repo} is not wrapped. Run \`${FRAMEWORK_NAME} wrap\` there first.`);
+  let runtimes = WRAP_RUNTIMES.filter((runtime) => wrapped.has(runtime));
+  let companionPath: string | undefined;
+  if (runtimes.length === 0) {
+    /**
+     * A new Checkout, or one whose manifest records none, takes its Registered
+     * Checkout's wraps (design Decision 8). Looked up first, so a refusal writes nothing.
+     */
+    const adoption = await deps.lookUpAdoption(parsed.repo);
+    if (!adoption || adoption.runtimes.length === 0) {
+      return fail(`${parsed.repo} is not wrapped. Run \`${FRAMEWORK_NAME} wrap\` there first.`);
+    }
+    runtimes = adoption.runtimes;
+    companionPath = adoption.companionPath;
+    /** The link and the projection, outside the companion lock the wrap pass takes. */
+    repository ??= await deps.adoptCheckout(parsed.repo, adoption);
   }
+  if (!repository) return fail(`${parsed.repo} is not linked.`);
 
-  const companionPath = await resolveCompanionPath(repository.path);
+  companionPath ??= await resolveCompanionPath(repository.path);
   if (!companionPath) return fail(`no companion is linked to ${repository.id}.`);
 
   const result = await deps.prepareSession({

@@ -1,7 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { checkoutCommonDir, cloneAt, readGitLayout } from "../../runtime/git-layout";
+import {
+  checkoutCommonDir,
+  checkoutRootOf,
+  cloneAt,
+  isDirectory,
+  namesOtherCheckout,
+  readGitLayout,
+} from "../../runtime/git-layout";
 import type { LinkedRepository } from "./types";
 
 /**
@@ -10,10 +17,6 @@ import type { LinkedRepository } from "./types";
  * Checkout handed over to another Checkout instead of dropped. File reads only,
  * no `git` process.
  */
-
-function isDirectory(candidate: string): boolean {
-  return fs.statSync(candidate, { throwIfNoEntry: false })?.isDirectory() ?? false;
-}
 
 function realPath(candidate: string): string {
   try {
@@ -41,6 +44,15 @@ function handoverTarget(gitCommonDir: string | undefined): string | null {
  */
 export function registeredCheckoutOf(entry: LinkedRepository): string | null {
   return isDirectory(entry.path) ? entry.path : handoverTarget(entry.gitCommonDir);
+}
+
+/**
+ * The entry as the Checkout holding `folder` sees it: that Checkout's root as
+ * the path when it is another live Checkout of the entry's clone.
+ */
+export function entryAtCheckout(entry: LinkedRepository, folder: string): LinkedRepository {
+  const root = checkoutRootOf(folder)?.root;
+  return root && namesOtherCheckout(root, entry.path) ? { ...entry, path: root } : entry;
 }
 
 /** A hand-linked entry merged into its clone's kept entry. */

@@ -42,8 +42,17 @@ function readText(filePath: string): string | null {
   }
 }
 
-function isDirectory(candidate: string): boolean {
-  return fs.statSync(candidate, { throwIfNoEntry: false })?.isDirectory() ?? false;
+/** `stat`, or null for a path that is missing or runs through a file (`ENOTDIR`). */
+function statOf(candidate: string): fs.Stats | null {
+  try {
+    return fs.statSync(candidate);
+  } catch {
+    return null;
+  }
+}
+
+export function isDirectory(candidate: string): boolean {
+  return statOf(candidate)?.isDirectory() ?? false;
 }
 
 /** The folder a `.git` file names, resolved against the file's own folder. */
@@ -61,7 +70,7 @@ function readPathFile(filePath: string, base: string): string | null {
 export function readGitLayout(checkoutPath: string): GitLayout | null {
   /** Real first: a relative `gitdir:` is relative to where `.git` really is. */
   const dotGit = path.join(realPath(checkoutPath), ".git");
-  const stat = fs.statSync(dotGit, { throwIfNoEntry: false });
+  const stat = statOf(dotGit);
   if (stat?.isDirectory()) {
     const gitDir = realPath(dotGit);
     return { kind: "main", gitDir, commonDir: gitDir };

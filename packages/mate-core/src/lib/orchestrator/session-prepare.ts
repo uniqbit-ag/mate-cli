@@ -75,6 +75,11 @@ export interface PrepareSessionInput {
    * one wrap pass and preflighted each; `[runtime]` when absent.
    */
   runtimes?: readonly PrepareRuntime[];
+  /**
+   * Runtimes a Checkout whose manifest records none takes from its Registered
+   * Checkout (design Decision 8): wrapped in the same pass, never preflighted.
+   */
+  adoptedRuntimes?: readonly PrepareRuntime[];
   companionPath: string;
   /** Absent for a companion-scope launch: nothing is projected. */
   repository?: LinkedRepository;
@@ -238,6 +243,13 @@ function runtimesOf(input: PrepareSessionInput): PrepareRuntime[] {
     : [input.runtime];
 }
 
+/** The wrap pass's runtimes: the prepared ones, then those the Checkout adopts. */
+function wrapRuntimesOf(input: PrepareSessionInput): PrepareRuntime[] {
+  const prepared = runtimesOf(input);
+  const adopted = (input.adoptedRuntimes ?? []).filter((runtime) => !prepared.includes(runtime));
+  return [...prepared, ...adopted];
+}
+
 /**
  * One wrap pass for `runtimes`, OpenCode's copies included. Every managed
  * launch is this pass followed by the agent, for either runtime.
@@ -303,14 +315,13 @@ async function projectClaude(
   run.push({ step: "launch-projection", outcome: "ok" });
   await deps.refreshProjectionRoot(input.companionPath, repository);
   /** A launch is a wrap: created when missing, reconciled when stale, so the launch can defer to it. */
-  await reconcileWrap(input, repository, ["claude"], config, run);
+  await reconcileWrap(input, repository, wrapRuntimesOf(input), config, run);
 }
 
 /** Attended: the launch's own runtime. Otherwise one wrap pass for every wrapped runtime. */
 async function projectRepository(
   input: PrepareSessionInput,
   repository: LinkedRepository,
-  runtimes: PrepareRuntime[],
   config: FrameworkConfig,
   run: StepLog,
 ): Promise<void> {
@@ -318,7 +329,7 @@ async function projectRepository(
     await projectClaude(input, repository, config, run);
     return;
   }
-  await reconcileWrap(input, repository, runtimes, config, run);
+  await reconcileWrap(input, repository, wrapRuntimesOf(input), config, run);
 }
 
 /** File sync, one projection pass, and the capability preflight per runtime. */
@@ -332,7 +343,7 @@ async function runLocal(
 
   const runtimes = runtimesOf(input);
   if (input.repository) {
-    await projectRepository(input, input.repository, runtimes, config, run);
+    await projectRepository(input, input.repository, config, run);
     if (run.stopped) return;
   }
 

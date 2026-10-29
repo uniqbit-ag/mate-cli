@@ -501,6 +501,46 @@ describe("wrapped runtimes", () => {
   });
 });
 
+describe("adopted runtimes (share-repository-link-across-worktrees)", () => {
+  test("a Claude launch wraps the adopted OpenCode too, and preflights only Claude", async () => {
+    const result = await prepareSession({
+      runtime: "claude",
+      adoptedRuntimes: ["claude", "opencode"],
+      companionPath,
+      repository,
+      mode: "attended",
+      config,
+    });
+
+    expect(sessionPrepareDeps.runWrapPass).toHaveBeenCalledWith(companionPath, repository, {
+      runtimes: ["claude", "opencode"],
+      config,
+    });
+    expect(sessionPrepareDeps.runCapabilityPreflight).toHaveBeenCalledTimes(1);
+    expect(result.runtimes).toEqual(["claude"]);
+  });
+
+  test("an OpenCode launch in a worktree of a Claude-wrapped clone wraps both", async () => {
+    await prepareSession({
+      runtime: "opencode",
+      adoptedRuntimes: ["claude"],
+      companionPath,
+      repository,
+      mode: "attended",
+      config,
+    });
+
+    expect(sessionPrepareDeps.runWrapPass).toHaveBeenCalledWith(companionPath, repository, {
+      runtimes: ["opencode", "claude"],
+      config,
+    });
+    expect(sessionPrepareDeps.runCapabilityPreflight).toHaveBeenCalledTimes(1);
+    expect(sessionPrepareDeps.runCapabilityPreflight).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: "opencode" }),
+    );
+  });
+});
+
 describe("sync", () => {
   test("waits for the lock and fetches regardless of the freshness interval", async () => {
     await prepareSession({ runtime: "opencode", companionPath, repository, mode: "sync" });

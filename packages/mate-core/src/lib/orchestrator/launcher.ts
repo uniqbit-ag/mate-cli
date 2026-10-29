@@ -3,6 +3,8 @@ import { FRAMEWORK_NAME } from "../../framework";
 import type { AdapterContext, LaunchAdapter } from "./adapters/base";
 import { ClaudeAdapter } from "./adapters/claude";
 import { OpenCodeAdapter } from "./adapters/opencode";
+import { inheritedWrapRuntimes } from "./checkout-adoption";
+import { entryAtCheckout } from "./registry-checkouts";
 import { CompanionStore } from "./repository-link";
 import { resolveForLaunch, type LaunchContext } from "./framework-context";
 import { prepareSession, type PrepareResult, type PrepareRuntime } from "./session-prepare";
@@ -39,13 +41,15 @@ interface ResolvedLaunchState {
 
 export const launcherDeps = {
   prepareSession,
+  inheritedWrapRuntimes,
 };
 
 /** The wrap notice is informational: `process.stderr.write`, since Bun renders `console.error` red. */
 function report(result: PrepareResult): void {
   const wrapped = result.steps.find((step) => step.step === "working-target");
   if (wrapped?.outcome === "ok" && wrapped.detail !== "current") {
-    const runtime = wrapped.runtimes?.includes("claude") ? "Claude" : "OpenCode";
+    const names = { claude: "Claude", opencode: "OpenCode" } as const;
+    const runtime = (wrapped.runtimes ?? [result.runtime]).map((name) => names[name]).join(" and ");
     process.stderr.write(
       `${FRAMEWORK_NAME}: wrapped ${result.repositoryId} for ${runtime}: ${wrapped.detail}\n`,
     );
@@ -53,6 +57,11 @@ function report(result: PrepareResult): void {
   for (const warning of result.warnings) {
     console.error(`${FRAMEWORK_NAME}: warning: ${warning}`);
   }
+}
+
+/** A registry entry seen from the launch folder: a launch in another Checkout of its clone starts there. */
+function atCheckout(entry: LinkedRepository | undefined): LinkedRepository | undefined {
+  return entry && entryAtCheckout(entry, process.cwd());
 }
 
 export class FrameworkLauncher {
@@ -81,6 +90,14 @@ export class FrameworkLauncher {
 
     const prepared = await launcherDeps.prepareSession({
       runtime: request.tool as PrepareRuntime,
+      ...(state.repository
+        ? {
+            adoptedRuntimes: await launcherDeps.inheritedWrapRuntimes(
+              state.companionPath,
+              state.repository,
+            ),
+          }
+        : {}),
       companionPath: state.companionPath,
       repository: state.repository,
       mode: "attended",
@@ -114,7 +131,7 @@ export class FrameworkLauncher {
     const repository =
       scope === "companion"
         ? undefined
-        : (localRepository ?? (await store.getRepository(repositoryId)));
+        : (localRepository ?? atCheckout(await store.getRepository(repositoryId)));
     if (scope === "working-repo" && !repository) {
       throw new RepositoryNotSelectedError(`Linked repository not found: ${repositoryId}`);
     }

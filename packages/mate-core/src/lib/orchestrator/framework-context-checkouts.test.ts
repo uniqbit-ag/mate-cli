@@ -1,16 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
-import { stringify } from "yaml";
-
-import { addWorktree, initRepo } from "../../../test/git-checkouts";
-import { createTempDir } from "../../../../../test/fixtures";
+import { addWorktree } from "../../../test/git-checkouts";
+import { linkedClone as cloneIn, type LinkedClone } from "../../../test/linked-clone";
 import { readProjectionFile } from "../../runtime/projection";
-import { repoLocalRegistryPath } from "../../runtime/repo-local";
 import { resolveForCapability, resolveForLaunch } from "./framework-context";
-import { GlobalConfigStore } from "./global-config-store";
 import { companionRegistryPath, findRepoLocalLinkedRepository } from "./repository-link";
 
 const roots: string[] = [];
@@ -19,48 +15,13 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
-interface Clone {
-  root: string;
-  companionPath: string;
-  main: string;
-  store: GlobalConfigStore;
-  registry: string;
-}
-
-/** A companion listing a clone at its main worktree, which carries its own link. */
-async function linkedClone(): Promise<Clone> {
-  const root = await createTempDir("mate-adoption-");
-  roots.push(root);
-  const companionPath = path.join(root, "companion");
-  await fs.mkdir(path.join(companionPath, ".mate", "config"), { recursive: true });
-  await fs.writeFile(
-    path.join(companionPath, ".mate", "config", "framework.yaml"),
-    stringify({ type: "companion", allowedAgents: ["claude", "opencode"] }),
-  );
-  const main = initRepo(path.join(root, "acme"));
-  const registry = stringify({
-    repos: [{ id: "acme", path: main, gitCommonDir: path.join(main, ".git") }],
-  });
-  await fs.writeFile(companionRegistryPath(companionPath), registry);
-  const local = repoLocalRegistryPath(main);
-  await fs.mkdir(path.dirname(local), { recursive: true });
-  await fs.writeFile(
-    local,
-    stringify({
-      repository: { id: "acme", path: main },
-      companions: [{ path: companionPath, repositoryId: "acme" }],
-    }),
-  );
-  const store = new GlobalConfigStore(path.join(root, "config.yaml"));
-  await store.register(companionPath);
-  return { root, companionPath, main, store, registry };
-}
+const linkedClone = () => cloneIn(roots);
 
 const LAYOUTS = {
-  sibling: async (clone: Clone) => addWorktree(clone.main, path.join(clone.root, "acme-fix")),
-  nested: async (clone: Clone) =>
+  sibling: async (clone: LinkedClone) => addWorktree(clone.main, path.join(clone.root, "acme-fix")),
+  nested: async (clone: LinkedClone) =>
     addWorktree(clone.main, path.join(clone.main, ".claude", "worktrees", "fix")),
-  "copied .mate/": async (clone: Clone) => {
+  "copied .mate/": async (clone: LinkedClone) => {
     const worktree = addWorktree(clone.main, path.join(clone.root, "acme-copy"));
     await fs.cp(path.join(clone.main, ".mate"), path.join(worktree, ".mate"), { recursive: true });
     return worktree;
@@ -94,4 +55,24 @@ describe("Adoption in resolution", () => {
       });
     }
   }
+
+  test("a worktree that can't be written warns, and resolution still answers", async () => {
+    const clone = await linkedClone();
+    const worktree = addWorktree(clone.main, path.join(clone.root, "acme-ro"));
+    await fs.chmod(worktree, 0o555);
+    const errors: string[] = [];
+    const error = spyOn(console, "error").mockImplementation(
+      (...args: unknown[]) => void errors.push(args.join(" ")),
+    );
+
+    try {
+      const context = await resolveForCapability(worktree, clone.store);
+      expect(context.repositoryId).toBe("acme");
+      expect(context.companionPath).toBe(clone.companionPath);
+    } finally {
+      error.mockRestore();
+      await fs.chmod(worktree, 0o755);
+    }
+    expect(errors.join("\n")).toContain(`failed to write the repository link in ${worktree}`);
+  });
 });
