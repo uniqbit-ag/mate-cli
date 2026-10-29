@@ -382,7 +382,8 @@ describe("dynamic plugin Claude plugin folders", () => {
       resetDynamicPluginHydration();
       activateDistribution().register(claudeProvider);
       await hydrateDynamicPlugins({ companionPath, env: {} });
-      return syncCompanionFiles(companionPath, await new ConfigStore(configPath).load());
+      return (await syncCompanionFiles(companionPath, await new ConfigStore(configPath).load()))
+        .claudePluginFolders;
     };
 
     const withDeclaration = await syncFresh();

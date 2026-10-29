@@ -36,7 +36,26 @@ export interface SetupContext {
   mcp?: McpService;
   instructions?: InstructionsService;
   templates?: TemplatesService;
+  /** Collects the managed output a sync pass touched; absent outside one. */
+  managedOutput?: ManagedOutputRecorder;
 }
+
+export type ManagedOutputOwner = "mate" | "openspec";
+
+/** One path a pass wrote or removed, with the side that owns it. */
+export interface ManagedOutputEntry {
+  /** Absolute when recorded; companion-relative POSIX in a {@link ManagedOutputReport}. */
+  path: string;
+  change: "written" | "removed";
+  owner: ManagedOutputOwner;
+}
+
+export interface ManagedOutputRecorder {
+  record(entry: ManagedOutputEntry): void;
+}
+
+/** What a sync pass reports it touched, as companion-relative POSIX paths. */
+export type ManagedOutputReport = readonly ManagedOutputEntry[];
 
 export interface LaunchPreflightContext {
   companionPath: string;

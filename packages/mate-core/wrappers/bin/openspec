@@ -50,16 +50,26 @@ if [ -z "$_companion" ]; then
 fi
 [ -n "$_companion" ] || { echo "openspec: no mate context here — run \`mate wrap\` in this repository" >&2; exit 1; }
 
-_real=""
-IFS=:
-for _dir in $PATH; do
-    [ "$_dir" = "$_this_dir" ] && continue
-    [ -x "$_dir/openspec" ] || continue
-    _real="$_dir/openspec"
-    break
+# The OpenSpec CLI Mate ships with, found the way Node resolves it: upward from
+# the package root, hoisted or nested under mate-core (distribution packages).
+# Never an openspec on PATH, so a global install of another version is ignored.
+# Physical path: the runtime directory reaches wrappers/ through a symlink.
+# MATE_E2E_OPENSPEC_BIN is a test-only stand-in for the CLI e2e suite.
+_real="${MATE_E2E_OPENSPEC_BIN-}"
+_dir="$(cd -P "$_this_dir" && cd ../.. && pwd -P)"
+while [ -z "$_real" ]; do
+  for _candidate in \
+    "$_dir/node_modules/@fission-ai/openspec/bin/openspec.js" \
+    "$_dir/node_modules/@uniqbit/mate-core/node_modules/@fission-ai/openspec/bin/openspec.js"; do
+    if [ -f "$_candidate" ]; then
+      _real="$_candidate"
+      break 2
+    fi
+  done
+  [ "$_dir" = "/" ] && break
+  _dir="$(dirname "$_dir")"
 done
-unset IFS
-[ -n "$_real" ] || { echo "openspec wrapper: real binary not found in PATH" >&2; exit 1; }
+[ -n "$_real" ] || { echo "openspec: bundled OpenSpec CLI is missing. Reinstall Mate to restore it." >&2; exit 1; }
 command="${1-}"
 if [ "$command" = "templates" ]; then
   has_schema=0
@@ -133,6 +143,19 @@ case "$command" in
     _mate_use_store_pointer
     ;;
 esac
+# A JS entry's `#!/usr/bin/env node` shebang needs an executable bit and `node`
+# on PATH; without either (Bun-only installs) it runs on an explicit runtime.
+_shebang=""
+[ "${_real%.js}" != "$_real" ] && { IFS= read -r _shebang < "$_real" || true; }
+if [ -n "$_shebang" ] && {
+  [ ! -x "$_real" ] ||
+    { [ "$_shebang" = "#!/usr/bin/env node" ] && ! command -v node >/dev/null 2>&1; }
+}; then
+  _runtime="$(command -v node || command -v bun || true)"
+  [ -n "$_runtime" ] || { echo "openspec: neither node nor bun is on PATH to run $_real" >&2; exit 1; }
+  set -- "$_real" "$@"
+  _real="$_runtime"
+fi
 # Mate decides the OpenSpec version, so OpenSpec's update hint is wrong advice
 # here; both variables reach the delegated binary only.
 exec env -C "$_cwd" OPENSPEC_TELEMETRY=0 OPENSPEC_NO_UPDATE_CHECK=1 "$_real" "$@"

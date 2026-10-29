@@ -3,7 +3,7 @@ version: 1
 description: Shared scope, frontmatter, delta, and canonical-spec rules for Mate schemas.
 rules: |
   - Every change artifact MUST name at least one paired repository and area in its scopes list: a delta spec in its mate:delta comment, every other change artifact in its frontmatter.
-  - Repository identity comes from the Git remote. Normalize SSH and HTTPS forms such as git@github.com:org/repository.git and https://github.com/org/repository.git to org/repository.
+  - Repository identity comes from the Git remote: its full path on the host, without host, credentials, or .git. Normalize SSH and HTTPS forms such as git@github.com:org/repository.git and https://github.com/org/repository.git to org/repository; keep every nested group, so git@gitlab.example.com:group/subgroup/repository.git becomes group/subgroup/repository.
   - In a monorepo, an Area is the owning workspace or package root: the directory containing the nearest package manifest (package.json, Cargo.toml, go.mod, and similar). A non-monorepo may use the exact affected path and uses . only when the repository root is affected.
   - Do not use a local checkout basename, internal repository ID, synthetic Area, or N/A as durable metadata.
   - Preserve each repository/Area pair. Never use separate repositories and areas arrays.

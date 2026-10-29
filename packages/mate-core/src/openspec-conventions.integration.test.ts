@@ -66,7 +66,7 @@ async function makeSandbox(): Promise<Sandbox> {
     companionPath: companion,
     activeProviders: [],
     mode: "sync",
-    config: { allowedAgents: [], capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }] },
+    config: { allowedAgents: [], capabilities: [{ name: "openspec" }] },
   });
 
   const env = {
@@ -142,6 +142,11 @@ function proposeChange(sandbox: Sandbox, name: string, section: string, requirem
 
 function archive(sandbox: Sandbox, name: string): void {
   expectOk(sandbox.openspec(["validate", name, "--strict"]), `validate ${name}`);
+  // What `mate artifact archive` leaves behind; it moves into the archive with the change.
+  fs.writeFileSync(
+    path.join(sandbox.companion, "openspec", "changes", name, "delivery.yaml"),
+    `version: 1\nchange: ${name}\ndeliveries:\n  - repository: acme/product\n    notApplicable: spec only\n`,
+  );
   expectOk(sandbox.openspec(["archive", name, "--yes"]), `archive ${name}`);
 }
 
@@ -342,7 +347,7 @@ describe.skipIf(!REAL_OPENSPEC)("Mate OpenSpec conventions with the real CLI", (
       fs.mkdirSync(path.dirname(frameworkConfig), { recursive: true });
       await new ConfigStore(frameworkConfig).save({
         allowedAgents: [],
-        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
+        capabilities: [{ name: "openspec" }],
       });
       expectOk(sandbox.openspec(["new", "change", "demo"]), "new change");
 

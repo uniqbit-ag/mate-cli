@@ -130,7 +130,7 @@ async function filesUnder(directory: string, relativeRoot: string): Promise<stri
  * the archive's `specs/` tree are read — never any file contents — so archived prose
  * cannot influence discovery.
  */
-async function canonicalSpecsFor(companionPath: string, anchor: string): Promise<string[]> {
+export async function canonicalSpecsFor(companionPath: string, anchor: string): Promise<string[]> {
   try {
     const specs = await filesUnder(
       path.join(companionPath, ARCHIVE_RELATIVE_DIR, anchor, "specs"),

@@ -3,12 +3,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 
 import { generatedHeader, renderProjectionEnv } from "./runtime/projection";
 import { repoLocalDirPath, repoLocalRegistryPath } from "./runtime/repo-local";
 
-const WRAPPER_BIN = path.resolve(import.meta.dirname, "..", "wrappers", "bin");
+const SOURCE_WRAPPER_BIN = path.resolve(import.meta.dirname, "..", "wrappers", "bin");
+const BUNDLED_OPENSPEC = path.join("node_modules", "@fission-ai", "openspec", "bin", "openspec.js");
 const tempRoots: string[] = [];
 
 function makeTempDir(prefix: string): string {
@@ -17,24 +18,50 @@ function makeTempDir(prefix: string): string {
   return dir;
 }
 
-/** Reports its cwd, its argv and every `MATE_`- and `OPENSPEC_`-prefixed variable it inherited. */
-function stubBinary(name: string): string {
-  const dir = makeTempDir(`mate-wrapper-stub-${name}-`);
-  const file = path.join(dir, name);
-  fs.writeFileSync(
-    file,
-    [
-      "#!/usr/bin/env bash",
-      'echo "cwd=$PWD"',
-      'echo "args=$*"',
-      'echo "graphify_out=${GRAPHIFY_OUT-}"',
-      'env | grep "^MATE_" | sort | sed "s/^/mate_env=/"',
-      'env | grep "^OPENSPEC_" | sort | sed "s/^/openspec_env=/"',
-      "exit 0",
-    ].join("\n") + "\n",
-    "utf8",
-  );
+/** Copies `wrappers/` into `<root>/<packageDir>/`, as an installed package carries it; returns its `bin`. */
+function installWrappers(root: string, packageDir = "."): string {
+  const wrappers = path.join(root, packageDir, "wrappers");
+  fs.cpSync(path.dirname(SOURCE_WRAPPER_BIN), wrappers, { recursive: true });
+  return path.join(wrappers, "bin");
+}
+
+/** A package install whose bundled OpenSpec CLI is the reporting stub; the tests' wrappers run from it. */
+const PACKAGE_ROOT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-wrapper-pkg-")));
+const WRAPPER_BIN = installWrappers(PACKAGE_ROOT);
+// The graphify gate shim loads mate-core sources relative to wrappers/.
+for (const dir of ["src", "claude-plugin"]) {
+  fs.symlinkSync(path.resolve(import.meta.dirname, "..", dir), path.join(PACKAGE_ROOT, dir));
+}
+
+afterAll(() => fs.rmSync(PACKAGE_ROOT, { recursive: true, force: true }));
+
+function writeStub(file: string, lines: string[] = REPORTING_STUB): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, ["#!/usr/bin/env bash", ...lines].join("\n") + "\n", "utf8");
   fs.chmodSync(file, 0o755);
+}
+
+/** Reports its cwd, its argv and every `MATE_`- and `OPENSPEC_`-prefixed variable it inherited. */
+const REPORTING_STUB = [
+  'echo "cwd=$PWD"',
+  'echo "args=$*"',
+  'echo "graphify_out=${GRAPHIFY_OUT-}"',
+  'env | grep "^MATE_" | sort | sed "s/^/mate_env=/"',
+  'env | grep "^OPENSPEC_" | sort | sed "s/^/openspec_env=/"',
+  "exit 0",
+];
+
+/**
+ * A reporting stub: `openspec` is placed where the package bundles its CLI,
+ * any other name in a directory returned for `PATH`.
+ */
+function stubBinary(name: string): string {
+  if (name === "openspec") {
+    writeStub(path.join(PACKAGE_ROOT, BUNDLED_OPENSPEC));
+    return path.dirname(path.join(PACKAGE_ROOT, BUNDLED_OPENSPEC));
+  }
+  const dir = makeTempDir(`mate-wrapper-stub-${name}-`);
+  writeStub(path.join(dir, name));
   return dir;
 }
 
@@ -66,7 +93,13 @@ function wrapRepo(
 function runWrapper(
   name: string,
   args: string[],
-  options: { cwd: string; env?: Record<string, string>; stubDir?: string; nodeDir?: string },
+  options: {
+    cwd: string;
+    env?: Record<string, string>;
+    stubDir?: string;
+    nodeDir?: string;
+    wrapperBin?: string;
+  },
 ): { status: number; stdout: string; stderr: string } {
   /** The harness may itself run under a launch; only what the test sets may reach the wrapper. */
   const env: Record<string, string | undefined> = {};
@@ -74,11 +107,12 @@ function runWrapper(
     if (!key.startsWith("MATE_") && key !== "GRAPHIFY_OUT") env[key] = value;
   }
   for (const [key, value] of Object.entries(options.env ?? {})) env[key] = value;
-  env.PATH = [WRAPPER_BIN, options.stubDir, options.nodeDir, "/usr/bin", "/bin"]
+  const wrapperBin = options.wrapperBin ?? WRAPPER_BIN;
+  env.PATH = [wrapperBin, options.stubDir, options.nodeDir, "/usr/bin", "/bin"]
     .filter(Boolean)
     .join(path.delimiter);
 
-  const result = spawnSync(path.join(WRAPPER_BIN, name), args, {
+  const result = spawnSync(path.join(wrapperBin, name), args, {
     cwd: options.cwd,
     env,
     encoding: "utf8",
@@ -193,6 +227,110 @@ describe("openspec wrapper", () => {
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("/some/other/install/wrappers/bin");
     expect(result.stderr).toContain("mate wrap");
+  });
+});
+
+describe("openspec wrapper finds the bundled CLI", () => {
+  function launch(wrapperBin: string, stubDir?: string) {
+    const companion = makeTempDir("mate-wrapper-bundled-companion-");
+    return runWrapper("openspec", ["list"], {
+      cwd: companion,
+      env: { MATE_ARTIFACT_PATH: companion },
+      stubDir,
+      wrapperBin,
+    });
+  }
+
+  test("ignores a global openspec earlier on PATH", () => {
+    const root = makeTempDir("mate-wrapper-global-");
+    const wrapperBin = installWrappers(root);
+    writeStub(path.join(root, BUNDLED_OPENSPEC), ['echo "bundled"']);
+    const global = makeTempDir("mate-wrapper-global-bin-");
+    writeStub(path.join(global, "openspec"), ['echo "global"']);
+
+    const result = launch(wrapperBin, global);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("bundled\n");
+  });
+
+  test("finds the CLI hoisted above an installed mate-core", () => {
+    const root = makeTempDir("mate-wrapper-hoisted-");
+    const wrapperBin = installWrappers(root, path.join("node_modules", "@uniqbit", "mate-core"));
+    writeStub(path.join(root, BUNDLED_OPENSPEC), ['echo "hoisted"']);
+
+    expect(launch(wrapperBin).stdout).toBe("hoisted\n");
+  });
+
+  test("finds the CLI nested under mate-core from a distribution's wrappers", () => {
+    const root = makeTempDir("mate-wrapper-distribution-");
+    const wrapperBin = installWrappers(root);
+    writeStub(path.join(root, "node_modules", "@uniqbit", "mate-core", BUNDLED_OPENSPEC), [
+      'echo "nested"',
+    ]);
+
+    expect(launch(wrapperBin).stdout).toBe("nested\n");
+  });
+
+  test("runs the test-only MATE_E2E_OPENSPEC_BIN stand-in instead of the bundled CLI", () => {
+    const root = makeTempDir("mate-wrapper-e2e-override-");
+    const wrapperBin = installWrappers(root);
+    writeStub(path.join(root, BUNDLED_OPENSPEC), ['echo "bundled"']);
+    const standIn = path.join(makeTempDir("mate-wrapper-e2e-stand-in-"), "openspec");
+    writeStub(standIn, ['echo "stand-in"']);
+    const companion = makeTempDir("mate-wrapper-e2e-companion-");
+
+    const result = runWrapper("openspec", ["list"], {
+      cwd: companion,
+      env: { MATE_ARTIFACT_PATH: companion, MATE_E2E_OPENSPEC_BIN: standIn },
+      wrapperBin,
+    });
+
+    expect(result.stdout).toBe("stand-in\n");
+  });
+
+  test("follows the runtime directory's symlink to the installed package", () => {
+    const root = makeTempDir("mate-wrapper-runtime-link-");
+    installWrappers(root, "package");
+    writeStub(path.join(root, "package", BUNDLED_OPENSPEC), ['echo "linked"']);
+    const runtime = path.join(root, "home", ".mate", "runtime");
+    fs.mkdirSync(runtime, { recursive: true });
+    fs.symlinkSync(path.join(root, "package", "wrappers"), path.join(runtime, "wrappers"));
+
+    expect(launch(path.join(runtime, "wrappers", "bin")).stdout).toBe("linked\n");
+  });
+
+  test("runs a JS entry its shebang cannot start on an explicit runtime", () => {
+    const root = makeTempDir("mate-wrapper-js-runtime-");
+    const wrapperBin = installWrappers(root);
+    const entry = path.join(root, BUNDLED_OPENSPEC);
+    fs.mkdirSync(path.dirname(entry), { recursive: true });
+    // Not executable, and no `node` on PATH: only the runtime fallback can start it.
+    fs.writeFileSync(entry, '#!/usr/bin/env node\nconsole.log("runtime");\n', "utf8");
+    const companion = makeTempDir("mate-wrapper-js-runtime-companion-");
+
+    const result = runWrapper("openspec", ["list"], {
+      cwd: companion,
+      env: { MATE_ARTIFACT_PATH: companion },
+      nodeDir: path.dirname(process.execPath),
+      wrapperBin,
+    });
+
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toBe("runtime\n");
+  });
+
+  test("names reinstalling Mate when no bundled CLI exists, without falling back to PATH", () => {
+    const root = makeTempDir("mate-wrapper-missing-");
+    const wrapperBin = installWrappers(root);
+    const global = makeTempDir("mate-wrapper-missing-bin-");
+    writeStub(path.join(global, "openspec"), ['echo "global"']);
+
+    const result = launch(wrapperBin, global);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toContain("global");
+    expect(result.stderr).toContain("Reinstall Mate");
   });
 });
 

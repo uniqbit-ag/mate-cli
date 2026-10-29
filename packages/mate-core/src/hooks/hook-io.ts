@@ -15,10 +15,6 @@ export interface HookOutcome {
   stdout: string;
 }
 
-export function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /** A hook's JSON output line, or nothing. Always exit zero: a hook must never block the session. */
 export function hookOutcome(output: object | null): HookOutcome {
   return { exitCode: 0, stdout: output ? `${JSON.stringify(output)}\n` : "" };

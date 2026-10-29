@@ -11,6 +11,7 @@ import { resolveForLaunch } from "../../lib/orchestrator/framework-context";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import { runtimeDocumentDeps } from "../../lib/orchestrator/projection-runtime-documents";
+import { openSpecCliDeps } from "../../lib/openspec-cli";
 import { openSpecStoreDeps } from "../../lib/orchestrator/openspec-store";
 import { project } from "../../lib/orchestrator/working-repo-projection";
 import { stubOpenSpec } from "../../../test/openspec-store-stub";
@@ -356,8 +357,9 @@ describe("runWrapCommand", () => {
       stderr: "Store registry is busy.",
     });
     const originalStoreDeps = { ...openSpecStoreDeps };
+    const originalCliDeps = { ...openSpecCliDeps };
     openSpecStoreDeps.env = () => ({ ...process.env, XDG_DATA_HOME: path.join(root, "data") });
-    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    openSpecCliDeps.locate = () => ({ bin: stub.bin });
     const { err, restore } = capture();
 
     try {
@@ -365,6 +367,7 @@ describe("runWrapCommand", () => {
     } finally {
       restore();
       Object.assign(openSpecStoreDeps, originalStoreDeps);
+      Object.assign(openSpecCliDeps, originalCliDeps);
     }
 
     expect(process.exitCode).toBeFalsy();

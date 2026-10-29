@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "bun scripts/check-commands.ts && astro build && bun scripts/check-links.ts",
-    "check": "astro check",
+    "build": "bun scripts/check-commands.ts && bun scripts/check-delivery-guide.ts && astro build && bun scripts/check-links.ts",
+    "check": "bun scripts/check-delivery-guide.ts && astro check",
     "preview": "astro preview"
   },
   "dependencies": {

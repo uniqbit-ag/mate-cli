@@ -126,7 +126,8 @@ describe("install context and planning", () => {
     expect(requirements.find((requirement) => requirement.id === "core:uv")).toEqual(
       expect.objectContaining({ group: "core", source: "Mate package manager" }),
     );
-    expect(ids).toContain("capability:openspec");
+    // OpenSpec ships with Mate, so the capability adds nothing to install.
+    expect(ids).not.toContain("capability:openspec");
     expect(ids).not.toContain("capability:graphify");
     expect(ids).not.toContain("capability:rtk");
   });

@@ -1,0 +1,230 @@
+---
+title: Your First Change
+description: Take one change from an idea to published companion specs along Mate's Delivery Path.
+---
+
+## Audience
+
+Developers whose companion has the OpenSpec capability enabled and who want to
+deliver a change the way Mate expects: planned, reviewed by people, implemented
+on a branch, and published only once it is merged.
+
+## Goal
+
+Know which stage comes next, which skill or command drives it, and what Mate
+waits for before your specs reach your teammates.
+
+## The Delivery Path
+
+Each **stage** names an action. A stage is driven by a **Mate skill** you invoke
+in your agent, by a **person** (the reviews), or is optional. Mate skills follow
+OpenSpec's workflows, which ship inside them, and call the **Mate CLI**
+(`mate artifact …`) for the deterministic parts. You only ever invoke the Mate
+skills listed here.
+
+The full schema, `mate-v1`, writes a proposal, specs, a design, and tasks:
+
+{/* delivery-path:mate-v1 */}
+
+| #   | Stage                       | Driven by               |
+| --- | --------------------------- | ----------------------- |
+| 1   | Clarify intent (optional)   | `mate-clarify-intent`   |
+| 2   | Explore change              | `mate-explore-change`   |
+| 3   | Propose change              | `mate-propose-change`   |
+| 4   | Review proposal             | you                     |
+| 5   | Review specs                | you                     |
+| 6   | Review design               | you                     |
+| 7   | Review tasks                | you                     |
+| 8   | Apply change                | `mate-apply-change`     |
+| 9   | Inspect outcome (optional)  | `mate-show-me`          |
+| 10  | Refine code (optional)      | `mate-simplify-code`    |
+| 11  | Archive change              | `mate-archive-change`   |
+| 12  | Publish companion artifacts | `mate-publish-artifact` |
+
+The minimal schema, `mate-minimal`, writes only specs and tasks, so it has two
+reviews:
+
+{/* delivery-path:mate-minimal */}
+
+| #   | Stage                       | Driven by               |
+| --- | --------------------------- | ----------------------- |
+| 1   | Clarify intent (optional)   | `mate-clarify-intent`   |
+| 2   | Explore change              | `mate-explore-change`   |
+| 3   | Propose change              | `mate-propose-change`   |
+| 4   | Review specs                | you                     |
+| 5   | Review tasks                | you                     |
+| 6   | Apply change                | `mate-apply-change`     |
+| 7   | Inspect outcome (optional)  | `mate-show-me`          |
+| 8   | Refine code (optional)      | `mate-simplify-code`    |
+| 9   | Archive change              | `mate-archive-change`   |
+| 10  | Publish companion artifacts | `mate-publish-artifact` |
+
+Studio's Workflow view shows the same stages for both schemas. Each path is a
+node graph running top to bottom: one node per stage, connected by edges in
+stage order, beside labelled Plan, Review, Build, and Ship bands. The reviews
+share one group node. Apply change branches to the optional Inspect outcome and
+Refine code, which rejoin at Archive change. A dashed bypass edge skips each
+optional stage, and a mark on an edge shows where a new session starts. An
+inner frame marks the stages each change repeats, up to Archive change. An
+outer frame holds the workset: one or more changes published together once they
+are archived. Select a
+node to open its stage in the side panel: what it does, why it is there, its
+phase, and its prompt ready to copy.
+To see where a change's delivery stands, run
+`mate artifact pending`.
+
+## Steps
+
+### 1. Clarify intent (optional)
+
+Run `/mate-clarify-intent about <idea>` when the idea is still vague. It checks
+whether the request states who it is for, why it is needed now, how success is
+measured, and what constrains it, then picks one mode: an interview when
+something is missing, grilling when a proposed direction needs testing, or
+nothing for a small, fully specified change. Reply `interview`, `grill`, or
+`skip` to override. You can also start `/mate-interview-me` or `/mate-grill-me`
+directly. All three end with a handoff to the next stage and write no files.
+
+### 2. Explore change
+
+`/mate-explore-change for <change-name>` investigates the repository with the
+scope your companion's context map assigns to the Working Repository and Area.
+When the feature is too big for one change, it suggests slices.
+
+### 3. Propose change
+
+`/mate-propose-change for <change-name>` chooses the schema. It uses
+`mate-minimal` only when intent and scope are clear, the change stays in one
+Area, and it is low risk: no new dependency, no data-model or public API change,
+and no security, performance, or migration concern. Public API includes command
+names, flags, exit codes, JSON output fields, config keys, and exported package
+symbols. Otherwise it uses `mate-v1`.
+One prompt writes every artifact of the chosen schema.
+
+When you skipped explore, propose applies the same slicing test first. If the
+feature spans several Areas, several independent behaviours, or more work than
+one review can hold (roughly more than 10 tasks or 400 changed lines), it
+suggests slices and writes nothing until you agree or keep one change. When the
+slice boundaries are unclear, it points you back to explore.
+Several Areas that only work together stay one change with a scope per Area.
+
+### 4. Review the artifacts yourself
+
+Reviews have no skill and no prompt. Read each artifact in schema order and
+edit it until you agree with it. To fold a decision into every affected
+artifact at once, run `/mate-propose-change for <change-name>` and ask for the
+revision: for an existing change it proposes the edits and writes each one after
+you confirm. Mate shows whether each artifact exists and
+whether the change validates, but it never records or claims an approval, and a
+passing validation is not a review.
+
+### 5. Apply change on a delivery branch
+
+`/mate-apply-change for <change-name>` first records the **delivery branch**:
+the Working Repository branch your change is merged through. On
+`change/<change-name>` it records it without asking; on another branch, such as
+a shared feature branch, it asks once.
+
+On a **protected branch** it does not implement by default. A branch is
+protected when it is the default branch or matches a pattern configured on the
+companion's openspec capability. Mate does not ask GitHub, so add a branch only
+GitHub protects to the pattern list:
+
+```yaml
+# .mate/config/framework.yaml
+capabilities:
+  - name: openspec
+    protectedBranches: ["release/*", "develop"]
+```
+
+It offers to create `change/<change-name>` (uncommitted edits carry over), to
+switch to another branch, or, only when you explicitly choose it, to work there
+as a recorded direct delivery. It names local commits that are not pushed yet
+and never moves them. Then it implements the tasks. Open your PR whenever you
+like; Mate does not open, merge, or push anything.
+
+A change whose scopes name several repositories needs a delivery for each one.
+Apply records the Working Repository's; record each other repository with
+`mate artifact link <change-name> --repository <org/repo> --branch <branch>`, or
+`--not-applicable <reason>` when it needs no branch. Publication holds the
+change back until every named repository has a delivery.
+
+When the change declares `dependsOn` and a dependency is neither archived nor fully
+implemented, recording the branch warns about it, so apply asks whether to apply
+the dependency first. The warning never blocks.
+
+### 6. Inspect and refine (optional)
+
+`/mate-show-me` renders what the change did; `/mate-simplify-code` tidies it.
+Either, both, or neither, in any order.
+
+### 7. Archive change, before or after the merge
+
+`/mate-archive-change for <change-name>` runs `mate artifact archive`, which
+applies the delta specs to the local canonical specs, moves the change into the
+archive, and leaves a `delivery.yaml` in it. **Archiving does not wait for the
+merge**: while your PR collects approvals, the next change of the same feature
+can already be written against the updated specs. Archiving is local and
+uncommitted. It warns when another active change modifies the same requirement
+or when a change it `dependsOn` is not archived yet; warnings never block.
+
+### 8. Publish companion artifacts after the merge
+
+`/mate-publish-artifact` lists archived, unpublished changes and publishes the
+ones you select with the `mate artifact publish` CLI: one commit, one tag, and
+a push to the companion. It first settles each archive's delivery branch:
+
+- With a [forge token](/docs/concepts/forge-token), it asks GitHub whether the
+  branch's PR is merged.
+- Without one, it asks you once per branch: **merged**, **not yet merged**, or
+  **dropped**. Your answer is recorded as yours, and it points to the token
+  setup once per run.
+
+Only merged (or not-applicable) archives get a number. The rest stay in the list
+marked **waiting for merge**, so the published specs always describe the
+default branch. A dropped branch's archive can be restored with Git, because
+nothing was committed yet.
+
+## A Feature Delivered As Several Changes
+
+Large features work best as several small changes:
+
+1. Let explore suggest slices, or propose when you skipped explore, and propose
+   one change per slice. A later slice declares `dependsOn: [<earlier-change>]`
+   in its first artifact's frontmatter.
+2. Apply every slice on the same feature branch; each records it.
+3. Archive each slice as soon as it is applied, so the next one builds on its
+   specs.
+4. After the feature PR merges, publish them together: one lookup or one answer
+   settles every archive on that branch.
+
+## Breaking Changes
+
+Two Mate skills were renamed without aliases, and `mate companion update`
+removes the old copies Mate installed:
+
+- `mate-artifact-publish` is now `mate-publish-artifact`.
+- `mate-openspec-backfill` is now `mate-backfill-spec`.
+
+The generated OpenSpec skills (`openspec-*`) and commands (`/opsx:*`) are gone;
+`mate companion update` removes them. Use the Mate skills instead:
+
+| Instead of                                 | Use                    |
+| ------------------------------------------ | ---------------------- |
+| `/opsx:explore`, `openspec-explore`        | `/mate-explore-change` |
+| `/opsx:propose`, `openspec-propose`        | `/mate-propose-change` |
+| `/opsx:apply`, `openspec-apply-change`     | `/mate-apply-change`   |
+| `/opsx:update`, `openspec-update-change`   | `/mate-propose-change` |
+| `/opsx:archive`, `openspec-archive-change` | `/mate-archive-change` |
+| `/opsx:sync`, `openspec-sync-specs`        | `/mate-archive-change` |
+
+`mate artifact publish` now refuses an archive whose delivery is not merged.
+Archives made before delivery records existed still publish, with a warning
+that their merge was not checked.
+
+## Result
+
+Your change is archived, its delivery branch is merged, and its canonical specs
+are published to the companion under their own tag. See the
+[command reference](/docs/reference/commands#artifacts-and-updates) for every
+`mate artifact` command.

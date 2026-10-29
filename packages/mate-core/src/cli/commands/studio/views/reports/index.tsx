@@ -6,13 +6,8 @@
  */
 export function Reports() {
   return (
-    <section className="panel reports-panel" data-reports-view>
-      <div className="section-header">
-        <div>
-          <h3>Hosted reports</h3>
-          <p className="section-note">Reports published by agent sessions Studio started.</p>
-        </div>
-      </div>
+    <section className="view-section" data-reports-view aria-label="Hosted reports">
+      <p className="view-summary">Reports published by agent sessions Studio started.</p>
       <div className="reports-layout">
         <div className="reports-side">
           <ul id="reports-list" className="reports-list" aria-label="Reports" />

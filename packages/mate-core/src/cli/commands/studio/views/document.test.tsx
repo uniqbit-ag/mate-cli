@@ -192,7 +192,7 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain("<h3>Choose a Companion Repository</h3>");
     expect(markup).toContain(`value="${digest}" class="picker-card"`);
     expect(markup).toContain("acme-companion");
-    expect(markup).not.toContain("<h3>Changes</h3>");
+    expect(markup).not.toContain('aria-label="Changes"');
   });
 
   it("names the resolved companion for the browser to remember, and nothing else", () => {
@@ -209,15 +209,16 @@ describe("renderStudioDocument", () => {
 
   it("presents the named companion's Dashboard", () => {
     const markup = renderStudioDocument(selected);
-    expect(markup).toContain("<h3>Changes</h3>");
-    expect(markup).not.toContain("<h3>Specs by Area</h3>");
+    expect(markup).toContain('aria-label="Changes"');
+    expect(markup).not.toContain('aria-label="Specs by Area"');
     expect(markup).toContain("add-auth");
     expect(markup).toContain('aria-pressed="true"');
   });
 
   it("surfaces the current view and snapshot context", () => {
     const markup = renderStudioDocument(selected);
-    expect(markup).toContain("<h1>Overview</h1>");
+    expect(markup).toContain('<div class="page-heading"><h1>Overview</h1></div>');
+    expect(markup).not.toContain("page-eyebrow");
     expect(markup).toContain('<span class="page-context-label">Companion Repository</span>');
     expect(markup).toContain(`<code>${acme}</code>`);
     expect(markup).toContain("Snapshot 12:34:56");
@@ -228,8 +229,8 @@ describe("renderStudioDocument", () => {
       ...selected,
       selection: { ...selected.selection, view: "specs" },
     });
-    expect(markup).toContain("<h3>Specs by Area</h3>");
-    expect(markup).not.toContain("<h3>Changes</h3>");
+    expect(markup).toContain('aria-label="Specs by Area"');
+    expect(markup).not.toContain('aria-label="Changes"');
     expect(viewForm(markup, "specs")).toContain('aria-pressed="true"');
   });
 
@@ -238,22 +239,23 @@ describe("renderStudioDocument", () => {
       ...selected,
       selection: { ...selected.selection, view: "workflow" },
     });
-    expect(markup).toContain('class="workflow-console"');
+    expect(markup).toContain('class="workflow-delivery-path"');
     expect(markup).not.toContain("mate workflow --read-only");
     expect(markup).not.toContain('id="studio-change"');
-    expect(markup).not.toContain("<h3>Changes</h3>");
+    expect(markup).not.toContain('aria-label="Changes"');
   });
 
-  it("presents the Skills view with runtime tabs", () => {
+  it("presents the Skills view with an Agent select", () => {
     const markup = renderStudioDocument({
       ...selected,
       selection: { ...selected.selection, view: "skills" },
     });
-    expect(markup).toContain("<h3>Agent Skills</h3>");
-    expect(markup).toContain('role="tablist" aria-label="Skill source"');
-    expect(markup).toContain('id="skills-tab-claude"');
-    expect(markup).toContain('id="skills-tab-opencode"');
-    expect(markup).toContain('id="skills-tab-agents"');
+    expect(markup).toContain('aria-label="Agent skills"');
+    expect(markup).toContain('<span>Agent</span><select data-skills-select="true">');
+    for (const agent of ["claude", "opencode", "agents"]) {
+      expect(markup).toContain(`data-skill-panel="${agent}"`);
+    }
+    expect(markup).not.toContain('role="tablist"');
     expect(markup).toContain("mate-grill-with-docs");
     expect(markup).toContain("mate-interview-me");
     expect(markup).toContain("mate-domain-modeling");

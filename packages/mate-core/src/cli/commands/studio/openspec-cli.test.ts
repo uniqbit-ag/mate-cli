@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import type { OpenSpecRunOptions } from "../../../lib/openspec-cli";
+
 import {
   listChanges,
   listSpecs,
@@ -10,9 +12,8 @@ import {
 } from "./openspec-cli";
 
 interface Invocation {
-  bin: string;
   args: string[];
-  companionPath: string;
+  options: OpenSpecRunOptions;
 }
 
 function recordingDeps(
@@ -22,9 +23,8 @@ function recordingDeps(
   return {
     invocations,
     deps: {
-      wrapperPath: () => "/wrappers/bin/openspec",
-      run: async (bin, args, companionPath) => {
-        invocations.push({ bin, args, companionPath });
+      run: async (args, options) => {
+        invocations.push({ args, options });
         const result = respond(args);
         return { stdout: result.stdout, stderr: result.stderr ?? "", code: result.code };
       },
@@ -33,18 +33,14 @@ function recordingDeps(
 }
 
 describe("readOpenSpecJson", () => {
-  test("invokes the managed wrapper against the companion", async () => {
+  test("runs the bundled CLI in the companion, bounded by a timeout", async () => {
     const { deps, invocations } = recordingDeps(() => ({ stdout: "{}", code: 0 }));
 
     const result = await readOpenSpecJson("/companions/acme", ["list", "--json"], deps);
 
     expect(result).toEqual({ ok: true, value: {} });
     expect(invocations).toEqual([
-      {
-        bin: "/wrappers/bin/openspec",
-        args: ["list", "--json"],
-        companionPath: "/companions/acme",
-      },
+      { args: ["list", "--json"], options: { cwd: "/companions/acme", timeout: 60_000 } },
     ]);
   });
 
@@ -81,9 +77,8 @@ describe("readOpenSpecJson", () => {
     expect(result.failure.reason).toContain("did not return JSON");
   });
 
-  test("returns a typed failure instead of throwing when the wrapper cannot be spawned", async () => {
+  test("returns a typed failure instead of throwing when the run rejects", async () => {
     const result = await readOpenSpecJson("/companions/acme", ["list", "--json"], {
-      wrapperPath: () => "/wrappers/bin/openspec",
       run: async () => {
         throw new Error("spawn ENOENT");
       },

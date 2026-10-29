@@ -1,8 +1,18 @@
+import {
+  DEFAULT_SCHEMA,
+  deliveryPath,
+  isMateSchema,
+  SCHEMA_ARTIFACTS,
+  type DeliveryStage,
+  type MateSchema,
+  type SkillStageId,
+} from "../../../../../lib/delivery/stages";
 import { CHANGE_PLACEHOLDER, IDEA_PLACEHOLDER } from "../../selection";
+import type { WorkflowTopology } from "../../topology";
 
-export type WorkflowStepKind = "skill" | "review" | "completion" | "optional";
-export type WorkflowStepBadge = "optional" | "skill" | "openspec" | "human-in-loop";
-export type WorkflowProfile = "mate-v1" | "mate-minimal";
+export type WorkflowStepBadge = "optional" | "skill" | "openspec" | "human-review";
+
+export type WorkflowPhaseId = "plan" | "review" | "build" | "ship";
 
 export interface WorkflowAlternative {
   name: string;
@@ -11,327 +21,258 @@ export interface WorkflowAlternative {
   copyPrompt: string;
 }
 
-export interface WorkflowStep {
-  kind: WorkflowStepKind;
-  id: string;
+export type WorkflowStep = DeliveryStage & {
   /** The action the stage performs. */
   what: string;
   /** The reason the stage is in the sequence at this position. */
   why: string;
-  title: string;
   badges: WorkflowStepBadge[];
-  sessionBreakBefore?: boolean;
-  prompt: string;
-  copyPrompt: string;
+  /** Null for a human review: a person performs it, so there is nothing to run. */
+  prompt: string | null;
+  copyPrompt: string | null;
   alternatives?: WorkflowAlternative[];
-}
+  /** The stage's skill when the companion does not report it. */
+  missingSkill?: string;
+  sessionBreakBefore?: boolean;
+  phase: WorkflowPhaseId;
+};
 
-export interface WorkflowBranch {
-  profile: WorkflowProfile;
+/** One step of the stage map: a single stage, or a run of review stages or optional peers. */
+export type WorkflowMapNode =
+  | { kind: "stage"; step: WorkflowStep }
+  | { kind: "group"; group: "human" | "optional"; steps: WorkflowStep[] };
+
+export interface WorkflowPath {
+  schema: string;
   label: string;
+  /** Short tab caption, e.g. `full planning`. */
+  tagline: string;
   description: string;
   steps: WorkflowStep[];
+  map: WorkflowMapNode[];
+  reviewsKnown: boolean;
+}
+
+export interface WorkflowPlanOptions {
+  /** Skills reported for the companion; undefined treats every stage skill as present. */
+  skills?: readonly string[];
+  topology?: WorkflowTopology | null;
 }
 
 export interface WorkflowPlan {
-  start: WorkflowStep;
-  branches: WorkflowBranch[];
-  shared: WorkflowStep[];
-  finish: WorkflowStep;
+  paths: WorkflowPath[];
 }
 
-const PRE_EXPLORE_SKILLS = ["mate-interview-me", "mate-grill-me"] as const;
+const CLARIFY_MODES = ["mate-clarify-intent", "mate-interview-me", "mate-grill-me"] as const;
 
-/** The optional post-apply stretch, in presented order, each keyed to the skill that drives it. */
-const SHARED_OPTIONAL_SKILLS = {
-  "show-me": "mate-show-me",
-  simplify: "mate-simplify-code",
-} as const;
+const CLARIFY_DESCRIPTIONS: Record<(typeof CLARIFY_MODES)[number], string> = {
+  "mate-clarify-intent":
+    "Default. Reads what the request already states and routes to an interview, grilling, or skip, then runs that one mode.",
+  "mate-interview-me":
+    "Explicit mode: guided, one-question-at-a-time clarification when intent, constraints, or scope still need confirmation.",
+  "mate-grill-me":
+    "Explicit mode: round-based stress test of a mostly known direction to surface hidden assumptions and risks.",
+};
 
-type SharedOptionalId = keyof typeof SHARED_OPTIONAL_SKILLS;
+const STAGE_TEXT: Record<SkillStageId, { what: string; why: string }> = {
+  "clarify-intent": {
+    what: "Settles who the change is for, why it is needed, how success is measured, and what binds it, before any artifact exists.",
+    why: "Intent gaps are cheapest to close before exploration turns them into documents.",
+  },
+  explore: {
+    what: "Resolves repository evidence, unknowns, and options, with scope taken from the companion context map, and suggests slicing a large feature.",
+    why: "It separates uncertainty from the proposal's committed scope.",
+  },
+  propose: {
+    what: "Chooses the schema from the minimal eligibility test, checks slicing when explore agreed none, and writes the change's planning artifacts in one prompt.",
+    why: "One prompt writes every artifact; each one is then reviewed on its own.",
+  },
+  apply: {
+    what: "Records the delivery branch, avoiding protected branches, then implements the reviewed tasks.",
+    why: "The recorded branch is what archive and publication later wait on.",
+  },
+  "inspect-outcome": {
+    what: "Shows what the applied change did as a rendered diagram and diff in a Mate report.",
+    why: "Seeing the result tells the reviewer whether cleanup is warranted.",
+  },
+  "refine-code": {
+    what: "Looks for smaller, clearer code once tests pass, preserving behavior.",
+    why: "Cleanup lands before archive, so shipped code and recorded specs agree.",
+  },
+  archive: {
+    what: "Applies the delta specs to the local canonical specs and records the delivery; allowed before the branch merges.",
+    why: "A feature's later changes build on canonical specs that already include this one.",
+  },
+  publish: {
+    what: "Commits, tags, and pushes archived changes whose delivery branches are merged, chosen by the developer.",
+    why: "Published canonical specs then describe the default branch; unmerged archives wait.",
+  },
+};
 
-function stepPrompt(
-  step: Omit<WorkflowStep, "prompt" | "copyPrompt">,
-  profile?: WorkflowProfile,
-  includeChange = true,
-): string {
-  const changeNote = includeChange ? ` for ${CHANGE_PLACEHOLDER}` : " for";
-  const ideaNote = includeChange ? ` about ${IDEA_PLACEHOLDER}` : " about";
-  const schemaNote = profile && profile !== "mate-v1" ? ` (use schema: ${profile})` : "";
+function reviewText(
+  artifact: string,
+  topology: WorkflowTopology | null | undefined,
+  schema: string,
+) {
+  const description =
+    topology?.schemaName === schema
+      ? topology.artifacts.find((entry) => entry.id === artifact)?.description
+      : undefined;
+  return {
+    what: description ?? `A person reviews the ${artifact} artifact.`,
+    why: "Reviews stay with people: Mate never marks them approved.",
+  };
+}
 
-  switch (step.id) {
-    case "pre-explore":
-      return `/mate-interview-me or /mate-grill-me${ideaNote}`;
-    case "explore":
-      return `/openspec-explore${schemaNote}${changeNote}`;
-    case "proposal":
-    case "propose":
-      return `/openspec-propose${schemaNote}${changeNote}`;
-    case "specs":
-    case "design":
-    case "tasks":
-      return `Review ${includeChange ? CHANGE_PLACEHOLDER : ""}/`;
-    case "apply":
-      return `/openspec-apply-change${schemaNote}${changeNote}`;
-    case "show-me":
-      return `/mate-show-me${changeNote}`;
-    case "simplify":
-      return `/mate-simplify-code${changeNote}`;
-    case "archive":
-      return `/openspec-archive-change${changeNote}`;
-    case "finish":
-      return `/mate-artifact-publish${changeNote}`;
-    default:
-      return `Use ${step.title}${schemaNote}${changeNote}`;
+function promptFor(stage: DeliveryStage, schema: string): string | null {
+  if (stage.kind === "human") return null;
+  if (stage.id === "clarify-intent") return `/${stage.skill} about ${IDEA_PLACEHOLDER}`;
+  const schemaNote =
+    stage.id === "propose" && schema !== DEFAULT_SCHEMA ? ` (use schema: ${schema})` : "";
+  return `/${stage.skill}${schemaNote} for ${CHANGE_PLACEHOLDER}`;
+}
+
+/** The prompt without its placeholders, ready to be completed after pasting. */
+function copyPromptFor(prompt: string | null): string | null {
+  if (!prompt) return prompt;
+  return prompt.replace(` ${CHANGE_PLACEHOLDER}`, "").replace(` ${IDEA_PLACEHOLDER}`, "");
+}
+
+function clarifyAlternatives(available: (skill: string) => boolean): WorkflowAlternative[] {
+  return CLARIFY_MODES.filter(available).map((name) => ({
+    name,
+    description: CLARIFY_DESCRIPTIONS[name],
+    prompt: `/${name} about ${IDEA_PLACEHOLDER}`,
+    copyPrompt: `/${name} about`,
+  }));
+}
+
+/** Stages whose skills run an OpenSpec workflow. */
+const OPENSPEC_STAGES: ReadonlySet<SkillStageId> = new Set([
+  "explore",
+  "propose",
+  "apply",
+  "archive",
+]);
+
+function badgesFor(stage: DeliveryStage): WorkflowStepBadge[] {
+  if (stage.kind === "human") return ["human-review"];
+  const badges: WorkflowStepBadge[] = stage.optional ? ["optional", "skill"] : ["skill"];
+  if (OPENSPEC_STAGES.has(stage.id)) badges.push("openspec");
+  return badges;
+}
+
+const SHIPPED_PATH_TEXT: Record<MateSchema, { tagline: string; description: string }> = {
+  "mate-v1": {
+    tagline: "full planning",
+    description: "Full planning path: proposal, specs, design, and tasks.",
+  },
+  "mate-minimal": {
+    tagline: "minimal planning",
+    description:
+      "Short path: specs and tasks only, for one-Area, low-risk changes with clear intent.",
+  },
+};
+
+function pathText(schema: string): { tagline: string; description: string } {
+  if (isMateSchema(schema)) return SHIPPED_PATH_TEXT[schema];
+  return { tagline: "custom schema", description: `Planning path of the ${schema} schema.` };
+}
+
+export const PHASE_LABELS: Record<WorkflowPhaseId, string> = {
+  plan: "Plan",
+  review: "Review",
+  build: "Build",
+  ship: "Ship",
+};
+
+/** Plan precedes reviews, Review holds them, Build is apply plus its optional peers, Ship follows. */
+function phaseOf(stage: DeliveryStage, previous: WorkflowPhaseId | undefined): WorkflowPhaseId {
+  if (stage.kind === "human") return "review";
+  if (stage.id === "apply") return "build";
+  if (previous === "build" && stage.optional) return "build";
+  return previous === undefined || previous === "plan" ? "plan" : "ship";
+}
+
+function groupOf(step: WorkflowStep): "human" | "optional" | null {
+  if (step.kind === "human") return "human";
+  return step.optional ? "optional" : null;
+}
+
+/** Review runs are always one group; optional runs group only when they hold peers. */
+function mapOf(steps: readonly WorkflowStep[]): WorkflowMapNode[] {
+  const runs: { group: "human" | "optional" | null; steps: WorkflowStep[] }[] = [];
+  for (const step of steps) {
+    const group = groupOf(step);
+    const run = runs.at(-1);
+    if (group && run?.group === group) run.steps.push(step);
+    else runs.push({ group, steps: [step] });
   }
+  return runs.map((run) =>
+    run.group === "human" || (run.group === "optional" && run.steps.length > 1)
+      ? { kind: "group", group: run.group, steps: run.steps }
+      : { kind: "stage", step: run.steps[0] },
+  );
 }
 
-function skillStep(
-  id: string,
-  title: string,
-  what: string,
-  why: string,
-  profile?: WorkflowProfile,
-): WorkflowStep {
-  const step = {
-    kind: "skill" as const,
-    id,
-    title,
-    what,
-    why,
-    badges: ["skill", "openspec"] as WorkflowStepBadge[],
-  };
-  return {
-    ...step,
-    prompt: stepPrompt(step, profile),
-    copyPrompt: stepPrompt(step, profile, false),
-  };
-}
+export function buildPath(
+  schema: string,
+  artifacts: readonly string[] | undefined,
+  options: WorkflowPlanOptions,
+): WorkflowPath {
+  const reported = options.skills ? new Set(options.skills) : null;
+  const available = (skill: string): boolean => !reported || reported.has(skill);
+  const contract = deliveryPath(artifacts);
 
-function reviewStep(
-  id: string,
-  title: string,
-  what: string,
-  why: string,
-  profile?: WorkflowProfile,
-): WorkflowStep {
-  const step = {
-    kind: "review" as const,
-    id,
-    title,
-    what,
-    why,
-    badges: ["human-in-loop", "openspec"] as WorkflowStepBadge[],
-  };
-  return {
-    ...step,
-    prompt: stepPrompt(step, profile),
-    copyPrompt: stepPrompt(step, profile, false),
-  };
-}
-
-function optionalStep(
-  id: "pre-explore" | SharedOptionalId,
-  title: string,
-  what: string,
-  why: string,
-  alternatives: WorkflowAlternative[] = [],
-): WorkflowStep {
-  const step = {
-    kind: "optional" as const,
-    id,
-    title,
-    what,
-    why,
-    badges: ["optional", "skill"] as WorkflowStepBadge[],
-  };
-  return {
-    ...step,
-    prompt: stepPrompt(step),
-    copyPrompt: stepPrompt(step, undefined, false),
-    ...(id === "pre-explore" || alternatives.length > 0 ? { alternatives } : {}),
-  };
-}
-
-function withSessionBreak(step: WorkflowStep): WorkflowStep {
-  return { ...step, sessionBreakBefore: true };
-}
-
-export function workflowPlan(
-  availableSkills: readonly string[] = [
-    ...PRE_EXPLORE_SKILLS,
-    ...Object.values(SHARED_OPTIONAL_SKILLS),
-  ],
-): WorkflowPlan {
-  const availableSkillSet = new Set(availableSkills);
-  const preExploreAlternatives: WorkflowAlternative[] = [];
-  for (const name of PRE_EXPLORE_SKILLS) {
-    if (!availableSkillSet.has(name)) continue;
-    preExploreAlternatives.push({
-      name,
-      description:
-        name === "mate-interview-me"
-          ? "Difference: guided, one-question-at-a-time clarification. Best when: the request is ambiguous and intent, constraints, or scope still need confirmation."
-          : "Difference: adversarial, round-based review of the full design-tree frontier. Best when: the direction is mostly known but hidden assumptions, risks, and downstream impacts need surfacing.",
-      prompt: `/${name} about ${IDEA_PLACEHOLDER}`,
-      copyPrompt: `/${name} about`,
-    });
+  const steps: WorkflowStep[] = [];
+  for (const stage of contract.stages) {
+    const text =
+      stage.kind === "human"
+        ? reviewText(stage.artifact, options.topology, schema)
+        : STAGE_TEXT[stage.id];
+    const prompt = promptFor(stage, schema);
+    const previous = steps.at(-1);
+    const step: WorkflowStep = {
+      ...stage,
+      what: text.what,
+      why: text.why,
+      badges: badgesFor(stage),
+      prompt,
+      copyPrompt: copyPromptFor(prompt),
+      phase: phaseOf(stage, previous?.phase),
+    };
+    if (stage.id === "clarify-intent") step.alternatives = clarifyAlternatives(available);
+    if (stage.kind === "skill" && !available(stage.skill)) step.missingSkill = stage.skill;
+    // A new session starts at apply; the optional peers after it reuse its context.
+    if (stage.id === "apply") step.sessionBreakBefore = true;
+    steps.push(step);
   }
-  const start = optionalStep(
-    "pre-explore",
-    "pre-explore",
-    "Clarifies intent with confidence and explicit confirmation, or stress-tests the full design frontier before the schema path turns it into artifacts.",
-    "One conversational choice settles uncertainty early without invoking documentation or implementation work.",
-    preExploreAlternatives,
-  );
-
-  const branches: WorkflowBranch[] = [
-    {
-      profile: "mate-v1",
-      label: "mate-v1",
-      description: "Full planning path for changes that need exploration and technical design.",
-      steps: [
-        skillStep(
-          "explore",
-          "explore",
-          "Resolves repository evidence, unknowns, options, and direction.",
-          "It separates uncertainty from the proposal's committed motivation and scope.",
-          "mate-v1",
-        ),
-        skillStep(
-          "proposal",
-          "proposal",
-          "Commits why the change is needed and what is in scope.",
-          "A written scope gives specs, design, and tasks one decision to build from.",
-          "mate-v1",
-        ),
-        reviewStep(
-          "specs",
-          "specs",
-          "Defines the observable behavior the system must provide.",
-          "The delta is the contract that will later be merged into the canonical spec.",
-          "mate-v1",
-        ),
-        reviewStep(
-          "design",
-          "design",
-          "Records the technical decisions for implementing the change.",
-          "Separating how from what exposes risks before implementation starts.",
-          "mate-v1",
-        ),
-        reviewStep(
-          "tasks",
-          "tasks",
-          "Orders the implementation and verification work.",
-          "Small, ordered tasks turn the agreed artifacts into a trackable build path.",
-          "mate-v1",
-        ),
-        withSessionBreak(
-          skillStep(
-            "apply",
-            "apply",
-            "Implements the change by working through the generated tasks.",
-            "Applying only approved tasks keeps code changes inside the agreed scope.",
-            "mate-v1",
-          ),
-        ),
-      ],
-    },
-    {
-      profile: "mate-minimal",
-      label: "mate-minimal",
-      description:
-        "Short path that explores first, then creates only specs and tasks for one-Area, low-risk changes; switch to mate-v1 when uncertain.",
-      steps: [
-        skillStep(
-          "explore",
-          "explore",
-          "Resolves repository evidence, unknowns, options, and direction without adding a planning artifact.",
-          "It gives the minimal proposal step an agreed direction while keeping the output to specs and tasks.",
-          "mate-minimal",
-        ),
-        skillStep(
-          "propose",
-          "propose",
-          "Creates the concise, parser-compatible specs and tasks from the explored direction.",
-          "OpenSpec turns the agreed direction into only the minimal profile's specs and tasks; proposal and design artifacts are intentionally omitted.",
-          "mate-minimal",
-        ),
-        reviewStep(
-          "specs",
-          "specs",
-          "Defines the behavior change as a concise, parser-compatible user story.",
-          "Reviewing the generated delta confirms the small change before tasks are applied.",
-          "mate-minimal",
-        ),
-        reviewStep(
-          "tasks",
-          "tasks",
-          "Orders the implementation and verification work.",
-          "The checklist keeps a deliberately small change concrete and reviewable.",
-          "mate-minimal",
-        ),
-        withSessionBreak(
-          skillStep(
-            "apply",
-            "apply",
-            "Implements the change by working through the generated tasks.",
-            "Applying only the short approved checklist keeps the low-risk boundary intact.",
-            "mate-minimal",
-          ),
-        ),
-      ],
-    },
-  ];
-
-  const showMe = optionalStep(
-    "show-me",
-    "mate show me",
-    "Shows what the applied change did as a rendered diagram and a colorized diff, delivered as a Mate report.",
-    "Seeing the resulting structure and the actual diff is what tells the reviewer whether cleanup is warranted.",
-  );
-  const simplify = optionalStep(
-    "simplify",
-    "mate simplify code",
-    "Looks for smaller, clearer code once the tests pass, preserving behavior and rerunning the relevant tests.",
-    "Cleanup lands before the specs are archived, so shipped code and recorded specs stay aligned.",
-  );
-  /** Peers, not prerequisites: an unreported skill drops its step and the rest keep their order. */
-  const optionalReview: WorkflowStep[] = [];
-  for (const step of [showMe, simplify]) {
-    if (!availableSkillSet.has(SHARED_OPTIONAL_SKILLS[step.id as SharedOptionalId])) continue;
-    optionalReview.push(optionalReview.length === 0 ? withSessionBreak(step) : step);
-  }
-  const archive = skillStep(
-    "archive",
-    "openspec archive change",
-    "Archives the verified change and its approved artifacts, applying its delta specs to the canonical specs.",
-    "Archiving validates the change, requires it to be complete, and is the precondition publishing refuses without.",
-  );
-  const finishStep = {
-    kind: "completion" as const,
-    id: "finish",
-    title: "mate artifact publish",
-    what: "Presents the already-archived changes and the drifted canonical specs as two selectable tables, then runs `mate artifact publish` for exactly what the developer picks — announcing that each selection is committed, tagged, and pushed to the companion Git repository before the first one runs.",
-    why: "It is the only sanctioned completion; a hand-committed publication leaves the anchor untagged and unrevertable, and a drifted spec shipped under an old archive's tag misfiles today's edit under a change that did not produce it.",
-    badges: ["skill"] as WorkflowStepBadge[],
-  };
 
   return {
-    start,
-    branches,
-    shared: [...optionalReview, archive],
-    finish: {
-      ...finishStep,
-      prompt: stepPrompt(finishStep),
-      copyPrompt: stepPrompt(finishStep, undefined, false),
-    },
+    schema,
+    label: schema,
+    ...pathText(schema),
+    steps,
+    map: mapOf(steps),
+    reviewsKnown: contract.reviewsKnown,
   };
 }
 
-export function workflowSteps(profile: WorkflowProfile = "mate-v1"): WorkflowStep[] {
-  const plan = workflowPlan();
-  const branch = plan.branches.find((entry) => entry.profile === profile);
-  if (!branch) return [plan.start, ...plan.shared, plan.finish];
-  return [plan.start, ...branch.steps, ...plan.shared, plan.finish];
+function schemaArtifacts(
+  schema: string,
+  topology: WorkflowTopology | null | undefined,
+): readonly string[] | undefined {
+  if (topology?.schemaName === schema) return topology.artifacts.map((artifact) => artifact.id);
+  return isMateSchema(schema) ? SCHEMA_ARTIFACTS[schema] : undefined;
+}
+
+/** The Delivery Path Studio shows: a path per schema Mate ships, or the served schema's alone. */
+export function workflowPlan(options: WorkflowPlanOptions = {}): WorkflowPlan {
+  const served = options.topology?.schemaName;
+  const schemas = served && !isMateSchema(served) ? [served] : Object.keys(SCHEMA_ARTIFACTS);
+  return {
+    paths: schemas.map((schema) =>
+      buildPath(schema, schemaArtifacts(schema, options.topology), options),
+    ),
+  };
 }

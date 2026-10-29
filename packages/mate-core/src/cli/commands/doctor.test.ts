@@ -8,6 +8,7 @@ import { createTempDir, overrideEnv } from "../../../../../test/fixtures";
 import { FRAMEWORK_NAME } from "../../framework";
 import { getContextModePackageRoot } from "../../lib/context-mode-package";
 import { ConfigStore } from "../../lib/orchestrator/config-store";
+import { locateOpenSpec, openSpecCliDeps } from "../../lib/openspec-cli";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
@@ -120,7 +121,7 @@ describe("runDoctorCommand", () => {
     await makeExecutable(binPath, "uv");
     const companionPath = await setupCompanion(root, repoPath, {
       allowedAgents: ["claude"],
-      packageManagers: ["uv"],
+      packageManagers: ["uv", "bun"],
       capabilities: [{ name: "openspec" }],
     });
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
@@ -132,12 +133,47 @@ describe("runDoctorCommand", () => {
 
     expect(output).toContain("Tool Installations");
     expect(output).toContain("uv");
-    expect(output).toContain("openspec");
+    expect(output).toContain("bun");
+    // OpenSpec ships with Mate, so no PATH entry is needed for it.
+    const bundled = locateOpenSpec();
+    if (!("bin" in bundled)) throw new Error(bundled.missing);
+    expect(output).toContain(`openspec ${bundled.version}`);
+    expect(output).toContain(bundled.bin);
     expect(output).not.toContain("rtk");
     expect(output).toContain("ok");
     expect(output).toContain("missing");
     expect(output).not.toContain("tokensave");
     expect(output).not.toContain("graphify");
+  });
+
+  test("reports the bundled OpenSpec CLI as ok when only its version is unreadable", async () => {
+    const root = await makeTempDir("doctor-openspec-version-");
+    const repoPath = path.join(root, "working");
+    const binPath = path.join(root, "bin");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(binPath, { recursive: true });
+    // Located without a version, as when its manifest is unreadable.
+    const stub = await makeExecutable(binPath, "openspec-stub");
+    const companionPath = await setupCompanion(root, repoPath, {
+      allowedAgents: ["claude"],
+      packageManagers: [],
+      capabilities: [{ name: "openspec" }],
+    });
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const originalLocate = openSpecCliDeps.locate;
+    openSpecCliDeps.locate = () => ({ bin: stub });
+    try {
+      const output = await captureStdout(() =>
+        runDoctorCommand([], { cwd: repoPath, globalConfigStore, pathValue: binPath }),
+      );
+      expect(output).toMatch(
+        /\| openspec \| capability, bundled with mate \| ok +\| .*openspec-stub/,
+      );
+    } finally {
+      openSpecCliDeps.locate = originalLocate;
+    }
   });
 
   test("checks RTK when it is the only selected capability", async () => {

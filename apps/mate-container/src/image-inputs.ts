@@ -82,7 +82,6 @@ export function readImageInputs(file: string = IMAGE_INPUTS_FILE): ImageInputs {
 export const REQUIRED_TOOL_COMMANDS = [
   "bun",
   "uv",
-  "openspec",
   "graphify",
   "rtk",
   "tokensave",

@@ -14,6 +14,7 @@ import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-sto
 import { pathIsDirectory } from "../../lib/fs-utils";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
+import { locateOpenSpec, type OpenSpecLocation } from "../../lib/openspec-cli";
 import { MATE_CLAUDE_PLUGIN_NAME } from "../../lib/package-paths";
 import {
   describeUnknownAudience,
@@ -67,6 +68,8 @@ export interface DoctorToolInstallation {
   source: string;
   status: "ok" | "missing";
   path: string | null;
+  /** Set for a tool Mate ships itself, such as the OpenSpec CLI. */
+  version?: string;
 }
 
 export interface DoctorHubMember {
@@ -119,6 +122,8 @@ interface ToolCheck {
   name: string;
   command: string;
   source: string;
+  /** Locates a tool Mate ships instead of looking it up on PATH. */
+  bundled?: () => OpenSpecLocation;
 }
 
 /** Doctor's view of the shared root kind: registry/env resolution means cwd is a working repo. */
@@ -159,7 +164,12 @@ function getSelectedToolChecks(config: {
     checks.push({ name: "uv", command: "uv", source: "package manager" });
   }
   if (selectedCapabilities.has("openspec")) {
-    checks.push({ name: "openspec", command: "openspec", source: "capability" });
+    checks.push({
+      name: "openspec",
+      command: "openspec",
+      source: "capability",
+      bundled: locateOpenSpec,
+    });
   }
   if (selectedCapabilities.has("tokensave")) {
     checks.push({ name: "tokensave", command: "tokensave", source: "capability" });
@@ -179,6 +189,21 @@ function collectToolInstallations(
   pathValue: string,
 ): DoctorToolInstallation[] {
   return getSelectedToolChecks(config).map((check) => {
+    if (check.bundled) {
+      const source = `${check.source}, bundled with ${FRAMEWORK_NAME}`;
+      const location = check.bundled();
+      if ("missing" in location) {
+        return { tool: check.name, source, status: "missing", path: null };
+      }
+      // An unreadable manifest only loses the version; the CLI itself resolved.
+      return {
+        tool: check.name,
+        source,
+        status: "ok",
+        path: location.bin,
+        ...(location.version ? { version: location.version } : {}),
+      };
+    }
     const resolved = resolveCommandOnPath(check.command, pathValue);
     return {
       tool: check.name,
@@ -448,7 +473,12 @@ function renderToolInstallations(installations: DoctorToolInstallation[]): strin
   }
   return renderTable(
     ["Tool", "Source", "Status", "Path"],
-    installations.map((item) => [item.tool, item.source, item.status, item.path ?? ""]),
+    installations.map((item) => [
+      item.version ? `${item.tool} ${item.version}` : item.tool,
+      item.source,
+      item.status,
+      item.path ?? "",
+    ]),
   );
 }
 

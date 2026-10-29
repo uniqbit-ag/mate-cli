@@ -1,7 +1,4 @@
-import { spawn } from "node:child_process";
-import path from "node:path";
-
-import { getWrapperBinPath } from "../../../lib/package-paths";
+import { runOpenSpec, type OpenSpecRun, type RunOpenSpec } from "../../../lib/openspec-cli";
 
 export interface OpenSpecFailure {
   command: string;
@@ -10,59 +7,15 @@ export interface OpenSpecFailure {
 
 export type OpenSpecResult<T> = { ok: true; value: T } | { ok: false; failure: OpenSpecFailure };
 
-export interface OpenSpecRunOutput {
-  stdout: string;
-  stderr: string;
-  code: number | null;
-}
-
 export interface OpenSpecCliDeps {
-  wrapperPath?: () => string;
-  run?: (bin: string, args: string[], companionPath: string) => Promise<OpenSpecRunOutput>;
+  run?: RunOpenSpec;
 }
 
 /** The Capability whose CLI produces the workflow a companion's changes move through. */
 export const WORKFLOW_CAPABILITY_ID = "openspec";
 
-/** Upper bound on one collection call; a hung wrapper must not hold a request open. */
+/** Upper bound on one collection call; a hung CLI must not hold a request open. */
 const OPENSPEC_TIMEOUT_MS = 60_000;
-
-function openSpecWrapperPath(): string {
-  return path.join(getWrapperBinPath(), "openspec");
-}
-
-/**
- * The wrapper resolves its OpenSpec root from `MATE_ARTIFACT_PATH`, so the
- * companion is selected by environment rather than by cwd — the studio server
- * has no Repository Link to walk up from.
- */
-function runOpenSpecWrapper(
-  bin: string,
-  args: string[],
-  companionPath: string,
-): Promise<OpenSpecRunOutput> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, {
-      cwd: companionPath,
-      env: { ...process.env, MATE_ARTIFACT_PATH: companionPath },
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: OPENSPEC_TIMEOUT_MS,
-    });
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr?.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-    child.once("error", reject);
-    child.once("close", (code) => resolve({ stdout, stderr, code }));
-  });
-}
 
 function firstJsonValue(stdout: string): unknown {
   const start = stdout.search(/[[{]/);
@@ -74,29 +27,28 @@ function firstJsonValue(stdout: string): unknown {
   }
 }
 
-function reasonFor(output: OpenSpecRunOutput): string {
+function reasonFor(output: OpenSpecRun): string {
   const detail = (output.stderr.trim() || output.stdout.trim()).split("\n").slice(-3).join("; ");
   const status = `exit code ${output.code ?? "unknown"}`;
   return detail ? `${status}: ${detail}` : status;
 }
 
 /**
- * Reads one OpenSpec JSON command for a Companion Repository. Never throws:
- * every failure — spawn, exit status, unparseable output — becomes a typed
- * failure so one unreadable companion cannot take the server down.
+ * Reads one OpenSpec JSON command, run in the Companion Repository. Never
+ * throws: every failure — spawn, exit status, unparseable output — becomes a
+ * typed failure so one unreadable companion cannot take the server down.
  */
 export async function readOpenSpecJson<T>(
   companionPath: string,
   args: string[],
   deps: OpenSpecCliDeps = {},
 ): Promise<OpenSpecResult<T>> {
-  const bin = (deps.wrapperPath ?? openSpecWrapperPath)();
   const command = `openspec ${args.join(" ")}`;
-  const run = deps.run ?? runOpenSpecWrapper;
+  const run = deps.run ?? runOpenSpec;
 
-  let output: OpenSpecRunOutput;
+  let output: OpenSpecRun;
   try {
-    output = await run(bin, args, companionPath);
+    output = await run(args, { cwd: companionPath, timeout: OPENSPEC_TIMEOUT_MS });
   } catch (error) {
     return {
       ok: false,
