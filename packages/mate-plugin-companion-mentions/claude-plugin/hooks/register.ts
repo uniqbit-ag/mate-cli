@@ -1,8 +1,9 @@
-// `@mate:<path>` names a file or folder in the mate Companion Repository.
-// `mate claude` hands over the companion ($MATE_ARTIFACT_PATH) and its secret
-// policy ($MATE_POLICY_JSON); a plain `claude` session asks
-// `mate session context` instead. Without a companion and a readable policy,
-// the mod offers no rows and attaches nothing.
+/**
+ * `@mate:<path>` names a file or folder in the mate Companion Repository.
+ * `mate claude` hands over the companion ($MATE_ARTIFACT_PATH) and its secret policy
+ * ($MATE_POLICY_JSON); a plain `claude` session asks `mate session context` instead.
+ * Without a companion and a readable policy, the mod offers no rows and attaches nothing.
+ */
 
 import type { EngineInterface, FsEntry, Register } from "claude-code";
 import {
@@ -118,7 +119,7 @@ async function askMate($: EngineInterface, sessionRoot: string): Promise<Context
   }
   const answer = parseContext(stdout);
   if ("reason" in answer) return answer;
-  // Mate exits 0 on every answer it stands by; a failure after printing one voids it.
+  /** Mate exits 0 on every answer it stands by; a failure after printing one voids it. */
   if (exitCode !== 0) {
     return {
       reason: `\`mate session context\` named a companion but exited with status ${exitCode}, so its answer is not used. \`mate doctor\` checks the installation`,
@@ -190,7 +191,7 @@ async function listFiles($: EngineInterface, root: string, signal: AbortSignal):
     }
   } catch {
     signal.throwIfAborted();
-    // git could not run (not installed, timed out): walk below.
+    /** git could not run (not installed, timed out): walk below. */
   }
   return walk($, root, signal);
 }
@@ -322,16 +323,14 @@ export const register: Register = (on) => {
         `${shown} was not attached: ${path} is a link to ${target.realPath}, outside the mate companion repo.`,
       );
     }
-    // Both the path named and where it leads count, but only inside the
-    // companion: folders above it never match a secret pattern.
+    /** Both the path named and where it leads count; folders above the companion never match. */
     const secretOf = (namedRel: string, landedRel: string) =>
       secretMatch(policy, namedRel) ?? secretMatch(policy, landedRel);
     if (target.kind === "dir") {
-      // Listed, and its linked entries looked up, where the checks above
-      // looked: a link repointed since would otherwise list another folder.
+      /** List where the checks looked: a link repointed since would list another folder. */
       const landedFolder = target.realPath;
       const children = await $.fs.list(landedFolder);
-      // A linked entry is judged where it leads, as a mention of it would be.
+      /** A linked entry is judged where it leads, as a mention of it would be. */
       const judged = await Promise.all(
         children.map(async (child: FsEntry) => {
           if (child.name === ".git") return undefined;
@@ -366,7 +365,7 @@ export const register: Register = (on) => {
       );
     }
 
-    // Read where the checks looked, not through the link, which could change.
+    /** Read where the checks looked, not through the link, which could change. */
     const read = await next({ ...e, path: target.realPath });
     if (read.deny !== undefined) return read;
     return {

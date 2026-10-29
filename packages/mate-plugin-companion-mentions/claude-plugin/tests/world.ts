@@ -1,5 +1,4 @@
-// A fake machine for the hook tests. Tests use paths of their own, so none
-// depends on what the mod kept from another.
+/** A fake machine for the hook tests; each test uses its own paths, so none sees another's state. */
 
 import { mock } from "claude-code/testing";
 import type { FsEntry, On, PromptMentionResult } from "claude-code";

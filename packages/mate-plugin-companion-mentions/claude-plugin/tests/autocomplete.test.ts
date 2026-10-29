@@ -4,8 +4,7 @@ import type { PromptAutocompleteInput, PromptAutocompleteResult } from "claude-c
 import { contextReply, policyJson } from "./policy.ts";
 import { world } from "./world.ts";
 
-// Each test has a companion of its own, so none sees a file list the mod kept
-// for another.
+/** Each test has a companion of its own, so none sees a file list the mod kept for another. */
 
 /** The kit raises prompt.autocomplete like any engine event, but its typings leave it off `$.prompt`. */
 type Autocompleting = {
@@ -205,7 +204,7 @@ describe("@ rows", () => {
       await abandoned;
       killGit();
       await clock.settle();
-      // Not a folder walk (which would offer the gitignored file) kept for 30 seconds.
+      /** Not a folder walk (which would offer the gitignored file) kept for 30 seconds. */
       expect(await texts($, "@mate:")).toEqual(["@mate:a.md "]);
     },
   );
@@ -230,7 +229,7 @@ describe("@ rows", () => {
         "/work/plain-secret": { stdout: contextReply("/c/plain-secret", { deny: ["*.tfstate"] }) },
       },
     });
-    // A folder that holds only secret files is not offered either.
+    /** A folder that holds only secret files is not offered either. */
     expect(await texts($, "@mate:")).toEqual(["@mate:.env.example ", "@mate:a.md "]);
     expect(await texts($, "@mate:acme")).toEqual([]);
     expect(await texts($, "@mate:.env")).toEqual(["@mate:.env.example "]);

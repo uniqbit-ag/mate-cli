@@ -1,4 +1,4 @@
-// Pure helpers for `@mate:` mentions: no `$`, so tests import them directly.
+/** Pure helpers for `@mate:` mentions: no `$`, so tests import them directly. */
 
 export const PREFIX = "mate:";
 

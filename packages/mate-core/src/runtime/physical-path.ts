@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// Shared by the Tool Guard and every companion-path entry, so all resolve `link/..` the same way.
+/** Shared by the Tool Guard and every companion-path entry, so all resolve `link/..` the same way. */
 
 const MAX_SYMLINKS = 40;
 export const PATH_SEPARATORS = path.sep === "\\" ? /[\\/]/ : /\//;

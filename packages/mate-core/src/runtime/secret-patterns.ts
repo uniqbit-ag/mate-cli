@@ -120,7 +120,7 @@ function bracket(body: string, start: number): { source: string; end: number } |
       members += named;
       i = close + 1;
     } else if (char === "\\" && i + 1 < body.length) {
-      // An escaped `-` is a member, never a range.
+      /** An escaped `-` is a member, never a range. */
       const escaped = body[++i];
       members += escaped === "-" ? "\\-" : escapeRegExp(escaped);
     } else {
@@ -149,7 +149,7 @@ function compile(pattern: string): { rule: SecretRule; regExp: RegExp } {
       i = set.end;
     } else if (char === "*" && body[i + 1] === "*") {
       // `**/` matches zero or more whole segments; a bare `**` matches anything.
-      // `[\s\S]`, not `.`, so a name holding a line break is crossed too.
+      /** `[\s\S]`, not `.`, so a name holding a line break is crossed too. */
       if (body[i + 2] === "/") {
         source += "(?:[\\s\\S]*/)?";
         i += 2;
@@ -167,9 +167,10 @@ function compile(pattern: string): { rule: SecretRule; regExp: RegExp } {
       source += escapeRegExp(char);
     }
   }
-  // A slash-free pattern matches the file name; one with a slash, or naming a
-  // folder, matches the trailing segments of the path, since the repository
-  // root is not known here.
+  /**
+   * A slash-free pattern matches the file name; one with a slash, or naming a folder, matches
+   * the trailing segments of the path, since the repository root is not known here.
+   */
   const subject = folder || body.includes("/") ? "path" : "name";
   let anchored: string;
   if (body === "") anchored = "(?!)";
@@ -261,10 +262,40 @@ export function projectableSecretDenyPatterns(): string[] {
 /** Ordinary files a broad glob also matches; a glob matching one is not aimed at secrets. */
 const ORDINARY_SAMPLES = ["index.ts", "README.md", "config.json"];
 
-/** Most alternatives a search glob's `{a,b}` groups are expanded to. */
-const BRACE_LIMIT = 64;
+/** Most alternatives a search glob's `{a,b}` groups may expand to; a glob with more is refused unchecked. */
+export const BRACE_LIMIT = 64;
 
-/** A glob's `{a,b}` alternatives, as ripgrep expands them; the glob itself past {@link BRACE_LIMIT}. */
+const capAlternatives = (count: number) => Math.min(count, BRACE_LIMIT + 1);
+
+/**
+ * Whether a glob's `{a,b}` groups expand to more than {@link BRACE_LIMIT}
+ * alternatives. Counts in one pass, without expanding, so a long glob can't
+ * stall the check.
+ */
+export function exceedsBraceLimit(glob: string): boolean {
+  const groups = [{ before: 0, current: 1, split: false }];
+  for (let i = 0; i < glob.length; i++) {
+    const char = glob[i];
+    const group = groups[groups.length - 1];
+    if (char === "\\") i++;
+    else if (char === "{") groups.push({ before: 0, current: 1, split: false });
+    else if (char === "," && groups.length > 1) {
+      group.before = capAlternatives(group.before + group.current);
+      group.current = 1;
+      group.split = true;
+    } else if (char === "}" && groups.length > 1) {
+      groups.pop();
+      const parent = groups[groups.length - 1];
+      parent.current = capAlternatives(
+        parent.current * (group.split ? group.before + group.current : 1),
+      );
+      if (groups.length === 1 && parent.current > BRACE_LIMIT) return true;
+    }
+  }
+  return false;
+}
+
+/** A glob's `{a,b}` alternatives, as ripgrep expands them; check {@link exceedsBraceLimit} first. */
 function braceAlternatives(glob: string): string[] {
   let depth = 0;
   let open = -1;
@@ -282,10 +313,9 @@ function braceAlternatives(glob: string): string[] {
       const cuts = [open, ...commas, i];
       const before = glob.slice(0, open);
       const after = glob.slice(i + 1);
-      const expanded = cuts
+      return cuts
         .slice(1)
         .flatMap((cut, k) => braceAlternatives(before + glob.slice(cuts[k] + 1, cut) + after));
-      return expanded.length > BRACE_LIMIT ? [glob] : expanded;
     }
   }
   return [glob];
@@ -318,10 +348,12 @@ function sampleName(glob: string): string {
  * Heuristic for search tools. An `{a,b}` alternative is aimed at secrets when
  * it matches no ordinary file and, wildcards filled in, names a secret file or
  * matches a deny pattern's sample name. `**\/*`, `*.ts` and `!` exclusions are not.
+ * A glob past {@link BRACE_LIMIT} counts as aimed at secrets.
  */
 export function globTargetsSecretFiles(glob: string, policy: SecretPolicy): boolean {
   const pattern = glob.trim();
   if (!pattern || pattern.startsWith("!")) return false;
+  if (exceedsBraceLimit(pattern)) return true;
   return braceAlternatives(pattern).some((alternative) => {
     if (ORDINARY_SAMPLES.some((sample) => matchesSecretPattern(sample, [alternative]))) {
       return false;

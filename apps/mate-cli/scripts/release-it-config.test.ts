@@ -164,7 +164,7 @@ async function createPublishFixture(
     Object.fromEntries(
       names.map((name) => [`node_modules/${name}`, { version, integrity: FIXTURE_INTEGRITY }]),
     );
-  // The plugin is publish-only: no image lock pins it.
+  /** The plugin is publish-only: no image lock pins it. */
   await fs.writeFile(
     path.join(lockDir, "global-tools.package-lock.json"),
     JSON.stringify({ packages: lockEntries(["@uniqbit/mate-core", "@uniqbit/mate"]) }),
@@ -292,7 +292,7 @@ describe("stable release-it config", () => {
   test("runs the companion-mentions plugin's tests in stable releases", async () => {
     const config = JSON.parse(await fs.readFile(stableReleaseConfigPath, "utf8")) as ReleaseConfig;
 
-    // Hooks run in apps/mate-cli, where `bun run test` covers the CLI alone.
+    /** Hooks run in apps/mate-cli, where `bun run test` covers the CLI alone. */
     expect(config.hooks?.["before:init"]).toContain(
       "bun run --cwd ../../packages/mate-plugin-companion-mentions test",
     );
@@ -594,7 +594,7 @@ describe("publish.sh", () => {
         );
       }
 
-      // Core must publish before the CLI that pins it; the publish-only plugin comes last.
+      /** Core must publish before the CLI that pins it; the publish-only plugin comes last. */
       expect(await publishedTarballs(fixture)).toEqual([
         `uniqbit-mate-core-${version}.tgz`,
         `uniqbit-mate-${version}.tgz`,
@@ -750,9 +750,9 @@ describe("publish.sh", () => {
     const pluginName = '  "@uniqbit/mate-plugin-companion-mentions"\n';
     const pluginDir = '  "$ROOT_DIR/packages/mate-plugin-companion-mentions"\n';
     const rewrites: Array<(script: string) => string> = [
-      // Without the plugin.
+      /** Without the plugin. */
       (script) => script.replace(pluginName, "").replace(pluginDir, ""),
-      // With the plugin before the CLI.
+      /** With the plugin before the CLI. */
       (script) =>
         script
           .replace(pluginName, "")

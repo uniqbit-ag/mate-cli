@@ -1,5 +1,4 @@
-// mate's compiled rules; test/rule-agreement.test.ts checks them against
-// mate-core, so they cannot drift from what mate sends.
+/** mate's compiled rules; test/rule-agreement.test.ts keeps them in step with mate-core. */
 
 export type FixtureRule = {
   pattern: string;

@@ -1,5 +1,10 @@
 import { resolveSecretPolicy } from "./policy";
-import { globTargetsSecretFiles, isSecretFile } from "./secret-patterns";
+import {
+  BRACE_LIMIT,
+  exceedsBraceLimit,
+  globTargetsSecretFiles,
+  isSecretFile,
+} from "./secret-patterns";
 import { describeSecretFindings, scanContent, type SecretFinding } from "./secret-scan";
 import { HEREDOC_MARKER, stripHeredocBodies } from "./shell-heredoc";
 
@@ -35,6 +40,14 @@ function secretFileRefusal(filePath: string): string {
     ` target: ${filePath}`,
     "Refer to the variable by name, read an example file such as .env.example, or ask the user to set the value.",
     SWITCH_HINT,
+  ].join("\n");
+}
+
+function braceLimitRefusal(glob: string): string {
+  return [
+    `Mate guardrail: this search glob expands to more than ${BRACE_LIMIT} {a,b} alternatives, too many to check for secret files.`,
+    ` glob: ${glob}`,
+    "Split the search into globs with fewer alternatives.",
   ].join("\n");
 }
 
@@ -109,10 +122,11 @@ export async function checkSecretAccess(
   }
 
   if (call.kind === "search") {
-    const named =
-      call.paths.find((filePath) => filePath && isSecretFile(filePath, policy)) ??
-      call.globs.find((glob) => globTargetsSecretFiles(glob, policy));
-    return named ? secretFileRefusal(named) : null;
+    const named = call.paths.find((filePath) => filePath && isSecretFile(filePath, policy));
+    if (named) return secretFileRefusal(named);
+    const glob = call.globs.find((candidate) => globTargetsSecretFiles(candidate, policy));
+    if (!glob) return null;
+    return exceedsBraceLimit(glob) ? braceLimitRefusal(glob) : secretFileRefusal(glob);
   }
 
   const paths = call.kind === "read" ? call.paths : call.writes.map((write) => write.path);
