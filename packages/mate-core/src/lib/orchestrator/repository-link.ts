@@ -5,6 +5,7 @@ import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { companionRegistryPath, registryLinks } from "../../runtime/companion-registry-read";
+import { namesOtherCheckout } from "../../runtime/git-layout";
 import { canonicalPath, normalisedCanonicalPath } from "../../runtime/physical-path";
 import {
   ancestorDirectories,
@@ -390,6 +391,12 @@ export async function writeRepoLocalRegistryEntry(
   if (failure) throw failure.error ?? new Error(`failed to project ${failure.path}`);
 }
 
+/**
+ * The Repository Link the nearest repo-local registry records. A link naming
+ * another live Checkout of the clone, as in a `.mate/` folder copied from it,
+ * counts as absent, so the Checkout is adopted instead of acting as that one.
+ * A link naming a missing folder is returned as before.
+ */
 export async function findRepoLocalLinkedRepository(cwd: string): Promise<LinkedRepository | null> {
   const found = await findRepoLocalRegistryFile(cwd);
   if (!found) return null;
@@ -398,7 +405,8 @@ export async function findRepoLocalLinkedRepository(cwd: string): Promise<Linked
     const raw = await fs.readFile(found.registryPath, "utf8");
     const parsed = parse(raw) as Partial<RepoLocalRegistry> | null;
     if (!parsed?.repository) return null;
-    return normalizeLinkedRepository(parsed.repository);
+    const repository = normalizeLinkedRepository(parsed.repository);
+    return namesOtherCheckout(found.repoRoot, repository.path) ? null : repository;
   } catch {
     return null;
   }

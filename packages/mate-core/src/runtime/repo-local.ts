@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "./framework";
+import { readGitLayout } from "./git-layout";
 
 export const repoLocalDirName = () => `.${FRAMEWORK_NAME}`;
 
@@ -29,13 +30,17 @@ export function companionLinkPath(repoPath: string): string {
 
 /**
  * `cwd` and each of its ancestors, nearest first, ending at the filesystem
- * root. Shared by the async and sync registry walks so the two cannot land on
+ * root or after a linked worktree's root, so a worktree nested in the main
+ * worktree never reads the main worktree's `.mate/`. A main worktree or a
+ * submodule walks on, so a submodule still resolves to the outer repository.
+ * Shared by the async and sync registry walks so the two cannot land on
  * different ancestors.
  */
 export function* ancestorDirectories(cwd: string): Generator<string> {
   let dir = path.resolve(cwd);
   for (;;) {
     yield dir;
+    if (readGitLayout(dir)?.kind === "linked") return;
     const parent = path.dirname(dir);
     if (parent === dir) return;
     dir = parent;

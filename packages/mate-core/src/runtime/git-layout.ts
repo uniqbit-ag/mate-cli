@@ -153,12 +153,17 @@ export function gitExcludePath(checkoutPath: string): string | null {
   return layout ? path.join(layout.commonDir, "info", "exclude") : null;
 }
 
-/**
- * Each worktree the shared folder lists whose `.git` file still points back to
- * it, and each locked one: Git keeps a locked worktree registered while its
- * drive is away, and so does this list.
- */
-function linkedWorktrees(commonDir: string): string[] {
+/** One worktree record under the shared folder's `worktrees/`. */
+interface WorktreeRecord {
+  recordName: string;
+  path: string;
+  /** The worktree's `.git` file still points back to this record. */
+  live: boolean;
+  locked: boolean;
+}
+
+/** Every record whose `gitdir` names a `.git` file, sorted by record name. */
+function worktreeRecords(commonDir: string): WorktreeRecord[] {
   const adminRoot = path.join(commonDir, "worktrees");
   let names: string[];
   try {
@@ -166,16 +171,31 @@ function linkedWorktrees(commonDir: string): string[] {
   } catch {
     return [];
   }
-  const worktrees: string[] = [];
-  for (const name of names) {
-    const adminDir = path.join(adminRoot, name);
+  return names.flatMap((recordName) => {
+    const adminDir = path.join(adminRoot, recordName);
     const dotGit = readPathFile(path.join(adminDir, "gitdir"), adminDir);
-    if (!dotGit || path.basename(dotGit) !== ".git") continue;
+    if (!dotGit || path.basename(dotGit) !== ".git") return [];
     const checkout = path.dirname(dotGit);
-    const live = readGitLayout(checkout)?.gitDir === realPath(adminDir);
-    if (live || fs.existsSync(path.join(adminDir, "locked"))) worktrees.push(realPath(checkout));
-  }
-  return worktrees;
+    return [
+      {
+        recordName,
+        path: realPath(checkout),
+        live: readGitLayout(checkout)?.gitDir === realPath(adminDir),
+        locked: fs.existsSync(path.join(adminDir, "locked")),
+      },
+    ];
+  });
+}
+
+/**
+ * Each worktree the shared folder lists whose `.git` file still points back to
+ * it, and each locked one: Git keeps a locked worktree registered while its
+ * drive is away, and so does this list.
+ */
+function linkedWorktrees(commonDir: string): string[] {
+  return worktreeRecords(commonDir)
+    .filter((record) => record.live || record.locked)
+    .map((record) => record.path);
 }
 
 /**
@@ -191,4 +211,98 @@ export function otherCheckouts(checkoutPath: string): string[] {
   return [...(main ? [main] : []), ...linkedWorktrees(layout.commonDir)].filter(
     (checkout) => checkout !== self,
   );
+}
+
+/** A Checkout root and its layout. */
+export interface CheckoutRoot {
+  root: string;
+  layout: GitLayout;
+}
+
+/**
+ * The nearest folder at or above `folder` whose Git layout reads, as Git finds
+ * its repository: a nested worktree or a submodule is its own root. `null`
+ * outside Git.
+ */
+export function checkoutRootOf(folder: string): CheckoutRoot | null {
+  let dir = realPath(folder);
+  for (;;) {
+    const layout = readGitLayout(dir);
+    if (layout) return { root: dir, layout };
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** A linked worktree as its clone lists it. */
+export interface LinkedWorktree {
+  recordName: string;
+  path: string;
+  /** Its `.git` file points back; a locked worktree whose folder is away is listed but not live. */
+  live: boolean;
+}
+
+/** The Checkouts that share one Git folder. */
+export interface Clone {
+  commonDir: string;
+  bare: boolean;
+  /** `null` for a bare repository. */
+  mainWorktree: string | null;
+  /** By record name: each live worktree, and each locked one whose folder is away. */
+  linkedWorktrees: LinkedWorktree[];
+}
+
+/** The clone whose shared Git folder is `commonDir`; `null` when that is no Git folder. */
+export function cloneAt(commonDir: string): Clone | null {
+  const dir = realPath(commonDir);
+  if (!isDirectory(dir) || !fs.existsSync(path.join(dir, "HEAD"))) return null;
+  const bare = configTrue(coreConfig(dir).get("bare"));
+  return {
+    commonDir: dir,
+    bare,
+    mainWorktree: bare ? null : mainWorktree(dir),
+    linkedWorktrees: worktreeRecords(dir)
+      .filter((record) => record.live || record.locked)
+      .map(({ recordName, path: worktree, live }) => ({ recordName, path: worktree, live })),
+  };
+}
+
+/**
+ * The clone of the Checkout at `root`. `null` for an `own` layout (a submodule,
+ * a separate Git folder), which is the Checkout of no shared clone, and outside Git.
+ */
+export function cloneOf(root: string): Clone | null {
+  const layout = readGitLayout(root);
+  if (!layout || layout.kind === "own") return null;
+  return cloneAt(layout.commonDir);
+}
+
+/**
+ * The shared Git folder of the Checkout at `root` when it counts as one of its
+ * clone: a main worktree, or a linked worktree whose record points back to it.
+ */
+export function checkoutCommonDir(root: string): string | null {
+  const layout = readGitLayout(root);
+  if (!layout || layout.kind === "own") return null;
+  if (layout.kind === "main") return layout.commonDir;
+  const dotGit = readPathFile(path.join(layout.gitDir, "gitdir"), layout.gitDir);
+  if (!dotGit || path.basename(dotGit) !== ".git") return null;
+  return realPath(path.dirname(dotGit)) === realPath(root) ? layout.commonDir : null;
+}
+
+/** Two Checkout roots of one clone, compared by the real path of their shared Git folder. */
+export function sameClone(a: string, b: string): boolean {
+  const first = checkoutCommonDir(a);
+  return first !== null && first === checkoutCommonDir(b);
+}
+
+/**
+ * `named` is another live Checkout of `root`'s clone, as when a `.mate/` folder
+ * was copied from it: such a link or projection belongs to `named`, not `root`.
+ */
+export function namesOtherCheckout(root: string, named: string): boolean {
+  const self = realPath(root);
+  const other = realPath(named);
+  return self !== other && isDirectory(other) && sameClone(self, other);
 }
