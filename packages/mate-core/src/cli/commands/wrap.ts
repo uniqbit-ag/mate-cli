@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { adoptNewCheckout } from "../../lib/orchestrator/checkout-adoption";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repository-link";
 import type { ProjectionChangedPaths } from "../../lib/orchestrator/projection-types";
 import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
@@ -11,12 +12,15 @@ import { launchAmbiguityDeps } from "./shared/companion-selection";
 
 export interface WrapCommandDependencies {
   findRepoLocalLinkedRepository?: typeof findRepoLocalLinkedRepository;
+  /** A new Checkout of a linked clone is adopted before it is wrapped (design Decision 7). */
+  adoptNewCheckout?: (folder: string) => ReturnType<typeof adoptNewCheckout>;
   runWrapPass?: typeof runWrapPass;
   resolveLinkedCompanions?: typeof launchAmbiguityDeps.resolveLinkedCompanions;
 }
 
 export const wrapCommandDeps: Required<WrapCommandDependencies> = {
   findRepoLocalLinkedRepository,
+  adoptNewCheckout: (folder) => adoptNewCheckout(folder),
   runWrapPass,
   resolveLinkedCompanions: (cwd: string) => launchAmbiguityDeps.resolveLinkedCompanions(cwd),
 };
@@ -73,6 +77,7 @@ export async function runWrapCommand(
     deps.findRepoLocalLinkedRepository ?? wrapCommandDeps.findRepoLocalLinkedRepository;
   const wrap = deps.runWrapPass ?? wrapCommandDeps.runWrapPass;
   const resolveLinked = deps.resolveLinkedCompanions ?? wrapCommandDeps.resolveLinkedCompanions;
+  const adopt = deps.adoptNewCheckout ?? wrapCommandDeps.adoptNewCheckout;
 
   const parsed = parseWrapArgs(argv);
   if ("error" in parsed) {
@@ -81,7 +86,7 @@ export async function runWrapCommand(
     return;
   }
 
-  const repository = await findRepository(cwd);
+  const repository = (await findRepository(cwd)) ?? (await adopt(cwd));
   if (!repository) {
     console.error(
       `${FRAMEWORK_NAME}: this directory is not a working repository linked to a companion.`,

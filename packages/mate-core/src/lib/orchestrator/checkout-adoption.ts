@@ -80,6 +80,38 @@ export async function adoptCheckout(
 }
 
 /**
+ * Looks up and adopts `folder` in one step, for a command that wraps it
+ * anyway (`mate wrap`). Null when no single companion lists its clone.
+ */
+export async function adoptNewCheckout(
+  folder: string,
+  globalConfigStore: GlobalConfigStore = new GlobalConfigStore(),
+): Promise<LinkedRepository | null> {
+  const lookup = await lookUpAdoption(folder, globalConfigStore);
+  return lookup && adoptCheckout(folder, lookup, globalConfigStore);
+}
+
+export interface RegisteredWraps {
+  /** The clone's Registered Checkout. */
+  checkout: string;
+  runtimes: WrapRuntime[];
+}
+
+/**
+ * The clone's Registered Checkout and its wrapped runtimes, when that is
+ * another Checkout than `repository` and is wrapped for any.
+ */
+export async function otherRegisteredWraps(
+  companionPath: string,
+  repository: LinkedRepository,
+): Promise<RegisteredWraps | null> {
+  const checkout = await registeredCheckout(companionPath, repository.id);
+  if (!checkout || physicalPath(checkout) === physicalPath(repository.path)) return null;
+  const runtimes = wrappedAt(checkout);
+  return runtimes.length > 0 ? { checkout, runtimes } : null;
+}
+
+/**
  * The runtimes a prepare wraps `repository` for besides its own: none while
  * its manifest records a wrapped runtime, else those its Registered Checkout
  * is wrapped for (Decision 8). The Registered Checkout itself takes none.
@@ -89,7 +121,5 @@ export async function inheritedWrapRuntimes(
   repository: LinkedRepository,
 ): Promise<WrapRuntime[]> {
   if (wrappedAt(repository.path).length > 0) return [];
-  const registered = await registeredCheckout(companionPath, repository.id);
-  if (!registered || physicalPath(registered) === physicalPath(repository.path)) return [];
-  return wrappedAt(registered);
+  return (await otherRegisteredWraps(companionPath, repository))?.runtimes ?? [];
 }

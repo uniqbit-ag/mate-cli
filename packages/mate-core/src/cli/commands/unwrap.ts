@@ -1,4 +1,5 @@
 import { FRAMEWORK_NAME } from "../../framework";
+import { otherRegisteredWraps } from "../../lib/orchestrator/checkout-adoption";
 import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repository-link";
 import { unwrapWorkingRuntimeDocuments } from "../../lib/orchestrator/working-repo-projection";
@@ -100,4 +101,11 @@ export async function runUnwrapCommand(
   console.log(
     `The next \`${FRAMEWORK_NAME} claude\` or \`${FRAMEWORK_NAME} opencode\` wraps this repository again.`,
   );
+  /** Adoption gives a Checkout its Registered Checkout's wraps (design Decision 8). */
+  const registered = companionPath && (await otherRegisteredWraps(companionPath, repository));
+  if (registered) {
+    console.log(
+      `So does the next \`${FRAMEWORK_NAME} session prepare\` here: ${registered.checkout}, the Registered Checkout of ${repository.id}, is wrapped for ${registered.runtimes.join(" and ")}.`,
+    );
+  }
 }
