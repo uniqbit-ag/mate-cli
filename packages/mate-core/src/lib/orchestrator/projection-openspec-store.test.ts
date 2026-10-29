@@ -188,6 +188,20 @@ describe("the pointer line across Checkouts of one clone", () => {
     expect(await pointerIgnoreProblem(worktree)).toBeNull();
   });
 
+  test("cleanup keeps the line while another Checkout's pointer is unreadable", async () => {
+    const { main, worktree, excludePath } = await clone();
+    await writeStorePointer(worktree, "acme-companion");
+    await fs.chmod(pointerPath(worktree), 0o000);
+    await removeStorePointer(main);
+
+    try {
+      expect(await removeStorePointerExclude(main)).toMatchObject({ keptFor: [worktree] });
+      expect(await fs.readFile(excludePath, "utf8")).toContain(`${OPENSPEC_POINTER_EXCLUDE}\n`);
+    } finally {
+      await fs.chmod(pointerPath(worktree), 0o644);
+    }
+  });
+
   test("the last Checkout with a pointer removes the line", async () => {
     const { main, excludePath } = await clone();
     await removeStorePointer(main);

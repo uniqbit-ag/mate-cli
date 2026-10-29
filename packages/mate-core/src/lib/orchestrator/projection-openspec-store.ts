@@ -124,9 +124,16 @@ export async function storePointerPresent(repoPath: string): Promise<boolean> {
   return (await readStorePointer(repoPath)).kind === "mate";
 }
 
-/** Another Checkout of the clone needs the line while it carries Mate's pointer. */
+/**
+ * Another Checkout of the clone needs the line while it carries Mate's pointer.
+ * A pointer it cannot read throws, so the caller keeps the line.
+ */
 async function pointerNeeds(checkout: string): Promise<readonly string[]> {
-  return (await storePointerPresent(checkout)) ? [OPENSPEC_POINTER_EXCLUDE] : [];
+  const content = await fs.readFile(pointerFile(checkout), "utf8").catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  });
+  return content?.split(/\r?\n/)[0] === generatedHeader() ? [OPENSPEC_POINTER_EXCLUDE] : [];
 }
 
 /**
