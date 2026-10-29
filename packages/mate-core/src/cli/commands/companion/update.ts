@@ -16,13 +16,12 @@ import {
   isCanaryVersion,
   isNewer,
 } from "../../../lib/update-checker";
-import { resolveCompanionRuntime } from "../../../runtime/env";
 import { syncCompanionFiles, type CompanionSyncOptions } from "../../../tools/setup";
 import type { ManagedOutputOwner, ManagedOutputReport } from "../../../tools/setup/plugin";
 import { runCommand } from "../../../tools/setup/utils";
 import { confirm } from "../../confirm";
 import { defaultGitOps, type GitOps } from "../artifact/finish/git";
-import { resolveCompanionPath } from "./tui";
+import { resolveCompanionPath, resolveSessionCompanionPath } from "./tui";
 import { errorMessage } from "../../../runtime/error-message";
 
 /** Snapshot marker for a changed path that no longer exists on disk. */
@@ -113,8 +112,7 @@ export interface CompanionUpdateDeps {
 
 export const companionUpdateDeps: CompanionUpdateDeps = {
   resolveCompanionPath,
-  resolveProjectedCompanionPath: (cwd) =>
-    resolveCompanionRuntime(process.env, cwd).context.companionPath || undefined,
+  resolveProjectedCompanionPath: (cwd) => resolveSessionCompanionPath(cwd),
   getCurrentVersion,
   fetchLatestVersion,
   loadConfig: (companionPath) => new ConfigStore(frameworkConfigPath(companionPath)).load(),

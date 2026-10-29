@@ -5,6 +5,7 @@ import { getActiveDistribution } from "../../../distribution";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
 import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repository-link";
+import { resolveSession } from "../../../runtime/session-resolution";
 import { ensureUnambiguousCompanion } from "../launch/shared";
 
 export function renderBanner(repoPath: string, companionPath: string): string {
@@ -43,6 +44,19 @@ export async function resolveCompanionPath(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The companion Session Resolution answers for `cwd`: the launch's, or a
+ * trusted projection's. A Wrapped Repository can never take the launch path,
+ * so `companion sync` and `update` fall back to this.
+ */
+export function resolveSessionCompanionPath(
+  cwd: string,
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const session = resolveSession(env, cwd);
+  return session.kind === "none" ? undefined : session.companionPath || undefined;
 }
 
 export async function resolveRepoPath(cwd: string = process.cwd()): Promise<string> {

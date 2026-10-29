@@ -1,9 +1,8 @@
 import { FRAMEWORK_NAME } from "../../../framework";
 import { syncCompanionGit } from "../../../lib/orchestrator/companion-git-sync";
 import { LaunchPreflightError } from "../../../lib/orchestrator/types";
-import { resolveCompanionRuntime } from "../../../runtime/env";
 import { readCompanionPolicy } from "../../../runtime/policy";
-import { resolveCompanionPath, resolveRepoPath } from "./tui";
+import { resolveCompanionPath, resolveRepoPath, resolveSessionCompanionPath } from "./tui";
 
 export interface CompanionSyncDeps {
   resolveCompanionPath: typeof resolveCompanionPath;
@@ -15,8 +14,7 @@ export interface CompanionSyncDeps {
 
 export const companionSyncDeps: CompanionSyncDeps = {
   resolveCompanionPath,
-  resolveProjectedCompanionPath: (cwd) =>
-    resolveCompanionRuntime(process.env, cwd).context.companionPath || undefined,
+  resolveProjectedCompanionPath: (cwd) => resolveSessionCompanionPath(cwd),
   resolveRepoPath,
   readCompanionPolicy,
   syncCompanionGit,

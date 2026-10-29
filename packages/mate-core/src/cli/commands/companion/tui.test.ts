@@ -6,7 +6,15 @@ import { promisify } from "node:util";
 
 import { version } from "../../../../package.json";
 import { writeRepoLocalRegistryEntry } from "../../../lib/orchestrator/repository-link";
-import { renderBanner, resolveCompanionPath, resolveRepoPath, resolveShell } from "./tui";
+import { writeProjectionPair } from "../../../runtime/projection";
+import { trustProjection } from "../../../../test/trusted-projection";
+import {
+  renderBanner,
+  resolveCompanionPath,
+  resolveRepoPath,
+  resolveSessionCompanionPath,
+  resolveShell,
+} from "./tui";
 
 const execFileAsync = promisify(execFile);
 
@@ -157,6 +165,69 @@ describe("resolveRepoPath", () => {
 
     try {
       expect(await resolveRepoPath(root)).toBe(root);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("resolveSessionCompanionPath", () => {
+  async function wrapped(): Promise<{
+    root: string;
+    repo: string;
+    companion: string;
+    home: string;
+  }> {
+    const root = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "mate-session-companion-")),
+    );
+    const repo = path.join(root, "repo");
+    const companion = path.join(root, "companion");
+    await fs.mkdir(path.join(repo, ".mate", "config"), { recursive: true });
+    await fs.mkdir(companion, { recursive: true });
+    await fs.writeFile(path.join(repo, ".mate", "config", "registry.yaml"), "companions: []\n");
+    writeProjectionPair(repo, {
+      stamp: "stamp",
+      projection: {
+        version: "0.0.0",
+        companionPath: companion,
+        repositoryPath: repo,
+        repositoryId: "acme",
+        wrapperBinPath: "/w",
+        reactDoctorBinPath: "/r",
+        graphifyOut: "/g",
+      },
+    });
+    const home = path.join(root, "home");
+    trustProjection({ home, companionPath: companion, repoRoot: repo, repositoryId: "acme" });
+    return { root, repo, companion, home };
+  }
+
+  test("answers a trusted projection's companion", async () => {
+    const { root, repo, companion, home } = await wrapped();
+    try {
+      expect(resolveSessionCompanionPath(repo, { HOME: home })).toBe(companion);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("answers none for a projection Session Resolution refuses", async () => {
+    const { root, repo } = await wrapped();
+    try {
+      expect(resolveSessionCompanionPath(repo, { HOME: path.join(root, "other") })).toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("answers the launch's companion, and none for a launch without one", async () => {
+    const { root, repo, home } = await wrapped();
+    try {
+      expect(resolveSessionCompanionPath(repo, { HOME: home, MATE_ARTIFACT_PATH: "/acme" })).toBe(
+        "/acme",
+      );
+      expect(resolveSessionCompanionPath(repo, { HOME: home, MATE_NAME: "mate" })).toBeUndefined();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
