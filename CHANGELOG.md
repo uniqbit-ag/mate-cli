@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Plain sessions trust a projection only for a linked companion (breaking)
+
+- A plain `claude` or `opencode` session in a wrapped repository uses the repository's projection only when your Mate configuration (`~/.mate/config.yaml`) lists the companion it names and that companion links the repository at the checkout the projection is in. Otherwise the session runs without Mate: no companion guidance, no guardrail, no session preparation. It shows one notice naming the reason and `mate doctor`, as its start message in Claude Code and as a toast in OpenCode. Run `mate companion link` in the repository, or `mate wrap` from a checkout the companion links.
+- `mate doctor` reports such a projection under Refused Projection, and `--json` carries it as `projectionRefusal` (`code`, `companionPath`, `message`).
+- A companion path that the repository's `.mate/` registry or your Mate configuration spells with a link before `..` now resolves to where it leads, as a launch environment's already did. When that folder is missing, `mate claude`, `mate opencode` and `mate companion setup` stop and name the configured path and where it leads, instead of using the folder its normalised spelling names.
+- `@uniqbit/mate-core/runtime` no longer exports `hasLaunchEnvironment`, `resolveCompanionRuntime`, `readCompanionRuntimeContext`, `isManagedCompanionContext`, `resolveSessionContext`, `sessionContextFailure`, `CompanionRuntimeContext` or `CompanionRuntimeResolution`. It exports `resolveSession` with its answer types, `sessionContextFor`, `sessionRefusalNotice`, `sessionRefusalReason`, and the synchronous readers `readGlobalCompanionsSync` and `readCompanionRegistrySync`.
+
 ### Changes are delivered through recorded branches (breaking)
 
 - **Renamed skills:** `mate-artifact-publish` is now `mate-publish-artifact`, and `mate-openspec-backfill` is now `mate-backfill-spec`. The old names are not kept as aliases; run `mate companion update` to deploy the new ones.
