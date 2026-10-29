@@ -102,6 +102,10 @@
 - The `mate-v1` (version 10) and `mate-minimal` (version 4) delta templates, their `specs` instructions, `openspec/mate-conventions.yaml`, and Mate's `rules.specs` entry describe the comment. Existing companions pick them up on their next capability sync.
 - `mate artifact publish` reads a delta's `scopes` from the comment, and still from frontmatter, so deltas in changes written before this release still publish. A `mate:delta` comment copied onto a main spec is replaced with canonical frontmatter, as a copied delta frontmatter block already was.
 
+### A second Mate can leave `~/.mate/runtime/` alone
+
+- With `MATE_SKIP_RUNTIME_REFRESH=1`, a Mate run does not re-point `~/.mate/runtime/`. A source checkout can then run next to the installed Mate without switching plain sessions and wrapped repositories over to itself. `mate wrap`, `mate opencode` and `mate session` refuse to run with it while that directory has no launcher.
+
 ### TokenSave indexing heals an empty store
 
 - `mate cap index`, and the indexing step of managed launches, now runs `tokensave init` whenever the Working Repository has no `.tokensave/tokensave.db`. Before, an empty or half-created `.tokensave/` folder counted as initialized, so every launch ran `tokensave sync` and failed with "no TokenSave index found".

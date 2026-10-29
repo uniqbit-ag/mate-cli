@@ -162,6 +162,14 @@ function runtimeDirectoryRequired(command: string | undefined): boolean {
   return command !== undefined && RUNTIME_DIRECTORY_COMMANDS.has(command);
 }
 
+/** Set to `1` by a second Mate, such as a source checkout, so the installed one keeps the runtime directory. */
+const SKIP_RUNTIME_REFRESH_ENV = "MATE_SKIP_RUNTIME_REFRESH";
+
+export interface EnsureRuntimeDirectoryOptions {
+  env?: Record<string, string | undefined>;
+  homeDir?: string;
+}
+
 /**
  * Startup refresh: a failure warns, except for the commands that write or
  * consume runtime-directory paths, where it is returned as fatal.
@@ -169,7 +177,17 @@ function runtimeDirectoryRequired(command: string | undefined): boolean {
 export async function ensureRuntimeDirectory(
   command: string | undefined,
   refresh: () => Promise<RuntimeDirectoryRefresh> = () => refreshRuntimeDirectory(),
+  { env = process.env, homeDir }: EnsureRuntimeDirectoryOptions = {},
 ): Promise<boolean> {
+  if (env[SKIP_RUNTIME_REFRESH_ENV] === "1") {
+    if (!runtimeDirectoryRequired(command) || fsSync.existsSync(runtimeMateBin(homeDir))) {
+      return true;
+    }
+    console.error(
+      `${FRAMEWORK_NAME}: ${runtimeDirectoryPath(homeDir)} has no launcher and ${SKIP_RUNTIME_REFRESH_ENV}=1 forbids writing it; run \`${FRAMEWORK_NAME}\` once without it.`,
+    );
+    return false;
+  }
   try {
     await refresh();
     return true;
