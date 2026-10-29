@@ -20,6 +20,11 @@ verification: |
   - mate-react-doctor: when writing tasks, end the task list of every Area whose tasks change React code (components, hooks, or other .tsx/.jsx modules) with one verification task, numbered like its neighbours, for example `- [ ] N.M Verify React changes with React Doctor [skill:mate-react-doctor]`. Areas whose tasks do not change React code get no verification task.
   - During apply, a tagged verification task is worked like any other task by invoking its skill.
   - Before reporting a change complete, check every Area that changed React code: if its tagged verification task is already checked, do nothing more; otherwise invoke the skill once for that Area.
+skill_tagging: |
+  A task's `[skill:<name>]` tag names only a skill installed in the Companion Repository, so every session runs the task the same way.
+  - Before tagging, check that the Companion Repository has `<name>/SKILL.md` under `.claude/skills/` or `.agents/skills/`.
+  - Never tag user-global, plugin (`<plugin>:<skill>`), or built-in skills, even when the current session offers them.
+  - When no companion skill applies, leave the task untagged.
 example_delta_metadata: |
   <!-- mate:delta
   change: <change-name>

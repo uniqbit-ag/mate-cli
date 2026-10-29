@@ -183,6 +183,12 @@ checked verification task. The skill scans the change's diff with Mate's pinned
 React Doctor binary, fixes regressions the change introduced, and reports what
 it could not fix. Outside an OpenSpec change, invoke the skill directly.
 
+A task's `[skill:<name>]` tag names only a skill installed in the Companion
+Repository, under its `.claude/skills/` or `.agents/skills/`. User-global,
+plugin, and built-in skills are never tagged, so every session that shares the
+companion runs a tagged task the same way. When no companion skill applies, the
+task stays untagged.
+
 React Doctor is configured during setup and does not have a separate `mate cap`
 command.
 
