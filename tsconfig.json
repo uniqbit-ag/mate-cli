@@ -20,8 +20,7 @@
     "packages/mate-core/opencode-plugin/**/*.tsx",
     "packages/mate-core/src/**/*.ts",
     "packages/mate-core/src/**/*.tsx",
-    "packages/mate-plugin-companion-mentions/src/**/*.ts",
-    "packages/mate-plugin-companion-mentions/claude-plugin/hooks/companion.ts"
+    "packages/mate-core/claude-capability-plugins/companion-mentions/hooks/companion.ts"
   ],
   "exclude": [
     "apps/mate-cli/src/**/*.test.ts",
@@ -29,7 +28,6 @@
     "packages/mate-core/opencode-plugin/**/*.test.ts",
     "packages/mate-core/src/templates/**",
     "packages/mate-core/src/**/*.test.ts",
-    "packages/mate-core/src/**/*.test.tsx",
-    "packages/mate-plugin-companion-mentions/src/**/*.test.ts"
+    "packages/mate-core/src/**/*.test.tsx"
   ]
 }

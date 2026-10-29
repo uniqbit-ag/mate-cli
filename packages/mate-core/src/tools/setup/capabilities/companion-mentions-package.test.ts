@@ -4,9 +4,11 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, test } from "bun:test";
 
-const packageRoot = path.resolve(import.meta.dir, "..");
+const packageRoot = path.resolve(import.meta.dir, "../../../..");
+const MOD = "claude-capability-plugins/companion-mentions";
+const modRoot = path.join(packageRoot, MOD);
 
-/** The files `npm pack` would publish, relative to the package root. */
+/** The files `npm pack` would publish, relative to mate-core's root. */
 function packedFiles(): string[] {
   const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--loglevel", "error"], {
     cwd: packageRoot,
@@ -23,7 +25,7 @@ function packedFiles(): string[] {
  */
 let files: string[] = [];
 beforeAll(() => {
-  const types = path.join(packageRoot, "claude-plugin", ".claude-plugin", "types");
+  const types = path.join(modRoot, ".claude-plugin", "types");
   const created = !fs.existsSync(types);
   if (created) {
     fs.mkdirSync(types);
@@ -36,39 +38,32 @@ beforeAll(() => {
   }
 }, 60_000);
 
-describe("the published package", () => {
-  test("holds the factory, the mod's manifest and hook modules, and the README", () => {
+describe("the published mate-core", () => {
+  test("holds the mod's manifest, marketplace file and hook modules", () => {
     for (const file of [
-      "package.json",
-      "README.md",
-      "src/index.ts",
-      "claude-plugin/.claude-plugin/plugin.json",
-      "claude-plugin/.claude-plugin/marketplace.json",
-      "claude-plugin/hooks/hooks.json",
-      "claude-plugin/hooks/register.ts",
-      "claude-plugin/hooks/companion.ts",
+      ".claude-plugin/plugin.json",
+      ".claude-plugin/marketplace.json",
+      "hooks/hooks.json",
+      "hooks/register.ts",
+      "hooks/companion.ts",
     ]) {
-      expect(files).toContain(file);
+      expect(files).toContain(`${MOD}/${file}`);
     }
   });
 
-  test("holds no tests, test helpers, or the types Claude Code writes beside the mod", () => {
+  test("holds none of the mod's tests, its tsconfig, or the types Claude Code writes beside it", () => {
     const unexpected = files.filter(
       (file) =>
-        file.endsWith(".test.ts") ||
-        file.startsWith("claude-plugin/tests/") ||
-        file.startsWith("claude-plugin/.claude-plugin/types/") ||
-        file === "claude-plugin/tsconfig.json" ||
-        file.startsWith("test/") ||
-        file === "bunfig.toml",
+        file.startsWith(`${MOD}/tests/`) ||
+        file.startsWith(`${MOD}/.claude-plugin/types/`) ||
+        file === `${MOD}/tsconfig.json`,
     );
     expect(unexpected).toEqual([]);
   });
 });
 
-const manifestDir = path.join(packageRoot, "claude-plugin", ".claude-plugin");
 const readJson = (file: string) =>
-  JSON.parse(fs.readFileSync(path.join(manifestDir, file), "utf8"));
+  JSON.parse(fs.readFileSync(path.join(modRoot, ".claude-plugin", file), "utf8"));
 
 /** Claude Code's marketplace name rules, as Mate checks them before publishing a folder. */
 const RESERVED_MARKETPLACE_NAMES = [
@@ -81,7 +76,7 @@ const RESERVED_MARKETPLACE_NAMES = [
   "npm",
 ];
 
-describe("the shipped marketplace file", () => {
+describe("the mod's marketplace file", () => {
   const marketplace = readJson("marketplace.json");
   const manifest = readJson("plugin.json");
 
@@ -100,7 +95,7 @@ describe("the shipped marketplace file", () => {
     expect(marketplace.plugins[0].version).toBeUndefined();
   });
 
-  test("leaves the version to the manifest, which declares the package's", () => {
+  test("leaves the version to the manifest, which declares mate-core's", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8"));
     expect(manifest.version).toBe(pkg.version);
   });

@@ -14,4 +14,5 @@ export { createTokensavePlugin } from "./tools/setup/capabilities/tokensave";
 export { createRtkPlugin } from "./tools/setup/capabilities/rtk";
 export { createGraphifyPlugin } from "./tools/setup/capabilities/graphify";
 export { createContextModePlugin } from "./tools/setup/capabilities/context-mode";
+export { createCompanionMentionsPlugin } from "./tools/setup/capabilities/companion-mentions";
 export { createGitignorePlugin } from "./tools/setup/plugins/gitignore";

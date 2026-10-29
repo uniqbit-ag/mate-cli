@@ -13,9 +13,13 @@
     "wrappers/",
     "claude-plugin/",
     "opencode-plugin/",
+    "claude-capability-plugins/",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
-    "!opencode-plugin/**/*.test.ts"
+    "!opencode-plugin/**/*.test.ts",
+    "!claude-capability-plugins/*/tests/",
+    "!claude-capability-plugins/*/tsconfig.json",
+    "!claude-capability-plugins/*/.claude-plugin/types/"
   ],
   "type": "module",
   "exports": {
@@ -32,14 +36,15 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "test": "CI=1 bun ../../test/run-isolated.ts",
-    "test:unit": "CI=1 bun ../../test/run-isolated.ts --suite=unit",
+    "test": "CI=1 bun ../../test/run-isolated.ts --path-ignore-patterns='claude-capability-plugins/*/tests/{autocomplete,companion-root,mention}.test.ts'",
+    "test:unit": "CI=1 bun ../../test/run-isolated.ts --suite=unit --path-ignore-patterns='claude-capability-plugins/*/tests/{autocomplete,companion-root,mention}.test.ts'",
+    "test:hooks": "claude plugin validate --strict claude-capability-plugins/companion-mentions && claude plugin test claude-capability-plugins/companion-mentions",
     "test:integration": "CI=1 bun ../../test/run-isolated.ts --suite=integration",
     "typecheck": "bunx tsc --noEmit -p ../../tsconfig.json",
-    "lint": "oxlint src/ opencode-plugin/",
-    "lint:fix": "oxlint src/ opencode-plugin/ --fix",
-    "format": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\"",
-    "format:check": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\" --check"
+    "lint": "oxlint src/ opencode-plugin/ claude-capability-plugins/*/hooks/",
+    "lint:fix": "oxlint src/ opencode-plugin/ claude-capability-plugins/*/hooks/ --fix",
+    "format": "oxfmt src/ opencode-plugin/ claude-capability-plugins/ \"!**/*.generated.*\"",
+    "format:check": "oxfmt src/ opencode-plugin/ claude-capability-plugins/ \"!**/*.generated.*\" --check"
   },
   "dependencies": {
     "@fission-ai/openspec": "1.15.0",

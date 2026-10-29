@@ -1,9 +1,8 @@
 /**
  * Image pins: the npm locks the image installs from pin the exact tarball of
- * every image-pinned release package. Release preparation writes the pins from
- * local packs; publication packs again, verifies against the same pins, and
- * publishes that tarball. Both go through this module so they agree on what a
- * pin is.
+ * every release package. Release preparation writes the pins from local packs;
+ * publication packs again, verifies against the same pins, and publishes that
+ * tarball. Both go through this module so they agree on what a pin is.
  *
  * Node built-ins only: publication runs this from a tree it does not install.
  */
@@ -12,18 +11,10 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-/**
- * Publish order: core before the CLI that pins it; the plugin, which nothing
- * depends on, last. `image`: the image locks must pin the package.
- */
+/** Publish order: core precedes the CLI that pins it. */
 export const RELEASE_PACKAGES = [
-  { name: "@uniqbit/mate-core", dir: "packages/mate-core", image: true },
-  { name: "@uniqbit/mate", dir: "apps/mate-cli", image: true },
-  {
-    name: "@uniqbit/mate-plugin-companion-mentions",
-    dir: "packages/mate-plugin-companion-mentions",
-    image: false,
-  },
+  { name: "@uniqbit/mate-core", dir: "packages/mate-core" },
+  { name: "@uniqbit/mate", dir: "apps/mate-cli" },
 ] as const;
 
 /** Relative to the container root. */

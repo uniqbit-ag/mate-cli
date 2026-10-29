@@ -32,6 +32,11 @@ export function getClaudePluginRoot(): string {
   return path.resolve(import.meta.dirname, "../../claude-plugin");
 }
 
+/** mate-core's folder of the Claude plugins its built-in Capabilities contribute. */
+export function getClaudeCapabilityPluginsRoot(): string {
+  return path.resolve(import.meta.dirname, "../../claude-capability-plugins");
+}
+
 /**
  * The `name` in the bundled Claude plugin's manifest. Claude Code identifies a
  * plugin by its name, so a contributed folder using this one could take the

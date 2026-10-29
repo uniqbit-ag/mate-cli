@@ -47,11 +47,6 @@ those selections. Run `mate install` afterward to refresh the dependency plan.
 Then `mate opencode` and `mate claude` launch from the working repository with
 the selected companion-managed capabilities available.
 
-Some capabilities are not selected in setup. They come from plugin packages
-that you install separately, and a plugin declared in the companion's
-`.mate/config/framework.yaml` is always enabled.
-[Companion Mentions](#companion-mentions) is one of them.
-
 ## Skill Locations
 
 Capability skills live in two companion skill roots:
@@ -200,12 +195,11 @@ command.
 ### Companion Mentions
 
 Companion Mentions (`companion-mentions`) is an optional capability that ships
-as a separate package, `@uniqbit/mate-plugin-companion-mentions`. It lets a
-Claude session in a Working Repository mention Companion Repository files and
-folders, whether `mate claude` started it or plain `claude` runs in a wrapped
-repository. The
-[package README](https://www.npmjs.com/package/@uniqbit/mate-plugin-companion-mentions)
-explains how to install it.
+with Mate. It lets a Claude session in a Working Repository mention Companion
+Repository files and folders, whether `mate claude` started it or plain `claude`
+runs in a wrapped repository. It is not selected by default: select it in
+`mate companion setup`, then run `mate wrap` or start a session with
+`mate claude`.
 
 Type `@` followed by a filename or path, such as `@tasks` or `@acme/tasks`, to
 search the companion as well as Claude's own files. `@mate:` uses the same search;
@@ -235,11 +229,16 @@ or type `@mate:` to reach companion results.
   `secrets` change applies from the next mention, and the menu follows within
   30 seconds. A `mate claude` session keeps the policy from its launch, so the
   change reaches it at the next `mate claude`.
-- It takes no configuration.
+- If you installed the `mate-companion-mentions` mod into Claude yourself,
+  disable that copy. Mate's copy is a different plugin ID, so it does not
+  replace yours, and with two enabled plugins of one name Claude leaves out the
+  hooks of one of them.
+- It runs on macOS and Linux. Its Windows path handling is covered by unit
+  tests but has not been tried by hand.
 
 `mate doctor` lists `companion-mentions` among the Capabilities that contribute
-a Claude plugin. To turn it off, remove its entry from the `plugins:` list in
-`framework.yaml`. If the rows do not appear, see
+a Claude plugin. To turn it off, deselect it in `mate companion setup`. If the
+rows do not appear, see
 [`@mate:` Rows Are Missing](/docs/troubleshooting#mate-rows-are-missing).
 
 ## Index Synchronization

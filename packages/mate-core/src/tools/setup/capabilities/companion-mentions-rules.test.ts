@@ -24,10 +24,19 @@ import {
   sessionContextReply,
   writeProjectionPair,
   type SecretPolicy,
-} from "@uniqbit/mate-core/runtime";
+} from "../../../runtime";
 
-import { parseContext, parsePolicy, secretMatch } from "../claude-plugin/hooks/companion.ts";
-import { DEFAULT_ALLOW, DEFAULT_DENY, RULES, policyJson } from "../claude-plugin/tests/policy.ts";
+import {
+  parseContext,
+  parsePolicy,
+  secretMatch,
+} from "../../../../claude-capability-plugins/companion-mentions/hooks/companion.ts";
+import {
+  DEFAULT_ALLOW,
+  DEFAULT_DENY,
+  RULES,
+  policyJson,
+} from "../../../../claude-capability-plugins/companion-mentions/tests/policy.ts";
 
 const policies: [string, SecretPolicy][] = [
   ["the defaults", defaultSecretPolicy()],

@@ -71,7 +71,7 @@
   ],
   "ignorePatterns": [
     "node_modules",
-    "packages/mate-plugin-companion-mentions/claude-plugin/.claude-plugin/types",
+    "packages/mate-core/claude-capability-plugins/companion-mentions/.claude-plugin/types",
     "dist",
     "_artifacts",
     "apps/mate-cli/src/templates",

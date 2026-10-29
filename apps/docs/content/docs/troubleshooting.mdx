@@ -226,11 +226,9 @@ The [Companion Mentions](/docs/capabilities#companion-mentions) plugin adds
   plugin only after you accept Claude Code's trust dialog for that folder.
 - Claude Code is older than 2.1.292. Older versions start normally and ignore
   the plugin. Check the version with `claude --version`.
-- The plugin is not declared or not installed. `mate doctor` lists the Claude
-  plugins that capabilities contribute and whether each one can load. If
-  `companion-mentions` is not listed, install the plugin as its
-  [package README](https://www.npmjs.com/package/@uniqbit/mate-plugin-companion-mentions)
-  describes.
+- The capability is not selected. `mate doctor` lists the Claude plugins that
+  capabilities contribute and whether each one can load. If
+  `companion-mentions` is not listed, select it in `mate companion setup`.
 - The session runs inside the companion, for example after
   `mate claude -- --companion`. Claude's own rows already list the companion's
   files there, so the plugin adds none. A typed `@mate:` mention still attaches.
