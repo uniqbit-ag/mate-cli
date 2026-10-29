@@ -200,10 +200,15 @@ type Token =
 class Bodies {
   static readonly none = new Bodies([], []);
 
-  private constructor(
-    private readonly offsets: number[],
-    private readonly texts: string[],
-  ) {}
+  // Plain fields, not parameter properties: the Claude hook loads this file
+  // through Node's type stripping, which cannot erase those.
+  private readonly offsets: number[];
+  private readonly texts: string[];
+
+  private constructor(offsets: number[], texts: string[]) {
+    this.offsets = offsets;
+    this.texts = texts;
+  }
 
   static of(bodies: readonly { offset: number; text: string }[]): Bodies {
     const sorted = bodies.toSorted((a, b) => a.offset - b.offset);
