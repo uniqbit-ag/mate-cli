@@ -6,19 +6,28 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { trustProjection } from "../../test/trusted-projection";
 import { buildSessionGuidance } from "./session-guidance";
 
 const tempRoots: string[] = [];
 const REGISTRY_CONTENT = "companions: []\n";
 
 function makeTempDir(prefix: string): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   tempRoots.push(dir);
   return dir;
 }
 
-/** A wrapped Working Repository beside a companion with `capabilities` enabled. */
-function wrapRepo(capabilities: string[] = []): { repoRoot: string; companionPath: string } {
+/**
+ * A wrapped Working Repository beside a companion with `capabilities` enabled;
+ * `env` is a plain session's, whose Mate configuration trusts the projection.
+ */
+function wrapRepo(capabilities: string[] = []): {
+  root: string;
+  repoRoot: string;
+  companionPath: string;
+  env: { HOME: string };
+} {
   const root = makeTempDir("session-guidance-");
   const repoRoot = path.join(root, "working");
   const companionPath = path.join(root, "companion");
@@ -47,7 +56,9 @@ function wrapRepo(capabilities: string[] = []): { repoRoot: string; companionPat
     },
   });
 
-  return { repoRoot, companionPath };
+  const home = path.join(root, "home");
+  const env = trustProjection({ home, companionPath, repoRoot, repositoryId: "acme" });
+  return { root, repoRoot, companionPath, env };
 }
 
 function additionalContext(stdout: string): string {
@@ -61,9 +72,9 @@ afterEach(() => {
 
 describe("session-guidance hook module", () => {
   test("emits the companion policy as SessionStart additionalContext", () => {
-    const { repoRoot, companionPath } = wrapRepo();
+    const { repoRoot, companionPath, env } = wrapRepo();
 
-    const result = buildSessionGuidance({}, repoRoot);
+    const result = buildSessionGuidance(env, repoRoot);
 
     expect(result.exitCode).toBe(0);
     const context = additionalContext(result.stdout);
@@ -74,27 +85,27 @@ describe("session-guidance hook module", () => {
   });
 
   test("names the projected wrapper bin, not the running installation's", () => {
-    const { repoRoot, companionPath } = wrapRepo();
+    const { repoRoot, companionPath, env } = wrapRepo();
 
-    const context = additionalContext(buildSessionGuidance({}, repoRoot).stdout);
+    const context = additionalContext(buildSessionGuidance(env, repoRoot).stdout);
 
     expect(context).toContain(path.join(companionPath, ".mate", "wrappers", "bin", "openspec"));
   });
 
   /** Predicates are read live, so a capability toggled after the wrap crosses over. */
   test("reflects capabilities enabled after the wrap without a re-wrap", () => {
-    const { repoRoot } = wrapRepo(["tokensave", "openspec"]);
+    const { repoRoot, env } = wrapRepo(["tokensave", "openspec"]);
 
-    const context = additionalContext(buildSessionGuidance({}, repoRoot).stdout);
+    const context = additionalContext(buildSessionGuidance(env, repoRoot).stdout);
 
     expect(context).toContain("<codebase-exploration-rules ");
     expect(context).toContain('rule id="openspec-publish"');
   });
 
   test("omits exploration rules when no exploration capability is enabled", () => {
-    const { repoRoot } = wrapRepo(["react-doctor"]);
+    const { repoRoot, env } = wrapRepo(["react-doctor"]);
 
-    const context = additionalContext(buildSessionGuidance({}, repoRoot).stdout);
+    const context = additionalContext(buildSessionGuidance(env, repoRoot).stdout);
 
     expect(context).not.toContain("<codebase-exploration-rules ");
   });
@@ -109,6 +120,25 @@ describe("session-guidance hook module", () => {
     const result = buildSessionGuidance({ MATE_ARTIFACT_PATH: companionPath }, repoRoot);
 
     expect(result).toEqual({ exitCode: 0, stdout: "" });
+  });
+
+  test("emits nothing for a projection whose companion is not registered", () => {
+    const { root, repoRoot } = wrapRepo();
+
+    const result = buildSessionGuidance({ HOME: path.join(root, "other-home") }, repoRoot);
+
+    expect(result).toEqual({ exitCode: 0, stdout: "" });
+  });
+
+  test("emits nothing for a projection whose companion does not link this Checkout", () => {
+    const { root, repoRoot, companionPath, env } = wrapRepo();
+    fs.writeFileSync(
+      path.join(companionPath, ".mate", "config", "registry.yaml"),
+      `repos:\n  - id: acme\n    path: ${path.join(root, "elsewhere")}\n`,
+      "utf8",
+    );
+
+    expect(buildSessionGuidance(env, repoRoot)).toEqual({ exitCode: 0, stdout: "" });
   });
 
   test("emits nothing in an unwrapped repository", () => {

@@ -1,7 +1,5 @@
 import { buildCompanionGuidance } from "./companion-guidance";
-import { hasLaunchEnvironment } from "./env";
-import { readCompanionPolicy } from "./policy";
-import { resolveProjection } from "./projection";
+import type { ResolvedSession } from "./session-resolution";
 
 /**
  * The companion guidance for an Unmanaged Session, built from the Projection
@@ -18,29 +16,23 @@ import { resolveProjection } from "./projection";
  * A rendered string in the Projection Root would be a snapshot, and rule 2 —
  * paths only, never predicates — exists to keep exactly that out of it.
  *
- * Returns null for a managed session: the launch already injects the guidance
- * through its own channel, and rule 1 says the environment wins. That is what
- * lets the same declaration be loaded by both a plugin and a projected
- * document without emitting twice.
+ * Returns null unless the session resolved from a trusted projection: a launch
+ * already injects the guidance through its own channel, and rule 1 says the
+ * environment wins. That is what lets the same declaration be loaded by both a
+ * plugin and a projected document without emitting twice.
  */
-export function buildProjectedGuidance(
-  env: Record<string, string | undefined> = process.env,
-  cwd: string = process.cwd(),
-): string | null {
-  if (hasLaunchEnvironment(env)) return null;
+export function buildProjectedGuidance(session: ResolvedSession): string | null {
+  if (session.kind !== "projection") return null;
 
-  const projection = resolveProjection(cwd);
-  if (!projection) return null;
-
-  const policy = readCompanionPolicy(projection.companionPath);
+  const policy = session.policy();
   return buildCompanionGuidance(
     {
-      companionPath: projection.companionPath,
-      repository: { id: projection.repositoryId, path: projection.repositoryPath },
+      companionPath: session.companionPath,
+      repository: { id: session.repositoryId, path: session.checkoutRoot },
       capabilities: policy.enabledCapabilities.map((name) => ({ name })),
       secretGuardrails: policy.secrets.guardrails,
     },
     /** The projected path, not the running install's: a wrap may be another mate's. */
-    { wrapperBinPath: projection.wrapperBinPath },
+    { wrapperBinPath: session.projection.wrapperBinPath },
   );
 }
