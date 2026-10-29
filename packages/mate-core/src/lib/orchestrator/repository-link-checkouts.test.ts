@@ -12,8 +12,10 @@ import { readProjectionFile } from "../../runtime/projection";
 import { repoLocalRegistryPath } from "../../runtime/repo-local";
 import { CompanionRegistryStore } from "./companion-registry-store";
 import { normalizeLinkedRepository } from "./repo-local-store";
+import { GlobalConfigStore } from "./global-config-store";
 import {
   backfillCompanionRegistration,
+  CompanionResolver,
   companionRegistryPath,
   companionRootedStore,
   findRepoLocalLinkedRepository,
@@ -451,5 +453,109 @@ describe("backfillCompanionRegistration with Checkouts", () => {
       { id: "acme", path: main, gitCommonDir: path.join(main, ".git") },
     ]);
     expect((await fs.stat(companionRegistryPath(companionPath))).mtimeMs).toBe(filled.mtimeMs);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The companion scan matches by clone
+// ---------------------------------------------------------------------------
+
+async function resolverFor(root: string, companions: string[]): Promise<CompanionResolver> {
+  const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+  for (const companionPath of companions) {
+    // oxlint-disable-next-line no-await-in-loop -- registration order is the catalogue order
+    await store.register(companionPath);
+  }
+  return new CompanionResolver(store);
+}
+
+async function readRepoLocal(repoRoot: string): Promise<unknown> {
+  return parse(await fs.readFile(repoLocalRegistryPath(repoRoot), "utf8"));
+}
+
+describe("CompanionResolver by clone", () => {
+  for (const recorded of [true, false]) {
+    test(`a worktree matches its clone's entry ${recorded ? "with" : "without"} a recorded shared Git folder`, async () => {
+      const root = await tempRoot();
+      const companionPath = await companion(root);
+      const main = initRepo(path.join(root, "acme"));
+      const worktree = addWorktree(main, path.join(root, "acme-fix"));
+      await writeRegistry(companionPath, [
+        { id: "acme", path: main, ...(recorded ? { gitCommonDir: path.join(main, ".git") } : {}) },
+      ]);
+      await fs.mkdir(path.join(worktree, "src"));
+      const resolver = await resolverFor(root, [companionPath]);
+
+      const result = await resolver.resolveWithDiagnostics(path.join(worktree, "src"));
+
+      expect(result.match).toEqual({ companionPath, repositoryId: "acme" });
+      expect(await readRepoLocal(worktree)).toEqual({
+        repository: { id: "acme", path: worktree },
+        companions: [{ path: companionPath, repositoryId: "acme" }],
+      });
+      expect(await readRegistry(companionPath)).toEqual([
+        { id: "acme", path: main, ...(recorded ? { gitCommonDir: path.join(main, ".git") } : {}) },
+      ]);
+      expect(
+        await fs.access(path.join(worktree, "src", ".mate")).then(
+          () => true,
+          () => false,
+        ),
+      ).toBe(false);
+    });
+  }
+
+  test("a nested worktree matches by clone instead of reading the main worktree's cache", async () => {
+    const root = await tempRoot();
+    const companionPath = await companion(root);
+    const main = initRepo(path.join(root, "acme"));
+    await writeRepoLocalLink(main, { id: "acme", path: main }, companionPath);
+    const nested = addWorktree(main, path.join(main, ".claude", "worktrees", "fix"));
+    await writeRegistry(companionPath, [{ id: "acme", path: main }]);
+    const resolver = await resolverFor(root, [companionPath]);
+
+    expect((await resolver.resolveWithDiagnostics(nested)).match?.repositoryId).toBe("acme");
+    expect(await findRepoLocalLinkedRepository(nested)).toEqual({ id: "acme", path: nested });
+  });
+
+  test("a copied cache naming the main worktree is replaced by the worktree's own", async () => {
+    const root = await tempRoot();
+    const companionPath = await companion(root);
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme-fix"));
+    await writeRepoLocalLink(worktree, { id: "acme", path: main }, companionPath);
+    await writeRegistry(companionPath, [{ id: "acme", path: main }]);
+    const resolver = await resolverFor(root, [companionPath]);
+
+    expect((await resolver.resolveWithDiagnostics(worktree)).match?.repositoryId).toBe("acme");
+    expect(await findRepoLocalLinkedRepository(worktree)).toEqual({ id: "acme", path: worktree });
+  });
+
+  test("two companions listing the clone stay ambiguous and nothing is written", async () => {
+    const root = await tempRoot();
+    const first = await companion(path.join(root, "one"));
+    const second = await companion(path.join(root, "two"));
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme-fix"));
+    await writeRegistry(first, [{ id: "acme", path: main }]);
+    await writeRegistry(second, [{ id: "acme", path: main }]);
+    const resolver = await resolverFor(root, [first, second]);
+
+    const result = await resolver.resolveWithDiagnostics(worktree);
+
+    expect(result.ambiguousMatches.map((match) => match.companionPath)).toEqual([first, second]);
+    await expect(fs.access(repoLocalRegistryPath(worktree))).rejects.toThrow();
+  });
+
+  test("a separate clone does not match", async () => {
+    const root = await tempRoot();
+    const companionPath = await companion(root);
+    const origin = initRepo(path.join(root, "origin"));
+    git(root, "clone", "-q", origin, path.join(root, "acme-1"));
+    git(root, "clone", "-q", origin, path.join(root, "acme-2"));
+    await writeRegistry(companionPath, [{ id: "acme", path: path.join(root, "acme-1") }]);
+    const resolver = await resolverFor(root, [companionPath]);
+
+    expect((await resolver.resolveWithDiagnostics(path.join(root, "acme-2"))).match).toBeNull();
   });
 });

@@ -7,7 +7,7 @@ import { parse } from "yaml";
 import { FRAMEWORK_NAME } from "../../framework";
 import { companionRegistryPath, registryLinks } from "../../runtime/companion-registry-read";
 import { withPathLock } from "../../runtime/companion-lock";
-import { namesOtherCheckout } from "../../runtime/git-layout";
+import { checkoutCommonDir, checkoutRootOf, namesOtherCheckout } from "../../runtime/git-layout";
 import { canonicalPath, normalisedCanonicalPath } from "../../runtime/physical-path";
 import {
   ancestorDirectories,
@@ -275,6 +275,31 @@ export interface CompanionResolutionResult {
   failures: CompanionResolutionFailure[];
 }
 
+export interface ResolveOptions {
+  logFailures?: boolean;
+  /** `false` looks up without the self-heal or the stale-pointer prune, so a caller can refuse first. */
+  write?: boolean;
+}
+
+/**
+ * The repo-local cache a single companion-scan match restores: `repository`
+ * names `folder`, and `companions` is replaced by the one pointer, without a
+ * `source`. Direct save, not `project("link")`: that scope also writes git
+ * excludes, the Projection Root, the companion link and the repo-local
+ * framework.yaml, and it upserts the pointer instead of replacing `companions`.
+ * For a new Checkout of a linked clone this is its Adoption, and its contents
+ * depend only on the match, so concurrent Adoptions end in the same file.
+ */
+export async function writeRepoLocalCache(folder: string, match: CompanionMatch): Promise<void> {
+  const store = new RepoLocalRegistryStore(repoLocalRegistryPath(folder));
+  /** `repository` too: wrap and unwrap resolve the Repository Link from it. */
+  await store.save({
+    ...(await store.load().catch(() => ({}))),
+    repository: { id: match.repositoryId, path: folder },
+    companions: [{ path: match.companionPath, repositoryId: match.repositoryId }],
+  });
+}
+
 export class CompanionResolver {
   constructor(private readonly globalConfigStore: GlobalConfigStore) {}
 
@@ -284,58 +309,63 @@ export class CompanionResolver {
 
   async resolveWithDiagnostics(
     cwd: string,
-    options: { logFailures?: boolean } = {},
+    options: ResolveOptions = {},
   ): Promise<CompanionResolutionResult> {
     const resolvedCwd = path.resolve(cwd);
 
     const repoLocalResult = await this.resolveFromRepoLocalRegistry(resolvedCwd, options);
     if (repoLocalResult) return repoLocalResult;
 
-    return this.resolveFromGlobalRegistry(resolvedCwd);
+    return this.resolveFromGlobalRegistry(resolvedCwd, options);
   }
 
   /**
    * Fallback for when the repo-local cache is missing or unusable: scans
    * every companion the global registry knows about and matches by
-   * repository path. A single match self-heals the repo-local cache so the
-   * fast path succeeds on the next resolution without repeating this scan.
-   * A registration is a claim (ADR-025): `link/..` names where it leads, and
-   * one leading nowhere matches nothing rather than the folder it normalises to.
+   * repository path, or by clone when the folder is inside a Git Checkout of
+   * an entry's clone. A single match self-heals the repo-local cache at the
+   * matched folder (the Checkout's root for a clone match) so the fast path
+   * succeeds on the next resolution without repeating this scan; for a new
+   * Checkout of a linked clone, that is its Adoption. A registration is a
+   * claim (ADR-025): `link/..` names where it leads, and one leading nowhere
+   * matches nothing rather than the folder it normalises to.
    */
-  private async resolveFromGlobalRegistry(resolvedCwd: string): Promise<CompanionResolutionResult> {
+  private async resolveFromGlobalRegistry(
+    resolvedCwd: string,
+    options: ResolveOptions,
+  ): Promise<CompanionResolutionResult> {
     const candidates = await this.globalConfigStore.list();
+    const checkoutRoot = checkoutRootOf(resolvedCwd)?.root;
+    const clone = checkoutRoot ? checkoutCommonDir(checkoutRoot) : null;
     const found = await Promise.all(
       candidates.map(async (candidate) => {
         const companionPath = normalisedCanonicalPath(candidate);
         if (companionPath === null) return null;
         try {
           const { repos } = await readCompanionRegistry(companionPath);
-          const repo = repos.find((r) => path.resolve(r.path) === resolvedCwd);
-          return repo ? { companionPath, repositoryId: repo.id } : null;
+          const byPath = repos.find((r) => path.resolve(r.path) === resolvedCwd);
+          if (byPath) {
+            return { companionPath, repositoryId: byPath.id, folder: resolvedCwd };
+          }
+          const byClone = clone ? repos.find((r) => entryOfClone(r, clone)) : undefined;
+          return byClone && checkoutRoot
+            ? { companionPath, repositoryId: byClone.id, folder: checkoutRoot }
+            : null;
         } catch {
           return null;
         }
       }),
     );
 
+    const matched = found.filter((match) => match !== null);
     const matches = uniqueByCompanion(
-      found.filter((match): match is CompanionMatch => match !== null),
+      matched.map(({ companionPath, repositoryId }) => ({ companionPath, repositoryId })),
     );
 
     if (matches.length === 0) return { match: null, ambiguousMatches: [], failures: [] };
 
-    if (matches.length === 1) {
-      // Direct save, not `project("link")`: that scope also writes git
-      // excludes, the Projection Root, the companion link and the repo-local
-      // framework.yaml, and it upserts the pointer instead of replacing
-      // `companions`. A read-side self-heal must only restore the cache.
-      const store = new RepoLocalRegistryStore(repoLocalRegistryPath(resolvedCwd));
-      /** `repository` too: wrap and unwrap resolve the Repository Link from it. */
-      await store.save({
-        ...(await store.load().catch(() => ({}))),
-        repository: { id: matches[0]!.repositoryId, path: resolvedCwd },
-        companions: [{ path: matches[0]!.companionPath, repositoryId: matches[0]!.repositoryId }],
-      });
+    if (matches.length === 1 && options.write !== false) {
+      await writeRepoLocalCache(matched[0]!.folder, matches[0]!);
     }
 
     return resolvedTo(matches);
@@ -351,7 +381,7 @@ export class CompanionResolver {
    */
   private async resolveFromRepoLocalRegistry(
     resolvedCwd: string,
-    options: { logFailures?: boolean },
+    options: ResolveOptions,
   ): Promise<CompanionResolutionResult | null> {
     const found = await findRepoLocalRegistryFile(resolvedCwd);
     if (!found) return null;
@@ -359,8 +389,11 @@ export class CompanionResolver {
     let pointers: RepoLocalCompanionPointer[];
     try {
       const raw = await fs.readFile(found.registryPath, "utf8");
-      const parsed = parse(raw) as { companions?: unknown } | null;
+      const parsed = parse(raw) as { companions?: unknown; repository?: { path?: unknown } } | null;
       if (!parsed || !Array.isArray(parsed.companions)) return null;
+      /** A cache copied from another Checkout of the clone is that Checkout's, not this one's. */
+      const named = parsed.repository?.path;
+      if (typeof named === "string" && namesOtherCheckout(found.repoRoot, named)) return null;
       pointers = parsed.companions as RepoLocalCompanionPointer[];
     } catch {
       return null;
@@ -385,7 +418,7 @@ export class CompanionResolver {
       }
     }
 
-    if (stale.length > 0) {
+    if (stale.length > 0 && options.write !== false) {
       const survivors: RepoLocalCompanionPointer[] = live.map(({ pointer, companionPath }) => ({
         path: companionPath,
         repositoryId: pointer.repositoryId,
@@ -409,6 +442,14 @@ export class CompanionResolver {
       ),
     );
   }
+}
+
+/** An entry of the clone whose shared Git folder is `clone`: recorded, else read from its live path. */
+function entryOfClone(entry: LinkedRepository, clone: string): boolean {
+  return (
+    entry.gitCommonDir === clone ||
+    (fsSync.existsSync(entry.path) && checkoutCommonDir(entry.path) === clone)
+  );
 }
 
 /** Keeps the first match per companion, so one companion linking a path twice is not ambiguous. */
