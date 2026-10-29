@@ -1254,3 +1254,81 @@ describe("findRepoLocalLinkedRepository", () => {
     expect(await findRepoLocalLinkedRepository(repoPath)).toBeNull();
   });
 });
+
+/**
+ * `<root>/forward` links to `<root>/outside/sub`, so `<root>/forward/../companion`
+ * leads to `<root>/outside/companion`; a lexical normalisation names the decoy
+ * at `<root>/companion`, whose policy turns the guardrails off.
+ */
+describe("CompanionResolver: a companion written with a link before `..`", () => {
+  async function linkFixture() {
+    const root = await fs.realpath(await makeTempDir("resolver-link-dotdot-"));
+    const repoPath = path.join(root, "project");
+    const real = path.join(root, "outside", "companion");
+    const decoy = path.join(root, "companion");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(path.join(root, "outside", "sub"), { recursive: true });
+    await fs.symlink(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    for (const companion of [real, decoy]) {
+      await fs.mkdir(path.join(companion, ".mate", "config"), { recursive: true });
+    }
+    await fs.writeFile(
+      path.join(decoy, ".mate", "config", "framework.yaml"),
+      "secrets:\n  guardrails: false\n",
+      "utf8",
+    );
+    const linkRepo = (companion: string) =>
+      new CompanionRegistryStore(companionRegistryPath(companion)).save({
+        repos: [{ id: "app", path: repoPath }],
+      });
+    const configPath = path.join(root, "config.yaml");
+    /** Joined by hand: `path.join` would normalise the `..` away. */
+    const written = [root, "forward", "..", "companion"].join(path.sep);
+    /** Written as is: `GlobalConfigStore.register` would normalise the spelling first. */
+    const registerWritten = () =>
+      fs.writeFile(configPath, `version: 1\ncompanions:\n  - path: ${written}\n`, "utf8");
+    return {
+      repoPath,
+      real,
+      decoy,
+      written,
+      linkRepo,
+      registerWritten,
+      store: new GlobalConfigStore(configPath),
+    };
+  }
+
+  test("a repo-local pointer resolves to where the spelling leads", async () => {
+    const { repoPath, real, written, store } = await linkFixture();
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(repoPath)), { recursive: true });
+    await fs.writeFile(
+      repoLocalRegistryPath(repoPath),
+      `companions:\n  - path: ${written}\n    repositoryId: app\n`,
+      "utf8",
+    );
+
+    expect(await new CompanionResolver(store).resolve(repoPath)).toEqual({
+      companionPath: real,
+      repositoryId: "app",
+    });
+  });
+
+  test("a global registration resolves to where the spelling leads, through its registry", async () => {
+    const { repoPath, real, linkRepo, registerWritten, store } = await linkFixture();
+    await linkRepo(real);
+    await registerWritten();
+
+    expect(await new CompanionResolver(store).resolve(repoPath)).toEqual({
+      companionPath: real,
+      repositoryId: "app",
+    });
+  });
+
+  test("the decoy's registry vouches for nothing", async () => {
+    const { repoPath, decoy, linkRepo, registerWritten, store } = await linkFixture();
+    await linkRepo(decoy);
+    await registerWritten();
+
+    expect(await new CompanionResolver(store).resolve(repoPath)).toBeNull();
+  });
+});

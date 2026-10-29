@@ -5,6 +5,7 @@ import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { companionRegistryPath, registryLinks } from "../../runtime/companion-registry-read";
+import { canonicalPath } from "../../runtime/physical-path";
 import {
   ancestorDirectories,
   repoLocalDirName,
@@ -222,12 +223,13 @@ export class CompanionResolver {
    * every companion the global registry knows about and matches by
    * repository path. A single match self-heals the repo-local cache so the
    * fast path succeeds on the next resolution without repeating this scan.
+   * A registration is a claim (ADR-025): `link/..` names where it leads.
    */
   private async resolveFromGlobalRegistry(resolvedCwd: string): Promise<CompanionResolutionResult> {
     const candidates = await this.globalConfigStore.list();
     const found = await Promise.all(
       candidates.map(async (candidate) => {
-        const companionPath = path.resolve(candidate);
+        const companionPath = canonicalPath(candidate);
         try {
           const { repos } = await readCompanionRegistry(companionPath);
           const repo = repos.find((r) => path.resolve(r.path) === resolvedCwd);
@@ -266,7 +268,8 @@ export class CompanionResolver {
    * before scanning every registered companion. Treats the file as the
    * working repo's source of truth for companion pointers: existing
    * directories are accepted immediately, stale paths are dropped, and
-   * absence of usable local data means the repo is not linked.
+   * absence of usable local data means the repo is not linked. A pointer
+   * written `link/..` names where it leads, as the kernel would.
    */
   private async resolveFromRepoLocalRegistry(
     resolvedCwd: string,
@@ -289,7 +292,7 @@ export class CompanionResolver {
 
     const checkedPointers = await Promise.all(
       pointers.map(async (pointer) => {
-        const companionPath = path.resolve(pointer.path);
+        const companionPath = canonicalPath(pointer.path);
         return { pointer, companionPath, exists: await pathIsDirectory(companionPath) };
       }),
     );
