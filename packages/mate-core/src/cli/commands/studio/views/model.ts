@@ -1,5 +1,6 @@
 import type { StudioInventory, StudioInventoryCompanion } from "../inventory";
 import type { StudioCompanionPayload } from "../payload";
+import type { StoredReport } from "../reports";
 import type { StudioSelection } from "../selection";
 import type { TerminalAgent } from "../terminal";
 import type { VaultFile, VaultTreeNode } from "../vault";
@@ -21,7 +22,14 @@ export interface StudioPage {
   vault: StudioVaultPage | null;
   /** `null` unless the terminal is enabled. */
   terminal: StudioTerminalPage | null;
+  /**
+   * Hosted reports, newest first, listed at render time for the Business Analyst
+   * Overview only; `null` when the listing failed.
+   */
+  reports?: StudioReportSummary[] | null;
 }
+
+export type StudioReportSummary = Pick<StoredReport, "id" | "title" | "createdAt">;
 
 export interface StudioTerminalPage {
   /** The launch companion was pinned at start and ignores the page selection. */

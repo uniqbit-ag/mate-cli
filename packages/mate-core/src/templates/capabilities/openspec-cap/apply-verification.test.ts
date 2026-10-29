@@ -11,9 +11,11 @@ type MateSchema = {
 const SCHEMAS = ["mate-v1", "mate-minimal"] as const;
 const VERIFICATION_SKILL = "mate-react-doctor";
 
-async function readConventions(): Promise<{ rules: string; verification: string }> {
+type Conventions = { rules: string; verification: string; skill_tagging: string };
+
+async function readConventions(): Promise<Conventions> {
   const raw = await fs.readFile(path.join(import.meta.dir, "openspec-conventions.yaml"), "utf8");
-  return parse(raw) as { rules: string; verification: string };
+  return parse(raw) as Conventions;
 }
 
 async function readSchemaRaw(name: string): Promise<string> {
@@ -35,6 +37,20 @@ describe("shared apply verification", () => {
     const { verification } = await readConventions();
 
     expect(verification).toContain("already checked");
+  });
+
+  test("conventions limit task skill tags to Companion Repository skills", async () => {
+    const { skill_tagging: rule } = await readConventions();
+
+    expect(rule).toContain("[skill:<name>]");
+    expect(rule).toContain("installed in the Companion Repository");
+    expect(rule).toContain("Before tagging, check");
+    expect(rule).toContain("`.claude/skills/`");
+    expect(rule).toContain("`.agents/skills/`");
+    expect(rule).toContain("user-global");
+    expect(rule).toContain("plugin (`<plugin>:<skill>`)");
+    expect(rule).toContain("built-in");
+    expect(rule).toContain("leave the task untagged");
   });
 
   for (const name of SCHEMAS) {

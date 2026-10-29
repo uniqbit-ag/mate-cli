@@ -8,7 +8,7 @@ import { studioPaletteCss } from "./palette";
  */
 export const STUDIO_STYLES = `
 ${studioPaletteCss()}
-:root { --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+:root { --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; --sidebar-inset: 12px; --sidebar-radius: 12px; }
 
 * { box-sizing: border-box; }
 body {
@@ -19,7 +19,7 @@ body {
   font-size: 14px;
   line-height: 1.5;
 }
-.shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100vh; }
+.shell { display: grid; grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr); min-height: 100vh; }
 @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } }
 
 .rail {
@@ -195,7 +195,13 @@ ul.plain li:last-child { border-bottom: 0; }
 .sidebar-label { color: var(--muted); font-size: .62rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
 .sidebar-scope { display: grid; gap: 7px; }
 .sidebar-scope select { padding: 8px 32px 8px 9px; font-family: var(--mono); font-size: .72rem; }
-.sidebar-nav { display: grid; gap: 3px; }
+/** Segmented: one track, the active role raised on the panel surface. */
+.role-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--border-soft); }
+.role-switch button { width: 100%; padding: 5px 4px; border-color: transparent; border-radius: 6px; background: transparent; color: var(--muted); font-size: .7rem; font-weight: 600; line-height: 1.25; text-align: center; }
+.role-switch button:hover { border-color: transparent; background: var(--accent-soft); color: var(--text); }
+.role-switch button[aria-pressed="true"] { border-color: var(--border); background: var(--panel); color: var(--text); font-weight: 700; }
+.sidebar-nav { display: grid; gap: 14px; }
+.sidebar-nav-section { display: grid; gap: 3px; }
 .sidebar-nav-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .sidebar-nav button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 6px 10px; border-color: transparent; border-radius: 7px; background: transparent; font-size: .8rem; }
 .sidebar-nav button:hover, .sidebar-nav button[aria-pressed="true"] { border-color: var(--border); background: var(--accent-soft); }
@@ -246,6 +252,41 @@ html[data-agent-viewed] [data-studio-action] { display: none; }
 .spec-status { display: inline-flex; align-items: center; gap: 6px; color: var(--done); font-family: var(--mono); font-size: .61rem; text-transform: uppercase; }
 .spec-status-invalid { color: var(--bad); }
 
+/** Business Analyst Overview: published state read at a glance; lists, not tables. */
+.analyst-overview { display: grid; gap: 28px; }
+.analyst-summary { display: grid; gap: 16px; }
+.analyst-summary-head, .analyst-part-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.analyst-summary-head h2 { margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -.02em; }
+.analyst-more { font-size: .8rem; text-underline-offset: 3px; }
+.analyst-summary-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 28px; align-items: start; }
+.analyst-stats { display: grid; grid-template-columns: repeat(3, minmax(84px, 1fr)); gap: 20px; margin: 0; }
+.analyst-stat { display: flex; flex-direction: column-reverse; gap: 2px; padding-top: 10px; border-top: 1px solid var(--border); }
+.analyst-stat dt { color: var(--muted); font-size: .8rem; }
+.analyst-stat dd { margin: 0; font-size: 1.6rem; font-variant-numeric: tabular-nums; font-weight: 650; line-height: 1.2; }
+.analyst-stat[data-alert="true"] { border-top-color: var(--bad); }
+.analyst-stat[data-alert="true"] dd { color: var(--bad); }
+.analyst-areas { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0 20px; margin: 0; padding: 0; list-style: none; }
+.analyst-areas li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; padding: 7px 0; border-top: 1px solid var(--border-soft); }
+.analyst-areas .mono { overflow: hidden; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.analyst-count { color: var(--muted); font-family: var(--mono); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.analyst-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.analyst-side { display: grid; gap: 14px; }
+.analyst-part { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.analyst-part-head { padding-bottom: 12px; border-bottom: 1px solid var(--border-soft); }
+.analyst-part-note { color: var(--muted); font-family: var(--mono); font-size: .7rem; white-space: nowrap; }
+.analyst-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.analyst-row { display: grid; gap: 3px; min-width: 0; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
+.analyst-row:first-child { padding-top: 0; }
+.analyst-row:last-child { padding-bottom: 0; border-bottom: 0; }
+.analyst-row-title { justify-self: start; max-width: 100%; color: var(--text); font-family: var(--mono); font-size: .8rem; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; text-decoration: none; }
+.analyst-row-title:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.analyst-row-title:focus-visible, .analyst-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.analyst-report-title { font-family: inherit; font-size: .84rem; }
+.analyst-row-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.analyst-caps { min-width: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .analyst-summary-body, .analyst-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .analyst-stats { grid-template-columns: 1fr 1fr; } }
+
 .skills-panels > [data-active="false"] { display: none; }
 .skills-panel-description { margin: 0 0 16px; color: var(--muted); font-size: .8rem; }
 .skills-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
@@ -260,11 +301,26 @@ html[data-agent-viewed] [data-studio-action] { display: none; }
   .section-header { gap: 10px; }
 }
 
+/** Detached panels: the grid column carries the inset so the rail keeps its 224px content width. */
 @media (min-width: 901px) {
-  .shell:has(.studio-sidebar) { grid-template-columns: 224px minmax(0, 1fr); }
+  .shell:has(.studio-sidebar) { grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr); }
+  .studio-sidebar {
+    top: var(--sidebar-inset);
+    height: calc(100vh - 2 * var(--sidebar-inset));
+    margin: var(--sidebar-inset) 0 var(--sidebar-inset) var(--sidebar-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--sidebar-radius);
+  }
 }
 @media (max-width: 900px) {
-  .studio-sidebar { position: relative; height: auto; max-height: none; }
+  .studio-sidebar {
+    position: relative;
+    height: auto;
+    max-height: none;
+    margin: var(--sidebar-inset) var(--sidebar-inset) 0;
+    border: 1px solid var(--border);
+    border-radius: var(--sidebar-radius);
+  }
 }
 
 /** Production Workflow Delivery Path. */
@@ -289,17 +345,18 @@ html[data-agent-viewed] [data-studio-action] { display: none; }
 .workflow-legend-optional { width: 14px; height: 9px; border: 1px dashed var(--muted); border-radius: 3px; }
 .workflow-legend-session { width: 7px; height: 7px; border: 1.5px solid var(--accent); border-radius: 50%; }
 .workflow-legend-skip { width: 16px; border-top: 1.5px dotted var(--muted); }
-/** The graph is centred with the stage panel beside it when wide enough, above it otherwise. */
+/** One column on tablet and phone: graph, then the stage panel. Side by side once both fit. */
 .workflow-schema { container-type: inline-size; }
-.workflow-path { display: grid; gap: 24px; padding-top: 56px; }
+.workflow-path { display: flex; flex-direction: column; gap: 24px; padding-top: 56px; }
 /** Room outside the graph for its workset frame. */
 .workflow-path-graph { display: grid; justify-items: center; gap: 36px; min-width: 0; }
 .workflow-path-graph > .workflow-graph { width: min(100% - 64px, 440px); }
 /** The one card on the view: the selected stage, or the path overview. */
 .workflow-detail { min-width: 0; padding: 18px 20px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
-@container (min-width: 760px) {
+/* 504px graph + 40px gap + 340px panel: below that the graph would shrink and wrap its labels. */
+@container (min-width: 884px) {
   /* Graph and card sit together at the left; 504px holds the graph and its workset frame. */
-  .workflow-path { grid-template-columns: minmax(0, 504px) minmax(300px, 420px); justify-content: start; gap: 40px; align-items: start; }
+  .workflow-path { display: grid; grid-template-columns: 504px minmax(340px, 420px); justify-content: start; gap: 40px; align-items: start; }
   /* Top-aligned with the workset frame, which rises 34px above the graph. */
   .workflow-detail { position: sticky; top: 16px; margin-top: -34px; }
 }
@@ -501,8 +558,16 @@ html[data-agent-viewed] [data-studio-action] { display: none; }
 .terminal-drawer-open { display: none; }
 
 @media (min-width: 1201px) {
-  .shell[data-terminal] { grid-template-columns: 224px minmax(0, 1fr) clamp(360px, var(--terminal-width, min(560px, 40vw)), 70vw); }
-  :root[data-terminal-collapsed] .shell[data-terminal] { grid-template-columns: 224px minmax(0, 1fr) var(--terminal-strip, 44px); }
+  .shell[data-terminal] { grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr) clamp(360px, var(--terminal-width, min(560px, 40vw)), 70vw); }
+  :root[data-terminal-collapsed] .shell[data-terminal] { grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr) calc(var(--terminal-strip, 44px) + var(--sidebar-inset)); }
+  /** Mirrors the rail; the stored width spans to the window edge, so it includes the inset. */
+  .shell[data-terminal] .terminal-sidebar {
+    top: var(--sidebar-inset);
+    height: calc(100vh - 2 * var(--sidebar-inset));
+    margin: var(--sidebar-inset) var(--sidebar-inset) var(--sidebar-inset) 0;
+    border: 1px solid var(--border);
+    border-radius: var(--sidebar-radius);
+  }
   :root[data-terminal-collapsed] .shell[data-terminal] .terminal-body,
   :root[data-terminal-collapsed] .shell[data-terminal] .terminal-resize { display: none; }
   :root[data-terminal-collapsed] .shell[data-terminal] .terminal-strip { display: flex; }

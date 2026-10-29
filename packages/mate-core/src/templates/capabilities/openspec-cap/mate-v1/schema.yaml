@@ -198,7 +198,7 @@ artifacts:
 
       Reference specs for what needs to be built, design for how to build it. Each task should be verifiable - you know when it's done.
 
-      **Skill tagging**: Tag each task with `[skill:<name>]` at the end of its checkbox line when a skill applies.
+      **Skill tagging**: Tag a task with `[skill:<name>]` at the end of its checkbox line only as the skill-tagging rule in `openspec/mate-conventions.yaml` allows.
 
       No-tag cases — implement these directly with no skill tag:
       - Config file changes (`vite.config.ts`, `next.config.ts`, etc.)
