@@ -25,10 +25,14 @@ export class CompanionRegistryStore extends YamlFileStore<CompanionRegistryConfi
     await migrateRegistryData(this.configPath);
     const config = await super.load();
     // Silently drop legacy per-repo policy fields (profile/overrides); the
-    // clean shape persists on the next save.
+    // clean shape persists on the next save. The shared Git folder stays.
     return {
       ...config,
-      repos: (config.repos ?? []).map(({ id, path: repoPath }) => ({ id, path: repoPath })),
+      repos: (config.repos ?? []).map(({ id, path: repoPath, gitCommonDir }) => ({
+        id,
+        path: repoPath,
+        ...(typeof gitCommonDir === "string" ? { gitCommonDir } : {}),
+      })),
     };
   }
 

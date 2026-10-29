@@ -17,6 +17,8 @@ import { FRAMEWORK_NAME } from "./framework";
 export interface RegistryLink {
   id: string;
   path: string;
+  /** The real path of the clone's shared Git folder, when recorded. */
+  gitCommonDir?: string;
 }
 
 /** One `companions` entry of the user's `config.yaml`. */
@@ -44,13 +46,22 @@ export function globalCompanionEntries(parsed: unknown): GlobalCompanionEntry[] 
   );
 }
 
-/** The `repos` of a parsed `registry.yaml`; entries without a string `id` and `path` are dropped. */
+/**
+ * The `repos` of a parsed `registry.yaml`; entries without a string `id` and
+ * `path` are dropped, and so is every other field but a string `gitCommonDir`.
+ */
 export function registryLinks(parsed: unknown): RegistryLink[] {
   const repos = isRecord(parsed) ? parsed.repos : undefined;
   if (!Array.isArray(repos)) return [];
   return repos.flatMap((entry: unknown) =>
     isRecord(entry) && typeof entry.id === "string" && typeof entry.path === "string"
-      ? [{ id: entry.id, path: entry.path }]
+      ? [
+          {
+            id: entry.id,
+            path: entry.path,
+            ...(typeof entry.gitCommonDir === "string" ? { gitCommonDir: entry.gitCommonDir } : {}),
+          },
+        ]
       : [],
   );
 }

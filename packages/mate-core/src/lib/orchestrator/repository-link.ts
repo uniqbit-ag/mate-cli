@@ -1,3 +1,4 @@
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -5,6 +6,7 @@ import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { companionRegistryPath, registryLinks } from "../../runtime/companion-registry-read";
+import { withPathLock } from "../../runtime/companion-lock";
 import { namesOtherCheckout } from "../../runtime/git-layout";
 import { canonicalPath, normalisedCanonicalPath } from "../../runtime/physical-path";
 import {
@@ -23,7 +25,15 @@ import {
   type RepoLocalRegistry,
   RepoLocalRegistryStore,
 } from "./repo-local-store";
-import { project } from "./working-repo-projection";
+import {
+  type MergedEntry,
+  reconcileRegistry,
+  registeredCheckoutOf,
+  registryListsRepository,
+} from "./registry-checkouts";
+import { project, projectWorkingRepository } from "./working-repo-projection";
+import { readProjectionFile } from "../../runtime/projection";
+import { GRAPHIFY_STORE_SEGMENT } from "../../tools/setup/capabilities/graphify";
 import { type CompanionSource, ConfigError, type LinkedRepository } from "./types";
 
 /**
@@ -52,6 +62,14 @@ export class CompanionStore {
     private readonly companionRegistryStore = new CompanionRegistryStore(),
   ) {}
 
+  /**
+   * One load and save under the registry's own lock: hand over or drop dead
+   * entries, merge hand-linked Checkouts of one clone, reuse the clone's entry
+   * or upsert by ID, and record each clone's shared Git folder. Returns the
+   * entry it kept. After the save, outside the lock, the asking folder's
+   * repo-local link takes the kept ID, as do the Checkouts of merged-away
+   * entries; those writes only warn.
+   */
   async registerRepository(
     repository: LinkedRepository,
     options: { companionSource?: CompanionSource } = {},
@@ -63,40 +81,43 @@ export class CompanionStore {
       );
     }
 
-    // A companion's registry.yaml may not exist yet (its first-ever link):
-    // that is not a real error here, unlike a working repo reading its own
-    // missing config, so fall back to an empty registry instead of throwing.
-    const working = await this.companionRegistryStore.load().catch((error) => {
-      if (error instanceof ConfigError) return CompanionRegistryStore.defaultConfig();
-      throw error;
-    });
-
-    // Prune dead entries (path no longer a directory) as part of this same
-    // write, piggybacking on the load/save that registration already does
-    // rather than adding a separate scan; never runs on a read-only list.
-    const checked = await Promise.all(
-      working.repos.map(async (repo) => ({ repo, exists: await pathIsDirectory(repo.path) })),
+    const registryPath = this.companionRegistryStore.configPath;
+    const locked = await withPathLock(
+      REGISTRY_LOCK_NAMESPACE,
+      existingRealPath(registryPath),
+      {},
+      async () => {
+        // A companion's registry.yaml may not exist yet (its first-ever link):
+        // that is not a real error here, unlike a working repo reading its own
+        // missing config, so fall back to an empty registry instead of throwing.
+        const working = await this.companionRegistryStore.load().catch((error) => {
+          if (error instanceof ConfigError) return CompanionRegistryStore.defaultConfig();
+          throw error;
+        });
+        const reconciled = reconcileRegistry(working.repos, repository);
+        working.repos = reconciled.repos;
+        await this.companionRegistryStore.save(working);
+        return reconciled;
+      },
     );
-    const survivors = checked.filter((entry) => entry.exists).map((entry) => entry.repo);
-
-    const existing = survivors.findIndex((r) => r.id === repository.id);
-    if (existing >= 0) {
-      survivors[existing] = repository;
-    } else {
-      survivors.push(repository);
+    if (!locked.acquired) {
+      throw new ConfigError(
+        `another ${FRAMEWORK_NAME} process is still writing ${registryPath}; try again.`,
+      );
     }
-    working.repos = survivors;
-    await this.companionRegistryStore.save(working);
 
+    const { kept, merged } = locked.value;
+    const companionPath = path.resolve(this.companionPath);
+    const source = options.companionSource ?? "git";
     // Repo-local registry write is a cache, not the source of truth: the
     // companion-side write above already succeeded, so a failure here (e.g. a
     // read-only working tree) must not fail the overall link operation.
     try {
       await writeRepoLocalRegistryEntry(
         repository.path,
-        path.resolve(this.companionPath),
-        repository,
-        options.companionSource ?? "git",
+        companionPath,
+        { id: kept.id, path: repository.path },
+        source,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -104,8 +125,12 @@ export class CompanionStore {
         `mate: warning: failed to write repo-local registry for ${repository.path}: ${message}`,
       );
     }
+    for (const entry of merged) {
+      // oxlint-disable-next-line no-await-in-loop -- one notice per merged Checkout, in order
+      await relinkMergedCheckout(companionPath, entry, source);
+    }
 
-    return repository;
+    return kept;
   }
 
   async getRepository(repositoryId: string): Promise<LinkedRepository | undefined> {
@@ -118,6 +143,56 @@ export class CompanionStore {
     return working.repos;
   }
 }
+
+/** The companion registry's own lock, apart from the companion's sync lock. */
+const REGISTRY_LOCK_NAMESPACE = "companion-registry";
+
+/** Real path of the nearest existing ancestor, plus the rest: a first link has no file yet. */
+function existingRealPath(target: string): string {
+  const rest: string[] = [];
+  let current = path.resolve(target);
+  for (;;) {
+    try {
+      return path.join(fsSync.realpathSync(current), ...rest);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return path.resolve(target);
+      rest.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Points a merged-away Checkout's link, and its projection when it has one, at
+ * the kept ID, and says that the Graphify graph under the old ID is unused.
+ */
+async function relinkMergedCheckout(
+  companionPath: string,
+  { removed, kept }: MergedEntry,
+  source: CompanionSource,
+): Promise<void> {
+  const graph = path.join(companionPath, GRAPHIFY_STORE_SEGMENT, removed.id);
+  console.error(
+    `${FRAMEWORK_NAME}: merged ${removed.id} (${removed.path}) into ${kept.id}, the entry of its clone in ${companionPath}; ${removed.path} now uses ${kept.id}, and the Graphify graph stored under ${removed.id} (${graph}) is no longer used.`,
+  );
+  const repository = { id: kept.id, path: removed.path };
+  try {
+    await writeRepoLocalRegistryEntry(removed.path, companionPath, repository, source);
+    if (readProjectionFile(removed.path)) {
+      const projected = await projectWorkingRepository(companionPath, repository);
+      if (projected.kind === "failed") throw projected.error;
+    }
+  } catch (error) {
+    console.error(
+      `${FRAMEWORK_NAME}: warning: failed to point ${removed.path} at ${kept.id}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
+export { registeredCheckoutOf };
 
 // ---------------------------------------------------------------------------
 // Pure read of the companion registry (never writes)
@@ -159,8 +234,8 @@ export async function backfillCompanionRegistration(
 ): Promise<void> {
   try {
     const { repos } = await readCompanionRegistry(companionPath).catch(() => ({ repos: [] }));
-    const existing = repos.find((repo) => repo.id === repository.id);
-    if (existing?.path === repository.path) return;
+    /** A launch from another Checkout of the clone never moves the entry to it. */
+    if (registryListsRepository(repos, repository)) return;
 
     await companionRootedStore(companionPath).registerRepository(repository);
   } catch (error) {
