@@ -67,6 +67,17 @@ the companion `AGENTS.md`, not that text, so the warning names the file and
 suggests moving shared rules into `AGENTS.md`. The warning appears in the JSON
 output too and does not change the exit status.
 
+When plain sessions in the current folder refuse its projection, `mate doctor`
+reports it under Refused Projection: the companion the projection names, the
+reason, and that plain agent sessions there run without Mate. It suggests
+`mate companion link`, or `mate wrap` from a checkout the companion links.
+`--json` carries the same verdict as `projectionRefusal`, with `code` (one of the
+[session context codes](#session-context) `companion-missing`,
+`companion-not-registered` or `repository-not-linked`), `companionPath` as the
+projection writes it, and `message`. When a file the check needs cannot be read,
+`unreadable` names it and its error. The field is absent when no projection is
+refused, and it does not change the exit status.
+
 ## Comment Guidance
 
 Shared agent guidance prefers sparse, concise comments explaining non-obvious

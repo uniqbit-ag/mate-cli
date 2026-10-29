@@ -111,6 +111,22 @@ Plain `opencode` and plain `claude` in a wrapped repository load Mate through
 installing or upgrading. If Mate is uninstalled, run `mate unwrap` in the
 repository.
 
+Mate can also refuse the repository's projection. It trusts a projection only
+when your Mate configuration lists its companion and that companion links the
+checkout the projection is in. A refused projection gives a plain session no
+guidance and no guardrail, the same as an unwrapped repository. The session shows
+one notice instead: Claude Code as its start message, OpenCode as a toast.
+
+```text
+mate: this folder's projection names a companion that is not registered in your Mate configuration (companion-not-registered); plain sessions here run without Mate. Run `mate doctor`.
+```
+
+`mate doctor` names the reason and the companion. The reasons are the
+[session context codes](/docs/reference/commands#session-context)
+`companion-missing`, `companion-not-registered` and `repository-not-linked`. To
+fix it, run `mate companion link` in the repository to register and link a
+companion, or run `mate wrap` from a checkout the companion links.
+
 ## A Capability's Claude Plugin Does Not Load In Plain `claude`
 
 Run `mate doctor`. Its Claude Plugins table has a Plain Sessions column showing
