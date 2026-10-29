@@ -134,6 +134,79 @@ describe("rows", () => {
 });
 
 describe("ranking", () => {
+  test("contiguous path components rank above loosely fuzzy components", () => {
+    const paths = toEntries(["longlonglong/acme-work/tasks.md", "x/ac-m-e/t-a-s-k-s.md"], defaults);
+    expect(rels(rank(paths, implicit("acme/tasks"), 15))[0]).toBe(
+      "longlonglong/acme-work/tasks.md",
+    );
+  });
+
+  test("duplicate basenames, archives and explicitly targeted managed paths remain searchable", () => {
+    const paths = toEntries(
+      ["notes/acme/tasks.md", "notes/archive/acme/tasks.md", ".mate/config/example.yaml"],
+      defaults,
+    );
+    expect(rels(rank(paths, implicit("tasks.md"), 15))).toEqual([
+      "notes/acme/tasks.md",
+      "notes/archive/acme/tasks.md",
+    ]);
+    expect(rels(rank(paths, implicit("archive/acme/tasks"), 15))).toEqual([
+      "notes/archive/acme/tasks.md",
+    ]);
+    const dotted = rels(rank(paths, implicit(".mate/config"), 15));
+    expect(dotted).toContain(".mate/config/example.yaml");
+    expect(dotted).toEqual(rels(rank(paths, explicit(".mate/config"), 15)));
+    expect(rels(rank(paths, implicit("example.yaml"), 15))).not.toContain(
+      ".mate/config/example.yaml",
+    );
+  });
+
+  test("path abbreviations match bounded fuzzy components in order", () => {
+    const paths = toEntries(["notes/acme-work/tasks.md", "notes/other/tickets.md"], defaults);
+    expect(rels(rank(paths, implicit("acm/tsks"), 15))).toEqual(["notes/acme-work/tasks.md"]);
+  });
+
+  test("a partial folder path searches descendants until a trailing slash requests browsing", () => {
+    const paths = toEntries(["notes/acme/plan.md", "notes/acme-archive/tasks.md"], defaults);
+    const found = rels(rank(paths, implicit("notes/acme"), 15));
+    expect(found).toContain("notes/acme/plan.md");
+    expect(found).toContain("notes/acme-archive/tasks.md");
+    expect(rels(rank(paths, implicit("notes/acme/"), 15))).toEqual(["notes/acme/plan.md"]);
+  });
+
+  test("bare search browses top-level folders without managed folders", () => {
+    const paths = toEntries(
+      ["notes/plan.md", "openspec/config.yaml", ".mate/config/example.yaml"],
+      defaults,
+    );
+    expect(rels(rank(paths, implicit(""), 4))).toEqual(["notes/", "openspec/"]);
+  });
+
+  test("fuzzy matches stay within one relevant path component", () => {
+    const paths = toEntries(["ab/fghi/cjkl.md", "notes/mate-conventions.yaml"], defaults);
+    expect(rels(rank(paths, implicit("abc"), 15))).toEqual([]);
+    expect(rels(rank(paths, implicit("mconv"), 15))).toEqual(["notes/mate-conventions.yaml"]);
+  });
+
+  test("an exact path ranks above an exact basename", () => {
+    const paths: Entry[] = [
+      { rel: "guide/", isDir: true },
+      { rel: "notes/guide", isDir: false },
+    ];
+    expect(rels(rank(paths, implicit("guide"), 2))).toEqual(["guide/", "notes/guide"]);
+  });
+
+  test("equally strong search matches prefer files over folders", () => {
+    const paths = toEntries(["docs.md", "docsets/a.txt"], defaults);
+    expect(rels(rank(paths, implicit("doc"), 2))).toEqual(["docs.md", "docsets/"]);
+  });
+
+  test("plain and prefixed path searches return the same matching companion paths", () => {
+    const paths = toEntries(["notes/acme-work/tasks.md", "notes/other/tasks.md"], defaults);
+    expect(rels(rank(paths, implicit("acme/tasks"), 15))).toEqual(["notes/acme-work/tasks.md"]);
+    expect(rels(rank(paths, explicit("acme/tasks"), 15))).toEqual(["notes/acme-work/tasks.md"]);
+  });
+
   test("a chosen folder lists what it holds, folders first", () => {
     expect(rels(rank(entries, explicit("openspec/"), 15))).toEqual([
       "openspec/changes/",
@@ -148,8 +221,9 @@ describe("ranking", () => {
     ]);
   });
 
-  test("the rest of the query narrows the folder, then searches its tree", () => {
+  test("a partial path finds matching folders and their descendants", () => {
     expect(rels(rank(entries, explicit("openspec/changes/cac"), 15))).toEqual([
+      "openspec/changes/cache-search-results/tasks.md",
       "openspec/changes/cache-search-results/",
     ]);
     const tasks = rels(rank(entries, explicit("openspec/tasks"), 15));
@@ -188,14 +262,14 @@ describe("ranking", () => {
     expect(rels(rank(entries, explicit("OpenSpec/"), 1))).toEqual(["openspec/changes/"]);
   });
 
-  test("on a tie, folders come first, then shorter paths", () => {
+  test("on a tie, files come first, then shorter paths", () => {
     const tied = toEntries(["docs.md", "docsets/a.txt", "abc/tasks.md", "zz/tasks.md"], defaults);
-    expect(rels(rank(tied, explicit("doc"), 2))).toEqual(["docsets/", "docs.md"]);
+    expect(rels(rank(tied, explicit("doc"), 2))).toEqual(["docs.md", "docsets/"]);
     expect(rels(rank(tied, explicit("tasks.md"), 2))).toEqual(["zz/tasks.md", "abc/tasks.md"]);
   });
 
-  test("a bare @ offers only names holding the query", () => {
-    expect(rank(entries, implicit(""), 3)).toEqual([]);
+  test("plain queries search the same paths as prefixed queries", () => {
+    expect(rels(rank(entries, implicit(""), 3))).toEqual(["nested/", "notes/", "openspec/"]);
     expect(rank(entries, implicit("src/app"), 3)).toEqual([]);
     expect(rank(entries, implicit("mcv"), 3)).toEqual([]);
     const tasks = rels(rank(entries, implicit("task"), 3));

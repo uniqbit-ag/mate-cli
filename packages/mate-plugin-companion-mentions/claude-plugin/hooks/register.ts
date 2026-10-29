@@ -36,11 +36,11 @@ import {
 /** How long the menu reuses Mate's answer, and a companion's file list is kept. */
 const REFRESH_MS = 30_000;
 const CONTEXT_TIMEOUT_MS = 5_000;
-/** Rows after a bare `@`, under the engine's own. */
-const ROWS = 3;
-/** Rows after `@mate:`. */
-const ROWS_EXPLICIT = 15;
-/** Most files the folder walk collects when git cannot list them. */
+/** Most companion matches for a search, after the engine's own rows. */
+const ROWS = 15;
+/** Top-level folders offered after a bare `@`. */
+const BARE_ROWS = 4;
+/** Most files and folders the walk visits when git cannot list them. */
 const WALK_LIMIT = 20_000;
 /** Most names a folder mention lists. */
 const FOLDER_LIMIT = 200;
@@ -161,8 +161,12 @@ async function walk($: EngineInterface, root: string, signal: AbortSignal): Prom
     signal.throwIfAborted();
     for (const child of children) {
       if (SKIPPED.has(child.name)) continue;
-      if (child.kind === "dir") folders.push(`${rel}${child.name}/`);
-      else if (child.kind === "file" || child.isLink) files.push(rel + child.name);
+      if (child.kind === "dir") {
+        if (folders.length < WALK_LIMIT) folders.push(`${rel}${child.name}/`);
+      } else if (child.kind === "file" || child.isLink) {
+        files.push(rel + child.name);
+        if (files.length >= WALK_LIMIT) break;
+      }
     }
   }
   return files;
@@ -263,7 +267,7 @@ async function companionRows($: EngineInterface, query: Query, signal: AbortSign
 
   const entries = await entriesOf($, context, signal);
   const ranked = rank(entries, query, entries.length);
-  const limit = query.isExplicit ? ROWS_EXPLICIT : ROWS;
+  const limit = !query.isExplicit && query.query === "" ? BARE_ROWS : ROWS;
   const offered = await offerable($, root, policy, ranked, limit, signal);
   const description = `${baseName(root)} (mate companion)`;
   const rows = offered.flatMap((entry) => {
@@ -290,10 +294,7 @@ export const register: Register = (on) => {
     const result = await next(e);
     const query = queryOf(e.token);
     if (query === undefined) return result;
-    const rows = await companionRows($, query, next.signal).catch((error: unknown) => {
-      if (next.signal.aborted) return []; // a newer keystroke took over
-      throw error;
-    });
+    const rows = await companionRows($, query, next.signal).catch(() => []);
     return rows.length === 0
       ? result
       : { ...result, suggestions: [...result.suggestions, ...rows] };

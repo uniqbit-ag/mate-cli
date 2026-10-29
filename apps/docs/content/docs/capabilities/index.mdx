@@ -207,11 +207,15 @@ repository. The
 [package README](https://www.npmjs.com/package/@uniqbit/mate-plugin-companion-mentions)
 explains how to install it.
 
-Type `@mate:` in Claude's prompt to list up to 15 matching companion files and
-folders in the `@` menu. Any other `@` search adds up to three companion rows
-after Claude's own. A sent `@mate:<path>` mention attaches that file, or a list
-of a folder's entries. A file mention can carry a line range, such as
+Type `@` followed by a filename or path, such as `@tasks` or `@acme/tasks`, to
+search the companion as well as Claude's own files. `@mate:` uses the same search;
+a path ending in `/` browses its direct children. A bare `@` offers a companion
+gateway and top-level folders. Search returns up to 15 companion matches, and
+selecting one inserts an `@mate:<path>` mention. A sent mention attaches that file,
+or a list of a folder's entries. A file mention can carry a line range, such as
 `@mate:openspec/config.yaml#L1-5`.
+Claude puts its own results above plugin rows; if many match, use the arrow keys
+or type `@mate:` to reach companion results.
 
 - It loads in sessions started with `mate claude` and in plain `claude` sessions
   of a repository wrapped for Claude, where Claude Code must trust the folder.
