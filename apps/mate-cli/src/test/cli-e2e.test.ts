@@ -2794,8 +2794,8 @@ describe("mate studio e2e", () => {
       const dashboard = await fetch(`${studio.url}/?companion=${digest}`);
       expect(dashboard.status).toBe(200);
       const dashboardMarkup = await dashboard.text();
-      expect(dashboardMarkup).toContain("<h3>Changes</h3>");
-      expect(dashboardMarkup).not.toContain("<h3>Specs by Area</h3>");
+      expect(dashboardMarkup).toContain('aria-label="Changes"');
+      expect(dashboardMarkup).not.toContain('aria-label="Specs by Area"');
       expect(dashboardMarkup).toContain("add-acme-checkout");
       expect(dashboardMarkup).not.toContain("<h3>Choose a Companion Repository</h3>");
 
@@ -2803,8 +2803,8 @@ describe("mate studio e2e", () => {
       const specs = await fetch(`${studio.url}/?companion=${digest}&view=specs`);
       expect(specs.status).toBe(200);
       const specsMarkup = await specs.text();
-      expect(specsMarkup).toContain("<h3>Specs by Area</h3>");
-      expect(specsMarkup).not.toContain("<h3>Changes</h3>");
+      expect(specsMarkup).toContain('aria-label="Specs by Area"');
+      expect(specsMarkup).not.toContain('aria-label="Changes"');
 
       /** The workflow console is change-agnostic: prompts carry the placeholder. */
       const workflow = await fetch(`${studio.url}/?companion=${digest}&view=workflow`);
@@ -2813,7 +2813,7 @@ describe("mate studio e2e", () => {
       expect(workflowMarkup).toContain("<h1>Workflow</h1>");
       expect(workflowMarkup).toContain('class="workflow-delivery-path"');
       expect(workflowMarkup).toContain("&lt;change-name&gt;");
-      expect(workflowMarkup).not.toContain("<h3>Changes</h3>");
+      expect(workflowMarkup).not.toContain('aria-label="Changes"');
     } finally {
       await studio.stop("SIGINT");
     }

@@ -146,7 +146,7 @@ tools:
   openspec:
     detect: openspec
     package: "@fission-ai/openspec"
-    version: 1.14.1
+    version: 1.15.0
     source: npm_global
     # Resolved through locks/global-tools.package-lock.json, not `@latest`.
     # Mate now ships its own OpenSpec CLI, so the image no longer requires this
