@@ -1,4 +1,4 @@
-import { MATE_ENV } from "../../src/runtime/env";
+import { MATE_ENV } from "../../src/runtime/env-names";
 
 export type LaunchEnvironment = Record<string, string | undefined>;
 

@@ -7,7 +7,7 @@ import {
   parseGuidanceContent,
   validateGuidanceData,
 } from "./guidance";
-import { MATE_ENV } from "./env";
+import { MATE_ENV } from "./env-names";
 
 const validGuidance = {
   version: 1,

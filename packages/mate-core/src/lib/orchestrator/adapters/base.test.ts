@@ -12,8 +12,8 @@ import {
   PROJECTION_FIELDS,
   resolveProjection,
 } from "../../../runtime/projection";
-import { readCompanionRuntimeContext } from "../../../runtime/env";
-import { resolveSessionContext } from "../../../runtime/session-context";
+import { globalConfigPath } from "../../../runtime/companion-registry-read";
+import { resolveSession, sessionContextFor } from "../../../runtime/session-resolution";
 import { companionFrameworkConfigPath, policyDocument } from "../../../runtime/policy";
 import {
   defaultSecretPolicy,
@@ -27,6 +27,7 @@ import {
   withDocument,
 } from "../../../runtime/runtime-document-manifest";
 import { wrapStateOf } from "../../../runtime/wrap-state";
+import { trustProjection } from "../../../../test/trusted-projection";
 import { getContextModePackageRoot } from "../../context-mode-package";
 import {
   getClaudePluginRoot,
@@ -486,8 +487,14 @@ describe("launch policy document", () => {
     await fs.writeFile(repoLocalRegistryPath(repoRoot), "companions: []\n", "utf8");
     const repository = { id: "app", path: repoRoot };
     await project("session", { repoPath: repoRoot, companionPath, repository });
+    const { HOME } = trustProjection({
+      home: path.join(repoRoot, "mate-home"),
+      companionPath,
+      repoRoot,
+      repositoryId: repository.id,
+    });
 
-    const query = resolveSessionContext(repoRoot);
+    const query = sessionContextFor(repoRoot, { globalConfigPath: globalConfigPath(HOME) });
     const launch = await prepareClaudeLaunch(context, []);
 
     expect(query.ok && query.context.policyJson).toBe(launch.env.MATE_POLICY_JSON!);
@@ -626,7 +633,10 @@ describe("launch environment and the projection agree", () => {
     );
 
     expect(resolveProjection(repoRoot)?.companionPath).toBe(companionPath);
-    expect(readCompanionRuntimeContext(launch.env, repoRoot).companionPath).toBe(launched);
+    expect(resolveSession(launch.env, repoRoot)).toMatchObject({
+      kind: "launch",
+      companionPath: launched,
+    });
   });
 });
 

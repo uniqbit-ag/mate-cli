@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { Context } from "@opencode/plugin/promise/plugin";
-import { MATE_ENV } from "../../src/runtime/env";
+import { MATE_ENV } from "../../src/runtime/env-names";
 import { COMPANION_POLICY_MARKER, type MateGuidanceFile } from "../../src/runtime/guidance";
 
 import type { CompanionContext } from "../../src/opencode/companion-policy";

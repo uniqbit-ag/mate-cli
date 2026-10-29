@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 const fs = await import("node:fs/promises");
 const path = await import("node:path");
 
-import { MATE_ENV } from "../../../runtime/env";
+import { MATE_ENV } from "../../../runtime/env-names";
 import { validateGuidanceData, type MateGuidanceFile } from "../../../runtime/guidance";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 

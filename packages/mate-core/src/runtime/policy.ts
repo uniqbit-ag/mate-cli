@@ -76,7 +76,7 @@ export function declaredAllowedAgents(config: {
 }
 
 /**
- * Synchronous so it composes into `readCompanionRuntimeContext`. A missing or
+ * Synchronous so it composes into Session Resolution. A missing or
  * unparseable companion config yields an inert policy rather than throwing,
  * with secret guardrails active.
  */

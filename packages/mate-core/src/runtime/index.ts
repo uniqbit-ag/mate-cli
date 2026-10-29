@@ -63,16 +63,7 @@ export {
   type UnattendedSyncStatus,
 } from "./companion-sync";
 export { FRAMEWORK_NAME } from "./framework";
-export {
-  MATE_ENV,
-  hasLaunchEnvironment,
-  isManagedCompanionContext,
-  readCompanionRuntimeContext,
-  resolveCompanionRuntime,
-  type CompanionRuntimeContext,
-  type CompanionRuntimeResolution,
-  type MateEnvVariable,
-} from "./env";
+export { MATE_ENV, type MateEnvVariable } from "./env-names";
 export {
   projectionFreshness,
   projectionStalenessLines,
