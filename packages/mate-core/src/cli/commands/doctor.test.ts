@@ -20,6 +20,10 @@ import type {
 } from "../../tools/setup/plugin";
 import { inspectClaudePluginDirectories } from "../../tools/setup";
 import { createClaudePlugin } from "../../tools/setup/providers/claude";
+import { globalConfigPath } from "../../runtime/companion-registry-read";
+import { writeProjectionPair } from "../../runtime/projection";
+import { repoLocalRegistryPath } from "../../runtime/repo-local";
+import { trustProjection } from "../../../test/trusted-projection";
 import { runDoctorCommand, type DoctorReport } from "./doctor";
 
 const tempRoots: string[] = [];
@@ -1251,5 +1255,82 @@ describe("Claude plugins of a distribution's Capabilities", () => {
       ),
     );
     expect(json.exitCode).toBe(0);
+  });
+});
+
+describe("doctor projection refusal", () => {
+  /** A folder whose projection names a companion with a Mate configuration of its own; trusted only on request. */
+  async function projectedFolder(options: { trusted: boolean }) {
+    const root = await makeTempDir("doctor-projection-");
+    const repoPath = path.join(root, "working");
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(companionPath, { recursive: true });
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(repoPath)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(repoPath), "companions: []\n", "utf8");
+    writeProjectionPair(repoPath, {
+      stamp: "stamp",
+      projection: {
+        version: "0.0.0",
+        companionPath,
+        repositoryPath: repoPath,
+        repositoryId: "app",
+        wrapperBinPath: path.join(companionPath, "wrappers", "bin"),
+        reactDoctorBinPath: path.join(companionPath, "react-doctor"),
+        graphifyOut: path.join(companionPath, ".graphify", "app", "graphify-out"),
+      },
+    });
+    const home = path.join(root, "home");
+    if (options.trusted) {
+      trustProjection({ home, companionPath, repoRoot: repoPath, repositoryId: "app" });
+    }
+    return {
+      repoPath,
+      companionPath,
+      deps: {
+        cwd: repoPath,
+        globalConfigStore: new GlobalConfigStore(globalConfigPath(home)),
+        inspectPlugins: async () => ({ failures: [], capabilities: [] }),
+        env: {},
+      },
+    };
+  }
+
+  test("names a refused projection's reason and companion, and how to fix it", async () => {
+    const { companionPath, deps } = await projectedFolder({ trusted: false });
+
+    const output = await captureStdout(() => runDoctorCommand([], deps));
+
+    expect(output).toContain("Refused Projection");
+    expect(output).toContain("companion-not-registered");
+    expect(output).toContain(companionPath);
+    expect(output).toContain("Plain agent sessions here run without Mate");
+    expect(output).toContain(`${FRAMEWORK_NAME} companion link`);
+    expect(output).toContain(`${FRAMEWORK_NAME} wrap`);
+  });
+
+  test("JSON carries the refusal code and the companion the projection names", async () => {
+    const { companionPath, deps } = await projectedFolder({ trusted: false });
+
+    const report = JSON.parse(await captureStdout(() => runDoctorCommand(["--json"], deps))) as {
+      projectionRefusal?: { code: string; companionPath: string; message: string };
+    };
+
+    expect(report.projectionRefusal).toEqual({
+      code: "companion-not-registered",
+      companionPath,
+      message: expect.stringContaining("not a companion registered"),
+    });
+  });
+
+  test("reports no refusal for a projection Session Resolution trusts", async () => {
+    const { deps } = await projectedFolder({ trusted: true });
+
+    const output = await captureStdout(() => runDoctorCommand([], deps));
+    const report = JSON.parse(
+      await captureStdout(() => runDoctorCommand(["--json"], deps)),
+    ) as DoctorReport;
+
+    expect(output).not.toContain("Refused Projection");
+    expect(report.projectionRefusal).toBeUndefined();
   });
 });

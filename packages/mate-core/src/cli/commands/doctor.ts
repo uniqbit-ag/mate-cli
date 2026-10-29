@@ -7,6 +7,11 @@ import { parse as parseYaml } from "yaml";
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
 import { companionClaudeMdHasOwnText } from "../../runtime/companion-instructions";
+import {
+  resolveSession,
+  sessionRefusalReason,
+  type SessionRefusal,
+} from "../../runtime/session-resolution";
 import { getActiveDistribution } from "../../distribution";
 import { hasOpenspecCapability } from "../../lib/orchestrator/capabilities";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
@@ -116,6 +121,11 @@ export interface DoctorReport {
   claudePluginFailures?: ClaudePluginContributionFailure[];
   hub?: { members: DoctorHubMember[] };
   resolutionFailures: Array<{ companionPath: string; message: string }>;
+  /**
+   * Set when plain sessions in this folder refuse its projection; Session
+   * Resolution's own refusal, so doctor and the sessions cannot disagree.
+   */
+  projectionRefusal?: SessionRefusal;
 }
 
 interface ToolCheck {
@@ -396,6 +406,10 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
     resolutionFailures: root.resolution.failures,
   };
 
+  /** What a plain session here would get, so the launch environment doctor runs under is ignored. */
+  const session = resolveSession({}, cwd, { globalConfigPath: deps.globalConfigStore?.configPath });
+  if (session.kind === "none" && session.refusal) report.projectionRefusal = session.refusal;
+
   if (kind === "working") {
     await collectWorkingSections(report, root, pathValue);
   } else if (kind === "companion" && root.config) {
@@ -555,6 +569,14 @@ function renderClaudePlugins(
   ].join("\n");
 }
 
+function renderProjectionRefusal(refusal: SessionRefusal): string {
+  return [
+    `This folder's projection names ${refusal.companionPath}, a companion that ${sessionRefusalReason(refusal)}.`,
+    "Plain agent sessions here run without Mate: no companion guidance, and no Tool Guard.",
+    `Register the companion with \`${FRAMEWORK_NAME} companion link\`, or run \`${FRAMEWORK_NAME} wrap\` from a Checkout it links.`,
+  ].join("\n");
+}
+
 function renderHumanReport(report: DoctorReport): void {
   console.log("Mate Doctor");
   console.log("");
@@ -651,6 +673,10 @@ function renderHumanReport(report: DoctorReport): void {
         "",
       ),
     );
+  }
+
+  if (report.projectionRefusal) {
+    printSection("Refused Projection", renderProjectionRefusal(report.projectionRefusal));
   }
 
   printSection(
