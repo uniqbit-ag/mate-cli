@@ -74,7 +74,7 @@ export async function refreshRecord(
     // A user answer of merged or dropped stands; the forge may still settle a "not yet merged".
     if (delivery.merge?.source === "user" && delivery.merge.state !== "open") continue;
     const { repository, branch } = delivery;
-    // A recorded PR URL picks that PR when several have the branch as head.
+    // A recorded PR URL picks that PR when several have the branch as head, unless it was dropped.
     const prNumber = prNumberFrom(delivery.pr);
     const direct = Boolean(delivery.direct);
     // A direct delivery is checked in Git, a PR delivery on the forge: never share an answer.
@@ -132,7 +132,16 @@ async function lookup(
   if ("unavailable" in access) {
     return { ...base, result: "unknown", needsAnswer: true, answerReason: access.unavailable };
   }
-  const answer = await access.adapter.pullsForBranch(access.repo, branch, prNumber);
+  let answer = await access.adapter.pullsForBranch(access.repo, branch, prNumber);
+  // A recorded PR that is closed or gone must not hide a newer PR from the same branch.
+  if (
+    prNumber !== undefined &&
+    answer.ok &&
+    (answer.value.kind === "none" || answer.value.kind === "closed-unmerged")
+  ) {
+    const wider = await access.adapter.pullsForBranch(access.repo, branch);
+    if (wider.ok && wider.value.kind !== "none") answer = wider;
+  }
   if (!answer.ok) {
     return {
       ...base,

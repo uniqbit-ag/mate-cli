@@ -272,23 +272,6 @@ describe("openspec wrapper finds the bundled CLI", () => {
     expect(launch(wrapperBin).stdout).toBe("nested\n");
   });
 
-  test("runs the test-only MATE_E2E_OPENSPEC_BIN stand-in instead of the bundled CLI", () => {
-    const root = makeTempDir("mate-wrapper-e2e-override-");
-    const wrapperBin = installWrappers(root);
-    writeStub(path.join(root, BUNDLED_OPENSPEC), ['echo "bundled"']);
-    const standIn = path.join(makeTempDir("mate-wrapper-e2e-stand-in-"), "openspec");
-    writeStub(standIn, ['echo "stand-in"']);
-    const companion = makeTempDir("mate-wrapper-e2e-companion-");
-
-    const result = runWrapper("openspec", ["list"], {
-      cwd: companion,
-      env: { MATE_ARTIFACT_PATH: companion, MATE_E2E_OPENSPEC_BIN: standIn },
-      wrapperBin,
-    });
-
-    expect(result.stdout).toBe("stand-in\n");
-  });
-
   test("follows the runtime directory's symlink to the installed package", () => {
     const root = makeTempDir("mate-wrapper-runtime-link-");
     installWrappers(root, "package");

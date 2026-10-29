@@ -2,7 +2,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, constants, existsSync } from "node:fs";
+import { accessSync, constants, existsSync, symlinkSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,8 +14,8 @@ import { version } from "../../package.json";
 
 const APP_ROOT = path.resolve(import.meta.dirname, "../..");
 
-/** mate-core's test-only replacement for its bundled OpenSpec CLI (`OPENSPEC_BIN_OVERRIDE_ENV`). */
-const OPENSPEC_BIN_OVERRIDE_ENV = "MATE_E2E_OPENSPEC_BIN";
+/** Preloaded into every Bun process a test starts, so Mate runs the recording OpenSpec stub. */
+const OPENSPEC_STUB_PRELOAD = path.join(import.meta.dirname, "openspec-stub-preload.ts");
 
 /** The `--exclude` pairs Mate appends to every graphify extraction that accepts them. */
 const GRAPHIFY_SECRET_EXCLUDE_ARGS = [
@@ -377,10 +377,22 @@ function withTtyExitCode(
   return { exitCode: Number(match[1]), stdout: stdout.replace(marker, ""), stderr };
 }
 
-/** Points Mate at the recording OpenSpec stub once a setup has written it. */
+/**
+ * Points Mate at the recording OpenSpec stub once a setup has written it. BUN_OPTIONS
+ * splits on whitespace and ignores quotes, so the preload is linked into the scenario's
+ * temp root rather than named by its checkout path, which may contain spaces.
+ */
 function openSpecStubEnv(scenario: E2EScenario): NodeJS.ProcessEnv {
   const stub = path.join(scenario.bin, "openspec");
-  return existsSync(stub) ? { [OPENSPEC_BIN_OVERRIDE_ENV]: stub } : {};
+  if (!existsSync(stub)) return {};
+  const preload = path.join(scenario.root, "openspec-stub-preload.ts");
+  if (/\s/.test(preload)) throw new Error(`BUN_OPTIONS cannot name a path with spaces: ${preload}`);
+  if (!existsSync(preload)) symlinkSync(OPENSPEC_STUB_PRELOAD, preload);
+  const inherited = process.env.BUN_OPTIONS?.trim();
+  return {
+    BUN_OPTIONS: [inherited, `--preload ${preload}`].filter(Boolean).join(" "),
+    MATE_E2E_OPENSPEC_STUB: stub,
+  };
 }
 
 async function setupCompanion(
@@ -2902,5 +2914,59 @@ describe("mate studio e2e", () => {
     } finally {
       await studio.stop("SIGINT");
     }
+  });
+});
+
+describe("openspec wrapper e2e", () => {
+  const WRAPPER = path.resolve(APP_ROOT, "../../packages/mate-core/wrappers/bin/openspec");
+
+  /** Runs the shipped wrapper on the real bundled CLI: no preload, a decoy first on PATH. */
+  function runWrapper(scenario: E2EScenario, cwd: string, args: string[]) {
+    const decoy = path.join(scenario.bin, "openspec");
+    return spawnSync(WRAPPER, args, {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: scenario.home,
+        XDG_CONFIG_HOME: path.join(scenario.home, ".config"),
+        XDG_DATA_HOME: path.join(scenario.home, ".local", "share"),
+        PATH: `${scenario.bin}:${process.env.PATH ?? ""}`,
+        CI: "1",
+        BUN_OPTIONS: "",
+        MATE_E2E_OPENSPEC_BIN: decoy,
+        MATE_ARTIFACT_PATH: scenario.companion,
+        MATE_REPO_PATH: "",
+        MATE_REPO_ID: "",
+        MATE_VERSION: "",
+        MATE_POLICY_JSON: "",
+      },
+    });
+  }
+
+  test("runs the pinned bundled CLI in the companion, never a decoy or the former override", async () => {
+    const scenario = await createScenario("mate-cli-e2e-openspec-wrapper-");
+    await fs.writeFile(
+      path.join(scenario.bin, "openspec"),
+      '#!/bin/sh\necho "9.9.9-decoy"\n',
+      "utf8",
+    );
+    await fs.chmod(path.join(scenario.bin, "openspec"), 0o755);
+    const corePackage = JSON.parse(
+      await fs.readFile(path.resolve(path.dirname(WRAPPER), "../../package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+
+    const versionRun = runWrapper(scenario, scenario.root, ["--version"]);
+    expect(versionRun.stderr).toBe("");
+    expect(versionRun.stdout.trim()).toBe(corePackage.dependencies["@fission-ai/openspec"]);
+
+    const init = runWrapper(scenario, scenario.root, ["init", "--tools", "none", "--no-animation"]);
+    expect(init.status).toBe(0);
+
+    const nested = path.join(scenario.companion, "acme");
+    await fs.mkdir(nested);
+    const list = runWrapper(scenario, nested, ["list", "--json"]);
+    expect(list.status).toBe(0);
+    expect(JSON.parse(list.stdout).root.path).toBe(scenario.companion);
   });
 });

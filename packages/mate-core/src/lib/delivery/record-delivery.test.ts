@@ -382,13 +382,13 @@ describe("recordDelivery refresh", () => {
 
   test("the PR number of an edited PR picks the lookup", async () => {
     await link("x", "change/x");
-    let asked: number | undefined;
+    const asked: Array<number | undefined> = [];
     const { accessFor } = fakeAccess();
     const access = accessFor(APP);
     const forge = await access.forge();
     if (!("adapter" in forge)) throw new Error("expected an adapter");
     forge.adapter.pullsForBranch = async (_repo, _branch, prNumber) => {
-      asked = prNumber;
+      asked.push(prNumber);
       return { ok: true, value: { kind: "none" } };
     };
     await recordDelivery(
@@ -399,7 +399,8 @@ describe("recordDelivery refresh", () => {
         repositoryAccess: () => ({ ...access, forge: async () => forge }),
       },
     );
-    expect(asked).toBe(12);
+    // No PR #12 on the forge, so the branch is asked about without it.
+    expect(asked).toEqual([12, undefined]);
   });
 
   test("an edited PR number is not applied to another repository's delivery", async () => {
@@ -409,7 +410,7 @@ describe("recordDelivery refresh", () => {
         branch: "b",
       }),
     );
-    const asked: Record<string, number | undefined> = {};
+    const asked: Record<string, Array<number | undefined>> = {};
     const { accessFor } = fakeAccess();
     await recordDelivery(
       environment(),
@@ -424,7 +425,7 @@ describe("recordDelivery refresh", () => {
               const forge = await access.forge();
               if (!("adapter" in forge)) throw new Error("expected an adapter");
               forge.adapter.pullsForBranch = async (_repo, _branch, prNumber) => {
-                asked[repository] = prNumber;
+                (asked[repository] ??= []).push(prNumber);
                 return { ok: true, value: { kind: "none" } };
               };
               return forge;
@@ -433,7 +434,7 @@ describe("recordDelivery refresh", () => {
         },
       },
     );
-    expect(asked).toEqual({ [APP]: 12, [LIB]: undefined });
+    expect(asked).toEqual({ [APP]: [12, undefined], [LIB]: [undefined] });
   });
 });
 

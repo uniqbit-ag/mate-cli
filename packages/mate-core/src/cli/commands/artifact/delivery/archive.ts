@@ -1,19 +1,9 @@
-import { companionRelative } from "../../../../lib/delivery/environment";
-import { archiveWarnings, type ArchiveWarning } from "../../../../lib/delivery/overlap";
 import {
-  isPublishable,
-  locateChangeDir,
-  settleDelivery,
-  type DeliveryRecord,
-  type DeliverySettlement,
-} from "../../../../lib/delivery/record";
-import {
-  recordDelivery,
-  type DeliveryRefusal,
-  type RecordDeliveryDeps,
-} from "../../../../lib/delivery/record-delivery";
-import type { BranchOutcome } from "../../../../lib/delivery/refresh";
-import { runOpenSpec, type RunOpenSpec } from "../../../../lib/openspec-cli";
+  archiveChange,
+  type ArchiveChangeDeps,
+  type ArchiveResult,
+} from "../../../../lib/delivery/archive-change";
+import type { DeliveryRefusal } from "../../../../lib/delivery/record-delivery";
 import { type BooleanFlagSet, parseFlags, positionalArgs } from "../../../parse-flags";
 import {
   branchFlagsFrom,
@@ -31,29 +21,13 @@ import {
   unscopedDeliveryWarning,
 } from "./output";
 
-export interface ArchiveCommandDeps extends DeliveryEnvironmentDeps, RecordDeliveryDeps {
-  runOpenSpec?: RunOpenSpec;
+export interface ArchiveCommandDeps
+  extends DeliveryEnvironmentDeps, Omit<ArchiveChangeDeps, "onWarnings"> {
   stdout?: (line: string) => void;
   stderr?: (line: string) => void;
 }
 
 const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["json", "direct", "skip-branch"]);
-
-export type ArchiveStatus = "archived" | "needs-branch" | "failed";
-
-export interface ArchiveResult {
-  status: ArchiveStatus;
-  change: string;
-  /** Companion-relative archive directory, once archived. */
-  path: string | null;
-  record: DeliveryRecord;
-  settlement: DeliverySettlement;
-  outcomes: BranchOutcome[];
-  warnings: ArchiveWarning[];
-  /** `needs-branch` only: the branch to suggest, when it exists. */
-  suggestedBranch?: string | null;
-  message: string;
-}
 
 function refusalMessage(refusal: DeliveryRefusal): string {
   if (refusal.reason === "unknown-change") {
@@ -74,8 +48,8 @@ function renderHuman(result: ArchiveResult): string[] {
 /**
  * @command mate artifact archive <change>
  * @description Archives an active change whether or not its delivery is merged, so a
- * feature's later changes build on its canonical specs. Writes overlap and dependency
- * warnings to stderr before archiving, refreshes merge state from the forge when a token
+ * feature's later changes build on its canonical specs. Writes overlap, dependency, and
+ * incomplete-planning warnings to stderr before archiving, refreshes merge state from the forge when a token
  * is available, always leaves a `delivery.yaml` (unlinked when none was recorded), then
  * runs `openspec archive` with the bundled CLI. Merge state is reported, never a refusal.
  * @flags
@@ -118,84 +92,26 @@ export async function runArtifactArchiveCommand(
   if ("error" in environment) return refuse(environment.error);
   const repository = canonicalRepository(environment, requested.repository);
   const delivery = deliveryEditFrom(branchFlags);
-  const outcome = await recordDelivery(
+  const outcome = await archiveChange(
     environment,
     {
-      changes: [change],
+      change,
       ...(repository ? { repository } : {}),
-      ...(delivery ? { edit: { delivery } } : {}),
-      refresh: true,
-      requireDelivery: !skip,
+      ...(delivery ? { delivery } : {}),
+      skipBranch: skip,
     },
-    deps,
+    {
+      ...deps,
+      onWarnings: (warnings, unscoped) => {
+        for (const warning of warnings) emitErr(`warning: ${warning.message}`);
+        for (const entry of unscoped) emitErr(unscopedDeliveryWarning(change, entry));
+      },
+    },
   );
   if ("refusal" in outcome) return refuse(refusalMessage(outcome.refusal));
 
-  const warnings = await archiveWarnings(environment.companionPath, change);
-  const emit = (result: ArchiveResult): void => {
-    if (json) emitOut(JSON.stringify(result));
-    else for (const line of renderHuman(result)) emitOut(line);
-  };
-
-  // A `needs-branch` run archives nothing, so its warnings go to stderr only on the re-run.
-  if ("needsBranch" in outcome) {
-    const { record, suggestedBranch } = outcome.needsBranch;
-    return emit({
-      status: "needs-branch",
-      change,
-      path: null,
-      record,
-      settlement: settleDelivery(record),
-      outcomes: [],
-      warnings,
-      suggestedBranch,
-      message: `No delivery branch is recorded for ${change}. Re-run with --branch <branch>, --not-applicable <reason>, or --skip-branch.`,
-    });
-  }
-
-  const [{ record, settlement, outcomes }] = outcome.results;
-  for (const warning of warnings) emitErr(`warning: ${warning.message}`);
-  for (const entry of settlement.unscoped) emitErr(unscopedDeliveryWarning(change, entry));
-
-  const run = await (deps.runOpenSpec ?? runOpenSpec)(["archive", change, "--yes"], {
-    cwd: environment.companionPath,
-  });
-  if (run.code !== 0) {
-    process.exitCode = 1;
-    const detail = (run.stderr.trim() || run.stdout.trim()).split("\n").slice(-5).join("\n");
-    return emit({
-      status: "failed",
-      change,
-      path: null,
-      record,
-      settlement,
-      outcomes,
-      warnings,
-      message: `openspec archive ${change} failed (exit ${run.code ?? "unknown"}): ${detail}`,
-    });
-  }
-
-  const archived = await locateChangeDir(environment.companionPath, change);
-  const archivePath = archived?.archived ? companionRelative(environment, archived.dir) : null;
-  emit({
-    status: "archived",
-    change,
-    path: archivePath,
-    record,
-    settlement,
-    outcomes,
-    warnings,
-    message: archivedMessage(change, settlement),
-  });
-}
-
-function archivedMessage(change: string, settlement: DeliverySettlement): string {
-  if (isPublishable(settlement.status)) {
-    return `Archived ${change}; it can be published with mate-publish-artifact.`;
-  }
-  const missing =
-    settlement.missing.length > 0
-      ? ` No delivery is recorded for ${settlement.missing.join(", ")}, which its scopes name.`
-      : "";
-  return `Archived ${change}; publication waits until its delivery is merged (${settlement.status}).${missing}`;
+  const { result } = outcome;
+  if (result.status === "failed") process.exitCode = 1;
+  if (json) emitOut(JSON.stringify(result));
+  else for (const line of renderHuman(result)) emitOut(line);
 }

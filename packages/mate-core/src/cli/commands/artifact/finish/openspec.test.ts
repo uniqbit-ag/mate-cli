@@ -98,6 +98,30 @@ describe("openspecFinisher.resolve", () => {
     expect(result.ok ? "" : result.message).toContain("openspec archive my-change");
   });
 
+  test("a dated anchor that is a file is not an archive", async () => {
+    const root = await makeCompanion();
+    const archive = path.join(root, "openspec", "changes", "archive");
+    await fs.mkdir(archive, { recursive: true });
+    await fs.writeFile(path.join(archive, "2026-07-14-my-change"), "not a dir\n", "utf8");
+
+    const anchored = await resolve(root, "2026-07-14-my-change");
+    expect(anchored.ok ? "" : anchored.message).toContain(
+      "no archive at openspec/changes/archive/2026-07-14-my-change",
+    );
+    expect((await resolve(root, "my-change")).ok).toBe(false);
+  });
+
+  test("a path-like target resolves to nothing", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-07-14-my-change");
+    await fs.mkdir(path.join(root, "openspec", "my-change"), { recursive: true });
+
+    for (const target of ["../my-change", "archive", "a/b"]) {
+      const result = await resolve(root, target);
+      expect(result.ok ? "" : result.message).toContain(`no archived change matches "${target}"`);
+    }
+  });
+
   test("a bare name matching exactly one archive resolves it", async () => {
     const root = await makeCompanion();
     await seedArchive(root, "2026-07-14-my-change");

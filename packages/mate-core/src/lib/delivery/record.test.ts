@@ -7,9 +7,9 @@ import {
   DELIVERY_FILE,
   defaultDeliveryBranch,
   isPublishable,
-  locateChangeDir,
   readDeliveryRecord,
   readDeliveryState,
+  readOrUnlinkedRecord,
   settleDelivery,
   unlinkedRecord,
   upsertDelivery,
@@ -195,6 +195,23 @@ describe("delivery record", () => {
     expect(record.deliveries[0]).toEqual({ repository: REPO, branch: "release/x", direct: true });
   });
 
+  test("a different PR drops the merge result; the same PR keeps it", () => {
+    const merged = upsertDelivery(unlinkedRecord("x"), REPO, {
+      branch: "change/x",
+      pr: "https://github.com/acme/acme-app/pull/3",
+      merge: { state: "merged", source: "forge", checkedAt: "t" },
+    });
+    const same = upsertDelivery(merged, REPO, { pr: "https://github.com/acme/acme-app/pull/3" });
+    expect(same.deliveries[0].merge?.state).toBe("merged");
+    const other = upsertDelivery(merged, REPO, { pr: "https://github.com/acme/acme-app/pull/7" });
+    expect(other.deliveries[0]).toEqual({
+      repository: REPO,
+      branch: "change/x",
+      pr: "https://github.com/acme/acme-app/pull/7",
+    });
+    expect(settleDelivery(other).status).toBe("waiting");
+  });
+
   test("a repository differing only by case edits the same delivery and keeps its spelling", () => {
     let record = upsertDelivery(unlinkedRecord("x"), "Acme/Api", { branch: "change/x" });
     record = upsertDelivery(record, "acme/api", {
@@ -222,36 +239,7 @@ describe("delivery record", () => {
   });
 });
 
-describe("locateChangeDir", () => {
-  test("finds an active change, then the newest archive of that name", async () => {
-    const changes = path.join(companion, "openspec", "changes");
-    await fs.mkdir(path.join(changes, "archive", "2026-01-01-x"), { recursive: true });
-    await fs.mkdir(path.join(changes, "archive", "2026-02-01-x"), { recursive: true });
-    await fs.mkdir(path.join(changes, "archive", "2026-03-01-xy"), { recursive: true });
-    expect(await locateChangeDir(companion, "x")).toEqual({
-      dir: path.join(changes, "archive", "2026-02-01-x"),
-      archived: true,
-    });
-
-    await fs.mkdir(path.join(changes, "x"));
-    expect(await locateChangeDir(companion, "x")).toEqual({
-      dir: path.join(changes, "x"),
-      archived: false,
-    });
-    expect(await locateChangeDir(companion, "2026-01-01-x")).toEqual({
-      dir: path.join(changes, "archive", "2026-01-01-x"),
-      archived: true,
-    });
-    expect(await locateChangeDir(companion, "missing")).toBeNull();
-  });
-
-  test("a name that is not one path segment resolves to nothing", async () => {
-    await fs.mkdir(path.join(companion, "openspec", "changes", "archive"), { recursive: true });
-    for (const name of ["../..", "..", ".", "a/b", "../changes", ""]) {
-      expect(await locateChangeDir(companion, name)).toBeNull();
-    }
-  });
-
+describe("delivery records across archive", () => {
   test("a record written to an active change is still read after the directory moves", async () => {
     const active = path.join(companion, "openspec", "changes", "x");
     await fs.mkdir(active, { recursive: true });
@@ -260,6 +248,19 @@ describe("locateChangeDir", () => {
     await fs.mkdir(path.dirname(archived), { recursive: true });
     await fs.rename(active, archived);
     expect((await readDeliveryRecord(archived))?.deliveries[0].branch).toBe("b");
+  });
+
+  test("an archived record without a change field is named after the change, not the anchor", async () => {
+    const archived = path.join(companion, "2026-10-28-acme");
+    await fs.mkdir(archived);
+    await fs.writeFile(path.join(archived, DELIVERY_FILE), `deliveries: []\n`);
+    expect((await readDeliveryRecord(archived))?.change).toBe("acme");
+  });
+
+  test("a renamed change's record takes the requested name, not the stale one in the file", async () => {
+    await writeDeliveryRecord(companion, unlinkedRecord("acme"));
+    expect((await readOrUnlinkedRecord(companion, "acme-v2")).change).toBe("acme-v2");
+    expect((await readOrUnlinkedRecord(companion, "2026-10-28-acme-v2")).change).toBe("acme-v2");
   });
 });
 

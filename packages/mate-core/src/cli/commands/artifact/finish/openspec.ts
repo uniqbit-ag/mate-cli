@@ -8,7 +8,18 @@ import {
   legacyDeliveryWarning,
   readDeliveryState,
 } from "../../../../lib/delivery/record";
+import {
+  ARCHIVE_RELATIVE_DIR,
+  archiveAnchors,
+  archiveDirOf,
+  CHANGES_RELATIVE_DIR,
+  deltaSpecs,
+  isChangeName,
+  parseAnchor,
+  SPECS_RELATIVE_DIR,
+} from "../../../../lib/change-layout";
 import { FRONTMATTER_PATTERN } from "../../../../lib/frontmatter";
+import { pathIsDirectory } from "../../../../lib/fs-utils";
 import {
   BOM,
   DELTA_COMMENT_PATTERN,
@@ -21,16 +32,11 @@ import {
   canonicalSpecsFor,
   discoverArchives,
   pendingArchives,
-  SPECS_RELATIVE_DIR,
   unattributedSpecs,
   type ArchiveEntry,
 } from "../pending/discovery";
 import type { ArtifactFinisher, FinishContext, Produced, ResolveResult } from "./finisher";
 import type { GitOps } from "./git";
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 async function pathExists(candidate: string): Promise<boolean> {
   try {
@@ -40,9 +46,6 @@ async function pathExists(candidate: string): Promise<boolean> {
     return false;
   }
 }
-
-/** A dated archive anchor; group 1 is the change name the archive was created from. */
-const ANCHOR_PATTERN = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
 
 /**
  * The publication commit's exact scope. The active-change path is included only when it
@@ -54,30 +57,14 @@ async function commitPathsForArchive(
   name: string,
   anchorName: string,
 ): Promise<string[]> {
-  const archiveRelative = path.posix.join("openspec", "changes", "archive", anchorName);
-  const activeRelative = path.posix.join("openspec", "changes", name);
-  const deltaSpecsDir = path.join(companionPath, archiveRelative, "specs");
-  const canonicalSpecs: string[] = [];
-  const collectDeltaSpecFiles = async (directory: string, relative = ""): Promise<void> => {
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      const entryRelative = path.posix.join(relative, entry.name);
-      if (entry.isDirectory()) {
-        await collectDeltaSpecFiles(path.join(directory, entry.name), entryRelative);
-      } else if (entry.isFile()) {
-        canonicalSpecs.push(path.posix.join("openspec", "specs", entryRelative));
-      }
-    }
-  };
-  try {
-    await collectDeltaSpecFiles(deltaSpecsDir);
-  } catch {
-    // Changes without delta specs still commit their active deletion and archive.
-  }
+  const archiveRelative = `${ARCHIVE_RELATIVE_DIR}/${anchorName}`;
+  const activeRelative = `${CHANGES_RELATIVE_DIR}/${name}`;
+  // Changes without delta specs still commit their active deletion and archive.
+  const canonicalSpecs = await deltaSpecs(path.join(companionPath, archiveRelative));
   return [
     ...((await pathExists(path.join(companionPath, activeRelative))) ? [] : [activeRelative]),
     archiveRelative,
-    ...canonicalSpecs.toSorted(),
+    ...canonicalSpecs.map((spec) => spec.canonical),
   ];
 }
 
@@ -183,76 +170,50 @@ async function reconcileMainSpecFrontmatter(
 ): Promise<string[]> {
   if (!(await archivedChangeUsesMateSchema(companionPath, anchorName))) return [];
 
-  const deltaSpecsDir = path.join(
-    companionPath,
-    "openspec",
-    "changes",
-    "archive",
-    anchorName,
-    "specs",
-  );
+  const archiveDir = path.join(archiveDirOf(companionPath), anchorName);
   const reconciled: string[] = [];
 
-  const walk = async (directory: string, relative = ""): Promise<void> => {
-    let entries;
+  for (const { file, canonical: canonicalRelative, capability } of await deltaSpecs(archiveDir)) {
+    if (capability === null) continue;
+    const canonicalPath = path.join(companionPath, canonicalRelative);
+
     try {
-      entries = await fs.readdir(directory, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const entryRelative = path.posix.join(relative, entry.name);
-      if (entry.isDirectory()) {
-        await walk(path.join(directory, entry.name), entryRelative);
+      const canonical = (await fs.readFile(canonicalPath, "utf8")).replace(BOM, "");
+      /** The body that follows the written block: the whole file, or what trails a delta-shaped header. */
+      let body = `\n${canonical}`;
+      if (DELTA_COMMENT_OPENER.test(canonical)) {
+        const header = DELTA_COMMENT_PATTERN.exec(canonical);
+        if (!header) continue;
+        body = canonical.slice(header[0].length);
+      } else if (canonical.startsWith("---")) {
+        const header = FRONTMATTER_PATTERN.exec(canonical);
+        if (!header || !isDeltaShapedFrontmatter(header[1])) continue;
+        body = canonical.slice(header[0].length);
+      }
+
+      const deltaSource = await fs.readFile(path.join(archiveDir, "specs", file), "utf8");
+      const scopes = parseScopes(deltaSource);
+      const projected = projectDeltaScopes(scopes);
+
+      /** Multi-repository is invalid input, so skip; absent scopes still earn a partial block. */
+      if (!projected.ok && scopes.length > 0) {
+        process.stderr.write(
+          `mate: skipped frontmatter for ${canonicalRelative}: ${projected.reason}\n`,
+        );
         continue;
       }
-      if (!entry.isFile() || entry.name !== "spec.md") continue;
-
-      const capability = path.posix.dirname(entryRelative);
-      if (capability === ".") continue;
-      const canonicalRelative = path.posix.join("openspec", "specs", entryRelative);
-      const canonicalPath = path.join(companionPath, canonicalRelative);
-
-      try {
-        const canonical = (await fs.readFile(canonicalPath, "utf8")).replace(BOM, "");
-        /** The body that follows the written block: the whole file, or what trails a delta-shaped header. */
-        let body = `\n${canonical}`;
-        if (DELTA_COMMENT_OPENER.test(canonical)) {
-          const header = DELTA_COMMENT_PATTERN.exec(canonical);
-          if (!header) continue;
-          body = canonical.slice(header[0].length);
-        } else if (canonical.startsWith("---")) {
-          const header = FRONTMATTER_PATTERN.exec(canonical);
-          if (!header || !isDeltaShapedFrontmatter(header[1])) continue;
-          body = canonical.slice(header[0].length);
-        }
-
-        const deltaSource = await fs.readFile(path.join(directory, entry.name), "utf8");
-        const scopes = parseScopes(deltaSource);
-        const projected = projectDeltaScopes(scopes);
-
-        /** Multi-repository is invalid input, so skip; absent scopes still earn a partial block. */
-        if (!projected.ok && scopes.length > 0) {
-          process.stderr.write(
-            `mate: skipped frontmatter for ${canonicalRelative}: ${projected.reason}\n`,
-          );
-          continue;
-        }
-        const head = renderCanonicalFrontmatter(
-          capability,
-          projected.ok ? { repository: projected.repository, areas: projected.areas } : null,
-        );
-        await fs.writeFile(canonicalPath, head + body, "utf8");
-        reconciled.push(canonicalRelative);
-      } catch (error) {
-        process.stderr.write(
-          `mate: could not reconcile frontmatter for ${canonicalRelative}: ${String(error)}\n`,
-        );
-      }
+      const head = renderCanonicalFrontmatter(
+        capability,
+        projected.ok ? { repository: projected.repository, areas: projected.areas } : null,
+      );
+      await fs.writeFile(canonicalPath, head + body, "utf8");
+      reconciled.push(canonicalRelative);
+    } catch (error) {
+      process.stderr.write(
+        `mate: could not reconcile frontmatter for ${canonicalRelative}: ${String(error)}\n`,
+      );
     }
-  };
-
-  await walk(deltaSpecsDir);
+  }
   return reconciled;
 }
 
@@ -287,9 +248,7 @@ async function capSync(context: FinishContext): Promise<boolean> {
 
 /** Why an archive's delivery keeps it unpublished, or null when it may be published. */
 async function deliveryHold(companionPath: string, anchorName: string): Promise<string | null> {
-  const delivery = await readDeliveryState(
-    path.join(companionPath, "openspec", "changes", "archive", anchorName),
-  );
+  const delivery = await readDeliveryState(path.join(archiveDirOf(companionPath), anchorName));
   if (delivery.error) return `mate: refusing to publish ${anchorName}: ${delivery.error}`;
   if (isPublishable(delivery.status)) return null;
   const waiting = delivery.unsettled.length > 0 ? ` (${delivery.unsettled.join(", ")})` : "";
@@ -372,9 +331,7 @@ async function resolved(
     context.holdCache,
   );
   if (hold) return { ok: false, message: hold };
-  const delivery = await readDeliveryState(
-    path.join(companionPath, "openspec", "changes", "archive", anchorName),
-  );
+  const delivery = await readDeliveryState(path.join(archiveDirOf(companionPath), anchorName));
   const commitPaths = await commitPathsForArchive(companionPath, name, anchorName);
   await reconcileMainSpecFrontmatter(companionPath, anchorName);
   return {
@@ -555,35 +512,30 @@ export function openspecFinisher(contextOrPath: FinishContext | string): Artifac
       return hasOpenspecCapability(capabilities);
     },
     async resolve(target) {
-      const archiveRoot = path.join(companionPath, "openspec", "changes", "archive");
-      const anchor = ANCHOR_PATTERN.exec(target);
+      /** A path-like target names no archive; refuse before touching the filesystem. */
+      if (!isChangeName(target)) {
+        return {
+          ok: false,
+          message: `mate: no archived change matches "${target}". Pass a change name or a dated archive anchor.`,
+        };
+      }
+      const anchor = parseAnchor(target);
 
       /** A dated anchor names exactly one directory; no name matching can widen it. */
       if (anchor) {
-        if (!(await pathExists(path.join(archiveRoot, target)))) {
+        if (!(await pathIsDirectory(path.join(archiveDirOf(companionPath), target)))) {
           return {
             ok: false,
-            message: `mate: no archive at openspec/changes/archive/${target}. Archive the change first with \`openspec archive ${anchor[2]}\`.`,
+            message: `mate: no archive at ${ARCHIVE_RELATIVE_DIR}/${target}. Archive the change first with \`openspec archive ${anchor.name}\`.`,
           };
         }
-        return resolved(context, anchor[2], target);
+        return resolved(context, anchor.name, target);
       }
 
-      const pattern = new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${escapeRegExp(target)}$`);
-      let matches: string[] = [];
-      try {
-        const entries = await fs.readdir(archiveRoot, { withFileTypes: true });
-        matches = [];
-        for (const entry of entries) {
-          if (entry.isDirectory() && pattern.test(entry.name)) matches.push(entry.name);
-        }
-        matches = matches.toSorted();
-      } catch {
-        /** No archive directory at all: nothing can match. */
-      }
+      const matches = await archiveAnchors(companionPath, target);
 
       if (matches.length === 0) {
-        const active = await pathExists(path.join(companionPath, "openspec", "changes", target));
+        const active = await pathExists(path.join(companionPath, CHANGES_RELATIVE_DIR, target));
         return {
           ok: false,
           message: active

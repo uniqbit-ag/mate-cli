@@ -1,6 +1,6 @@
 ---
 name: mate-archive-change
-description: Archive a change through mate artifact archive, which records its delivery, reports merge state and overlap warnings, and runs the OpenSpec archive, also before the merge. Use when the user wants to archive, finalize, or close out an implemented change.
+description: Archive a change through mate artifact archive, which records its delivery, reports merge state and its warnings, and runs the OpenSpec archive, also before the merge. Use when the user wants to archive, finalize, or close out an implemented change.
 allowed-tools: Bash(mate:*), Bash(git:*)
 license: MIT
 compatibility: Requires the mate CLI and the openspec capability enabled.
@@ -39,7 +39,8 @@ merge. Archiving is local and uncommitted; it publishes nothing.
    - `--skip-branch` — when the user skips the question; publication will ask again.
 
 3. **Report.** Relay every entry of `warnings` first: another active change that
-   modifies the same requirement, or a declared dependency that is not archived yet.
+   modifies the same requirement, a declared dependency that is not archived yet, or
+   planning artifacts its schema requires that are missing (`incomplete-planning`).
    Warnings never block. Then report the archive `path` and the delivery: each branch
    with its merge result and source (`forge` or `user`) and PR link, or the
    not-applicable reason. An open or unknown merge is information, not a failure.

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { parse, stringify } from "yaml";
 import { errorMessage } from "../../runtime/error-message";
-import { pathIsDirectory } from "../fs-utils";
+import { changeNameOf } from "../change-layout";
 import { scopedRepositories } from "../openspec-scopes";
 
 /** The Delivery Record's file name at a change root; it moves with the change into its archive. */
@@ -128,7 +128,8 @@ export function findDelivery(record: DeliveryRecord, repository: string): Delive
  * Applies `patch` to the repository's delivery, creating it when absent; an existing
  * delivery keeps its spelling of the repository. A branch and a not-applicable reason
  * exclude each other, and a new branch or a switch between direct and PR delivery drops
- * the previous merge result and PR, which described a different delivery.
+ * the previous merge result and PR, which described a different delivery; a different PR
+ * drops the merge result.
  */
 export function upsertDelivery(
   record: DeliveryRecord,
@@ -147,7 +148,10 @@ export function upsertDelivery(
       next = { repository, branch: patch.branch ?? next.branch };
     }
     if (patch.direct !== undefined) next.direct = patch.direct;
-    if (patch.pr !== undefined) next.pr = patch.pr;
+    if (patch.pr !== undefined && patch.pr !== next.pr) {
+      delete next.merge;
+      next.pr = patch.pr;
+    }
     if (patch.merge !== undefined) next.merge = patch.merge;
     if (next.direct === false) delete next.direct;
   }
@@ -278,17 +282,23 @@ export async function readDeliveryRecord(changeDir: string): Promise<DeliveryRec
   if (!Array.isArray(deliveries)) throw malformed(file, "deliveries must be a list");
   return {
     version: 1,
-    change: optionalString(document.change, file, "change") ?? path.basename(changeDir),
+    change:
+      optionalString(document.change, file, "change") ?? changeNameOf(path.basename(changeDir)),
     deliveries: deliveries.map((entry) => parseDelivery(entry, file)),
   };
 }
 
-/** The change's record, or an unlinked one when none was written yet. */
+/**
+ * The change's record, or an unlinked one when none was written yet. The name comes from
+ * `change`, not the file, so a renamed change's record follows its directory.
+ */
 export async function readOrUnlinkedRecord(
   changeDir: string,
   change: string,
 ): Promise<DeliveryRecord> {
-  return (await readDeliveryRecord(changeDir)) ?? unlinkedRecord(changeNameOf(change));
+  const name = changeNameOf(change);
+  const record = await readDeliveryRecord(changeDir);
+  return record ? { ...record, change: name } : unlinkedRecord(name);
 }
 
 /** A change's record with its settlement; `error` names a record that exists but cannot be read. */
@@ -330,57 +340,4 @@ export async function writeDeliveryRecord(
   record: DeliveryRecord,
 ): Promise<void> {
   await fs.writeFile(path.join(changeDir, DELIVERY_FILE), stringify(record), "utf8");
-}
-
-/** The `YYYY-MM-DD-` prefix `openspec archive` puts before a change name. */
-export const ARCHIVE_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}-/;
-
-/** The change name of an archive anchor (`2026-01-02-acme` → `acme`); other names pass through. */
-export function changeNameOf(anchor: string): string {
-  return anchor.replace(ARCHIVE_DATE_PREFIX, "");
-}
-
-/** The companion's `openspec/changes` directory. */
-export function changesDirOf(companionPath: string): string {
-  return path.join(companionPath, "openspec", "changes");
-}
-
-export interface ChangeLocation {
-  dir: string;
-  archived: boolean;
-}
-
-/** A change name or archive anchor: one path segment, never `.`, `..`, or a separator. */
-const CHANGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
-/**
- * Resolves a change name to its directory: the active change first, then the newest
- * archive of exactly that name. A dated anchor resolves to that archive. A name that is
- * not a single path segment resolves to nothing.
- */
-export async function locateChangeDir(
-  companionPath: string,
-  name: string,
-): Promise<ChangeLocation | null> {
-  if (!CHANGE_NAME.test(name)) return null;
-  const changesDir = changesDirOf(companionPath);
-  const archiveDir = path.join(changesDir, "archive");
-  if (ARCHIVE_DATE_PREFIX.test(name) && (await pathIsDirectory(path.join(archiveDir, name)))) {
-    return { dir: path.join(archiveDir, name), archived: true };
-  }
-  if (name !== "archive" && (await pathIsDirectory(path.join(changesDir, name)))) {
-    return { dir: path.join(changesDir, name), archived: false };
-  }
-  let anchors: string[];
-  try {
-    anchors = await fs.readdir(archiveDir);
-  } catch {
-    return null;
-  }
-  const newest = anchors
-    .filter((anchor) => ARCHIVE_DATE_PREFIX.test(anchor))
-    .filter((anchor) => changeNameOf(anchor) === name)
-    .toSorted()
-    .at(-1);
-  return newest ? { dir: path.join(archiveDir, newest), archived: true } : null;
 }

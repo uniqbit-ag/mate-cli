@@ -8,7 +8,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import {
   locateOpenSpec,
-  OPENSPEC_BIN_OVERRIDE_ENV,
   OPENSPEC_ENV,
   openSpecCliDeps,
   resolveOpenSpec,
@@ -84,7 +83,7 @@ describe("resolveOpenSpec", () => {
     const root = makeTempDir("acme-openspec-hoisted-");
     const bin = installOpenSpec(root);
 
-    expect(resolveOpenSpec(resolveFrom(path.join(root, MATE_CORE)), {})).toEqual({
+    expect(resolveOpenSpec(resolveFrom(path.join(root, MATE_CORE)))).toEqual({
       bin,
       version: "9.9.9",
     });
@@ -95,7 +94,7 @@ describe("resolveOpenSpec", () => {
     installOpenSpec(root, "1.0.0");
     const nested = installOpenSpec(path.join(root, MATE_CORE));
 
-    expect(resolveOpenSpec(resolveFrom(path.join(root, MATE_CORE)), {})).toEqual({
+    expect(resolveOpenSpec(resolveFrom(path.join(root, MATE_CORE)))).toEqual({
       bin: nested,
       version: "9.9.9",
     });
@@ -106,7 +105,7 @@ describe("resolveOpenSpec", () => {
       throw new Error("Cannot find module '@fission-ai/openspec'");
     };
 
-    expect(resolveOpenSpec(resolve, {})).toEqual({
+    expect(resolveOpenSpec(resolve)).toEqual({
       missing: expect.stringMatching(/Reinstall Mate/),
     });
   });
@@ -115,17 +114,8 @@ describe("resolveOpenSpec", () => {
     const root = makeTempDir("acme-openspec-no-bin-");
     fs.rmSync(installOpenSpec(root));
 
-    expect(resolveOpenSpec(resolveFrom(path.join(root, MATE_CORE)), {})).toEqual({
+    expect(resolveOpenSpec(resolveFrom(path.join(root, MATE_CORE)))).toEqual({
       missing: expect.stringMatching(/openspec\.js\. Reinstall Mate/),
-    });
-  });
-
-  test("honors the test-only override, without a version when it has no manifest", () => {
-    const resolve = () => "/acme/unused";
-
-    expect(resolveOpenSpec(resolve, { [OPENSPEC_BIN_OVERRIDE_ENV]: "/acme/openspec" })).toEqual({
-      bin: "/acme/openspec",
-      version: undefined,
     });
   });
 });
@@ -138,7 +128,7 @@ describe("the wrapper and Mate resolve the same CLI", () => {
     return coreRoot;
   }
 
-  function wrapperResolves(coreRoot: string, env: Record<string, string> = {}): string {
+  function wrapperResolves(coreRoot: string): string {
     const companion = makeTempDir("acme-openspec-companion-");
     const inherited = Object.fromEntries(
       Object.entries(process.env).filter(([key]) => !key.startsWith("MATE_")),
@@ -146,14 +136,14 @@ describe("the wrapper and Mate resolve the same CLI", () => {
     const result = spawnSync(path.join(coreRoot, "wrappers", "bin", "openspec"), ["list"], {
       cwd: companion,
       encoding: "utf8",
-      env: { ...inherited, MATE_ARTIFACT_PATH: companion, ...env },
+      env: { ...inherited, MATE_ARTIFACT_PATH: companion },
     });
     expect(result.stderr).toBe("");
     return result.stdout.trim();
   }
 
-  function mateResolves(coreRoot: string, env: Record<string, string> = {}): string {
-    const location = resolveOpenSpec(resolveFrom(coreRoot), env);
+  function mateResolves(coreRoot: string): string {
+    const location = resolveOpenSpec(resolveFrom(coreRoot));
     if (!("bin" in location)) throw new Error(location.missing);
     return location.bin;
   }
@@ -165,19 +155,6 @@ describe("the wrapper and Mate resolve the same CLI", () => {
 
     expect(wrapperResolves(coreRoot)).toBe(bin);
     expect(mateResolves(coreRoot)).toBe(bin);
-  });
-
-  test("with the test-only override", () => {
-    const root = makeTempDir("acme-openspec-parity-override-");
-    const coreRoot = installMateCore(root);
-    installOpenSpec(root);
-    const standIn = writeExecutable(path.join(makeTempDir("acme-stand-in-"), "openspec"), [
-      'echo "$0"',
-    ]);
-    const env = { [OPENSPEC_BIN_OVERRIDE_ENV]: standIn };
-
-    expect(wrapperResolves(coreRoot, env)).toBe(standIn);
-    expect(mateResolves(coreRoot, env)).toBe(standIn);
   });
 });
 

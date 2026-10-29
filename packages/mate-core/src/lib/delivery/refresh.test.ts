@@ -155,4 +155,39 @@ describe("refreshRecord", () => {
     expect(outcomes).toEqual([]);
     expect(calls).toEqual([]);
   });
+
+  test("a recorded PR closed unmerged does not hide a newer PR from the same branch", async () => {
+    const asked: Array<number | undefined> = [];
+    const forge: ForgeAdapter = {
+      id: "github",
+      async defaultBranch() {
+        return { ok: true, value: "main" };
+      },
+      async pullsForBranch(_repo, _branch, prNumber) {
+        asked.push(prNumber);
+        return prNumber === 1
+          ? { ok: true, value: { kind: "closed-unmerged", pr: { number: 1, url: "u/pull/1" } } }
+          : { ok: true, value: { kind: "merged", pr: { number: 2, url: "u/pull/2" } } };
+      },
+    };
+    const dropped = upsertDelivery(linked(), REPO, {
+      pr: "u/pull/1",
+      merge: { state: "closed-unmerged", source: "forge", checkedAt: "earlier" },
+    });
+    const { record } = await refreshRecord(dropped, { now, forgeAccess: access(forge) });
+    expect(asked).toEqual([1, undefined]);
+    expect(record.deliveries[0]).toMatchObject({
+      pr: "u/pull/2",
+      merge: { state: "merged", source: "forge" },
+    });
+  });
+
+  test("a recorded PR that is the branch's only one stays closed unmerged", async () => {
+    const calls: string[] = [];
+    const forge = adapter({ kind: "closed-unmerged", pr: { number: 1, url: "u/pull/1" } }, calls);
+    const recorded = upsertDelivery(linked(), REPO, { pr: "u/pull/1" });
+    const { record } = await refreshRecord(recorded, { now, forgeAccess: access(forge) });
+    expect(calls).toHaveLength(2);
+    expect(record.deliveries[0].merge?.state).toBe("closed-unmerged");
+  });
 });

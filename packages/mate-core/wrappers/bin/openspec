@@ -54,8 +54,7 @@ fi
 # the package root, hoisted or nested under mate-core (distribution packages).
 # Never an openspec on PATH, so a global install of another version is ignored.
 # Physical path: the runtime directory reaches wrappers/ through a symlink.
-# MATE_E2E_OPENSPEC_BIN is a test-only stand-in for the CLI e2e suite.
-_real="${MATE_E2E_OPENSPEC_BIN-}"
+_real=""
 _dir="$(cd -P "$_this_dir" && cd ../.. && pwd -P)"
 while [ -z "$_real" ]; do
   for _candidate in \

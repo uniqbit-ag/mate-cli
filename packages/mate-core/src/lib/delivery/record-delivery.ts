@@ -1,14 +1,13 @@
 import type { ProtectionReason } from "./branches";
+import { locateChange, type ChangeLocation } from "../change-layout";
 import { companionRelative, type DeliveryEnvironment } from "./environment";
 import {
   defaultDeliveryBranch,
   findDelivery,
-  locateChangeDir,
   readOrUnlinkedRecord,
   settleChangeDir,
   upsertDelivery,
   writeDeliveryRecord,
-  type ChangeLocation,
   type DeliveryRecord,
   type DeliverySettlement,
   type MergeState,
@@ -37,13 +36,15 @@ export interface DeliveryEdit {
 export interface DeliveryRequest {
   changes: string[];
   /**
-   * The delivery to edit, and the only one refreshed. Without it the Working
-   * Repository's delivery is edited and every delivery is refreshed.
+   * The delivery to edit, and the only one refreshed unless `refreshAll`. Without it the
+   * Working Repository's delivery is edited and every delivery is refreshed.
    */
   repository?: string;
   edit?: DeliveryEdit;
   /** Ask the forge for each branch's merge state; a direct delivery needs the user's answer instead. */
   refresh?: boolean;
+  /** Refresh every delivery even when `repository` names the one to edit. */
+  refreshAll?: boolean;
   /** Archived changes may be edited; otherwise only active ones are found. */
   includeArchived?: boolean;
   /** A change left without any delivery answers `needsBranch` and nothing is written. */
@@ -112,7 +113,7 @@ export async function recordDelivery(
 
   const located: Array<ChangeLocation & { change: string }> = [];
   for (const change of request.changes) {
-    const location = await locateChangeDir(environment.companionPath, change);
+    const location = await locateChange(environment.companionPath, change);
     if (!location || (location.archived && !request.includeArchived)) {
       return { refusal: { reason: "unknown-change", change } };
     }
@@ -161,7 +162,7 @@ export async function recordDelivery(
       const refreshed = await refreshRecord(record, {
         ...refreshAccess,
         cache,
-        ...(request.repository ? { repository: request.repository } : {}),
+        ...(request.repository && !request.refreshAll ? { repository: request.repository } : {}),
       });
       record = refreshed.record;
       outcomes = refreshed.outcomes;

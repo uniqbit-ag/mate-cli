@@ -14,9 +14,6 @@ export const OPENSPEC_ENV = {
   OPENSPEC_NO_UPDATE_CHECK: "1",
 } as const satisfies Record<string, string>;
 
-/** Undocumented, test-only replacement for the bundled OpenSpec CLI; the wrapper honors it too. */
-export const OPENSPEC_BIN_OVERRIDE_ENV = "MATE_E2E_OPENSPEC_BIN";
-
 /** The bundled CLI, with its version when its manifest is readable, or the reinstall message. */
 export type OpenSpecLocation = { bin: string; version?: string } | { missing: string };
 
@@ -58,14 +55,11 @@ function readVersion(bin: string): string | undefined {
 
 /**
  * Finds the OpenSpec CLI shipped with mate-core the way Node resolves it, never
- * an `openspec` on `PATH`. `resolve` and `env` exist for layout tests.
+ * an `openspec` on `PATH`. `resolve` exists for layout tests.
  */
 export function resolveOpenSpec(
   resolve: (id: string) => string = require.resolve,
-  env: NodeJS.ProcessEnv = process.env,
 ): OpenSpecLocation {
-  const override = env[OPENSPEC_BIN_OVERRIDE_ENV];
-  if (override) return { bin: override, version: readVersion(override) };
   let entryPath: string;
   try {
     // The package exports only `.` (dist/index.js); the binary sits beside dist/.

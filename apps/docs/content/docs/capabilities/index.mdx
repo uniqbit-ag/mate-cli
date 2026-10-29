@@ -111,6 +111,8 @@ globally installed `openspec`; a global install of another version stays as it
 is for your other projects. A new OpenSpec version arrives with a new Mate
 release. `mate doctor` shows the bundled path and version.
 
+{/* breaking:start */}
+
 Mate generates no OpenSpec skills or `/opsx` commands. Setup and
 `mate companion update` run `openspec init --tools none`, which writes only the
 `openspec/` folder. The workflow text OpenSpec would put in its skills ships
@@ -125,6 +127,8 @@ Companions set up by earlier Mate versions still hold the generated
 `openspec-*` skills and `/opsx` commands. The next `mate companion update`
 removes them, and the link refresh drops their links from wrapped working
 repositories. Commit the result. Launches never touch them.
+
+{/* breaking:end */}
 
 Every OpenSpec process Mate starts runs with `OPENSPEC_TELEMETRY=0` and
 `OPENSPEC_NO_UPDATE_CHECK=1`.

@@ -455,7 +455,7 @@ is github.com. Without a forge token, or when GitHub
 cannot answer, `main` is taken as its default branch.
 
 `mate artifact archive` archives regardless of merge state, prints overlap,
-dependency, and unscoped-delivery warnings to stderr before archiving, refreshes merge state when a token is available, always
+dependency, incomplete-planning, and unscoped-delivery warnings to stderr before archiving, refreshes merge state when a token is available, always
 leaves a `delivery.yaml`, and then runs `openspec archive`. Without a recorded
 delivery it archives nothing and reports `needs-branch`; answer with
 `--branch <branch>` (`--direct` for a protected one), `--not-applicable

@@ -12,7 +12,8 @@ import {
 } from "../../../../lib/delivery/record";
 import type { OpenSpecRunOptions } from "../../../../lib/openspec-cli";
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
-import { runArtifactArchiveCommand, type ArchiveCommandDeps, type ArchiveResult } from "./archive";
+import type { ArchiveResult } from "../../../../lib/delivery/archive-change";
+import { runArtifactArchiveCommand, type ArchiveCommandDeps } from "./archive";
 
 const REPO = "acme/acme-app";
 let companion: string;
@@ -131,19 +132,6 @@ describe("mate artifact archive", () => {
     expect(await archivedRecord("x")).toContain("repository: platform/api");
   });
 
-  test("a merged change is archived and reported as publishable", async () => {
-    await writeDeliveryRecord(
-      changeDir("x"),
-      upsertDelivery(unlinkedRecord("x"), REPO, {
-        branch: "change/x",
-        merge: { state: "merged", source: "user", checkedAt: "t" },
-      }),
-    );
-    const result = await run(["x"]);
-    expect(result.settlement.status).toBe("merged");
-    expect(result.message).toContain("mate-publish-artifact");
-  });
-
   test("an unlinked change is not archived; the existing default branch is suggested", async () => {
     const result = await run(["x"], { workingRepoGit: () => repoGit(["change/x"]) });
     expect(result).toMatchObject({ status: "needs-branch", suggestedBranch: "change/x" });
@@ -194,6 +182,35 @@ describe("mate artifact archive", () => {
     expect(shownBeforeArchive).toEqual([`warning: ${result.warnings[0].message}`]);
   });
 
+  describe("incomplete planning", () => {
+    const withStatus =
+      (artifacts: Record<string, string>, code = 0): ArchiveCommandDeps["runOpenSpec"] =>
+      async (args, options) => {
+        if (args[0] !== "status") return fakeArchive(args, options);
+        const stdout = JSON.stringify({
+          schemaName: "mate-v1",
+          artifacts: Object.entries(artifacts).map(([id, status]) => ({ id, status })),
+        });
+        return { code, stdout, stderr: "" };
+      };
+
+    test("missing artifacts are warned about before archiving", async () => {
+      const result = await run(["x", "--skip-branch"], {
+        runOpenSpec: withStatus({
+          proposal: "done",
+          specs: "done",
+          design: "ready",
+          tasks: "done",
+        }),
+      });
+      expect(result.status).toBe("archived");
+      expect(result.warnings).toEqual([
+        expect.objectContaining({ kind: "incomplete-planning", artifacts: ["design"] }),
+      ]);
+      expect(err).toEqual([`warning: ${result.warnings[0].message}`]);
+    });
+  });
+
   test("a needs-branch run leaves warnings to the re-run that archives", async () => {
     await fs.writeFile(path.join(changeDir("x"), "proposal.md"), "---\ndependsOn: [a]\n---\n");
     await fs.mkdir(changeDir("a"), { recursive: true });
@@ -203,15 +220,35 @@ describe("mate artifact archive", () => {
     expect(err).toEqual([]);
   });
 
-  test("a failing OpenSpec archive is reported with the record left in place", async () => {
+  test("a failing OpenSpec archive exits non-zero after its warnings reached stderr", async () => {
+    await fs.writeFile(path.join(changeDir("x"), "proposal.md"), "---\ndependsOn: [a]\n---\n");
+    await fs.mkdir(changeDir("a"), { recursive: true });
+    let shownBeforeArchive: string[] = [];
     const result = await run(["x", "--skip-branch"], {
-      runOpenSpec: async () => ({ code: 1, stdout: "", stderr: "tasks incomplete" }),
+      runOpenSpec: async (args) => {
+        if (args[0] === "archive") shownBeforeArchive = [...err];
+        return { code: 1, stdout: "", stderr: "tasks incomplete" };
+      },
     });
     expect(result).toMatchObject({ status: "failed" });
-    expect(result.message).toContain("tasks incomplete");
-    expect(await fs.readFile(path.join(changeDir("x"), DELIVERY_FILE), "utf8")).toContain(
-      "deliveries",
+    expect(result.warnings).toHaveLength(1);
+    expect(shownBeforeArchive).toEqual([`warning: ${result.warnings[0].message}`]);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("without --json the result is rendered for people", async () => {
+    await writeDeliveryRecord(
+      changeDir("x"),
+      upsertDelivery(unlinkedRecord("x"), REPO, { branch: "change/x" }),
     );
+    out = [];
+    err = [];
+    await runArtifactArchiveCommand(["x"], deps());
+    expect(out).toEqual([
+      "Archived x; publication waits until its delivery is merged (waiting).",
+      `  ${REPO}  change/x  no merge recorded`,
+      "  delivery: waiting",
+    ]);
   });
 
   test("branch flags without an origin remote are refused and nothing is archived", async () => {

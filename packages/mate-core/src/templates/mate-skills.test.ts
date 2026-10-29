@@ -1018,6 +1018,23 @@ describe("bundled Delivery Path stage skills", () => {
     }
   });
 
+  test("propose revise mode upgrades a minimal change to mate-v1 and never downgrades", async () => {
+    const flat = (source: string) => source.replace(/\s+/g, " ");
+    const [claude, agents] = await Promise.all(
+      bothRoots.map((root) => readSkillFrom(root, "mate-propose-change")),
+    );
+    expect(agents).toBe(claude);
+    const source = flat(claude ?? "");
+    expect(source).toContain("**Upgrade a minimal change when it outgrows the gate.**");
+    expect(source).toContain("Set `schema: mate-v1` in the change's `.openspec.yaml`, first");
+    expect(source).toContain(
+      "Write the proposal from the existing specs and tasks, then the design",
+    );
+    expect(source).toContain("Keep task numbers and check marks.");
+    expect(source).toContain("only case in which revise mode creates a missing artifact");
+    expect(source).toContain("Never downgrade a `mate-v1` change");
+  });
+
   test("explore and propose share one slicing test, and propose checks it without explore", async () => {
     const slicingTest =
       "Slicing test: a feature needs slicing when it spans several Areas, several independent behaviours, or more work than one review can hold (roughly more than 10 tasks or 400 changed lines).";

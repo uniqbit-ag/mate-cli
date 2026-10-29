@@ -8,6 +8,7 @@ import {
   archiveWarnings,
   declaredDependencies,
   deltaRequirementEdits,
+  planningWarning,
 } from "./overlap";
 
 let companion: string;
@@ -86,6 +87,22 @@ describe("archiveWarnings", () => {
     ]);
   });
 
+  test("compares nested capabilities by their full path", async () => {
+    await writeDelta("a", "identity/user-auth", "## MODIFIED Requirements\n### Requirement: R1\n");
+    await writeDelta("b", "identity/user-auth", "## MODIFIED Requirements\n### Requirement: R1\n");
+    await writeDelta("c", "identity/admin-auth", "## MODIFIED Requirements\n### Requirement: R1\n");
+    expect(await archiveWarnings(companion, "a")).toEqual([
+      {
+        kind: "overlap",
+        change: "b",
+        capability: "identity/user-auth",
+        requirement: "R1",
+        message:
+          "b also changes identity/user-auth › R1; archiving b later will replace this change's version of that requirement.",
+      },
+    ]);
+  });
+
   test("names a declared dependency that is not archived yet", async () => {
     await writeArtifact("b", "proposal.md", "dependsOn: [a, done]");
     await fs.mkdir(path.join(changes(), "a"), { recursive: true });
@@ -119,5 +136,50 @@ describe("applyWarnings", () => {
     expect(warnings[0].message).toBe(
       "x depends on empty, which is not implemented yet; apply empty first.",
     );
+  });
+});
+
+describe("planningWarning", () => {
+  const status = (...artifacts: [string, string][]) =>
+    JSON.stringify({
+      schemaName: "mate-v1",
+      artifacts: artifacts.map(([id, status]) => ({ id, status })),
+    });
+
+  test("names artifacts neither done nor skipped", () => {
+    expect(
+      planningWarning(
+        "x",
+        status(["proposal", "ready"], ["specs", "done"], ["design", "blocked"], ["tasks", "done"]),
+      ),
+    ).toEqual({
+      kind: "incomplete-planning",
+      change: "x",
+      artifacts: ["proposal", "design"],
+      message: "x is missing planning artifacts its schema requires: proposal, design.",
+    });
+  });
+
+  test("done and skipped artifacts complete the planning", () => {
+    expect(planningWarning("x", status(["specs", "skipped"], ["tasks", "done"]))).toBeNull();
+  });
+
+  test("another schema's ready artifacts may be conditional, so they yield no warning", () => {
+    const specDriven = JSON.stringify({
+      schemaName: "spec-driven",
+      artifacts: [
+        { id: "design", status: "ready" },
+        { id: "tasks", status: "done" },
+      ],
+    });
+    expect(planningWarning("x", specDriven)).toBeNull();
+  });
+
+  test("unparsable status yields no warning", () => {
+    expect(planningWarning("x", "not json")).toBeNull();
+    expect(
+      planningWarning("x", JSON.stringify({ schemaName: "mate-v1", artifacts: "none" })),
+    ).toBeNull();
+    expect(planningWarning("x", "null")).toBeNull();
   });
 });

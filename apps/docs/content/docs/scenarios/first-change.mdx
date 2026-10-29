@@ -166,7 +166,8 @@ archive, and leaves a `delivery.yaml` in it. **Archiving does not wait for the
 merge**: while your PR collects approvals, the next change of the same feature
 can already be written against the updated specs. Archiving is local and
 uncommitted. It warns when another active change modifies the same requirement
-or when a change it `dependsOn` is not archived yet; warnings never block.
+when a change it `dependsOn` is not archived yet, or when a planning artifact its
+schema requires is missing; warnings never block.
 
 ### 8. Publish companion artifacts after the merge
 
@@ -200,14 +201,20 @@ Large features work best as several small changes:
 
 ## Breaking Changes
 
+{/* breaking:start */}
+
 Two Mate skills were renamed without aliases, and `mate companion update`
 removes the old copies Mate installed:
+
+{/* breaking:renamed */}
 
 - `mate-artifact-publish` is now `mate-publish-artifact`.
 - `mate-openspec-backfill` is now `mate-backfill-spec`.
 
 The generated OpenSpec skills (`openspec-*`) and commands (`/opsx:*`) are gone;
 `mate companion update` removes them. Use the Mate skills instead:
+
+{/* breaking:openspec */}
 
 | Instead of                                 | Use                    |
 | ------------------------------------------ | ---------------------- |
@@ -221,6 +228,8 @@ The generated OpenSpec skills (`openspec-*`) and commands (`/opsx:*`) are gone;
 `mate artifact publish` now refuses an archive whose delivery is not merged.
 Archives made before delivery records existed still publish, with a warning
 that their merge was not checked.
+
+{/* breaking:end */}
 
 ## Result
 
