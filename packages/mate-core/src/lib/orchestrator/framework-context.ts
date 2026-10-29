@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
-import { canonicalPath } from "../../runtime/physical-path";
+import { normalisedCanonicalPath, physicalPath } from "../../runtime/physical-path";
 import { parse } from "yaml";
 import { CompanionRegistryStore } from "./companion-registry-store";
 import { ConfigStore } from "./config-store";
@@ -47,16 +47,28 @@ function repositoryFromEnvironment(): LinkedRepository | undefined {
   };
 }
 
+/**
+ * `configured` made canonical, so a `link/..` spelling loads where it leads.
+ * Refuses when that place is missing rather than fall back to the folder the
+ * normalised spelling names, which may be a decoy.
+ */
+export function canonicalCompanionPath(configured: string): string {
+  const companionPath = normalisedCanonicalPath(configured);
+  if (companionPath !== null) return companionPath;
+  throw new ConfigError(
+    `The companion path ${configured} leads to ${physicalPath(configured)}, which does not exist; ${FRAMEWORK_NAME} does not use ${path.resolve(configured)} in its place.`,
+  );
+}
+
 // Builds a FrameworkContext from a known companion path — wires up the config
 // store, working repo store, and companion path. Used by all three resolvers.
-// Canonicalised first so a `link/..` spelling loads where it leads, not a decoy.
 function makeContext(
   configuredPath: string,
   contextKind: FrameworkContext["contextKind"],
   repository?: LinkedRepository,
   hub?: HubConfig,
 ): FrameworkContext {
-  const companionPath = path.resolve(canonicalPath(configuredPath));
+  const companionPath = canonicalCompanionPath(configuredPath);
   const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   return {
     configStore: new ConfigStore(path.join(configDir, "framework.yaml")),

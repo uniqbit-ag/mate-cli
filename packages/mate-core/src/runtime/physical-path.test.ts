@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { canonicalPath, physicalPath } from "./physical-path";
+import { canonicalPath, normalisedCanonicalPath, physicalPath } from "./physical-path";
 
 const tempRoots: string[] = [];
 
@@ -53,5 +53,25 @@ describe("canonicalPath", () => {
     const missing = `${root}/forward/../missing`;
     expect(canonicalPath(missing)).toBe(missing);
     expect(canonicalPath("")).toBe("");
+  });
+});
+
+describe("normalisedCanonicalPath", () => {
+  test("answers where an existing `link/..` spelling leads", () => {
+    const { real, configured } = linkFixture();
+    expect(normalisedCanonicalPath(configured)).toBe(real);
+  });
+
+  test("refuses a missing place a link leads to, instead of the decoy the spelling names", () => {
+    const { root, real, configured } = linkFixture();
+    fs.rmSync(real, { recursive: true });
+    expect(fs.existsSync(path.join(root, "companion"))).toBe(true);
+    expect(normalisedCanonicalPath(configured)).toBeNull();
+  });
+
+  test("normalises a missing path whose `..` no link changes", () => {
+    const { root } = linkFixture();
+    expect(normalisedCanonicalPath(`${root}/outside/../gone`)).toBe(path.join(root, "gone"));
+    expect(normalisedCanonicalPath("relative/dir")).toBe(path.resolve("relative/dir"));
   });
 });

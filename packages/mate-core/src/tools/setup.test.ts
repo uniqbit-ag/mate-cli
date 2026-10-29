@@ -10,6 +10,7 @@ import { FRAMEWORK_NAME } from "../framework";
 import { ConfigStore } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repository-link";
+import { ConfigError } from "../lib/orchestrator/types";
 import { project } from "../lib/orchestrator/working-repo-projection";
 import { openSpecCliDeps } from "../lib/openspec-cli";
 import { MATE_SPECS_RULE } from "./setup/capabilities/openspec";
@@ -965,6 +966,29 @@ describe("executeSetup", () => {
     ).load();
     expect(persisted.git).toBe("auto");
     await expect(fs.access(path.join(root, "companion"))).rejects.toThrow();
+  });
+
+  test("setup refuses a companion path whose link leads to a missing folder, and writes nothing into the decoy", async () => {
+    const root = await fs.realpath(await makeTempDir("mate-setup-link-missing-"));
+    const decoy = path.join(root, "companion");
+    await fs.mkdir(path.join(root, "outside", "sub"), { recursive: true });
+    await fs.mkdir(decoy, { recursive: true });
+    await fs.symlink(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    await installOpenSpecStub(root);
+    const written = `${path.join(root, "forward")}/../companion`;
+
+    const refused = await executeSetup(
+      { allowedAgents: ["claude"], capabilities: [{ name: "openspec" }], git: "auto" },
+      { cwd: written, globalConfigStore },
+    ).catch((error: unknown) => error);
+
+    expect(refused).toBeInstanceOf(ConfigError);
+    expect((refused as Error).message).toContain(written);
+    expect(await fs.readdir(decoy)).toEqual([]);
+    await expect(fs.access(path.join(root, "outside", "companion"))).rejects.toThrow();
   });
 
   test("setup persists git auto mode selection", async () => {

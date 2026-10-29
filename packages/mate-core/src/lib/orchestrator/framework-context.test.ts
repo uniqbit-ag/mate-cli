@@ -213,6 +213,27 @@ describe("resolveForLaunch", () => {
     expect(framework.companionPath).toBe(real);
   });
 
+  test("refuses a MATE_ARTIFACT_PATH whose link leads to a missing companion, instead of loading the decoy", async () => {
+    const root = await fs.realpath(await makeTempDir("launch-env-link-missing-"));
+    const decoy = path.join(root, "companion");
+    await fs.mkdir(path.join(root, "outside", "sub"), { recursive: true });
+    await fs.symlink(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    await writeFrameworkConfig(decoy, "secrets:\n  guardrails: false\n");
+    const written = `${path.join(root, "forward")}/../companion`;
+    process.env.MATE_ARTIFACT_PATH = written;
+    process.env.MATE_REPO_ID = "my-repo";
+
+    const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+    for (const scope of ["working-repo", "companion"] as const) {
+      // oxlint-disable-next-line no-await-in-loop -- one scope at a time
+      const refused = await resolveForLaunch(root, store, scope).catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(ConfigError);
+      expect((refused as Error).message).toContain(written);
+      expect((refused as Error).message).toContain(path.join(root, "outside", "companion"));
+    }
+    await expect(resolveFrameworkContext(root, store)).rejects.toThrow(ConfigError);
+  });
+
   test("uses explicit working repo environment when running from a companion", async () => {
     const root = await makeTempDir("launch-env-repo-");
     const companionPath = path.join(root, "companion");

@@ -38,6 +38,18 @@ export function canonicalPath(target: string): string {
   return physicalPath(normalised) === physical ? normalised : physical;
 }
 
+/**
+ * {@link canonicalPath}, absolute and normalised; `null` when `target` is
+ * missing and a link before a `..` leads somewhere other than the normalised
+ * spelling, so a caller cannot fall back to the folder that spelling names.
+ */
+export function normalisedCanonicalPath(target: string): string | null {
+  const canonical = canonicalPath(target);
+  const normalised = path.resolve(canonical);
+  if (canonical === normalised) return normalised;
+  return physicalPath(target) === physicalPath(normalised) ? normalised : null;
+}
+
 export const foldCase = (filePath: string) => filePath.normalize("NFC").toLowerCase();
 
 /** Lexical containment; only a whole `..` segment leaves `root` (`root/..notes` is inside). */

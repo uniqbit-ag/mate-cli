@@ -12,6 +12,7 @@ import {
   formatSetupGuardrailError,
   inspectSetupPreflight,
 } from "../lib/orchestrator/setup-preflight";
+import { canonicalCompanionPath } from "../lib/orchestrator/framework-context";
 import type { FrameworkTool } from "../lib/orchestrator/tool";
 import {
   ConfigError,
@@ -19,7 +20,6 @@ import {
   type FrameworkConfig,
 } from "../lib/orchestrator/types";
 import { getClaudePluginRoot } from "../lib/package-paths";
-import { canonicalPath } from "../runtime/physical-path";
 import type { RenderedRuntimeDocuments } from "../runtime/runtime-document-manifest";
 import {
   collectManagedGitignoreEntries,
@@ -252,7 +252,7 @@ export async function executeSetup(
   deps: SetupDependencies = {},
 ): Promise<{ config: FrameworkConfig }> {
   // Canonical before any path is built on it: `link/..` sets up where it leads.
-  const cwd = path.resolve(canonicalPath(deps.cwd ?? process.cwd()));
+  const cwd = canonicalCompanionPath(deps.cwd ?? process.cwd());
   const globalConfigStore = deps.globalConfigStore ?? new GlobalConfigStore();
   const preflight = await inspectSetupPreflight(cwd, globalConfigStore);
   if (preflight.kind === "linked-working-repo") {
