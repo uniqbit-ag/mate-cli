@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { MATE_ENV } from "../../../runtime/env-names";
+import { policyDocument, resolveSecretPolicy } from "../../../runtime/policy";
 import { getWrapperBinPath } from "../../package-paths";
 import { buildProjection, companionEnvironment, projectionEnvironment } from "../projection-record";
 import type { PrepareResult } from "../session-prepare";
@@ -114,7 +115,10 @@ export abstract class LaunchAdapter<C extends AdapterContext = AdapterContext> {
       MATE_OPENSPEC_ENABLED: context.capabilities.some((c) => c.name === "openspec") ? "1" : "0",
       MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
       MATE_GIT_AUTO_MODE: context.git === "auto" && !context.skipGit ? "1" : "0",
-      MATE_POLICY_JSON: JSON.stringify({ allowedAgents: context.allowedAgents }),
+      MATE_POLICY_JSON: policyDocument({
+        allowedAgents: context.allowedAgents,
+        secrets: resolveSecretPolicy(context.companionPath),
+      }),
     };
 
     if (!context.repository) {

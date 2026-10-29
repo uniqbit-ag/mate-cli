@@ -1,28 +1,25 @@
+import os from "node:os";
 import path from "node:path";
 
 import type { Context } from "@opencode/plugin/promise/plugin";
 
-import { resolveArtifactTarget } from "../runtime/artifact-refusal";
-import { checkCommitAttribution } from "../runtime/commit-attribution-guard";
-import {
-  companionForkRefusal,
-  syncCompanionUnattended,
-  unattendedSyncStalenessLines,
-} from "../runtime/companion-sync";
+import { syncCompanionUnattended, unattendedSyncStalenessLines } from "../runtime/companion-sync";
 import { hasLaunchEnvironment } from "../runtime/env";
 import { MATE_ENV } from "../runtime/env-names";
 import { resolveProjection } from "../runtime/projection";
-import { checkSecretAccess, type SecretToolCall } from "../runtime/secret-guard";
-import { readWrapStateSync } from "../runtime/wrap-state";
 import {
-  buildArtifactError,
-  extractPatchAdditions,
-  extractPatchPaths,
-  isArtifactPath,
-  isCompanionTarget,
-  shouldBlockArtifactWrite,
-  type CompanionContext,
-} from "./companion-policy";
+  checkToolCall,
+  contentText,
+  guardFailureMessage,
+  landingPath,
+  pathText,
+  singleWrite,
+  type GuardedToolCall,
+  type GuardedWrite,
+  type ToolGuardRefusal,
+} from "../runtime/tool-guard";
+import { readWrapStateSync } from "../runtime/wrap-state";
+import type { CompanionContext } from "./companion-policy";
 
 /** The Working Repository above `directory`, when it is wrapped for OpenCode. */
 export function repositoryWrappedForOpenCode(directory: string): string | undefined {
@@ -79,102 +76,196 @@ export function resetCompanionGitRepairGuard(): void {
 }
 
 /**
- * Writing artifacts on top of a forked companion is the state in which the
- * eventual reconciliation destroys work. The verdict comes from `runtime/`, so
- * the Claude hook and this middleware refuse the same writes for the same
- * reason — including the launch-environment gate that keeps a Managed
- * Launch's Git decision authoritative for the session it started.
+ * OpenCode's config folders: Agent Runtime state, never Mate artifacts. Not
+ * normalised: the Tool Guard follows each through its links.
  */
-export async function refuseForkedCompanionWrite(
-  context: CompanionContext,
-  filePath: string,
-  env: Record<string, string | undefined> = process.env,
-): Promise<void> {
-  if (!filePath || !isArtifactPath(filePath)) return;
-  if (!isCompanionTarget(context, filePath)) return;
-  const refusal = await companionForkRefusal(env, context.companionPath);
-  if (refusal) throw new Error(refusal);
+function openCodeStateRoots(env: Record<string, string | undefined>): string[] {
+  const configHome = env.XDG_CONFIG_HOME || `${env.HOME || os.homedir()}${path.sep}.config`;
+  const roots = [`${configHome}${path.sep}opencode`];
+  if (env.OPENCODE_CONFIG_DIR) roots.push(env.OPENCODE_CONFIG_DIR);
+  return roots;
 }
 
-/** OpenCode tool inputs in the shape the shared secret guard reads. */
-function secretToolCall(
-  context: CompanionContext,
+const ADD_FILE = "*** Add File: ";
+const DELETE_FILE = "*** Delete File: ";
+const UPDATE_FILE = "*** Update File: ";
+/**
+ * Also matches the legacy `Move to File:`: OpenCode rejects it, so judging it
+ * can only refuse a call that would fail anyway.
+ */
+const MOVE_TO = /^\*\*\* Move to(?: File)?:(.*)$/;
+/** OpenCode unwraps a patch sent as a heredoc (`cat <<'EOF' … EOF`) before parsing it. */
+const PATCH_HEREDOC = /^(?:cat\s+)?<<(['"]?)(\w+)\1\s*\n([\s\S]*?)\n\2\s*$/;
+
+function isSectionStart(line: string): boolean {
+  return (
+    line === "*** End Patch" ||
+    line.startsWith(ADD_FILE) ||
+    line.startsWith(DELETE_FILE) ||
+    line.startsWith(UPDATE_FILE)
+  );
+}
+
+/**
+ * What a patch writes, per file, with its added `+` lines, parsed as OpenCode
+ * parses it: inside an update's hunks a header counts only at line start, so a
+ * context line (` *** Update File: x`) stays content. A move edits its source
+ * and creates its destination, and a delete counts as an edit, so the secret
+ * and fork checks see every file touched. A malformed patch is still read:
+ * OpenCode refuses it, so judging it is harmless.
+ */
+export function patchWrites(patchText: string): PatchWrite[] {
+  return readPatch(patchText).map(({ movedFrom: _movedFrom, ...write }) => write);
+}
+
+type PatchWrite = Omit<GuardedWrite, "movedFrom">;
+
+/** {@link patchWrites}, with a move's destination naming the file it moves. */
+function readPatch(patchText: string): GuardedWrite[] {
+  const trimmed = patchText.trim();
+  const lines = (PATCH_HEREDOC.exec(trimmed)?.[3] ?? trimmed)
+    .split("\n")
+    .map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
+  const writes: GuardedWrite[] = [];
+
+  const addedLines = (start: number, isEnd: (line: string) => boolean) => {
+    const added: string[] = [];
+    let index = start;
+    for (; index < lines.length && !isEnd(lines[index]); index++) {
+      if (lines[index].startsWith("+")) added.push(lines[index].slice(1));
+    }
+    return { content: added.join("\n"), next: index };
+  };
+
+  let index = 0;
+  while (index < lines.length) {
+    const header = lines[index].trim();
+    if (header.startsWith(ADD_FILE)) {
+      const body = addedLines(index + 1, (line) => isSectionStart(line.trim()));
+      writes.push({
+        path: header.slice(ADD_FILE.length).trim(),
+        content: body.content,
+        mode: "create",
+      });
+      index = body.next;
+    } else if (header.startsWith(DELETE_FILE)) {
+      writes.push({ path: header.slice(DELETE_FILE.length).trim(), content: "", mode: "edit" });
+      index++;
+    } else if (header.startsWith(UPDATE_FILE)) {
+      const source = header.slice(UPDATE_FILE.length).trim();
+      let next = index + 1;
+      while (lines[next]?.trimEnd() === "*** End of File") next++;
+      const destination = MOVE_TO.exec(lines[next]?.trimEnd() ?? "")?.[1].trim();
+      if (destination !== undefined) next++;
+      const hunks = addedLines(next, (line) => isSectionStart(line.trimEnd()));
+      if (destination) {
+        writes.push({ path: source, content: "", mode: "edit" });
+        writes.push({
+          path: destination,
+          content: hunks.content,
+          mode: "create",
+          movedFrom: source,
+        });
+      } else {
+        writes.push({ path: source, content: hunks.content, mode: "edit" });
+      }
+      index = hunks.next;
+    } else {
+      // `*** Begin Patch`, `*** End Patch`, `*** Environment ID:` and stray lines.
+      index++;
+    }
+  }
+  return writes;
+}
+
+/**
+ * A move's destination holds the added lines of every section touching its
+ * source or destination: OpenCode writes the whole updated file there, so an
+ * earlier section's line kept as context lands in it too. Spellings match when
+ * they resolve or land alike against `directory`.
+ */
+function patchWritesWithMovedContent(patchText: string, directory: string): GuardedWrite[] {
+  const writes = readPatch(patchText);
+  const keys = new Map<string, string[]>();
+  const identities = (spelling: string) => {
+    let known = keys.get(spelling);
+    if (!known) {
+      known = [path.resolve(directory, spelling), landingPath(spelling, directory)];
+      keys.set(spelling, known);
+    }
+    return known;
+  };
+  const touches = (spelling: string | undefined, ends: string[]) =>
+    spelling !== undefined && identities(spelling).some((key) => ends.includes(key));
+  return writes.map((write) => {
+    if (write.movedFrom === undefined) return write;
+    const ends = [...identities(write.movedFrom), ...identities(write.path)];
+    const content = writes
+      .filter((other) => touches(other.path, ends) || touches(other.movedFrom, ends))
+      .map((other) => other.content)
+      .filter(Boolean)
+      .join("\n");
+    return { ...write, content };
+  });
+}
+
+/** OpenCode tool inputs in the Tool Guard's shape; null for a tool it does not guard. */
+function openCodeToolCall(
   tool: string,
   args: Record<string, unknown>,
-): SecretToolCall | null {
-  const text = (value: unknown) => (typeof value === "string" ? value : "");
-  const target = (value: unknown) =>
-    text(value) ? resolveArtifactTarget(text(value), context.repositoryPath) : "";
+  directory: string,
+): GuardedToolCall | null {
   switch (tool) {
     case "read":
-      return { kind: "read", paths: [target(args.filePath)] };
+      return { kind: "read", paths: [pathText(args.filePath)] };
     case "write":
-      return {
-        kind: "write",
-        writes: [{ path: target(args.filePath), content: text(args.content) }],
-      };
+      return singleWrite(args.filePath, contentText(args.content), "create");
     case "edit":
-      return {
-        kind: "write",
-        writes: [{ path: target(args.filePath), content: text(args.newString) }],
-      };
+      return singleWrite(args.filePath, contentText(args.newString), "edit");
     case "apply_patch":
       return {
         kind: "write",
-        writes: extractPatchAdditions(text(args.patchText)).map((addition) => ({
-          path: target(addition.path),
-          content: addition.content,
-        })),
+        writes: patchWritesWithMovedContent(pathText(args.patchText), directory),
       };
     case "bash":
-      return { kind: "shell", command: text(args.command) };
+      return { kind: "shell", command: pathText(args.command) };
     case "grep":
-      return { kind: "search", paths: [target(args.path)], globs: [text(args.include)] };
+      return {
+        kind: "search",
+        paths: [pathText(args.path)],
+        globs: [pathText(args.include)],
+      };
     default:
       return null;
   }
 }
 
-/**
- * Rejects when the tool call touches a secret, commits with a model co-author
- * trailer, or would write an artifact outside the companion. Checked in that
- * order, as in the Claude hook.
- */
+/** OpenCode adapter of the Tool Guard (`runtime/tool-guard.ts`); verdicts are the guard's. */
 export async function guardToolInput(
   context: CompanionContext,
   tool: string,
   input: unknown,
   env: Record<string, string | undefined> = process.env,
 ): Promise<void> {
-  const args = (input ?? {}) as Record<string, unknown>;
-
-  const secretCall = context.companionPath ? secretToolCall(context, tool, args) : null;
-  if (secretCall) {
-    const companionRoot = path.normalize(context.companionPath);
-    const refusal = await checkSecretAccess(secretCall, {
+  let refusal: ToolGuardRefusal | null;
+  try {
+    const call = openCodeToolCall(
+      tool,
+      (input ?? {}) as Record<string, unknown>,
+      context.repositoryPath || process.cwd(),
+    );
+    if (!call) return;
+    refusal = await checkToolCall(call, {
       companionPath: context.companionPath,
-      isCompanionPath: (filePath) => filePath.startsWith(companionRoot),
+      repositoryPath: context.repositoryPath,
+      runtimeStateRoots: openCodeStateRoots(env),
+      env,
     });
-    if (refusal) throw new Error(refusal);
+  } catch (error) {
+    // OpenCode blocks a call whose hook throws.
+    throw new Error(guardFailureMessage(error), { cause: error });
   }
-  if (tool === "bash") {
-    const refusal = checkCommitAttribution(String(args.command ?? ""));
-    if (refusal) throw new Error(refusal);
-  }
-  const filePaths =
-    tool === "write" || tool === "edit"
-      ? [String(args.filePath ?? "")]
-      : tool === "apply_patch"
-        ? extractPatchPaths(String(args.patchText ?? ""))
-        : [];
-
-  for (const filePath of filePaths) {
-    if (context.repositoryPath && filePath && shouldBlockArtifactWrite(context, filePath)) {
-      throw new Error(buildArtifactError(context, filePath));
-    }
-    // oxlint-disable-next-line no-await-in-loop -- the first refusal wins
-    await refuseForkedCompanionWrite(context, filePath, env);
-  }
+  if (refusal) throw new Error(refusal.message);
 }
 
 /**

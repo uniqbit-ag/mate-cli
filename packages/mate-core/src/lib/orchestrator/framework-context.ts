@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { canonicalPath } from "../../runtime/physical-path";
 import { parse } from "yaml";
 import { CompanionRegistryStore } from "./companion-registry-store";
 import { ConfigStore } from "./config-store";
@@ -48,12 +49,14 @@ function repositoryFromEnvironment(): LinkedRepository | undefined {
 
 // Builds a FrameworkContext from a known companion path — wires up the config
 // store, working repo store, and companion path. Used by all three resolvers.
+// Canonicalised first so a `link/..` spelling loads where it leads, not a decoy.
 function makeContext(
-  companionPath: string,
+  configuredPath: string,
   contextKind: FrameworkContext["contextKind"],
   repository?: LinkedRepository,
   hub?: HubConfig,
 ): FrameworkContext {
+  const companionPath = path.resolve(canonicalPath(configuredPath));
   const configDir = path.join(companionPath, `.${FRAMEWORK_NAME}`, "config");
   return {
     configStore: new ConfigStore(path.join(configDir, "framework.yaml")),
@@ -157,9 +160,7 @@ export async function resolveFrameworkContext(
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
   if (envCompanionPath) {
     const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
-    return withResolvedHub(
-      makeContext(path.resolve(envCompanionPath), "env", repository ?? undefined),
-    );
+    return withResolvedHub(makeContext(envCompanionPath, "env", repository ?? undefined));
   }
 
   const match = await new CompanionResolver(globalConfigStore).resolve(cwd);
@@ -198,13 +199,13 @@ export async function resolveForLaunch(
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
   if (envCompanionPath) {
     if (scope === "companion") {
-      const context = await withResolvedHub(makeContext(path.resolve(envCompanionPath), "env"));
+      const context = await withResolvedHub(makeContext(envCompanionPath, "env"));
       return { ...context, repositoryId: "" };
     }
     const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
     const repositoryId = process.env.MATE_REPO_ID ?? repository?.id ?? "";
     const context = await withResolvedHub(
-      makeContext(path.resolve(envCompanionPath), "env", repository ?? undefined),
+      makeContext(envCompanionPath, "env", repository ?? undefined),
     );
     return {
       ...context,
@@ -270,7 +271,7 @@ export async function resolveForCapability(
   if (envCompanionPath) {
     const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
     const ctx = await withResolvedHub(
-      makeContext(path.resolve(envCompanionPath), "env", repository ?? undefined),
+      makeContext(envCompanionPath, "env", repository ?? undefined),
     );
     const repositoryId = process.env.MATE_REPO_ID;
     if (repositoryId) {

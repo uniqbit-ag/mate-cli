@@ -24,6 +24,7 @@ export function usage(): string {
     ` ${n} wrap [--companion PATH]`,
     ` ${n} unwrap`,
     ` ${n} session prepare --repo <dir> [--json] [--sync]`,
+    ` ${n} session context --repo <dir> [--json]`,
     ` ${n} hub init [folder]`,
     ` ${n} hub add [source] [--id ID] [--path PATH]`,
     ` ${n} hub sync [--json] (companions + hub plugins)`,

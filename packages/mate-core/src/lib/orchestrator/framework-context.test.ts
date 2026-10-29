@@ -190,6 +190,29 @@ describe("resolveForLaunch", () => {
     expect(ctx.repositoryId).toBe("my-repo");
   });
 
+  test("a MATE_ARTIFACT_PATH with a link before `..` loads the companion it leads to, not the decoy", async () => {
+    const root = await fs.realpath(await makeTempDir("launch-env-link-"));
+    const real = path.join(root, "outside", "companion");
+    const decoy = path.join(root, "companion");
+    await fs.mkdir(path.join(root, "outside", "sub"), { recursive: true });
+    await fs.symlink(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    await writeFrameworkConfig(real, "allowedAgents:\n  - claude\n");
+    await writeFrameworkConfig(decoy, "allowedAgents:\n  - opencode\n");
+    process.env.MATE_ARTIFACT_PATH = `${path.join(root, "forward")}/../companion`;
+    process.env.MATE_REPO_ID = "my-repo";
+
+    const store = new GlobalConfigStore(path.join(root, "config.yaml"));
+    for (const scope of ["working-repo", "companion"] as const) {
+      // oxlint-disable-next-line no-await-in-loop -- one scope at a time
+      const ctx = await resolveForLaunch(root, store, scope);
+      expect(ctx.companionPath).toBe(real);
+      // oxlint-disable-next-line no-await-in-loop -- one scope at a time
+      expect((await ctx.configStore.load()).allowedAgents).toEqual(["claude"]);
+    }
+    const framework = await resolveFrameworkContext(root, store);
+    expect(framework.companionPath).toBe(real);
+  });
+
   test("uses explicit working repo environment when running from a companion", async () => {
     const root = await makeTempDir("launch-env-repo-");
     const companionPath = path.join(root, "companion");

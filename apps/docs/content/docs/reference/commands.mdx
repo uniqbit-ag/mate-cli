@@ -120,6 +120,23 @@ All other arguments after the separator are forwarded to the agent.
 Confirmation is shown only when standard input is a TTY. Non-interactive
 launches proceed without a prompt.
 
+### Exit Status And Signals
+
+A launch exits with a status reflecting how the agent process ended: zero when
+the agent exited zero, non-zero when it did not. The JSON result is still
+printed, but it no longer stands in for the status.
+
+A launch also forwards `SIGINT` and `SIGTERM` to the agent process it spawned
+and waits for that process to exit before exiting itself, so nothing is left
+running behind it. An agent that ends on a forwarded signal is reported as the
+signalled stop it was — `128 + signal`, the usual shell convention — so a
+caller can tell a clean shutdown from a crash. At a terminal this is unchanged
+in practice: Ctrl-C reaches the whole foreground process group, so the agent is
+stopped once and the shell is returned.
+
+This has no opt-out: a caller that read success from a zero exit will see
+agent failures.
+
 ### OpenCode: Wrap, Prepare, Launch
 
 `mate opencode` from a Working Repository syncs the companion with Git, wraps the
@@ -349,22 +366,61 @@ prints each step's outcome, the runtimes each step answered for, and the warning
 It reports no Claude plugin-folder problems; `mate wrap` and `mate doctor` name
 them. The OpenCode plugin and the Claude session-prepare hook call this for you.
 
-### Exit Status And Signals
+## Session Context
 
-A launch exits with a status reflecting how the agent process ended: zero when
-the agent exited zero, non-zero when it did not. The JSON result is still
-printed, but it no longer stands in for the status.
+```sh
+mate session context --repo <dir> [--json]
+```
 
-A launch also forwards `SIGINT` and `SIGTERM` to the agent process it spawned
-and waits for that process to exit before exiting itself, so nothing is left
-running behind it. An agent that ends on a forwarded signal is reported as the
-signalled stop it was — `128 + signal`, the usual shell convention — so a
-caller can tell a clean shutdown from a crash. At a terminal this is unchanged
-in practice: Ctrl-C reaches the whole foreground process group, so the agent is
-stopped once and the shell is returned.
+Prints the companion and the secret policy that Mate resolves for a folder of a
+wrapped Working Repository. A Claude plugin in a plain `claude` session asks this,
+because such a session has no `MATE_*` launch environment. The folder can be the
+repository root or any folder below it. A relative `--repo` resolves against the
+current folder, and a link before a `..` is followed first, as the system does:
+with `forward` a link to `/x/sub`, `--repo /x/d/forward/../acme-app` asks about
+`/x/acme-app`.
 
-This has no opt-out: a caller that read success from a zero exit will see
-agent failures.
+The command changes nothing. It writes no file, takes no lock, refreshes nothing
+under `~/.mate/runtime/`, loads no plugin, checks for no update and prints no
+banner. It reads the companion's secret policy at each call, so a `secrets`
+change shows in the next answer.
+
+It reports a companion only when your Mate configuration registers it and the
+companion's registry links, by ID and path, the checkout whose projection
+answered. A `.mate/projection.yaml` that a cloned repository carries is not
+enough, even when it names another checkout you linked.
+
+With `--json`, stdout holds exactly one JSON object; diagnostics go to stderr. On
+success the command exits 0:
+
+```json
+{
+  "protocol": 1,
+  "companionPath": "/home/me/.mate/companions/acme",
+  "repositoryPath": "/work/acme-app",
+  "repositoryId": "acme-app",
+  "policyJson": "{\"allowedAgents\":[\"claude\"],\"secrets\":{\"guardrails\":true,…}}"
+}
+```
+
+`companionPath` is the companion's real path. `policyJson` is the document that
+`mate claude` puts in `MATE_POLICY_JSON` for the same companion. When the command
+cannot report a context, it exits 1 and prints
+`{"protocol":1,"error":{"code":"…","message":"…"}}`, with no companion and no
+policy:
+
+| Code                       | Meaning                                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `not-wrapped`              | No Mate projection covers the folder. Run `mate wrap` in the repository.                             |
+| `companion-missing`        | The companion folder that the projection names does not exist.                                       |
+| `companion-not-registered` | The projection names a folder that your Mate configuration does not list.                            |
+| `repository-not-linked`    | The companion is registered, but its registry does not link the repository.                          |
+| `usage`                    | An unknown option or a `--repo` without a folder.                                                    |
+| `internal`                 | The query failed unexpectedly, for example on a corrupt `~/.mate/config.yaml` or companion registry. |
+
+A reader rejects any other `protocol`, and trusts a companion only from a run
+that exits 0. Without `--json`, the command prints the companion and the
+repository.
 
 ## Capabilities
 

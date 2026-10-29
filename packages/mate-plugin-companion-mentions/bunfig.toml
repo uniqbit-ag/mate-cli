@@ -1,0 +1,2 @@
+[test]
+preload = ["../../test/require-isolated-home.ts", "./test/claude-code-testing.ts"]

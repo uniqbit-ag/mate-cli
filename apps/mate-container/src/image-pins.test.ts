@@ -10,12 +10,14 @@ import {
   RELEASE_PACKAGES,
   stalePins,
   unpinned,
+  withPublishedPackageVersions,
   type NpmRunner,
   type PackedTarball,
 } from "./image-pins";
 
 const GLOBAL_LOCK = IMAGE_LOCKS[0].lock;
 const WORKSPACE_LOCK = IMAGE_LOCKS[1].lock;
+const PLUGIN = "@uniqbit/mate-plugin-companion-mentions";
 
 const tempDirs: string[] = [];
 
@@ -49,6 +51,16 @@ function packed(entries: Record<string, string>): Map<string, PackedTarball> {
     ]),
   );
 }
+
+describe("release packages", () => {
+  test("core and the CLI are image-pinned, the plugin is publish-only, in publish order", () => {
+    expect(RELEASE_PACKAGES).toEqual([
+      { name: "@uniqbit/mate-core", dir: "packages/mate-core", image: true },
+      { name: "@uniqbit/mate", dir: "apps/mate-cli", image: true },
+      { name: PLUGIN, dir: "packages/mate-plugin-companion-mentions", image: false },
+    ]);
+  });
+});
 
 describe("stale image pins", () => {
   const good = integrityOf("acme-core");
@@ -96,6 +108,17 @@ describe("stale image pins", () => {
     ]);
 
     expect(stalePins(locks, "1.2.3", packed({ "@uniqbit/mate-core": good }))).toEqual([]);
+  });
+
+  test("a packed package no image lock names is compared with no lock", () => {
+    const locks = new Map([
+      [GLOBAL_LOCK, lockSource({ "@uniqbit/mate-core": { version: "1.2.3", integrity: good } })],
+      [WORKSPACE_LOCK, lockSource({})],
+    ]);
+
+    expect(
+      stalePins(locks, "1.2.3", packed({ "@uniqbit/mate-core": good, [PLUGIN]: "sha512-acme" })),
+    ).toEqual([]);
   });
 });
 
@@ -164,6 +187,9 @@ describe("packing the release packages", () => {
       path.join(dest, "uniqbit-mate-core-1.2.3.tgz"),
     );
     expect(result.get("@uniqbit/mate")!.tarball).toBe(path.join(dest, "uniqbit-mate-1.2.3.tgz"));
+    expect(result.get(PLUGIN)!.tarball).toBe(
+      path.join(dest, "uniqbit-mate-plugin-companion-mentions-1.2.3.tgz"),
+    );
   });
 
   test("reports the base64 sha512 integrity of each tarball", () => {
@@ -208,5 +234,29 @@ describe("packing the release packages", () => {
     expect(() =>
       packRelease("1.2.3", root, tempDir(), { runNpm: fakeNpm([], { failFor: "@uniqbit/mate" }) }),
     ).toThrow("packing @uniqbit/mate failed");
+  });
+});
+
+describe("lock rewrites for a package no lock names", () => {
+  test("leave the lock as it was", () => {
+    const source = `${JSON.stringify(
+      {
+        packages: {
+          "": { dependencies: { "@fission-ai/openspec": "1.13.1" } },
+          "node_modules/@fission-ai/openspec": { version: "1.13.1" },
+        },
+      },
+      null,
+      2,
+    )}\n`;
+
+    const rewritten = withPublishedPackageVersions(
+      source,
+      "1.2.3",
+      [{ name: PLUGIN, version: "1.2.3" }],
+      new Map([[PLUGIN, "sha512-acme"]]),
+    );
+
+    expect(rewritten).toBe(source);
   });
 });

@@ -7,10 +7,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   companionFrameworkConfigPath,
   isCapabilityEnabled,
+  policyDocument,
   readCompanionPolicy,
   resolveSecretPolicy,
 } from "./policy";
-import { defaultSecretPolicy, isSecretFile } from "./secret-patterns";
+import {
+  defaultSecretPolicy,
+  isSecretFile,
+  parseSecretsConfig,
+  secretRules,
+} from "./secret-patterns";
 
 const tempRoots: string[] = [];
 
@@ -79,6 +85,32 @@ describe("readCompanionPolicy", () => {
   test("treats any git mode other than auto as disabled", () => {
     expect(readCompanionPolicy(makeCompanion("git: manual\n")).gitAutoMode).toBe(false);
   });
+
+  test("reads the config where the companion path lands, following a link before `..`", () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "companion-policy-link-")));
+    tempRoots.push(root);
+    const real = path.join(root, "outside", "companion");
+    const decoy = path.join(root, "companion");
+    fs.mkdirSync(path.join(root, "outside", "sub"), { recursive: true });
+    fs.symlinkSync(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    for (const [dir, config] of [
+      [real, "git: auto\nsecrets:\n  deny: [private.txt]\n"],
+      [decoy, "secrets:\n  guardrails: false\n"],
+    ]) {
+      fs.mkdirSync(path.join(dir, ".mate", "config"), { recursive: true });
+      fs.writeFileSync(path.join(dir, ".mate", "config", "framework.yaml"), config, "utf8");
+    }
+    const configured = `${path.join(root, "forward")}/../companion`;
+
+    // Read as the kernel opens it; `fs.realpathSync` would normalise first.
+    expect(fs.readFileSync(companionFrameworkConfigPath(configured), "utf8")).toBe(
+      fs.readFileSync(path.join(real, ".mate", "config", "framework.yaml"), "utf8"),
+    );
+    const policy = readCompanionPolicy(configured);
+    expect(policy.gitAutoMode).toBe(true);
+    expect(policy.secrets.guardrails).toBe(true);
+    expect(isSecretFile("private.txt", resolveSecretPolicy(configured))).toBe(true);
+  });
 });
 
 describe("resolveSecretPolicy", () => {
@@ -112,5 +144,39 @@ describe("resolveSecretPolicy", () => {
       "secrets: { guardrails: false }\n",
     );
     expect(resolveSecretPolicy(companionPath).guardrails).toBe(false);
+  });
+});
+
+describe("policyDocument", () => {
+  test("carries the allowed agents and the compiled secret rules", () => {
+    const secrets = defaultSecretPolicy();
+    expect(JSON.parse(policyDocument({ allowedAgents: ["claude"], secrets }))).toEqual({
+      allowedAgents: ["claude"],
+      secrets: secretRules(secrets),
+    });
+  });
+
+  test("adds a companion's own deny pattern beside the defaults", () => {
+    const document = JSON.parse(
+      policyDocument({ allowedAgents: [], secrets: parseSecretsConfig({ deny: ["*.tfstate"] }) }),
+    );
+    const patterns = document.secrets.deny.map((rule: { pattern: string }) => rule.pattern);
+    expect(patterns).toContain(".env");
+    expect(patterns).toContain("*.tfstate");
+  });
+
+  test("carries an opt-out", () => {
+    const secrets = parseSecretsConfig({ guardrails: false });
+    expect(JSON.parse(policyDocument({ allowedAgents: [], secrets })).secrets.guardrails).toBe(
+      false,
+    );
+  });
+
+  test("stays small with the default patterns", () => {
+    const document = policyDocument({
+      allowedAgents: ["claude", "opencode"],
+      secrets: defaultSecretPolicy(),
+    });
+    expect(document.length).toBeLessThan(4096);
   });
 });

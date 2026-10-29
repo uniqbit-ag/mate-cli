@@ -2,6 +2,7 @@
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "./framework";
+import { isWithin } from "./physical-path";
 
 /** Matched by consumers and tests; keep byte-identical. */
 export const ARTIFACT_REFUSAL_HEADLINE = "artifact writes must go to the companion framework path.";
@@ -12,20 +13,19 @@ export interface ArtifactRefusalInput {
   /** The absolute path the guard judged. */
   resolved: string;
   companion: string;
-  /** The Working Repository root relative targets resolve against. */
+  /** The Working Repository root relative targets resolve against; empty without one. */
   repoRoot: string;
 }
 
-/** The absolute path both guards judge: a relative target resolves against the repo root, never a `cd`. */
-export function resolveArtifactTarget(target: string, repoRoot: string): string {
+/** The absolute path both guards judge: a relative target resolves against `base`, never a `cd`. */
+export function resolveArtifactTarget(target: string, base: string): string {
   if (path.isAbsolute(target)) return path.normalize(target);
-  return path.normalize(path.join(repoRoot, target));
+  return path.normalize(path.join(base, target));
 }
 
 function relativeInside(target: string, root: string): string | null {
-  const relative = path.relative(path.normalize(root), path.normalize(target));
-  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return null;
-  return relative;
+  if (!root || !isWithin(target, root)) return null;
+  return path.relative(path.normalize(root), path.normalize(target)) || null;
 }
 
 /** The refusal text, without a trailing newline. */
@@ -48,7 +48,9 @@ export function artifactRefusal({
   if (suggested) lines.push(` suggested: ${suggested}`);
   if (isRelative) {
     lines.push(
-      "Relative paths resolve against the working repository; a preceding `cd` is not followed.",
+      repoRoot
+        ? "Relative paths resolve against the working repository; a preceding `cd` is not followed."
+        : "Relative paths resolve against the session's folder; a preceding `cd` is not followed.",
     );
   }
   lines.push(

@@ -5,14 +5,18 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Publish order matters: core must exist on the registry before the CLI that
 # pins it, so a partially failed publish never leaves a released @uniqbit/mate
-# referencing an unpublished package version.
+# referencing an unpublished package version. The plugin goes last so its
+# failure cannot hold back core or the CLI. Must match RELEASE_PACKAGES in
+# apps/mate-container/src/image-pins.ts.
 PACKAGE_NAMES=(
   "@uniqbit/mate-core"
   "@uniqbit/mate"
+  "@uniqbit/mate-plugin-companion-mentions"
 )
 PACKAGE_DIRS=(
   "$ROOT_DIR/packages/mate-core"
   "$ROOT_DIR/apps/mate-cli"
+  "$ROOT_DIR/packages/mate-plugin-companion-mentions"
 )
 
 REGISTRY="https://registry.npmjs.org/"

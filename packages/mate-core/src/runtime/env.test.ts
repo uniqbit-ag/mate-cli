@@ -5,7 +5,8 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { MATE_ENV, isManagedCompanionContext, readCompanionRuntimeContext } from "./env";
-import { companionFrameworkConfigPath } from "./policy";
+import { companionFrameworkConfigPath, policyDocument } from "./policy";
+import { defaultSecretPolicy, parseSecretsConfig } from "./secret-patterns";
 import { writeProjectionPair, type MateProjection } from "./projection";
 import { repoLocalRegistryPath } from "./repo-local";
 
@@ -136,12 +137,26 @@ describe("readCompanionRuntimeContext file-backed composition", () => {
       companionPath,
       repositoryPath: repoRoot,
       repositoryId: "acme",
-      policyJson: JSON.stringify({ allowedAgents: ["claude"] }),
+      policyJson: policyDocument({ allowedAgents: ["claude"], secrets: defaultSecretPolicy() }),
       graphifyEnabled: true,
       gitAutoModeEnabled: true,
       reactDoctorEnabled: false,
     });
     expect(isManagedCompanionContext(context)).toBe(true);
+  });
+
+  test("carries the companion's secret rules in the policy document", () => {
+    const { repoRoot } = makeProjectedRepo(
+      {},
+      'allowedAgents:\n  - claude\nsecrets:\n  guardrails: false\n  deny: ["*.tfstate"]\n',
+    );
+
+    expect(readCompanionRuntimeContext({}, repoRoot).policyJson).toBe(
+      policyDocument({
+        allowedAgents: ["claude"],
+        secrets: parseSecretsConfig({ guardrails: false, deny: ["*.tfstate"] }),
+      }),
+    );
   });
 
   test("resolves from a nested subdirectory of the Working Repository", () => {
@@ -165,7 +180,9 @@ describe("readCompanionRuntimeContext file-backed composition", () => {
     expect(context.graphifyEnabled).toBe(false);
     expect(context.reactDoctorEnabled).toBe(true);
     expect(context.gitAutoModeEnabled).toBe(false);
-    expect(context.policyJson).toBe(JSON.stringify({ allowedAgents: [] }));
+    expect(context.policyJson).toBe(
+      policyDocument({ allowedAgents: [], secrets: defaultSecretPolicy() }),
+    );
   });
 
   test("a managed session ignores a projection naming a different companion", () => {
@@ -238,5 +255,39 @@ describe("isManagedCompanionContext", () => {
     expect(isManagedCompanionContext(managed)).toBe(true);
     expect(isManagedCompanionContext(missingRepo)).toBe(true);
     expect(isManagedCompanionContext(missingCompanion)).toBe(false);
+  });
+});
+
+describe("a companion path with a link before `..`", () => {
+  /** `forward` links to `outside/sub`, so `forward/../companion` is `outside/companion`. */
+  function linkedCompanions() {
+    const root = fs.realpathSync(makeTempDir("env-link-"));
+    const real = path.join(root, "outside", "companion");
+    const decoy = path.join(root, "companion");
+    fs.mkdirSync(path.join(root, "outside", "sub"), { recursive: true });
+    fs.symlinkSync(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    for (const [dir, config] of [
+      [real, "git: auto\n"],
+      [decoy, "git: manual\n"],
+    ] as const) {
+      fs.mkdirSync(path.dirname(companionFrameworkConfigPath(dir)), { recursive: true });
+      fs.writeFileSync(companionFrameworkConfigPath(dir), config, "utf8");
+    }
+    return { real, configured: `${path.join(root, "forward")}/../companion` };
+  }
+
+  test("from the launch environment resolves to where it leads", () => {
+    const { real, configured } = linkedCompanions();
+    expect(readCompanionRuntimeContext({ MATE_ARTIFACT_PATH: configured }).companionPath).toBe(
+      real,
+    );
+  });
+
+  test("from a projection resolves to where it leads, and its policy is read there", () => {
+    const { real, configured } = linkedCompanions();
+    const { repoRoot } = makeProjectedRepo({ companionPath: configured });
+    const context = readCompanionRuntimeContext({}, repoRoot);
+    expect(context.companionPath).toBe(real);
+    expect(context.gitAutoModeEnabled).toBe(true);
   });
 });

@@ -7,9 +7,9 @@
  *     <version>, then stage them.
  *
  *   bun scripts/image-pins.ts verify <version> <pack-dir> [workspace-root]
- *     Publication: pack each release package once into <pack-dir>, check it
- *     against the image locks, and print `name\tintegrity\ttarball` per
- *     package in publish order.
+ *     Publication: pack each release package once into <pack-dir>, check each
+ *     image-pinned one against the image locks, and print
+ *     `name\tintegrity\ttarball` per package in publish order.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -43,6 +43,8 @@ const defaultDeps: EntryDeps = {
   stderr: (text) => process.stderr.write(text),
 };
 
+const IMAGE_PINNED = RELEASE_PACKAGES.filter(({ image }) => image).map(({ name }) => name);
+
 function roots(workspaceArg: string | undefined): { containerRoot: string; workspaceRoot: string } {
   const containerRoot = workspaceArg
     ? path.resolve(workspaceArg, "apps", "mate-container")
@@ -69,10 +71,7 @@ export async function sync(argv: string[], deps: EntryDeps = defaultDeps): Promi
   }
 
   const locks = readImageLocks(containerRoot);
-  const missing = unpinned(
-    locks,
-    RELEASE_PACKAGES.map(({ name }) => name),
-  );
+  const missing = unpinned(locks, IMAGE_PINNED);
   if (missing.length > 0) {
     deps.stderr(`sync-image-inputs: no image lock pins ${missing.join(", ")}\n`);
     return 1;
@@ -131,7 +130,7 @@ export async function verify(argv: string[], deps: EntryDeps = defaultDeps): Pro
   }
 
   const locks = readImageLocks(containerRoot);
-  const missing = unpinned(locks, [...packed.keys()]);
+  const missing = unpinned(locks, IMAGE_PINNED);
   for (const name of missing) {
     deps.stderr(`Error: no image lock pins ${name}.\n`);
   }

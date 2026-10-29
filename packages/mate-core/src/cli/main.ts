@@ -16,6 +16,7 @@ import { runLaunchClaudeCommand } from "./commands/launch/claude";
 import { runLaunchOpenCodeCommand } from "./commands/launch/opencode";
 import { runPluginCommand } from "./commands/plugin/plugin";
 import { runReportCommand } from "./commands/report";
+import { runSessionContextCommand } from "./commands/session/context";
 import { runSessionCommand } from "./commands/session/prepare";
 import { runStudioCommand } from "./commands/studio";
 import { runUpdateCommand } from "./commands/update";
@@ -76,6 +77,16 @@ const mainDeps: MainDeps = {
 
 export async function main(argv = process.argv, deps: MainDeps = mainDeps): Promise<void> {
   const [, , command, subcommand, ...rest] = argv;
+
+  /**
+   * A Claude plugin asks this on every mention of a plain session. It changes
+   * nothing and prints only its answer, so it skips the runtime refresh,
+   * plugin loading, the update checks and every gate.
+   */
+  if (command === "session" && subcommand === "context") {
+    await runSessionContextCommand(rest);
+    return;
+  }
 
   if (!(await ensureRuntimeDirectory(command, deps.refreshRuntimeDirectory))) {
     process.exitCode = 1;

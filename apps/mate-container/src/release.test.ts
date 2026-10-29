@@ -33,15 +33,15 @@ describe("the release tag's inputs pin its own published version", () => {
     expect(rewritten).toContain(`version: ${readImageInputs().opencode.version}`);
   });
 
-  test("no image input, manifest, or lock pins the retired OpenCode plugin package", () => {
+  test("no image input, manifest, or lock pins the retired or the publish-only plugin package", () => {
     const files = [
       "image-inputs.yaml",
       ...IMAGE_LOCKS.flatMap(({ manifest, lock }) => [manifest, lock]),
     ];
     for (const file of files) {
-      expect(fs.readFileSync(path.join(CONTAINER_ROOT, file), "utf8")).not.toContain(
-        "@uniqbit/mate-opencode-plugin",
-      );
+      const contents = fs.readFileSync(path.join(CONTAINER_ROOT, file), "utf8");
+      expect(contents).not.toContain("@uniqbit/mate-opencode-plugin");
+      expect(contents).not.toContain("@uniqbit/mate-plugin-companion-mentions");
     }
   });
 

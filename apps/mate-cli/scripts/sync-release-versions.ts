@@ -1,12 +1,12 @@
 /**
- * Release hook: keep `@uniqbit/mate-core` and `@uniqbit/mate` at one
- * synchronized version.
+ * Release hook: keep `@uniqbit/mate-core`, `@uniqbit/mate` and
+ * `@uniqbit/mate-plugin-companion-mentions` at one synchronized version.
  *
  * Runs from apps/mate-cli as release-it's `after:bump` hook. release-it bumps
  * only the CLI package.json; this script propagates the new version to the
- * other public packages and to every inter-package dependency pin, refreshes
- * the lockfile, and stages the touched files so they land in the release
- * commit.
+ * other public packages, to every inter-package dependency pin and to the
+ * plugin's Claude manifest, refreshes the lockfile, and stages the touched
+ * files so they land in the release commit.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
@@ -19,10 +19,14 @@ const workspaceRoot = process.argv[2]
   : path.resolve(import.meta.dirname, "..", "..", "..");
 const cliRoot = path.join(workspaceRoot, "apps", "mate-cli");
 const coreRoot = path.join(workspaceRoot, "packages", "mate-core");
+const pluginRoot = path.join(workspaceRoot, "packages", "mate-plugin-companion-mentions");
+/** `claude plugin validate --strict` needs a version, and a cached copy is named by it. */
+const pluginManifestPath = path.join(pluginRoot, "claude-plugin", ".claude-plugin", "plugin.json");
 
 type PackageJson = {
   version: string;
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 };
 
 async function readPackageJson(packageRoot: string): Promise<PackageJson> {
@@ -39,14 +43,25 @@ async function writePackageJson(packageRoot: string, data: PackageJson): Promise
 
 const cli = await readPackageJson(cliRoot);
 const core = await readPackageJson(coreRoot);
+const plugin = await readPackageJson(pluginRoot);
 const version = cli.version;
 
 core.version = version;
+plugin.version = version;
 
 cli.dependencies = { ...cli.dependencies, "@uniqbit/mate-core": version };
+plugin.devDependencies = { ...plugin.devDependencies, "@uniqbit/mate-core": version };
 
 await writePackageJson(coreRoot, core);
 await writePackageJson(cliRoot, cli);
+await writePackageJson(pluginRoot, plugin);
+
+const manifest = JSON.parse(await fs.readFile(pluginManifestPath, "utf8")) as Record<
+  string,
+  unknown
+>;
+manifest.version = version;
+await fs.writeFile(pluginManifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
 
 const install = spawnSync("bun", ["install"], { cwd: workspaceRoot, stdio: "inherit" });
 if (install.status !== 0) {
@@ -60,6 +75,8 @@ const add = spawnSync(
     "add",
     path.join(coreRoot, "package.json"),
     path.join(cliRoot, "package.json"),
+    path.join(pluginRoot, "package.json"),
+    pluginManifestPath,
     path.join(workspaceRoot, "bun.lock"),
   ],
   { cwd: workspaceRoot, stdio: "inherit" },

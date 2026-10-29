@@ -266,6 +266,150 @@ describe("packed Claude plugin", () => {
     expect(exitCode).toBe(0);
   });
 
+  describe("validate-artifact-path shim under Node fails closed", () => {
+    /** A Working Repository with a companion and a key file; HOME points into the fixture. */
+    async function guardFixture(prefix: string) {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+      tempRoots.push(root);
+      const repo = path.join(root, "acme");
+      const companion = path.join(root, "companion");
+      const home = path.join(root, "home");
+      for (const dir of [repo, companion, home]) await fs.mkdir(dir, { recursive: true });
+      spawnSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
+      await fs.writeFile(path.join(repo, "cert.key"), "synthetic key fixture\n", "utf8");
+      return {
+        repo,
+        env: {
+          ...withoutLaunchEnvironment(),
+          MATE_ARTIFACT_PATH: companion,
+          MATE_REPO_PATH: repo,
+          HOME: home,
+        },
+      };
+    }
+
+    /** The verifier's command: `depth` substitutions, each inside double quotes. */
+    function nestedCommand(depth: number, tail: string): string {
+      let command = "printf x";
+      for (let i = 0; i < depth; i++) command = `printf "%s" "$(${command})"`;
+      return `${command}; ${tail}`;
+    }
+
+    test("a command nested 5,000 levels deep is refused, not a crash", async () => {
+      const { repo, env } = await guardFixture("mate-shim-deep-");
+      for (const tail of ["cat cert.key > captured.txt", "printf x > captured.txt"]) {
+        const result = runShim(
+          "validate-artifact-path.mjs",
+          { tool_name: "Bash", tool_input: { command: nestedCommand(5000, tail) } },
+          env,
+          repo,
+        );
+        expect(result.stderr).not.toContain("RangeError");
+        expect(result.exitCode).toBe(2);
+        expect(result.stderr).toContain("more than 64 levels");
+      }
+    });
+
+    test("an unexpected error is exit 2 with a short message, so Claude refuses the call", async () => {
+      const { repo, env } = await guardFixture("mate-shim-error-");
+      const result = runShim(
+        "validate-artifact-path.mjs",
+        { tool_name: "Write", tool_input: { file_path: "no\u0000tes.md", content: "x" } },
+        env,
+        repo,
+      );
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toStartWith("Mate guardrail could not check this call: ");
+      expect(result.stderr.trim().split("\n")).toHaveLength(1);
+    });
+
+    test("a shim that cannot load the guard refuses the call", async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-broken-"));
+      tempRoots.push(root);
+      const hooks = path.join(pluginRoot, "hooks");
+      const withoutLoader = path.join(root, "no-loader", "hooks");
+      const withoutGuard = path.join(root, "no-guard", "hooks");
+      for (const dir of [withoutLoader, withoutGuard]) {
+        // oxlint-disable-next-line no-await-in-loop -- fixture setup
+        await fs.mkdir(dir, { recursive: true });
+        // oxlint-disable-next-line no-await-in-loop -- fixture setup
+        await fs.copyFile(
+          path.join(hooks, "validate-artifact-path.mjs"),
+          path.join(dir, "validate-artifact-path.mjs"),
+        );
+      }
+      await fs.copyFile(
+        path.join(hooks, "ts-loader.mjs"),
+        path.join(withoutGuard, "ts-loader.mjs"),
+      );
+
+      for (const dir of [withoutLoader, withoutGuard]) {
+        const result = spawnSync("node", [path.join(dir, "validate-artifact-path.mjs")], {
+          input: JSON.stringify({ tool_name: "Read", tool_input: { file_path: "cert.key" } }),
+          encoding: "utf8",
+          cwd: root,
+        });
+        expect({ dir, status: result.status }).toEqual({ dir, status: 2 });
+        expect(result.stderr).toStartWith("Mate guardrail could not check this call: ");
+        expect(result.stderr.trim().split("\n")).toHaveLength(1);
+      }
+    });
+
+    test("a payload that is not JSON names no tool and stays allowed", async () => {
+      const { repo, env } = await guardFixture("mate-shim-not-json-");
+      const result = spawnSync(
+        "node",
+        [path.join(pluginRoot, "hooks", "validate-artifact-path.mjs")],
+        { input: "not json", encoding: "utf8", env: { ...process.env, ...env }, cwd: repo },
+      );
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+    });
+  });
+
+  test("validate-artifact-path shim reads the policy where a `link/..` companion lands", async () => {
+    // `forward` leads to `outside/sub`, so `forward/../companion` is `outside/companion`.
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-shim-policy-")));
+    tempRoots.push(root);
+    const repo = path.join(root, "acme");
+    const real = path.join(root, "outside", "companion");
+    const decoy = path.join(root, "companion");
+    const home = path.join(root, "home");
+    for (const dir of [repo, home, path.join(root, "outside", "sub")]) {
+      // oxlint-disable-next-line no-await-in-loop -- fixture setup
+      await fs.mkdir(dir, { recursive: true });
+    }
+    for (const [companion, config] of [
+      [real, 'secrets:\n  deny: ["private.txt"]\n'],
+      [decoy, "secrets:\n  guardrails: false\n"],
+    ]) {
+      // oxlint-disable-next-line no-await-in-loop -- fixture setup
+      await fs.mkdir(path.join(companion, ".mate", "config"), { recursive: true });
+      // oxlint-disable-next-line no-await-in-loop -- fixture setup
+      await fs.writeFile(path.join(companion, ".mate", "config", "framework.yaml"), config, "utf8");
+    }
+    await fs.symlink(path.join(root, "outside", "sub"), path.join(root, "forward"));
+    spawnSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
+    const env = {
+      ...withoutLaunchEnvironment(),
+      MATE_ARTIFACT_PATH: `${path.join(root, "forward")}/../companion`,
+      MATE_REPO_PATH: repo,
+      HOME: home,
+    };
+    for (const file of ["private.txt", "cert.key"]) {
+      // oxlint-disable-next-line no-await-in-loop -- fixture setup
+      await fs.writeFile(path.join(repo, file), "synthetic fixture\n", "utf8");
+      const result = runShim(
+        "validate-artifact-path.mjs",
+        { tool_name: "Read", tool_input: { file_path: file } },
+        env,
+        repo,
+      );
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain("secret files are off-limits");
+    }
+  });
+
   test("session-prepare shim is inert under a launch environment", () => {
     const result = runShim("session-prepare.mjs", {}, { MATE_ARTIFACT_PATH: "/companions/acme" });
     expect(result.exitCode).toBe(0);

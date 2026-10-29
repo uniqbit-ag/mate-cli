@@ -47,6 +47,11 @@ those selections. Run `mate install` afterward to refresh the dependency plan.
 Then `mate opencode` and `mate claude` launch from the working repository with
 the selected companion-managed capabilities available.
 
+Some capabilities are not selected in setup. They come from plugin packages
+that you install separately, and a plugin declared in the companion's
+`.mate/config/framework.yaml` is always enabled.
+[Companion Mentions](#companion-mentions) is one of them.
+
 ## Skill Locations
 
 Capability skills live in two companion skill roots:
@@ -191,6 +196,47 @@ task stays untagged.
 
 React Doctor is configured during setup and does not have a separate `mate cap`
 command.
+
+### Companion Mentions
+
+Companion Mentions (`companion-mentions`) is an optional capability that ships
+as a separate package, `@uniqbit/mate-plugin-companion-mentions`. It lets a
+Claude session in a Working Repository mention Companion Repository files and
+folders, whether `mate claude` started it or plain `claude` runs in a wrapped
+repository. The
+[package README](https://www.npmjs.com/package/@uniqbit/mate-plugin-companion-mentions)
+explains how to install it.
+
+Type `@mate:` in Claude's prompt to list up to 15 matching companion files and
+folders in the `@` menu. Any other `@` search adds up to three companion rows
+after Claude's own. A sent `@mate:<path>` mention attaches that file, or a list
+of a folder's entries. A file mention can carry a line range, such as
+`@mate:openspec/config.yaml#L1-5`.
+
+- It loads in sessions started with `mate claude` and in plain `claude` sessions
+  of a repository wrapped for Claude, where Claude Code must trust the folder.
+  `mate doctor` shows under Plain Sessions whether plain sessions load it. A
+  plain session in a repository that is not wrapped does not.
+- It uses the companion that `mate claude` hands it. In a plain session it asks
+  Mate through [`mate session context`](/docs/reference/commands#session-context),
+  which reports only a companion you registered that links the repository.
+- It needs Claude Code 2.1.292 or later. Older versions start normally and
+  ignore it.
+- In a session inside the companion, such as `mate claude -- --companion`, it
+  adds no menu rows, because Claude's own rows already list those files. A
+  typed `@mate:` mention still attaches.
+- It does not offer, list or attach secret files, whether named directly or
+  through a link. It applies the companion's
+  [secret policy](/docs/concepts/secret-guardrails). In a plain session a
+  `secrets` change applies from the next mention, and the menu follows within
+  30 seconds. A `mate claude` session keeps the policy from its launch, so the
+  change reaches it at the next `mate claude`.
+- It takes no configuration.
+
+`mate doctor` lists `companion-mentions` among the Capabilities that contribute
+a Claude plugin. To turn it off, remove its entry from the `plugins:` list in
+`framework.yaml`. If the rows do not appear, see
+[`@mate:` Rows Are Missing](/docs/troubleshooting#mate-rows-are-missing).
 
 ## Index Synchronization
 
