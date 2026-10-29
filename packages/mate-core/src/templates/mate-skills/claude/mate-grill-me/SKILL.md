@@ -11,7 +11,7 @@ metadata:
 
 # Mate Grill Me
 
-This skill runs before `/openspec-explore`. It stress-tests decisions; wide
+This skill runs before `/mate-explore-change`. It stress-tests decisions; wide
 repository investigation and option comparison belong to explore. When a
 question would need mapping large parts of the repository, record it under
 Unresolved or Assumptions in the handoff instead of investigating it.
@@ -30,11 +30,11 @@ PRE-EXPLORE HANDOFF (grill)
 Confirmed:   <accepted decisions>
 Unresolved:  <open questions, or "none">
 Assumptions: <untested assumptions explore should verify, or "none">
-Next: /openspec-explore
+Next: /mate-explore-change
 ```
 
 Confirmed decisions are settled; explore should not ask them again. Then tell
-the user the next step is `/openspec-explore`; do not invoke it. The user starts
+the user the next step is `/mate-explore-change`; do not invoke it. The user starts
 it in this conversation.
 
 If grilling stopped on a blocker, still emit the block. List the blocker first

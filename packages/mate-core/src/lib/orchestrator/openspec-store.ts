@@ -1,15 +1,11 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import { parse as parseYaml } from "yaml";
 
-import { MATE_ENV } from "../../runtime/env-names";
-import { runtimeWrapperBinPath } from "../../runtime/runtime-directory";
-import { resolveCommandOnPath } from "../../tools/setup/utils";
-import { getWrapperBinPath } from "../package-paths";
+import { pathIsDirectory } from "../fs-utils";
+import { runOpenSpec } from "../openspec-cli";
 
 /**
  * The Companion Repository as an OpenSpec store. OpenSpec reports the Working
@@ -22,31 +18,16 @@ import { getWrapperBinPath } from "../package-paths";
  * register, which OpenSpec answers authoritatively.
  */
 
-const execFileAsync = promisify(execFile);
-
 /** OpenSpec's one id grammar, shared by store and change ids. */
 const KEBAB_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 const STORE_METADATA_FILE = path.join(".openspec-store", "store.yaml");
 
-/** Injectable so the suite never touches the developer's registry or binary. */
+/** Injectable so the suite never touches the developer's registry; the CLI is `openSpecCliDeps`. */
 export const openSpecStoreDeps = {
   env: (): NodeJS.ProcessEnv => process.env,
   platform: (): NodeJS.Platform => process.platform,
   homedir: (): string => os.homedir(),
-  /** Mate's own `openspec` wrappers, which must never answer a registration. */
-  wrapperBinDirs: (): string[] => {
-    const launched = openSpecStoreDeps.env()[MATE_ENV.wrapperBinPath];
-    return [getWrapperBinPath(), runtimeWrapperBinPath(), ...(launched ? [launched] : [])];
-  },
-  resolveBinary: (): string | undefined => {
-    const excluded = new Set(openSpecStoreDeps.wrapperBinDirs().map((dir) => path.resolve(dir)));
-    const searchPath = (openSpecStoreDeps.env().PATH ?? "")
-      .split(path.delimiter)
-      .filter((dir) => dir && !excluded.has(path.resolve(dir)))
-      .join(path.delimiter);
-    return resolveCommandOnPath("openspec", searchPath);
-  },
 };
 
 export type StoreRegistrationCheck =
@@ -65,13 +46,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 async function canonicalPath(candidate: string): Promise<string> {
   return fs.realpath(candidate).catch(() => path.resolve(candidate));
-}
-
-async function isDirectory(candidate: string): Promise<boolean> {
-  return fs
-    .stat(candidate)
-    .then((stats) => stats.isDirectory())
-    .catch(() => false);
 }
 
 function sanitizeStoreId(name: string): string {
@@ -157,23 +131,14 @@ export async function checkStoreRegistration(
     : { state: "conflict", path: localPath };
 }
 
-function commandOutput(error: unknown): string {
-  const { stderr, stdout, message } = error as {
-    stderr?: string;
-    stdout?: string;
-    message: string;
-  };
-  return (stderr || stdout || message).trim();
-}
-
 /**
  * Registers the companion when the registry lacks it. A conflicting id fails
- * rather than silently picking another one; OpenSpec without stores, or a
+ * rather than silently picking another one; a missing bundled CLI, or a
  * companion that is no OpenSpec root, is skipped.
  */
 export async function ensureStoreRegistration(companionPath: string): Promise<StoreRegistration> {
   const companion = await canonicalPath(companionPath);
-  if (!(await isDirectory(path.join(companion, "openspec")))) {
+  if (!(await pathIsDirectory(path.join(companion, "openspec")))) {
     return { state: "skipped", reason: `${companion} is not an OpenSpec root` };
   }
   const id = await deriveStoreId(companion);
@@ -183,20 +148,15 @@ export async function ensureStoreRegistration(companionPath: string): Promise<St
     throw new Error(`OpenSpec store id "${id}" is already registered at ${check.path}`);
   }
 
-  const bin = openSpecStoreDeps.resolveBinary();
-  if (!bin) return { state: "skipped", reason: "the openspec CLI is not on PATH" };
-  try {
-    await execFileAsync(bin, ["store", "register", companion, "--id", id, "--yes"], {
-      cwd: companion,
-      env: openSpecStoreDeps.env(),
-      timeout: 30_000,
-    });
-  } catch (error) {
-    const output = commandOutput(error);
-    if (/unknown command/i.test(output)) {
-      return { state: "skipped", reason: "the openspec CLI does not support stores" };
-    }
-    throw new Error(`openspec store register failed: ${output}`, { cause: error });
+  const run = await runOpenSpec(["store", "register", companion, "--id", id, "--yes"], {
+    cwd: companion,
+    env: openSpecStoreDeps.env(),
+    timeout: 30_000,
+  });
+  if (run.missing) return { state: "skipped", reason: run.stderr };
+  if (run.code !== 0) {
+    const output = (run.stderr || run.stdout).trim() || `exit code ${run.code ?? "unknown"}`;
+    throw new Error(`openspec store register failed: ${output}`);
   }
   return { state: "written", id };
 }

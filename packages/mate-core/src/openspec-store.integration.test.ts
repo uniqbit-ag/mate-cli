@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { getWrapperBinPath } from "./lib/package-paths";
 import { runtimeWrapperBinPath } from "./runtime/runtime-directory";
+import { openSpecCliDeps } from "./lib/openspec-cli";
 import { checkStoreRegistration, openSpecStoreDeps } from "./lib/orchestrator/openspec-store";
 import type { ProjectionEntryOutcome } from "./lib/orchestrator/projection-types";
 import { writeRepoLocalRegistryEntry } from "./lib/orchestrator/repository-link";
@@ -23,12 +24,13 @@ import { findRealOpenSpec } from "../test/real-openspec";
 
 const SCHEMA_SOURCE = path.join(import.meta.dirname, "templates", "capabilities", "openspec-cap");
 /**
- * Where a projection says the wrappers live, under the test run's HOME; the
- * package's wrapper is installed there the way the runtime directory is.
+ * Where a projection says the wrappers live, under the test run's HOME; linked
+ * to the package's wrappers the way the runtime directory is.
  */
 const WRAPPER_BIN = runtimeWrapperBinPath();
-fs.mkdirSync(WRAPPER_BIN, { recursive: true });
-fs.copyFileSync(path.join(getWrapperBinPath(), "openspec"), path.join(WRAPPER_BIN, "openspec"));
+fs.mkdirSync(path.dirname(path.dirname(WRAPPER_BIN)), { recursive: true });
+fs.rmSync(path.dirname(WRAPPER_BIN), { recursive: true, force: true });
+fs.symlinkSync(path.dirname(getWrapperBinPath()), path.dirname(WRAPPER_BIN));
 
 const REAL_OPENSPEC = findRealOpenSpec();
 const NODE_DIR = path.dirname(
@@ -37,9 +39,11 @@ const NODE_DIR = path.dirname(
 
 const tempRoots: string[] = [];
 const originalDeps = { ...openSpecStoreDeps };
+const originalCliDeps = { ...openSpecCliDeps };
 
 afterEach(() => {
   Object.assign(openSpecStoreDeps, originalDeps);
+  Object.assign(openSpecCliDeps, originalCliDeps);
   for (const dir of tempRoots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -78,9 +82,9 @@ function makeSandbox(): Sandbox {
 
   let registrations = 0;
   openSpecStoreDeps.env = () => env;
-  openSpecStoreDeps.resolveBinary = () => {
+  openSpecCliDeps.locate = () => {
     registrations += 1;
-    return REAL_OPENSPEC;
+    return { bin: REAL_OPENSPEC! };
   };
   return { root, companion, env, registrations: () => registrations };
 }

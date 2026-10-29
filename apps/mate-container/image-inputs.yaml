@@ -149,6 +149,9 @@ tools:
     version: 1.14.1
     source: npm_global
     # Resolved through locks/global-tools.package-lock.json, not `@latest`.
+    # Mate now ships its own OpenSpec CLI, so the image no longer requires this
+    # global copy. It leaves the global-tools manifest and lock when they are
+    # regenerated after the first release that bundles OpenSpec.
 
   context7:
     detect: context7-mcp

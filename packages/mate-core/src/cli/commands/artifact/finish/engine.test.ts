@@ -269,6 +269,18 @@ describe("runFinishEngine — publication pipeline", () => {
     expect(result.tag).toBe("openspec/2020-01-01-legacy");
   });
 
+  test("a finisher warning is reported in the result and publication continues", async () => {
+    const h = harness(
+      {},
+      { resolved: { anchorName: "2020-01-01-acme", commitPaths: COMMIT_PATHS, warning: "w" } },
+    );
+
+    const result = await runEngine(h);
+
+    expect(result.warning).toBe("w");
+    expect(result.status).toBe("ok");
+  });
+
   test("--no-push does every local step but skips sync and push", async () => {
     const h = harness();
 

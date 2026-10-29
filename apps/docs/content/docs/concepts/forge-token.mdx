@@ -1,0 +1,73 @@
+---
+title: Forge Token
+description: Let Mate read merge state from GitHub with an optional, read-only MATE_GIT_TOKEN.
+---
+
+Mate publishes an archived change only after its delivery branch is merged. A
+forge token lets it read that merge state from GitHub instead of asking you.
+
+## It Is Optional
+
+Without a token, nothing breaks. When publishing (or linking or archiving) needs
+a merge state, Mate asks whether the branch is **merged**, **not yet merged**, or
+**dropped**, and records your answer with source `user`. The publish skill
+reminds you once per run that a token would answer this for you.
+
+## Where Mate Looks
+
+1. `MATE_GIT_TOKEN`
+2. `gh auth token`, when the GitHub CLI is installed and signed in
+
+Other variables, such as `GITHUB_TOKEN` or `GH_TOKEN`, are ignored on purpose, so a
+broadly scoped CI token is never picked up by accident. Mate removes them before it
+runs `gh auth token`, so the GitHub CLI reports only its stored login. The token is separate
+from Git transport, so SSH remotes work.
+
+## Permissions
+
+Mate only reads. No write permission is needed.
+
+**Fine-grained token** (recommended): under _Repository access_, select only your
+Working Repositories, then grant:
+
+| Permission    | Access | Why                                             |
+| ------------- | ------ | ----------------------------------------------- |
+| Pull requests | Read   | Finds the PR whose head is the delivery branch. |
+| Metadata      | Read   | Added by GitHub automatically.                  |
+
+**Classic token**: no scope for public repositories; `repo` for private ones.
+
+For an organization that enforces SAML single sign-on, authorize the token for
+that organization after creating it.
+
+When a permission is missing, Mate names it, falls back to asking you, and
+records your answer.
+
+## Setting It
+
+Set it in your shell profile or load it from a secret manager:
+
+```sh
+export MATE_GIT_TOKEN=…   # in ~/.zshrc or your secret manager's shell hook
+```
+
+Never put it in a repository, a companion, or a `.env` file that is committed.
+Mate never prints, logs, or stores the token: it is not written to
+`delivery.yaml`, reports, or command output.
+
+## Requests Mate Sends
+
+Only to `https://api.github.com`, only during `mate artifact link` (recording
+a branch or `--refresh`), `mate artifact archive`, or publication, and never
+while Studio renders:
+
+| Request                                            | Used for                                             |
+| -------------------------------------------------- | ---------------------------------------------------- |
+| `GET /repos/{owner}/{repo}`                        | another repository's default branch; a fork's parent |
+| `GET /repos/{owner}/{repo}/pulls?head=…&state=all` | PRs whose head is the delivery branch                |
+| `GET /repos/{owner}/{repo}/pulls/{number}`         | merge commit and merger of a merged PR               |
+
+Hosts other than github.com always use the question instead. A repository
+other than the Working Repository is never assumed to be on github.com: its host
+comes from the `origin` remote of a linked checkout of it, else from the Working
+Repository's remote, and with no known host Mate asks.

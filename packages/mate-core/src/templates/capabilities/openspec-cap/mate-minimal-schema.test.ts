@@ -41,7 +41,7 @@ describe("mate-minimal schema", () => {
     expect(artifact(schema, "specs").instruction).toContain("not an optional subset of mate-v1");
     expect(artifact(schema, "specs").instruction).toContain("one repository and one Area");
     expect(artifact(schema, "tasks").instruction).toContain(
-      "shared `/openspec-explore` and `/openspec-propose` planning steps",
+      "shared `/mate-explore-change` and `/mate-propose-change` planning steps",
     );
     expect(artifact(schema, "tasks").instruction).toContain(
       "no explore, proposal, or design artifact",

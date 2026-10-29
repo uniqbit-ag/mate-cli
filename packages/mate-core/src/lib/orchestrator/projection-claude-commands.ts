@@ -7,7 +7,7 @@ import {
 } from "./projection-claude-links";
 
 /**
- * A companion command directory (e.g. OpenSpec's `opsx/`) holds at least one
+ * A companion command directory (e.g. `acme/`) holds at least one
  * `.md` file. Loose command files are not linked: a file symlink needs
  * elevation on Windows, a directory junction does not.
  */

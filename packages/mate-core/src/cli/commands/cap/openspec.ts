@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -6,11 +5,13 @@ import { parse } from "yaml";
 
 import { resolveForCapability } from "../../../lib/orchestrator/framework-context";
 import { getEffectiveCliTools } from "../../../lib/orchestrator/setup-compatibilities";
+import { runOpenSpec, type RunOpenSpec } from "../../../lib/openspec-cli";
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import { ensureUnambiguousCompanion } from "../shared/companion-selection";
 
 export interface OpenspecCapDeps {
   ensureUnambiguousCompanion?: (cwd: string) => Promise<boolean>;
+  runOpenSpec?: RunOpenSpec;
 }
 
 export function readOpenSpecProjectSchema(companionPath: string): string | undefined {
@@ -79,33 +80,20 @@ export async function runOpenspecCapCommand(
     readOpenSpecProjectSchema(companionPath),
   );
 
+  const run = deps.runOpenSpec ?? runOpenSpec;
+  const options = { cwd, stdio: "inherit" } as const;
+
   if (forwardedArgs[0] === "init" || forwardedArgs[0] === "update") {
-    const reset = spawnSync("openspec", ["config", "reset", "--all", "-y"], {
-      cwd,
-      stdio: "inherit",
-    });
-    if (reset.error) {
-      process.stderr.write(`Failed to reset openspec config: ${reset.error.message}\n`);
-      process.exitCode = 1;
-      return;
-    }
-    if (reset.status !== 0) {
-      process.exitCode = reset.status ?? 1;
+    const reset = await run(["config", "reset", "--all", "-y"], options);
+    if (reset.code !== 0) {
+      // Inherited output already reached the terminal; only Mate's own message is returned.
+      if (reset.stderr) process.stderr.write(`${reset.stderr}\n`);
+      process.exitCode = reset.code ?? 1;
       return;
     }
   }
 
-  const result = spawnSync("openspec", forwardedArgs, {
-    cwd,
-    stdio: "inherit",
-  });
-  if (result.error) {
-    process.stderr.write(`Failed to run openspec: ${result.error.message}\n`);
-    process.exitCode = 1;
-    return;
-  }
-
-  if (result.status !== null) {
-    process.exitCode = result.status;
-  }
+  const result = await run(forwardedArgs, options);
+  if (result.stderr) process.stderr.write(`${result.stderr}\n`);
+  if (result.code !== null) process.exitCode = result.code;
 }

@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Changes are delivered through recorded branches (breaking)
+
+- **Renamed skills:** `mate-artifact-publish` is now `mate-publish-artifact`, and `mate-openspec-backfill` is now `mate-backfill-spec`. The old names are not kept as aliases; run `mate companion update` to deploy the new ones.
+- `mate artifact link <change>` writes a change's `delivery.yaml`. It records the delivery branch (`--branch`, with `--direct` for a protected branch) or a not-applicable reason, plus an optional PR URL and the merge state (`--refresh` asks GitHub; `--confirm-merged`, `--confirm-open` and `--confirm-dropped` record your answer). Without an edit flag or `--refresh` it only reads the record. In another repository whose default branch GitHub cannot provide, `main` is taken as its default branch.
+- `mate artifact archive <change>` archives before the merge. It warns about overlapping and unarchived dependent changes, always leaves a `delivery.yaml`, and runs `openspec archive`. `--repository <org/repo>` names the repository when the Working Repository's `origin` cannot be read. `mate-publish-artifact` holds an archive back until its delivery branch is merged, and `mate artifact publish` refuses one that is not.
+- A protected branch (the default branch or a `protectedBranches` pattern of the openspec capability; Mate does not ask GitHub) is recorded only as an explicit direct delivery. `--direct` works on any branch: no PR is looked up, and only your confirmation settles it, since Git cannot tell its commits from your other pushes. The publish skill asks once per branch, for all direct deliveries on it.
+- An archive without a `delivery.yaml` (made before delivery records) still publishes, with a warning that its merge was not checked. An archive sharing a canonical spec with a pending held-back archive is held back too. `mate artifact publish --all` skips held-back archives and publishes the rest.
+- The forge token comes from `MATE_GIT_TOKEN`, else from the GitHub CLI's stored login. `GITHUB_TOKEN` and `GH_TOKEN` are ignored. The token needs read access to Pull requests and Metadata, and it is never printed or stored.
+- Studio's Workflow view shows the Delivery Path for `mate-v1` and `mate-minimal`, including review stages for people with no skill and no prompt.
+
+### Mate skills carry the OpenSpec workflows (breaking)
+
+- **Removed:** the generated `openspec-*` skills and `/opsx:*` commands. Setup and `mate companion update` run `openspec init --tools none` and no `openspec update`, and `mate companion update` removes the earlier generated output, including the `.agents/skills/.openspec-target` marker, and the links to it in wrapped working repositories. Use `/mate-explore-change`, `/mate-propose-change`, `/mate-apply-change`, and `/mate-archive-change` instead.
+- `mate-explore-change`, `mate-propose-change`, and `mate-apply-change` follow a `references/` copy of the OpenSpec workflow from the bundled version, with command references pointing at the Mate skills, instead of loading an OpenSpec skill.
+- `mate-propose-change` gains a revise mode: for a change that already exists, it follows the OpenSpec update workflow, revises the planning artifacts and keeps them consistent, writing each edit after you confirm. In this mode it is not a Delivery Path stage.
+- Setup no longer runs `openspec config reset`.
+
+### Every companion plans with mate-v1 (breaking)
+
+- With the `openspec` capability, setup always makes `mate-v1` the companion's OpenSpec schema: it writes `schema: mate-v1` into `openspec/config.yaml`, replacing a missing schema or the `spec-driven` that `openspec init` writes. Any other schema you set, such as `mate-minimal`, stays, and so does the rest of the file, including OpenSpec's comments.
+- The setup wizard's OpenSpec schema step and the `--openspec-schema` flag are removed; a saved `schemaProfile` is ignored. Pick `mate-minimal` per change with `--schema mate-minimal`.
+
+### `mate companion update` refreshes Claude links in Working Repositories
+
+- After regenerating the companion, `mate companion update` re-links Claude skills and commands into every linked Working Repository wrapped for Claude, so new skills work and renamed ones stop dangling before the next launch. Each repository is reported as written, current, or failed; the links never join the companion commit.
+
+### OpenSpec ships with Mate (breaking)
+
+- Mate now depends on `@fission-ai/openspec` at one exact version (1.15.0) and runs that copy for every OpenSpec process it starts: setup, `mate companion update`, `mate cap openspec`, store registration, `mate artifact archive`, and the `openspec` wrapper. A new OpenSpec version arrives with a Mate release.
+- Mate no longer installs, upgrades, or uses a global `openspec`: setup asks for no install, `mate companion update` no longer upgrades to `@latest`, and launches install nothing. A global install of another version is left untouched and no longer reached through the wrapper.
+- `mate install` lists no OpenSpec requirement, and `mate doctor` reports the bundled CLI's path and version. When the bundled CLI is missing, setup fails and launches warn, both naming a reinstall of Mate.
+
 ### Companion instructions reach Claude sessions
 
 - The companion `AGENTS.md` now reaches every Claude session in a Working Repository once. `mate claude`, plain `claude` sessions, Agent SDK sessions that load local settings (`settingSources` includes `local`), and linked worktrees that hold the repository's `.mate/` folder all get it from the wrap's `SessionStart` session-prepare hook once preparation finishes, so a conversation resumed through the other launcher holds one current copy; subagents get it from a `SubagentStart` hook, except Explore, Plan and forks. A companion-scoped launch loads the file natively, as before.
@@ -42,7 +74,6 @@
 ### OpenSpec output regenerates only on `mate companion setup` and `mate companion update`
 
 - **Behavior change:** launches no longer upgrade the `openspec` CLI to `@latest` or run `openspec config reset`, `openspec init --force`, and `openspec update --force`. Those commands rewrote the committed `openspec-*` skills and `/opsx` commands in the background, so teammates on different CLI versions kept overwriting each other's files. A new OpenSpec release now reaches a companion only when someone runs `mate companion update` (or `mate companion setup`) and commits the result.
-- A launch reads the `metadata.generatedBy` version from the companion's committed OpenSpec skills. When the installed `openspec` is older, Mate runs `npm install -g @fission-ai/openspec@<version>`, so every developer catches up to the version the last companion update generated with. A newer installed CLI is never downgraded, and pinned deployments skip the install. A failed install prints a warning with the manual command, and the launch continues.
 - Launches still deploy Mate-owned skills and sync Mate schemas and the `config.yaml` rule.
 - A runtime added by editing `framework.yaml` by hand gets its OpenSpec skills on the next `mate companion setup` or `mate companion update`.
 - Every OpenSpec process Mate starts, including the `openspec` wrapper agents call, runs with `OPENSPEC_TELEMETRY=0` and `OPENSPEC_NO_UPDATE_CHECK=1`. OpenSpec's "update available" hint was wrong advice inside Mate, which decides the version.

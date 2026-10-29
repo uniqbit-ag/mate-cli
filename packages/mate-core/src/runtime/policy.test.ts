@@ -41,7 +41,6 @@ describe("readCompanionPolicy", () => {
         "capabilities:",
         "  - name: graphify",
         "  - name: openspec",
-        "    schemaProfile: mate-v1",
         "",
       ].join("\n"),
     );

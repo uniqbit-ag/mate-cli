@@ -1,4 +1,5 @@
 /** Delivers the Companion Instructions to a Claude main thread or subagent. */
+import { errorMessage } from "../runtime/error-message";
 import { planClaudeInstructions } from "../runtime/claude-delivery-plan";
 import {
   COMPANION_INSTRUCTIONS_BUDGET,
@@ -12,7 +13,7 @@ import { FRAMEWORK_NAME } from "../runtime/framework";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveProjection } from "../runtime/projection";
 import { managedSessionKind, type SessionKind } from "../runtime/session-kind";
-import { errorText, hookOutcome, runHook, type HookCall, type HookEnv } from "./hook-io";
+import { hookOutcome, runHook, type HookCall, type HookEnv } from "./hook-io";
 
 export interface InstructionHookPayload {
   hookSpecificOutput?: { hookEventName: InstructionEvent; additionalContext: string };
@@ -151,7 +152,7 @@ function instructionOutput(
 
 function failure(error: unknown): InstructionHookPayload {
   return {
-    systemMessage: `${FRAMEWORK_NAME}: companion instructions hook failed: ${errorText(error)}`,
+    systemMessage: `${FRAMEWORK_NAME}: companion instructions hook failed: ${errorMessage(error)}`,
   };
 }
 

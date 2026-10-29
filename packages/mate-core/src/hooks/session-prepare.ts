@@ -1,6 +1,7 @@
 /** Prepares a plain Claude session in a Claude-wrapped repository as `mate claude` would. */
 import fs from "node:fs";
 
+import { errorMessage } from "../runtime/error-message";
 import { unmanagedClaudeDelivery } from "../runtime/claude-delivery-plan";
 import { hasLaunchEnvironment } from "../runtime/env";
 import { FRAMEWORK_NAME } from "../runtime/framework";
@@ -15,14 +16,7 @@ import {
   type PrepareRunner,
 } from "../runtime/session-prepare-runner";
 import { instructionHookPayload, type InstructionHookDeps } from "./companion-instructions";
-import {
-  errorText,
-  hookOutcome,
-  runHook,
-  type HookCall,
-  type HookEnv,
-  type HookOutcome,
-} from "./hook-io";
+import { hookOutcome, runHook, type HookCall, type HookEnv, type HookOutcome } from "./hook-io";
 
 export interface SessionPrepareHookDeps {
   /** The runtime-directory launcher; `null` until a `mate` run wrote it. */
@@ -58,7 +52,7 @@ async function runLocalPhase(
   try {
     return await pending;
   } catch (error) {
-    return { ok: false, notes: [errorText(error)] };
+    return { ok: false, notes: [errorMessage(error)] };
   }
 }
 
@@ -90,7 +84,7 @@ function prepareDirectory(env: HookEnv, cwd: string): string {
 }
 
 function prepareFailure(error: unknown): string {
-  return `${FRAMEWORK_NAME}: session prepare failed: ${errorText(error)}`;
+  return `${FRAMEWORK_NAME}: session prepare failed: ${errorMessage(error)}`;
 }
 
 /** A prepare that throws becomes a note, so the instructions after it still go out. */
@@ -189,6 +183,6 @@ export function run(argv: readonly string[] = process.argv.slice(2)): Promise<nu
   return runHook(
     (input) => runSessionStartHook({ env: process.env, cwd: process.cwd(), argv, input }),
     (error) =>
-      operatorMessage([`${FRAMEWORK_NAME}: session start hook failed: ${errorText(error)}`]),
+      operatorMessage([`${FRAMEWORK_NAME}: session start hook failed: ${errorMessage(error)}`]),
   );
 }

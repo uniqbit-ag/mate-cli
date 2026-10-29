@@ -1,4 +1,6 @@
 import { usage } from "../../usage";
+import { runArtifactArchiveCommand } from "./delivery/archive";
+import { runArtifactLinkCommand } from "./delivery/link";
 import { runArtifactPublishCommand } from "./finish";
 import { runArtifactPendingCommand } from "./pending";
 
@@ -29,6 +31,12 @@ export async function runArtifactCommand(
       return;
     case "pending":
       await runArtifactPendingCommand(argv);
+      return;
+    case "link":
+      await runArtifactLinkCommand(argv);
+      return;
+    case "archive":
+      await runArtifactArchiveCommand(argv);
       return;
     default:
       console.error(`Unknown artifact command: ${subcommand ?? ""}`);

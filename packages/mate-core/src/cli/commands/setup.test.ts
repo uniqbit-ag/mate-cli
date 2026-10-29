@@ -96,7 +96,6 @@ describe("runSetupCommandWithDeps", () => {
           allowedAgents: ["claude"],
           packageManagers: ["bun"],
           capabilities: [],
-          selectedOpenSpecSchema: "default",
           selectedGitMode: "default",
         }) satisfies SetupSelections,
     );
@@ -131,7 +130,6 @@ describe("runSetupCommandWithDeps", () => {
           allowedAgents: ["claude"],
           packageManagers: ["bun"],
           capabilities: [],
-          selectedOpenSpecSchema: "default",
           selectedGitMode: "default",
         }) satisfies SetupSelections,
     );
@@ -172,7 +170,6 @@ describe("runSetupCommandWithDeps", () => {
           allowedAgents: ["claude"],
           packageManagers: ["bun"],
           capabilities: [],
-          selectedOpenSpecSchema: "default",
           selectedGitMode: "default",
         }) satisfies SetupSelections,
     );
@@ -272,7 +269,7 @@ describe("runSetupCommandWithDeps", () => {
     );
   });
 
-  test("passes explicit openspec schema flag through to setup tool", async () => {
+  test("ignores a leftover --openspec-schema flag", async () => {
     const cwd = await makeTempDir("mate-setup-cli-openspec-schema-");
     const selectorMock = mock(async () => {
       throw new Error("selector should not run");
@@ -281,7 +278,7 @@ describe("runSetupCommandWithDeps", () => {
       config: {
         allowedAgents: ["claude"],
         packageManagers: ["bun", "uv"],
-        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
+        capabilities: [{ name: "openspec" }],
       },
     }));
 
@@ -299,7 +296,7 @@ describe("runSetupCommandWithDeps", () => {
       {
         allowedAgents: ["claude"],
         packageManagers: ["bun", "uv"],
-        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
+        capabilities: [{ name: "openspec" }],
         git: "default",
       },
       expect.objectContaining({ cwd: expect.stringContaining(path.basename(cwd)) }),
@@ -418,7 +415,6 @@ describe("runSetupCommandWithDeps", () => {
           allowedAgents: ["opencode"],
           packageManagers: ["bun"],
           capabilities: [{ name: "graphify" }],
-          selectedOpenSpecSchema: "default",
           selectedGitMode: "default",
         }) satisfies SetupSelections,
     );
@@ -501,44 +497,6 @@ describe("runSetupCommandWithDeps", () => {
     );
   });
 
-  test("applies schema-only linked setup to the saved capability selection", async () => {
-    const cwd = await makeTempDir("mate-setup-cli-linked-schema-only-");
-    const companionPath = await makeTempDir("mate-setup-cli-linked-schema-companion-");
-    await new ConfigStore(
-      path.join(companionPath, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
-    ).save({
-      type: "companion",
-      allowedAgents: ["claude"],
-      packageManagers: ["bun"],
-      capabilities: [{ name: "openspec" }, { name: "react-doctor" }],
-    });
-    const executeMock = mock(async () => ({
-      config: {
-        allowedAgents: ["claude"],
-        packageManagers: ["bun"],
-        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }, { name: "react-doctor" }],
-      },
-    }));
-
-    await withCwd(cwd, () =>
-      runSetupCommandWithDeps(["--openspec-schema", "mate-v1"], {
-        inspectSetupPreflight: async () => ({
-          kind: "linked-working-repo",
-          match: { companionPath, repositoryId: "repo" },
-        }),
-        executeSetup: executeMock as never,
-      }),
-    );
-
-    expect(executeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        allowedAgents: ["claude"],
-        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }, { name: "react-doctor" }],
-      }),
-      expect.objectContaining({ cwd: companionPath }),
-    );
-  });
-
   test("selects a companion before setup when a working repo has multiple links", async () => {
     const cwd = await makeTempDir("mate-setup-cli-ambiguous-working-repo-");
     const companionA = await makeTempDir("mate-setup-cli-ambiguous-companion-a-");
@@ -553,7 +511,6 @@ describe("runSetupCommandWithDeps", () => {
           allowedAgents: ["claude"],
           packageManagers: ["bun"],
           capabilities: [],
-          selectedOpenSpecSchema: "default",
           selectedGitMode: "default",
         }) satisfies SetupSelections,
     );

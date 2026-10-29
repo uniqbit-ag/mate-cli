@@ -12,6 +12,7 @@ import {
 } from "../../../test/openspec-store-stub";
 import { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "../../tools/setup/capabilities/tokensave-shared";
 import { cleanupWorkingRepository } from "../../tools/setup/working-repo-cleanup";
+import { openSpecCliDeps } from "../openspec-cli";
 import { checkStoreRegistration, openSpecStoreDeps } from "./openspec-store";
 import { generatedHeader } from "../../runtime/projection";
 import type { ProjectionEntryOutcome } from "./projection-types";
@@ -21,6 +22,7 @@ import { project, unproject } from "./working-repo-projection";
 
 const tempRoots: string[] = [];
 const originalDeps = { ...openSpecStoreDeps };
+const originalCliDeps = { ...openSpecCliDeps };
 
 interface Fixture {
   root: string;
@@ -52,7 +54,7 @@ async function makeFixture(options: { registerFails?: string } = {}): Promise<Fi
     options.registerFails ? { stderr: options.registerFails } : {},
   );
   openSpecStoreDeps.env = () => ({ ...process.env, XDG_DATA_HOME: dataHome });
-  openSpecStoreDeps.resolveBinary = () => stub.bin;
+  openSpecCliDeps.locate = () => ({ bin: stub.bin });
   return { root, repoPath, companionPath, repository, dataHome, calls: stub.calls };
 }
 
@@ -100,10 +102,12 @@ async function snapshot(dir: string): Promise<Record<string, string>> {
 
 beforeEach(() => {
   Object.assign(openSpecStoreDeps, originalDeps);
+  Object.assign(openSpecCliDeps, originalCliDeps);
 });
 
 afterEach(async () => {
   Object.assign(openSpecStoreDeps, originalDeps);
+  Object.assign(openSpecCliDeps, originalCliDeps);
   for (const dir of tempRoots.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
 

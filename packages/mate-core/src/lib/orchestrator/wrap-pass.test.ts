@@ -22,6 +22,7 @@ import type { CapabilityPlugin } from "../../tools/setup/plugin";
 import { runWrapPass, wrapPassDeps, type WrapPassDependencies } from "./wrap-pass";
 import { prepareSession, sessionPrepareDeps } from "./session-prepare";
 import { syncWorkingRepoClaudeAdditionalDirectories } from "./projection-claude-entry";
+import { openSpecCliDeps } from "../openspec-cli";
 import { openSpecStoreDeps } from "./openspec-store";
 import { writeOpenSpecRegistry } from "../../../test/openspec-store-stub";
 import { planClaudeDelivery } from "../../runtime/claude-delivery-plan";
@@ -438,10 +439,12 @@ describe("a full wrap pass", () => {
 
 describe("a failing OpenSpec store entry", () => {
   const originalStoreDeps = { ...openSpecStoreDeps };
+  const originalCliDeps = { ...openSpecCliDeps };
   const originalPrepareDeps = { ...sessionPrepareDeps };
 
   afterEach(() => {
     Object.assign(openSpecStoreDeps, originalStoreDeps);
+    Object.assign(openSpecCliDeps, originalCliDeps);
     Object.assign(sessionPrepareDeps, originalPrepareDeps);
   });
 
@@ -456,7 +459,7 @@ describe("a failing OpenSpec store entry", () => {
     tempRoots.push(dataHome);
     await writeOpenSpecRegistry(dataHome, { companion: "/somewhere/else" });
     openSpecStoreDeps.env = () => ({ ...process.env, XDG_DATA_HOME: dataHome });
-    openSpecStoreDeps.resolveBinary = () => undefined;
+    openSpecCliDeps.locate = () => ({ missing: "bundled OpenSpec CLI is missing." });
     return linked;
   }
 
