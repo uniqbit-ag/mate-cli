@@ -8,12 +8,11 @@ import {
   type CompanionInstructionsInput,
   type InstructionReader,
 } from "../runtime/companion-instructions";
-import { MATE_ENV, hasLaunchEnvironment } from "../runtime/env";
 import { FRAMEWORK_NAME } from "../runtime/framework";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
-import { resolveProjection } from "../runtime/projection";
 import { managedSessionKind, type SessionKind } from "../runtime/session-kind";
-import { hookOutcome, runHook, type HookCall, type HookEnv } from "./hook-io";
+import { resolveSession, type ResolvedSession } from "../runtime/session-resolution";
+import { hookOutcome, runHook, type HookCall } from "./hook-io";
 
 export interface InstructionHookPayload {
   hookSpecificOutput?: { hookEventName: InstructionEvent; additionalContext: string };
@@ -36,7 +35,6 @@ export interface InstructionHookCall extends Omit<HookCall, "argv"> {
 
 export interface InstructionHookDeps {
   read?: InstructionReader;
-  resolveProjection?: typeof resolveProjection;
 }
 
 /**
@@ -60,9 +58,9 @@ function normalizeInput(raw: unknown): InstructionHookInput {
   return input;
 }
 
-function sessionKind(env: HookEnv): SessionKind {
-  if (!hasLaunchEnvironment(env)) return "unmanaged";
-  return managedSessionKind(Boolean(env[MATE_ENV.repositoryPath]));
+function sessionKind(session: ResolvedSession): SessionKind {
+  if (session.kind !== "launch") return "unmanaged";
+  return managedSessionKind(session.scope === "repository");
 }
 
 /**
@@ -79,32 +77,19 @@ function ownsEvent(event: InstructionEvent, kind: SessionKind, projected: boolea
   return false;
 }
 
-/** A launch sets every path; a partial one is not completed from a projection, which may name another repository. */
-function launchReaderInput(env: HookEnv): CompanionInstructionsInput | null {
-  const companionPath = env[MATE_ENV.companionPath];
-  const id = env[MATE_ENV.repositoryId];
-  const repoPath = env[MATE_ENV.repositoryPath];
-  const wrapperBinPath = env[MATE_ENV.wrapperBinPath];
-  if (!companionPath || !id || !repoPath || !wrapperBinPath) return null;
-  return { companionPath, repository: { id, path: repoPath }, wrapperBinPath };
-}
-
-/** The environment always wins: a managed session never reads the projection. */
-function readerInput(
-  env: HookEnv,
-  kind: SessionKind,
-  cwd: string,
-  resolve: typeof resolveProjection,
-): CompanionInstructionsInput | null {
-  if (kind !== "unmanaged") return launchReaderInput(env);
-  const projection = resolve(cwd);
-  if (!projection) return null;
-  return {
-    companionPath: projection.companionPath,
-    /** A linked worktree on a projection copied from the main checkout names itself, not that checkout. */
-    repository: { id: projection.repositoryId, path: projection.repoRoot },
-    wrapperBinPath: projection.wrapperBinPath,
-  };
+/**
+ * A launch sets every path; a partial one is not completed from a projection,
+ * which may name another repository. A projection names the Checkout it was
+ * found in, so a linked worktree on a projection copied from the main checkout
+ * names itself, not that checkout.
+ */
+function readerInput(session: ResolvedSession): CompanionInstructionsInput | null {
+  if (session.kind === "none") return null;
+  const wrapperBinPath =
+    session.kind === "launch" ? session.wrapperBinPath : session.projection.wrapperBinPath;
+  const { companionPath, repositoryId: id, checkoutRoot } = session;
+  if (!companionPath || !id || !checkoutRoot || !wrapperBinPath) return null;
+  return { companionPath, repository: { id, path: checkoutRoot }, wrapperBinPath };
 }
 
 function oversizeMessage(source: string): string {
@@ -118,16 +103,15 @@ function evaluate(
   input: InstructionHookInput,
   deps: InstructionHookDeps,
 ): InstructionHookPayload | null {
-  const resolve = deps.resolveProjection ?? resolveProjection;
   const read = deps.read ?? buildCompanionInstructions;
   const event = input.hook_event_name;
   if (event !== "SessionStart" && event !== "SubagentStart") return null;
   if (event === "SubagentStart" && SKIPPED_AGENTS.has(input.agent_type ?? "")) return null;
 
-  const kind = sessionKind(env);
-  if (!ownsEvent(event, kind, projected)) return null;
+  const session = resolveSession(env, directory || input.cwd || cwd);
+  if (!ownsEvent(event, sessionKind(session), projected)) return null;
 
-  const reader = readerInput(env, kind, directory || input.cwd || cwd, resolve);
+  const reader = readerInput(session);
   if (!reader) return null;
 
   const result = read(reader);

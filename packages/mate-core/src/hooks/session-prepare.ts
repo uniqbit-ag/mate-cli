@@ -3,10 +3,8 @@ import fs from "node:fs";
 
 import { errorMessage } from "../runtime/error-message";
 import { unmanagedClaudeDelivery } from "../runtime/claude-delivery-plan";
-import { hasLaunchEnvironment } from "../runtime/env";
 import { FRAMEWORK_NAME } from "../runtime/framework";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
-import { resolveProjection } from "../runtime/projection";
 import { runtimeDirectoryPath, runtimeMateBin } from "../runtime/runtime-directory";
 import {
   PREPARE_TIMEOUT_MS,
@@ -15,6 +13,7 @@ import {
   type PrepareRun,
   type PrepareRunner,
 } from "../runtime/session-prepare-runner";
+import { resolveSession } from "../runtime/session-resolution";
 import { instructionHookPayload, type InstructionHookDeps } from "./companion-instructions";
 import { hookOutcome, runHook, type HookCall, type HookEnv, type HookOutcome } from "./hook-io";
 
@@ -65,7 +64,8 @@ interface Prepared {
 const NO_SYNC = (): void => {};
 
 /**
- * Inert under a launch environment or where the plan gives it nothing to own.
+ * Inert unless the session resolves from a trusted projection, and where the
+ * plan gives it nothing to own.
  * Awaits the local phase within a bound, then starts Git sync detached. Always
  * exits zero: a failed prepare must not block the session.
  */
@@ -112,11 +112,10 @@ function startSync(prepared: Prepared): string[] {
 
 async function prepare(env: HookEnv, cwd: string, deps: SessionPrepareHookDeps): Promise<Prepared> {
   const nothing = { notes: [], startSync: NO_SYNC };
-  if (hasLaunchEnvironment(env)) return nothing;
   const projectDir = prepareDirectory(env, cwd);
-  const projection = resolveProjection(projectDir);
-  if (!projection) return nothing;
-  const plan = unmanagedClaudeDelivery(projection.repoRoot);
+  const session = resolveSession(env, projectDir);
+  if (session.kind !== "projection") return nothing;
+  const plan = unmanagedClaudeDelivery(session.projection.repoRoot);
   const reconciles = plan.reconcile === "prepare-hook";
   const syncs = plan.gitSync === "prepare-hook";
   if (!reconciles && !syncs) return nothing;

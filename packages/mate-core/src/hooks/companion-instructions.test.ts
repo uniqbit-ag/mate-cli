@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { CompanionInstructions } from "../runtime/companion-instructions";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { trustProjection } from "../../test/trusted-projection";
 import {
   instructionHookPayload,
   type InstructionHookDeps,
@@ -23,15 +24,18 @@ afterEach(() => {
 });
 
 interface Fixture {
+  root: string;
   repoRoot: string;
   companionPath: string;
+  /** A plain session's environment, whose Mate configuration trusts the projection. */
+  env: Record<string, string>;
   launchEnv: Record<string, string>;
 }
 
 function wrappedRepo(
   options: { agentsMd?: boolean; projectedRepositoryPath?: string } = {},
 ): Fixture {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "acme-instruction-hook-"));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "acme-instruction-hook-")));
   tempRoots.push(root);
   const repoRoot = path.join(root, "working");
   const companionPath = path.join(root, "companion");
@@ -60,9 +64,17 @@ function wrappedRepo(
     },
   });
 
+  const env = trustProjection({
+    home: path.join(root, "home"),
+    companionPath,
+    repoRoot,
+    repositoryId: "acme",
+  });
   return {
+    root,
     repoRoot,
     companionPath,
+    env,
     launchEnv: {
       MATE_ARTIFACT_PATH: companionPath,
       MATE_REPO_PATH: repoRoot,
@@ -73,7 +85,7 @@ function wrappedRepo(
 }
 
 function tempDir(prefix: string): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   tempRoots.push(dir);
   return dir;
 }
@@ -114,9 +126,9 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
   test.each(["startup", "compact", "resume", "clear"])(
     "the wrap's SessionStart copy emits the instructions as their own output on %s",
     (source) => {
-      const { repoRoot } = wrappedRepo();
+      const { repoRoot, env } = wrappedRepo();
 
-      const result = outcome({}, repoRoot, WRAPPED, sessionStart(source));
+      const result = outcome(env, repoRoot, WRAPPED, sessionStart(source));
 
       expect(result.exitCode).toBe(0);
       const output = parsed(result.stdout).hookSpecificOutput!;
@@ -131,15 +143,15 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
 
   /** A plain session that loads the plugin through `--plugin-dir` runs both copies. */
   test("a plugin SessionStart copy without a launch stays silent: the wrap's copy owns it", () => {
-    const { repoRoot } = wrappedRepo();
+    const { repoRoot, env } = wrappedRepo();
 
-    expect(outcome({}, repoRoot, PLUGIN, sessionStart()).stdout).toBe("");
+    expect(outcome(env, repoRoot, PLUGIN, sessionStart()).stdout).toBe("");
   });
 
   test("the wrap's SubagentStart copy emits for a general-purpose subagent", () => {
-    const { repoRoot } = wrappedRepo();
+    const { repoRoot, env } = wrappedRepo();
 
-    const result = outcome({}, repoRoot, WRAPPED, subagentStart());
+    const result = outcome(env, repoRoot, WRAPPED, subagentStart());
 
     const output = parsed(result.stdout).hookSpecificOutput!;
     expect(output.hookEventName).toBe("SubagentStart");
@@ -147,24 +159,24 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
   });
 
   test("a plugin SubagentStart copy without a launch stays silent: the wrap's owns it", () => {
-    const { repoRoot } = wrappedRepo();
+    const { repoRoot, env } = wrappedRepo();
 
-    expect(outcome({}, repoRoot, PLUGIN, subagentStart()).stdout).toBe("");
+    expect(outcome(env, repoRoot, PLUGIN, subagentStart()).stdout).toBe("");
   });
 
   test.each(["Explore", "Plan", "fork"])("a %s subagent gets no copy", (agentType) => {
-    const { repoRoot } = wrappedRepo();
+    const { repoRoot, env } = wrappedRepo();
 
-    const result = outcome({}, repoRoot, WRAPPED, subagentStart(agentType));
+    const result = outcome(env, repoRoot, WRAPPED, subagentStart(agentType));
 
     expect(result.stdout).toBe("");
   });
 
   test("prefers the hook input's cwd, so a subagent in another checkout reads its own", () => {
-    const { repoRoot } = wrappedRepo();
+    const { repoRoot, env } = wrappedRepo();
     const elsewhere = tempDir("acme-unwrapped-");
 
-    const fromInput = outcome({}, elsewhere, WRAPPED, {
+    const fromInput = outcome(env, elsewhere, WRAPPED, {
       ...sessionStart(),
       cwd: repoRoot,
     });
@@ -174,9 +186,9 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
 
   test("names the directory whose projection resolved as the repository, so a worktree names itself", () => {
     const mainCheckout = tempDir("acme-main-checkout-");
-    const { repoRoot } = wrappedRepo({ projectedRepositoryPath: mainCheckout });
+    const { repoRoot, env } = wrappedRepo({ projectedRepositoryPath: mainCheckout });
 
-    const result = outcome({}, repoRoot, WRAPPED, sessionStart());
+    const result = outcome(env, repoRoot, WRAPPED, sessionStart());
 
     const context = parsed(result.stdout).hookSpecificOutput!.additionalContext;
     expect(context).toContain(`${SENTINEL} in ${repoRoot}`);
@@ -184,9 +196,9 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
   });
 
   test("a missing AGENTS.md gives one factual context line and a system message", () => {
-    const { repoRoot, companionPath } = wrappedRepo({ agentsMd: false });
+    const { repoRoot, companionPath, env } = wrappedRepo({ agentsMd: false });
 
-    const result = outcome({}, repoRoot, WRAPPED, sessionStart());
+    const result = outcome(env, repoRoot, WRAPPED, sessionStart());
 
     const line = `Companion instructions unavailable: ${path.join(companionPath, "AGENTS.md")} not found`;
     const output = parsed(result.stdout);
@@ -196,7 +208,7 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
   });
 
   test("an oversized managed block is still delivered, with a system message naming the file", () => {
-    const { repoRoot, companionPath } = wrappedRepo();
+    const { repoRoot, companionPath, env } = wrappedRepo();
     const source = path.join(companionPath, "AGENTS.md");
     const text = `<companion-instructions source="${source}">\n${RULE}\n</companion-instructions>`;
     const oversized = (): CompanionInstructions => ({
@@ -207,7 +219,7 @@ describe("companion-instructions hook in a Claude-wrapped plain session", () => 
       oversized: true,
     });
 
-    const result = outcome({}, repoRoot, WRAPPED, sessionStart(), {
+    const result = outcome(env, repoRoot, WRAPPED, sessionStart(), {
       read: oversized,
     });
 
@@ -302,6 +314,16 @@ describe("companion-instructions hook under a launch environment", () => {
 });
 
 describe("companion-instructions hook where nothing resolves", () => {
+  test("a projection Session Resolution refuses: silent", () => {
+    const { root, repoRoot } = wrappedRepo();
+    const untrusted = { HOME: path.join(root, "other-home") };
+
+    for (const projected of BOTH_COPIES) {
+      expect(outcome(untrusted, repoRoot, projected, sessionStart()).stdout).toBe("");
+      expect(outcome(untrusted, repoRoot, projected, subagentStart()).stdout).toBe("");
+    }
+  });
+
   test("no projection: silent", () => {
     const dir = tempDir("acme-no-projection-");
 
@@ -319,18 +341,18 @@ describe("companion-instructions hook where nothing resolves", () => {
   });
 
   test("an event it does not handle: silent", () => {
-    const { repoRoot } = wrappedRepo();
+    const { repoRoot, env } = wrappedRepo();
 
-    expect(outcome({}, repoRoot, WRAPPED, { hook_event_name: "Stop" }).stdout).toBe("");
-    expect(outcome({}, repoRoot, WRAPPED, {}).stdout).toBe("");
+    expect(outcome(env, repoRoot, WRAPPED, { hook_event_name: "Stop" }).stdout).toBe("");
+    expect(outcome(env, repoRoot, WRAPPED, {}).stdout).toBe("");
   });
 });
 
 describe("companion-instructions hook on a malformed payload or a failing reader", () => {
   test("a non-string cwd reads as absent: exit zero and the process cwd's instructions", () => {
-    const { repoRoot } = wrappedRepo();
+    const { repoRoot, env } = wrappedRepo();
 
-    const result = outcome({}, repoRoot, WRAPPED, {
+    const result = outcome(env, repoRoot, WRAPPED, {
       hook_event_name: "SessionStart",
       cwd: 42,
     });
@@ -340,19 +362,19 @@ describe("companion-instructions hook on a malformed payload or a failing reader
   });
 
   test("other non-string fields and non-object payloads read as absent", () => {
-    const { repoRoot } = wrappedRepo();
+    const { repoRoot, env } = wrappedRepo();
 
-    const noEvent = outcome({}, repoRoot, WRAPPED, { hook_event_name: 7 });
+    const noEvent = outcome(env, repoRoot, WRAPPED, { hook_event_name: 7 });
     expect(noEvent).toEqual({ exitCode: 0, stdout: "" });
 
-    const noAgent = outcome({}, repoRoot, WRAPPED, {
+    const noAgent = outcome(env, repoRoot, WRAPPED, {
       hook_event_name: "SubagentStart",
       agent_type: ["Explore"],
     });
     expect(parsed(noAgent.stdout).hookSpecificOutput!.additionalContext).toContain(SENTINEL);
 
     for (const payload of [null, "SessionStart", 42]) {
-      expect(outcome({}, repoRoot, WRAPPED, payload)).toEqual({
+      expect(outcome(env, repoRoot, WRAPPED, payload)).toEqual({
         exitCode: 0,
         stdout: "",
       });
@@ -360,12 +382,12 @@ describe("companion-instructions hook on a malformed payload or a failing reader
   });
 
   test("a throwing reader exits zero and reports the failure as a system message only", () => {
-    const { repoRoot } = wrappedRepo();
+    const { repoRoot, env } = wrappedRepo();
     const throwing = (): CompanionInstructions => {
       throw new Error("disk on fire");
     };
 
-    const result = outcome({}, repoRoot, WRAPPED, sessionStart(), {
+    const result = outcome(env, repoRoot, WRAPPED, sessionStart(), {
       read: throwing,
     });
 

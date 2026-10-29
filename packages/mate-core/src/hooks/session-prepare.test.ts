@@ -9,6 +9,7 @@ import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { manifestPath } from "../runtime/runtime-document-manifest";
 import type { PrepareRequest, PrepareRun } from "../runtime/session-prepare-runner";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
+import { trustProjection } from "../../test/trusted-projection";
 import {
   runSessionPrepareHook,
   runSessionStartHook,
@@ -21,12 +22,24 @@ afterEach(() => {
   for (const root of tempRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
+/** A plain session's environment, whose Mate configuration trusts `projectedRepo`'s projection. */
+function plainEnv(repo: string): { HOME: string } {
+  return { HOME: path.join(path.dirname(repo), "home") };
+}
+
 function projectedRepo(wrappedFor: "claude" | "opencode" | null): string {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "acme-prepare-hook-")));
   tempRoots.push(root);
   const repo = path.join(root, "acme");
   const companion = path.join(root, "acme-companion");
   fs.mkdirSync(repo, { recursive: true });
+  fs.mkdirSync(companion, { recursive: true });
+  trustProjection({
+    home: plainEnv(repo).HOME,
+    companionPath: companion,
+    repoRoot: repo,
+    repositoryId: "acme",
+  });
   const registryPath = repoLocalRegistryPath(repo);
   fs.mkdirSync(path.dirname(registryPath), { recursive: true });
   fs.writeFileSync(registryPath, "companions: []\n", "utf8");
@@ -74,7 +87,11 @@ describe("session-prepare hook", () => {
     const repo = projectedRepo("claude");
     const { deps, requests, order } = fakeDeps();
 
-    const outcome = await runSessionPrepareHook({ CLAUDE_PROJECT_DIR: repo }, "/", deps);
+    const outcome = await runSessionPrepareHook(
+      { ...plainEnv(repo), CLAUDE_PROJECT_DIR: repo },
+      "/",
+      deps,
+    );
 
     expect(outcome).toEqual({ exitCode: 0, stdout: "" });
     expect(requests).toEqual([{ sync: false, timeoutMs: 1234 }]);
@@ -86,7 +103,7 @@ describe("session-prepare hook", () => {
     const repo = projectedRepo("claude");
     const { deps } = fakeDeps({ ok: false, notes: ["file-sync: acme unreadable"] });
 
-    const outcome = await runSessionPrepareHook({}, repo, deps);
+    const outcome = await runSessionPrepareHook(plainEnv(repo), repo, deps);
 
     expect(outcome.exitCode).toBe(0);
     const payload = JSON.parse(outcome.stdout) as Record<string, unknown>;
@@ -100,7 +117,7 @@ describe("session-prepare hook", () => {
     const repo = projectedRepo("claude");
     const { deps } = fakeDeps({ ok: true, notes: ["acme shadowed"] });
 
-    const outcome = await runSessionPrepareHook({}, repo, deps);
+    const outcome = await runSessionPrepareHook(plainEnv(repo), repo, deps);
 
     expect(JSON.parse(outcome.stdout)).toEqual({
       systemMessage: "mate: session prepare warning: acme shadowed",
@@ -111,7 +128,7 @@ describe("session-prepare hook", () => {
     const repo = projectedRepo("claude");
     const { deps } = fakeDeps(new Error("cannot run acme"));
 
-    const outcome = await runSessionPrepareHook({}, repo, deps);
+    const outcome = await runSessionPrepareHook(plainEnv(repo), repo, deps);
 
     expect(outcome.exitCode).toBe(0);
     expect(outcome.stdout).toContain("cannot run acme");
@@ -131,7 +148,7 @@ describe("session-prepare hook", () => {
     const repo = projectedRepo("opencode");
     const { deps, order } = fakeDeps();
 
-    await runSessionPrepareHook({}, repo, deps);
+    await runSessionPrepareHook(plainEnv(repo), repo, deps);
 
     expect(order).toEqual([]);
   });
@@ -141,7 +158,21 @@ describe("session-prepare hook", () => {
     fs.mkdirSync(manifestPath(repo), { recursive: true });
     const { deps, order } = fakeDeps();
 
-    const outcome = await runSessionPrepareHook({}, repo, deps);
+    const outcome = await runSessionPrepareHook(plainEnv(repo), repo, deps);
+
+    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
+    expect(order).toEqual([]);
+  });
+
+  test("is inert for a projection Session Resolution refuses", async () => {
+    const repo = projectedRepo("claude");
+    const { deps, order } = fakeDeps();
+
+    const outcome = await runSessionPrepareHook(
+      { HOME: path.join(path.dirname(repo), "other-home") },
+      repo,
+      deps,
+    );
 
     expect(outcome).toEqual({ exitCode: 0, stdout: "" });
     expect(order).toEqual([]);
@@ -163,7 +194,7 @@ describe("session-prepare hook", () => {
     const { deps, order } = fakeDeps();
     deps.mateBin = () => null;
 
-    const outcome = await runSessionPrepareHook({}, repo, deps);
+    const outcome = await runSessionPrepareHook(plainEnv(repo), repo, deps);
 
     expect(outcome.exitCode).toBe(0);
     expect(outcome.stdout).toContain("run `mate` once");
@@ -193,7 +224,7 @@ describe("session-start hook", () => {
     };
 
     const outcome = await runSessionStartHook(
-      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      { env: plainEnv(repo), cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
       deps,
     );
 
@@ -211,7 +242,7 @@ describe("session-start hook", () => {
     const { deps } = fakeDeps({ ok: true, notes: ["acme shadowed"] });
 
     const outcome = await runSessionStartHook(
-      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      { env: plainEnv(repo), cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
       deps,
     );
 
@@ -233,7 +264,7 @@ describe("session-start hook", () => {
     };
 
     const outcome = await runSessionStartHook(
-      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      { env: plainEnv(repo), cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
       deps,
     );
 
@@ -261,7 +292,7 @@ describe("session-start hook", () => {
     };
 
     const outcome = await runSessionStartHook(
-      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      { env: plainEnv(repo), cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
       deps,
     );
 
@@ -277,7 +308,7 @@ describe("session-start hook", () => {
     const { deps, order } = fakeDeps();
 
     const outcome = await runSessionStartHook(
-      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: null },
+      { env: plainEnv(repo), cwd: repo, argv: [PROJECTED_FLAG], input: null },
       deps,
     );
 
@@ -291,7 +322,7 @@ describe("session-start hook", () => {
     const { deps, order } = fakeDeps();
 
     const outcome = await runSessionStartHook(
-      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: [] },
+      { env: plainEnv(repo), cwd: repo, argv: [PROJECTED_FLAG], input: [] },
       deps,
     );
 
@@ -318,7 +349,7 @@ describe("session-start hook", () => {
     };
 
     await runSessionStartHook(
-      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      { env: plainEnv(repo), cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
       deps,
     );
 
@@ -334,7 +365,7 @@ describe("session-start hook", () => {
     };
 
     const outcome = await runSessionStartHook(
-      { env: {}, cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
+      { env: plainEnv(repo), cwd: repo, argv: [PROJECTED_FLAG], input: sessionStart },
       deps,
     );
 
@@ -356,7 +387,7 @@ describe("session-start hook", () => {
 
     const outcome = await runSessionStartHook(
       {
-        env: { CLAUDE_PROJECT_DIR: repo },
+        env: { ...plainEnv(repo), CLAUDE_PROJECT_DIR: repo },
         cwd: elsewhere,
         argv: [PROJECTED_FLAG],
         input: { ...sessionStart, cwd: elsewhere },
@@ -378,7 +409,12 @@ describe("session-start hook", () => {
     const { deps, order } = fakeDeps();
 
     const outcome = await runSessionStartHook(
-      { env: { CLAUDE_PLUGIN_ROOT: "/acme/plugin" }, cwd: repo, argv: [], input: sessionStart },
+      {
+        env: { ...plainEnv(repo), CLAUDE_PLUGIN_ROOT: "/acme/plugin" },
+        cwd: repo,
+        argv: [],
+        input: sessionStart,
+      },
       deps,
     );
 
@@ -392,7 +428,7 @@ describe("session-start hook", () => {
     const { deps, order } = fakeDeps();
 
     const outcome = await runSessionStartHook(
-      { env: {}, cwd: repo, argv: [], input: sessionStart },
+      { env: plainEnv(repo), cwd: repo, argv: [], input: sessionStart },
       deps,
     );
 
