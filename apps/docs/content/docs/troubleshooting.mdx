@@ -199,7 +199,8 @@ artifact that a call would create in the working repository:
   as Bash reads them;
 - a Markdown file operand of `tee` (`tee -a README.md notes.md` judges both
   files). `tee` counts where it runs as a command: at the start of a command,
-  after `|`, `;`, `&&`, `||`, `&` or `(`, behind `NAME=value` assignments, or
+  after `|`, `;`, `&&`, `||`, `&` or `(`, in a `case` arm, behind `NAME=value`
+  and array (`a=(1 2)`) assignments, or
   behind `sudo`, `env`, `command`, `exec`, `nohup`, `nice`, `time`, `stdbuf`
   or `xargs`, past the options of theirs that take a value (`sudo --user bob`,
   `nice -n 5`) and inside the command line of `env -S "…"`. An option the
@@ -208,18 +209,23 @@ artifact that a call would create in the working repository:
 
 A command substitution or process substitution (`$(…)`, backticks, `<(…)`,
 `>(…)`) is never read as a file name, but the command inside it is read the
-same way, and the `tee` operands after it still count. A `#` comment hides the
-rest of its line from the artifact check, inside a substitution too. The secret
-check reads comments like any other text and errs toward refusing, so
-`git status # leave server.key alone` is refused there; see
+same way, and the `tee` operands after it still count. The secret, commit
+attribution and artifact checks read a command through one shared reader, so
+they agree on where each command starts and what each word is. A `#` comment
+hides the rest of its line from the artifact check, inside a substitution too.
+The secret check reads comments like any other text and errs toward refusing,
+so `git status # leave server.key alone` is refused there; see
 [Secret Guardrails](/docs/concepts/secret-guardrails). An ANSI-C string `$'…'`
 is read as Bash reads it (`\'` does not end it). A heredoc body is not read as
 commands when its marker reads as one both on its own line and in the whole
 command, with the delimiter taken as Bash takes it (`<<E"OF"` ends at `EOF`,
 `<<EOF+` at `EOF+`). Otherwise the lines after the marker are read as commands
 too: when the marker sits in a quote that spans lines, or in arithmetic
-(`$((1<<2))`), or its delimiter holds `$` or a backtick. A command that nests
-substitutions more than 64 levels deep is refused unread:
+(`$((1<<2))`), or its delimiter holds `$` or a backtick. A substitution whose
+heredocs the whole command could not place is read on its own the same way. A
+command that nests substitutions more than 64 levels deep, counting those in a
+comment or on a line of a quote that spans lines, is refused unread, before any
+of the three checks:
 
 ```text
 Mate guardrail: this shell command nests substitutions more than 64 levels deep, too deep to check, so it is blocked.

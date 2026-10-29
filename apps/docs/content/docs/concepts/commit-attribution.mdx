@@ -30,9 +30,29 @@ No commit was created. Rerun the same commit without the Co-Authored-By trailer;
 The guard runs whatever the attribution setting says, so it also covers a user
 whose own setting adds a model trailer. Human co-author trailers pass.
 
-The guard reads only message text in the command itself: `-m` and `--message`
-values (`-m x`, `-mx`, `-am x`, `--message=x`), `--trailer` values, and the
-heredoc bodies the commit itself reads, such as `-m "$(cat <<'EOF' … EOF)"` or
-`git commit -F - <<'EOF'`. It reads no files, so `git commit -F <file>`,
-`git commit -t <template>`, and messages written in an editor are not checked.
+The guard finds `git commit` where the other guardrails find a command: behind
+wrappers and their option values (`sudo -u bob`, `nice -n 5`, `env -S "…"`,
+`xargs`), after `if …; then`, and inside a substitution, quoted or not. A
+substitution where the command's name goes may expand to nothing, a path or a
+wrapper, so after one (`$(…) git commit`, `$(…)git commit`) any later `git`
+counts as the name. A `git commit` inside a quoted argument
+(`echo "a && git commit …"`) is text.
+
+It reads only message text in the command itself: `-m` and `--message` values
+(`-m x`, `-mx`, `-am x`, `--message=x`) as Bash passes them, `$'…'` decoded;
+`--trailer` values; a here-string (`<<< "…"`); the text a substitution in any
+of the commit's arguments or redirects carries, even when that text never
+reaches the message (`-F <(cat <<'EOF' … EOF)`, `< <(…)`); and the heredoc
+bodies the commit reads, its own or piped in, such as
+`-m "$(cat <<'EOF' … EOF)"`, `git commit -F - <<'EOF'` or
+`cat <<'EOF' | git commit -F -`. A body piped into `{ … }`, `( … )`, `if`, a
+loop or `case`, also behind `time`, or given on its closer (`done <<'EOF'`),
+reaches every command in it, and every body read inside such a group reaches a
+pipe after it; `|&` pipes like `|`. A shell function's body is read where it
+is defined; a body is not followed into or out of a call
+(`f | git commit -F -`). It reads no files, so
+`git commit -F <file>`, `git commit -t <template>`, and messages written in an
+editor are not checked, also when the same command wrote the file from a
+heredoc (`cat <<'EOF' > msg.txt; git commit -F msg.txt`). Reading shell commands is
+best effort: `bash -c`, `eval` and scripts are not read into.
 Only agent tool calls are guarded; your own shell and Git are not.

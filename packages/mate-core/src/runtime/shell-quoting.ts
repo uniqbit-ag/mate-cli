@@ -1,4 +1,4 @@
-// Bash quoting rules shared by every guard shell reader, so they read a command the same way.
+// Bash quoting rules for the shell reader (`shell-reading.ts`), the only module that imports this one.
 
 /** Bash removes the backslash only before `$`, a backtick, `"`, `\` and a newline (`"pub\lic"` is `pub\lic`). */
 export function escapedInDoubleQuotes(next: string | undefined): boolean {
@@ -38,15 +38,6 @@ export function backtickEnd(text: string, start: number): number {
   let i = start + 1;
   for (; i < text.length && text[i] !== "`"; i++) if (text[i] === "\\") i++;
   return i;
-}
-
-/**
- * A backtick substitution's command as Bash runs it: inside backticks, `\\`,
- * `` \` `` and `\$` lose one escape layer before the command is read, so an
- * escaped backtick there opens a nested substitution.
- */
-export function backtickCommand(inner: string): string {
-  return inner.replaceAll(/\\([\\`$])/g, "$1");
 }
 
 /** `level` is the substitution level of the string. */

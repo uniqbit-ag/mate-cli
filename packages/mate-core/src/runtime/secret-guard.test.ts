@@ -5,13 +5,14 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { companionFrameworkConfigPath } from "./policy";
-import { checkSecretAccess, shellWords, type SecretGuardScope } from "./secret-guard";
+import { checkSecretAccess, shellWords, type SecretTarget, type SecretWrite } from "./secret-guard";
 
 const GITHUB_TOKEN = ["ghp", "wWPw5k4aXcaT4fNP0UcnZwJUVFk6LO0pINUx"].join("_");
 
 const tempRoots: string[] = [];
 
-function scope(config?: string): SecretGuardScope {
+/** A companion, optionally with a `framework.yaml`; the secret check reads its policy there. */
+function scope(config?: string): string {
   const companionPath = fs.mkdtempSync(path.join(os.tmpdir(), "secret-guard-"));
   tempRoots.push(companionPath);
   if (config !== undefined) {
@@ -19,101 +20,24 @@ function scope(config?: string): SecretGuardScope {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, config, "utf8");
   }
-  return {
-    companionPath,
-    isCompanionPath: (filePath) => filePath.startsWith(companionPath),
-  };
+  return companionPath;
 }
+
+/** A path as the Tool Guard resolves it, with nothing at it: only its name is judged. */
+const target = (filePath: string): SecretTarget => ({
+  path: filePath,
+  landing: filePath,
+  exists: false,
+});
+
+const write = (filePath: string, content: string, companion: boolean): SecretWrite => ({
+  ...target(filePath),
+  content,
+  companion,
+});
 
 afterEach(() => {
   for (const dir of tempRoots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
-});
-
-describe("shellWords", () => {
-  test("splits on operators and redirects, keeping quoted strings whole", () => {
-    expect(shellWords(`echo TOKEN=x >>.env && cat 'a b' "c" | tee -a out.log`)).toEqual([
-      "echo",
-      "TOKEN=x",
-      ".env",
-      "cat",
-      "a b",
-      "c",
-      "tee",
-      "-a",
-      "out.log",
-    ]);
-  });
-
-  test("skips heredoc bodies", () => {
-    expect(shellWords("cat <<'EOF' > note.md\nsee .env\nEOF\nls")).toEqual([
-      "cat",
-      "note.md",
-      "ls",
-    ]);
-  });
-
-  test('inside double quotes a backslash goes only before $ ` " \\ or a newline, as in Bash', () => {
-    expect(shellWords('cat "pub\\lic/server.key"')).toEqual(["cat", "pub\\lic/server.key"]);
-    expect(shellWords('echo "a\\$b" "c\\`d" "e\\"f" "g\\\\h"')).toEqual([
-      "echo",
-      "a$b",
-      "c`d",
-      'e"f',
-      "g\\h",
-    ]);
-    expect(shellWords("cat pub\\lic 'pub\\lic'")).toEqual(["cat", "public", "pub\\lic"]);
-  });
-
-  test("a comment is read like any other text: the secret check errs toward refusing", () => {
-    expect(shellWords("git status # leave server.key alone")).toEqual([
-      "git",
-      "status",
-      "#",
-      "leave",
-      "server.key",
-      "alone",
-    ]);
-    expect(shellWords("true;# .env\ncat x")).toContain(".env");
-  });
-
-  test("each line is read on its own, and the whole command once more; the words of both count", () => {
-    // A quote the reader misjudges cannot carry over into the next line.
-    expect(shellWords("echo 'x\ncat .env")).toContain(".env");
-    // A quote that spans lines in Bash is read whole too.
-    expect(shellWords('echo "x\n# " ; cat .env')).toContain(".env");
-    expect(shellWords("echo 'a\nb' c")).toEqual(expect.arrayContaining(["echo", "a\nb", "c"]));
-  });
-
-  test("a backslash before a newline joins the lines, inside double quotes or out", () => {
-    expect(shellWords('echo "a\\\nb" se\\\ncret')).toEqual(
-      expect.arrayContaining(["echo", "ab", "secret"]),
-    );
-  });
-
-  test("ANSI-C quoting: inside $'…' a backslash escapes the next character", () => {
-    expect(shellWords("printf %s $'it\\'s'; cat .env")).toEqual([
-      "printf",
-      "%s",
-      "it's",
-      "cat",
-      ".env",
-    ]);
-    expect(shellWords("cat $'.e\\x6ev' $'\\056env' a$'b'c")).toEqual([
-      "cat",
-      ".env",
-      ".env",
-      "abc",
-    ]);
-    expect(shellWords('cat $".env"')).toEqual(["cat", ".env"]);
-  });
-
-  test("a decoded NUL ends the ANSI-C string; the word goes on after its closing quote", () => {
-    // Bash 3.2: printf '%s|' $'a\0b'c prints "ac|".
-    for (const nul of ["\\0", "\\000", "\\400", "\\x00", "\\u0000", "\\U00000000", "\\c@"]) {
-      expect(shellWords(`cat $'.env${nul}ignored'`)).toEqual(["cat", ".env"]);
-      expect(shellWords(`printf %s $'a${nul}b'c`)).toEqual(["printf", "%s", "ac"]);
-    }
-  });
 });
 
 describe("the shell secret check errs toward refusing", () => {
@@ -126,6 +50,13 @@ describe("the shell secret check errs toward refusing", () => {
     expect(await refused("git status # nothing secret here")).toBe(false);
   });
 
+  test("each line is read on its own and the whole command once more", async () => {
+    // A quote the reader misjudges cannot carry over into the next line.
+    expect(await refused("echo 'x\ncat .env")).toBe(true);
+    // A quote that spans lines in Bash is read whole too.
+    expect(await refused('echo "x\n# " ; cat .env')).toBe(true);
+  });
+
   test("a secret read after $'…' with an escaped quote is refused, on the same line or the next", async () => {
     expect(await refused("printf %s $'it\\'s'; cat .env")).toBe(true);
     expect(await refused("printf %s $'it\\'s';\ncat .env")).toBe(true);
@@ -136,12 +67,6 @@ describe("the shell secret check errs toward refusing", () => {
 describe("a substitution inside double quotes is read as a command", () => {
   const refused = async (command: string) =>
     (await checkSecretAccess({ kind: "shell", command }, scope())) !== null;
-
-  test("its words count, as an unquoted substitution's do", () => {
-    expect(shellWords('echo "$(cat a.txt)" "`ls b.txt`"')).toEqual(
-      expect.arrayContaining(["cat", "a.txt", "ls", "b.txt"]),
-    );
-  });
 
   test("a secret file named inside it is refused", async () => {
     for (const command of [
@@ -166,6 +91,30 @@ describe("a substitution inside double quotes is read as a command", () => {
   });
 });
 
+describe("the shared shell reader refuses more, and less only for names Bash never opens", () => {
+  const refused = async (command: string) =>
+    (await checkSecretAccess({ kind: "shell", command }, scope())) !== null;
+
+  test.each([
+    ["a file name joined to a substitution", "cat x.pem$(true)"],
+    ["a file name after a quoted substitution", 'cat "$(true)".env'],
+    ["an env -S command line", "env -S 'cat .env'"],
+    ["a value after a substitution", "docker run --env-file$(true)=.env x"],
+  ])("refuses %s", async (_label, command) => {
+    expect(await refused(command)).toBe(true);
+  });
+
+  test.each([
+    ["a folder before a substitution", "cat .env.example$(true)/x"],
+    ["a heredoc delimiter inside backticks", "echo `cat <<.env\nbody\n.env\n`"],
+    ["a comment's trailing backslash, which joins no line", "true # cert.ke\\\ny"],
+    ["a quote opened in a comment", "# it's\nx' cat .env\n'"],
+    ["a vertical tab, at which Bash does not split", "cat\v.env"],
+  ])("allows %s", async (_label, command) => {
+    expect(await refused(command)).toBe(false);
+  });
+});
+
 describe("a backslash in double quotes names the file Bash opens", () => {
   test("an allow pattern does not cover a file that only matches with the backslash dropped", async () => {
     const allowed = scope('secrets:\n  allow: ["public/**"]\n');
@@ -180,14 +129,17 @@ describe("a backslash in double quotes names the file Bash opens", () => {
 
 describe("checkSecretAccess: file tools", () => {
   test("blocks reading .env and names the path and the switch", async () => {
-    const refusal = await checkSecretAccess({ kind: "read", paths: ["acme/.env"] }, scope());
+    const refusal = await checkSecretAccess(
+      { kind: "read", targets: [target("acme/.env")] },
+      scope(),
+    );
     expect(refusal).toContain("acme/.env");
     expect(refusal).toContain("secrets");
   });
 
   test("blocks writing .env.local", async () => {
     const refusal = await checkSecretAccess(
-      { kind: "write", writes: [{ path: "acme/.env.local", content: "KEY=1\n", mode: "create" }] },
+      { kind: "write", writes: [write("acme/.env.local", "KEY=1\n", false)] },
       scope(),
     );
     expect(refusal).toContain("acme/.env.local");
@@ -195,26 +147,31 @@ describe("checkSecretAccess: file tools", () => {
   });
 
   test("blocks a differently-cased .Env", async () => {
-    expect(await checkSecretAccess({ kind: "read", paths: ["acme/.Env"] }, scope())).toContain(
-      "acme/.Env",
-    );
+    expect(
+      await checkSecretAccess({ kind: "read", targets: [target("acme/.Env")] }, scope()),
+    ).toContain("acme/.Env");
   });
 
   test("lets the example file through", async () => {
-    expect(await checkSecretAccess({ kind: "read", paths: ["acme/.env.example"] }, scope())).toBe(
-      null,
-    );
+    expect(
+      await checkSecretAccess({ kind: "read", targets: [target("acme/.env.example")] }, scope()),
+    ).toBe(null);
   });
 
   test("allows everything after an opt-out", async () => {
     const optedOut = scope("secrets:\n  guardrails: false\n");
-    expect(await checkSecretAccess({ kind: "read", paths: ["acme/.env"] }, optedOut)).toBe(null);
+    expect(
+      await checkSecretAccess({ kind: "read", targets: [target("acme/.env")] }, optedOut),
+    ).toBe(null);
   });
 
   test("enforces an extra deny pattern from config", async () => {
     const extra = scope('secrets:\n  deny: ["config/master.key.enc"]\n');
     expect(
-      await checkSecretAccess({ kind: "read", paths: ["/r/config/master.key.enc"] }, extra),
+      await checkSecretAccess(
+        { kind: "read", targets: [target("/r/config/master.key.enc")] },
+        extra,
+      ),
     ).not.toBe(null);
   });
 });
@@ -246,23 +203,32 @@ describe("checkSecretAccess: shell commands", () => {
 describe("checkSecretAccess: searches", () => {
   test("blocks a search inside a secret file", async () => {
     expect(
-      await checkSecretAccess({ kind: "search", paths: ["acme/.env"], globs: [""] }, scope()),
+      await checkSecretAccess(
+        { kind: "search", targets: [target("acme/.env")], globs: [""] },
+        scope(),
+      ),
     ).toContain("acme/.env");
   });
 
   test("blocks a search whose glob is aimed at secret files", async () => {
     expect(
-      await checkSecretAccess({ kind: "search", paths: ["acme"], globs: [".env*"] }, scope()),
+      await checkSecretAccess(
+        { kind: "search", targets: [target("acme")], globs: [".env*"] },
+        scope(),
+      ),
     ).toContain(".env*");
   });
 
   test("lets an ordinary search through", async () => {
     expect(
-      await checkSecretAccess({ kind: "search", paths: ["acme/src"], globs: ["*.ts"] }, scope()),
+      await checkSecretAccess(
+        { kind: "search", targets: [target("acme/src")], globs: ["*.ts"] },
+        scope(),
+      ),
     ).toBe(null);
     expect(
       await checkSecretAccess(
-        { kind: "search", paths: ["acme/.env.example"], globs: [""] },
+        { kind: "search", targets: [target("acme/.env.example")], globs: [""] },
         scope(),
       ),
     ).toBe(null);
@@ -272,27 +238,27 @@ describe("checkSecretAccess: searches", () => {
 describe("checkSecretAccess: companion content scan", () => {
   test("blocks a companion write containing a token, naming the rule but not the token", async () => {
     const guarded = scope();
-    const target = path.join(guarded.companionPath, "notes", "design.md");
+    const file = path.join(guarded, "notes", "design.md");
     const refusal = await checkSecretAccess(
       {
         kind: "write",
-        writes: [{ path: target, content: `token: ${GITHUB_TOKEN}\n`, mode: "create" }],
+        writes: [write(file, `token: ${GITHUB_TOKEN}\n`, true)],
       },
       guarded,
     );
     expect(refusal).toContain("@secretlint/secretlint-rule-github");
-    expect(refusal).toContain(target);
+    expect(refusal).toContain(file);
     expect(refusal).not.toContain(GITHUB_TOKEN);
   });
 
   test("lets a clean companion write through", async () => {
     const guarded = scope();
-    const target = path.join(guarded.companionPath, "notes", "design.md");
+    const file = path.join(guarded, "notes", "design.md");
     expect(
       await checkSecretAccess(
         {
           kind: "write",
-          writes: [{ path: target, content: "Set GITHUB_TOKEN yourself.\n", mode: "create" }],
+          writes: [write(file, "Set GITHUB_TOKEN yourself.\n", true)],
         },
         guarded,
       ),
@@ -304,7 +270,7 @@ describe("checkSecretAccess: companion content scan", () => {
     const refusal = await checkSecretAccess(
       {
         kind: "write",
-        writes: [{ path: "/repo/src/app.ts", content: GITHUB_TOKEN, mode: "create" }],
+        writes: [write("/repo/src/app.ts", GITHUB_TOKEN, false)],
       },
       scope(),
       {
@@ -323,7 +289,7 @@ describe("checkSecretAccess: companion content scan", () => {
     const refusal = await checkSecretAccess(
       {
         kind: "write",
-        writes: [{ path: path.join(guarded.companionPath, "a.md"), content: "x", mode: "create" }],
+        writes: [write(path.join(guarded, "a.md"), "x", true)],
       },
       guarded,
       {
@@ -333,5 +299,57 @@ describe("checkSecretAccess: companion content scan", () => {
       },
     );
     expect(refusal).toContain("could not be scanned");
+  });
+});
+
+describe("checkSecretAccess: a path that lands on a secret file", () => {
+  const landsOnKey = (filePath: string): SecretTarget => ({
+    path: filePath,
+    landing: "/home/me/.ssh/server.key",
+    exists: true,
+  });
+
+  test("is refused, naming the path and where it lands", async () => {
+    const refusal = await checkSecretAccess(
+      { kind: "read", targets: [landsOnKey("/repo/notes.txt")] },
+      scope(),
+    );
+    expect(refusal).toContain("/repo/notes.txt");
+    expect(refusal).toContain("lands in: /home/me/.ssh/server.key");
+  });
+
+  test("counts only when something sits at the path", async () => {
+    const missing = { ...landsOnKey("/repo/notes.txt"), exists: false };
+    expect(await checkSecretAccess({ kind: "read", targets: [missing] }, scope())).toBeNull();
+  });
+
+  test("comes after a named secret file and after the content scan", async () => {
+    const named = await checkSecretAccess(
+      { kind: "search", targets: [landsOnKey("/repo/a.txt"), target("/repo/.env")], globs: [] },
+      scope(),
+    );
+    expect(named).toContain("target: /repo/.env");
+    expect(named).not.toContain("lands in");
+
+    const guarded = scope();
+    const scanned = await checkSecretAccess(
+      {
+        kind: "write",
+        writes: [
+          { ...write(path.join(guarded, "a.md"), "x", false), ...landsOnKey("/repo/a.md") },
+          write(path.join(guarded, "b.md"), "x", true),
+        ],
+      },
+      guarded,
+      { scan: async (filePath) => [{ path: filePath, line: 1, ruleId: "rule" }] },
+    );
+    expect(scanned).toContain("would put a secret into the Companion Repository");
+  });
+
+  test("an opt-out allows it", async () => {
+    const optedOut = scope("secrets:\n  guardrails: false\n");
+    expect(
+      await checkSecretAccess({ kind: "read", targets: [landsOnKey("/repo/notes.txt")] }, optedOut),
+    ).toBeNull();
   });
 });

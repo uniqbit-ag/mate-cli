@@ -1,6 +1,6 @@
 import { endsWord, startsAnsiCQuote } from "./shell-quoting";
 
-// Shared by every guard shell reader so they agree on what is a heredoc body. A heuristic:
+// Heredoc reading for the shell reader (`shell-reading.ts`), its only importer. A heuristic:
 // when unsure, lines stay command text, so a misread can only make a check read more.
 
 export interface HeredocMarker {
@@ -171,61 +171,60 @@ function scanLine(line: string, stack: Frame[]): LineScan {
   return { markers, continued };
 }
 
-/** A heredoc body and the line, in the stripped command, whose marker opened it. */
-export interface HeredocBody {
-  line: number;
+/** A heredoc body and where its `<<` sits in the stripped command (`kept` joined with newlines). */
+export interface HeredocSplitBody {
+  offset: number;
   text: string;
 }
 
 /**
- * A body is split off only when its marker reads the same on its line read
- * alone, so a quote misjudged earlier cannot turn later lines into a body;
- * otherwise every body of that line stays command text.
+ * The command's lines with every heredoc body and terminator line removed,
+ * and the bodies, in order; an unterminated body runs to the end. Marker lines
+ * stay: a redirect the command performs is spelled there, never in the body
+ * it writes. A body is split off only when its marker reads the same on its
+ * line read alone, so a quote misjudged earlier cannot turn later lines into
+ * a body; otherwise every body of that line stays command text.
  */
-function splitHeredocs(command: string): { kept: string[]; bodies: HeredocBody[] } {
+export function splitHeredocs(command: string): { kept: string[]; bodies: HeredocSplitBody[] } {
   const lines = command.split("\n");
   const kept: string[] = [];
-  const bodies: HeredocBody[] = [];
+  /** Where each kept line starts in the stripped command. */
+  const keptStarts: number[] = [];
+  let keptLength = 0;
+  const bodies: HeredocSplitBody[] = [];
   const stack = topLevel();
-  let pending: (string | null)[] = [];
+  let pending: { delimiter: string | null; offset: number }[] = [];
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
+    keptStarts.push(keptLength);
+    keptLength += line.length + 1;
     kept.push(line);
     const scan = scanLine(line, stack);
     if (scan.markers.length > 0) {
-      const alone = scanLine(line, topLevel()).markers;
+      const alone = new Map(
+        scanLine(line, topLevel()).markers.map((other) => [other.column, other]),
+      );
       for (const marker of scan.markers) {
-        const same = alone.find((other) => other.column === marker.column);
-        pending.push(same?.delimiter === marker.delimiter ? marker.delimiter : null);
+        const same = alone.get(marker.column);
+        pending.push({
+          delimiter: same?.delimiter === marker.delimiter ? marker.delimiter : null,
+          offset: (keptStarts.at(-1) as number) + marker.column,
+        });
       }
     }
     const top = stack.at(-1) as Frame;
     if (pending.length === 0 || scan.continued || top.kind !== "command") continue;
-    const delimiters = pending;
+    const markers = pending;
     pending = [];
-    if (delimiters.includes(null)) continue;
-    for (const delimiter of delimiters) {
+    if (markers.some((marker) => marker.delimiter === null)) continue;
+    for (const marker of markers) {
       const body: string[] = [];
-      for (index++; index < lines.length && lines[index].trim() !== delimiter; index++) {
+      for (index++; index < lines.length && lines[index].trim() !== marker.delimiter; index++) {
         body.push(lines[index]);
       }
-      bodies.push({ line: kept.length - 1, text: body.join("\n") });
+      bodies.push({ offset: marker.offset, text: body.join("\n") });
       if (index >= lines.length) break;
     }
   }
   return { kept, bodies };
-}
-
-/**
- * The command with every heredoc body and terminator line removed. Marker
- * lines stay: a redirect the command performs is spelled there, never in the
- * body it writes.
- */
-export function stripHeredocBodies(command: string): string {
-  return splitHeredocs(command).kept.join("\n");
-}
-
-/** Every heredoc body in the command, in order; an unterminated one runs to the end. */
-export function heredocBodies(command: string): HeredocBody[] {
-  return splitHeredocs(command).bodies;
 }

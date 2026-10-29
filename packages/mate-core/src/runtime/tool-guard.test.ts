@@ -9,8 +9,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createTempDir } from "../../../../test/fixtures";
 import { ARTIFACT_REFUSAL_HEADLINE } from "./artifact-refusal";
 import { companionLinkPath } from "./repo-local";
-import type { GuardedToolCall, WriteMode } from "./secret-guard";
-import { checkToolCall, type ToolGuardScope } from "./tool-guard";
+import {
+  checkToolCall,
+  type GuardedToolCall,
+  type ToolGuardScope,
+  type WriteMode,
+} from "./tool-guard";
 
 const tempRoots: string[] = [];
 
@@ -491,29 +495,6 @@ describe("shell targets", () => {
       await checkToolCall(shell("printf hello | tee scratch/note.md"), scopeFor(repo, companion)),
     ).toBeNull();
   });
-
-  test("ignores redirect-like text in a heredoc body", async () => {
-    const command = [
-      "cat >> src/app.ts <<'EOF'",
-      "const files = roots.flatMap((root) =>",
-      '  ["CLAUDE.md", "AGENTS.md"].map((name) => path.join(root, name)),',
-      ");",
-      "echo notes > scratch/plan.md",
-      "EOF",
-    ].join("\n");
-    expect(await shellVerdict(command)).toBeNull();
-  });
-
-  test("still judges redirects around a heredoc", async () => {
-    expect(await shellVerdict("cat <<'EOF' > notes/x.md\nbody\nEOF")).toBe("artifact");
-    expect(await shellVerdict("cat > notes/x.md <<EOF\nbody\nEOF")).toBe("artifact");
-    expect(await shellVerdict("cat <<EOF | sort\nbody\nEOF\necho x > notes/x.md")).toBe("artifact");
-  });
-
-  test("does not pair a line-end redirect or tee with a later line", async () => {
-    expect(await shellVerdict("node -e 'a =>\nnotes.md'")).toBeNull();
-    expect(await shellVerdict("echo hi | tee\nnotes.md")).toBeNull();
-  });
 });
 
 describe("classification ignores letter case", () => {
@@ -617,7 +598,7 @@ describe("symlinks are followed before `..`", () => {
   });
 });
 
-describe("shell targets the tokenizer finds", () => {
+describe("shell targets the reading finds", () => {
   async function shellVerdict(command: string): Promise<string | null> {
     const repo = await makeTempDir("mate-tg-shell2-");
     const companion = await makeTempDir("mate-tg-shell2-companion-");
@@ -625,102 +606,12 @@ describe("shell targets the tokenizer finds", () => {
     return (await checkToolCall(shell(command), scopeFor(repo, companion)))?.check ?? null;
   }
 
-  test("quoted targets with spaces", async () => {
-    expect(await shellVerdict('printf x > "notes dir/handoff.md"')).toBe("artifact");
-    expect(await shellVerdict("printf x > 'notes dir/handoff.md'")).toBe("artifact");
-    expect(await shellVerdict('printf x >> "a b.md"')).toBe("artifact");
-  });
-
-  test("every tee operand, with or without options", async () => {
-    expect(await shellVerdict("echo x | tee README.md notes.md")).toBe("artifact");
-    expect(await shellVerdict("echo x | tee -a README.md notes.md")).toBe("artifact");
-    expect(await shellVerdict("echo x | tee --append README.md notes.md")).toBe("artifact");
-    expect(await shellVerdict("echo x | tee -i README.md 'my notes.md'")).toBe("artifact");
-    expect(await shellVerdict("echo x | tee README.md src/a.ts")).toBeNull();
-  });
-
-  test("tee operands stop at the next command", async () => {
-    expect(await shellVerdict("echo x | tee src/a.ts; cat notes.md")).toBeNull();
-    expect(await shellVerdict("echo x | tee src/a.ts | grep notes.md")).toBeNull();
-  });
-
-  test("fd and combined redirects", async () => {
-    const target = ["build-notes", "md"].join(".");
-    expect(await shellVerdict(`make 2> ${target}`)).toBe("artifact");
-    expect(await shellVerdict(`make &> ${target}`)).toBe("artifact");
-    expect(await shellVerdict(`make >| ${target}`)).toBe("artifact");
-    expect(await shellVerdict(`make 2>&1 > ${target}`)).toBe("artifact");
-    expect(await shellVerdict("make > /dev/null 2>&1")).toBeNull();
-  });
-
-  test("an input redirect and a quoted word are not write targets", async () => {
-    expect(await shellVerdict("wc -l < notes.md")).toBeNull();
-    expect(await shellVerdict('git commit -m "see > notes.md"')).toBeNull();
-    expect(await shellVerdict("echo notes.md.bak > src/a.ts")).toBeNull();
-  });
-
-  test("ANSI-C quoting: an escaped quote inside $'…' does not end it", async () => {
-    const target = ["plan", "md"].join(".");
-    expect(await shellVerdict(`printf %s $'it\\'s' > ${target}`)).toBe("artifact");
-    expect(await shellVerdict(`printf %s $'it\\'s'\nprintf x > ${target}`)).toBe("artifact");
-    expect(await shellVerdict(`printf %s $'it\\'s'; printf x > ${target}`)).toBe("artifact");
-    expect(await shellVerdict(`echo "$(printf %s $'a\\')' > ${target})"`)).toBe("artifact");
-    expect(await shellVerdict(`printf x > $'${target}'`)).toBe("artifact");
-    expect(await shellVerdict(`echo $'> ${target}' > src/a.ts`)).toBeNull();
-  });
-
-  test("an ANSI-C redirect target ends at a decoded NUL, as the C string Bash opens does", async () => {
-    const target = ["notes", "md"].join(".");
-    expect(await shellVerdict(`printf x > $'${target}\\0x'`)).toBe("artifact");
-    expect(await shellVerdict(`printf x > $'${target}\\x00'.txt`)).toBeNull();
-  });
-
-  test("a secret read whose ANSI-C name ends at a decoded NUL is refused", async () => {
-    expect(await shellVerdict("cat $'.env\\0ignored'")).toBe("secret");
-  });
-
-  test("heredoc bodies stay ignored", async () => {
-    expect(
-      await shellVerdict("cat > src/a.ts <<'EOF'\necho x | tee notes.md\n> \"a b.md\"\nEOF"),
-    ).toBeNull();
-  });
-
   test("a quoted substitution's secret read is refused", async () => {
     expect(await shellVerdict('printf "%s" "$(cat cert.key)"')).toBe("secret");
     expect(await shellVerdict('printf "%s" "`cat cert.key`"')).toBe("secret");
   });
 
-  test("a heredoc delimiter is read as Bash reads it, so the lines after the body are judged", async () => {
-    const target = ["notes", "md"].join(".");
-    expect(await shellVerdict(`cat <<E"OF"\nbody\nEOF\nprintf x > ${target}`)).toBe("artifact");
-    expect(await shellVerdict("cat <<EOF+\nbody\nEOF+\ncat cert.key")).toBe("secret");
-  });
-
-  test("a heredoc marker inside a quote that spans lines hides nothing", async () => {
-    const target = ["notes", "md"].join(".");
-    expect(await shellVerdict("printf '%s' '\n<<EOF\n'\ncat cert.key")).toBe("secret");
-    expect(await shellVerdict(`printf '%s' '\n<<EOF\n'\nprintf x > ${target}`)).toBe("artifact");
-  });
-
-  test("a descriptor redirect does not end a tee's operands", async () => {
-    const target = ["notes", "md"].join(".");
-    for (const redirect of ["<&0", "0<&0", "<&-", "2>&1", ">&2", "2>/dev/null", "&>/dev/null"]) {
-      // oxlint-disable-next-line no-await-in-loop -- one command at a time
-      const verdict = await shellVerdict(`printf x | tee ${redirect} ${target}`);
-      expect({ redirect, verdict }).toEqual({ redirect, verdict: "artifact" });
-    }
-    expect(await shellVerdict(`printf x |& tee ${target}`)).toBe("artifact");
-    expect(await shellVerdict(`printf x | tee 2<>log.txt ${target}`)).toBe("artifact");
-  });
-
-  test("a read-write redirect writes its target", async () => {
-    expect(await shellVerdict(`exec 3<> ${["notes", "md"].join(".")}`)).toBe("artifact");
-    expect(await shellVerdict("exec 3<> src/a.ts")).toBeNull();
-  });
-
-  test('$"…" is a double-quoted string', async () => {
-    expect(await shellVerdict('printf x > $"README.md"')).toBeNull();
-    expect(await shellVerdict(`printf x > $"${["notes", "md"].join(".")}"`)).toBe("artifact");
+  test('a $"…" target in the companion is the companion', async () => {
     const companion = await makeTempDir("mate-tg-locale-companion-");
     const repo = await makeTempDir("mate-tg-locale-");
     git(repo, "init", "-q");
@@ -970,131 +861,6 @@ describe("a runtime state root linked into the Working Repository", () => {
     const scope = scopeFor(repo, companion, { runtimeStateRoots: [stateRoot] });
     expect(await checkToolCall(write(`${stateRoot}/skills/x/SKILL.md`), scope)).toBeNull();
     expect(await checkToolCall(write(`${stateRoot}/CLAUDE.md`), scope)).toBeNull();
-  });
-});
-
-describe("shell words follow Bash's quoting", () => {
-  /** The fixture's companion is `<repo>/companion`, so a one-character change leaves it. */
-  async function verdict(command: string): Promise<string | null> {
-    const { repo, companion } = await fixture("mate-tg-quote-");
-    return (await checkToolCall(shell(command), scopeFor(repo, companion)))?.check ?? null;
-  }
-
-  test('inside double quotes a backslash stays unless it escapes $ ` " \\ or a newline', async () => {
-    expect(await verdict('printf x > "co\\mpanion/notes.md"')).toBe("artifact");
-    expect(await verdict('printf x > "companion\\\\/notes.md"')).toBe("artifact");
-    expect(await verdict('printf x > "compa\\\nnion/notes.md"')).toBeNull();
-    expect(await verdict('printf x > "companion/n\\"otes.md"')).toBeNull();
-    expect(await verdict('printf x > "companion/\\$x.md"')).toBeNull();
-  });
-
-  test("outside quotes a backslash escapes the next character; inside single quotes it is literal", async () => {
-    expect(await verdict("printf x > co\\mpanion/notes.md")).toBeNull();
-    expect(await verdict("printf x > 'co\\mpanion/notes.md'")).toBe("artifact");
-    expect(await verdict("printf x > compa\\\nnion/notes.md")).toBeNull();
-  });
-});
-
-describe("tee operands after nested syntax", () => {
-  async function verdict(command: string): Promise<string | null> {
-    const { repo, companion } = await fixture("mate-tg-nested-");
-    return (await checkToolCall(shell(command), scopeFor(repo, companion)))?.check ?? null;
-  }
-
-  test("a substitution is one opaque word, and the operands after it are still read", async () => {
-    for (const command of [
-      "printf x | tee $(printf README.md) notes.md",
-      "printf x | tee >(cat) notes.md",
-      "printf x | tee <(printf x) notes.md",
-      "printf x | tee `printf a` notes.md",
-      'printf x | tee "$(echo "a b)")" notes.md',
-      "printf x | tee $(echo $(echo a) ')') notes.md",
-      "printf x | tee a$(echo b)c notes.md",
-    ]) {
-      // oxlint-disable-next-line no-await-in-loop -- one command at a time
-      expect(await verdict(command)).toBe("artifact");
-    }
-  });
-
-  test("an opaque word is never itself a target", async () => {
-    expect(await verdict("printf x > $(echo notes.md)")).toBeNull();
-    expect(await verdict("printf x | tee `echo notes.md`")).toBeNull();
-    expect(await verdict("printf x | tee notes$(echo x).md")).toBeNull();
-  });
-
-  test("the commands inside a substitution are judged as commands", async () => {
-    expect(await verdict("printf x | tee >(cat > notes.md) src/a.ts")).toBe("artifact");
-    expect(await verdict("echo $(printf x | tee notes.md)")).toBe("artifact");
-    expect(await verdict('echo "`printf x > notes.md`"')).toBe("artifact");
-    expect(await verdict("echo $(echo $(tee notes.md))")).toBe("artifact");
-  });
-
-  test("a subshell still ends a tee", async () => {
-    expect(await verdict("(printf x | tee src/a.ts) notes.md")).toBeNull();
-  });
-});
-
-describe("tee counts only as a command", () => {
-  async function verdict(command: string): Promise<string | null> {
-    const { repo, companion } = await fixture("mate-tg-tee-cmd-");
-    return (await checkToolCall(shell(command), scopeFor(repo, companion)))?.check ?? null;
-  }
-
-  test("tee as an argument writes nothing", async () => {
-    for (const command of [
-      "grep tee docs/notes.md",
-      "ls tee notes.md",
-      'printf "%s" "tee" docs/notes.md',
-      "echo x | grep -e tee notes.md",
-    ]) {
-      // oxlint-disable-next-line no-await-in-loop -- one command at a time
-      expect(await verdict(command)).toBeNull();
-    }
-  });
-
-  test("tee in command position, after any separator", async () => {
-    for (const command of [
-      "tee notes.md",
-      "echo x | tee notes.md",
-      "true && tee notes.md",
-      "false || tee notes.md",
-      "true; tee notes.md",
-      "sleep 1 & tee notes.md",
-      "true\ntee notes.md",
-      "(tee notes.md)",
-      "if true; then tee notes.md; fi",
-      "{ tee notes.md; }",
-      "f() { tee notes.md; }; f",
-      "case x in x) tee notes.md;; esac",
-      "case x in (x) tee notes.md;; esac",
-      "/usr/bin/tee notes.md",
-      "> src/a.ts tee notes.md",
-    ]) {
-      // oxlint-disable-next-line no-await-in-loop -- one command at a time
-      expect(await verdict(command)).toBe("artifact");
-    }
-  });
-
-  test("tee behind assignments and wrappers", async () => {
-    for (const command of [
-      "FOO=1 BAR=2 tee notes.md",
-      "sudo tee notes.md",
-      "sudo -u root tee notes.md",
-      "env FOO=1 tee notes.md",
-      "env -i tee notes.md",
-      "command tee notes.md",
-      "exec tee notes.md",
-      "nohup tee notes.md",
-      "nice -n 5 tee notes.md",
-      "time tee notes.md",
-      "stdbuf -oL tee notes.md",
-      "echo notes.md | xargs tee notes.md",
-      "echo x | xargs -I {} tee notes.md",
-      "sudo env FOO=1 nice tee -a notes.md",
-    ]) {
-      // oxlint-disable-next-line no-await-in-loop -- one command at a time
-      expect(await verdict(command)).toBe("artifact");
-    }
   });
 });
 
@@ -1354,24 +1120,11 @@ describe("a file moved into the companion is scanned as it will land", () => {
   });
 });
 
-describe("shell comments and backtick escapes", () => {
+describe("shell comments", () => {
   async function verdict(command: string): Promise<string | null> {
     const { repo, companion } = await fixture("mate-tg-comment-");
     return (await checkToolCall(shell(command), scopeFor(repo, companion)))?.check ?? null;
   }
-
-  test("a `)` inside a comment does not end a substitution", async () => {
-    expect(await verdict("printf x | tee $(printf README.md # )\n) notes.md")).toBe("artifact");
-    expect(await verdict("echo $(printf x # comment )\n > notes.md)")).toBe("artifact");
-  });
-
-  test("a comment hides what follows it on its line, and only there", async () => {
-    expect(await verdict("printf x # > notes.md")).toBeNull();
-    expect(await verdict("printf x #> notes.md")).toBeNull();
-    expect(await verdict("printf x # comment\nprintf x > notes.md")).toBe("artifact");
-    expect(await verdict("printf a#b > notes.md")).toBe("artifact");
-    expect(await verdict("printf '#' > notes.md")).toBe("artifact");
-  });
 
   test("decided: a secret file named only in a comment is refused, the secret check errs toward refusing", async () => {
     expect(await verdict("git status # leave server.key alone")).toBe("secret");
@@ -1382,66 +1135,6 @@ describe("shell comments and backtick escapes", () => {
     expect(await verdict("cat x#y .env")).toBe("secret");
     expect(await verdict('echo "#" .env')).toBe("secret");
     expect(await verdict("echo '#' server.key")).toBe("secret");
-  });
-
-  test("a heredoc marker inside a comment opens no heredoc", async () => {
-    expect(await verdict("true # <<EOF\nprintf x > notes.md\nEOF")).toBe("artifact");
-  });
-
-  test("escaped backticks inside backticks lose one escape layer", async () => {
-    expect(await verdict('printf "%s" "`printf %s \\`printf x > nested.md\\``"')).toBe("artifact");
-    expect(await verdict("echo `echo \\`tee nested.md\\``")).toBe("artifact");
-    expect(await verdict("echo `echo \\$(tee nested.md)`")).toBe("artifact");
-  });
-});
-
-describe("wrapper options that take an argument", () => {
-  async function verdict(command: string): Promise<string | null> {
-    const { repo, companion } = await fixture("mate-tg-wrapper-");
-    return (await checkToolCall(shell(command), scopeFor(repo, companion)))?.check ?? null;
-  }
-
-  test("env -S holds a command, in every spelling", async () => {
-    for (const command of [
-      'printf x | env -S "tee notes.md"',
-      "printf x | env -S'tee notes.md'",
-      'printf x | env --split-string="tee notes.md"',
-      'printf x | env --split-string "tee notes.md"',
-      'printf x | env -iS "tee notes.md"',
-      'printf x | env -S "-i FOO=1 tee -a notes.md"',
-      'printf x | env -S "tee" notes.md',
-    ]) {
-      // oxlint-disable-next-line no-await-in-loop -- one command at a time
-      expect(await verdict(command)).toBe("artifact");
-    }
-    expect(await verdict('env -S "echo tee" notes.md')).toBeNull();
-  });
-
-  test("long options that take a separate argument are skipped with it", async () => {
-    for (const command of [
-      "sudo --user bob tee notes.md",
-      "sudo --user=bob tee notes.md",
-      "sudo -u bob -g staff --chdir /tmp --host h --prompt p --close-from 3 --other-user x tee notes.md",
-      "sudo -ubob tee notes.md",
-      "env --unset FOO --chdir /tmp tee notes.md",
-      "env -u FOO -C /tmp tee notes.md",
-      "nice --adjustment 5 tee notes.md",
-      "nice -n5 tee notes.md",
-      "stdbuf --output L -e 0 tee notes.md",
-      "echo x | xargs --max-args 1 --delimiter , tee notes.md",
-      "echo x | xargs -n 1 -P 2 tee notes.md",
-      "time -f %e -o out.txt tee notes.md",
-      "time --format %e --output out.txt tee notes.md",
-      "sudo -- tee notes.md",
-    ]) {
-      // oxlint-disable-next-line no-await-in-loop -- one command at a time
-      expect(await verdict(command)).toBe("artifact");
-    }
-  });
-
-  test("an unknown option takes no argument", async () => {
-    expect(await verdict("sudo --some-flag tee notes.md")).toBe("artifact");
-    expect(await verdict("sudo --some-flag cat notes.md")).toBeNull();
   });
 });
 

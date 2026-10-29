@@ -3,46 +3,39 @@ import fs from "node:fs";
 import { resolveSecretPolicy } from "./policy";
 import { globTargetsSecretFiles, isSecretFile } from "./secret-patterns";
 import { describeSecretFindings, scanContent, type SecretFinding } from "./secret-scan";
-import { heredocMarker, stripHeredocBodies } from "./shell-heredoc";
-import {
-  ansiCQuote,
-  backtickCommand,
-  backtickEnd,
-  checkNesting,
-  escapedInDoubleQuotes,
-  parenEnd,
-  startsAnsiCQuote,
-} from "./shell-quoting";
+import { readShell, type ShellReading } from "./shell-reading";
 
-export type WriteMode = "create" | "edit";
-
-/** Runtime-neutral tool call; the Claude hook and OpenCode middleware both translate into it, so they refuse alike. */
-export type GuardedToolCall =
-  | { kind: "read"; paths: string[] }
-  /** `content` is what the call would put into the file: a whole body or an edit's new text. */
-  | { kind: "write"; writes: GuardedWrite[] }
-  | { kind: "shell"; command: string }
-  /** A content search: refused when it names a secret file or a glob aimed at secret files. */
-  | { kind: "search"; paths: string[]; globs: string[] };
-
-export interface GuardedWrite {
+/**
+ * A path as the Tool Guard resolved it. `path` is normalised against the
+ * Working Repository and names the file in a refusal; `landing` is where the
+ * path as written leads through links, and `exists` whether anything, a
+ * dangling link included, sits there.
+ */
+export interface SecretTarget {
   path: string;
+  landing: string;
+  exists: boolean;
+}
+
+export interface SecretWrite extends SecretTarget {
+  /** What the call would put into the file: a whole body or an edit's new text. */
   content: string;
-  mode: WriteMode;
+  /** Whether the write lands in the Companion Repository, whose writes are content-scanned. */
+  companion: boolean;
   /**
-   * A move's source, which OpenCode writes whole to `path`; `content` then holds
-   * the patch's added lines. A companion destination is scanned as the source's
-   * content plus those lines. The Tool Guard resolves it against the Working
-   * Repository first.
+   * A move's source, absolute as written, which OpenCode writes whole to the
+   * destination; `content` then holds the patch's added lines.
    */
   movedFrom?: string;
 }
 
-export interface SecretGuardScope {
-  companionPath: string;
-  /** Whether a target lands in the Companion Repository, whose writes are content-scanned. */
-  isCompanionPath: (filePath: string) => boolean;
-}
+/** A tool call with its paths resolved; built by the Tool Guard, its only caller. */
+export type SecretCheckCall =
+  | { kind: "read"; targets: SecretTarget[] }
+  | { kind: "write"; writes: SecretWrite[] }
+  | { kind: "shell"; command: string }
+  /** A content search: refused when it names a secret file or a glob aimed at secret files. */
+  | { kind: "search"; targets: SecretTarget[]; globs: string[] };
 
 export interface SecretGuardDeps {
   scan?: (filePath: string, content: string) => Promise<SecretFinding[]>;
@@ -62,111 +55,49 @@ export function secretFileRefusal(filePath: string, landsIn?: string): string {
   ].join("\n");
 }
 
-const SHELL_SEPARATOR = /[\s;|&<>()`]/;
-
 /**
- * Shell words with quotes removed, redirect operators as separators and
- * heredoc bodies dropped. A heuristic, not a parser: it exists to find file
- * names a command spells out, and a quoted string stays one word, so a
- * commit message that mentions `.env` is not a reference to the file.
- *
- * Errs toward refusing: comments count as text, and the command is read per
- * line (so a misjudged quote cannot hide the next line) and whole (for quotes
- * spanning lines). Substitutions count too; nesting past `MAX_SHELL_NESTING`
- * throws `ShellNestingError`.
+ * The words a shell command names, as the secret check judges them. Errs
+ * toward refusing: the command is read per line (so a misjudged quote cannot
+ * hide the next line) and whole (for quotes spanning lines); comments count
+ * as text; a word holding a substitution counts as written and by each of its
+ * literal parts (`x.pem$(true)` names `x.pem`). A quoted string stays one
+ * word, so a commit message that mentions `.env` is not a reference to the
+ * file. Nesting past `MAX_SHELL_NESTING` throws `ShellNestingError`.
  */
-export function shellWords(command: string): string[] {
-  const text = stripHeredocBodies(command);
-  const perLine = text.split("\n").flatMap((line) => readWords(line));
+function shellWords(command: string): string[] {
+  const reading = readShell(command);
+  const perLine = reading.lines.flatMap((line) => judgedWords(readShell(line)));
   const seen = new Set(perLine);
-  return [...perLine, ...readWords(text).filter((word) => !seen.has(word))];
+  return [...perLine, ...judgedWords(reading).filter((word) => !seen.has(word))];
+}
+
+function judgedWords(reading: ShellReading): string[] {
+  return [...reading.words, ...reading.comments]
+    .flatMap((word) => (word.opaque ? [word.text, ...word.pieces] : [word.text]))
+    .filter(Boolean);
 }
 
 /**
- * One reading's words. Outside quotes a substitution's parentheses and
- * backticks separate words; inside double quotes the substitution stays in
- * its word and its command's words are read too, `level` deeper.
+ * A word, plus the value of a `--flag=path` or `NAME=path` word; a word's
+ * literal part after a substitution may start at the `=` (`--flag$(x)=path`).
  */
-function readWords(text: string, level = 0): string[] {
-  const words: string[] = [];
-  let word = "";
-  let quote: string | undefined;
-  let quoted = false;
-  const flush = () => {
-    if (word || quoted) words.push(word);
-    word = "";
-    quoted = false;
-  };
-  const substitution = (start: number, end: number, inner: string) => {
-    words.push(...readWords(inner, level + 1));
-    word += text.slice(start, end + 1);
-    return end;
-  };
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    if (quote) {
-      if (char === quote) quote = undefined;
-      else if (quote === '"' && char === "$" && text[i + 1] === "(") {
-        const end = parenEnd(text, i + 1, level + 1);
-        i = substitution(i, end, text.slice(i + 2, end));
-      } else if (quote === '"' && char === "`") {
-        checkNesting(level + 1);
-        const end = backtickEnd(text, i);
-        i = substitution(i, end, backtickCommand(text.slice(i + 1, end)));
-      } else if (char === "\\" && quote === '"' && (text[i + 1] ?? "\n") === "\n") {
-        i++; // A line continuation: Bash drops the backslash and the newline.
-      } else if (char === "\\" && quote === '"' && escapedInDoubleQuotes(text[i + 1])) {
-        word += text[++i];
-      } else word += char;
-    } else if (startsAnsiCQuote(text, i)) {
-      const ansi = ansiCQuote(text, i);
-      word += ansi.value;
-      quoted = true;
-      i = ansi.end;
-    } else if (char === "$" && text[i + 1] === '"') {
-      // `$"…"` is a double-quoted string Bash may translate; the `$` is no part of the word.
-    } else if (char === "'" || char === '"') {
-      quote = char;
-      quoted = true;
-    } else if (char === "\\" && text[i + 1] === "\n") {
-      i++; // A line continuation joins the lines, inside a word too.
-    } else if (char === "\\" && i + 1 < text.length) {
-      word += text[++i];
-    } else if (char === "<" && text[i + 1] === "<") {
-      flush();
-      if (text[i + 2] === "<") {
-        i += 2;
-      } else {
-        // The marker word names no file; one the reader cannot settle is read as words.
-        const marker = heredocMarker(text, i);
-        i = marker.delimiter === null ? i + 1 : marker.end - 1;
-      }
-    } else if (SHELL_SEPARATOR.test(char)) {
-      flush();
-    } else {
-      word += char;
-    }
-  }
-  flush();
-  return words.filter(Boolean);
-}
-
-/** A word, plus the value of a `--flag=path` or `NAME=path` word. */
 function candidatePaths(word: string): string[] {
   const equals = word.indexOf("=");
-  return equals > 0 ? [word, word.slice(equals + 1)] : [word];
+  return equals === -1 ? [word] : [word, word.slice(equals + 1)];
 }
 
 /**
  * Returns the refusal message for a call that touches a secret, or null. Reads
  * the companion's `secrets` block live, so a toggle applies to the next call.
+ * First refusal wins: a secret file named, then a companion write's content,
+ * then a path that lands on a secret file through a link.
  */
 export async function checkSecretAccess(
-  call: GuardedToolCall,
-  scope: SecretGuardScope,
+  call: SecretCheckCall,
+  companionPath: string,
   deps: SecretGuardDeps = {},
 ): Promise<string | null> {
-  const policy = resolveSecretPolicy(scope.companionPath);
+  const policy = resolveSecretPolicy(companionPath);
   if (!policy.guardrails) return null;
 
   if (call.kind === "shell") {
@@ -176,22 +107,33 @@ export async function checkSecretAccess(
     return named ? secretFileRefusal(named) : null;
   }
 
-  if (call.kind === "search") {
-    const named =
-      call.paths.find((filePath) => filePath && isSecretFile(filePath, policy)) ??
-      call.globs.find((glob) => globTargetsSecretFiles(glob, policy));
-    return named ? secretFileRefusal(named) : null;
+  const targets = call.kind === "write" ? call.writes : call.targets;
+  const named =
+    targets.find((target) => target.path && isSecretFile(target.path, policy))?.path ??
+    (call.kind === "search"
+      ? call.globs.find((glob) => globTargetsSecretFiles(glob, policy))
+      : undefined);
+  if (named) return secretFileRefusal(named);
+
+  if (call.kind === "write") {
+    const scanned = await scanCompanionWrites(call.writes, deps.scan ?? scanContent);
+    if (scanned) return scanned;
   }
 
-  const paths = call.kind === "read" ? call.paths : call.writes.map((write) => write.path);
-  const secretPath = paths.find((filePath) => filePath && isSecretFile(filePath, policy));
-  if (secretPath) return secretFileRefusal(secretPath);
-  if (call.kind === "read") return null;
+  // Looked up as written: normalising `link/..` first would inspect another file than the kernel opens.
+  const landing = targets.find(
+    (target) => target.path && target.exists && isSecretFile(target.landing, policy),
+  );
+  return landing ? secretFileRefusal(landing.path, landing.landing) : null;
+}
 
-  const scan = deps.scan ?? scanContent;
-  for (const write of call.writes) {
+async function scanCompanionWrites(
+  writes: SecretWrite[],
+  scan: NonNullable<SecretGuardDeps["scan"]>,
+): Promise<string | null> {
+  for (const write of writes) {
     const moved = write.movedFrom !== undefined;
-    if (!write.path || (!write.content && !moved) || !scope.isCompanionPath(write.path)) continue;
+    if (!write.path || (!write.content && !moved) || !write.companion) continue;
     let content = write.content;
     if (write.movedFrom !== undefined) {
       const movedIn = movedContent(write, write.movedFrom);
@@ -231,7 +173,7 @@ export async function checkSecretAccess(
  * source cannot be read in full.
  */
 function movedContent(
-  write: GuardedWrite,
+  write: SecretWrite,
   movedFrom: string,
 ): { content: string } | { refusal: string } {
   const source = readMovedSource(movedFrom);
