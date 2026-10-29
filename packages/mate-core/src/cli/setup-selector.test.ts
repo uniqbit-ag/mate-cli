@@ -2,16 +2,14 @@ import { describe, expect, test } from "bun:test";
 
 import { createTtyInput, createTtyOutput } from "../../test/helpers";
 import {
-  buildWizardSteps,
   getDisabledCapabilityIds,
   getItemsForStep,
-  getOpenSpecSchemaStepMessage,
   getSelectableItems,
-  OPENSPEC_SCHEMA_SKIP_MESSAGE,
   parseSelectorInput,
   selectRadioItem,
   selectSetupCompatibilities,
   toggleSelectableItem,
+  WIZARD_STEPS,
 } from "./setup-selector";
 
 function createInitialSelections(overrides: Partial<ReturnType<typeof getInitialSelections>> = {}) {
@@ -22,8 +20,7 @@ function getInitialSelections() {
   return {
     allowedAgents: ["claude"],
     packageManagers: ["bun"],
-    capabilities: [] as { name: string; schemaProfile?: string }[],
-    selectedOpenSpecSchema: "default" as const,
+    capabilities: [] as { name: string }[],
     selectedGitMode: "default" as const,
   };
 }
@@ -77,7 +74,6 @@ describe("required plugins in the wizard", () => {
         selectedProviders: new Set<string>(),
         selectedPackageManagers: new Set<string>(),
         selectedCapabilities: new Set(["acme-mcp"]),
-        selectedOpenSpecSchema: "default" as const,
         selectedGitMode: "default" as const,
       };
       const next = toggleSelectableItem(state, item!);
@@ -146,7 +142,6 @@ describe("selectSetupCompatibilities", () => {
       selectedProviders: new Set<string>(["claude"]),
       selectedPackageManagers: new Set<string>(["bun"]),
       selectedCapabilities: new Set<string>(),
-      selectedOpenSpecSchema: "default" as const,
       selectedGitMode: "default" as const,
     };
 
@@ -157,18 +152,6 @@ describe("selectSetupCompatibilities", () => {
     expect(withRtk.selectedCapabilities).toEqual(new Set(["rtk"]));
   });
 
-  test("schema step items include a custom entry only when a non-builtin schema is active", () => {
-    const withoutCustom = getItemsForStep("openspecSchema", "default");
-    expect(withoutCustom.map((item) => item.id)).toEqual(["default", "mate-v1"]);
-
-    const withCustom = getItemsForStep("openspecSchema", "some-custom-schema");
-    expect(withCustom.map((item) => item.id)).toEqual(["default", "mate-v1", "some-custom-schema"]);
-    expect(withCustom.find((item) => item.id === "some-custom-schema")).toMatchObject({
-      kind: "openspecSchema",
-      label: "Custom",
-    });
-  });
-
   test("git mode is a radio step with manual mode selected by default", () => {
     expect(getItemsForStep("gitMode").map((item) => item.id)).toEqual(["default", "auto"]);
 
@@ -176,7 +159,6 @@ describe("selectSetupCompatibilities", () => {
       selectedProviders: new Set<string>(["claude"]),
       selectedPackageManagers: new Set<string>(["bun"]),
       selectedCapabilities: new Set<string>(),
-      selectedOpenSpecSchema: "default" as const,
       selectedGitMode: "default" as const,
     };
     const auto = getItemsForStep("gitMode").find((item) => item.id === "auto");
@@ -187,7 +169,7 @@ describe("selectSetupCompatibilities", () => {
   });
 
   test("package manager items never appear as navigable items in any wizard step", () => {
-    for (const step of buildWizardSteps({ selectedCapabilities: new Set(["openspec"]) })) {
+    for (const step of WIZARD_STEPS) {
       const items = getItemsForStep(step);
       for (const item of items) {
         expect(item.kind).not.toBe("packageManager");
@@ -195,24 +177,11 @@ describe("selectSetupCompatibilities", () => {
     }
   });
 
-  test("builds dynamic step arrays when openspec is selected", () => {
-    expect(buildWizardSteps({ selectedCapabilities: new Set() })).toEqual([
-      "providers",
-      "capabilities",
-      "gitMode",
-    ]);
-    expect(buildWizardSteps({ selectedCapabilities: new Set(["openspec"]) })).toEqual([
-      "providers",
-      "capabilities",
-      "openspecSchema",
-      "gitMode",
-    ]);
-    expect(
-      buildWizardSteps({ selectedCapabilities: new Set(), lockOpenSpecSchemaStep: true }),
-    ).toEqual(["providers", "capabilities", "openspecSchema", "gitMode"]);
+  test("wizard always has the agents, capabilities, and git mode steps", () => {
+    expect(WIZARD_STEPS).toEqual(["providers", "capabilities", "gitMode"]);
   });
 
-  test("navigates through the schema step and submits updated selections", async () => {
+  test("navigates through every step and submits updated selections", async () => {
     const stdin = createTtyInput();
     const stdout = createTtyOutput();
     const stderr = createTtyOutput();
@@ -245,25 +214,16 @@ describe("selectSetupCompatibilities", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     stdin.write("\r");
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
-
-    await new Promise((resolve) => setTimeout(resolve, 30));
-
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write(" ");
-    stdin.write("\r");
-
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude", "opencode"],
       packageManagers: ["bun", "uv"],
       capabilities: [{ name: "openspec" }, { name: "rtk" }],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
 
     expect(output).toContain("Agents");
     expect(output).toContain("Always installing: bun (node) · uv (python)");
+    expect(output).not.toContain("OpenSpec Schema Profile");
   });
 
   test("rtk selection keeps the required package managers in the result", async () => {
@@ -292,7 +252,6 @@ describe("selectSetupCompatibilities", () => {
       allowedAgents: ["claude"],
       packageManagers: ["bun", "uv"],
       capabilities: [{ name: "rtk" }],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
   });
@@ -339,7 +298,6 @@ describe("selectSetupCompatibilities", () => {
       allowedAgents: ["claude", "opencode"],
       packageManagers: ["bun", "uv"],
       capabilities: [],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
   });
@@ -362,44 +320,36 @@ describe("selectSetupCompatibilities", () => {
     stdin.write("\r");
     await new Promise((resolve) => setTimeout(resolve, 30));
     stdin.write("\r");
-    stdin.write("\r");
-    stdin.write("\r");
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude"],
       packageManagers: ["bun", "uv"],
       capabilities: [{ name: "openspec" }],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
   });
 
-  test("radio selection updates only the selected openspec schema option", () => {
+  test("radio selection ignores items outside the git mode step", () => {
     const state = {
       selectedProviders: new Set<string>(["claude"]),
       selectedPackageManagers: new Set<string>(["bun"]),
       selectedCapabilities: new Set<string>(["openspec"]),
-      selectedOpenSpecSchema: "default" as const,
       selectedGitMode: "default" as const,
     };
+    const openspec = getItemsForStep("capabilities").find((item) => item.id === "openspec");
 
-    expect(
-      selectRadioItem(state, {
-        kind: "openspecSchema",
-        id: "mate-v1",
-        label: "Mate v1",
-        description: "desc",
-      }).selectedOpenSpecSchema,
-    ).toBe("mate-v1");
+    expect(openspec).toBeDefined();
+    expect(selectRadioItem(state, openspec!)).toBe(state);
   });
 
-  test("OpenSpec schema profile can be selected with Enter", async () => {
+  test("a leftover schemaProfile on the saved openspec capability is dropped on submit", async () => {
     const stdin = createTtyInput();
     const stdout = createTtyOutput();
     const stderr = createTtyOutput();
+    const leftover = { name: "openspec", schemaProfile: "mate-v1" } as { name: string };
 
     const selectionPromise = selectSetupCompatibilities({
-      initialSelections: createInitialSelections({ capabilities: [{ name: "openspec" }] }),
+      initialSelections: createInitialSelections({ capabilities: [leftover] }),
       stdin,
       stdout,
       stderr,
@@ -408,123 +358,6 @@ describe("selectSetupCompatibilities", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     stdin.write("\r");
-    stdin.write("\r");
-    stdin.write("\u001b[B");
-    stdin.write("\r");
-    stdin.write("\r");
-    stdin.write("\r");
-    stdin.write("\r");
-    stdin.write("\r");
-    stdin.write("\r");
-
-    await expect(selectionPromise).resolves.toEqual({
-      allowedAgents: ["claude"],
-      packageManagers: ["bun", "uv"],
-      capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
-      selectedOpenSpecSchema: "mate-v1",
-      selectedGitMode: "default",
-    });
-  });
-
-  test("preloaded OpenSpec schema profile is preserved on submit", async () => {
-    const stdin = createTtyInput();
-    const stdout = createTtyOutput();
-    const stderr = createTtyOutput();
-
-    const selectionPromise = selectSetupCompatibilities({
-      initialSelections: createInitialSelections({
-        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
-        selectedOpenSpecSchema: "mate-v1",
-        selectedGitMode: "default",
-      }),
-      stdin,
-      stdout,
-      stderr,
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    stdin.write("\r");
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
-
-    await expect(selectionPromise).resolves.toEqual({
-      allowedAgents: ["claude"],
-      packageManagers: ["bun", "uv"],
-      capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
-      selectedOpenSpecSchema: "mate-v1",
-      selectedGitMode: "default",
-    });
-  });
-
-  test("preloaded custom OpenSpec schema profile is preserved on submit", async () => {
-    const stdin = createTtyInput();
-    const stdout = createTtyOutput();
-    const stderr = createTtyOutput();
-
-    const selectionPromise = selectSetupCompatibilities({
-      initialSelections: createInitialSelections({
-        capabilities: [{ name: "openspec", schemaProfile: "custom-schema" }],
-        selectedOpenSpecSchema: "custom-schema",
-        selectedGitMode: "default",
-      }),
-      stdin,
-      stdout,
-      stderr,
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    stdin.write("\r");
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
-
-    await expect(selectionPromise).resolves.toEqual({
-      allowedAgents: ["claude"],
-      packageManagers: ["bun", "uv"],
-      capabilities: [{ name: "openspec", schemaProfile: "custom-schema" }],
-      selectedOpenSpecSchema: "custom-schema",
-      selectedGitMode: "default",
-    });
-  });
-
-  test("selecting default overrides an active custom OpenSpec schema profile", async () => {
-    const stdin = createTtyInput();
-    const stdout = createTtyOutput();
-    const stderr = createTtyOutput();
-
-    const selectionPromise = selectSetupCompatibilities({
-      initialSelections: createInitialSelections({
-        capabilities: [{ name: "openspec", schemaProfile: "custom-schema" }],
-        selectedOpenSpecSchema: "custom-schema",
-        selectedGitMode: "default",
-      }),
-      stdin,
-      stdout,
-      stderr,
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    stdin.write("\r");
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\u001b[A");
-    stdin.write("\u001b[A");
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
     stdin.write("\r");
     await new Promise((resolve) => setTimeout(resolve, 30));
     stdin.write("\r");
@@ -533,7 +366,6 @@ describe("selectSetupCompatibilities", () => {
       allowedAgents: ["claude"],
       packageManagers: ["bun", "uv"],
       capabilities: [{ name: "openspec" }],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
   });
@@ -566,7 +398,6 @@ describe("selectSetupCompatibilities", () => {
       allowedAgents: [],
       packageManagers: ["bun", "uv"],
       capabilities: [],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
   });
@@ -595,7 +426,6 @@ describe("selectSetupCompatibilities", () => {
       allowedAgents: [],
       packageManagers: ["bun", "uv"],
       capabilities: [],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
   });
@@ -629,12 +459,11 @@ describe("selectSetupCompatibilities", () => {
       allowedAgents: [],
       packageManagers: ["bun", "uv"],
       capabilities: [],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
   });
 
-  test("returns the skip message when openspec is deselected after the schema step is locked", async () => {
+  test("deselecting openspec after reaching the last step keeps three steps", async () => {
     const stdin = createTtyInput();
     const stdout = createTtyOutput();
     const stderr = createTtyOutput();
@@ -655,21 +484,12 @@ describe("selectSetupCompatibilities", () => {
     stdin.write("\r");
     await new Promise((resolve) => setTimeout(resolve, 30));
     stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    stdin.write("\r");
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude"],
       packageManagers: ["bun", "uv"],
       capabilities: [],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
-
-    expect(getOpenSpecSchemaStepMessage("openspecSchema", new Set())).toBe(
-      OPENSPEC_SCHEMA_SKIP_MESSAGE,
-    );
   });
 });

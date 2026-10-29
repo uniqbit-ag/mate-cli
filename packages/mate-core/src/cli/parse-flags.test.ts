@@ -5,8 +5,8 @@ import {
   parseCapabilities,
   parseFlags,
   parseGitMode,
-  parseOpenSpecSchema,
   parsePackageManagers,
+  positionalArgs,
 } from "./parse-flags";
 
 describe("parseFlags", () => {
@@ -99,21 +99,6 @@ describe("parsePackageManagers", () => {
   });
 });
 
-describe("parseOpenSpecSchema", () => {
-  test("returns undefined when flag is absent", () => {
-    expect(parseOpenSpecSchema({})).toBeUndefined();
-  });
-
-  test("accepts supported values", () => {
-    expect(parseOpenSpecSchema({ "openspec-schema": "mate-v1" })).toBe("mate-v1");
-    expect(parseOpenSpecSchema({ "openspec-schema": "default" })).toBe("default");
-  });
-
-  test("ignores unsupported values", () => {
-    expect(parseOpenSpecSchema({ "openspec-schema": "custom" })).toBeUndefined();
-  });
-});
-
 describe("parseGitMode", () => {
   test("returns undefined when flag is absent", () => {
     expect(parseGitMode({})).toBeUndefined();
@@ -156,5 +141,18 @@ describe("parseFlags boolean flags", () => {
 
   test("without a boolean set the legacy behaviour is unchanged", () => {
     expect(parseFlags(["--no-push", "my-change"])).toEqual({ "no-push": "my-change" });
+  });
+});
+
+describe("positionalArgs", () => {
+  test("skips flag values with the rules of parseFlags", () => {
+    const booleans = new Set(["json"]);
+    expect(
+      positionalArgs(
+        ["a", "--branch", "b", "--json", "c", "--x=1", "d", "--bare", "--json"],
+        booleans,
+      ),
+    ).toEqual(["a", "c", "d"]);
+    expect(positionalArgs(["--branch"], booleans)).toEqual([]);
   });
 });

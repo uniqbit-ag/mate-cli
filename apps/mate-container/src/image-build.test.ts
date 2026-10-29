@@ -147,7 +147,6 @@ describe("the recipe itself", () => {
       "git",
       "ssh",
       "uv",
-      "openspec",
       "graphify",
       "rtk",
       "tokensave",
@@ -156,6 +155,8 @@ describe("the recipe itself", () => {
     ]) {
       expect(dockerfile).toContain(`command -v ${command}`);
     }
+    // OpenSpec ships inside Mate, so the image carries no global copy.
+    expect(dockerfile).not.toContain("command -v openspec");
   });
 
   test("checks the pinned Claude Code binary and the terminal-capable Bun", () => {

@@ -22,7 +22,7 @@ Once implementation has started, switching costs are real and the user may
 rationalize the wrong thing into "good enough." This skill closes the gap before
 it costs anything.
 
-This skill runs before `/openspec-explore`. It clarifies intent only: do not read
+This skill runs before `/mate-explore-change`. It clarifies intent only: do not read
 or investigate the repository, and do not compare implementation options. When
 an answer would need repository evidence, record it in the handoff for explore
 instead of looking it up.
@@ -143,11 +143,11 @@ PRE-EXPLORE HANDOFF (interview)
 Confirmed:   <Outcome, User, Why now, Success, Constraint, Out of scope>
 Unresolved:  <open questions, or "none">
 Assumptions: <points explore should verify against the repository, or "none">
-Next: /openspec-explore
+Next: /mate-explore-change
 ```
 
 Confirmed points are settled; explore should not ask them again. Then tell the
-user the next step is `/openspec-explore`; do not invoke it. The user starts it
+user the next step is `/mate-explore-change`; do not invoke it. The user starts it
 in this conversation.
 
 If the session stopped on a blocker, still emit the block. Put only explicitly
@@ -166,7 +166,7 @@ its partial intent, blocker, and unresolved questions in the handoff instead.
 This is a conversational-only skill. Do not create or modify code, context files,
 ADRs, OpenSpec artifacts, intent documents, or any other files. Do not claim that
 a file was written, and do not invoke another skill. The only skill this skill
-names is `/openspec-explore`, as the user's next step.
+names is `/mate-explore-change`, as the user's next step.
 
 ## Verification
 
@@ -184,6 +184,6 @@ Before stopping, check that:
 - The user explicitly confirmed the restatement, or the result is clearly marked
   unresolved because of a blocker.
 - The session ended with the `PRE-EXPLORE HANDOFF` block and named
-  `/openspec-explore` as the next step without invoking it.
+  `/mate-explore-change` as the next step without invoking it.
 - No repository investigation was done; evidence needs went to Unresolved or
   Assumptions.

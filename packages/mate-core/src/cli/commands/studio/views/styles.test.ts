@@ -61,12 +61,8 @@ describe("studio styles", () => {
   });
 
   it("keeps pre-explore skill choices free of the accent border", () => {
-    expect(STUDIO_STYLES).toContain(
-      ".workflow-option { display: grid; gap: 1px; padding-left: 8px; }",
-    );
-    expect(STUDIO_STYLES).not.toContain(
-      ".workflow-option { display: grid; gap: 1px; padding-left: 8px; border-left:",
-    );
+    expect(STUDIO_STYLES).toContain(".workflow-option { display: grid; }");
+    expect(STUDIO_STYLES).not.toMatch(/\.workflow-option \{[^}]*border-left/);
   });
 
   it("scopes the terminal grid to a shell that carries the terminal", () => {
@@ -129,7 +125,7 @@ describe("studio styles", () => {
   };
 
   it("frames cards and panes flat: surface, rule border, 8px corners, no shadow", () => {
-    for (const card of [".panel", ".specs-area-card", ".workflow-console"]) {
+    for (const card of [".panel", ".specs-area-card", ".workflow-detail"]) {
       const rule = ruleFor(card);
       expect(rule).toContain("background: var(--panel)");
       expect(rule).toContain("border: 1px solid var(--border)");
@@ -175,7 +171,7 @@ describe("studio styles", () => {
     const label = ruleFor(".section-header h3");
     expect(label).toContain("color: var(--muted)");
     expect(label).toContain("text-transform: uppercase");
-    expect(ruleFor(".page-eyebrow")).not.toContain("var(--accent)");
+    expect(STUDIO_STYLES).not.toContain(".page-eyebrow");
     for (const tile of [".sidebar-metric", ".specs-summary-item"]) {
       expect(ruleFor(tile)).toContain("border-top: 1px solid var(--border)");
       expect(ruleFor(`${tile} strong`)).toContain("font-variant-numeric: tabular-nums");

@@ -1,22 +1,7 @@
-import type {
-  CapabilityConfig,
-  CliToolConfig,
-  FrameworkConfig,
-  GitModeProfile,
-  OpenSpecSchemaProfile,
-} from "./types";
+import type { CapabilityConfig, CliToolConfig, FrameworkConfig, GitModeProfile } from "./types";
 
-export type OpenSpecSchemaSelection = OpenSpecSchemaProfile | "default";
 export type GitModeSelection = GitModeProfile | "default";
-const DEFAULT_OPENSPEC_SCHEMA_SELECTION: OpenSpecSchemaSelection = "default";
 export const DEFAULT_GIT_MODE_SELECTION: GitModeSelection = "default";
-
-export interface OpenSpecSchemaCompatibility {
-  id: OpenSpecSchemaSelection;
-  label: string;
-  description: string;
-  defaultSelected: boolean;
-}
 
 export interface GitModeCompatibility {
   id: GitModeSelection;
@@ -24,21 +9,6 @@ export interface GitModeCompatibility {
   description: string;
   defaultSelected: boolean;
 }
-
-const BUILTIN_OPENSPEC_SCHEMA_COMPATIBILITIES: OpenSpecSchemaCompatibility[] = [
-  {
-    id: "default",
-    label: "Default (vanilla OpenSpec)",
-    description: "Use OpenSpec's built-in spec-driven workflow.",
-    defaultSelected: true,
-  },
-  {
-    id: "mate-v1",
-    label: "Mate v1",
-    description: "Use Mate's schema with proposal, design, spec, and task artifacts.",
-    defaultSelected: false,
-  },
-];
 
 const BUILTIN_GIT_MODE_COMPATIBILITIES: GitModeCompatibility[] = [
   {
@@ -59,31 +29,7 @@ export interface SetupSelections {
   allowedAgents: string[];
   packageManagers: string[];
   capabilities: CapabilityConfig[];
-  selectedOpenSpecSchema: OpenSpecSchemaSelection;
   selectedGitMode: GitModeSelection;
-}
-
-export function getOpenSpecSchemaSelection(
-  capabilities: CapabilityConfig[],
-): OpenSpecSchemaSelection {
-  const openspec = capabilities.find((capability) => capability.name === "openspec");
-  return openspec?.schemaProfile ?? DEFAULT_OPENSPEC_SCHEMA_SELECTION;
-}
-
-export function applyOpenSpecSchemaSelection(
-  capabilities: CapabilityConfig[],
-  schemaSelection: OpenSpecSchemaSelection | undefined,
-): CapabilityConfig[] {
-  if (schemaSelection === undefined) return capabilities;
-
-  return capabilities.map((capability) => {
-    if (capability.name !== "openspec") return capability;
-    if (schemaSelection === "default") {
-      const { schemaProfile: _schemaProfile, ...rest } = capability;
-      return rest;
-    }
-    return { ...capability, schemaProfile: schemaSelection };
-  });
 }
 
 interface SetupCompatibilityBase {
@@ -222,24 +168,6 @@ export function listSetupPackageManagerCompatibilities(): SetupPackageManagerCom
   );
 }
 
-export function listSetupOpenSpecSchemaCompatibilities(
-  activeSchemaProfile?: OpenSpecSchemaSelection,
-): OpenSpecSchemaCompatibility[] {
-  const compatibilities = [...BUILTIN_OPENSPEC_SCHEMA_COMPATIBILITIES];
-  if (
-    activeSchemaProfile !== undefined &&
-    !BUILTIN_OPENSPEC_SCHEMA_COMPATIBILITIES.some((entry) => entry.id === activeSchemaProfile)
-  ) {
-    compatibilities.push({
-      id: activeSchemaProfile,
-      label: "Custom",
-      description: `Keep the project's current custom schema profile ("${activeSchemaProfile}"). Selecting Default or Mate v1 replaces it.`,
-      defaultSelected: false,
-    });
-  }
-  return compatibilities;
-}
-
 export function listSetupGitModeCompatibilities(): GitModeCompatibility[] {
   return [...BUILTIN_GIT_MODE_COMPATIBILITIES];
 }
@@ -272,7 +200,6 @@ export function getDefaultSetupSelections(): SetupSelections {
     allowedAgents,
     packageManagers,
     capabilities,
-    selectedOpenSpecSchema: DEFAULT_OPENSPEC_SCHEMA_SELECTION,
     selectedGitMode: DEFAULT_GIT_MODE_SELECTION,
   };
 }
@@ -284,9 +211,25 @@ export function getSetupSelectionsFromConfig(config: FrameworkConfig): SetupSele
       ...new Set([...getLockedPackageManagers(), ...(config.packageManagers ?? [])]),
     ],
     capabilities: dedupeCapabilities(config.capabilities ?? []),
-    selectedOpenSpecSchema: getOpenSpecSchemaSelection(config.capabilities ?? []),
     selectedGitMode: config.git ?? DEFAULT_GIT_MODE_SELECTION,
   };
+}
+
+/**
+ * Re-selected capabilities keep their saved settings (such as openspec's
+ * `protectedBranches`); pickers and flags only name the capabilities.
+ */
+export function keepCapabilitySettings(
+  selected: CapabilityConfig[],
+  saved: CapabilityConfig[],
+): CapabilityConfig[] {
+  const byName = new Map(saved.map((capability) => [capability.name, capability]));
+  return selected.map((capability) => {
+    // `schemaProfile` is a removed setting; a re-save drops it.
+    const { schemaProfile: _removed, ...settings } = (byName.get(capability.name) ??
+      {}) as CapabilityConfig & { schemaProfile?: unknown };
+    return { ...capability, ...settings };
+  });
 }
 
 export function dedupeCapabilities(capabilities: CapabilityConfig[]): CapabilityConfig[] {

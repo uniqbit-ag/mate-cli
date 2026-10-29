@@ -1,47 +1,28 @@
-import { execFile as execFileCb } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 
-import semver from "semver";
+import { Document, isMap, isScalar, isSeq, parseDocument, type YAMLMap, type YAMLSeq } from "yaml";
+
 import {
-  Document,
-  isMap,
-  isScalar,
-  isSeq,
-  parse,
-  parseDocument,
-  type YAMLMap,
-  type YAMLSeq,
-} from "yaml";
-
-import { getOpenSpecSchemaSelection } from "../../../lib/orchestrator/setup-compatibilities";
+  locateOpenSpec,
+  runOpenSpec,
+  type OpenSpecLocation,
+  type RunOpenSpec,
+} from "../../../lib/openspec-cli";
 import { getWrapperBinPath } from "../../../lib/package-paths";
-import { fetchPublicPackageVersion } from "../../../lib/public-npm";
-import { isNewer, isPinnedDeployment } from "../../../lib/update-checker";
 import { FRAMEWORK_NAME } from "../../../framework";
-import { confirm } from "../../../cli/confirm";
-import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
-import type { InstallRequirement } from "../install-contract";
-import {
-  isCommandOnPath,
-  mergeDir,
-  pruneEmptyAncestors,
-  resolveCommandOnPath,
-  runCommand,
-  runCommandSilently,
-} from "../utils";
-import { applyMateSkills, MANAGED_MATE_SKILL_NAMES, teardownMateSkills } from "../mate";
-import {
-  getSharedSkillsDir,
-  isSharedSkillRootActive,
-  removeLegacyOpenCodeSkills,
-  removeSharedSkills,
-} from "../providers/agents-skill-root";
+import { removeRecorded } from "../managed-output";
+import type {
+  CapabilityPlugin,
+  ManagedOutputRecorder,
+  RuntimeContributionsByRuntime,
+  SetupContext,
+} from "../plugin";
+import { mergeDir, pruneEmptyAncestors } from "../utils";
+import { applyMateSkills, MATE_SKILLS, readSkillAuthor, teardownMateSkills } from "../mate";
+import { getSharedSkillsDir, isSharedSkillRootActive } from "../providers/agents-skill-root";
 
-export { MATE_ARTIFACT_SKILLS, MATE_SKILLS } from "../mate";
-
-const execFileAsync = promisify(execFileCb);
+export { MATE_SKILLS } from "../mate";
 
 export const OPENSPEC_SKILLS = [
   "openspec-explore",
@@ -52,11 +33,30 @@ export const OPENSPEC_SKILLS = [
   "openspec-update-change",
 ] as const;
 
+/** Mate skills without a pre-seeded `Skill(...)` permission. */
+const UNPERMITTED_MATE_SKILLS: ReadonlySet<string> = new Set(["mate-create-report"]);
+
 /** Written by the OpenSpec `agents` tool beside its skills in the shared root. */
 const OPENSPEC_AGENTS_MARKER = ".openspec-target";
 
-/** Skill names the capability owns in any skill root. */
-const MANAGED_SKILL_NAMES = [...OPENSPEC_SKILLS, ...MANAGED_MATE_SKILL_NAMES];
+/** Command ids the OpenSpec CLI writes as `.claude/commands/opsx/<id>.md` and `.opencode/commands/opsx-<id>.md`. */
+const OPENSPEC_COMMAND_IDS = [
+  "explore",
+  "new",
+  "continue",
+  "apply",
+  "update",
+  "ff",
+  "sync",
+  "archive",
+  "bulk-archive",
+  "verify",
+  "onboard",
+  "propose",
+] as const;
+
+/** Skill roots earlier Mate versions let the OpenSpec CLI generate workflow skills into. */
+const GENERATED_SKILL_ROOTS = [".claude", ".agents", ".opencode"] as const;
 
 /** Every Mate-owned schema is installed for availability; only one is ever activated as the companion default. */
 const MATE_SCHEMA_NAMES = ["mate-v1", "mate-minimal"] as const;
@@ -83,28 +83,11 @@ export const MATE_SPECS_RULE = `${MATE_SPECS_RULE_MARKER}A main spec at openspec
 /** What Mate writes besides its entry; anything beyond the two is user content. */
 const MANAGED_CONFIG_SCHEMA_ONLY = "schema: mate-v1";
 
+/** The schema a fresh `openspec init` writes into config.yaml. */
+const OPENSPEC_INIT_SCHEMA = "spec-driven";
+
 /** Unfolded output keeps the Mate entry on one line and user scalars unwrapped. */
 const CONFIG_TO_STRING = { lineWidth: 0 } as const;
-
-/**
- * Runtime → OpenSpec CLI tools. OpenCode reads workflow skills from the shared
- * `agents` root; its own tool only contributes the `/opsx-*` commands.
- */
-const OPENSPEC_TOOLS_BY_RUNTIME = {
-  claude: ["claude"],
-  opencode: ["agents", "opencode"],
-} as const;
-
-const OPENSPEC_INSTALL_COMMAND = "npm install -g @fission-ai/openspec@latest";
-
-/**
- * Set on every `openspec` process Mate starts. Mate decides the CLI version, so
- * OpenSpec's own "update available" hint is wrong advice here.
- */
-export const OPENSPEC_ENV = {
-  OPENSPEC_TELEMETRY: "0",
-  OPENSPEC_NO_UPDATE_CHECK: "1",
-} as const satisfies Record<string, string>;
 
 /**
  * Store metadata `openspec store register` writes beside the companion. Its id
@@ -113,50 +96,10 @@ export const OPENSPEC_ENV = {
  */
 const OPENSPEC_GITIGNORE_ENTRIES = [".openspec-store/"];
 
-type OpenSpecTool =
-  (typeof OPENSPEC_TOOLS_BY_RUNTIME)[keyof typeof OPENSPEC_TOOLS_BY_RUNTIME][number];
-type OpenSpecRunCommand = typeof runCommandSilently;
-
 export interface OpenSpecPluginDeps {
-  runCommand?: OpenSpecRunCommand;
-  installCommand?: typeof runCommand;
-  isCommandOnPath?: typeof isCommandOnPath;
-  confirm?: typeof confirm;
-  pathValue?: () => string;
+  runOpenSpec?: RunOpenSpec;
+  locateOpenSpec?: () => OpenSpecLocation;
   wrapperBinPath?: () => string;
-  getInstalledVersion?: (pathValue: string) => Promise<string | undefined>;
-  fetchLatestVersion?: () => Promise<string | undefined>;
-  isPinnedDeployment?: () => boolean;
-}
-
-async function defaultGetInstalledVersion(pathValue: string): Promise<string | undefined> {
-  const bin = resolveCommandOnPath("openspec", pathValue);
-  if (!bin) return undefined;
-
-  try {
-    const { stdout } = await execFileAsync(bin, ["--version"], {
-      timeout: 10_000,
-      env: { ...process.env, ...OPENSPEC_ENV },
-    });
-    return stdout.match(/\d+\.\d+\.\d+/)?.[0];
-  } catch {
-    return undefined;
-  }
-}
-
-async function defaultFetchLatestVersion(): Promise<string | undefined> {
-  try {
-    return await fetchPublicPackageVersion("@fission-ai/openspec");
-  } catch {
-    return undefined;
-  }
-}
-
-export function deriveOpenSpecTools(activeProviders: string[]): OpenSpecTool[] {
-  const active = new Set(activeProviders);
-  return Object.entries(OPENSPEC_TOOLS_BY_RUNTIME).flatMap(([runtime, tools]) =>
-    active.has(runtime) ? tools : [],
-  );
 }
 
 function getClaudeSkillsDir(companionPath: string): string {
@@ -175,259 +118,109 @@ function getMateConventionsPath(companionPath: string): string {
   return path.join(companionPath, "openspec", "mate-conventions.yaml");
 }
 
-async function teardownClaudeSkillRoot(companionPath: string): Promise<void> {
+async function teardownClaudeSkillRoot(
+  companionPath: string,
+  recorder?: ManagedOutputRecorder,
+): Promise<void> {
   const skillsDir = getClaudeSkillsDir(companionPath);
   for (const skill of OPENSPEC_SKILLS) {
     try {
-      await fs.rm(path.join(skillsDir, skill), { recursive: true, force: true });
+      await removeRecorded(path.join(skillsDir, skill), "openspec", recorder);
     } catch {
       /* not present */
     }
   }
-  await teardownMateSkills(skillsDir, companionPath);
+  await teardownMateSkills(skillsDir, companionPath, recorder);
   await pruneEmptyAncestors(skillsDir, companionPath);
 }
 
-async function teardownSharedSkillRoot(companionPath: string): Promise<void> {
-  await removeSharedSkills(companionPath, [...MANAGED_SKILL_NAMES, OPENSPEC_AGENTS_MARKER]);
-}
-
-/** Converges earlier layouts and drops the `opencode` tool's duplicate workflow skills. */
-async function removeLegacyOpenCodeCopies(companionPath: string): Promise<void> {
-  await removeLegacyOpenCodeSkills(companionPath, MANAGED_SKILL_NAMES);
-}
-
-async function applyMateOpenspecSkills(
+async function teardownSharedSkillRoot(
   companionPath: string,
-  activeProviders: string[],
+  recorder?: ManagedOutputRecorder,
 ): Promise<void> {
-  if (activeProviders.includes("claude")) {
-    await applyMateSkills(getClaudeSkillsDir(companionPath), "claude");
+  const skillsDir = getSharedSkillsDir(companionPath);
+  await teardownMateSkills(skillsDir, companionPath, recorder);
+  for (const name of [...OPENSPEC_SKILLS, OPENSPEC_AGENTS_MARKER]) {
+    await removeRecorded(path.join(skillsDir, name), "openspec", recorder);
   }
-  if (isSharedSkillRootActive(activeProviders)) {
-    await applyMateSkills(getSharedSkillsDir(companionPath), "agents");
-  }
+  await pruneEmptyAncestors(skillsDir, companionPath);
 }
 
-async function reconcileOpenSpecTools(
-  ctx: SetupContext,
-  runCommand: OpenSpecRunCommand,
+/** Converges the earlier layout that deployed Mate skills into `.opencode/skills`. */
+async function removeLegacyOpenCodeCopies(
+  companionPath: string,
+  recorder?: ManagedOutputRecorder,
 ): Promise<void> {
-  const tools = deriveOpenSpecTools(ctx.activeProviders);
-  if (tools.length === 0) return;
-  /** Best-effort: `config reset` is missing on older openspec releases. */
-  try {
-    await runCommand("openspec", ["config", "reset", "--all", "-y"], {
-      cwd: ctx.companionPath,
-      env: OPENSPEC_ENV,
-    });
-  } catch (error) {
-    process.stderr.write(
-      `openspec config reset skipped: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
-  }
-
-  await runCommand("openspec", ["init", "--tools", tools.join(","), "--force", ctx.companionPath], {
-    cwd: ctx.companionPath,
-    env: OPENSPEC_ENV,
-  });
-  await runCommand("openspec", ["update", "--force", ctx.companionPath], {
-    cwd: ctx.companionPath,
-    env: OPENSPEC_ENV,
-  });
-
-  await removeLegacyOpenCodeCopies(ctx.companionPath);
-  await applyMateOpenspecSkills(ctx.companionPath, ctx.activeProviders);
-}
-
-async function updateOpenSpecIfOutdated(
-  ctx: SetupContext,
-  deps: Required<
-    Pick<
-      OpenSpecPluginDeps,
-      | "installCommand"
-      | "pathValue"
-      | "getInstalledVersion"
-      | "fetchLatestVersion"
-      | "isPinnedDeployment"
-    >
-  >,
-): Promise<void> {
-  /** Pinned artifacts change tool versions by replacement, never reconciliation. */
-  if (deps.isPinnedDeployment()) return;
-
-  const installed = await deps.getInstalledVersion(deps.pathValue());
-  if (!installed) return;
-
-  const latest = await deps.fetchLatestVersion();
-  if (!latest || !isNewer(latest, installed)) return;
-
-  process.stdout.write(
-    `openspec: installed version ${installed} is outdated (latest ${latest}). Updating now:\n  ${OPENSPEC_INSTALL_COMMAND}\n`,
+  await teardownMateSkills(
+    path.join(companionPath, ".opencode", "skills"),
+    companionPath,
+    recorder,
   );
+}
 
-  try {
-    await deps.installCommand("npm", ["install", "-g", "@fission-ai/openspec@latest"], {
-      cwd: ctx.companionPath,
-    });
-  } catch {
-    process.stderr.write("openspec: upgrade failed - continuing with the installed version\n");
+/** The `openspec-*` skills in `skillsDir` OpenSpec wrote: the known names, or `author: openspec`. */
+async function generatedOpenSpecSkills(skillsDir: string): Promise<string[]> {
+  const names = (await fs.readdir(skillsDir).catch(() => [])).filter((name) =>
+    name.startsWith("openspec-"),
+  );
+  const generated = await Promise.all(
+    names.map(async (name) => {
+      const dir = path.join(skillsDir, name);
+      const known = (OPENSPEC_SKILLS as readonly string[]).includes(name);
+      return known || (await readSkillAuthor(dir)) === "openspec" ? [dir] : [];
+    }),
+  );
+  return generated.flat();
+}
+
+/** Removes OpenSpec-generated output by name or authorship; user and third-party entries stay. */
+async function removeGeneratedOpenSpecOutput(
+  companionPath: string,
+  recorder?: ManagedOutputRecorder,
+): Promise<void> {
+  const skills = await Promise.all(
+    GENERATED_SKILL_ROOTS.map((root) =>
+      generatedOpenSpecSkills(path.join(companionPath, root, "skills")),
+    ),
+  );
+  const targets = [
+    ...skills.flat(),
+    path.join(getSharedSkillsDir(companionPath), OPENSPEC_AGENTS_MARKER),
+    ...OPENSPEC_COMMAND_IDS.flatMap((id) => [
+      path.join(companionPath, ".claude", "commands", "opsx", `${id}.md`),
+      path.join(companionPath, ".opencode", "commands", `opsx-${id}.md`),
+    ]),
+  ];
+  await Promise.all(targets.map((target) => removeRecorded(target, "openspec", recorder)));
+  // Sequential: the parent directories share ancestors.
+  for (const dir of new Set(targets.map((target) => path.dirname(target)))) {
+    // oxlint-disable-next-line no-await-in-loop
+    await pruneEmptyAncestors(dir, companionPath);
   }
 }
 
-/** Matches a SKILL.md's leading YAML frontmatter block. */
-const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
-
-function readGeneratedBy(content: string): string | undefined {
-  const frontmatter = FRONTMATTER_PATTERN.exec(content)?.[1];
-  if (frontmatter === undefined) return undefined;
-  let version: unknown;
-  try {
-    const data = parse(frontmatter) as { metadata?: { generatedBy?: unknown } | null } | null;
-    version = data?.metadata?.generatedBy;
-  } catch {
-    return undefined;
+async function applyMateOpenspecSkills(ctx: SetupContext): Promise<void> {
+  if (ctx.activeProviders.includes("claude")) {
+    await applyMateSkills(getClaudeSkillsDir(ctx.companionPath), "claude", ctx.managedOutput);
   }
-  return typeof version === "string" ? (semver.valid(version) ?? undefined) : undefined;
+  if (isSharedSkillRootActive(ctx.activeProviders)) {
+    await applyMateSkills(getSharedSkillsDir(ctx.companionPath), "agents", ctx.managedOutput);
+  }
 }
 
 /**
- * The highest OpenSpec CLI version recorded as `metadata.generatedBy` in the
- * companion's committed OpenSpec skills, or `undefined` when none records one.
+ * Initializes OpenSpec without tool output, so it writes only its `openspec/`
+ * scaffolding: Mate carries the workflow text in its own skills.
  */
-export async function readCompanionGeneratedOpenSpecVersion(
-  companionPath: string,
-): Promise<string | undefined> {
-  const skillFiles = await Promise.all(
-    [getClaudeSkillsDir(companionPath), getSharedSkillsDir(companionPath)].map(async (dir) => {
-      const entries = await fs.readdir(dir).catch(() => [] as string[]);
-      return entries
-        .filter((name) => name.startsWith("openspec-"))
-        .map((name) => path.join(dir, name, "SKILL.md"));
-    }),
-  );
-  const versions = await Promise.all(
-    skillFiles.flat().map(async (file) => {
-      const content = await fs.readFile(file, "utf8").catch(() => undefined);
-      return content === undefined ? undefined : readGeneratedBy(content);
-    }),
-  );
-  return versions
-    .filter((version): version is string => version !== undefined)
-    .reduce<string | undefined>(
-      (highest, version) => (!highest || semver.gt(version, highest) ? version : highest),
-      undefined,
-    );
-}
-
-/**
- * Launch-time counterpart of the reconcile: moves an older installed CLI up to
- * the version the companion's skills were generated with. Never downgrades and
- * never writes OpenSpec output.
- */
-async function catchUpOpenSpecToCompanion(
-  ctx: SetupContext,
-  deps: Required<
-    Pick<
-      OpenSpecPluginDeps,
-      | "installCommand"
-      | "isCommandOnPath"
-      | "pathValue"
-      | "getInstalledVersion"
-      | "isPinnedDeployment"
-    >
-  >,
-): Promise<void> {
-  if (!deps.isCommandOnPath("openspec", deps.pathValue())) {
-    process.stderr.write(
-      `openspec binary not found. Install it manually with \`${OPENSPEC_INSTALL_COMMAND}\`\n`,
-    );
-    return;
+async function initializeOpenSpec(ctx: SetupContext, run: RunOpenSpec): Promise<void> {
+  const args = ["init", "--tools", "none", "--force", ctx.companionPath];
+  const result = await run(args, { cwd: ctx.companionPath });
+  if (result.code !== 0) {
+    // A missing bundled CLI answers its reinstall message as stderr.
+    const detail = result.stderr.trim() || result.stdout.trim();
+    throw new Error(`openspec ${args.join(" ")} exited with code ${result.code}: ${detail}`);
   }
-  /** Pinned artifacts change tool versions by replacement, never reconciliation. */
-  if (deps.isPinnedDeployment()) return;
-
-  const generated = await readCompanionGeneratedOpenSpecVersion(ctx.companionPath);
-  if (!generated) return;
-  const installed = await deps.getInstalledVersion(deps.pathValue());
-  if (!installed || !isNewer(generated, installed)) return;
-
-  const pkg = `@fission-ai/openspec@${generated}`;
-  const command = `npm install -g ${pkg}`;
-  process.stdout.write(
-    `openspec: installed version ${installed} is older than the companion's ${generated}. Updating now:\n  ${command}\n`,
-  );
-  try {
-    await deps.installCommand("npm", ["install", "-g", pkg], { cwd: ctx.companionPath });
-  } catch (error) {
-    process.stderr.write(
-      `openspec: catch-up to ${generated} failed (${error instanceof Error ? error.message : String(error)}) - install it manually with \`${command}\`\n`,
-    );
-  }
-}
-
-async function ensureOpenSpecInstalled(
-  ctx: SetupContext,
-  deps: Required<
-    Pick<
-      OpenSpecPluginDeps,
-      | "installCommand"
-      | "isCommandOnPath"
-      | "confirm"
-      | "pathValue"
-      | "getInstalledVersion"
-      | "fetchLatestVersion"
-      | "isPinnedDeployment"
-    >
-  >,
-): Promise<boolean> {
-  if (deps.isCommandOnPath("openspec", deps.pathValue())) {
-    await updateOpenSpecIfOutdated(ctx, deps);
-    return true;
-  }
-
-  if (ctx.mode !== "setup") {
-    process.stderr.write(
-      `openspec binary not found. Install it manually with \`${OPENSPEC_INSTALL_COMMAND}\`\n`,
-    );
-    return false;
-  }
-
-  if (!deps.isCommandOnPath("npm", deps.pathValue())) {
-    process.stderr.write(
-      `openspec binary not found and npm is not available on PATH. Install it manually with \`${OPENSPEC_INSTALL_COMMAND}\`\n`,
-    );
-    return false;
-  }
-
-  process.stdout.write(`openspec binary not found. To install:\n  ${OPENSPEC_INSTALL_COMMAND}\n`);
-  const ok = await deps.confirm("Run this install command now?");
-  if (!ok) {
-    process.stderr.write(
-      `openspec: install skipped - install manually with \`${OPENSPEC_INSTALL_COMMAND}\`\n`,
-    );
-    return false;
-  }
-
-  try {
-    await deps.installCommand("npm", ["install", "-g", "@fission-ai/openspec@latest"], {
-      cwd: ctx.companionPath,
-    });
-  } catch {
-    process.stderr.write(
-      `openspec: install failed - install manually with \`${OPENSPEC_INSTALL_COMMAND}\`\n`,
-    );
-    return false;
-  }
-
-  if (!deps.isCommandOnPath("openspec", deps.pathValue())) {
-    process.stderr.write(
-      "openspec install completed but the binary is still not available on PATH\n",
-    );
-    return false;
-  }
-
-  return true;
+  await removeGeneratedOpenSpecOutput(ctx.companionPath, ctx.managedOutput);
 }
 
 function isMateSpecsRule(item: unknown): boolean {
@@ -542,7 +335,7 @@ async function ensureManagedOpenSpecConfig(companionPath: string): Promise<void>
     return;
   }
 
-  // config.yaml is user-editable once created; only Mate's own entry is touched.
+  // config.yaml is user-editable once created; only Mate's entry and a default `schema` are touched.
   const doc = parseDocument(content);
   if (doc.errors.length > 0) {
     process.stderr.write(
@@ -550,7 +343,14 @@ async function ensureManagedOpenSpecConfig(companionPath: string): Promise<void>
     );
     return;
   }
-  if (!upsertMateSpecsRule(doc)) return;
+  const ruleChanged = upsertMateSpecsRule(doc);
+  // Mate's `mate-v1` replaces a missing schema or the one `openspec init` writes; any other is a user choice.
+  const current = isMap(doc.contents) ? doc.get("schema") : undefined;
+  const schemaChanged =
+    isMap(doc.contents) &&
+    (current === undefined || current === null || current === OPENSPEC_INIT_SCHEMA);
+  if (schemaChanged) doc.set("schema", "mate-v1");
+  if (!schemaChanged && !ruleChanged) return;
   const merged = doc.toString(CONFIG_TO_STRING);
   if (merged !== content) await fs.writeFile(configPath, merged, "utf8");
 }
@@ -581,27 +381,14 @@ async function reconcileOpenSpecSchema(ctx: SetupContext): Promise<void> {
   );
   await fs.copyFile(MATE_CONVENTIONS_SOURCE, getMateConventionsPath(ctx.companionPath));
 
-  // Availability is unconditional so any change may select a Mate schema;
-  // activation stays opt-in through the companion-level setup selection.
-  if (getOpenSpecSchemaSelection(ctx.config.capabilities ?? []) !== "mate-v1") {
-    await removeManagedOpenSpecConfig(ctx.companionPath);
-    return;
-  }
-
   await ensureManagedOpenSpecConfig(ctx.companionPath);
 }
 
 export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityPlugin {
   const depsWithDefaults = {
-    runCommand: deps.runCommand ?? runCommandSilently,
-    installCommand: deps.installCommand ?? runCommand,
-    isCommandOnPath: deps.isCommandOnPath ?? isCommandOnPath,
-    confirm: deps.confirm ?? confirm,
-    pathValue: deps.pathValue ?? (() => process.env.PATH ?? ""),
+    runOpenSpec: deps.runOpenSpec ?? runOpenSpec,
+    locateOpenSpec: deps.locateOpenSpec ?? locateOpenSpec,
     wrapperBinPath: deps.wrapperBinPath ?? getWrapperBinPath,
-    getInstalledVersion: deps.getInstalledVersion ?? defaultGetInstalledVersion,
-    fetchLatestVersion: deps.fetchLatestVersion ?? defaultFetchLatestVersion,
-    isPinnedDeployment: deps.isPinnedDeployment ?? (() => isPinnedDeployment()),
   };
 
   return {
@@ -619,19 +406,9 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
       return {
         claude: {
           permissionEntries: [
-            "Skill(openspec-explore)",
-            "Skill(openspec-propose)",
-            "Skill(openspec-apply-change)",
-            "Skill(openspec-archive-change)",
-            "Skill(mate-artifact-publish)",
-            "Skill(mate-openspec-backfill)",
-            "Skill(mate-interview-me)",
-            "Skill(mate-grill-me)",
-            "Skill(mate-grilling)",
-            "Skill(mate-grill-with-docs)",
-            "Skill(mate-domain-modeling)",
-            "Skill(mate-show-me)",
-            "Skill(mate-simplify-code)",
+            ...MATE_SKILLS.filter((skill) => !UNPERMITTED_MATE_SKILLS.has(skill)).map(
+              (skill) => `Skill(${skill})`,
+            ),
             "Bash(openspec:*)",
             `Bash(${FRAMEWORK_NAME} cap graphify:*)`,
             `Bash(${path.join(depsWithDefaults.wrapperBinPath(), "openspec")}:*)`,
@@ -641,61 +418,42 @@ export function createOpenspecPlugin(deps: OpenSpecPluginDeps = {}): CapabilityP
     },
     gitignoreEntries: () => OPENSPEC_GITIGNORE_ENTRIES,
     persistGitignoreEntries: true,
-    getInstallRequirements: (): InstallRequirement[] => [
-      {
-        id: "capability:openspec",
-        label: "OpenSpec CLI",
-        group: "companion",
-        source: "OpenSpec capability",
-        command: OPENSPEC_INSTALL_COMMAND,
-        fingerprint: `openspec:${OPENSPEC_INSTALL_COMMAND}`,
-        detect: () => depsWithDefaults.isCommandOnPath("openspec", depsWithDefaults.pathValue()),
-        install: () =>
-          depsWithDefaults.installCommand("npm", ["install", "-g", "@fission-ai/openspec@latest"]),
-        verify: () => depsWithDefaults.isCommandOnPath("openspec", depsWithDefaults.pathValue()),
-      },
-    ],
     async apply(ctx) {
-      const tools = deriveOpenSpecTools(ctx.activeProviders);
       // OpenSpec output is committed in the companion, so only setup and
-      // `mate companion update` regenerate it; a launch must leave it alone.
+      // `mate companion update` touch it; a launch must leave it alone.
       if (ctx.mode === "setup" || ctx.regenerateOpenSpec === true) {
-        if (ctx.mode === "setup" || tools.length > 0) {
-          if (await ensureOpenSpecInstalled(ctx, depsWithDefaults)) {
-            if (tools.length > 0) {
-              await reconcileOpenSpecTools(ctx, depsWithDefaults.runCommand);
-            }
-          }
-        }
-      } else if (tools.length > 0) {
-        await catchUpOpenSpecToCompanion(ctx, depsWithDefaults);
-        await applyMateOpenspecSkills(ctx.companionPath, ctx.activeProviders);
+        await initializeOpenSpec(ctx, depsWithDefaults.runOpenSpec);
+      } else {
+        const location = depsWithDefaults.locateOpenSpec();
+        if ("missing" in location) process.stderr.write(`openspec: ${location.missing}\n`);
       }
-      await removeLegacyOpenCodeCopies(ctx.companionPath);
+      await applyMateOpenspecSkills(ctx);
+      await removeLegacyOpenCodeCopies(ctx.companionPath, ctx.managedOutput);
       await reconcileOpenSpecSchema(ctx);
     },
     async teardown(ctx) {
-      await teardownClaudeSkillRoot(ctx.companionPath);
-      await teardownSharedSkillRoot(ctx.companionPath);
-      await removeLegacyOpenCodeCopies(ctx.companionPath);
+      await teardownClaudeSkillRoot(ctx.companionPath, ctx.managedOutput);
+      await teardownSharedSkillRoot(ctx.companionPath, ctx.managedOutput);
+      await removeLegacyOpenCodeCopies(ctx.companionPath, ctx.managedOutput);
+      await removeGeneratedOpenSpecOutput(ctx.companionPath, ctx.managedOutput);
       await teardownOpenSpecSchema(ctx.companionPath);
     },
     forProvider: {
       claude: {
-        // Publication is explicit (`mate-artifact-publish`), so openspec
+        // Publication is explicit (`mate-publish-artifact`), so openspec
         // contributes no archive-triggered Claude hook and no hook state.
         async apply() {},
         async teardown(ctx: SetupContext) {
-          await teardownClaudeSkillRoot(ctx.companionPath);
+          await teardownClaudeSkillRoot(ctx.companionPath, ctx.managedOutput);
         },
       },
       opencode: {
         async apply() {},
         async teardown(ctx: SetupContext) {
           if (!isSharedSkillRootActive(ctx.activeProviders)) {
-            await teardownSharedSkillRoot(ctx.companionPath);
+            await teardownSharedSkillRoot(ctx.companionPath, ctx.managedOutput);
           }
-          await removeLegacyOpenCodeCopies(ctx.companionPath);
+          await removeLegacyOpenCodeCopies(ctx.companionPath, ctx.managedOutput);
         },
       },
     },

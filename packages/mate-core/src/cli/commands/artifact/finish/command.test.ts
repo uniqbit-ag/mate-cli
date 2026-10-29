@@ -509,13 +509,22 @@ describe("runArtifactPublishCommand — --all sequencing", () => {
     await Promise.all(roots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
   });
 
-  async function companionWithArchives(anchors: string[]): Promise<string> {
+  async function companionWithArchives(
+    anchors: string[],
+    held: readonly string[] = [],
+  ): Promise<string> {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-publish-all-"));
     roots.push(dir);
     for (const anchor of anchors) {
       const archive = path.join(dir, "openspec", "changes", "archive", anchor);
       await fs.mkdir(archive, { recursive: true });
       await fs.writeFile(path.join(archive, "proposal.md"), "archived\n", "utf8");
+      const state = held.includes(anchor) ? "open" : "merged";
+      await fs.writeFile(
+        path.join(archive, "delivery.yaml"),
+        `version: 1\ndeliveries:\n  - repository: acme/app\n    branch: change/x\n    merge:\n      state: ${state}\n      source: user\n`,
+        "utf8",
+      );
     }
     return dir;
   }
@@ -578,6 +587,31 @@ describe("runArtifactPublishCommand — --all sequencing", () => {
     await runArtifactPublishCommand(["--all", "--json"], d);
 
     expect(record).toEqual(["change:2026-09-10-alpha", "change:2026-09-14-beta", `specs:${SPEC}`]);
+  });
+
+  test("a held-back archive is skipped and the merged ones still publish", async () => {
+    const companion = await companionWithArchives(
+      ["2026-09-10-alpha", "2026-09-14-beta"],
+      ["2026-09-10-alpha"],
+    );
+    const record: string[] = [];
+    const changed = [
+      "openspec/changes/archive/2026-09-14-beta/",
+      "openspec/changes/archive/2026-09-10-alpha/",
+    ];
+    const { deps: d, stdout } = deps(record, companion, changed);
+
+    await runArtifactPublishCommand(["--all", "--json"], d);
+
+    expect(record).toEqual(["change:2026-09-14-beta"]);
+    const results = JSON.parse(stdout[0]) as Array<{
+      name: string;
+      status: string;
+      message: string;
+    }>;
+    expect(results[0]).toMatchObject({ name: "2026-09-10-alpha", status: "skipped" });
+    expect(results[0].message).toContain("held back");
+    expect(process.exitCode ?? 0).toBe(0);
   });
 
   test("a change failure halts the queue before any later publication", async () => {

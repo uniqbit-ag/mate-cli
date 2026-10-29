@@ -406,53 +406,36 @@ describe("studio browser code", () => {
     expect(none.store.values[COMPANION_STORAGE_KEY]).toBeUndefined();
   });
 
-  it("switches workflow schema tabs in memory without leaving the page", () => {
-    const tab = (profile: string, selected: boolean) =>
-      new FakeElement({
-        "data-workflow-schema-profile": profile,
-        "aria-selected": selected ? "true" : "false",
-      });
-    const panel = (profile: string) => new FakeElement({ "data-workflow-schema-panel": profile });
-    const [claude, opencode] = [tab("claude", true), tab("opencode", false)];
-    const [claudePanel, opencodePanel] = [panel("claude"), panel("opencode")];
+  it("switches the workflow schema from its select without leaving the page", () => {
+    const select = new FakeElement({ "data-workflow-schema-select": "" });
+    select.value = "mate-v1";
+    const panel = (schema: string) => new FakeElement({ "data-workflow-schema-panel": schema });
+    const [full, minimal] = [panel("mate-v1"), panel("mate-minimal")];
     runClient({
       clipboard: null,
-      elements: [
-        new FakeElement({ "data-workflow-schema-root": "" }, [
-          claude,
-          opencode,
-          claudePanel,
-          opencodePanel,
-        ]),
-      ],
+      elements: [new FakeElement({ "data-workflow-schema-root": "" }, [select, full, minimal])],
     });
-    expect(claudePanel.getAttribute("data-active")).toBe("true");
-    expect(opencodePanel.getAttribute("data-active")).toBe("false");
-    opencode.listeners.click!();
-    expect(claude.getAttribute("aria-selected")).toBe("false");
-    expect(opencode.getAttribute("aria-selected")).toBe("true");
-    expect(claudePanel.getAttribute("data-active")).toBe("false");
-    expect(opencodePanel.getAttribute("data-active")).toBe("true");
-    expect(opencodePanel.hasAttribute("aria-hidden")).toBe(false);
+    expect(full.getAttribute("data-active")).toBe("true");
+    expect(minimal.getAttribute("data-active")).toBe("false");
+    select.value = "mate-minimal";
+    select.listeners.change!();
+    expect(full.getAttribute("data-active")).toBe("false");
+    expect(minimal.getAttribute("data-active")).toBe("true");
+    expect(minimal.hasAttribute("aria-hidden")).toBe(false);
   });
 
-  it("switches Skills tabs in memory and hides the inactive panel from assistive technology", () => {
-    const tab = (profile: string, selected: boolean) =>
-      new FakeElement({
-        "data-skill-profile": profile,
-        "aria-selected": selected ? "true" : "false",
-      });
+  it("switches Skills from the Agent select and hides inactive panels from assistive technology", () => {
+    const select = new FakeElement({ "data-skills-select": "" });
+    select.value = "claude";
     const panel = (profile: string) => new FakeElement({ "data-skill-panel": profile });
-    const [claude, opencode] = [tab("claude", true), tab("opencode", false)];
     const [claudePanel, opencodePanel] = [panel("claude"), panel("opencode")];
     runClient({
       clipboard: null,
-      elements: [
-        new FakeElement({ "data-skills-root": "" }, [claude, opencode, claudePanel, opencodePanel]),
-      ],
+      elements: [new FakeElement({ "data-skills-root": "" }, [select, claudePanel, opencodePanel])],
     });
     expect(opencodePanel.getAttribute("aria-hidden")).toBe("true");
-    opencode.listeners.click!();
+    select.value = "opencode";
+    select.listeners.change!();
     expect(claudePanel.getAttribute("aria-hidden")).toBe("true");
     expect(opencodePanel.getAttribute("aria-hidden")).toBe("false");
     expect(opencodePanel.getAttribute("data-active")).toBe("true");

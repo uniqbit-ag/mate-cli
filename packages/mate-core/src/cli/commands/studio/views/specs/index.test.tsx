@@ -30,12 +30,15 @@ describe("Specs", () => {
         })}
       />,
     );
-    expect(markup).toContain("<h3>Specs by Area</h3>");
+    expect(markup).toContain('aria-label="Specs by Area"');
     expect(markup).toContain('aria-label="Area acme"');
     expect(markup).toContain('aria-label="Area docs"');
+    expect(markup).toContain('<h4 class="specs-area-name">acme</h4>');
+    expect(markup).toContain("2 specs · capabilities grouped by the Areas they serve");
+    expect(markup).not.toContain('class="panel');
     expect(markup).toContain("3 requirements");
     expect(markup).toContain("2 issues");
-    expect(markup).not.toContain("<h3>Changes</h3>");
+    expect(markup).not.toContain('aria-label="Changes"');
     expect(markup).not.toContain("add-auth");
   });
 

@@ -58,12 +58,12 @@ export interface CliToolConfig {
   redirectCwd: "companionRoot" | false;
 }
 
-export type OpenSpecSchemaProfile = "mate-v1" | (string & {});
 export type GitModeProfile = "auto";
 
 export interface CapabilityConfig {
   name: string;
-  schemaProfile?: OpenSpecSchemaProfile;
+  /** openspec only: branch glob patterns (`release/*`) treated as protected besides the default branch. */
+  protectedBranches?: string[];
 }
 
 export type FrameworkType = "working" | "companion" | "hub";

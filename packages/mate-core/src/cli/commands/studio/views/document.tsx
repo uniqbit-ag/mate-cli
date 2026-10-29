@@ -56,33 +56,6 @@ const FAVICON_URI = svgDataUri(BRAND_SVGS.favicon);
 const SYMBOL_COLOR_URI = svgDataUri(BRAND_SVGS.symbolColor);
 const SYMBOL_ON_DARK_URI = svgDataUri(BRAND_SVGS.symbolOnDark);
 
-const VIEW_DETAILS = {
-  dashboard: {
-    eyebrow: "Companion lookup",
-    title: "Overview",
-  },
-  specs: {
-    eyebrow: "Companion lookup",
-    title: "Specs",
-  },
-  workflow: {
-    eyebrow: "Companion lookup",
-    title: "Workflow",
-  },
-  skills: {
-    eyebrow: "Agent guidance",
-    title: "Skills",
-  },
-  vault: {
-    eyebrow: "Companion files",
-    title: "Vault",
-  },
-  reports: {
-    eyebrow: "Agent output",
-    title: "Reports",
-  },
-} as const;
-
 /**
  * `<style>` and `<script>` are HTML raw-text elements: a character reference
  * inside one is not decoded, so escaped content would be broken CSS and broken
@@ -212,13 +185,10 @@ function Sidebar({ page }: { page: StudioPage }) {
 function PageHeader({ page }: { page: StudioPage }) {
   if (!page.companion) return null;
 
-  const details = VIEW_DETAILS[page.selection.view];
-
   return (
     <header className="page-header">
       <div className="page-heading">
-        <p className="page-eyebrow">{details.eyebrow}</p>
-        <h1>{details.title}</h1>
+        <h1>{VIEW_TITLES[page.selection.view]}</h1>
       </div>
       <div className="page-context">
         <span className="page-context-label">Companion Repository</span>
@@ -242,6 +212,9 @@ const VIEW_NAV: readonly (readonly [StudioView, string])[] = [
   ["skills", "Skills"],
   ["reports", "Reports"],
 ];
+
+/** A view's page title is its navigation label. */
+const VIEW_TITLES = Object.fromEntries(VIEW_NAV) as Record<StudioView, string>;
 
 /**
  * One GET form per view, so switching a view is a navigation to the URL naming

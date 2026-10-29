@@ -1,6 +1,5 @@
 import {
   type GitModeSelection,
-  type OpenSpecSchemaSelection,
   listSetupCapabilityCompatibilities,
 } from "../lib/orchestrator/setup-compatibilities";
 import type { CapabilityConfig } from "../lib/orchestrator/types";
@@ -63,6 +62,31 @@ export function parseFlags(
   return flags;
 }
 
+/** Tokens that are neither flags nor flag values, read with the rules of {@link parseFlags}. */
+export function positionalArgs(
+  argv: string[],
+  booleanFlags: BooleanFlagSet = NO_BOOLEAN_FLAGS,
+): string[] {
+  const names: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (!token.startsWith("--")) names.push(token);
+    else if (token.includes("=") || booleanFlags.has(token.slice(2))) continue;
+    else if (argv[index + 1] && !argv[index + 1].startsWith("--")) index += 1;
+  }
+  return names;
+}
+
+/** A flag's value when it was given one, so a bare or repeated flag reads as absent. */
+export function stringFlag(value: CliFlags[string] | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+/** The first of `names` given bare or more than once, which {@link stringFlag} would read as absent. */
+export function malformedValueFlag(flags: CliFlags, names: readonly string[]): string | undefined {
+  return names.find((name) => flags[name] !== undefined && typeof flags[name] !== "string");
+}
+
 export function parseAllowedAgents(flags: CliFlags): string[] | undefined {
   const allowedAgents = flags["allowed-agent"];
   return Array.isArray(allowedAgents)
@@ -93,12 +117,6 @@ export function parseCapabilities(flags: CliFlags): CapabilityConfig[] | undefin
     listSetupCapabilityCompatibilities().map((e) => [e.capability.name, e.capability]),
   );
   return names.map((name) => index.get(name) ?? { name });
-}
-
-export function parseOpenSpecSchema(flags: CliFlags): OpenSpecSchemaSelection | undefined {
-  const schema = flags["openspec-schema"];
-  if (schema === "mate-v1" || schema === "default") return schema;
-  return undefined;
 }
 
 export function parseGitMode(flags: CliFlags): GitModeSelection | undefined {
