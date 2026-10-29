@@ -51,7 +51,7 @@ function scopeFor(
     companionPath: companion,
     repositoryPath: repo,
     runtimeStateRoots: [],
-    env: { MATE_ARTIFACT_PATH: companion, MATE_REPO_PATH: repo },
+    launch: true,
     ...extra,
   };
 }
@@ -336,7 +336,7 @@ describe("a session without a Working Repository", () => {
       repositoryPath: "",
       workingDirectory: workingDirectory ?? companion,
       runtimeStateRoots: [path.join(elsewhere, "state")],
-      env: { MATE_ARTIFACT_PATH: companion },
+      launch: true,
     };
     return { companion, elsewhere, scope };
   }

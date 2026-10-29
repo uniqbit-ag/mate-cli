@@ -1,16 +1,22 @@
 import { spawnSync } from "node:child_process";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { writeProjectionPair, type MateProjection } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { trustProjection } from "../../test/trusted-projection";
 import { evaluate } from "./validate-artifact-path";
 
 const tempRoots: string[] = [];
+
+/** The Mate home `wrapRepo` registers each companion in; `plain` is a plain session's environment naming it. */
+const plainHome = fsSync.mkdtempSync(path.join(os.tmpdir(), "mate-hook-home-"));
+const plain = { HOME: plainHome };
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -41,18 +47,21 @@ async function wrapRepo(
     graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
   };
   writeProjectionPair(repoRoot, { stamp, projection });
+  trustProjection({ home: plainHome, companionPath, repoRoot, repositoryId: "acme" });
 }
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
+afterAll(() => fsSync.rmSync(plainHome, { recursive: true, force: true }));
+
 describe("validate-artifact-path hook module", () => {
   test("fails open when neither the environment nor a projection resolves", async () => {
     const bare = await makeTempDir("mate-hook-unwrapped-");
     const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: "/anywhere/design.md" } },
-      {},
+      plain,
       bare,
     );
     expect(result.exitCode).toBe(0);
@@ -67,11 +76,27 @@ describe("validate-artifact-path hook module", () => {
 
     const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
-      {},
+      plain,
       repo,
     );
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain(companion);
+  });
+
+  test("allows every call for a projection Session Resolution refuses", async () => {
+    const repo = await makeTempDir("mate-hook-refused-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await initGitRepo(repo);
+    await wrapRepo(repo, companion);
+    const unregistered = { HOME: path.join(repo, "other-home") };
+
+    for (const tool of [
+      { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
+      { tool_name: "Read", tool_input: { file_path: path.join(repo, ".env") } },
+    ]) {
+      expect((await evaluate(tool, unregistered, repo)).exitCode).toBe(0);
+    }
   });
 
   test("keeps guarding when the projection stamp does not match", async () => {
@@ -85,7 +110,7 @@ describe("validate-artifact-path hook module", () => {
       (
         await evaluate(
           { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
-          {},
+          plain,
           repo,
         )
       ).exitCode,
@@ -101,7 +126,7 @@ describe("validate-artifact-path hook module", () => {
 
     const trailer = "Co-Authored-By: Claude <noreply@anthropic.com>";
     const bash = (command: string) =>
-      evaluate({ tool_name: "Bash", tool_input: { command } }, {}, repo);
+      evaluate({ tool_name: "Bash", tool_input: { command } }, plain, repo);
 
     const refused = await bash(`git commit -m "fix: x" -m "${trailer}"`);
     expect(refused.exitCode).toBe(2);
@@ -313,7 +338,7 @@ describe("validate-artifact-path secret guardrails", () => {
 
     const result = await evaluate(
       { tool_name: "Read", tool_input: { file_path: path.join(repo, ".env") } },
-      {},
+      plain,
       repo,
     );
     expect(result.exitCode).toBe(2);
@@ -326,7 +351,7 @@ describe("validate-artifact-path secret guardrails", () => {
     const { repo } = await wrapped();
     const result = await evaluate(
       { tool_name: "Read", tool_input: { file_path: path.join(repo, ".Env") } },
-      {},
+      plain,
       repo,
     );
     expect(result.exitCode).toBe(2);
@@ -337,7 +362,7 @@ describe("validate-artifact-path secret guardrails", () => {
     const { repo } = await wrapped();
     const result = await evaluate(
       { tool_name: "Write", tool_input: { file_path: ".env.local", content: "KEY=1\n" } },
-      {},
+      plain,
       repo,
     );
     expect(result.exitCode).toBe(2);
@@ -347,7 +372,7 @@ describe("validate-artifact-path secret guardrails", () => {
     const { repo } = await wrapped();
     const result = await evaluate(
       { tool_name: "NotebookEdit", tool_input: { notebook_path: "certs/server.key" } },
-      {},
+      plain,
       repo,
     );
     expect(result.exitCode).toBe(2);
@@ -357,7 +382,7 @@ describe("validate-artifact-path secret guardrails", () => {
     const { repo } = await wrapped();
     const result = await evaluate(
       { tool_name: "Read", tool_input: { file_path: path.join(repo, ".env.example") } },
-      {},
+      plain,
       repo,
     );
     expect(result).toEqual({ exitCode: 0, stderr: "" });
@@ -367,19 +392,19 @@ describe("validate-artifact-path secret guardrails", () => {
     const { repo } = await wrapped();
     const inFile = await evaluate(
       { tool_name: "Grep", tool_input: { pattern: "KEY", path: path.join(repo, ".env") } },
-      {},
+      plain,
       repo,
     );
     expect(inFile.exitCode).toBe(2);
     const byGlob = await evaluate(
       { tool_name: "Grep", tool_input: { pattern: "KEY", path: repo, glob: ".env*" } },
-      {},
+      plain,
       repo,
     );
     expect(byGlob.exitCode).toBe(2);
     const ordinary = await evaluate(
       { tool_name: "Grep", tool_input: { pattern: "KEY", path: repo, glob: "*.ts" } },
-      {},
+      plain,
       repo,
     );
     expect(ordinary.exitCode).toBe(0);
@@ -389,12 +414,12 @@ describe("validate-artifact-path secret guardrails", () => {
     const { repo } = await wrapped();
     for (const command of ["cat acme/.env", "echo TOKEN=x >> .env"]) {
       // oxlint-disable-next-line no-await-in-loop -- sequential is clearer here
-      const result = await evaluate({ tool_name: "Bash", tool_input: { command } }, {}, repo);
+      const result = await evaluate({ tool_name: "Bash", tool_input: { command } }, plain, repo);
       expect(result.exitCode).toBe(2);
     }
     const example = await evaluate(
       { tool_name: "Bash", tool_input: { command: "cat .env.example" } },
-      {},
+      plain,
       repo,
     );
     expect(example.exitCode).toBe(0);
@@ -410,7 +435,7 @@ describe("validate-artifact-path secret guardrails", () => {
           content: `token: ${GITHUB_TOKEN}\n`,
         },
       },
-      {},
+      plain,
       repo,
     );
     expect(result.exitCode).toBe(2);
@@ -425,7 +450,7 @@ describe("validate-artifact-path secret guardrails", () => {
         tool_name: "Edit",
         tool_input: { file_path: path.join(repo, "src", "app.ts"), new_string: GITHUB_TOKEN },
       },
-      {},
+      plain,
       repo,
     );
     expect(result.exitCode).toBe(0);
@@ -439,7 +464,7 @@ describe("validate-artifact-path secret guardrails", () => {
 
     const result = await evaluate(
       { tool_name: "Read", tool_input: { file_path: path.join(repo, ".env") } },
-      {},
+      plain,
       repo,
     );
     expect(result.exitCode).toBe(0);

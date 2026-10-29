@@ -7,6 +7,7 @@ import { recordCompanionSyncUnfinished } from "../runtime/companion-git-state";
 import { MATE_ENV } from "../runtime/env-names";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { trustProjection } from "../../test/trusted-projection";
 import type { MateSlotClaim, MateTuiApi } from "./tui";
 
 const tempRoots: string[] = [];
@@ -15,8 +16,11 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
-async function wrappedRepo(): Promise<{ repo: string; companion: string }> {
-  const repo = await fs.mkdtemp(path.join(os.tmpdir(), "mate-tui-wrapped-"));
+/** `home` is where the Mate configuration trusting the projection lives; a plain session runs with it as HOME. */
+async function wrappedRepo(
+  homeDir?: string,
+): Promise<{ repo: string; companion: string; home: string }> {
+  const repo = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-tui-wrapped-")));
   tempRoots.push(repo);
   const companion = path.join(repo, "companion");
   await fs.mkdir(companion, { recursive: true });
@@ -35,16 +39,20 @@ async function wrappedRepo(): Promise<{ repo: string; companion: string }> {
       graphifyOut: path.join(companion, ".graphify", "acme", "graphify-out"),
     },
   });
-  return { repo, companion };
+  const home = homeDir ?? path.join(repo, "mate-home");
+  trustProjection({ home, companionPath: companion, repoRoot: repo, repositoryId: "acme" });
+  return { repo, companion, home };
 }
 
-async function inUnmanagedSession<T>(cwd: string, fn: () => Promise<T>): Promise<T> {
+/** No `MATE_*` variable, in `cwd`, with `home` as HOME when given. */
+async function inUnmanagedSession<T>(cwd: string, fn: () => Promise<T>, home?: string): Promise<T> {
   const previousCwd = process.cwd();
   const previousEnv = new Map<string, string | undefined>();
-  for (const name of Object.values(MATE_ENV)) {
+  for (const name of [...Object.values(MATE_ENV), "HOME"]) {
     previousEnv.set(name, process.env[name]);
-    delete process.env[name];
+    if (name !== "HOME") delete process.env[name];
   }
+  if (home) process.env.HOME = home;
   process.chdir(cwd);
   try {
     return await fn();
@@ -97,11 +105,11 @@ describe("Mate OpenCode TUI plugin", () => {
   });
 
   test("claims home footer and sidebar placements from a projection when the environment is empty", async () => {
-    const { repo } = await wrappedRepo();
+    const { repo, home } = await wrappedRepo();
     const { default: tuiPlugin } = await import("./tui");
     const { api, claims } = fakeApi();
 
-    await inUnmanagedSession(repo, async () => tuiPlugin.setup(api));
+    await inUnmanagedSession(repo, async () => tuiPlugin.setup(api), home);
 
     expect(claims.map(({ render: _render, ...placement }) => placement)).toEqual([
       { prepend: "home.footer" },
@@ -111,9 +119,9 @@ describe("Mate OpenCode TUI plugin", () => {
   });
 
   test("polls the session lines and raises a new one as a toast", async () => {
-    const { repo, companion } = await wrappedRepo();
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "mate-tui-home-"));
     tempRoots.push(home);
+    const { repo, companion } = await wrappedRepo(home);
     const previousHome = process.env.HOME;
     process.env.HOME = home;
     const { default: tuiPlugin } = await import("./tui");

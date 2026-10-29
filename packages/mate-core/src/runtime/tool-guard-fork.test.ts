@@ -125,7 +125,7 @@ function scopeFor(fixture: Fixture, env: HookEnv) {
     companionPath: fixture.companion,
     repositoryPath: fixture.repo,
     runtimeStateRoots: [],
-    env,
+    launch: env.MATE_ARTIFACT_PATH !== undefined,
   };
 }
 

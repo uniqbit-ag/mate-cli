@@ -12,6 +12,7 @@ import { readContext } from "../opencode/companion-policy";
 import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { trustProjection } from "../../test/trusted-projection";
 import { evaluate } from "./validate-artifact-path";
 
 interface Fixture {
@@ -25,7 +26,9 @@ let fixture: Fixture;
 
 /** A wrapped Working Repository and no launch environment: both adapters resolve the projection. */
 beforeAll(async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-tool-guard-parity-"));
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), "mate-tool-guard-parity-")),
+  );
   const repo = path.join(root, "repo");
   const companion = path.join(root, "companion");
   const home = path.join(root, "home");
@@ -48,6 +51,7 @@ beforeAll(async () => {
       graphifyOut: path.join(companion, ".graphify", "acme", "graphify-out"),
     },
   });
+  trustProjection({ home, companionPath: companion, repoRoot: repo, repositoryId: "acme" });
   fixture = { root, repo, companion, env: { HOME: home } };
 });
 

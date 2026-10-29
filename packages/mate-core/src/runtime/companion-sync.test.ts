@@ -538,20 +538,20 @@ describe("the shared fork refusal", () => {
     commitCompanion(fixture, "local");
     fetchOnly(fixture);
 
-    const refusal = await companionForkRefusal({}, fixture.companion, { homeDir: fixture.home });
+    const refusal = await companionForkRefusal(false, fixture.companion, { homeDir: fixture.home });
 
     expect(refusal).toContain("forked");
     expect(refusal).toContain(COMPANION_SYNC_COMMAND);
   });
 
-  test("permits when a launch environment is present", async () => {
+  test("permits in a launch session", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
     fetchOnly(fixture);
 
     expect(
-      await companionForkRefusal({ MATE_ARTIFACT_PATH: fixture.companion }, fixture.companion, {
+      await companionForkRefusal(true, fixture.companion, {
         homeDir: fixture.home,
       }),
     ).toBeNull();
@@ -560,21 +560,25 @@ describe("the shared fork refusal", () => {
   test("permits an ahead-only companion", async () => {
     const fixture = makeFixture();
     commitCompanion(fixture, "local");
-    expect(await companionForkRefusal({}, fixture.companion, { homeDir: fixture.home })).toBeNull();
+    expect(
+      await companionForkRefusal(false, fixture.companion, { homeDir: fixture.home }),
+    ).toBeNull();
   });
 
   test("permits a behind-only companion", async () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
     fetchOnly(fixture);
-    expect(await companionForkRefusal({}, fixture.companion, { homeDir: fixture.home })).toBeNull();
+    expect(
+      await companionForkRefusal(false, fixture.companion, { homeDir: fixture.home }),
+    ).toBeNull();
   });
 
   test("permits when the check cannot complete", async () => {
     const { root, home } = makeFixture();
     const plain = path.join(root, "plain");
     fs.mkdirSync(plain);
-    expect(await companionForkRefusal({}, plain, { homeDir: home })).toBeNull();
+    expect(await companionForkRefusal(false, plain, { homeDir: home })).toBeNull();
   });
 
   test("caches the verdict for the interval instead of spawning Git per write", async () => {

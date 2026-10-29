@@ -11,6 +11,7 @@ import { COMPANION_SYNC_COMMAND } from "../runtime/companion-sync";
 import { mateVersion } from "../runtime/install";
 import { computeProjectionStamp, writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { trustProjection } from "../../test/trusted-projection";
 import type { HookEnv } from "./hook-io";
 import { evaluate, type HookOutcome } from "./validate-artifact-path";
 
@@ -34,7 +35,7 @@ interface Fixture {
 }
 
 function makeFixture(): Fixture {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-fork-guard-"));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-fork-guard-")));
   tempRoots.push(root);
   const home = path.join(root, "home");
   const repo = path.join(root, "acme");
@@ -85,6 +86,7 @@ function makeFixture(): Fixture {
       graphifyOut: path.join(companion, ".graphify", "acme", "graphify-out"),
     },
   });
+  trustProjection({ home, companionPath: companion, repoRoot: repo, repositoryId: "acme" });
 
   return { root, home, repo, companion, upstream };
 }

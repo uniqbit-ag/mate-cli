@@ -4,24 +4,21 @@ import {
   registerCompanionHooks,
   repositoryWrappedForOpenCode,
 } from "../../src/opencode/companion-hooks";
-import { readContext } from "../../src/opencode/companion-policy";
+import { readContext, type CompanionContext } from "../../src/opencode/companion-policy";
 import { registerSessionPrepare } from "../../src/opencode/session-prepare";
-import { hasLaunchEnvironment } from "../../src/runtime/env";
 import { spawnPrepareRunner } from "../../src/runtime/session-prepare-runner";
 import { readWrapStateSync } from "../../src/runtime/wrap-state";
 
 import { registerCompanionAccess } from "./add-dir";
 import { missingRuntimeDirectoryMessage, registerCompanion, resolveMateBin } from "./companion";
-import { pluginLaunchEnvironment, type LaunchEnvironment } from "./launch-environment";
+import { pluginLaunchEnvironment } from "./launch-environment";
 
 /**
- * Only a location in a repository wrapped for OpenCode prepares, and only
- * without a launch environment: `mate opencode` has already prepared the
- * session it starts.
+ * Only a session resolved from a projection of a repository wrapped for
+ * OpenCode prepares: `mate opencode` has already prepared the session it starts.
  */
-async function registerPrepare(api: Context, companionPath: string, env: LaunchEnvironment) {
-  if (hasLaunchEnvironment(env)) return undefined;
-  const repoRoot = repositoryWrappedForOpenCode(api.location.directory);
+async function registerPrepare(api: Context, context: CompanionContext) {
+  const repoRoot = repositoryWrappedForOpenCode(context.session);
   if (!repoRoot) return undefined;
   const mateBin = resolveMateBin();
   if (!mateBin) {
@@ -31,7 +28,7 @@ async function registerPrepare(api: Context, companionPath: string, env: LaunchE
   return registerSessionPrepare(api, {
     directory: api.location.directory,
     repoPath: repoRoot,
-    companionPath,
+    companionPath: context.companionPath,
     mateServers: readWrapStateSync(repoRoot).openCodeMcpServers,
     run: spawnPrepareRunner(mateBin, repoRoot),
   });
@@ -39,8 +36,8 @@ async function registerPrepare(api: Context, companionPath: string, env: LaunchE
 
 /**
  * Mate OpenCode server plugin (OpenCode 2.x). Loaded through the package's
- * `./server` export; stays inert when no companion resolves from the launch
- * environment or a Projection Root above the session directory. The launch
+ * `./server` export; stays inert when Session Resolution answers no companion
+ * for the launch environment and the session directory. The launch
  * environment is decided once here: outside a managed launch every reader
  * gets `{}`, so an environment inherited by the shared service never counts.
  */
@@ -55,7 +52,7 @@ export const MateOpenCodePlugin = Plugin.define({
     await registerCompanionHooks(api, context, env);
     await registerCompanion(api, context, env);
     /** Last: the guardrails above are live while the local phase holds `setup`. */
-    const prepareCleanup = await registerPrepare(api, context.companionPath, env);
+    const prepareCleanup = await registerPrepare(api, context);
     return async () => {
       await prepareCleanup?.();
     };

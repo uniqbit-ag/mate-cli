@@ -6,17 +6,19 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { trustProjection } from "../../test/trusted-projection";
 import { readContext } from "./companion-policy";
 
 const tempRoots: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
   tempRoots.push(dir);
   return dir;
 }
 
-async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> {
+/** Returns a plain session's environment, whose Mate configuration trusts the projection. */
+async function wrapRepo(repoRoot: string, companionPath: string): Promise<{ HOME: string }> {
   const registryPath = repoLocalRegistryPath(repoRoot);
   await fs.mkdir(path.dirname(registryPath), { recursive: true });
   await fs.writeFile(registryPath, "companions: []\n", "utf8");
@@ -32,6 +34,8 @@ async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> 
       graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
   });
+  const home = path.join(repoRoot, "home");
+  return trustProjection({ home, companionPath, repoRoot, repositoryId: "acme" });
 }
 
 afterEach(async () => {
@@ -44,13 +48,31 @@ describe("readContext", () => {
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
     await fs.writeFile(path.join(companion, "AGENTS.md"), "projected agents\n", "utf8");
-    await wrapRepo(repo, companion);
+    const env = await wrapRepo(repo, companion);
 
-    const context = readContext({}, repo);
+    const context = readContext(env, repo);
 
     expect(context.companionPath).toBe(companion);
     expect(context.repositoryPath).toBe(repo);
     expect(context.agentsMd).toBe("projected agents\n");
+    expect(context.session.kind).toBe("projection");
+  });
+
+  test("resolves nothing, and reads no AGENTS.md, for a projection Session Resolution refuses", async () => {
+    const repo = await makeTempDir("mate-readcontext-refused-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await fs.writeFile(path.join(companion, "AGENTS.md"), "projected agents\n", "utf8");
+    await wrapRepo(repo, companion);
+
+    const context = readContext({ HOME: path.join(repo, "other-home") }, repo);
+
+    expect(context.companionPath).toBe("");
+    expect(context.agentsMd).toBe("");
+    expect(context.stalenessLines).toEqual([]);
+    expect(context.session.kind === "none" && context.session.refusal?.code).toBe(
+      "companion-not-registered",
+    );
   });
 
   test("is a no-op under a launch: the resolved companion is the environment value", async () => {
@@ -72,9 +94,9 @@ describe("readContext", () => {
     const repo = await makeTempDir("mate-readcontext-stale-");
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
-    await wrapRepo(repo, companion);
+    const env = await wrapRepo(repo, companion);
 
-    const context = readContext({}, repo);
+    const context = readContext(env, repo);
 
     expect(context.companionPath).toBe(companion);
     expect(context.stalenessLines.join("\n")).toContain("mate wrap");

@@ -3,7 +3,7 @@
 import os from "node:os";
 import path from "node:path";
 
-import { readCompanionRuntimeContext } from "../runtime/env";
+import { resolveSession } from "../runtime/session-resolution";
 import {
   checkToolCall,
   contentText,
@@ -64,9 +64,10 @@ function claudeToolCall(
 }
 
 /**
- * Fails open only when no Mate context resolves from either source; in a
- * wrapped Working Repository the guard runs without a launch. Otherwise errors
- * fail closed as exit 2; an uncaught one (exit 1) would let the call run.
+ * Fails open only when Session Resolution answers no companion, a refused
+ * projection included; in a wrapped Working Repository whose companion links
+ * it the guard runs without a launch. Otherwise errors fail closed as exit 2;
+ * an uncaught one (exit 1) would let the call run.
  */
 export async function evaluate(
   payload: unknown,
@@ -83,8 +84,8 @@ export async function evaluate(
 async function judge(payload: unknown, env: HookEnv, cwd: string): Promise<HookOutcome> {
   const allow: HookOutcome = { exitCode: 0, stderr: "" };
 
-  const resolved = readCompanionRuntimeContext(env, cwd);
-  if (!resolved.companionPath) return allow;
+  const session = resolveSession(env, cwd);
+  if (session.kind === "none" || !session.companionPath) return allow;
 
   const input = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
   const toolName = typeof input.tool_name === "string" ? input.tool_name : "";
@@ -97,11 +98,11 @@ async function judge(payload: unknown, env: HookEnv, cwd: string): Promise<HookO
   if (!call) return allow;
 
   const refusal = await checkToolCall(call, {
-    companionPath: resolved.companionPath,
-    repositoryPath: resolved.repositoryPath,
+    companionPath: session.companionPath,
+    repositoryPath: session.checkoutRoot,
     workingDirectory: cwd,
     runtimeStateRoots: [claudeConfigRoot(env)],
-    env,
+    launch: session.kind === "launch",
   });
   return refusal ? { exitCode: 2, stderr: `${refusal.message}\n` } : allow;
 }

@@ -19,6 +19,7 @@ import {
 import { readContext, type CompanionContext } from "./companion-policy";
 import { resolveOpenCodeGuidance } from "./projected-guidance";
 import { makeSshStub, stubSshUrl } from "../../../../test/ssh-stub";
+import { trustProjection } from "../../test/trusted-projection";
 
 const tempRoots: string[] = [];
 const REGISTRY_CONTENT = "companions: []\n";
@@ -41,7 +42,7 @@ interface Fixture {
 }
 
 function makeFixture(gitPolicy: "auto" | "manual" = "auto"): Fixture {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-oc-sync-"));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-oc-sync-")));
   tempRoots.push(root);
   const home = path.join(root, "home");
   const repo = path.join(root, "acme");
@@ -88,8 +89,27 @@ function makeFixture(gitPolicy: "auto" | "manual" = "auto"): Fixture {
       graphifyOut: path.join(companion, ".graphify", "acme", "graphify-out"),
     },
   });
+  trustProjection({
+    home: mateHome({ root }),
+    companionPath: companion,
+    repoRoot: repo,
+    repositoryId: "acme",
+  });
 
   return { root, home, repo, companion, upstream };
+}
+
+/**
+ * Where the fixture's Mate configuration trusts its projection: apart from
+ * `home`, whose `.mate/` folder some tests expect never to appear.
+ */
+function mateHome(fixture: Pick<Fixture, "root">): string {
+  return path.join(fixture.root, "mate-home");
+}
+
+/** A plain session's environment. */
+function plainEnv(fixture: Fixture): Record<string, string> {
+  return { HOME: mateHome(fixture) };
 }
 
 function commitUpstream(fixture: Fixture, message: string): void {
@@ -104,9 +124,12 @@ function commitCompanion(fixture: Fixture, message: string): void {
   git(fixture.companion, "commit", "-qm", message);
 }
 
-function context(fixture: Fixture): CompanionContext {
+function context(
+  fixture: Fixture,
+  env: Record<string, string> = plainEnv(fixture),
+): CompanionContext {
   return {
-    ...readContext({}, fixture.repo),
+    ...readContext(env, fixture.repo),
     frameworkName: "mate",
     companionPath: fixture.companion,
     repositoryPath: fixture.repo,
@@ -143,7 +166,7 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     let ticks = 0;
     const ticker = setInterval(() => ticks++, 50);
     try {
-      const notes = await repairCompanionGitOnce(context(fixture), {});
+      const notes = await repairCompanionGitOnce(context(fixture));
       expect(notes.join("\n")).toContain("Companion not updated");
     } finally {
       clearInterval(ticker);
@@ -160,7 +183,7 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     process.env.HOME = fixture.home;
     commitUpstream(fixture, "remote");
 
-    const notes = await repairCompanionGitOnce(context(fixture), {});
+    const notes = await repairCompanionGitOnce(context(fixture));
 
     expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
     expect(notes).toEqual([]);
@@ -173,7 +196,7 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     recordCompanionSync(fixture.companion, new Date(), fixture.home);
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    await repairCompanionGitOnce(context(fixture), {});
+    await repairCompanionGitOnce(context(fixture));
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
   });
@@ -184,7 +207,7 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     commitUpstream(fixture, "remote");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    await repairCompanionGitOnce(context(fixture), {});
+    await repairCompanionGitOnce(context(fixture));
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
@@ -196,17 +219,16 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     commitUpstream(fixture, "remote");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    await repairCompanionGitOnce(context(fixture), {
-      MATE_ARTIFACT_PATH: fixture.companion,
-      MATE_REPO_PATH: fixture.repo,
-    });
+    await repairCompanionGitOnce(
+      context(fixture, { MATE_ARTIFACT_PATH: fixture.companion, MATE_REPO_PATH: fixture.repo }),
+    );
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
   });
 
   /** The plugin hands `{}` to a session it does not trust; inherited variables must not gate it. */
-  test("registerCompanionHooks repairs by the environment it is given, not process.env", async () => {
+  test("registerCompanionHooks repairs by the context's session, not process.env", async () => {
     const fixture = makeFixture();
     process.env.HOME = fixture.home;
     commitUpstream(fixture, "remote");
@@ -231,10 +253,10 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     process.env.HOME = fixture.home;
     commitUpstream(fixture, "remote");
 
-    const notes = await repairCompanionGitOnce(
-      { ...context(fixture), repositoryPath: "" },
-      { MATE_ARTIFACT_PATH: fixture.companion, MATE_GIT_AUTO_MODE: "1" },
-    );
+    const notes = await repairCompanionGitOnce({
+      ...context(fixture, { MATE_ARTIFACT_PATH: fixture.companion, MATE_GIT_AUTO_MODE: "1" }),
+      repositoryPath: "",
+    });
 
     expect(notes).toEqual([]);
     expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
@@ -246,13 +268,10 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     commitUpstream(fixture, "remote");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    await repairCompanionGitOnce(
-      { ...context(fixture), repositoryPath: "" },
-      {
-        MATE_ARTIFACT_PATH: fixture.companion,
-        MATE_GIT_AUTO_MODE: "0",
-      },
-    );
+    await repairCompanionGitOnce({
+      ...context(fixture, { MATE_ARTIFACT_PATH: fixture.companion, MATE_GIT_AUTO_MODE: "0" }),
+      repositoryPath: "",
+    });
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
   });
@@ -261,7 +280,7 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     const fixture = makeFixture();
     process.env.HOME = fixture.home;
 
-    const notes = await repairCompanionGitOnce({ ...context(fixture), companionPath: "" }, {});
+    const notes = await repairCompanionGitOnce({ ...context(fixture), companionPath: "" });
 
     expect(notes).toEqual([]);
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
@@ -272,11 +291,11 @@ describe("the OpenCode plugin repairs the companion at session start", () => {
     process.env.HOME = fixture.home;
     commitUpstream(fixture, "remote");
 
-    await repairCompanionGitOnce(context(fixture), {});
+    await repairCompanionGitOnce(context(fixture));
     const head = git(fixture.companion, "rev-parse", "HEAD");
 
     commitUpstream(fixture, "second");
-    await repairCompanionGitOnce(context(fixture), {});
+    await repairCompanionGitOnce(context(fixture));
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(head);
   });
@@ -289,7 +308,7 @@ describe("an unfinished synchronization reaches the operator only", () => {
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
 
-    const notes = await repairCompanionGitOnce(context(fixture), {});
+    const notes = await repairCompanionGitOnce(context(fixture));
 
     expect(notes[0]).toContain("diverged");
     expect(notes[0]).toContain(OPENCODE_LAUNCH_COMMAND);
@@ -301,11 +320,11 @@ describe("an unfinished synchronization reaches the operator only", () => {
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
 
-    await repairCompanionGitOnce(context(fixture), {});
+    await repairCompanionGitOnce(context(fixture));
 
     // The TUI renders `stalenessLines`; the Git note joins the projection note
     // there rather than in any model-visible payload.
-    const resolved = readContext({}, fixture.repo);
+    const resolved = readContext(plainEnv(fixture), fixture.repo);
     expect(resolved.companionPath).toBe(fixture.companion);
     expect(resolved.stalenessLines.join("\n")).toContain(OPENCODE_LAUNCH_COMMAND);
   });
@@ -315,7 +334,7 @@ describe("an unfinished synchronization reaches the operator only", () => {
     process.env.HOME = fixture.home;
     commitUpstream(fixture, "remote");
 
-    const notes = await repairCompanionGitOnce(context(fixture), {});
+    const notes = await repairCompanionGitOnce(context(fixture));
 
     expect(notes).toEqual([]);
   });
@@ -326,10 +345,10 @@ describe("an unfinished synchronization reaches the operator only", () => {
     commitUpstream(fixture, "remote");
     commitCompanion(fixture, "local");
 
-    const notes = await repairCompanionGitOnce(context(fixture), {});
+    const notes = await repairCompanionGitOnce(context(fixture));
     expect(notes[0]).toContain(OPENCODE_LAUNCH_COMMAND);
 
-    const guidance = resolveOpenCodeGuidance({}, fixture.repo);
+    const guidance = resolveOpenCodeGuidance(plainEnv(fixture), fixture.repo);
     const payload = JSON.stringify(guidance ?? {});
     expect(payload).not.toContain(OPENCODE_LAUNCH_COMMAND);
     expect(payload).not.toContain("synchronization unfinished");
@@ -347,7 +366,7 @@ describe("the repair yields to Session Prepare", () => {
     );
     const before = git(fixture.companion, "rev-parse", "origin/main");
 
-    const notes = await repairCompanionGitOnce(context(fixture), {}, fixture.repo);
+    const notes = await repairCompanionGitOnce(context(fixture));
 
     expect(notes).toEqual([]);
     expect(git(fixture.companion, "rev-parse", "origin/main")).toBe(before);
@@ -363,19 +382,19 @@ describe("the repair yields to Session Prepare", () => {
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
     const started = Date.now();
-    const notes = await repairCompanionGitOnce(context(fixture), {}, fixture.repo);
+    const notes = await repairCompanionGitOnce(context(fixture));
 
     expect(Date.now() - started).toBeLessThan(2_000);
     expect(notes).toEqual([]);
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
   });
 
-  test("still repairs the companion itself", async () => {
+  test("still repairs a projection not wrapped for OpenCode", async () => {
     const fixture = makeFixture();
     process.env.HOME = fixture.home;
     commitUpstream(fixture, "remote");
 
-    await repairCompanionGitOnce(context(fixture), {}, fixture.companion);
+    await repairCompanionGitOnce(context(fixture));
 
     expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
   });
@@ -388,7 +407,7 @@ describe("session start is never blocked", () => {
     git(fixture.companion, "remote", "set-url", "origin", path.join(fixture.root, "gone.git"));
 
     const started = Date.now();
-    const notes = await repairCompanionGitOnce(context(fixture), {});
+    const notes = await repairCompanionGitOnce(context(fixture));
     const elapsed = Date.now() - started;
 
     expect(notes[0]).toContain(OPENCODE_LAUNCH_COMMAND);

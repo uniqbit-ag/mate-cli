@@ -31,7 +31,6 @@ import {
   type CompanionGit,
 } from "./companion-git";
 import { withCompanionLock } from "./companion-lock";
-import { hasLaunchEnvironment } from "./env";
 import { FRAMEWORK_NAME } from "./framework";
 import { readCompanionPolicy } from "./policy";
 
@@ -288,7 +287,7 @@ export interface ForkGuardOptions {
  * never fail closed.
  */
 export async function companionForkRefusal(
-  env: Record<string, string | undefined>,
+  launch: boolean,
   companionPath: string,
   options: ForkGuardOptions = {},
 ): Promise<string | null> {
@@ -298,7 +297,7 @@ export async function companionForkRefusal(
    * preflight, by `--no-git`, or by a companion whose Git handling is not
    * automatic. Refusing afterwards would revoke a documented bypass mid-session.
    */
-  if (hasLaunchEnvironment(env)) return null;
+  if (launch) return null;
   /** The same consent gate the repair holds: Git handling off makes this inert. */
   if (!readCompanionPolicy(companionPath).gitAutoMode) return null;
 

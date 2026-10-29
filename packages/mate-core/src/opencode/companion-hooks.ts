@@ -4,9 +4,7 @@ import path from "node:path";
 import type { Context } from "@opencode/plugin/promise/plugin";
 
 import { syncCompanionUnattended, unattendedSyncStalenessLines } from "../runtime/companion-sync";
-import { hasLaunchEnvironment } from "../runtime/env";
-import { MATE_ENV } from "../runtime/env-names";
-import { resolveProjection } from "../runtime/projection";
+import type { ResolvedSession } from "../runtime/session-resolution";
 import {
   checkToolCall,
   contentText,
@@ -21,13 +19,21 @@ import {
 import { readWrapStateSync } from "../runtime/wrap-state";
 import type { CompanionContext } from "./companion-policy";
 
-/** The Working Repository above `directory`, when it is wrapped for OpenCode. */
-export function repositoryWrappedForOpenCode(directory: string): string | undefined {
-  const projection = resolveProjection(directory);
-  if (!projection || !readWrapStateSync(projection.repoRoot).runtimes.has("opencode")) {
-    return undefined;
-  }
-  return projection.repoRoot;
+/** The Projection Root a session resolved from, when it is wrapped for OpenCode. */
+export function repositoryWrappedForOpenCode(session: ResolvedSession): string | undefined {
+  if (session.kind !== "projection") return undefined;
+  const { repoRoot } = session.projection;
+  return readWrapStateSync(repoRoot).runtimes.has("opencode") ? repoRoot : undefined;
+}
+
+/**
+ * A launch has settled its Git question already, unless it is companion-scoped
+ * with Git handling automatic: no repository prepare served it.
+ */
+function launchSettledGit(session: ResolvedSession): boolean {
+  return (
+    session.kind === "launch" && (session.scope === "repository" || !session.flags().gitAutoMode)
+  );
 }
 
 /**
@@ -41,21 +47,12 @@ const repairedCompanions = new Set<string>();
  * In a repository wrapped for OpenCode the plugin's background sync performs
  * the same unattended operation, so this one steps aside. Elsewhere it only
  * tries the companion lock: a held lock means another sync is already on it.
- * The launch-environment gate comes first so a Managed Session does no Git
- * work at all; the consent gate is the operation's own.
+ * The launch gate comes first so a Managed Session does no Git work at all;
+ * the consent gate is the operation's own.
  */
-export async function repairCompanionGitOnce(
-  context: CompanionContext,
-  env: Record<string, string | undefined> = process.env,
-  directory?: string,
-): Promise<string[]> {
-  if (
-    !context.companionPath ||
-    (hasLaunchEnvironment(env) &&
-      (env[MATE_ENV.repositoryPath] !== undefined || env[MATE_ENV.gitAutoMode] !== "1"))
-  )
-    return [];
-  if (directory && repositoryWrappedForOpenCode(directory)) return [];
+export async function repairCompanionGitOnce(context: CompanionContext): Promise<string[]> {
+  if (!context.companionPath || launchSettledGit(context.session)) return [];
+  if (repositoryWrappedForOpenCode(context.session)) return [];
   if (repairedCompanions.has(context.companionPath)) return [];
   repairedCompanions.add(context.companionPath);
 
@@ -259,7 +256,7 @@ export async function guardToolInput(
       companionPath: context.companionPath,
       repositoryPath: context.repositoryPath,
       runtimeStateRoots: openCodeStateRoots(env),
-      env,
+      launch: context.session.kind === "launch",
     });
   } catch (error) {
     // OpenCode blocks a call whose hook throws.
@@ -282,7 +279,7 @@ export async function registerCompanionHooks(
    * Anything escaping the repair would cost the session every guardrail
    * below to save a synchronization that is optional by design.
    */
-  await repairCompanionGitOnce(context, env, api.location.directory).catch(() => []);
+  await repairCompanionGitOnce(context).catch(() => []);
 
   await api.tool.hook("execute.before", (event) =>
     guardToolInput(context, event.tool, event.input, env),

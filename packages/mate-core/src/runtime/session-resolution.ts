@@ -87,7 +87,7 @@ export interface NoSession {
 export type ResolvedSession = LaunchSession | ProjectionSession | NoSession;
 
 export interface SessionResolutionDeps {
-  /** The user's Mate configuration; defaults to `config.yaml` under `env.HOME`, else the OS home. */
+  /** The user's Mate configuration; defaults to `config.yaml` under `env.HOME`, else the process's home. */
   globalConfigPath?: string;
 }
 
@@ -193,7 +193,8 @@ function projectionSession(
     );
   }
 
-  const configPath = deps.globalConfigPath ?? globalConfigPath(env.HOME || os.homedir());
+  const configPath =
+    deps.globalConfigPath ?? globalConfigPath(env.HOME || process.env.HOME || os.homedir());
   const registered = readTrustFile(configPath, () => readGlobalCompanionsSync(configPath));
   if (!registered.ok || !registered.value.some((entry) => physicalPath(entry) === companionPath)) {
     return refused(

@@ -11,6 +11,7 @@ import { ARTIFACT_REFUSAL_HEADLINE } from "../runtime/artifact-refusal";
 import { MATE_ENV } from "../runtime/env-names";
 import { writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
+import { trustProjection } from "../../test/trusted-projection";
 const tempRoots: string[] = [];
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -19,12 +20,16 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
-/** Every launch variable cleared: `hasLaunchEnvironment` counts any of them as a launch. */
+/** Every launch variable cleared: Session Resolution counts any of them as a launch. */
 function noLaunchEnvironment(): Record<string, string | undefined> {
   return Object.fromEntries(Object.values(MATE_ENV).map((name) => [name, undefined]));
 }
 
-async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> {
+/** Returns a plain session's environment, whose Mate configuration trusts the projection. */
+async function wrapRepo(
+  repoRoot: string,
+  companionPath: string,
+): Promise<Record<string, string | undefined>> {
   const registryPath = repoLocalRegistryPath(repoRoot);
   await fs.mkdir(path.dirname(registryPath), { recursive: true });
   await fs.writeFile(registryPath, "companions: []\n", "utf8");
@@ -40,6 +45,9 @@ async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> 
       graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
   });
+  const home = path.join(repoRoot, "home");
+  trustProjection({ home, companionPath, repoRoot, repositoryId: "acme" });
+  return { ...noLaunchEnvironment(), HOME: home };
 }
 
 type Hook = (event: Record<string, unknown>) => unknown;
@@ -103,13 +111,23 @@ describe("OpenCode companion hooks without a launch", () => {
     const repo = await makeTempDir("mate-hooks-wrapped-");
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
-    await wrapRepo(repo, companion);
+    const env = await wrapRepo(repo, companion);
 
-    const context = readContext(noLaunchEnvironment(), repo);
-    expect(context.companionPath).toBe(companion);
+    const context = readContext(env, repo);
+    expect(context.companionPath).toBe(await fs.realpath(companion));
     await expect(
       guardToolInput(context, "write", { filePath: path.join(repo, "design.md") }),
     ).rejects.toThrow(ARTIFACT_REFUSAL_HEADLINE);
+  });
+
+  test("resolves no companion for a projection Session Resolution refuses", async () => {
+    const repo = await makeTempDir("mate-hooks-refused-");
+    const companion = path.join(repo, "companion");
+    await fs.mkdir(companion, { recursive: true });
+    await wrapRepo(repo, companion);
+
+    const env = { ...noLaunchEnvironment(), HOME: path.join(repo, "other-home") };
+    expect(readContext(env, repo).companionPath).toBe("");
   });
 
   test("resolves no companion when neither the environment nor a projection does", async () => {

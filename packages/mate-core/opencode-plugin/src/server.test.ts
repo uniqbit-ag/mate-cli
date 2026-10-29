@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createTempDir, overrideEnv, withEnv } from "../../../../test/fixtures";
 import { MATE_ENV, renderProjectionEnv, renderProjectionYaml } from "../../src/runtime";
 import { runtimeMateBin, runtimeWrapperBinPath } from "../../src/runtime/runtime-directory";
+import { trustProjection } from "../../test/trusted-projection";
 
 const { default: MateOpenCodePlugin } = await import("./server");
 
@@ -69,6 +70,7 @@ function fakeApi(directory: string) {
   return { api: api as never, hooks, tools };
 }
 
+/** Registered and linked in the test's HOME, so Session Resolution trusts the projection. */
 async function wrappedRepo(companionPath: string): Promise<string> {
   const repoRoot = await makeTempDir("mate-server-wrapped-");
   const mateDir = path.join(repoRoot, ".mate");
@@ -88,6 +90,7 @@ async function wrappedRepo(companionPath: string): Promise<string> {
   };
   await fs.writeFile(path.join(mateDir, "projection.yaml"), renderProjectionYaml(file), "utf8");
   await fs.writeFile(path.join(mateDir, "projection.env"), renderProjectionEnv(file), "utf8");
+  trustProjection({ home: process.env.HOME!, companionPath, repoRoot, repositoryId: "acme" });
   return repoRoot;
 }
 

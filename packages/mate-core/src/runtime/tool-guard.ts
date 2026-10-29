@@ -67,8 +67,8 @@ export interface ToolGuardScope {
   workingDirectory?: string;
   /** Folders holding the Agent Runtime's own state; writes there are never artifacts. */
   runtimeStateRoots: readonly string[];
-  /** The session's environment; only the fork check's launch gate reads it. */
-  env: Record<string, string | undefined>;
+  /** Whether a Mate launch configured the session; only the fork check reads it. */
+  launch: boolean;
 }
 
 /**
@@ -360,14 +360,14 @@ function artifactRefusalFor(target: ResolvedTarget, ctx: GuardContext): ToolGuar
   };
 }
 
-/** Depends on companion Git state, not just tool input; `companionForkRefusal` gates on the launch environment. */
+/** Depends on companion Git state, not just tool input; `companionForkRefusal` steps aside for a launch. */
 async function forkRefusalFor(
   target: ResolvedTarget,
   ctx: GuardContext,
 ): Promise<ToolGuardRefusal | null> {
   if (!target.path || !artifactLikePath(target.path)) return null;
   if (!isCompanionPath(target.physical, ctx)) return null;
-  const message = await companionForkRefusal(ctx.scope.env, ctx.companion());
+  const message = await companionForkRefusal(ctx.scope.launch, ctx.companion());
   return message ? { check: "fork", message } : null;
 }
 
