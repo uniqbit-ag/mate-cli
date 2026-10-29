@@ -5,7 +5,7 @@
   "description": "Global CLI tools the image installs. Locked so a rebuild cannot resolve a newer graph.",
   "dependencies": {
     "@uniqbit/mate": "0.18.5",
-    "@fission-ai/openspec": "1.14.1",
+    "@fission-ai/openspec": "1.15.0",
     "@upstash/context7-mcp": "4.2.0"
   }
 }
