@@ -267,58 +267,80 @@ export const BRACE_LIMIT = 64;
 
 const capAlternatives = (count: number) => Math.min(count, BRACE_LIMIT + 1);
 
-/**
- * Whether a glob's `{a,b}` groups expand to more than {@link BRACE_LIMIT}
- * alternatives. Counts in one pass, without expanding, so a long glob can't
- * stall the check.
- */
-export function exceedsBraceLimit(glob: string): boolean {
-  const groups = [{ before: 0, current: 1, split: false }];
-  for (let i = 0; i < glob.length; i++) {
-    const char = glob[i];
-    const group = groups[groups.length - 1];
-    if (char === "\\") i++;
-    else if (char === "{") groups.push({ before: 0, current: 1, split: false });
-    else if (char === "," && groups.length > 1) {
-      group.before = capAlternatives(group.before + group.current);
-      group.current = 1;
-      group.split = true;
-    } else if (char === "}" && groups.length > 1) {
-      groups.pop();
-      const parent = groups[groups.length - 1];
-      parent.current = capAlternatives(
-        parent.current * (group.split ? group.before + group.current : 1),
-      );
-      if (groups.length === 1 && parent.current > BRACE_LIMIT) return true;
-    }
-  }
-  return false;
-}
+/** Glob text, or the branches of one `{a,b}` group. */
+type BracePart = string | BraceSequence[];
+type BraceSequence = BracePart[];
 
-/** A glob's `{a,b}` alternatives, as ripgrep expands them; check {@link exceedsBraceLimit} first. */
-function braceAlternatives(glob: string): string[] {
-  let depth = 0;
-  let open = -1;
-  const commas: number[] = [];
-  for (let i = 0; i < glob.length; i++) {
-    const char = glob[i];
-    if (char === "\\") i++;
-    else if (char === "{" && depth++ === 0) open = i;
-    else if (char === "," && depth === 1) commas.push(i);
-    else if (char === "}" && depth > 0 && --depth === 0) {
-      if (commas.length === 0) {
-        open = -1;
+/**
+ * A glob's `{a,b}` groups as ripgrep reads them: a `[...]` set or an escaped
+ * character is text, `{a}` is a group too, groups nest, and an unclosed group
+ * closes at the end. On Windows ripgrep reads `**\` as `**\/`. Null when groups
+ * nest deeper than {@link BRACE_LIMIT}.
+ */
+function parseBraces(
+  glob: string,
+  { windows = IS_WINDOWS }: SecretPathOptions,
+): BraceSequence | null {
+  const source = windows ? glob.replaceAll("**\\", "**/") : glob;
+  let i = 0;
+  const sequence = (depth: number): BraceSequence | null => {
+    const parts: BraceSequence = [];
+    while (i < source.length) {
+      const char = source[i];
+      if (depth > 0 && (char === "," || char === "}")) break;
+      if (char === "{") {
+        if (depth === BRACE_LIMIT) return null;
+        const branches: BraceSequence[] = [];
+        do {
+          i++;
+          const branch = sequence(depth + 1);
+          if (!branch) return null;
+          branches.push(branch);
+        } while (source[i] === ",");
+        i++;
+        parts.push(branches);
         continue;
       }
-      const cuts = [open, ...commas, i];
-      const before = glob.slice(0, open);
-      const after = glob.slice(i + 1);
-      return cuts
-        .slice(1)
-        .flatMap((cut, k) => braceAlternatives(before + glob.slice(cuts[k] + 1, cut) + after));
+      const set = char === "[" ? bracket(source, i) : null;
+      const end = set ? set.end + 1 : char === "\\" ? i + 2 : i + 1;
+      const last = parts.at(-1);
+      if (typeof last === "string") parts[parts.length - 1] = last + source.slice(i, end);
+      else parts.push(source.slice(i, end));
+      i = end;
     }
-  }
-  return [glob];
+    return parts;
+  };
+  return sequence(0);
+}
+
+function alternativeCount(sequence: BraceSequence): number {
+  return sequence.reduce<number>((count, part) => {
+    if (typeof part === "string") return count;
+    const branches = part.reduce(
+      (sum, branch) => capAlternatives(sum + alternativeCount(branch)),
+      0,
+    );
+    return capAlternatives(count * branches);
+  }, 1);
+}
+
+function expandBraces(sequence: BraceSequence): string[] {
+  return sequence.reduce<string[]>(
+    (prefixes, part) => {
+      const options = typeof part === "string" ? [part] : part.flatMap(expandBraces);
+      return prefixes.flatMap((prefix) => options.map((option) => prefix + option));
+    },
+    [""],
+  );
+}
+
+/**
+ * Whether a glob's `{a,b}` groups expand to more than {@link BRACE_LIMIT}
+ * alternatives. Counts without expanding, so a long glob can't stall the check.
+ */
+export function exceedsBraceLimit(glob: string, options: SecretPathOptions = {}): boolean {
+  const parsed = parseBraces(glob, options);
+  return !parsed || alternativeCount(parsed) > BRACE_LIMIT;
 }
 
 /** A file name a glob or pattern matches: each wildcard filled with `x`, a set with its first member. */
@@ -350,11 +372,16 @@ function sampleName(glob: string): string {
  * matches a deny pattern's sample name. `**\/*`, `*.ts` and `!` exclusions are not.
  * A glob past {@link BRACE_LIMIT} counts as aimed at secrets.
  */
-export function globTargetsSecretFiles(glob: string, policy: SecretPolicy): boolean {
+export function globTargetsSecretFiles(
+  glob: string,
+  policy: SecretPolicy,
+  options: SecretPathOptions = {},
+): boolean {
   const pattern = glob.trim();
   if (!pattern || pattern.startsWith("!")) return false;
-  if (exceedsBraceLimit(pattern)) return true;
-  return braceAlternatives(pattern).some((alternative) => {
+  const parsed = parseBraces(pattern, options);
+  if (!parsed || alternativeCount(parsed) > BRACE_LIMIT) return true;
+  return expandBraces(parsed).some((alternative) => {
     if (ORDINARY_SAMPLES.some((sample) => matchesSecretPattern(sample, [alternative]))) {
       return false;
     }

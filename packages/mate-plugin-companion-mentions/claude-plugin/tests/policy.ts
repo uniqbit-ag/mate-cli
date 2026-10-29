@@ -26,6 +26,7 @@ const COMPILED: Record<string, Pick<FixtureRule, "source" | "subject">> = {
   ".env.dist": { source: "^\\.env\\.dist$", subject: "name" },
   "*.tfstate": { source: "^[^/]*\\.tfstate$", subject: "name" },
   "secrets/**": { source: "(?:^|/)secrets/[\\s\\S]*$", subject: "path" },
+  "private/": { source: "(?:^|/)private(?:/[\\s\\S]*)?$", subject: "path" },
 };
 
 /** Each pattern's rule, as mate compiles it. */

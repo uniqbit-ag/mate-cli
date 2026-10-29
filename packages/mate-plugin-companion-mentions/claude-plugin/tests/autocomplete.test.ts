@@ -329,6 +329,22 @@ describe("@ rows", () => {
     expect(await texts($, "@mate:")).toEqual(["@mate:a.md ", "@mate:latest.md "]);
   });
 
+  test("a folder a folder pattern denies is not offered, even through a link", async ($, on) => {
+    world(on, {
+      env: {
+        MATE_ARTIFACT_PATH: "/c/hidden",
+        MATE_POLICY_JSON: policyJson({ deny: ["private/"] }),
+      },
+      disk: {
+        "/c/hidden/a.md": "a",
+        "/c/hidden/private/b.md": "b",
+        "/c/hidden/alias": { link: "/c/hidden/private" },
+      },
+      git: { "/c/hidden": gitList("a.md", "alias", "private/") },
+    });
+    expect(await texts($, "@mate:")).toEqual(["@mate:a.md "]);
+  });
+
   test("without a companion only the engine rows stay", async ($, on) => {
     const { runs } = world(on, { sessionRoot: "/work/plain" });
     expect((await ask($, "@")).suggestions).toEqual([]);

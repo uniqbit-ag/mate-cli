@@ -97,6 +97,15 @@ describe("the file list", () => {
     ]);
     expect(rels(toEntries(files, policyOf({ guardrails: false })))).toContain(".env");
   });
+
+  test("leaves out a folder a folder pattern denies, not one a file pattern names", () => {
+    const files = ["private/", "box/private/", "certs.key/readme.md"];
+    expect(rels(toEntries(files, policyOf({ deny: ["private/"] })))).toEqual([
+      "box/",
+      "certs.key/",
+      "certs.key/readme.md",
+    ]);
+  });
 });
 
 describe("rows", () => {
@@ -461,6 +470,9 @@ describe("mate's launcher", () => {
 
   test("is mate.cmd for a Windows home", () => {
     expect(launcherPath("C:\\Users\\me")).toBe("C:\\Users\\me\\.mate\\runtime\\bin\\mate.cmd");
+    expect(launcherPath("\\\\server\\profiles\\me")).toBe(
+      "\\\\server\\profiles\\me\\.mate\\runtime\\bin\\mate.cmd",
+    );
   });
 
   test("runs from its own folder, which no repository controls", () => {

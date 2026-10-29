@@ -216,6 +216,17 @@ describe("Mate's answer in a plain session", () => {
     expect(mateRuns).toHaveLength(2);
   });
 
+  test("is asked once by keystrokes that overlap its answer", async ($, on) => {
+    const { mateRuns } = world(on, {
+      sessionRoot: "/work/ask-overlap",
+      disk: { "/c/ask-overlap/openspec.md": "o" },
+      git: { "/c/ask-overlap": { files: ["openspec.md"] } },
+      mate: { "/work/ask-overlap": answers("/c/ask-overlap") },
+    });
+    await Promise.all(["@mate:o", "@mate:op", "@mate:ope"].map((token) => rows($, token)));
+    expect(mateRuns).toHaveLength(1);
+  });
+
   test("keeps a failure for the window instead of asking on every keystroke", async ($, on) => {
     const { mateRuns, clock } = world(on, {
       sessionRoot: "/work/ask-timeout",

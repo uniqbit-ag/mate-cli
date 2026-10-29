@@ -49,7 +49,7 @@ const SKIPPED = new Set([".git", "node_modules"]);
 type Context = SessionContext | ContextFailure;
 
 let parsed: { json: string | undefined; result: ReturnType<typeof parsePolicy> } | undefined;
-let asked: { sessionRoot: string; answer: Context; at: number } | undefined;
+let asked: { sessionRoot: string; answer: Promise<Context>; at: number } | undefined;
 let listed: { root: string; policyJson: string; entries: Entry[]; at: number } | undefined;
 
 /** A clock that went back counts as stale. */
@@ -130,18 +130,29 @@ async function askMate($: EngineInterface, sessionRoot: string): Promise<Context
 }
 
 /**
- * Reuses Mate's answer for REFRESH_MS, failures included, so a slow or missing
- * Mate costs one wait per window, not per keystroke.
+ * Shares Mate's answer, pending or not, for REFRESH_MS, failures included, so a
+ * slow or missing Mate costs one run per window, not per keystroke. A failure
+ * that arrives after the asking lookup was cancelled may be the cancel's own,
+ * so it is not kept.
  */
 async function menuContext($: EngineInterface, signal: AbortSignal): Promise<Context> {
   const launch = await launchContext($);
   if (launch !== undefined) return launch;
   const sessionRoot = await $.session.root();
   const now = await $.clock.now();
-  if (asked?.sessionRoot === sessionRoot && isFresh(asked.at, now)) return asked.answer;
-  const answer = await askMate($, sessionRoot);
+  let entry = asked;
+  if (entry === undefined || entry.sessionRoot !== sessionRoot || !isFresh(entry.at, now)) {
+    const started = { sessionRoot, answer: askMate($, sessionRoot), at: now };
+    const forget = () => {
+      if (asked === started) asked = undefined;
+    };
+    started.answer.then((answer) => {
+      if ("reason" in answer && signal.aborted) forget();
+    }, forget);
+    asked = entry = started;
+  }
+  const answer = await entry.answer;
   signal.throwIfAborted();
-  asked = { sessionRoot, answer, at: now };
   return answer;
 }
 
@@ -218,8 +229,8 @@ async function entriesOf(
 
 /**
  * Whether the menu may offer an entry, as a mention would attach it: it is
- * still a file or folder, it leads to no place outside the companion, and a
- * file's real location is no secret file. The listed path was checked already.
+ * still a file or folder, it leads to no place outside the companion, and its
+ * real location is no secret file or folder. The listed path was checked already.
  */
 async function isOfferable(
   $: EngineInterface,
@@ -233,8 +244,8 @@ async function isOfferable(
   if (target?.realPath === undefined) return false;
   const realRel = relativeInside(target.realPath, root);
   if (realRel === undefined) return false;
-  if (target.kind === "dir") return true;
-  return target.kind === "file" && secretMatch(policy, realRel) === undefined;
+  if (target.kind !== "dir" && target.kind !== "file") return false;
+  return secretMatch(policy, realRel, target.kind === "dir") === undefined;
 }
 
 /** The first `limit` of the ranked entries the menu may offer, checked a batch at a time. */
@@ -325,9 +336,15 @@ export const register: Register = (on) => {
       );
     }
     /** Both the path named and where it leads count; folders above the companion never match. */
-    const secretOf = (namedRel: string, landedRel: string) =>
-      secretMatch(policy, namedRel) ?? secretMatch(policy, landedRel);
+    const secretOf = (namedRel: string, landedRel: string, isDir: boolean) =>
+      secretMatch(policy, namedRel, isDir) ?? secretMatch(policy, landedRel, isDir);
     if (target.kind === "dir") {
+      const secretFolder = secretOf(named.rel, realRel, true);
+      if (secretFolder !== undefined) {
+        return note(
+          `${shown} was not attached: mate keeps secret folders (\`${secretFolder}\`) away from Claude.`,
+        );
+      }
       /** List where the checks looked: a link repointed since would list another folder. */
       const landedFolder = target.realPath;
       const children = await $.fs.list(landedFolder);
@@ -337,9 +354,9 @@ export const register: Register = (on) => {
           if (child.name === ".git") return undefined;
           const namedRel = under(named.rel, child.name);
           if (!child.isLink) {
-            if (child.kind === "dir") return { name: child.name, isDir: true };
-            const isSecret = secretOf(namedRel, under(realRel, child.name)) !== undefined;
-            return isSecret ? undefined : { name: child.name, isDir: false };
+            const isDir = child.kind === "dir";
+            const isSecret = secretOf(namedRel, under(realRel, child.name), isDir) !== undefined;
+            return isSecret ? undefined : { name: child.name, isDir };
           }
           const landed = await $.fs
             .stat(joinPath(landedFolder, child.name), { resolve: true })
@@ -347,9 +364,9 @@ export const register: Register = (on) => {
           const landedRel =
             landed?.realPath === undefined ? undefined : relativeInside(landed.realPath, root);
           if (landed === undefined || landedRel === undefined) return undefined;
-          if (landed.kind === "dir") return { name: child.name, isDir: true };
-          return secretOf(namedRel, landedRel) === undefined
-            ? { name: child.name, isDir: false }
+          const isDir = landed.kind === "dir";
+          return secretOf(namedRel, landedRel, isDir) === undefined
+            ? { name: child.name, isDir }
             : undefined;
         }),
       );
@@ -359,7 +376,7 @@ export const register: Register = (on) => {
     if (target.kind !== "file") {
       return note(`${shown} was not attached: ${path} is not a file or folder.`);
     }
-    const secret = secretOf(named.rel, realRel);
+    const secret = secretOf(named.rel, realRel, false);
     if (secret !== undefined) {
       return note(
         `${shown} was not attached: mate keeps secret files (\`${secret}\`) away from Claude.`,

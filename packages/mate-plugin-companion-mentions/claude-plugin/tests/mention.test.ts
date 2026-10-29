@@ -94,6 +94,24 @@ describe("@mate: mentions", () => {
     );
   });
 
+  test("a secret folder is refused, by name or link, and left out of its parent's list", async ($, on) => {
+    const root = "/companions/private";
+    world(on, {
+      env: { MATE_ARTIFACT_PATH: root, MATE_POLICY_JSON: policyJson({ deny: ["private/"] }) },
+      disk: {
+        [`${root}/box/private/nested/a.md`]: "a",
+        [`${root}/box/plan.md`]: "plan",
+        [`${root}/box/alias`]: { link: `${root}/box/private` },
+      },
+    });
+    for (const named of ["mate:box/private", "mate:box/alias"]) {
+      expect((await mention($, named)).context?.[0]).toContain("secret folders (`private/`)");
+    }
+    expect((await mention($, "mate:box")).context?.[0]).toBe(
+      `@mate:box is the folder ${root}/box in the mate companion repo. It holds:\n- plan.md`,
+    );
+  });
+
   test("a folder's list judges each linked entry where it leads", async ($, on) => {
     const root = "/companions/linked";
     world(on, {

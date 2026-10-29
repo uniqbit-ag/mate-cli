@@ -26,6 +26,9 @@ export function baseName(path: string): string {
 
 type SecretRule = { pattern: string; regExp: RegExp; subject: "name" | "path" };
 
+/** mate's test for a pattern that names a folder and everything in it. */
+const FOLDER_PATTERN = /[^/]\/+$/;
+
 /** The companion's secret policy, as mate hands it over in its policy document. */
 export type SecretPolicy = {
   guardrails: boolean;
@@ -116,7 +119,7 @@ export type ContextFailure = { reason: string };
  * another `mate` first.
  */
 export function launcherPath(home: string): string {
-  return DRIVE.test(home)
+  return isWindowsPath(home)
     ? `${home.replace(/[\\/]+$/, "")}\\.mate\\runtime\\bin\\mate.cmd`
     : joinPath(home, ".mate/runtime/bin/mate");
 }
@@ -176,13 +179,16 @@ export function parseContext(stdout: string): SessionContext | ContextFailure {
  * rule does, or undefined; always undefined with guardrails off. `rel` is
  * `/`-separated, as {@link relativeInside} and git give it, so a `\` in it is
  * part of a name, as mate reads it outside Windows; trailing slashes are trimmed.
+ * Only a pattern ending in `/` names a folder, so only those judge one.
  */
-export function secretMatch(policy: SecretPolicy, rel: string): string | undefined {
+export function secretMatch(policy: SecretPolicy, rel: string, isDir = false): string | undefined {
   if (!policy.guardrails) return undefined;
   const path = rel.replace(/\/+$/, "");
   if (path === "") return undefined;
   const name = path.slice(path.lastIndexOf("/") + 1);
-  const matches = (rule: SecretRule) => rule.regExp.test(rule.subject === "name" ? name : path);
+  const matches = (rule: SecretRule) =>
+    (!isDir || FOLDER_PATTERN.test(rule.pattern)) &&
+    rule.regExp.test(rule.subject === "name" ? name : path);
   if (policy.allow.some(matches)) return undefined;
   return policy.deny.find(matches)?.pattern;
 }
@@ -208,8 +214,8 @@ export function rowText(entry: Entry): string | undefined {
 
 /**
  * Every file of a `/`-separated list plus its parent folders, each once,
- * leaving out the policy's secret files and what no mention can name. A listed
- * path ending in `/` is a folder: git lists a nested repository that way.
+ * leaving out the policy's secret files and folders and what no mention can
+ * name. A listed path ending in `/` is a folder: git lists a nested repository that way.
  */
 export function toEntries(files: readonly string[], policy: SecretPolicy): Entry[] {
   const entries: Entry[] = [];
@@ -217,7 +223,9 @@ export function toEntries(files: readonly string[], policy: SecretPolicy): Entry
   const add = (entry: Entry) => {
     if (seen.has(entry.rel)) return;
     seen.add(entry.rel);
-    if (rowText(entry) !== undefined) entries.push(entry);
+    if (rowText(entry) === undefined) return;
+    if (entry.isDir && secretMatch(policy, entry.rel, true) !== undefined) return;
+    entries.push(entry);
   };
   for (const file of files) {
     const rel = file.replace(/^(\.\/)+/, "");
