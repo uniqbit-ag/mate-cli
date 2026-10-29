@@ -177,6 +177,28 @@ describe("Mate OpenCode TUI plugin", () => {
     expect(claims).toHaveLength(0);
   });
 
+  test("a refused projection shows one toast naming the refusal, and claims nothing", async () => {
+    const { repo, companion, home } = await wrappedRepo();
+    await fs.rm(path.join(companion, ".mate"), { recursive: true, force: true });
+    const { default: tuiPlugin } = await import("./tui");
+    const { api, claims, toasts } = fakeApi();
+    const setInterval = spyOn(globalThis, "setInterval");
+
+    try {
+      const cleanup = await inUnmanagedSession(repo, async () => tuiPlugin.setup(api), home);
+
+      expect(claims).toHaveLength(0);
+      expect(toasts).toHaveLength(1);
+      expect(toasts[0]).toContain("repository-not-linked");
+      expect(toasts[0]).toContain("mate doctor");
+      expect(toasts[0]).not.toContain(companion);
+      expect(cleanup).toBeUndefined();
+      expect(setInterval).not.toHaveBeenCalled();
+    } finally {
+      setInterval.mockRestore();
+    }
+  });
+
   test("is exported through the core ./opencode/tui subpath, not the ./opencode barrel", async () => {
     const packageJson = JSON.parse(
       await fs.readFile(path.resolve(import.meta.dirname, "..", "..", "package.json"), "utf8"),

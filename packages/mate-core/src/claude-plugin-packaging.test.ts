@@ -10,6 +10,7 @@ import { ARTIFACT_REFUSAL_HEADLINE } from "./runtime/artifact-refusal";
 import { MATE_ENV } from "./runtime/env-names";
 import { writeProjectionPair } from "./runtime/projection";
 import { repoLocalRegistryPath } from "./runtime/repo-local";
+import { trustProjection } from "../test/trusted-projection";
 
 // Packs the package once and executes every bundled Claude plugin hook shim
 // against fixture hook payloads, proving the shipped plugin is loadable and
@@ -99,7 +100,8 @@ function withoutLaunchEnvironment(): Record<string, string> {
   return Object.fromEntries(Object.values(MATE_ENV).map((name) => [name, ""]));
 }
 
-async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> {
+/** Wraps `repoRoot` as `mate wrap` leaves it; returns the HOME whose Mate configuration trusts it. */
+async function wrapRepo(repoRoot: string, companionPath: string): Promise<{ HOME: string }> {
   const registryPath = repoLocalRegistryPath(repoRoot);
   await fs.mkdir(path.dirname(registryPath), { recursive: true });
   await fs.writeFile(registryPath, "companions: []\n", "utf8");
@@ -114,6 +116,12 @@ async function wrapRepo(repoRoot: string, companionPath: string): Promise<void> 
       reactDoctorBinPath: path.join(companionPath, "react-doctor"),
       graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
+  });
+  return trustProjection({
+    home: path.join(repoRoot, "mate-home"),
+    companionPath,
+    repoRoot,
+    repositoryId: "acme",
   });
 }
 
@@ -189,12 +197,12 @@ describe("packed Claude plugin", () => {
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
     spawnSync("git", ["init", "-q"], { cwd: repo, stdio: "ignore" });
-    await wrapRepo(repo, companion);
+    const trusted = await wrapRepo(repo, companion);
 
     const blocked = runShim(
       "validate-artifact-path.mjs",
       { tool_name: "Write", tool_input: { file_path: path.join(repo, "design.md") } },
-      withoutLaunchEnvironment(),
+      { ...withoutLaunchEnvironment(), ...trusted },
       repo,
     );
     expect(blocked.stderr).toContain(ARTIFACT_REFUSAL_HEADLINE);
@@ -207,12 +215,16 @@ describe("packed Claude plugin", () => {
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
     await fs.writeFile(path.join(companion, "AGENTS.md"), "## Git\n\nACME-SHIM-SENTINEL\n");
-    await wrapRepo(repo, companion);
+    const trusted = await wrapRepo(repo, companion);
     const input = { hook_event_name: "SessionStart", source: "startup" };
 
-    const carried = runShim("session-prepare.mjs", input, withoutLaunchEnvironment(), repo, [
-      "--projected",
-    ]);
+    const carried = runShim(
+      "session-prepare.mjs",
+      input,
+      { ...withoutLaunchEnvironment(), ...trusted },
+      repo,
+      ["--projected"],
+    );
 
     expect(carried.exitCode).toBe(0);
     expect(carried.stderr).toBe("");
@@ -225,7 +237,7 @@ describe("packed Claude plugin", () => {
     const bare = runShim(
       "session-prepare.mjs",
       input,
-      { ...withoutLaunchEnvironment(), CLAUDE_PLUGIN_ROOT: pluginRoot },
+      { ...withoutLaunchEnvironment(), ...trusted, CLAUDE_PLUGIN_ROOT: pluginRoot },
       repo,
     );
     expect(bare.exitCode).toBe(0);
@@ -252,12 +264,16 @@ describe("packed Claude plugin", () => {
     const companion = path.join(repo, "companion");
     await fs.mkdir(companion, { recursive: true });
     await fs.writeFile(path.join(companion, "AGENTS.md"), "## Git\n\nACME-SHIM-SENTINEL\n");
-    await wrapRepo(repo, companion);
+    const trusted = await wrapRepo(repo, companion);
 
     const child = spawn(
       "node",
       [path.join(pluginRoot, "hooks", "companion-instructions.mjs"), "--projected"],
-      { cwd: repo, env: shimEnvironment(withoutLaunchEnvironment()), stdio: "pipe" },
+      {
+        cwd: repo,
+        env: shimEnvironment({ ...withoutLaunchEnvironment(), ...trusted }),
+        stdio: "pipe",
+      },
     );
     child.stdout.destroy();
     child.stdin.end(JSON.stringify({ hook_event_name: "SubagentStart", agent_type: "acme" }));

@@ -8,6 +8,7 @@
  */
 import { BRAND_ACCENT } from "../brand/palette";
 import { mateVersion } from "../runtime/install";
+import { sessionRefusalNotice } from "../runtime/session-resolution";
 import { readContext, readStalenessLines } from "./companion-policy";
 
 /** Minimal structural slice of the OpenCode V2 TUI API; the published SDK ships no V2 TUI types. */
@@ -84,9 +85,21 @@ function SessionContext({
   );
 }
 
-/** Polls the session lines; a line that appears after startup is also raised as a toast. */
+/**
+ * Polls the session lines; a line that appears after startup is also raised as
+ * a toast. A refused projection gets its one toast and nothing else.
+ */
 function setup(api: MateTuiApi): (() => void) | undefined {
   const context = readContext();
+  const { session } = context;
+  if (session.kind === "none" && session.refusal) {
+    api.ui.toast.show({
+      title: "mate",
+      message: sessionRefusalNotice(session.refusal),
+      variant: "warning",
+    });
+    return undefined;
+  }
   if (!context.companionPath || !context.repositoryPath) {
     return undefined;
   }

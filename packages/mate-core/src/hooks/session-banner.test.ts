@@ -12,13 +12,15 @@ import {
 } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
+import { trustProjection } from "../../test/trusted-projection";
 import { buildBanner } from "./session-banner";
 
 const tempRoots: string[] = [];
 const REGISTRY_CONTENT = "companions: []\n";
 
+/** Real paths, since Session Resolution names the Checkout by its real path. */
 function makeTempDir(prefix: string): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   tempRoots.push(dir);
   return dir;
 }
@@ -30,7 +32,8 @@ function currentStamp(): string {
   });
 }
 
-function wrapRepo(repoRoot: string, companionPath: string, stamp: string): void {
+/** Projects `companionPath` into `repoRoot`; returns a plain-session environment that does not trust it. */
+function wrapRepo(repoRoot: string, companionPath: string, stamp: string): { HOME: string } {
   const registryPath = repoLocalRegistryPath(repoRoot);
   fs.mkdirSync(path.dirname(registryPath), { recursive: true });
   fs.writeFileSync(registryPath, REGISTRY_CONTENT, "utf8");
@@ -46,6 +49,13 @@ function wrapRepo(repoRoot: string, companionPath: string, stamp: string): void 
       graphifyOut: path.join(companionPath, ".graphify", "acme", "graphify-out"),
     },
   });
+  return { HOME: path.join(repoRoot, "home") };
+}
+
+/** {@link wrapRepo}, with the companion registered and linking `repoRoot`, as `mate wrap` leaves it. */
+function wrapTrustedRepo(repoRoot: string, companionPath: string, stamp: string): { HOME: string } {
+  const { HOME } = wrapRepo(repoRoot, companionPath, stamp);
+  return trustProjection({ home: HOME, companionPath, repoRoot, repositoryId: "acme" });
 }
 
 function bannerMessage(outcome: { stdout: string }): string {
@@ -98,9 +108,9 @@ describe("session-banner hook module", () => {
     const repoRoot = makeTempDir("banner-wrapped-");
     const companion = path.join(repoRoot, "companion");
     fs.mkdirSync(companion, { recursive: true });
-    wrapRepo(repoRoot, companion, currentStamp());
+    const env = wrapTrustedRepo(repoRoot, companion, currentStamp());
 
-    const message = bannerMessage(await buildBanner({}, repoRoot));
+    const message = bannerMessage(await buildBanner(env, repoRoot));
 
     expect(message).toContain(repoRoot);
     expect(message).toContain(companion);
@@ -111,23 +121,61 @@ describe("session-banner hook module", () => {
     const repoRoot = makeTempDir("banner-stale-");
     const companion = path.join(repoRoot, "companion");
     fs.mkdirSync(companion, { recursive: true });
-    wrapRepo(repoRoot, companion, "written-by-another-mate");
+    const env = wrapTrustedRepo(repoRoot, companion, "written-by-another-mate");
 
-    const message = bannerMessage(await buildBanner({}, repoRoot));
+    const message = bannerMessage(await buildBanner(env, repoRoot));
 
     expect(message).toContain(companion);
     expect(message).toContain("mate wrap");
   });
 
-  test("reports a missing companion", async () => {
-    const repoRoot = makeTempDir("banner-gone-");
-    const companion = path.join(repoRoot, "removed");
-    wrapRepo(repoRoot, companion, currentStamp());
+  describe("a projection Session Resolution refuses", () => {
+    function expectRefusalNotice(outcome: { exitCode: number; stdout: string }, code: string) {
+      expect(outcome.exitCode).toBe(0);
+      const output = JSON.parse(outcome.stdout) as Record<string, unknown>;
+      expect(Object.keys(output)).toEqual(["systemMessage"]);
+      expect(output.systemMessage).toContain(code);
+      expect(output.systemMessage).toContain("mate doctor");
+    }
 
-    const message = bannerMessage(await buildBanner({}, repoRoot));
+    test("reports an unregistered companion to the operator alone", async () => {
+      const repoRoot = makeTempDir("banner-unregistered-");
+      const companion = path.join(repoRoot, "companion");
+      fs.mkdirSync(companion, { recursive: true });
+      const env = wrapRepo(repoRoot, companion, currentStamp());
 
-    expect(message).toContain(companion);
-    expect(message).toContain("mate wrap");
+      expectRefusalNotice(await buildBanner(env, repoRoot), "companion-not-registered");
+    });
+
+    test("reports a companion that does not link the Checkout", async () => {
+      const repoRoot = makeTempDir("banner-unlinked-");
+      const companion = path.join(repoRoot, "companion");
+      fs.mkdirSync(companion, { recursive: true });
+      const env = wrapTrustedRepo(repoRoot, companion, currentStamp());
+      fs.rmSync(path.join(companion, ".mate"), { recursive: true, force: true });
+
+      expectRefusalNotice(await buildBanner(env, repoRoot), "repository-not-linked");
+    });
+
+    test("reports a missing companion", async () => {
+      const repoRoot = makeTempDir("banner-gone-");
+      const env = wrapRepo(repoRoot, path.join(repoRoot, "removed"), currentStamp());
+
+      expectRefusalNotice(await buildBanner(env, repoRoot), "companion-missing");
+    });
+
+    /** The `--projected` copy defers only to a launch; a refusal has none, so it prints once. */
+    test("the copy a wrap carries prints the notice too", async () => {
+      const repoRoot = makeTempDir("banner-refused-projected-");
+      const companion = path.join(repoRoot, "companion");
+      fs.mkdirSync(companion, { recursive: true });
+      const env = wrapRepo(repoRoot, companion, currentStamp());
+
+      expectRefusalNotice(
+        await buildBanner(env, repoRoot, [PROJECTED_FLAG]),
+        "companion-not-registered",
+      );
+    });
   });
 
   test("stays silent when no context resolves", async () => {
@@ -146,11 +194,13 @@ describe("session-banner hook module", () => {
 
   test("stays silent when the projection is unparseable", async () => {
     const repoRoot = makeTempDir("banner-truncated-");
-    wrapRepo(repoRoot, path.join(repoRoot, "companion"), currentStamp());
+    const companion = path.join(repoRoot, "companion");
+    fs.mkdirSync(companion, { recursive: true });
+    const env = wrapTrustedRepo(repoRoot, companion, currentStamp());
     const yamlPath = projectionYamlPath(repoRoot);
     fs.writeFileSync(yamlPath, fs.readFileSync(yamlPath, "utf8").slice(0, 45), "utf8");
 
-    expect(await buildBanner({}, repoRoot)).toEqual({ exitCode: 0, stdout: "" });
+    expect(await buildBanner(env, repoRoot)).toEqual({ exitCode: 0, stdout: "" });
   });
 
   /**
@@ -173,9 +223,9 @@ describe("session-banner hook module", () => {
       const repoRoot = makeTempDir("banner-projected-");
       const companion = path.join(repoRoot, "companion");
       fs.mkdirSync(companion, { recursive: true });
-      wrapRepo(repoRoot, companion, currentStamp());
+      const env = wrapTrustedRepo(repoRoot, companion, currentStamp());
 
-      const message = bannerMessage(await buildBanner({}, repoRoot, [PROJECTED_FLAG]));
+      const message = bannerMessage(await buildBanner(env, repoRoot, [PROJECTED_FLAG]));
 
       expect(message).toContain(repoRoot);
       expect(message).toContain(companion);

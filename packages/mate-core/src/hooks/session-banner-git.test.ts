@@ -12,6 +12,7 @@ import { mateVersion } from "../runtime/install";
 import { computeProjectionStamp, writeProjectionPair } from "../runtime/projection";
 import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { manifestPath } from "../runtime/runtime-document-manifest";
+import { trustProjection } from "../../test/trusted-projection";
 import { buildSessionGuidance } from "./session-guidance";
 import { buildBanner } from "./session-banner";
 
@@ -32,10 +33,12 @@ interface Fixture {
   repo: string;
   companion: string;
   upstream: string;
+  /** The plain-session environment whose Mate configuration trusts the projection. */
+  env: { HOME: string };
 }
 
 function makeFixture(gitPolicy: "auto" | "manual" = "auto"): Fixture {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-banner-git-"));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mate-banner-git-")));
   tempRoots.push(root);
   const home = path.join(root, "home");
   const repo = path.join(root, "acme");
@@ -55,6 +58,13 @@ function makeFixture(gitPolicy: "auto" | "manual" = "auto"): Fixture {
     path.join(companion, ".mate", "config", "framework.yaml"),
     `git: ${gitPolicy}\n`,
   );
+  /** Kept apart from `home`, which the tests assert stays untouched; committed, so the tree is clean. */
+  const env = trustProjection({
+    home: path.join(root, "mate-home"),
+    companionPath: companion,
+    repoRoot: repo,
+    repositoryId: "acme",
+  });
   fs.writeFileSync(path.join(companion, "notes.md"), "base\n");
   git(companion, "add", ".");
   git(companion, "commit", "-qm", "base");
@@ -83,7 +93,7 @@ function makeFixture(gitPolicy: "auto" | "manual" = "auto"): Fixture {
     },
   });
 
-  return { root, home, repo, companion, upstream };
+  return { root, home, repo, companion, upstream, env };
 }
 
 function commitUpstream(fixture: Fixture, message: string): void {
@@ -111,7 +121,7 @@ describe("SessionStart repairs the companion", () => {
     const fixture = makeFixture();
     commitUpstream(fixture, "remote");
 
-    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    const outcome = await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home });
 
     expect(outcome.exitCode).toBe(0);
     expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
@@ -127,7 +137,7 @@ describe("SessionStart repairs the companion", () => {
     );
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    const outcome = await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home });
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
     expect(bannerMessage(outcome.stdout)).toContain(fixture.companion);
@@ -151,7 +161,7 @@ describe("SessionStart repairs the companion", () => {
     commitUpstream(fixture, "remote");
     arrange(fixture.repo);
 
-    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    const outcome = await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home });
 
     expect(outcome.exitCode).toBe(0);
     expect(git(fixture.companion, "log", "-1", "--pretty=%s")).toBe("remote");
@@ -181,7 +191,7 @@ describe("SessionStart repairs the companion", () => {
     recordCompanionSync(fixture.companion, new Date(), fixture.home);
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home });
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
   });
@@ -191,7 +201,7 @@ describe("SessionStart repairs the companion", () => {
     commitUpstream(fixture, "remote");
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
-    await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home });
 
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
@@ -223,7 +233,7 @@ describe("SessionStart repairs the companion", () => {
     const before = git(fixture.companion, "rev-parse", "HEAD");
 
     const started = Date.now();
-    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    const outcome = await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home });
 
     expect(Date.now() - started).toBeLessThan(2_000);
     expect(git(fixture.companion, "rev-parse", "HEAD")).toBe(before);
@@ -235,7 +245,7 @@ describe("SessionStart repairs the companion", () => {
     const plain = path.join(fixture.root, "plain");
     fs.mkdirSync(plain);
 
-    const outcome = await buildBanner({}, plain, [], { homeDir: fixture.home });
+    const outcome = await buildBanner(fixture.env, plain, [], { homeDir: fixture.home });
 
     expect(outcome).toEqual({ exitCode: 0, stdout: "" });
     expect(fs.existsSync(path.join(fixture.home, ".mate"))).toBe(false);
@@ -249,7 +259,7 @@ describe("an unfinished synchronization is reported to the operator", () => {
     commitCompanion(fixture, "local");
 
     const message = bannerMessage(
-      (await buildBanner({}, fixture.repo, [], { homeDir: fixture.home })).stdout,
+      (await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home })).stdout,
     );
 
     expect(message).toContain("diverged");
@@ -261,7 +271,7 @@ describe("an unfinished synchronization is reported to the operator", () => {
     commitUpstream(fixture, "remote");
 
     const message = bannerMessage(
-      (await buildBanner({}, fixture.repo, [], { homeDir: fixture.home })).stdout,
+      (await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home })).stdout,
     );
 
     expect(message).not.toContain(COMPANION_SYNC_COMMAND);
@@ -273,11 +283,11 @@ describe("an unfinished synchronization is reported to the operator", () => {
     commitCompanion(fixture, "local");
 
     const banner = bannerMessage(
-      (await buildBanner({}, fixture.repo, [], { homeDir: fixture.home })).stdout,
+      (await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home })).stdout,
     );
     expect(banner).toContain(COMPANION_SYNC_COMMAND);
 
-    const guidance = buildSessionGuidance({}, fixture.repo).stdout;
+    const guidance = buildSessionGuidance(fixture.env, fixture.repo).stdout;
     expect(guidance).not.toContain(COMPANION_SYNC_COMMAND);
     expect(guidance).not.toContain("synchronization unfinished");
   });
@@ -289,7 +299,7 @@ describe("session start is never blocked", () => {
     git(fixture.companion, "remote", "set-url", "origin", path.join(fixture.root, "gone.git"));
 
     const started = Date.now();
-    const outcome = await buildBanner({}, fixture.repo, [], { homeDir: fixture.home });
+    const outcome = await buildBanner(fixture.env, fixture.repo, [], { homeDir: fixture.home });
     const elapsed = Date.now() - started;
 
     expect(outcome.exitCode).toBe(0);
@@ -302,7 +312,7 @@ describe("session start is never blocked", () => {
     commitUpstream(fixture, "remote");
 
     const started = Date.now();
-    const outcome = await buildBanner({}, fixture.repo, [], {
+    const outcome = await buildBanner(fixture.env, fixture.repo, [], {
       homeDir: fixture.home,
       timeoutMs: 1,
     });
