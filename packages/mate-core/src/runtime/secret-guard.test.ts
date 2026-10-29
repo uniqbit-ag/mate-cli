@@ -219,6 +219,16 @@ describe("checkSecretAccess: searches", () => {
     ).toContain(".env*");
   });
 
+  test("names the alternatives limit when a glob is past it", async () => {
+    const glob = "{a,b}".repeat(7);
+    const refusal = await checkSecretAccess(
+      { kind: "search", targets: [target("acme")], globs: [glob] },
+      scope(),
+    );
+    expect(refusal).toContain(glob);
+    expect(refusal).toContain("more than 64");
+  });
+
   test("lets an ordinary search through", async () => {
     expect(
       await checkSecretAccess(

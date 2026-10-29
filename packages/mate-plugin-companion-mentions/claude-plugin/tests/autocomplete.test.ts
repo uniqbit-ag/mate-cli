@@ -4,8 +4,7 @@ import type { PromptAutocompleteInput, PromptAutocompleteResult } from "claude-c
 import { contextReply, policyJson } from "./policy.ts";
 import { world } from "./world.ts";
 
-// Each test has a companion of its own, so none sees a file list the mod kept
-// for another.
+/** Each test has a companion of its own, so none sees a file list the mod kept for another. */
 
 /** The kit raises prompt.autocomplete like any engine event, but its typings leave it off `$.prompt`. */
 type Autocompleting = {
@@ -46,6 +45,80 @@ const answersFirst: Plugin = {
 };
 
 describe("@ rows", () => {
+  test("fallback walking bounds the number of folders it visits", async ($, on) => {
+    const root = "/c/walk-dirs";
+    const folder = (name: string) => ({
+      name,
+      kind: "dir" as const,
+      size: 0,
+      mtimeMs: 0,
+      isLink: false,
+    });
+    const children = [
+      ...Array.from({ length: 20_000 }, (_, i) => folder(`dir-${i}`)),
+      folder("overflow"),
+    ];
+    world(on, {
+      env: env(root),
+      disk: { [root]: null, [`${root}/overflow/overflow-target.md`]: "" },
+      listingOverrides: { [root]: children },
+    });
+    expect(await texts($, "@overflow-target")).toEqual([]);
+  });
+
+  test("fallback walking stops after its file budget even in one large folder", async ($, on) => {
+    const disk = Object.fromEntries(
+      Array.from({ length: 20_000 }, (_, i) => [`/c/walk-limit/file-${i}.md`, ""]),
+    );
+    disk["/c/walk-limit/overflow-target.md"] = "";
+    world(on, { env: env("/c/walk-limit"), disk });
+    expect(await texts($, "@overflow-target")).toEqual([]);
+  });
+
+  test("other plugin results stay intact while plain searches browse and quote companion paths", async ($, on) => {
+    const native = Array.from({ length: 25 }, (_, i) => ({
+      text: `@file-${i}.md `,
+      label: `file-${i}.md`,
+    }));
+    world(on, {
+      upstreamSuggestions: native,
+      env: env("/c/native-many"),
+      disk: { "/c/native-many": null },
+      git: { "/c/native-many": gitList("notes/acme/meeting notes.md") },
+    });
+    const expected = {
+      text: '@"mate:notes/acme/meeting notes.md" ',
+      label: "mate:notes/acme/meeting notes.md",
+      description: "native-many (mate companion)",
+    };
+    expect((await ask($, "@notes/acme/")).suggestions).toEqual([...native, expected]);
+    expect((await ask($, "@meeting")).suggestions).toEqual([...native, expected]);
+  });
+
+  test("other plugin and companion rows with the same name remain distinct", async ($, on) => {
+    const native = { text: "@tasks.md ", label: "tasks.md", description: "Other plugin" };
+    world(on, {
+      upstreamSuggestions: [native],
+      env: env("/c/collision"),
+      disk: { "/c/collision": null },
+      git: { "/c/collision": gitList("notes/tasks.md") },
+    });
+    expect((await ask($, "@tasks")).suggestions).toEqual([
+      native,
+      {
+        text: "@mate:notes/tasks.md ",
+        label: "mate:notes/tasks.md",
+        description: "collision (mate companion)",
+      },
+    ]);
+  });
+
+  test("a failed companion lookup preserves other plugin suggestions", async ($, on) => {
+    const native = [{ text: "@tasks.md ", label: "tasks.md", description: "Other plugin" }];
+    world(on, { upstreamSuggestions: native, sessionError: "session lookup failed" });
+    expect((await ask($, "@tasks")).suggestions).toEqual(native);
+  });
+
   test("a chosen folder lists what it holds", async ($, on) => {
     world(on, {
       env: env("/c/drill"),
@@ -68,14 +141,15 @@ describe("@ rows", () => {
     expect(await texts($, "@mate:")).toEqual(["@mate:openspec/", "@mate:AGENTS.md "]);
   });
 
-  test("a bare @ adds just the mate: row, described by the companion", async ($, on) => {
+  test("a bare @ offers the companion gateway and top-level folders", async ($, on) => {
     world(on, {
       env: env("/c/bare"),
       disk: { "/c/bare": null },
-      git: { "/c/bare": gitList("AGENTS.md") },
+      git: { "/c/bare": gitList("AGENTS.md", "notes/plan.md") },
     });
     expect((await ask($, "@")).suggestions).toEqual([
       { text: "@mate:", label: "mate:", description: "bare (mate companion)" },
+      { text: "@mate:notes/", label: "mate:notes/", description: "bare (mate companion)" },
     ]);
     expect(await texts($, "@MA")).toEqual(["@mate:"]);
   });
@@ -90,7 +164,7 @@ describe("@ rows", () => {
     expect(await texts($, "@mate:note")).toHaveLength(15);
   });
 
-  test("a bare @ query adds at most three name matches, and no loose ones", async ($, on) => {
+  test("plain search finds path components and more than three matching files", async ($, on) => {
     world(on, {
       env: env("/c/few"),
       disk: { "/c/few": null },
@@ -104,8 +178,9 @@ describe("@ rows", () => {
         ),
       },
     });
-    expect(await texts($, "@tasks")).toHaveLength(3);
-    expect(await texts($, "@src/app")).toEqual([]);
+    expect(await texts($, "@tasks")).toHaveLength(4);
+    expect(await texts($, "@src/app")).toEqual(["@mate:src-notes/apple.md "]);
+    expect(await texts($, "@src/app")).toEqual(await texts($, "@mate:src/app"));
   });
 
   test("paths with spaces are quoted", async ($, on) => {
@@ -205,7 +280,7 @@ describe("@ rows", () => {
       await abandoned;
       killGit();
       await clock.settle();
-      // Not a folder walk (which would offer the gitignored file) kept for 30 seconds.
+      /** Not a folder walk (which would offer the gitignored file) kept for 30 seconds. */
       expect(await texts($, "@mate:")).toEqual(["@mate:a.md "]);
     },
   );
@@ -230,7 +305,7 @@ describe("@ rows", () => {
         "/work/plain-secret": { stdout: contextReply("/c/plain-secret", { deny: ["*.tfstate"] }) },
       },
     });
-    // A folder that holds only secret files is not offered either.
+    /** A folder that holds only secret files is not offered either. */
     expect(await texts($, "@mate:")).toEqual(["@mate:.env.example ", "@mate:a.md "]);
     expect(await texts($, "@mate:acme")).toEqual([]);
     expect(await texts($, "@mate:.env")).toEqual(["@mate:.env.example "]);
@@ -252,6 +327,22 @@ describe("@ rows", () => {
       git: { "/c/links": gitList("a.md", "config", "dangling.md", "escape.md", "latest.md") },
     });
     expect(await texts($, "@mate:")).toEqual(["@mate:a.md ", "@mate:latest.md "]);
+  });
+
+  test("a folder a folder pattern denies is not offered, even through a link", async ($, on) => {
+    world(on, {
+      env: {
+        MATE_ARTIFACT_PATH: "/c/hidden",
+        MATE_POLICY_JSON: policyJson({ deny: ["private/"] }),
+      },
+      disk: {
+        "/c/hidden/a.md": "a",
+        "/c/hidden/private/b.md": "b",
+        "/c/hidden/alias": { link: "/c/hidden/private" },
+      },
+      git: { "/c/hidden": gitList("a.md", "alias", "private/") },
+    });
+    expect(await texts($, "@mate:")).toEqual(["@mate:a.md "]);
   });
 
   test("without a companion only the engine rows stay", async ($, on) => {

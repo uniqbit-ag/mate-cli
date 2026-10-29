@@ -1,4 +1,4 @@
-// Pure helpers for `@mate:` mentions: no `$`, so tests import them directly.
+/** Pure helpers for `@mate:` mentions: no `$`, so tests import them directly. */
 
 export const PREFIX = "mate:";
 
@@ -25,6 +25,9 @@ export function baseName(path: string): string {
 }
 
 type SecretRule = { pattern: string; regExp: RegExp; subject: "name" | "path" };
+
+/** mate's test for a pattern that names a folder and everything in it. */
+const FOLDER_PATTERN = /[^/]\/+$/;
 
 /** The companion's secret policy, as mate hands it over in its policy document. */
 export type SecretPolicy = {
@@ -116,7 +119,7 @@ export type ContextFailure = { reason: string };
  * another `mate` first.
  */
 export function launcherPath(home: string): string {
-  return DRIVE.test(home)
+  return isWindowsPath(home)
     ? `${home.replace(/[\\/]+$/, "")}\\.mate\\runtime\\bin\\mate.cmd`
     : joinPath(home, ".mate/runtime/bin/mate");
 }
@@ -176,13 +179,16 @@ export function parseContext(stdout: string): SessionContext | ContextFailure {
  * rule does, or undefined; always undefined with guardrails off. `rel` is
  * `/`-separated, as {@link relativeInside} and git give it, so a `\` in it is
  * part of a name, as mate reads it outside Windows; trailing slashes are trimmed.
+ * Only a pattern ending in `/` names a folder, so only those judge one.
  */
-export function secretMatch(policy: SecretPolicy, rel: string): string | undefined {
+export function secretMatch(policy: SecretPolicy, rel: string, isDir = false): string | undefined {
   if (!policy.guardrails) return undefined;
   const path = rel.replace(/\/+$/, "");
   if (path === "") return undefined;
   const name = path.slice(path.lastIndexOf("/") + 1);
-  const matches = (rule: SecretRule) => rule.regExp.test(rule.subject === "name" ? name : path);
+  const matches = (rule: SecretRule) =>
+    (!isDir || FOLDER_PATTERN.test(rule.pattern)) &&
+    rule.regExp.test(rule.subject === "name" ? name : path);
   if (policy.allow.some(matches)) return undefined;
   return policy.deny.find(matches)?.pattern;
 }
@@ -208,8 +214,8 @@ export function rowText(entry: Entry): string | undefined {
 
 /**
  * Every file of a `/`-separated list plus its parent folders, each once,
- * leaving out the policy's secret files and what no mention can name. A listed
- * path ending in `/` is a folder: git lists a nested repository that way.
+ * leaving out the policy's secret files and folders and what no mention can
+ * name. A listed path ending in `/` is a folder: git lists a nested repository that way.
  */
 export function toEntries(files: readonly string[], policy: SecretPolicy): Entry[] {
   const entries: Entry[] = [];
@@ -217,7 +223,9 @@ export function toEntries(files: readonly string[], policy: SecretPolicy): Entry
   const add = (entry: Entry) => {
     if (seen.has(entry.rel)) return;
     seen.add(entry.rel);
-    if (rowText(entry) !== undefined) entries.push(entry);
+    if (rowText(entry) === undefined) return;
+    if (entry.isDir && secretMatch(policy, entry.rel, true) !== undefined) return;
+    entries.push(entry);
   };
   for (const file of files) {
     const rel = file.replace(/^(\.\/)+/, "");
@@ -254,69 +262,96 @@ function compareText(a: string, b: string): number {
   return x < y ? -1 : x > y ? 1 : a < b ? -1 : a > b ? 1 : 0;
 }
 
-function isSubsequence(text: string, query: string): boolean {
+/** `query`'s letters in order within a short stretch of `text`; queries under 3 letters never match. */
+function isCompactSubsequence(text: string, query: string): boolean {
+  if (query.length < 3) return false;
+  const maxSpan = query.length * 2 + 2;
+  for (
+    let start = text.indexOf(query[0]!);
+    start !== -1;
+    start = text.indexOf(query[0]!, start + 1)
+  ) {
+    let at = start;
+    for (const ch of query) {
+      at = text.indexOf(ch, at);
+      if (at === -1) break;
+      at++;
+    }
+    if (at !== -1 && at - start <= maxSpan) return true;
+  }
+  return false;
+}
+
+/** Whether each query part matches a later path segment than the one before. */
+function matchesSegmentsInOrder(
+  segments: readonly string[],
+  queryParts: readonly string[],
+  fuzzy: boolean,
+): boolean {
   let at = 0;
-  for (const ch of query) {
-    at = text.indexOf(ch, at);
-    if (at === -1) return false;
+  for (const part of queryParts) {
+    const matchesPart = (segment: string) =>
+      segment.includes(part) || (fuzzy && isCompactSubsequence(segment, part));
+    while (at < segments.length && !matchesPart(segments[at]!)) at++;
+    if (at === segments.length) return false;
     at++;
   }
   return true;
 }
 
-/** How well a path matches a lowercase query, lower being better; -1 is no match. */
-function score(rel: string, query: string): number {
+/**
+ * How well a path matches a lowercase query, lower being better; -1 is no match.
+ * `queryParts` is the query split at `/`, or null for a query without one.
+ */
+function score(rel: string, query: string, queryParts: readonly string[] | null): number {
   const path = rel.toLowerCase();
   const base = baseName(path);
-  if (base === query) return 0;
-  if (base.startsWith(query)) return 1;
-  if (base.includes(query)) return 2;
-  if (path.includes(query)) return 3;
-  if (isSubsequence(path, query)) return 4;
-  return -1;
+  if (path.replace(/\/$/, "") === query) return 0;
+  if (base === query) return 1;
+  if (base.startsWith(query)) return 2;
+  if (base.includes(query)) return 3;
+  if (path.includes(query)) return 4;
+  const segments = path.split("/");
+  if (queryParts) {
+    if (queryParts.length === 0) return -1;
+    if (matchesSegmentsInOrder(segments, queryParts, false)) return 5;
+    return matchesSegmentsInOrder(segments, queryParts, true) ? 6 : -1;
+  }
+  return segments.some((segment) => isCompactSubsequence(segment, query)) ? 6 : -1;
 }
 
 function search(pool: readonly Entry[], query: string, limit: number): Entry[] {
+  const queryParts = query.includes("/") ? query.split("/").filter(Boolean) : null;
   const scored: { entry: Entry; score: number }[] = [];
   for (const entry of pool) {
-    const s = score(entry.rel, query);
+    const s = score(entry.rel, query, queryParts);
     if (s >= 0) scored.push({ entry, score: s });
   }
   scored.sort(
     (a, b) =>
       a.score - b.score ||
-      Number(b.entry.isDir) - Number(a.entry.isDir) ||
+      Number(a.entry.isDir) - Number(b.entry.isDir) ||
       a.entry.rel.length - b.entry.rel.length ||
       compareText(a.entry.rel, b.entry.rel),
   );
   return scored.slice(0, limit).map((s) => s.entry);
 }
 
-/** What is directly in `folder` (from `inside`, its whole tree) whose name holds `rest`. */
-function childrenOf(inside: readonly Entry[], folder: string, rest: string): Entry[] {
-  const found: { entry: Entry; tier: number }[] = [];
-  for (const entry of inside) {
-    const name = entry.rel.toLowerCase().slice(folder.length).replace(/\/$/, "");
-    if (name.includes("/")) continue;
-    const tier = name === rest ? 0 : name.startsWith(rest) ? 1 : name.includes(rest) ? 2 : -1;
-    if (tier !== -1) found.push({ entry, tier });
-  }
-  found.sort(
-    (a, b) =>
-      Number(isManaged(a.entry.rel)) - Number(isManaged(b.entry.rel)) ||
-      a.tier - b.tier ||
-      Number(b.entry.isDir) - Number(a.entry.isDir) ||
-      compareText(a.entry.rel, b.entry.rel),
-  );
-  return found.map((f) => f.entry);
+/** What is directly in `folder` (from `inside`, its whole tree): unmanaged first, then folders, then by name. */
+function childrenOf(inside: readonly Entry[], folder: string): Entry[] {
+  return inside
+    .filter(
+      (entry) => !entry.rel.toLowerCase().slice(folder.length).replace(/\/$/, "").includes("/"),
+    )
+    .toSorted(
+      (a, b) =>
+        Number(isManaged(a.rel)) - Number(isManaged(b.rel)) ||
+        Number(b.isDir) - Number(a.isDir) ||
+        compareText(a.rel, b.rel),
+    );
 }
 
-/**
- * The entries to offer for a query, best first, at most `limit`. An `@mate:`
- * query naming a folder (`openspec/ch`) lists its direct children, falling back
- * to its whole tree; a bare `@` matches names only, since the engine's own rows
- * lead.
- */
+/** The entries to offer for a query, best first, at most `limit`. */
 export function rank(
   entries: readonly Entry[],
   { query, isExplicit }: Query,
@@ -324,32 +359,21 @@ export function rank(
 ): Entry[] {
   const q = query.toLowerCase();
   const unmanaged = () => entries.filter((entry) => !isManaged(entry.rel));
-  if (!isExplicit) {
-    if (q === "") return [];
-    return search(
-      unmanaged().filter((entry) => baseName(entry.rel.toLowerCase()).includes(q)),
-      q,
-      limit,
-    );
+  if (q === "") {
+    if (isExplicit) return childrenOf(entries, "").slice(0, limit);
+    return childrenOf(unmanaged(), "")
+      .filter((entry) => entry.isDir)
+      .slice(0, limit);
   }
-
-  const slash = q.lastIndexOf("/");
-  const folder = q.slice(0, slash + 1);
-  const rest = q.slice(slash + 1);
-  const isFolder =
-    folder === ""
-      ? rest === ""
-      : entries.some((entry) => entry.isDir && entry.rel.toLowerCase() === folder);
-  if (!isFolder) return search(q.startsWith(".") ? entries : unmanaged(), q, limit);
-
-  const inside = entries.filter((entry) => {
-    const rel = entry.rel.toLowerCase();
-    return rel.startsWith(folder) && rel !== folder;
-  });
-  const children = childrenOf(inside, folder, rest);
-  return children.length > 0 || rest === ""
-    ? children.slice(0, limit)
-    : search(inside, rest, limit);
+  const pool = q.startsWith(".") ? entries : unmanaged();
+  if (q.endsWith("/") && pool.some((entry) => entry.isDir && entry.rel.toLowerCase() === q)) {
+    const inside = pool.filter((entry) => {
+      const rel = entry.rel.toLowerCase();
+      return rel.startsWith(q) && rel !== q;
+    });
+    return childrenOf(inside, q).slice(0, limit);
+  }
+  return search(pool, q, limit);
 }
 
 /**

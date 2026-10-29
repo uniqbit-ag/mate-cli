@@ -143,9 +143,7 @@ function chmodTree(dir: string, mode: number): void {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) chmodTree(path.join(dir, entry.name), mode);
     }
-  } catch {
-    // best effort
-  }
+  } catch {}
 }
 
 describe("parseSessionContextArgs", () => {

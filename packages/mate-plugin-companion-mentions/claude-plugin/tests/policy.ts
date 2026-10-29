@@ -1,5 +1,4 @@
-// mate's compiled rules; test/rule-agreement.test.ts checks them against
-// mate-core, so they cannot drift from what mate sends.
+/** mate's compiled rules; test/rule-agreement.test.ts keeps them in step with mate-core. */
 
 export type FixtureRule = {
   pattern: string;
@@ -27,6 +26,7 @@ const COMPILED: Record<string, Pick<FixtureRule, "source" | "subject">> = {
   ".env.dist": { source: "^\\.env\\.dist$", subject: "name" },
   "*.tfstate": { source: "^[^/]*\\.tfstate$", subject: "name" },
   "secrets/**": { source: "(?:^|/)secrets/[\\s\\S]*$", subject: "path" },
+  "private/": { source: "(?:^|/)private(?:/[\\s\\S]*)?$", subject: "path" },
 };
 
 /** Each pattern's rule, as mate compiles it. */

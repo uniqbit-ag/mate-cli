@@ -1,8 +1,7 @@
-// A fake machine for the hook tests. Tests use paths of their own, so none
-// depends on what the mod kept from another.
+/** A fake machine for the hook tests; each test uses its own paths, so none sees another's state. */
 
 import { mock } from "claude-code/testing";
-import type { FsEntry, On, PromptMentionResult } from "claude-code";
+import type { FsEntry, On, PromptAutocompleteResult, PromptMentionResult } from "claude-code";
 
 /**
  * What a path holds: a file's text, a folder (null), a link to an absolute
@@ -59,12 +58,18 @@ export type Setup = {
   mate?: Record<string, MateAnswer>;
   /** `$.session.root()`; `/work/app` when absent. */
   sessionRoot?: string;
+  /** Rows from other plugins returned by `next`, or none when absent. */
+  upstreamSuggestions?: PromptAutocompleteResult["suggestions"];
+  /** Simulates a failed session lookup. */
+  sessionError?: string;
   /** The main working tree's root, as `$.session.repo()` answers; no repository when absent. */
   repoRoot?: string;
   /** git's answer by the folder it runs in; a folder not listed is no repository. */
   git?: Record<string, Git>;
   /** What the engine's own read of a mention resolves to; a file when absent. */
   mentionResult?: PromptMentionResult;
+  /** Directory listings supplied directly for large traversal fixtures. */
+  listingOverrides?: Record<string, FsEntry[]>;
   /** Folders that are there but cannot be listed. */
   unlistable?: string[];
   /** Runs after each `fs.stat` answers, with the disk to change: a link repointed mid-lookup. */
@@ -170,6 +175,8 @@ export function world(on: On, setup: Setup) {
     return typeof node === "string" ? { value: node } : { deny: `ENOENT: ${e.path}` };
   });
   on("fs.list", ($, e) => {
+    const override = setup.listingOverrides?.[e.path];
+    if (override !== undefined) return { value: override };
     const landed = existing(e.path);
     if (landed === undefined || kindAt(landed) !== "dir") return { deny: `ENOTDIR: ${e.path}` };
     if (setup.unlistable?.includes(landed)) return { deny: `EACCES: ${e.path}` };
@@ -214,7 +221,9 @@ export function world(on: On, setup: Setup) {
     return git.isTruncated ? exited(0, stdout.slice(0, -1), true) : exited(0, stdout);
   });
 
-  on("session.root", () => ({ value: setup.sessionRoot ?? "/work/app" }));
+  on("session.root", () =>
+    setup.sessionError ? { deny: setup.sessionError } : { value: setup.sessionRoot ?? "/work/app" },
+  );
   on("session.repo", () => ({
     value:
       setup.repoRoot === undefined
@@ -222,7 +231,7 @@ export function world(on: On, setup: Setup) {
         : { root: setup.repoRoot, remote: null, internal: false, name: null },
   }));
 
-  on("prompt.autocomplete", () => ({ suggestions: [] }));
+  on("prompt.autocomplete", () => ({ suggestions: setup.upstreamSuggestions ?? [] }));
   on("prompt.mention", ($, e) => {
     reads.push({ path: e.path, offset: e.offset, limit: e.limit });
     return setup.mentionResult ?? { type: "file" };

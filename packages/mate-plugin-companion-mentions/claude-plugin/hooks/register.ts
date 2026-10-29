@@ -1,8 +1,9 @@
-// `@mate:<path>` names a file or folder in the mate Companion Repository.
-// `mate claude` hands over the companion ($MATE_ARTIFACT_PATH) and its secret
-// policy ($MATE_POLICY_JSON); a plain `claude` session asks
-// `mate session context` instead. Without a companion and a readable policy,
-// the mod offers no rows and attaches nothing.
+/**
+ * `@mate:<path>` names a file or folder in the mate Companion Repository.
+ * `mate claude` hands over the companion ($MATE_ARTIFACT_PATH) and its secret policy
+ * ($MATE_POLICY_JSON); a plain `claude` session asks `mate session context` instead.
+ * Without a companion and a readable policy, the mod offers no rows and attaches nothing.
+ */
 
 import type { EngineInterface, FsEntry, Register } from "claude-code";
 import {
@@ -35,11 +36,11 @@ import {
 /** How long the menu reuses Mate's answer, and a companion's file list is kept. */
 const REFRESH_MS = 30_000;
 const CONTEXT_TIMEOUT_MS = 5_000;
-/** Rows after a bare `@`, under the engine's own. */
-const ROWS = 3;
-/** Rows after `@mate:`. */
-const ROWS_EXPLICIT = 15;
-/** Most files the folder walk collects when git cannot list them. */
+/** Most companion matches for a search, after the engine's own rows. */
+const ROWS = 15;
+/** Top-level folders offered after a bare `@`. */
+const BARE_ROWS = 4;
+/** Most files and folders the walk visits when git cannot list them. */
 const WALK_LIMIT = 20_000;
 /** Most names a folder mention lists. */
 const FOLDER_LIMIT = 200;
@@ -48,7 +49,7 @@ const SKIPPED = new Set([".git", "node_modules"]);
 type Context = SessionContext | ContextFailure;
 
 let parsed: { json: string | undefined; result: ReturnType<typeof parsePolicy> } | undefined;
-let asked: { sessionRoot: string; answer: Context; at: number } | undefined;
+let asked: { sessionRoot: string; answer: Promise<Context>; at: number } | undefined;
 let listed: { root: string; policyJson: string; entries: Entry[]; at: number } | undefined;
 
 /** A clock that went back counts as stale. */
@@ -118,7 +119,7 @@ async function askMate($: EngineInterface, sessionRoot: string): Promise<Context
   }
   const answer = parseContext(stdout);
   if ("reason" in answer) return answer;
-  // Mate exits 0 on every answer it stands by; a failure after printing one voids it.
+  /** Mate exits 0 on every answer it stands by; a failure after printing one voids it. */
   if (exitCode !== 0) {
     return {
       reason: `\`mate session context\` named a companion but exited with status ${exitCode}, so its answer is not used. \`mate doctor\` checks the installation`,
@@ -129,18 +130,29 @@ async function askMate($: EngineInterface, sessionRoot: string): Promise<Context
 }
 
 /**
- * Reuses Mate's answer for REFRESH_MS, failures included, so a slow or missing
- * Mate costs one wait per window, not per keystroke.
+ * Shares Mate's answer, pending or not, for REFRESH_MS, failures included, so a
+ * slow or missing Mate costs one run per window, not per keystroke. A failure
+ * that arrives after the asking lookup was cancelled may be the cancel's own,
+ * so it is not kept.
  */
 async function menuContext($: EngineInterface, signal: AbortSignal): Promise<Context> {
   const launch = await launchContext($);
   if (launch !== undefined) return launch;
   const sessionRoot = await $.session.root();
   const now = await $.clock.now();
-  if (asked?.sessionRoot === sessionRoot && isFresh(asked.at, now)) return asked.answer;
-  const answer = await askMate($, sessionRoot);
+  let entry = asked;
+  if (entry === undefined || entry.sessionRoot !== sessionRoot || !isFresh(entry.at, now)) {
+    const started = { sessionRoot, answer: askMate($, sessionRoot), at: now };
+    const forget = () => {
+      if (asked === started) asked = undefined;
+    };
+    started.answer.then((answer) => {
+      if ("reason" in answer && signal.aborted) forget();
+    }, forget);
+    asked = entry = started;
+  }
+  const answer = await entry.answer;
   signal.throwIfAborted();
-  asked = { sessionRoot, answer, at: now };
   return answer;
 }
 
@@ -160,8 +172,12 @@ async function walk($: EngineInterface, root: string, signal: AbortSignal): Prom
     signal.throwIfAborted();
     for (const child of children) {
       if (SKIPPED.has(child.name)) continue;
-      if (child.kind === "dir") folders.push(`${rel}${child.name}/`);
-      else if (child.kind === "file" || child.isLink) files.push(rel + child.name);
+      if (child.kind === "dir") {
+        if (folders.length < WALK_LIMIT) folders.push(`${rel}${child.name}/`);
+      } else if (child.kind === "file" || child.isLink) {
+        files.push(rel + child.name);
+        if (files.length >= WALK_LIMIT) break;
+      }
     }
   }
   return files;
@@ -190,7 +206,7 @@ async function listFiles($: EngineInterface, root: string, signal: AbortSignal):
     }
   } catch {
     signal.throwIfAborted();
-    // git could not run (not installed, timed out): walk below.
+    /** git could not run (not installed, timed out): walk below. */
   }
   return walk($, root, signal);
 }
@@ -213,8 +229,8 @@ async function entriesOf(
 
 /**
  * Whether the menu may offer an entry, as a mention would attach it: it is
- * still a file or folder, it leads to no place outside the companion, and a
- * file's real location is no secret file. The listed path was checked already.
+ * still a file or folder, it leads to no place outside the companion, and its
+ * real location is no secret file or folder. The listed path was checked already.
  */
 async function isOfferable(
   $: EngineInterface,
@@ -228,8 +244,8 @@ async function isOfferable(
   if (target?.realPath === undefined) return false;
   const realRel = relativeInside(target.realPath, root);
   if (realRel === undefined) return false;
-  if (target.kind === "dir") return true;
-  return target.kind === "file" && secretMatch(policy, realRel) === undefined;
+  if (target.kind !== "dir" && target.kind !== "file") return false;
+  return secretMatch(policy, realRel, target.kind === "dir") === undefined;
 }
 
 /** The first `limit` of the ranked entries the menu may offer, checked a batch at a time. */
@@ -262,7 +278,7 @@ async function companionRows($: EngineInterface, query: Query, signal: AbortSign
 
   const entries = await entriesOf($, context, signal);
   const ranked = rank(entries, query, entries.length);
-  const limit = query.isExplicit ? ROWS_EXPLICIT : ROWS;
+  const limit = !query.isExplicit && query.query === "" ? BARE_ROWS : ROWS;
   const offered = await offerable($, root, policy, ranked, limit, signal);
   const description = `${baseName(root)} (mate companion)`;
   const rows = offered.flatMap((entry) => {
@@ -289,10 +305,7 @@ export const register: Register = (on) => {
     const result = await next(e);
     const query = queryOf(e.token);
     if (query === undefined) return result;
-    const rows = await companionRows($, query, next.signal).catch((error: unknown) => {
-      if (next.signal.aborted) return []; // a newer keystroke took over
-      throw error;
-    });
+    const rows = await companionRows($, query, next.signal).catch(() => []);
     return rows.length === 0
       ? result
       : { ...result, suggestions: [...result.suggestions, ...rows] };
@@ -322,24 +335,28 @@ export const register: Register = (on) => {
         `${shown} was not attached: ${path} is a link to ${target.realPath}, outside the mate companion repo.`,
       );
     }
-    // Both the path named and where it leads count, but only inside the
-    // companion: folders above it never match a secret pattern.
-    const secretOf = (namedRel: string, landedRel: string) =>
-      secretMatch(policy, namedRel) ?? secretMatch(policy, landedRel);
+    /** Both the path named and where it leads count; folders above the companion never match. */
+    const secretOf = (namedRel: string, landedRel: string, isDir: boolean) =>
+      secretMatch(policy, namedRel, isDir) ?? secretMatch(policy, landedRel, isDir);
     if (target.kind === "dir") {
-      // Listed, and its linked entries looked up, where the checks above
-      // looked: a link repointed since would otherwise list another folder.
+      const secretFolder = secretOf(named.rel, realRel, true);
+      if (secretFolder !== undefined) {
+        return note(
+          `${shown} was not attached: mate keeps secret folders (\`${secretFolder}\`) away from Claude.`,
+        );
+      }
+      /** List where the checks looked: a link repointed since would list another folder. */
       const landedFolder = target.realPath;
       const children = await $.fs.list(landedFolder);
-      // A linked entry is judged where it leads, as a mention of it would be.
+      /** A linked entry is judged where it leads, as a mention of it would be. */
       const judged = await Promise.all(
         children.map(async (child: FsEntry) => {
           if (child.name === ".git") return undefined;
           const namedRel = under(named.rel, child.name);
           if (!child.isLink) {
-            if (child.kind === "dir") return { name: child.name, isDir: true };
-            const isSecret = secretOf(namedRel, under(realRel, child.name)) !== undefined;
-            return isSecret ? undefined : { name: child.name, isDir: false };
+            const isDir = child.kind === "dir";
+            const isSecret = secretOf(namedRel, under(realRel, child.name), isDir) !== undefined;
+            return isSecret ? undefined : { name: child.name, isDir };
           }
           const landed = await $.fs
             .stat(joinPath(landedFolder, child.name), { resolve: true })
@@ -347,9 +364,9 @@ export const register: Register = (on) => {
           const landedRel =
             landed?.realPath === undefined ? undefined : relativeInside(landed.realPath, root);
           if (landed === undefined || landedRel === undefined) return undefined;
-          if (landed.kind === "dir") return { name: child.name, isDir: true };
-          return secretOf(namedRel, landedRel) === undefined
-            ? { name: child.name, isDir: false }
+          const isDir = landed.kind === "dir";
+          return secretOf(namedRel, landedRel, isDir) === undefined
+            ? { name: child.name, isDir }
             : undefined;
         }),
       );
@@ -359,14 +376,14 @@ export const register: Register = (on) => {
     if (target.kind !== "file") {
       return note(`${shown} was not attached: ${path} is not a file or folder.`);
     }
-    const secret = secretOf(named.rel, realRel);
+    const secret = secretOf(named.rel, realRel, false);
     if (secret !== undefined) {
       return note(
         `${shown} was not attached: mate keeps secret files (\`${secret}\`) away from Claude.`,
       );
     }
 
-    // Read where the checks looked, not through the link, which could change.
+    /** Read where the checks looked, not through the link, which could change. */
     const read = await next({ ...e, path: target.realPath });
     if (read.deny !== undefined) return read;
     return {

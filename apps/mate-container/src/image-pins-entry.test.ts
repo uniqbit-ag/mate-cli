@@ -171,7 +171,7 @@ describe("image-pins sync then verify", () => {
     const root = workspace("1.2.3");
     expect(await sync(["1.2.3", root], deps().entryDeps)).toBe(0);
 
-    // A plugin tree changed after preparation has no pin to drift from.
+    /** A plugin tree changed after preparation has no pin to drift from. */
     fs.writeFileSync(
       path.join(root, "packages/mate-plugin-companion-mentions/package.json"),
       JSON.stringify({ name: PLUGIN, version: "1.2.3", content: "acme-changed" }),

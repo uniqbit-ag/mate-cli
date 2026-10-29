@@ -4,8 +4,7 @@ import type { PromptAutocompleteInput, PromptAutocompleteResult } from "claude-c
 import { RULES, contextReply, policyJson } from "./policy.ts";
 import { LAUNCHER, world, type MateAnswer } from "./world.ts";
 
-// Each test has a session folder and a companion of its own, so none sees an
-// answer or a file list the mod kept for another.
+/** Each test has its own session folder and companion, so none sees what the mod kept for another. */
 
 const POLICY = policyJson();
 
@@ -122,8 +121,7 @@ describe("a plain session", () => {
       mate: { "/work/plain-argv": answers("/c/plain-argv") },
     });
     await mentionNote($, "a.md");
-    // Never in the session folder: Bun reads `bunfig.toml` from its working
-    // directory, so a repository's `preload` would run inside Mate's answer.
+    /** Never in the session folder, whose `bunfig.toml` preload Bun would run inside Mate's answer. */
     expect(mateRuns).toEqual([
       {
         argv: [LAUNCHER, "session", "context", "--repo", "/work/plain-argv", "--json"],
@@ -216,6 +214,17 @@ describe("Mate's answer in a plain session", () => {
     await clock.advance(30_000);
     await rows($, "@mate:open");
     expect(mateRuns).toHaveLength(2);
+  });
+
+  test("is asked once by keystrokes that overlap its answer", async ($, on) => {
+    const { mateRuns } = world(on, {
+      sessionRoot: "/work/ask-overlap",
+      disk: { "/c/ask-overlap/openspec.md": "o" },
+      git: { "/c/ask-overlap": { files: ["openspec.md"] } },
+      mate: { "/work/ask-overlap": answers("/c/ask-overlap") },
+    });
+    await Promise.all(["@mate:o", "@mate:op", "@mate:ope"].map((token) => rows($, token)));
+    expect(mateRuns).toHaveLength(1);
   });
 
   test("keeps a failure for the window instead of asking on every keystroke", async ($, on) => {

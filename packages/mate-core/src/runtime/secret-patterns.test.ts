@@ -356,8 +356,17 @@ describe("globTargetsSecretFiles", () => {
     "{src,certs}/*.key",
     "*.[k]ey",
     "**/{*.ts,.env}",
+    "{.env}",
+    "*.{pem}",
+    "**/{id_rsa}",
+    "{{.env,x}}",
+    "{.env,[}]}",
   ])("%s, naming a secret file, is aimed at one", (glob) => {
     expect(globTargetsSecretFiles(glob, defaults)).toBe(true);
+  });
+
+  test("reads `**\\` as `**/` on Windows, as ripgrep does", () => {
+    expect(globTargetsSecretFiles("**\\{.env,x}", defaults, { windows: true })).toBe(true);
   });
 
   test.each(["", "*", "**/*", "*.ts", "*.md", ".env.example", "src/**", "*.{ts,tsx}", "!*.key"])(
@@ -366,6 +375,29 @@ describe("globTargetsSecretFiles", () => {
       expect(globTargetsSecretFiles(glob, defaults)).toBe(false);
     },
   );
+
+  test.each([
+    ".{e,e}{n,n}{v,v}{.,.}{l,l}{o,o}{c,c}al",
+    `${"{,}".repeat(7)}.env`,
+    `{${"{a,b}".repeat(7)}}`,
+  ])("%s, past the alternatives limit, is refused", (glob) => {
+    expect(globTargetsSecretFiles(glob, defaults)).toBe(true);
+  });
+
+  test("counts alternatives without expanding them", () => {
+    const start = performance.now();
+    expect(globTargetsSecretFiles(`${"{,}".repeat(30)}.env`, defaults)).toBe(true);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  test("refuses groups nested too deep to read", () => {
+    expect(globTargetsSecretFiles("{".repeat(10_000), defaults)).toBe(true);
+  });
+
+  test("passes an ordinary glob with as many alternatives as the limit", () => {
+    const glob = "{apps,packages}/{src,lib,test,docs}/**/*.{ts,tsx,js,jsx,mts,cts,json,md}";
+    expect(globTargetsSecretFiles(glob, defaults)).toBe(false);
+  });
 
   test("follows the policy's extra patterns", () => {
     const policy = parseSecretsConfig({ deny: ["*.secret"], allow: [".npmrc"] });

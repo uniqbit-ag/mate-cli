@@ -77,7 +77,7 @@ describe("the mod and mate agree on secret files", () => {
       const parsed = parsePolicy(policyDocument({ allowedAgents: ["claude"], secrets: policy }));
       if ("error" in parsed) throw new Error(parsed.error);
       for (const path of paths) {
-        // The mod is handed `/`-separated paths, in which a `\\` is part of a name.
+        /** The mod is handed `/`-separated paths, in which a `\\` is part of a name. */
         const mod = secretMatch(parsed.policy, path) !== undefined;
         const mate = policy.guardrails && isSecretFile(path, policy, { windows: false });
         expect({ path, secret: mod }).toEqual({ path, secret: mate });

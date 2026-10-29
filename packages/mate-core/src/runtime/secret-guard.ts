@@ -1,7 +1,12 @@
 import fs from "node:fs";
 
 import { resolveSecretPolicy } from "./policy";
-import { globTargetsSecretFiles, isSecretFile } from "./secret-patterns";
+import {
+  BRACE_LIMIT,
+  exceedsBraceLimit,
+  globTargetsSecretFiles,
+  isSecretFile,
+} from "./secret-patterns";
 import { describeSecretFindings, scanContent, type SecretFinding } from "./secret-scan";
 import { readShell, type ShellReading } from "./shell-reading";
 
@@ -52,6 +57,14 @@ export function secretFileRefusal(filePath: string, landsIn?: string): string {
     ...(landsIn ? [` lands in: ${landsIn} (through a link)`] : []),
     "Refer to the variable by name, read an example file such as .env.example, or ask the user to set the value.",
     SWITCH_HINT,
+  ].join("\n");
+}
+
+function braceLimitRefusal(glob: string): string {
+  return [
+    `Mate guardrail: this search glob expands to more than ${BRACE_LIMIT} {a,b} alternatives, too many to check for secret files.`,
+    ` glob: ${glob}`,
+    "Split the search into globs with fewer alternatives.",
   ].join("\n");
 }
 
@@ -108,12 +121,13 @@ export async function checkSecretAccess(
   }
 
   const targets = call.kind === "write" ? call.writes : call.targets;
-  const named =
-    targets.find((target) => target.path && isSecretFile(target.path, policy))?.path ??
-    (call.kind === "search"
-      ? call.globs.find((glob) => globTargetsSecretFiles(glob, policy))
-      : undefined);
+  const named = targets.find((target) => target.path && isSecretFile(target.path, policy))?.path;
   if (named) return secretFileRefusal(named);
+
+  if (call.kind === "search") {
+    const glob = call.globs.find((candidate) => globTargetsSecretFiles(candidate, policy));
+    if (glob) return exceedsBraceLimit(glob) ? braceLimitRefusal(glob) : secretFileRefusal(glob);
+  }
 
   if (call.kind === "write") {
     const scanned = await scanCompanionWrites(call.writes, deps.scan ?? scanContent);

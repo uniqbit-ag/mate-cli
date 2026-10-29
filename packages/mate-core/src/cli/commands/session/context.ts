@@ -31,7 +31,7 @@ export function parseSessionContextArgs(
       if (!repo || (inline === undefined && repo.startsWith("--"))) {
         return { error: "--repo requires a directory" };
       }
-      // `link/..` resolves beside the link's target, as the OS does.
+      /** `link/..` resolves beside the link's target, as the OS does. */
       args.repo = canonicalPath(absoluteAsWritten(repo, cwd));
     } else {
       return { error: `unknown session context option: ${arg}` };
