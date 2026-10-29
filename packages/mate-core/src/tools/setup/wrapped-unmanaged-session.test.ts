@@ -24,6 +24,7 @@ import {
   updateManifest,
   withDocument,
 } from "../../runtime/runtime-document-manifest";
+import { trustProjection } from "../../../test/trusted-projection";
 import { cleanupWorkingRepository } from "./working-repo-cleanup";
 import type { ClaudeHookGroup, ClaudeSettings } from "./providers/claude-format";
 
@@ -85,6 +86,8 @@ async function makeCompanionAndRepo(prefix: string, capabilities: string[]): Pro
   );
   await writeRepoLocalRegistryEntry(repoPath, companionPath, { id: "acme", path: repoPath }, "git");
   await new GlobalConfigStore(path.join(root, "config.yaml")).register(companionPath);
+  /** Where the hooks look: {@link runHookCommand} runs them with `fixtureHome` as HOME. */
+  trustProjection({ home: fixtureHome, companionPath, repoRoot: repoPath, repositoryId: "acme" });
   return { repoPath, companionPath };
 }
 
@@ -122,7 +125,7 @@ function runHookCommand(
   const result = spawnSync("sh", ["-c", command], {
     input: JSON.stringify(payload),
     encoding: "utf8",
-    env: { ...unmanagedEnv(), ...settingsEnv },
+    env: { ...unmanagedEnv(), HOME: fixtureHome, ...settingsEnv },
     cwd,
   });
   return { exitCode: result.status ?? 1, stderr: result.stderr, stdout: result.stdout };
@@ -557,13 +560,23 @@ describe("Companion Instructions in a wrapped Working Repository", () => {
     const worktree = path.join(path.dirname(fixture.repoPath), "worktree");
     git("worktree", "add", "-q", worktree);
 
-    /** The worktree's own `.mate/` names it, as a share of the repository link would. */
+    /**
+     * The worktree's own `.mate/` names it, as a share of the repository link
+     * would, and the companion links it, without which Session Resolution
+     * refuses the copy (ADR-025).
+     */
     await fs.mkdir(path.dirname(repoLocalRegistryPath(worktree)), { recursive: true });
     await fs.copyFile(repoLocalRegistryPath(fixture.repoPath), repoLocalRegistryPath(worktree));
     const projected = readProjectionFile(fixture.repoPath)!;
     writeProjectionPair(worktree, {
       ...projected,
       projection: { ...projected.projection, repositoryPath: worktree },
+    });
+    trustProjection({
+      home: fixtureHome,
+      companionPath: fixture.companionPath,
+      repoRoot: worktree,
+      repositoryId: "acme",
     });
     expect(fsSync.existsSync(path.join(worktree, ".claude"))).toBe(false);
     expect(documentRegions(await readManifest(worktree), CLAUDE_SETTINGS_DOCUMENT)).toBeFalsy();
