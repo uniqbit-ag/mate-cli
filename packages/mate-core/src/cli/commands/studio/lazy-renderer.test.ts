@@ -90,7 +90,7 @@ describe("the renderer is loaded on the studio path alone", () => {
     expect(
       views.renderStudioDocument({
         inventory: { companions: [] },
-        selection: { companionDigest: null, view: "dashboard" },
+        selection: { companionDigest: null, role: "product-engineer", view: "dashboard" },
         companion: null,
         payload: null,
         error: null,

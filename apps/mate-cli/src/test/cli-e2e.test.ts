@@ -2,7 +2,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, existsSync, symlinkSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +14,9 @@ import { parse, stringify } from "yaml";
 import { version } from "../../package.json";
 
 const APP_ROOT = path.resolve(import.meta.dirname, "../..");
+
+/** Preloaded into every Bun process a test starts, so Mate runs the recording OpenSpec stub. */
+const OPENSPEC_STUB_PRELOAD = path.join(import.meta.dirname, "openspec-stub-preload.ts");
 
 /** The `--exclude` pairs Mate appends to every graphify extraction that accepts them. */
 const GRAPHIFY_SECRET_EXCLUDE_ARGS = [
@@ -68,7 +71,6 @@ interface SetupSelectionFixture {
   allowedAgents?: string[];
   packageManagers?: string[];
   capabilities?: string[];
-  openspecSchema?: "mate-v1" | "default";
 }
 
 // Returns a PATH string with any directory containing the given command removed.
@@ -167,6 +169,7 @@ async function runMate(
         ...process.env,
         HOME: scenario.home,
         PATH: `${scenario.bin}:${process.env.PATH ?? ""}`,
+        ...openSpecStubEnv(scenario),
         TERM_PROGRAM: "",
         VSCODE_IPC_HOOK: "",
         __CFBundleIdentifier: "",
@@ -315,6 +318,7 @@ async function runMateInTty(
         ...process.env,
         HOME: scenario.home,
         PATH: `${scenario.bin}:${process.env.PATH ?? ""}`,
+        ...openSpecStubEnv(scenario),
         TERM_PROGRAM: "",
         VSCODE_IPC_HOOK: "",
         __CFBundleIdentifier: "",
@@ -374,6 +378,24 @@ function withTtyExitCode(
   return { exitCode: Number(match[1]), stdout: stdout.replace(marker, ""), stderr };
 }
 
+/**
+ * Points Mate at the recording OpenSpec stub once a setup has written it. BUN_OPTIONS
+ * splits on whitespace and ignores quotes, so the preload is linked into the scenario's
+ * temp root rather than named by its checkout path, which may contain spaces.
+ */
+function openSpecStubEnv(scenario: E2EScenario): NodeJS.ProcessEnv {
+  const stub = path.join(scenario.bin, "openspec");
+  if (!existsSync(stub)) return {};
+  const preload = path.join(scenario.root, "openspec-stub-preload.ts");
+  if (/\s/.test(preload)) throw new Error(`BUN_OPTIONS cannot name a path with spaces: ${preload}`);
+  if (!existsSync(preload)) symlinkSync(OPENSPEC_STUB_PRELOAD, preload);
+  const inherited = process.env.BUN_OPTIONS?.trim();
+  return {
+    BUN_OPTIONS: [inherited, `--preload ${preload}`].filter(Boolean).join(" "),
+    MATE_E2E_OPENSPEC_STUB: stub,
+  };
+}
+
 async function setupCompanion(
   scenario: E2EScenario,
   extraArgs: string[] = [],
@@ -405,7 +427,6 @@ async function setupCompanion(
       packageManager,
     ]),
     ...(selections.capabilities ?? []).flatMap((capability) => ["--capability", capability]),
-    ...(selections.openspecSchema ? ["--openspec-schema", selections.openspecSchema] : []),
   ];
 
   return runMate(scenario, {
@@ -934,10 +955,10 @@ describe("mate CLI e2e", () => {
     expect(config).toContain("- uv");
   });
 
-  test("flagged setup persists openspec schema profile and seeds companion-local schema state", async () => {
-    const scenario = await createScenario("mate-cli-e2e-openspec-schema-");
+  test("setup with the openspec capability activates mate-v1", async () => {
+    const scenario = await createScenario("mate-cli-e2e-openspec-mate-v1-");
 
-    const result = await setupCompanion(scenario, ["--openspec-schema", "mate-v1"], {
+    const result = await setupCompanion(scenario, [], {
       allowedAgents: ["claude"],
       capabilities: ["openspec"],
     });
@@ -949,7 +970,7 @@ describe("mate CLI e2e", () => {
       "utf8",
     );
     expect(config).toContain("name: openspec");
-    expect(config).toContain("schemaProfile: mate-v1");
+    expect(config).not.toContain("schemaProfile");
     const openspecConfig = parse(
       await fs.readFile(path.join(scenario.companion, "openspec", "config.yaml"), "utf8"),
     );
@@ -1014,7 +1035,7 @@ describe("mate CLI e2e", () => {
       ).exitCode,
     ).toBe(0);
 
-    await fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore"));
+    await fs.access(path.join(scenario.companion, ".claude", "skills", "mate-explore-change"));
 
     expect(
       (
@@ -1027,7 +1048,7 @@ describe("mate CLI e2e", () => {
 
     // OpenSpec is required by the CLI distribution, so its skills remain
     // installed even when it is omitted from the explicit capability flags.
-    await fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore"));
+    await fs.access(path.join(scenario.companion, ".claude", "skills", "mate-explore-change"));
     await fs.access(path.join(scenario.companion, "AGENTS.md"));
   });
 
@@ -1113,7 +1134,7 @@ describe("mate CLI e2e", () => {
     expect(opencodeConfigAfter.mcp?.context7).toBeUndefined();
   });
 
-  test("setup reconciles openspec skills as allowed agents are added and removed", async () => {
+  test("setup reconciles the OpenSpec stage skills as allowed agents are added and removed", async () => {
     const scenario = await createScenario("mate-cli-e2e-openspec-reconcile-");
     const capturePath = await writeOpenSpecStub(scenario);
 
@@ -1129,14 +1150,16 @@ describe("mate CLI e2e", () => {
     ).toBe(0);
 
     await fs.access(
-      path.join(scenario.companion, ".agents", "skills", "openspec-explore", "SKILL.md"),
+      path.join(scenario.companion, ".agents", "skills", "mate-explore-change", "SKILL.md"),
     );
     await expect(
-      fs.access(path.join(scenario.companion, ".opencode", "skills", "openspec-explore")),
+      fs.access(path.join(scenario.companion, ".agents", "skills", "openspec-explore")),
     ).rejects.toThrow();
+    await expect(fs.access(path.join(scenario.companion, ".opencode", "skills"))).rejects.toThrow();
     await expect(
-      fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore")),
+      fs.access(path.join(scenario.companion, ".opencode", "commands")),
     ).rejects.toThrow();
+    await expect(fs.access(path.join(scenario.companion, ".claude", "skills"))).rejects.toThrow();
 
     expect(
       (
@@ -1150,11 +1173,14 @@ describe("mate CLI e2e", () => {
     ).toBe(0);
 
     await fs.access(
-      path.join(scenario.companion, ".claude", "skills", "openspec-explore", "SKILL.md"),
+      path.join(scenario.companion, ".claude", "skills", "mate-explore-change", "SKILL.md"),
     );
     await fs.access(
-      path.join(scenario.companion, ".agents", "skills", "openspec-explore", "SKILL.md"),
+      path.join(scenario.companion, ".agents", "skills", "mate-explore-change", "SKILL.md"),
     );
+    await expect(
+      fs.access(path.join(scenario.companion, ".claude", "commands", "opsx")),
+    ).rejects.toThrow();
 
     expect(
       (
@@ -1168,25 +1194,14 @@ describe("mate CLI e2e", () => {
     ).toBe(0);
 
     await expect(
-      fs.access(path.join(scenario.companion, ".agents", "skills", "openspec-explore")),
+      fs.access(path.join(scenario.companion, ".agents", "skills", "mate-explore-change")),
     ).resolves.toBeNull();
 
     const invocations = await readJson<Array<{ command: string; args: string[] }>>(capturePath);
-    expect(invocations.map((entry) => entry.command)).toEqual([
-      "config",
-      "init",
-      "update",
-      "config",
-      "init",
-      "update",
-      "config",
-      "init",
-      "update",
-    ]);
-    expect(invocations[0]?.args).toEqual(["config", "reset", "--all", "-y"]);
-    expect(invocations[1]?.args).toContain("agents,opencode");
-    expect(invocations[4]?.args).toContain("claude,agents,opencode");
-    expect(invocations[7]?.args).toContain("agents,opencode");
+    expect(invocations.map((entry) => entry.command)).toEqual(["init", "init", "init"]);
+    for (const invocation of invocations) {
+      expect(invocation.args.slice(0, 4)).toEqual(["init", "--tools", "none", "--force"]);
+    }
   });
 
   test("declined setup leaves no companion config or provider files behind", async () => {
@@ -1427,7 +1442,7 @@ describe("mate CLI e2e", () => {
     const scenario = await createScenario("mate-cli-e2e-cap-openspec-templates-");
     const capturePath = await writeOpenSpecStub(scenario);
 
-    expect((await setupCompanion(scenario, [], { openspecSchema: "mate-v1" })).exitCode).toBe(0);
+    expect((await setupCompanion(scenario, [], { capabilities: ["openspec"] })).exitCode).toBe(0);
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
     const result = await runMate(scenario, {
@@ -1448,7 +1463,7 @@ describe("mate CLI e2e", () => {
     const scenario = await createScenario("mate-cli-e2e-cap-openspec-templates-explicit-");
     const capturePath = await writeOpenSpecStub(scenario);
 
-    expect((await setupCompanion(scenario, [], { openspecSchema: "mate-v1" })).exitCode).toBe(0);
+    expect((await setupCompanion(scenario, [], { capabilities: ["openspec"] })).exitCode).toBe(0);
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
     const result = await runMate(scenario, {
@@ -1902,7 +1917,7 @@ describe("mate CLI e2e", () => {
     const scenario = await createScenario("mate-cli-e2e-setup-preserve-linked-");
 
     expect((await setupCompanion(scenario)).exitCode).toBe(0);
-    await fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore"));
+    await fs.access(path.join(scenario.companion, ".claude", "skills", "mate-explore-change"));
     expect((await linkRepository(scenario)).exitCode).toBe(0);
 
     const result = await runMate(scenario, {
@@ -1916,7 +1931,7 @@ describe("mate CLI e2e", () => {
       "utf8",
     );
     expect(config).toContain("name: openspec");
-    await fs.access(path.join(scenario.companion, ".claude", "skills", "openspec-explore"));
+    await fs.access(path.join(scenario.companion, ".claude", "skills", "mate-explore-change"));
   });
 
   test("claude fails when run from companion directory with no linked working repository", async () => {
@@ -2666,6 +2681,7 @@ async function startStudio(scenario: E2EScenario, cwd: string): Promise<StudioPr
       ...process.env,
       HOME: scenario.home,
       PATH: `${scenario.bin}:${process.env.PATH ?? ""}`,
+      ...openSpecStubEnv(scenario),
       CI: "",
       MATE_ARTIFACT_PATH: "",
       MATE_VERSION: "",
@@ -2780,8 +2796,8 @@ describe("mate studio e2e", () => {
       const dashboard = await fetch(`${studio.url}/?companion=${digest}`);
       expect(dashboard.status).toBe(200);
       const dashboardMarkup = await dashboard.text();
-      expect(dashboardMarkup).toContain("<h3>Changes</h3>");
-      expect(dashboardMarkup).not.toContain("<h3>Specs by Area</h3>");
+      expect(dashboardMarkup).toContain('aria-label="Changes"');
+      expect(dashboardMarkup).not.toContain('aria-label="Specs by Area"');
       expect(dashboardMarkup).toContain("add-acme-checkout");
       expect(dashboardMarkup).not.toContain("<h3>Choose a Companion Repository</h3>");
 
@@ -2789,17 +2805,17 @@ describe("mate studio e2e", () => {
       const specs = await fetch(`${studio.url}/?companion=${digest}&view=specs`);
       expect(specs.status).toBe(200);
       const specsMarkup = await specs.text();
-      expect(specsMarkup).toContain("<h3>Specs by Area</h3>");
-      expect(specsMarkup).not.toContain("<h3>Changes</h3>");
+      expect(specsMarkup).toContain('aria-label="Specs by Area"');
+      expect(specsMarkup).not.toContain('aria-label="Changes"');
 
       /** The workflow console is change-agnostic: prompts carry the placeholder. */
       const workflow = await fetch(`${studio.url}/?companion=${digest}&view=workflow`);
       expect(workflow.status).toBe(200);
       const workflowMarkup = await workflow.text();
       expect(workflowMarkup).toContain("<h1>Workflow</h1>");
-      expect(workflowMarkup).toContain('class="workflow-console"');
+      expect(workflowMarkup).toContain('class="workflow-delivery-path"');
       expect(workflowMarkup).toContain("&lt;change-name&gt;");
-      expect(workflowMarkup).not.toContain("<h3>Changes</h3>");
+      expect(workflowMarkup).not.toContain('aria-label="Changes"');
     } finally {
       await studio.stop("SIGINT");
     }
@@ -2900,5 +2916,59 @@ describe("mate studio e2e", () => {
     } finally {
       await studio.stop("SIGINT");
     }
+  });
+});
+
+describe("openspec wrapper e2e", () => {
+  const WRAPPER = path.resolve(APP_ROOT, "../../packages/mate-core/wrappers/bin/openspec");
+
+  /** Runs the shipped wrapper on the real bundled CLI: no preload, a decoy first on PATH. */
+  function runWrapper(scenario: E2EScenario, cwd: string, args: string[]) {
+    const decoy = path.join(scenario.bin, "openspec");
+    return spawnSync(WRAPPER, args, {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: scenario.home,
+        XDG_CONFIG_HOME: path.join(scenario.home, ".config"),
+        XDG_DATA_HOME: path.join(scenario.home, ".local", "share"),
+        PATH: `${scenario.bin}:${process.env.PATH ?? ""}`,
+        CI: "1",
+        BUN_OPTIONS: "",
+        MATE_E2E_OPENSPEC_BIN: decoy,
+        MATE_ARTIFACT_PATH: scenario.companion,
+        MATE_REPO_PATH: "",
+        MATE_REPO_ID: "",
+        MATE_VERSION: "",
+        MATE_POLICY_JSON: "",
+      },
+    });
+  }
+
+  test("runs the pinned bundled CLI in the companion, never a decoy or the former override", async () => {
+    const scenario = await createScenario("mate-cli-e2e-openspec-wrapper-");
+    await fs.writeFile(
+      path.join(scenario.bin, "openspec"),
+      '#!/bin/sh\necho "9.9.9-decoy"\n',
+      "utf8",
+    );
+    await fs.chmod(path.join(scenario.bin, "openspec"), 0o755);
+    const corePackage = JSON.parse(
+      await fs.readFile(path.resolve(path.dirname(WRAPPER), "../../package.json"), "utf8"),
+    ) as { dependencies: Record<string, string> };
+
+    const versionRun = runWrapper(scenario, scenario.root, ["--version"]);
+    expect(versionRun.stderr).toBe("");
+    expect(versionRun.stdout.trim()).toBe(corePackage.dependencies["@fission-ai/openspec"]);
+
+    const init = runWrapper(scenario, scenario.root, ["init", "--tools", "none", "--no-animation"]);
+    expect(init.status).toBe(0);
+
+    const nested = path.join(scenario.companion, "acme");
+    await fs.mkdir(nested);
+    const list = runWrapper(scenario, nested, ["list", "--json"]);
+    expect(list.status).toBe(0);
+    expect(JSON.parse(list.stdout).root.path).toBe(scenario.companion);
   });
 });

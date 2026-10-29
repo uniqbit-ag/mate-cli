@@ -28,6 +28,7 @@ import {
 import { project } from "../../lib/orchestrator/working-repo-projection";
 import type { FrameworkConfig } from "../../lib/orchestrator/types";
 import { executeSetup, renderWorkingRuntimeDocuments, syncCompanionFiles } from "../setup";
+import { openSpecCliDeps } from "../../lib/openspec-cli";
 
 // Golden-fixture harness for the Runtime Surface refactor: runs the real
 // `executeSetup` across a capability × runtime matrix and snapshots the
@@ -41,9 +42,11 @@ const AGENT_SETS: string[][] = [["claude"], ["opencode"], ["claude", "opencode"]
 
 const tempRoots: string[] = [];
 const originalPath = process.env.PATH;
+const originalOpenSpecCliDeps = { ...openSpecCliDeps };
 
 afterEach(async () => {
   process.env.PATH = originalPath;
+  Object.assign(openSpecCliDeps, originalOpenSpecCliDeps);
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
@@ -196,6 +199,7 @@ async function makeFixture(prefix: string): Promise<Fixture> {
   tempRoots.push(root);
   const binDir = await installStubs(root);
   process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+  openSpecCliDeps.locate = () => ({ bin: path.join(binDir, "openspec") });
   const companionPath = path.join(root, "companion");
   await fs.mkdir(companionPath, { recursive: true });
   const globalConfigStore = new GlobalConfigStore(path.join(root, "home", ".mate", "config.yaml"));
@@ -322,7 +326,9 @@ async function collectLaunchSurface(
   if (agents.includes("claude")) {
     const adapter = new ClaudeAdapter();
     /** The plugin folders a launch's own sync pass gathers. */
-    const { launch } = await syncCompanionFiles(fixture.companionPath, config);
+    const {
+      claudePluginFolders: { launch },
+    } = await syncCompanionFiles(fixture.companionPath, config);
     /** As a launch hands it over for a Claude-wrapped repository. */
     const claudeContext = await adapter.planLaunch(context, {
       ok: true,

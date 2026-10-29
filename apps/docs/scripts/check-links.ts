@@ -4,25 +4,15 @@
  * - authored content never hardcodes the site base
  * - every authored page is reachable from the sidebar page tree
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+
+import { isMarkdown, walk } from "./lib.ts";
 
 const root = join(import.meta.dir, "..");
 const dist = join(root, "dist");
 const contentDir = join(root, "content", "docs");
 const base = "/mate-cli";
-
-function isMarkdown(file: string): boolean {
-  return /\.mdx?$/.test(file);
-}
-
-function walk(dir: string, filter: (file: string) => boolean): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) return walk(path, filter);
-    return filter(path) ? [path] : [];
-  });
-}
 
 function resolvesInDist(pathname: string): boolean {
   const local = decodeURIComponent(pathname.slice(base.length)).replace(/^\/+/, "");

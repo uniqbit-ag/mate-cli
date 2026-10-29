@@ -13,7 +13,35 @@ export const STUDIO_VIEWS: readonly StudioView[] = [
   "reports",
 ];
 
+/** A lens on the views offered, never access control. */
+export type StudioRole = "product-engineer" | "business-analyst";
+
+export const STUDIO_ROLES: readonly StudioRole[] = ["product-engineer", "business-analyst"];
+
+export const DEFAULT_ROLE: StudioRole = "product-engineer";
+
+/** Views only the role is offered, in navigation order. */
+export const ROLE_VIEWS: Readonly<Record<StudioRole, readonly StudioView[]>> = {
+  "product-engineer": ["dashboard", "workflow", "skills"],
+  // The same `dashboard` id; `Content` renders each role's own Overview.
+  "business-analyst": ["dashboard"],
+};
+
+/** Views every role is offered, in navigation order. */
+export const SHARED_VIEWS: readonly StudioView[] = ["vault", "specs", "reports"];
+
+/** Where a role lands when its URL names no view, or one it is not offered. */
+export const LANDING_VIEW: Readonly<Record<StudioRole, StudioView>> = {
+  "product-engineer": "dashboard",
+  "business-analyst": "dashboard",
+};
+
+export function viewsFor(role: StudioRole): readonly StudioView[] {
+  return [...ROLE_VIEWS[role], ...SHARED_VIEWS];
+}
+
 export const COMPANION_PARAM = "companion";
+export const ROLE_PARAM = "role";
 export const VIEW_PARAM = "view";
 export const REFRESH_PARAM = "refresh";
 export const FILE_PARAM = "path";
@@ -23,6 +51,7 @@ export const MODE_PARAM = "mode";
 /** Every URL parameter Studio names; no other module writes one out. */
 export const STUDIO_PARAMS: readonly string[] = [
   COMPANION_PARAM,
+  ROLE_PARAM,
   VIEW_PARAM,
   REFRESH_PARAM,
   FILE_PARAM,
@@ -40,6 +69,7 @@ const DIGEST_LENGTH = 10;
 
 interface SelectionBase {
   companionDigest: string | null;
+  role: StudioRole;
   /** One-shot: only the `refresh` move sets it, and every other move clears it. */
   refresh: boolean;
 }
@@ -90,8 +120,13 @@ export function resolveCompanion(
   );
 }
 
-function readView(value: string | null): StudioView {
-  return STUDIO_VIEWS.includes(value as StudioView) ? (value as StudioView) : "dashboard";
+function readRole(value: string | null): StudioRole {
+  return STUDIO_ROLES.includes(value as StudioRole) ? (value as StudioRole) : DEFAULT_ROLE;
+}
+
+/** A view the role is not offered reads as the role's landing view. */
+function readView(value: string | null, role: StudioRole): StudioView {
+  return viewsFor(role).includes(value as StudioView) ? (value as StudioView) : LANDING_VIEW[role];
 }
 
 function readText(value: string | null): string | null {
@@ -107,6 +142,7 @@ function readDigest(value: string | null): string | null {
 function readBase(params: URLSearchParams): SelectionBase {
   return {
     companionDigest: readDigest(params.get(COMPANION_PARAM)),
+    role: readRole(params.get(ROLE_PARAM)),
     refresh: params.get(REFRESH_PARAM) === "1",
   };
 }
@@ -123,9 +159,10 @@ function readVault(params: URLSearchParams): StudioVaultSelection {
 
 /** Forgiving: parameters the named view does not have are ignored. */
 export function parse(url: URL): StudioSelection {
-  const view = readView(url.searchParams.get(VIEW_PARAM));
+  const base = readBase(url.searchParams);
+  const view = readView(url.searchParams.get(VIEW_PARAM), base.role);
   if (view === "vault") return readVault(url.searchParams);
-  return { ...readBase(url.searchParams), view };
+  return { ...base, view };
 }
 
 /** For the `/api/vault/*` routes, which imply the vault view whatever `view` says. */
@@ -135,9 +172,18 @@ export function parseVaultSelection(url: URL): StudioVaultSelection {
 
 /** Drops the vault's target. */
 export function switchView(selection: StudioSelection, view: StudioView): StudioSelection {
-  const base = { companionDigest: selection.companionDigest, refresh: false };
+  const base = { companionDigest: selection.companionDigest, role: selection.role, refresh: false };
   if (view === "vault") return { ...base, view, openPath: null, mode: "read", openDir: null };
   return { ...base, view };
+}
+
+/**
+ * Keeps the view, and the vault's target with it, when the role is offered the
+ * view; otherwise lands on the role's landing view.
+ */
+export function switchRole(selection: StudioSelection, role: StudioRole): StudioSelection {
+  if (viewsFor(role).includes(selection.view)) return { ...selection, role, refresh: false };
+  return switchView({ ...selection, role }, LANDING_VIEW[role]);
 }
 
 /** Keeps the view and drops the vault's target: it belongs to the companion being left. */
@@ -151,6 +197,7 @@ export function switchCompanion(
 export function openFile(selection: StudioSelection, path: string): StudioVaultSelection {
   return {
     companionDigest: selection.companionDigest,
+    role: selection.role,
     refresh: false,
     view: "vault",
     openPath: path,
@@ -163,6 +210,7 @@ export function openFile(selection: StudioSelection, path: string): StudioVaultS
 export function openFolder(selection: StudioSelection, dir: string | null): StudioVaultSelection {
   return {
     companionDigest: selection.companionDigest,
+    role: selection.role,
     refresh: false,
     view: "vault",
     openPath: null,
@@ -180,13 +228,16 @@ export function refresh(selection: StudioSelection): StudioSelection {
   return { ...selection, refresh: true };
 }
 
-/** Omits defaults (the Dashboard view, an unset target), so URLs stay short. */
+/** Omits defaults (the default role, its landing view, an unset target), so URLs stay short. */
 export function toFields(selection: StudioSelection): SelectionField[] {
   const fields: SelectionField[] = [];
   if (selection.companionDigest) {
     fields.push({ name: COMPANION_PARAM, value: selection.companionDigest });
   }
-  if (selection.view !== "dashboard") fields.push({ name: VIEW_PARAM, value: selection.view });
+  if (selection.role !== DEFAULT_ROLE) fields.push({ name: ROLE_PARAM, value: selection.role });
+  if (selection.view !== LANDING_VIEW[selection.role]) {
+    fields.push({ name: VIEW_PARAM, value: selection.view });
+  }
   if (selection.view === "vault") {
     if (selection.openPath) fields.push({ name: FILE_PARAM, value: selection.openPath });
     if (selection.openPath && selection.mode === "edit") {

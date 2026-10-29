@@ -19,16 +19,11 @@ function progressPercent(change: StudioChange): number {
 
 export function Changes({ changes }: ChangesProps) {
   return (
-    <section className="panel lookup-panel">
-      <div className="section-header">
-        <div>
-          <h3>Changes</h3>
-          <p className="section-note">Active work tracked by this Companion Repository.</p>
-        </div>
-        <span className="section-count">
-          {changes.length} {changes.length === 1 ? "change" : "changes"}
-        </span>
-      </div>
+    <section className="view-section lookup-view" aria-label="Changes">
+      <p className="view-summary">
+        {changes.length} {changes.length === 1 ? "change" : "changes"} · active work in this
+        Companion Repository
+      </p>
       {changes.length === 0 ? (
         <p className="empty">No changes in this companion.</p>
       ) : (

@@ -6,6 +6,7 @@ import { vaultState } from "./state";
 
 const selection: StudioVaultSelection = {
   companionDigest: null,
+  role: "product-engineer",
   view: "vault",
   refresh: false,
   openPath: null,

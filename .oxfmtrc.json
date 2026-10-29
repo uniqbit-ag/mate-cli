@@ -17,6 +17,7 @@
     "dist",
     "_artifacts",
     "apps/mate-cli/src/templates",
-    "**/*.generated.*"
+    "**/*.generated.*",
+    "packages/mate-core/src/templates/mate-skills/*/*/references/openspec-*.md"
   ]
 }

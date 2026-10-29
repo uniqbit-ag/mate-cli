@@ -36,6 +36,8 @@ export interface FinishResult {
   message: string;
   /** Set when the secret scan stopped the publication: where and which rule, never the value. */
   secretFindings?: SecretFinding[];
+  /** The finisher's warning about what it resolved; publication continued. */
+  warning?: string;
 }
 
 export interface EngineOptions {
@@ -118,6 +120,10 @@ export async function runFinishEngine(
   }
   const resolved: Produced = resolution.resolved;
   result.anchorName = resolved.anchorName;
+  if (resolved.warning) {
+    result.warning = resolved.warning;
+    if (!deps.json) deps.stderr(`warning: ${resolved.warning}`);
+  }
   const baseTag = `${resolved.tagNamespace ?? finisher.type}/${resolved.anchorName}`;
   // Provisional: a `suffix` publication only learns its final name at the tag
   // step, once the remote sync has revealed tags created elsewhere. Early exits

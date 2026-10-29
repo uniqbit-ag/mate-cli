@@ -9,12 +9,12 @@ import { parse } from "yaml";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import type { GitOps } from "../artifact/finish/git";
 import { defaultGitOps } from "../artifact/finish/git";
+import type { ManagedOutputEntry, ManagedOutputReport } from "../../../tools/setup/plugin";
 import {
   companionUpdateDeps,
   diffChangedPaths,
   DELETED,
-  isMateManagedSkill,
-  isOpenSpecGenerated,
+  ownerOf,
   runCompanionUpdateCommand,
   snapshotChangedPaths,
 } from "./update";
@@ -66,7 +66,8 @@ function setup(
   options: {
     current?: string;
     latest?: string | Error;
-    sync?: (world: World) => void | Promise<void>;
+    /** Returns the managed-output report the sync would give; none when void. */
+    sync?: (world: World) => void | ManagedOutputReport | Promise<void | ManagedOutputReport>;
     floorWrites?: boolean;
     skillsLock?: boolean;
     skills?: () => Promise<void>;
@@ -78,9 +79,7 @@ function setup(
 ): Setup {
   const world = options.world ?? { changed: new Set(), content: new Map() };
   const git = fakeGit(world, options.git);
-  const sync = mock(async () => {
-    await options.sync?.(world);
-  });
+  const sync = mock(async () => (await options.sync?.(world)) ?? []);
   const skills = mock(options.skills ?? (async () => {}));
   const floor = mock(async () => {
     if (options.floorWrites === false) return false;
@@ -100,6 +99,7 @@ function setup(
     },
     loadConfig: async () => CONFIG,
     syncCompanionFiles: sync,
+    refreshWorkingClaudeLinks: async () => [],
     writeEngineFloor: floor,
     hasSkillsLock: async () => options.skillsLock ?? false,
     runSkillsUpdate: skills,
@@ -145,8 +145,20 @@ async function run(argv: string[] = []): Promise<{ out: string; err: string }> {
   return { out: captured.out(), err: captured.err() };
 }
 
-const regenerateSkill = (world: World) =>
+const mateSkill = (skillPath: string): ManagedOutputEntry => ({
+  path: skillPath,
+  change: "written",
+  owner: "mate",
+});
+const removed = (
+  removedPath: string,
+  owner: ManagedOutputEntry["owner"] = "openspec",
+): ManagedOutputEntry => ({ path: removedPath, change: "removed", owner });
+
+const regenerateSkill = (world: World): ManagedOutputReport => {
   write(world, ".claude/skills/mate-grill-me/SKILL.md", "new skill");
+  return [mateSkill(".claude/skills/mate-grill-me")];
+};
 
 let originalExitCode: number | undefined;
 
@@ -341,6 +353,10 @@ describe("mate companion update — commit scope", () => {
       sync: (w) => {
         write(w, ".claude/skills/openspec-propose/SKILL.md", "regenerated");
         write(w, ".opencode/commands/opsx-apply.md", "regenerated");
+        return [
+          removed(".claude/skills/openspec-propose"),
+          removed(".opencode/commands/opsx-apply.md"),
+        ];
       },
       answers: [true, false],
     });
@@ -354,15 +370,16 @@ describe("mate companion update — commit scope", () => {
     ]);
   });
 
-  test("commits already-uncommitted OpenSpec output the update regenerated identically", async () => {
+  test("commits the removal of OpenSpec output that carried local edits", async () => {
     const world: World = { changed: new Set(), content: new Map() };
-    write(world, ".claude/skills/openspec-propose/SKILL.md", "regenerated");
-    write(world, ".agents/skills/openspec-acme/", "regenerated");
+    write(world, ".claude/skills/openspec-propose/SKILL.md", "local edit");
+    write(world, ".claude/commands/opsx/propose.md", "local edit");
     const { git } = setup({
       world,
       sync: (w) => {
-        write(w, ".claude/skills/openspec-propose/SKILL.md", "regenerated");
-        write(w, ".agents/skills/openspec-acme/", "regenerated");
+        write(w, ".claude/skills/openspec-propose/SKILL.md", DELETED);
+        write(w, ".claude/commands/opsx/propose.md", DELETED);
+        return [removed(".claude/skills/openspec-propose"), removed(".claude/commands/opsx")];
       },
       answers: [true, false],
     });
@@ -370,7 +387,7 @@ describe("mate companion update — commit scope", () => {
     expect(err).toBe("");
     const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
     expect(committed).toEqual([
-      ".agents/skills/openspec-acme/",
+      ".claude/commands/opsx/propose.md",
       ".claude/skills/openspec-propose/SKILL.md",
       ".mate/config/framework.yaml",
     ]);
@@ -379,7 +396,12 @@ describe("mate companion update — commit scope", () => {
   test("does not report up to date while OpenSpec output is still uncommitted", async () => {
     const world: World = { changed: new Set(), content: new Map() };
     write(world, ".claude/skills/openspec-propose/SKILL.md", "regenerated");
-    const { git } = setup({ world, floorWrites: false, answers: [true, false] });
+    const { git } = setup({
+      world,
+      floorWrites: false,
+      sync: () => [removed(".claude/skills/openspec-propose")],
+      answers: [true, false],
+    });
     const { out } = await run();
     expect(out).not.toContain("already up to date");
     const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
@@ -404,7 +426,10 @@ describe("mate companion update — commit scope", () => {
     write(world, ".agents/skills/openspec-explore/SKILL.md", "stale");
     const { git } = setup({
       world,
-      sync: (w) => write(w, ".agents/skills/openspec-explore/SKILL.md", "regenerated"),
+      sync: (w) => {
+        write(w, ".agents/skills/openspec-explore/SKILL.md", DELETED);
+        return [removed(".agents/skills/openspec-explore")];
+      },
       answers: [true, false],
     });
     const { err } = await run();
@@ -418,7 +443,10 @@ describe("mate companion update — commit scope", () => {
     write(world, ".agents/skills/mate-grill-me/SKILL.md", "local edit");
     const { git } = setup({
       world,
-      sync: (w) => write(w, ".agents/skills/mate-grill-me/SKILL.md", "new skill"),
+      sync: (w) => {
+        write(w, ".agents/skills/mate-grill-me/SKILL.md", "new skill");
+        return [mateSkill(".agents/skills/mate-grill-me")];
+      },
       answers: [true, false],
     });
     const { err } = await run();
@@ -472,27 +500,75 @@ describe("mate companion update — commit scope", () => {
     for (const file of legacy) expect(out).toContain(file);
   });
 
-  test("matches only OpenSpec CLI output as regenerated", () => {
-    expect(isOpenSpecGenerated(".claude/skills/openspec-explore/SKILL.md")).toBe(true);
-    expect(isOpenSpecGenerated(".opencode/skills/openspec-sync-specs/")).toBe(true);
-    expect(isOpenSpecGenerated(".claude/commands/opsx/apply.md")).toBe(true);
-    expect(isOpenSpecGenerated(".opencode/commands/opsx-archive.md")).toBe(true);
-    expect(isOpenSpecGenerated(".agents/skills/openspec-explore/SKILL.md")).toBe(true);
-    expect(isOpenSpecGenerated(".agents/skills/.openspec-target")).toBe(true);
-    expect(isOpenSpecGenerated(".agents/skills/mate-grill-me/SKILL.md")).toBe(false);
-    expect(isOpenSpecGenerated(".agents/skills/acme-skill/SKILL.md")).toBe(false);
-    expect(isOpenSpecGenerated(".claude/skills/mate-grill-me/SKILL.md")).toBe(false);
-    expect(isOpenSpecGenerated(".claude/skills/")).toBe(false);
-    expect(isOpenSpecGenerated("openspec/config.yaml")).toBe(false);
+  test("refuses to commit an edited .gitignore whose managed block the update rewrote", async () => {
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, ".gitignore", "local edit");
+    const { git } = setup({
+      world,
+      sync: (w) => {
+        write(w, ".gitignore", "managed block rewritten");
+        return regenerateSkill(w);
+      },
+    });
+    const { err } = await run();
+    expect(err).toContain(".gitignore");
+    expect(err).toContain("can no longer be separated");
+    expect(git.commit).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 
-  test("matches only Mate-managed skill names as Mate output", () => {
-    expect(isMateManagedSkill(".claude/skills/mate-grill-me/SKILL.md")).toBe(true);
-    expect(isMateManagedSkill(".agents/skills/mate-artifact-publish/")).toBe(true);
-    expect(isMateManagedSkill(".opencode/skills/mate-artifact-finish/SKILL.md")).toBe(true);
-    expect(isMateManagedSkill(".claude/skills/mate-acme/SKILL.md")).toBe(false);
-    expect(isMateManagedSkill(".claude/skills/acme-skill/SKILL.md")).toBe(false);
-    expect(isMateManagedSkill("skills/mate-grill-me/SKILL.md")).toBe(false);
+  test("commits a removed Mate-authored retired skill without a conflict", async () => {
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, ".claude/skills/mate-artifact-publish/SKILL.md", "local edit");
+    const { git } = setup({
+      world,
+      sync: (w) => {
+        write(w, ".claude/skills/mate-artifact-publish/SKILL.md", DELETED);
+        return [removed(".claude/skills/mate-artifact-publish", "mate")];
+      },
+      answers: [true, false],
+    });
+    const { err } = await run();
+    expect(err).not.toContain("can no longer be separated");
+    const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
+    expect(committed).toContain(".claude/skills/mate-artifact-publish/SKILL.md");
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  test("excludes a user skill with a retired name that the sync left in place", async () => {
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, ".claude/skills/mate-openspec-backfill/SKILL.md", "user edit");
+    const { git } = setup({ world, sync: regenerateSkill, answers: [true, false] });
+    const { err } = await run();
+    expect(err).toBe("");
+    const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
+    expect(committed).not.toContain(".claude/skills/mate-openspec-backfill/SKILL.md");
+  });
+
+  test("commits a removed OpenSpec-authored skill with an unknown name", async () => {
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, ".claude/skills/openspec-onboard/SKILL.md", "local edit");
+    const { git } = setup({
+      world,
+      sync: (w) => {
+        write(w, ".claude/skills/openspec-onboard/SKILL.md", DELETED);
+        return [removed(".claude/skills/openspec-onboard")];
+      },
+      answers: [true, false],
+    });
+    const { err } = await run();
+    expect(err).toBe("");
+    const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
+    expect(committed).toContain(".claude/skills/openspec-onboard/SKILL.md");
+  });
+
+  test("excludes an edited user openspec-* skill the sync did not report", async () => {
+    const world: World = { changed: new Set(), content: new Map() };
+    write(world, ".claude/skills/openspec-acme/SKILL.md", "user edit");
+    const { git } = setup({ world, sync: regenerateSkill, answers: [true, false] });
+    await run();
+    const committed = (git.commit as ReturnType<typeof mock>).mock.calls[0]?.[1] as string[];
+    expect(committed).not.toContain(".claude/skills/openspec-acme/SKILL.md");
   });
 
   test("reports up to date without prompting when nothing was written", async () => {
@@ -577,6 +653,25 @@ describe("mate companion update — commit and push prompts", () => {
   });
 });
 
+describe("ownerOf", () => {
+  const report: ManagedOutputReport = [
+    mateSkill(".claude/skills/mate-grill-me"),
+    removed(".agents/skills/.openspec-target"),
+  ];
+
+  test.each([
+    [".claude/skills/mate-grill-me/SKILL.md", "mate"],
+    [".claude/skills/mate-grill-me/", "mate"],
+    [".claude/skills/mate-grill-me", "mate"],
+    [".agents/skills/.openspec-target", "openspec"],
+    [".claude/skills/", undefined],
+    [".claude/skills/mate-grill-me-acme/SKILL.md", undefined],
+    [".gitignore", undefined],
+  ] as const)("%s → %s", (changedPath, owner) => {
+    expect(ownerOf(changedPath, report)).toBe(owner);
+  });
+});
+
 describe("mate companion update — real working tree", () => {
   let root: string;
 
@@ -616,9 +711,37 @@ describe("mate companion update — real working tree", () => {
     await fs.mkdir(path.join(root, "fresh"), { recursive: true });
     await fs.writeFile(path.join(root, "fresh", "SKILL.md"), "new\n");
 
-    const changes = await diffChangedPaths(root, ops, before);
+    // The collapsed `skills/` only contains the reported skill, so it stays a conflict.
+    const changes = await diffChangedPaths(root, ops, before, [mateSkill("skills/acme")]);
     expect(changes.written).toEqual(["fresh/", "skills/", "tracked.md"]);
     expect(changes.conflict).toEqual(["skills/"]);
+  });
+
+  test("a removed OpenSpec-authored skill is generated output, a kept user skill with a retired name is not Mate's", async () => {
+    const onboard = path.join(root, ".claude", "skills", "openspec-onboard");
+    const retired = path.join(root, ".claude", "skills", "mate-openspec-backfill");
+    await fs.mkdir(onboard, { recursive: true });
+    await fs.mkdir(retired, { recursive: true });
+    await fs.writeFile(path.join(onboard, "SKILL.md"), "---\nmetadata:\n  author: openspec\n---\n");
+    await fs.writeFile(path.join(retired, "SKILL.md"), "mine\n");
+    git("add", ".");
+    git("commit", "-q", "-m", "skills");
+    // Uncommitted edits on both before the update runs.
+    await fs.appendFile(path.join(onboard, "SKILL.md"), "edited\n");
+    await fs.appendFile(path.join(retired, "SKILL.md"), "edited\n");
+    const ops = defaultGitOps(root, undefined);
+    const before = await snapshotChangedPaths(root, ops);
+
+    await fs.rm(onboard, { recursive: true });
+
+    const changes = await diffChangedPaths(root, ops, before, [
+      removed(".claude/skills/openspec-onboard"),
+    ]);
+    expect(changes).toEqual({
+      written: [".claude/skills/openspec-onboard/SKILL.md"],
+      conflict: [],
+      overwritten: [],
+    });
   });
 
   test("raises engines.mate, preserves other keys, and leaves an equal floor untouched", async () => {
@@ -647,5 +770,60 @@ describe("mate companion update — real working tree", () => {
       mate: ">=0.17.0",
       acme: ">=1.0.0",
     });
+  });
+});
+
+describe("mate companion update — Working Repository Claude links", () => {
+  const REPO = { id: "acme/shop", path: "/tmp/acme-shop" };
+
+  test("refreshes the links with the companion's config", async () => {
+    setup({ sync: regenerateSkill });
+    const refresh = mock(async () => [{ repository: REPO, outcome: "written" as const }]);
+    Object.assign(companionUpdateDeps, { refreshWorkingClaudeLinks: refresh });
+    const { out } = await run(["--yes"]);
+    expect(refresh).toHaveBeenCalledWith(COMPANION, CONFIG);
+    expect(out).toContain("refreshed Claude skill and command links in /tmp/acme-shop");
+  });
+
+  test("refreshes the links even when the companion is already up to date", async () => {
+    setup({ floorWrites: false });
+    const refresh = mock(async () => [{ repository: REPO, outcome: "written" as const }]);
+    Object.assign(companionUpdateDeps, { refreshWorkingClaudeLinks: refresh });
+    const { out } = await run();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(out).toContain("already up to date");
+  });
+
+  test("warns about a repository it could not refresh and still finishes", async () => {
+    setup({ floorWrites: false });
+    Object.assign(companionUpdateDeps, {
+      refreshWorkingClaudeLinks: async () => [
+        { repository: REPO, outcome: "failed" as const, error: "EACCES" },
+      ],
+    });
+    const { err } = await run();
+    expect(err).toContain("could not refresh Claude links in /tmp/acme-shop: EACCES");
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("reports a repository whose links are already current", async () => {
+    setup({ floorWrites: false });
+    Object.assign(companionUpdateDeps, {
+      refreshWorkingClaudeLinks: async () => [{ repository: REPO, outcome: "current" as const }],
+    });
+    const { out } = await run();
+    expect(out).toContain("Claude links already current in /tmp/acme-shop");
+  });
+
+  test("does not refresh when the companion sync fails", async () => {
+    setup({
+      sync: () => {
+        throw new Error("boom");
+      },
+    });
+    const refresh = mock(async () => []);
+    Object.assign(companionUpdateDeps, { refreshWorkingClaudeLinks: refresh });
+    await run();
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

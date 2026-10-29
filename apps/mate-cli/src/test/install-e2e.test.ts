@@ -193,7 +193,8 @@ describe("install lifecycle CLI", () => {
 
   test("blocks a linked companion when a requirement is unsatisfied", async () => {
     const entry = await scenario();
-    await writeCompanionConfig(entry.companion, ["openspec"]);
+    // OpenSpec ships with Mate; RTK is still an external requirement.
+    await writeCompanionConfig(entry.companion, ["rtk"]);
     await fs.mkdir(path.join(entry.working, ".mate", "config"), { recursive: true });
     await fs.writeFile(
       path.join(entry.working, ".mate", "config", "registry.yaml"),
@@ -203,7 +204,7 @@ describe("install lifecycle CLI", () => {
     const result = await runMate(entry.root, entry.working, ["report", "--json"]);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("OpenSpec CLI");
+    expect(result.stderr).toContain("RTK CLI");
     expect(result.stderr).toContain("Run `mate install`");
   });
 

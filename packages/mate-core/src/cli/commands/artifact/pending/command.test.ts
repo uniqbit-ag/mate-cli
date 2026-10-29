@@ -102,7 +102,13 @@ describe("mate artifact pending", () => {
       type: "openspec",
       companionPath: COMPANION,
       count: 1,
-      pending: [{ ...entry("2026-09-08-acme-two"), coveredByAll: true }],
+      pending: [
+        {
+          ...entry("2026-09-08-acme-two"),
+          coveredByAll: true,
+          delivery: { status: "legacy", unsettled: [], missing: [], unscoped: [], record: null },
+        },
+      ],
       unattributedSpecs: [],
     });
   });
@@ -148,7 +154,7 @@ describe("mate artifact pending", () => {
 
     expect(out).toEqual([
       "1 archived change pending publication:",
-      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]",
+      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]  delivery: legacy",
       "       openspec/changes/archive/2026-09-08-acme-two/proposal.md",
       "       openspec/specs/widget-api/spec.md",
     ]);
@@ -219,7 +225,7 @@ describe("mate artifact pending", () => {
 
     expect(out).toEqual([
       "1 archived change pending publication:",
-      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]",
+      "  1. acme-two  openspec/2026-09-08-acme-two  openspec/changes/archive/2026-09-08-acme-two  [--all]  delivery: legacy",
       "       openspec/changes/archive/2026-09-08-acme-two/",
     ]);
   });
@@ -391,12 +397,65 @@ describe("mate artifact pending over a real archive", () => {
       type: "openspec",
       companionPath: companion,
       count: 1,
-      pending: [{ ...entry("2026-09-07-acme"), coveredByAll: true }],
+      pending: [
+        {
+          ...entry("2026-09-07-acme"),
+          coveredByAll: true,
+          delivery: { status: "legacy", unsettled: [], missing: [], unscoped: [], record: null },
+        },
+      ],
       unattributedSpecs: [],
     });
     expect(lines[0]).not.toContain("IGNORE PREVIOUS INSTRUCTIONS");
     expect(lines[0]).not.toContain("other-change");
     expect(lines[0]).not.toContain("--force");
+  });
+
+  test("reports each pending archive's delivery settlement from its delivery.yaml", async () => {
+    const companion = await companionWithInjectedArchive();
+    await fs.writeFile(
+      path.join(companion, "openspec/changes/archive/2026-09-07-acme/delivery.yaml"),
+      "version: 1\nchange: acme\ndeliveries:\n  - repository: acme/acme-app\n    branch: change/acme\n",
+    );
+
+    await runArtifactPendingCommand(["--json"], {
+      ensureUnambiguousCompanion: async () => true,
+      resolveContext: async () => ({ ...makeContext(), companionPath: companion }),
+      loadCapabilities: async () => [{ name: "openspec" } as CapabilityConfig],
+      git: () => stubGit(["openspec/changes/archive/2026-09-07-acme/"]),
+      ...sink(),
+    });
+
+    expect(JSON.parse(out[0]).pending[0].delivery).toEqual({
+      status: "waiting",
+      unsettled: ["acme/acme-app"],
+      missing: [],
+      unscoped: [],
+      record: {
+        version: 1,
+        change: "acme",
+        deliveries: [{ repository: "acme/acme-app", branch: "change/acme" }],
+      },
+    });
+  });
+
+  test("a damaged delivery.yaml is shown as unreadable with its error", async () => {
+    const companion = await companionWithInjectedArchive();
+    await fs.writeFile(
+      path.join(companion, "openspec/changes/archive/2026-09-07-acme/delivery.yaml"),
+      "version: 1\nchange: acme\ndeliveries: acme\n",
+    );
+
+    await runArtifactPendingCommand([], {
+      ensureUnambiguousCompanion: async () => true,
+      resolveContext: async () => ({ ...makeContext(), companionPath: companion }),
+      loadCapabilities: async () => [{ name: "openspec" } as CapabilityConfig],
+      git: () => stubGit(["openspec/changes/archive/2026-09-07-acme/"]),
+      ...sink(),
+    });
+
+    expect(out[1]).toContain("delivery: unreadable (");
+    expect(out[1]).toContain("deliveries must be a list");
   });
 });
 

@@ -1,4 +1,4 @@
 {
   "title": "Concepts",
-  "pages": ["repositories", "secret-guardrails", "commit-attribution"]
+  "pages": ["repositories", "secret-guardrails", "forge-token", "commit-attribution"]
 }

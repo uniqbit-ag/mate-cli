@@ -9,7 +9,7 @@ import {
 } from "../../lib/orchestrator/setup-preflight";
 import {
   getSetupSelectionsFromConfig,
-  applyOpenSpecSchemaSelection,
+  keepCapabilitySettings,
 } from "../../lib/orchestrator/setup-compatibilities";
 import { confirm } from "../confirm";
 import { selectCompanion } from "../companion-selector";
@@ -19,7 +19,6 @@ import {
   parseCapabilities,
   parseGitMode,
   parseFlags,
-  parseOpenSpecSchema,
   parsePackageManagers,
 } from "../parse-flags";
 
@@ -62,7 +61,6 @@ export async function runSetupCommand(argv: string[]): Promise<void> {
  * - `--allowed-agent <agent>` — repeatable; parsed via `parseAllowedAgents`.
  * - `--package-manager <name>` — repeatable; parsed via `parsePackageManagers`.
  * - `--capability <name>` — repeatable; parsed via `parseCapabilities`.
- * - `--openspec-schema <mate-v1|default>` — parsed via `parseOpenSpecSchema`.
  * - `--git-mode <auto|default>` — parsed via `parseGitMode`.
  * @remarks When any flag above is present, the whole selection is treated as
  * explicit and the interactive picker is skipped.
@@ -142,13 +140,11 @@ async function runSetupFlow(
   const flagAllowedAgents = parseAllowedAgents(flags);
   const flagPackageManagers = parsePackageManagers(flags);
   const flagCapabilities = parseCapabilities(flags);
-  const flagOpenSpecSchema = parseOpenSpecSchema(flags);
   const flagGitMode = parseGitMode(flags);
   const hasExplicitSelections =
     flagAllowedAgents !== undefined ||
     flagPackageManagers !== undefined ||
     flagCapabilities !== undefined ||
-    flagOpenSpecSchema !== undefined ||
     flagGitMode !== undefined;
 
   const currentSelections =
@@ -164,12 +160,8 @@ async function runSetupFlow(
     ? {
         allowedAgents: flagAllowedAgents ?? currentSelections.allowedAgents,
         packageManagers: flagPackageManagers ?? currentSelections.packageManagers,
-        capabilities: applyOpenSpecSchemaSelection(
-          flagCapabilities ?? currentSelections.capabilities,
-          flagOpenSpecSchema,
-        ),
+        capabilities: flagCapabilities ?? currentSelections.capabilities,
         git: flagGitMode ?? currentSelections.selectedGitMode,
-        selectedOpenSpecSchema: flagOpenSpecSchema ?? currentSelections.selectedOpenSpecSchema,
         selectedGitMode: flagGitMode ?? currentSelections.selectedGitMode,
       }
     : await selectCompatibilities({ initialSelections: currentSelections });
@@ -183,7 +175,7 @@ async function runSetupFlow(
     {
       allowedAgents: selections.allowedAgents,
       packageManagers: selections.packageManagers,
-      capabilities: selections.capabilities,
+      capabilities: keepCapabilitySettings(selections.capabilities, currentSelections.capabilities),
       git: selections.selectedGitMode,
     },
     { cwd: targetCwd },

@@ -25,7 +25,13 @@ import {
   collectManagedGitignoreEntries,
   writeManagedGitignoreBlock,
 } from "./setup/plugins/gitignore";
-import type { PluginRegistration, SetupContext, SetupScope } from "./setup/plugin";
+import { createManagedOutputCollector } from "./setup/managed-output";
+import type {
+  ManagedOutputReport,
+  PluginRegistration,
+  SetupContext,
+  SetupScope,
+} from "./setup/plugin";
 import {
   inspectClaudePluginFolders,
   type ClaudePluginContributionFailure,
@@ -73,6 +79,11 @@ export interface CompanionSyncOptions {
   regenerateOpenSpec?: boolean;
 }
 
+export interface CompanionSyncOutcome extends SetupInstallationOutcome {
+  /** The managed output this pass wrote or removed. */
+  managedOutput: ManagedOutputReport;
+}
+
 export async function applySetupCompatibilities(
   companionPath: string,
   config: FrameworkConfig,
@@ -81,9 +92,10 @@ export async function applySetupCompatibilities(
   repoPath?: string,
   scope: SetupScope = config.type === "hub" ? "hub" : "companion",
   options: CompanionSyncOptions = {},
-): Promise<SetupInstallationOutcome> {
+): Promise<CompanionSyncOutcome> {
   const plan = buildSetupInstallationPlan(config, plugins);
   const activeProviders = plan.activeProviders;
+  const managedOutput = createManagedOutputCollector(companionPath);
   const ctx: SetupContext = {
     companionPath,
     config,
@@ -92,8 +104,10 @@ export async function applySetupCompatibilities(
     repoPath,
     scope,
     ...(options.regenerateOpenSpec ? { regenerateOpenSpec: true } : {}),
+    managedOutput: managedOutput.recorder,
   };
-  return executeSetupInstallationPlan(ctx, plugins, plan);
+  const outcome = await executeSetupInstallationPlan(ctx, plugins, plan);
+  return { ...outcome, managedOutput: managedOutput.report() };
 }
 
 /**
@@ -196,16 +210,19 @@ export async function updateProjectGitignore(
   await writeManagedGitignoreBlock(path.join(companionPath, ".gitignore"), FRAMEWORK_NAME, entries);
 }
 
-/**
- * Returns the pass's Claude plugin folders, for a launch to pass and report;
- * every other caller ignores them.
- */
+export interface CompanionSyncResult {
+  /** For a launch to pass and report; every other caller ignores them. */
+  claudePluginFolders: ClaudePluginFolders;
+  /** For `mate companion update` to sort changed paths; a launch ignores it. */
+  managedOutput: ManagedOutputReport;
+}
+
 export async function syncCompanionFiles(
   companionPath: string,
   config: FrameworkConfig,
   repoPath?: string,
   options: CompanionSyncOptions = {},
-): Promise<ClaudePluginFolders> {
+): Promise<CompanionSyncResult> {
   const outcome = await applySetupCompatibilities(
     companionPath,
     config,
@@ -215,7 +232,7 @@ export async function syncCompanionFiles(
     undefined,
     options,
   );
-  return outcome.claudePluginFolders;
+  return { claudePluginFolders: outcome.claudePluginFolders, managedOutput: outcome.managedOutput };
 }
 
 export const setupToolDeps = {

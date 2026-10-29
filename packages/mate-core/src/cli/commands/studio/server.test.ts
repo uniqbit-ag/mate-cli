@@ -122,6 +122,7 @@ describe("createStudioFetch", () => {
     expect(assembled).toEqual([ACME]);
     expect(pages[0]?.selection).toEqual({
       companionDigest: digest,
+      role: "product-engineer",
       view: "workflow",
       refresh: false,
     });
@@ -263,7 +264,7 @@ describe("createStudioFetch", () => {
 
     expect(body).toContain("<!doctype html>");
     expect(body).toContain("add-auth");
-    expect(body).toContain("<h3>Changes</h3>");
+    expect(body).toContain('aria-label="Changes"');
   });
 
   test.each(["/api/inventory", "/api/companion", "/api/companion?path=/companions/acme"])(

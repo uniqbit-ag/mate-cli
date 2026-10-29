@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
+import { openSpecCliDeps } from "../openspec-cli";
 import {
   checkStoreRegistration,
   deriveStoreId,
@@ -19,6 +20,7 @@ import {
 
 const tempRoots: string[] = [];
 const originalDeps = { ...openSpecStoreDeps };
+const originalCliDeps = { ...openSpecCliDeps };
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
@@ -43,6 +45,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   Object.assign(openSpecStoreDeps, originalDeps);
+  Object.assign(openSpecCliDeps, originalCliDeps);
   for (const dir of tempRoots.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
 
@@ -140,7 +143,7 @@ describe("ensureStoreRegistration", () => {
     const root = await makeTempDir("openspec-store-ensure-");
     const companion = await makeCompanion(root);
     const stub = await stubOpenSpec(root, dataHome);
-    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    openSpecCliDeps.locate = () => ({ bin: stub.bin });
 
     expect(await ensureStoreRegistration(companion)).toEqual({
       state: "written",
@@ -157,7 +160,7 @@ describe("ensureStoreRegistration", () => {
     const companion = await makeCompanion(root);
     await writeRegistry(dataHome, { "acme-companion": companion });
     const stub = await stubOpenSpec(root, dataHome);
-    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    openSpecCliDeps.locate = () => ({ bin: stub.bin });
 
     expect(await ensureStoreRegistration(companion)).toEqual({
       state: "current",
@@ -172,7 +175,7 @@ describe("ensureStoreRegistration", () => {
     await fs.mkdir(path.dirname(registryPath(dataHome)), { recursive: true });
     await fs.writeFile(registryPath(dataHome), "stores: [\n");
     const stub = await stubOpenSpec(root, dataHome);
-    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    openSpecCliDeps.locate = () => ({ bin: stub.bin });
 
     expect((await ensureStoreRegistration(companion)).state).toBe("written");
     expect(await stub.calls()).toHaveLength(1);
@@ -183,7 +186,7 @@ describe("ensureStoreRegistration", () => {
     const companion = await makeCompanion(root);
     await writeRegistry(dataHome, { "acme-companion": "/somewhere/else" });
     const stub = await stubOpenSpec(root, dataHome);
-    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    openSpecCliDeps.locate = () => ({ bin: stub.bin });
 
     await expect(ensureStoreRegistration(companion)).rejects.toThrow("/somewhere/else");
     expect(await stub.calls()).toEqual([]);
@@ -192,18 +195,7 @@ describe("ensureStoreRegistration", () => {
   test("a missing binary is skipped", async () => {
     const root = await makeTempDir("openspec-store-ensure-");
     const companion = await makeCompanion(root);
-    openSpecStoreDeps.resolveBinary = () => undefined;
-
-    expect((await ensureStoreRegistration(companion)).state).toBe("skipped");
-  });
-
-  test("a binary without the store command is skipped", async () => {
-    const root = await makeTempDir("openspec-store-ensure-");
-    const companion = await makeCompanion(root);
-    const stub = await stubOpenSpec(root, dataHome, {
-      stderr: "error: unknown command 'store'",
-    });
-    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    openSpecCliDeps.locate = () => ({ missing: "bundled OpenSpec CLI is missing." });
 
     expect((await ensureStoreRegistration(companion)).state).toBe("skipped");
   });
@@ -212,7 +204,7 @@ describe("ensureStoreRegistration", () => {
     const root = await makeTempDir("openspec-store-ensure-");
     const companion = await makeCompanion(root);
     const stub = await stubOpenSpec(root, dataHome, { stderr: "Store registry is busy." });
-    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    openSpecCliDeps.locate = () => ({ bin: stub.bin });
 
     await expect(ensureStoreRegistration(companion)).rejects.toThrow("Store registry is busy.");
   });
@@ -222,26 +214,31 @@ describe("ensureStoreRegistration", () => {
     const companion = path.join(root, "bare-companion");
     await fs.mkdir(companion);
     const stub = await stubOpenSpec(root, dataHome);
-    openSpecStoreDeps.resolveBinary = () => stub.bin;
+    openSpecCliDeps.locate = () => ({ bin: stub.bin });
 
     expect((await ensureStoreRegistration(companion)).state).toBe("skipped");
     expect(await stub.calls()).toEqual([]);
   });
 });
 
-describe("the default binary resolver", () => {
-  test("skips Mate's wrapper directories", async () => {
-    const root = await makeTempDir("openspec-store-resolve-");
-    const wrapperDir = path.join(root, "wrappers");
-    const realDir = path.join(root, "real");
-    for (const dir of [wrapperDir, realDir]) {
-      await fs.mkdir(dir);
-      await fs.writeFile(path.join(dir, "openspec"), "#!/bin/sh\n");
-      await fs.chmod(path.join(dir, "openspec"), 0o755);
-    }
-    openSpecStoreDeps.env = () => ({ PATH: [wrapperDir, realDir].join(path.delimiter) });
-    openSpecStoreDeps.wrapperBinDirs = () => [wrapperDir];
+describe("the registration environment", () => {
+  test("runs with telemetry and update checks off, over the injected environment", async () => {
+    const root = await makeTempDir("openspec-store-env-");
+    const companion = await makeCompanion(root);
+    const log = path.join(root, "env.log");
+    const bin = path.join(root, "openspec");
+    await fs.writeFile(
+      bin,
+      `#!/usr/bin/env bash\nenv | grep -E "^(OPENSPEC_|XDG_DATA_HOME)" | sort > "${log}"\n`,
+    );
+    await fs.chmod(bin, 0o755);
+    openSpecCliDeps.locate = () => ({ bin });
 
-    expect(openSpecStoreDeps.resolveBinary()).toBe(path.join(realDir, "openspec"));
+    expect((await ensureStoreRegistration(companion)).state).toBe("written");
+    expect((await fs.readFile(log, "utf8")).trim().split("\n")).toEqual([
+      "OPENSPEC_NO_UPDATE_CHECK=1",
+      "OPENSPEC_TELEMETRY=0",
+      `XDG_DATA_HOME=${dataHome}`,
+    ]);
   });
 });

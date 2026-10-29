@@ -72,7 +72,6 @@ describe("withRequiredSelections", () => {
       allowedAgents: ["claude"],
       packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
 
@@ -92,7 +91,6 @@ describe("withRequiredSelections", () => {
       allowedAgents: [],
       packageManagers: [],
       capabilities: [{ name: "acme-mcp" }],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
 

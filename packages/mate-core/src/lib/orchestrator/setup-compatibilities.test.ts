@@ -2,15 +2,13 @@ import { describe, expect, test } from "bun:test";
 
 import { defaultConfig } from "./config-store";
 import {
-  applyOpenSpecSchemaSelection,
   BUILTIN_SETUP_COMPATIBILITIES,
-  getOpenSpecSchemaSelection,
   getCompatibilityCliTools,
   getEffectiveCliTools,
   getDefaultSetupSelections,
   getSetupSelectionsFromConfig,
+  keepCapabilitySettings,
   listSetupGitModeCompatibilities,
-  listSetupOpenSpecSchemaCompatibilities,
   listSetupPackageManagerCompatibilities,
   mergeCliTools,
 } from "./setup-compatibilities";
@@ -56,53 +54,6 @@ describe("setup compatibilities", () => {
     ]);
   });
 
-  test("openspec schema compatibilities expose labeled options", () => {
-    expect(listSetupOpenSpecSchemaCompatibilities()).toEqual([
-      {
-        id: "default",
-        label: "Default (vanilla OpenSpec)",
-        description: "Use OpenSpec's built-in spec-driven workflow.",
-        defaultSelected: true,
-      },
-      {
-        id: "mate-v1",
-        label: "Mate v1",
-        description: "Use Mate's schema with proposal, design, spec, and task artifacts.",
-        defaultSelected: false,
-      },
-    ]);
-  });
-
-  test("openspec schema compatibilities append a custom entry when a non-builtin schema is active", () => {
-    expect(listSetupOpenSpecSchemaCompatibilities("some-custom-schema")).toEqual([
-      {
-        id: "default",
-        label: "Default (vanilla OpenSpec)",
-        description: "Use OpenSpec's built-in spec-driven workflow.",
-        defaultSelected: true,
-      },
-      {
-        id: "mate-v1",
-        label: "Mate v1",
-        description: "Use Mate's schema with proposal, design, spec, and task artifacts.",
-        defaultSelected: false,
-      },
-      {
-        id: "some-custom-schema",
-        label: "Custom",
-        description:
-          'Keep the project\'s current custom schema profile ("some-custom-schema"). Selecting Default or Mate v1 replaces it.',
-        defaultSelected: false,
-      },
-    ]);
-  });
-
-  test("openspec schema compatibilities omit the custom entry when the active schema is builtin", () => {
-    expect(listSetupOpenSpecSchemaCompatibilities("default")).toHaveLength(2);
-    expect(listSetupOpenSpecSchemaCompatibilities("mate-v1")).toHaveLength(2);
-    expect(listSetupOpenSpecSchemaCompatibilities()).toHaveLength(2);
-  });
-
   test("git mode compatibilities expose labeled options", () => {
     expect(listSetupGitModeCompatibilities()).toEqual([
       {
@@ -130,23 +81,6 @@ describe("setup compatibilities", () => {
     expect(getEffectiveCliTools(config)).toEqual([
       { name: "openspec", redirectCwd: "companionRoot" },
     ]);
-  });
-
-  test("openspec schema selection defaults to default and preserves mate-v1 when present", () => {
-    expect(getOpenSpecSchemaSelection([{ name: "openspec" }])).toBe("default");
-    expect(getOpenSpecSchemaSelection([{ name: "openspec", schemaProfile: "mate-v1" }])).toBe(
-      "mate-v1",
-    );
-  });
-
-  test("applying openspec schema selection updates only the openspec capability", () => {
-    expect(
-      applyOpenSpecSchemaSelection([{ name: "openspec" }, { name: "react-doctor" }], "mate-v1"),
-    ).toEqual([{ name: "openspec", schemaProfile: "mate-v1" }, { name: "react-doctor" }]);
-
-    expect(
-      applyOpenSpecSchemaSelection([{ name: "openspec", schemaProfile: "mate-v1" }], "default"),
-    ).toEqual([{ name: "openspec" }]);
   });
 
   test("user cliTools override compatibility-provided wrappers by name", () => {
@@ -210,7 +144,6 @@ describe("setup compatibilities", () => {
       }),
     ).toMatchObject({
       packageManagers: ["bun", "uv"],
-      selectedOpenSpecSchema: "default",
       selectedGitMode: "default",
     });
 
@@ -218,15 +151,30 @@ describe("setup compatibilities", () => {
       getSetupSelectionsFromConfig({
         allowedAgents: ["claude"],
         git: "auto",
-        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
+        capabilities: [{ name: "openspec" }],
       }),
     ).toMatchObject({
       packageManagers: ["bun", "uv"],
-      selectedOpenSpecSchema: "mate-v1",
+      capabilities: [{ name: "openspec" }],
       selectedGitMode: "auto",
     });
 
-    expect(getDefaultSetupSelections().selectedOpenSpecSchema).toBe("default");
     expect(getDefaultSetupSelections().selectedGitMode).toBe("default");
+  });
+
+  test("re-selected capabilities keep their saved settings", () => {
+    expect(
+      keepCapabilitySettings(
+        [{ name: "openspec" }, { name: "rtk" }],
+        [{ name: "openspec", protectedBranches: ["release/*"] }, { name: "graphify" }],
+      ),
+    ).toEqual([{ name: "openspec", protectedBranches: ["release/*"] }, { name: "rtk" }]);
+  });
+
+  test("a saved schemaProfile is dropped on re-selection", () => {
+    const leftover = { name: "openspec", schemaProfile: "mate-v1" } as { name: string };
+    expect(keepCapabilitySettings([{ name: "openspec" }], [leftover])).toEqual([
+      { name: "openspec" },
+    ]);
   });
 });

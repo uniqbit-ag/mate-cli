@@ -8,6 +8,7 @@ import {
   parseVaultSelection,
   STUDIO_VIEWS,
   type StudioSelection,
+  type StudioView,
   switchView,
   toFields,
 } from "../selection";
@@ -66,7 +67,12 @@ const digest = companionDigest(acme);
 function page(overrides: Partial<StudioPage> = {}): StudioPage {
   return {
     inventory: { companions: [{ path: acme, health: "ready", pairings: [] }] },
-    selection: { companionDigest: null, view: "dashboard", refresh: false },
+    selection: {
+      companionDigest: null,
+      role: "product-engineer",
+      view: "dashboard",
+      refresh: false,
+    },
     companion: null,
     payload: null,
     error: null,
@@ -76,13 +82,19 @@ function page(overrides: Partial<StudioPage> = {}): StudioPage {
 }
 
 const selected: StudioPage = page({
-  selection: { companionDigest: digest, view: "dashboard", refresh: false },
+  selection: {
+    companionDigest: digest,
+    role: "product-engineer",
+    view: "dashboard",
+    refresh: false,
+  },
   collectedAt: Date.UTC(2026, 0, 2, 12, 34, 56),
   companion: { path: acme, health: "ready", pairings: [] },
   payload: {
     companionPath: acme,
     changes: [{ name: "add-auth", completedTasks: 1, totalTasks: 4, artifacts: [] }],
     specs: [{ capability: "acme-login", areas: ["acme"] }],
+    shipped: [],
     skills: ["mate-interview-me", "mate-grill-me", "mate-grill-with-docs"],
     skillInventory: {
       claude: ["mate-interview-me", "mate-grill-me", "mate-grill-with-docs"],
@@ -192,7 +204,7 @@ describe("renderStudioDocument", () => {
     expect(markup).toContain("<h3>Choose a Companion Repository</h3>");
     expect(markup).toContain(`value="${digest}" class="picker-card"`);
     expect(markup).toContain("acme-companion");
-    expect(markup).not.toContain("<h3>Changes</h3>");
+    expect(markup).not.toContain('aria-label="Changes"');
   });
 
   it("names the resolved companion for the browser to remember, and nothing else", () => {
@@ -202,22 +214,30 @@ describe("renderStudioDocument", () => {
     expect(renderStudioDocument(page())).toContain('<div class="shell">');
     expect(
       renderStudioDocument(
-        page({ selection: { companionDigest: "deadbeef00", view: "dashboard", refresh: false } }),
+        page({
+          selection: {
+            companionDigest: "deadbeef00",
+            role: "product-engineer",
+            view: "dashboard",
+            refresh: false,
+          },
+        }),
       ),
     ).toContain('<div class="shell">');
   });
 
   it("presents the named companion's Dashboard", () => {
     const markup = renderStudioDocument(selected);
-    expect(markup).toContain("<h3>Changes</h3>");
-    expect(markup).not.toContain("<h3>Specs by Area</h3>");
+    expect(markup).toContain('aria-label="Changes"');
+    expect(markup).not.toContain('aria-label="Specs by Area"');
     expect(markup).toContain("add-auth");
     expect(markup).toContain('aria-pressed="true"');
   });
 
   it("surfaces the current view and snapshot context", () => {
     const markup = renderStudioDocument(selected);
-    expect(markup).toContain("<h1>Overview</h1>");
+    expect(markup).toContain('<div class="page-heading"><h1>Overview</h1></div>');
+    expect(markup).not.toContain("page-eyebrow");
     expect(markup).toContain('<span class="page-context-label">Companion Repository</span>');
     expect(markup).toContain(`<code>${acme}</code>`);
     expect(markup).toContain("Snapshot 12:34:56");
@@ -228,8 +248,8 @@ describe("renderStudioDocument", () => {
       ...selected,
       selection: { ...selected.selection, view: "specs" },
     });
-    expect(markup).toContain("<h3>Specs by Area</h3>");
-    expect(markup).not.toContain("<h3>Changes</h3>");
+    expect(markup).toContain('aria-label="Specs by Area"');
+    expect(markup).not.toContain('aria-label="Changes"');
     expect(viewForm(markup, "specs")).toContain('aria-pressed="true"');
   });
 
@@ -238,22 +258,23 @@ describe("renderStudioDocument", () => {
       ...selected,
       selection: { ...selected.selection, view: "workflow" },
     });
-    expect(markup).toContain('class="workflow-console"');
+    expect(markup).toContain('class="workflow-delivery-path"');
     expect(markup).not.toContain("mate workflow --read-only");
     expect(markup).not.toContain('id="studio-change"');
-    expect(markup).not.toContain("<h3>Changes</h3>");
+    expect(markup).not.toContain('aria-label="Changes"');
   });
 
-  it("presents the Skills view with runtime tabs", () => {
+  it("presents the Skills view with an Agent select", () => {
     const markup = renderStudioDocument({
       ...selected,
       selection: { ...selected.selection, view: "skills" },
     });
-    expect(markup).toContain("<h3>Agent Skills</h3>");
-    expect(markup).toContain('role="tablist" aria-label="Skill source"');
-    expect(markup).toContain('id="skills-tab-claude"');
-    expect(markup).toContain('id="skills-tab-opencode"');
-    expect(markup).toContain('id="skills-tab-agents"');
+    expect(markup).toContain('aria-label="Agent skills"');
+    expect(markup).toContain('<span>Agent</span><select data-skills-select="true">');
+    for (const agent of ["claude", "opencode", "agents"]) {
+      expect(markup).toContain(`data-skill-panel="${agent}"`);
+    }
+    expect(markup).not.toContain('role="tablist"');
     expect(markup).toContain("mate-grill-with-docs");
     expect(markup).toContain("mate-interview-me");
     expect(markup).toContain("mate-domain-modeling");
@@ -705,7 +726,12 @@ describe("renderStudioDocument", () => {
   it("presents an unreadable companion as an error while the selector stays usable", () => {
     const markup = renderStudioDocument(
       page({
-        selection: { companionDigest: digest, view: "dashboard", refresh: false },
+        selection: {
+          companionDigest: digest,
+          role: "product-engineer",
+          view: "dashboard",
+          refresh: false,
+        },
         companion: { path: acme, health: "ready", pairings: [] },
         error: { companionPath: acme, reason: "openspec list --json: exited with 1" },
       }),
@@ -739,6 +765,7 @@ describe("renderStudioDocument", () => {
   it("offers one form per view, each leading to that view alone", () => {
     const current: StudioSelection = {
       companionDigest: digest,
+      role: "product-engineer",
       view: "vault",
       refresh: true,
       openPath: "docs/note.md",
@@ -754,6 +781,7 @@ describe("renderStudioDocument", () => {
   it("carries a refresh in no form but a refresh control", () => {
     const current: StudioSelection = {
       companionDigest: digest,
+      role: "product-engineer",
       view: "vault",
       refresh: true,
       openPath: null,
@@ -798,6 +826,151 @@ describe("renderStudioDocument", () => {
     );
     expect(markup).not.toContain("<script>alert(1)</script>");
     expect(markup).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+});
+
+describe("roles", () => {
+  const analyst = (view: StudioView): StudioPage => ({
+    ...selected,
+    selection: submitted([
+      { name: "companion", value: digest },
+      { name: "role", value: "business-analyst" },
+      { name: "view", value: view },
+    ]),
+  });
+
+  /** The labels and order of the sidebar's sections and views, read from the markup. */
+  function navigation(markup: string) {
+    const nav = /<nav class="sidebar-nav"[^>]*>([\s\S]*?)<\/nav>/.exec(markup)?.[1] ?? "";
+    return [...nav.matchAll(/class="sidebar-label">([^<]*)<|data-studio-view="([^"]*)"/g)].map(
+      ([, label, view]) => label ?? view,
+    );
+  }
+
+  function fixedParts(markup: string) {
+    const sidebar = /<aside class="rail studio-sidebar"[\s\S]*?<\/aside>/.exec(markup)?.[0] ?? "";
+    return [
+      ...sidebar.matchAll(/class="(sidebar-brand|role-switch|sidebar-scope|sidebar-footer)"/g),
+    ].map(([, part]) => part);
+  }
+
+  it("Product Engineer navigation", () => {
+    const markup = renderStudioDocument(selected);
+    expect(navigation(markup)).toEqual([
+      "Product Engineer",
+      "dashboard",
+      "workflow",
+      "skills",
+      "Shared",
+      "vault",
+      "specs",
+      "reports",
+    ]);
+    expect(markup).toContain('id="studio-stats"');
+  });
+
+  it("Business Analyst navigation", () => {
+    const markup = renderStudioDocument(analyst("specs"));
+    expect(navigation(markup)).toEqual([
+      "Business Analyst",
+      "dashboard",
+      "Shared",
+      "vault",
+      "specs",
+      "reports",
+    ]);
+    expect(markup).not.toContain('id="studio-stats"');
+  });
+
+  it("marks the active role in the switch", () => {
+    const markup = renderStudioDocument(analyst("specs"));
+    const roles = forms(markup).filter(({ attrs }) => attrs.includes("data-studio-role="));
+    expect(
+      roles.map(({ body }) => /aria-pressed="(\w+)"[^>]*>([^<]*)</.exec(body)?.slice(1)),
+    ).toEqual([
+      ["false", "Product Engineer"],
+      ["true", "Business Analyst"],
+    ]);
+  });
+
+  it("keeps the fixed parts across roles", () => {
+    const engineer = fixedParts(renderStudioDocument(selected));
+    expect(engineer).toEqual(["sidebar-brand", "role-switch", "sidebar-scope", "sidebar-footer"]);
+    expect(fixedParts(renderStudioDocument(analyst("specs")))).toEqual(engineer);
+  });
+
+  it("renders the role switch without a companion, keeping the role through the picker", () => {
+    const markup = renderStudioDocument(
+      page({ selection: { ...page().selection, role: "business-analyst", view: "specs" } }),
+    );
+    expect(markup).toContain('class="role-switch"');
+    for (const { attrs, fields } of forms(markup)) {
+      if (attrs.includes('data-studio-role="product-engineer"')) continue;
+      expect(submitted(fields).role).toBe("business-analyst");
+    }
+  });
+
+  it("lands the Business Analyst on their Overview for a Workflow or no-view URL", () => {
+    expect(analyst("workflow").selection.view).toBe("dashboard");
+    const markup = renderStudioDocument(analyst("workflow"));
+    expect(markup).toContain("<h1>Overview</h1>");
+    expect(markup).toContain('class="analyst-overview"');
+    const none = submitted([
+      { name: "companion", value: digest },
+      { name: "role", value: "business-analyst" },
+    ]);
+    expect(none.view).toBe("dashboard");
+  });
+
+  it("carries the active role in every rendered form and link but the role switch", () => {
+    const current = openFile(analyst("vault").selection, "docs/a/x.md");
+    const markup = renderStudioDocument({
+      ...selected,
+      selection: current,
+      vault: {
+        tree: [
+          {
+            name: "docs",
+            path: "docs",
+            kind: "directory",
+            children: [
+              { name: "b.md", path: "docs/b.md", kind: "file" },
+              {
+                name: "a",
+                path: "docs/a",
+                kind: "directory",
+                children: [{ name: "x.md", path: "docs/a/x.md", kind: "file" }],
+              },
+            ],
+          },
+        ],
+        open: { path: "docs/a/x.md", content: "# x\n\n[b](../b.md)", token: "t" },
+        refusal: null,
+        incoming: null,
+        overwritten: null,
+        watching: true,
+        warning: null,
+      },
+    });
+    const navigations = forms(markup).filter(
+      ({ attrs }) => !attrs.includes('data-studio-role="product-engineer"'),
+    );
+    expect(navigations.length).toBeGreaterThan(5);
+    for (const { fields } of navigations) {
+      expect(fields).toContainEqual({ name: "role", value: "business-analyst" });
+    }
+    const links = [
+      ...markup.matchAll(
+        /(?:href|data-(?!reports-(?:events-)?url)[a-z-]+(?:url|href))="(\/[^"#]*)"/g,
+      ),
+    ]
+      .map(([, href]) => href!.replaceAll("&amp;", "&"))
+      .filter((href) => href.startsWith("/?") || href.startsWith("/api/") || href === "/");
+    // The reports feeds are data, not navigations, and the role withholds no data.
+    expect(links.length).toBeGreaterThan(2);
+    for (const href of links) {
+      expect(new URL(href, "http://localhost:1").searchParams.get("role")).toBe("business-analyst");
+    }
   });
 });
 

@@ -1,5 +1,6 @@
 import type { Cleanup, Context } from "@opencode/plugin/promise/plugin";
 
+import { errorMessage } from "../runtime/error-message";
 import {
   PREPARE_TIMEOUT_MS,
   type PrepareRun,
@@ -52,7 +53,7 @@ async function report(
 }
 
 function failedRun(error: unknown): PrepareRun {
-  return { ok: false, notes: [error instanceof Error ? error.message : String(error)] };
+  return { ok: false, notes: [errorMessage(error)] };
 }
 
 /** No remote: OpenCode holds MCP servers and skills until `setup` returns. */

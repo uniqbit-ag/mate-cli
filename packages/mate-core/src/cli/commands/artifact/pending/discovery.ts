@@ -1,6 +1,15 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 
+import {
+  ARCHIVE_RELATIVE_DIR,
+  archiveAnchors,
+  archiveDirOf,
+  CHANGES_RELATIVE_DIR,
+  changeNameOf,
+  deltaSpecs,
+  filesBelow,
+  SPECS_RELATIVE_DIR,
+} from "../../../../lib/change-layout";
 import type { WorkingTreeChange } from "../finish/git";
 
 /** Whether an archived change still has uncommitted content in the companion working tree. */
@@ -47,13 +56,6 @@ export interface ArchiveEntry {
   uncommittedSpecChanges: UncommittedSpecChange[];
   state: CommitState;
 }
-
-/** Only dated archive directories are publishable; everything else is ignored. */
-const ARCHIVE_ANCHOR_PATTERN = /^\d{4}-\d{2}-\d{2}-.+$/;
-const ARCHIVE_DATE_PREFIX = /^\d{4}-\d{2}-\d{2}-/;
-
-const ARCHIVE_RELATIVE_DIR = "openspec/changes/archive";
-export const SPECS_RELATIVE_DIR = "openspec/specs";
 
 /** The tag `mate artifact publish` creates, never a recomputed date. */
 export function finishMarker(anchor: string): string {
@@ -110,37 +112,15 @@ function changeKindFor(
 }
 
 /**
- * Every file beneath `directory`, as POSIX paths under `relativeRoot`. Reads directory
- * entry names only, never file contents. Throws when `directory` cannot be read.
- */
-async function filesUnder(directory: string, relativeRoot: string): Promise<string[]> {
-  const entries = await fs.readdir(directory, { withFileTypes: true });
-  const nested = await Promise.all(
-    entries.map(async (entry) => {
-      const entryRelative = path.posix.join(relativeRoot, entry.name);
-      if (entry.isDirectory()) return filesUnder(path.join(directory, entry.name), entryRelative);
-      return entry.isFile() ? [entryRelative] : [];
-    }),
-  );
-  return nested.flat();
-}
-
-/**
  * Canonical specs the change's delta specs applied to. Only directory entry names under
  * the archive's `specs/` tree are read — never any file contents — so archived prose
  * cannot influence discovery.
  */
-async function canonicalSpecsFor(companionPath: string, anchor: string): Promise<string[]> {
-  try {
-    const specs = await filesUnder(
-      path.join(companionPath, ARCHIVE_RELATIVE_DIR, anchor, "specs"),
-      SPECS_RELATIVE_DIR,
-    );
-    return specs.toSorted();
-  } catch {
-    // A change without delta specs still owns its archive and active directories.
-    return [];
-  }
+export async function canonicalSpecsFor(companionPath: string, anchor: string): Promise<string[]> {
+  // A change without delta specs still owns its archive and active directories.
+  return (await deltaSpecs(path.join(archiveDirOf(companionPath), anchor))).map(
+    (spec) => spec.canonical,
+  );
 }
 
 /**
@@ -156,24 +136,12 @@ export async function discoverArchives(
   uncommittedPaths: string[],
   changeKinds: Readonly<Record<string, WorkingTreeChange>> = {},
 ): Promise<ArchiveEntry[]> {
-  let entries;
-  try {
-    entries = await fs.readdir(path.join(companionPath, "openspec", "changes", "archive"), {
-      withFileTypes: true,
-    });
-  } catch {
-    return [];
-  }
-
-  const anchors = entries
-    .filter((entry) => entry.isDirectory() && ARCHIVE_ANCHOR_PATTERN.test(entry.name))
-    .map((entry) => entry.name)
-    .toSorted();
+  const anchors = await archiveAnchors(companionPath);
 
   return Promise.all(
     anchors.map(async (anchor) => {
-      const name = anchor.replace(ARCHIVE_DATE_PREFIX, "");
-      const ownedPaths = [`${ARCHIVE_RELATIVE_DIR}/${anchor}`, `openspec/changes/${name}`];
+      const name = changeNameOf(anchor);
+      const ownedPaths = [`${ARCHIVE_RELATIVE_DIR}/${anchor}`, `${CHANGES_RELATIVE_DIR}/${name}`];
       const owned = matching(uncommittedPaths, ownedPaths);
       const ownedDirectories = matchingDirectories(uncommittedPaths, ownedPaths);
       const specs =
@@ -237,13 +205,9 @@ async function specFilesFor(
   }
   const collapsed = withoutTrailingSlash(worktreePath);
   const root = collapsed.startsWith(`${SPECS_RELATIVE_DIR}/`) ? collapsed : SPECS_RELATIVE_DIR;
-  try {
-    const files = await filesUnder(path.join(companionPath, root), root);
-    return files.map((file) => ({ path: file, kind: "new" as const }));
-  } catch {
-    // A collapsed ancestor such as `openspec/` need not contain a spec tree at all.
-    return [];
-  }
+  // A collapsed ancestor such as `openspec/` need not contain a spec tree at all.
+  const files = await filesBelow(path.join(companionPath, root));
+  return files.map((file) => ({ path: `${root}/${file}`, kind: "new" as const }));
 }
 
 /**
