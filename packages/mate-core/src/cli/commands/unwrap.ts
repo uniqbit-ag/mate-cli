@@ -77,8 +77,15 @@ export async function runUnwrapCommand(
     return;
   }
 
+  const reportKept = () => {
+    if (!result.kept) return;
+    console.log(
+      `  Kept: ${result.kept.lines} copy exclude lines still needed by ${result.kept.keptFor.join(", ")}`,
+    );
+  };
   if (result.kind === "absent") {
     console.log(`Not wrapped: ${repository.id}`);
+    reportKept();
     return;
   }
 
@@ -89,6 +96,7 @@ export async function runUnwrapCommand(
   if (result.copies.length > 0) {
     console.log(`  Withdrawn: ${result.copies.length} companion copies under .opencode/`);
   }
+  reportKept();
   console.log(
     `The next \`${FRAMEWORK_NAME} claude\` or \`${FRAMEWORK_NAME} opencode\` wraps this repository again.`,
   );

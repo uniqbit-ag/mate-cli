@@ -41,6 +41,11 @@ store pointer, and updates the Claude settings Mate wrote. Tracked files and
 product work are untouched, and the next link or launch recreates what it needs.
 Run from a companion or a repository that is not linked, it exits non-zero.
 
+All worktrees of a clone share one Git exclude file. Cleanup in one worktree keeps
+any exclude line that another worktree still needs, because that worktree still
+holds a file the line hides, and names it:
+`kept: git-excludes (still needed by <path>)`.
+
 ## Installation And Health
 
 | Command                  | Purpose                                                                            |
@@ -335,7 +340,9 @@ sessions before your first managed launch there. Session preparation keeps the
 documents current, so a Capability enabled after the wrap reaches the next session
 without re-wrapping. `mate unwrap` withdraws the documents and the owned copies and
 keeps the repository link; the withdrawal holds until the next `mate claude` or
-`mate opencode` there, which wraps again.
+`mate opencode` there, which wraps again. A copy's exclude line stays while
+another worktree of the clone still has that copy, and unwrap says so:
+`Kept: <n> copy exclude lines still needed by <path>`.
 
 ## Session Preparation
 

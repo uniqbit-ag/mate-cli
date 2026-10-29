@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { isSecretFile, type SecretPolicy } from "../../../runtime/secret-patterns";
 import { scanContent, scanFiles } from "../../../runtime/secret-scan";
-import { resolveGitInfoExcludePath } from "../git-utils";
+import { addExcludeLine } from "../working-repo-local-state";
 
 export const GRAPHIFY_IGNORE_FILE = ".graphifyignore";
 const REGION_BEGIN = "# mate:secrets begin (managed by Mate; edits are overwritten)";
@@ -47,19 +47,7 @@ function endsWithRegion(content: string, region: string[]): boolean {
 }
 
 async function excludeFromGit(repoPath: string): Promise<void> {
-  const excludePath = await resolveGitInfoExcludePath(repoPath);
-  if (!excludePath) return;
-  let existing = "";
-  try {
-    existing = await fs.readFile(excludePath, "utf8");
-  } catch {
-    // Fresh repos may not have created info/exclude yet.
-  }
-  const entry = `/${GRAPHIFY_IGNORE_FILE}`;
-  if (existing.split(/\r?\n/).some((line) => line.trim() === entry)) return;
-  await fs.mkdir(path.dirname(excludePath), { recursive: true });
-  const separator = existing === "" || existing.endsWith("\n") ? "" : "\n";
-  await fs.writeFile(excludePath, `${existing}${separator}${entry}\n`, "utf8");
+  await addExcludeLine(repoPath, `/${GRAPHIFY_IGNORE_FILE}`);
 }
 
 /**

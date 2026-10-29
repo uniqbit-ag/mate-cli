@@ -6,7 +6,12 @@ import { promisify } from "node:util";
 import { generatedHeader } from "../../runtime/projection";
 import { reconcileWorkingRepoCapabilityExcludes } from "../../tools/setup/working-repo-local-state";
 import { ensureStoreRegistration } from "./openspec-store";
-import type { ProjectionWriteReport, ProjectionWriteState } from "./projection-types";
+import {
+  excludeRemovalReport,
+  type ProjectionSelfRemoval,
+  type ProjectionWriteReport,
+  type ProjectionWriteState,
+} from "./projection-types";
 
 /**
  * The store pointer: an `openspec/config.yaml` in the Working Repository that
@@ -119,20 +124,60 @@ export async function storePointerPresent(repoPath: string): Promise<boolean> {
   return (await readStorePointer(repoPath)).kind === "mate";
 }
 
-/** Keeps the exclusion line exactly while the repository may carry Mate's pointer. */
-export async function reconcileStorePointerExclude(repoPath: string): Promise<boolean> {
-  const eligible = (await storePointerIneligibility(repoPath)) === null;
-  return reconcileWorkingRepoCapabilityExcludes(
-    repoPath,
-    eligible ? [OPENSPEC_POINTER_EXCLUDE] : [],
-    MANAGED_POINTER_EXCLUDES,
-  );
+/**
+ * Another Checkout of the clone needs the line while it carries Mate's pointer.
+ * A pointer it cannot read throws, so the caller keeps the line.
+ */
+async function pointerNeeds(checkout: string): Promise<readonly string[]> {
+  const content = await fs.readFile(pointerFile(checkout), "utf8").catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  });
+  return content?.split(/\r?\n/)[0] === generatedHeader() ? [OPENSPEC_POINTER_EXCLUDE] : [];
 }
 
-export async function removeStorePointerExclude(repoPath: string): Promise<"removed" | "absent"> {
-  return (await reconcileWorkingRepoCapabilityExcludes(repoPath, [], MANAGED_POINTER_EXCLUDES))
-    ? "removed"
-    : "absent";
+/**
+ * Sets the pointer's exclusion line to `desired`, keeping it while another
+ * Checkout of the clone carries Mate's pointer. A line kept that way also
+ * hides this Checkout's own `openspec/` files, which the warning says.
+ */
+async function editPointerExclude(repoPath: string, desired: string[]) {
+  const result = await reconcileWorkingRepoCapabilityExcludes(
+    repoPath,
+    desired,
+    MANAGED_POINTER_EXCLUDES,
+    pointerNeeds,
+  );
+  const folder = path.join(repoPath, "openspec");
+  const hidden = result.kept.includes(OPENSPEC_POINTER_EXCLUDE) && (await exists(folder));
+  const warnings = hidden
+    ? [
+        `untracked files under ${folder} are hidden from Git: the shared exclude line ${OPENSPEC_POINTER_EXCLUDE} stays for ${result.keptFor.join(", ")}`,
+      ]
+    : [];
+  return { result, warnings };
+}
+
+/**
+ * Keeps the exclusion line while the repository may carry Mate's pointer, or
+ * another Checkout of the clone carries it.
+ */
+export async function reconcileStorePointerExclude(
+  repoPath: string,
+): Promise<ProjectionWriteState | ProjectionWriteReport> {
+  const eligible = (await storePointerIneligibility(repoPath)) === null;
+  const { result, warnings } = await editPointerExclude(
+    repoPath,
+    eligible ? [OPENSPEC_POINTER_EXCLUDE] : [],
+  );
+  const state = result.changed ? "written" : "current";
+  return warnings.length > 0 ? { state, warnings } : state;
+}
+
+export async function removeStorePointerExclude(repoPath: string): Promise<ProjectionSelfRemoval> {
+  const { result, warnings } = await editPointerExclude(repoPath, []);
+  const report = excludeRemovalReport(result);
+  return typeof report === "object" && warnings.length > 0 ? { ...report, warnings } : report;
 }
 
 function pointerNotWritten(reason: string): ProjectionWriteReport {

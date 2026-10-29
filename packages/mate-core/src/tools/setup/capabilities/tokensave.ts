@@ -6,10 +6,10 @@ import path from "node:path";
 
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { DEFAULT_SECRET_DENY_PATTERNS, type SecretPolicy } from "../../../runtime/secret-patterns";
-import { resolveGitInfoExcludePath } from "../git-utils";
 import type { InstallRequirement } from "../install-contract";
 import type { CapabilityPlugin, RuntimeContributionsByRuntime } from "../plugin";
 import { isCommandOnPath, resolveCommandOnPath, runCommand, runShellCommand } from "../utils";
+import { addExcludeLine } from "../working-repo-local-state";
 import { TOKENSAVE_CLAUDE_MD_MARKER } from "./tokensave-shared";
 export { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "./tokensave-shared";
 
@@ -298,30 +298,7 @@ export async function ensureTokensaveInstalled(
 }
 
 export async function ensureTokensaveStoreExcluded(repoPath: string): Promise<void> {
-  const excludePath = await resolveGitInfoExcludePath(repoPath);
-  if (!excludePath) {
-    return;
-  }
-
-  let existing = "";
-  try {
-    existing = await fs.readFile(excludePath, "utf8");
-  } catch {
-    // Fresh repos may not have created info/exclude yet.
-  }
-
-  const lines = existing
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.includes(TOKENSAVE_STORE_EXCLUDE_ENTRY)) {
-    return;
-  }
-
-  lines.push(TOKENSAVE_STORE_EXCLUDE_ENTRY);
-  await fs.mkdir(path.dirname(excludePath), { recursive: true });
-  await fs.writeFile(excludePath, lines.join("\n") + "\n", "utf8");
+  await addExcludeLine(repoPath, TOKENSAVE_STORE_EXCLUDE_ENTRY);
 }
 
 /**
