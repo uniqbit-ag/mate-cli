@@ -5,7 +5,7 @@ import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { companionRegistryPath, registryLinks } from "../../runtime/companion-registry-read";
-import { canonicalPath } from "../../runtime/physical-path";
+import { canonicalPath, normalisedCanonicalPath } from "../../runtime/physical-path";
 import {
   ancestorDirectories,
   repoLocalDirName,
@@ -223,13 +223,15 @@ export class CompanionResolver {
    * every companion the global registry knows about and matches by
    * repository path. A single match self-heals the repo-local cache so the
    * fast path succeeds on the next resolution without repeating this scan.
-   * A registration is a claim (ADR-025): `link/..` names where it leads.
+   * A registration is a claim (ADR-025): `link/..` names where it leads, and
+   * one leading nowhere matches nothing rather than the folder it normalises to.
    */
   private async resolveFromGlobalRegistry(resolvedCwd: string): Promise<CompanionResolutionResult> {
     const candidates = await this.globalConfigStore.list();
     const found = await Promise.all(
       candidates.map(async (candidate) => {
-        const companionPath = canonicalPath(candidate);
+        const companionPath = normalisedCanonicalPath(candidate);
+        if (companionPath === null) return null;
         try {
           const { repos } = await readCompanionRegistry(companionPath);
           const repo = repos.find((r) => path.resolve(r.path) === resolvedCwd);

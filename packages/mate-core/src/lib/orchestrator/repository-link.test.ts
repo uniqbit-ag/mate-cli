@@ -1331,4 +1331,14 @@ describe("CompanionResolver: a companion written with a link before `..`", () =>
 
     expect(await new CompanionResolver(store).resolve(repoPath)).toBeNull();
   });
+
+  test("a registration leading to a missing companion does not read the decoy's registry", async () => {
+    const { repoPath, real, decoy, linkRepo, registerWritten, store } = await linkFixture();
+    await fs.rm(real, { recursive: true });
+    await linkRepo(decoy);
+    await registerWritten();
+
+    expect(await new CompanionResolver(store).resolve(repoPath)).toBeNull();
+    await expect(fs.access(repoLocalRegistryPath(repoPath))).rejects.toThrow();
+  });
 });
