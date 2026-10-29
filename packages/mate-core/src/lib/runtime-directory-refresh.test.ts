@@ -3,10 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 
 import {
-  ensureRuntimeDirectory,
   refreshRuntimeDirectory,
   stableInterpreterPath,
   type RuntimeDirectoryTargets,
@@ -188,51 +187,5 @@ describe("refreshRuntimeDirectory", () => {
 
     expect((await fs.lstat(runtimeOpenCodePluginRoot(home))).isSymbolicLink()).toBe(true);
     expect(await fs.realpath(runtimeOpenCodePluginRoot(home))).toBe(targets.pluginRoot);
-  });
-});
-
-describe("ensureRuntimeDirectory with MATE_SKIP_RUNTIME_REFRESH", () => {
-  const env = { MATE_SKIP_RUNTIME_REFRESH: "1" };
-
-  function countingRefresh() {
-    const calls = { count: 0 };
-    const refresh = async () => {
-      calls.count += 1;
-      return { changed: [] };
-    };
-    return { calls, refresh };
-  }
-
-  test("leaves the runtime directory to the installed Mate", async () => {
-    const home = await makeTempDir("acme-home-");
-    const { calls, refresh } = countingRefresh();
-
-    expect(await ensureRuntimeDirectory("doctor", refresh, { env, homeDir: home })).toBe(true);
-    expect(calls.count).toBe(0);
-  });
-
-  test("runs a command that names runtime paths once the launcher exists", async () => {
-    const home = await makeTempDir("acme-home-");
-    await fs.mkdir(path.dirname(runtimeMateBin(home)), { recursive: true });
-    await fs.writeFile(runtimeMateBin(home), "#!/bin/sh\n");
-    const { calls, refresh } = countingRefresh();
-
-    expect(await ensureRuntimeDirectory("wrap", refresh, { env, homeDir: home })).toBe(true);
-    expect(calls.count).toBe(0);
-  });
-
-  test("refuses a command that names runtime paths while the launcher is missing", async () => {
-    const home = await makeTempDir("acme-home-");
-    const errors: string[] = [];
-    const errorSpy = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
-      errors.push(args.join(" "));
-    });
-    try {
-      const { refresh } = countingRefresh();
-      expect(await ensureRuntimeDirectory("wrap", refresh, { env, homeDir: home })).toBe(false);
-    } finally {
-      errorSpy.mockRestore();
-    }
-    expect(errors.join("\n")).toContain("MATE_SKIP_RUNTIME_REFRESH");
   });
 });

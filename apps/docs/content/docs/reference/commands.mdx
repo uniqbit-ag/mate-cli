@@ -275,11 +275,6 @@ without the companion guidance and reports the missing directory, so run `mate` 
 after upgrading. If you uninstalled Mate, run `mate unwrap` (or `mate` once after
 reinstalling).
 
-To run a second Mate, such as a source checkout, next to the installed one, set
-`MATE_SKIP_RUNTIME_REFRESH=1` for it. That run leaves `~/.mate/runtime/` pointing at
-the installed Mate. `wrap`, `opencode` and `session` then refuse to run until that
-directory has a launcher.
-
 For Claude it writes `.claude/settings.local.json` regions (the artifact-path
 guard, banner, guidance and session-prepare hooks, the
 subagent companion-instructions hook, every enabled Capability's hooks, permissions, the secret-file deny rules while secret guardrails are on, and
