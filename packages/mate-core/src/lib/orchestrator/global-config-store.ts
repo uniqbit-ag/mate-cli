@@ -1,32 +1,27 @@
-import os from "node:os";
 import path from "node:path";
 
-import { FRAMEWORK_NAME } from "../../framework";
+import {
+  globalCompanionEntries,
+  globalConfigPath,
+  type GlobalCompanionEntry,
+} from "../../runtime/companion-registry-read";
 import { pathIsDirectory } from "../fs-utils";
 import { YamlFileStore } from "./yaml-file-store";
 
-interface CompanionEntry {
-  path: string;
-}
+type CompanionEntry = GlobalCompanionEntry;
 
 interface GlobalConfig {
   version: 1;
   companions: CompanionEntry[];
 }
 
+/** Parsed as Session Resolution's trust check reads it, so the two agree on who is registered. */
 function normalizeGlobalConfig(config: GlobalConfig | null): GlobalConfig {
-  return {
-    version: 1,
-    companions: Array.isArray(config?.companions) ? config.companions : [],
-  };
-}
-
-function defaultGlobalConfigPath(): string {
-  return path.join(os.homedir(), `.${FRAMEWORK_NAME}`, "config.yaml");
+  return { version: 1, companions: globalCompanionEntries(config) };
 }
 
 export class GlobalConfigStore extends YamlFileStore<GlobalConfig> {
-  constructor(configPath = defaultGlobalConfigPath()) {
+  constructor(configPath = globalConfigPath()) {
     super(configPath);
   }
 

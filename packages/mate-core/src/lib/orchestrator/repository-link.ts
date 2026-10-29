@@ -4,6 +4,7 @@ import path from "node:path";
 import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { companionRegistryPath, registryLinks } from "../../runtime/companion-registry-read";
 import {
   ancestorDirectories,
   repoLocalDirName,
@@ -120,9 +121,7 @@ export class CompanionStore {
 // Pure read of the companion registry (never writes)
 // ---------------------------------------------------------------------------
 
-export function companionRegistryPath(companionPath: string): string {
-  return path.join(path.resolve(companionPath), `.${FRAMEWORK_NAME}`, "config", "registry.yaml");
-}
+export { companionRegistryPath };
 
 export interface CompanionRegistryReadResult {
   repos: LinkedRepository[];
@@ -139,15 +138,7 @@ export async function readCompanionRegistry(
   companionPath: string,
 ): Promise<CompanionRegistryReadResult> {
   const raw = await fs.readFile(companionRegistryPath(companionPath), "utf8");
-  const parsed = parse(raw) as { repos?: unknown } | null;
-  const rawRepos = Array.isArray(parsed?.repos) ? parsed.repos : [];
-  const repos = rawRepos
-    .filter(
-      (entry): entry is LinkedRepository =>
-        Boolean(entry) && typeof entry.id === "string" && typeof entry.path === "string",
-    )
-    .map(({ id, path: repoPath }) => ({ id, path: repoPath }));
-  return { repos };
+  return { repos: registryLinks(parse(raw)) };
 }
 
 // ---------------------------------------------------------------------------
