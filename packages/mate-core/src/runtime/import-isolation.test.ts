@@ -75,3 +75,70 @@ describe("runtime subpath import isolation", () => {
     expect(outside).toEqual([]);
   });
 });
+
+/**
+ * The session surfaces take their companion from Session Resolution only: a
+ * module that walks to a projection or reads the launch variables itself
+ * would skip the trust check (ADR-025). Writing the variables for a child
+ * process stays allowed.
+ */
+const COMPANION_CHOICES = [
+  /\bresolveProjection\b/g,
+  /\bhasLaunchEnvironment\b/g,
+  /\bMATE_ENV\.(?:companionPath|repositoryPath|repositoryId)\b(?!\s*\]\s*=[^=])/g,
+  /(?:\.|\[\s*["'])(?:MATE_ARTIFACT_PATH|MATE_REPO_PATH|MATE_REPO_ID)\b(?:["']\s*\])?(?!\s*=[^=])/g,
+];
+
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'])\/\/.*$/gm, "$1");
+}
+
+/** The lines of `source` that choose a companion; `delete` of a variable is not a read. */
+function companionChoices(source: string): string[] {
+  return withoutComments(source)
+    .split("\n")
+    .filter((line) => !/^\s*delete\s/.test(line))
+    .filter((line) => COMPANION_CHOICES.some((pattern) => line.match(pattern)));
+}
+
+function sourceFiles(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) return sourceFiles(file);
+    return /\.tsx?$/.test(entry.name) && !entry.name.includes(".test.") ? [file] : [];
+  });
+}
+
+describe("session surfaces choose no companion themselves", () => {
+  test("flags a projection walk or a launch variable read, but not a write", () => {
+    expect(companionChoices("const found = resolveProjection(cwd);")).toHaveLength(1);
+    expect(companionChoices("if (hasLaunchEnvironment(env)) return;")).toHaveLength(1);
+    expect(companionChoices("const id = env[MATE_ENV.repositoryId] ?? '';")).toHaveLength(1);
+    expect(companionChoices('const p = env.MATE_ARTIFACT_PATH ?? "";')).toHaveLength(1);
+    expect(companionChoices('const p = env["MATE_REPO_PATH"];')).toHaveLength(1);
+    expect(companionChoices("if (env.MATE_REPO_ID === id) return;")).toHaveLength(1);
+
+    expect(companionChoices("env.MATE_ARTIFACT_PATH = context.companionPath;")).toEqual([]);
+    expect(companionChoices("env[MATE_ENV.repositoryPath] = context.repositoryPath;")).toEqual([]);
+    expect(companionChoices("  delete env.MATE_REPO_ID;")).toEqual([]);
+    expect(companionChoices('text.replaceAll("$MATE_REPO_PATH", root);')).toEqual([]);
+    expect(companionChoices("/** Unlike resolveProjection, this checks trust. */")).toEqual([]);
+  });
+
+  test("no hook or OpenCode module walks to a projection or reads the launch variables", () => {
+    const dirs = [
+      path.join(SRC_ROOT, "hooks"),
+      path.join(SRC_ROOT, "opencode"),
+      path.join(SRC_ROOT, "..", "opencode-plugin", "src"),
+    ];
+    const offenders = dirs
+      .flatMap(sourceFiles)
+      .flatMap((file) =>
+        companionChoices(fs.readFileSync(file, "utf8")).map(
+          (line) => `${path.relative(SRC_ROOT, file)}: ${line.trim()}`,
+        ),
+      );
+
+    expect(offenders).toEqual([]);
+  });
+});
