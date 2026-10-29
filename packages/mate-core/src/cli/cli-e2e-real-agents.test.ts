@@ -1389,3 +1389,255 @@ describe.skipIf(!runRealAgentTests || !hasOpenCode)(
     });
   },
 );
+
+/**
+ * Spike for `share-repository-link-across-worktrees` (design Decision 1): what
+ * a real Claude Code reads in a linked worktree. Every layout carries a marker
+ * hook in each candidate `settings.local.json`, an MCP server under each
+ * folder's `~/.claude.json` entry and a skill only in the main worktree. The
+ * assertions pin the outcome recorded in the design, so a Claude Code release
+ * that changes it fails here first.
+ */
+
+interface SpikeHookRun {
+  marker: string;
+  projectDir: string | null;
+  inputCwd: string | null;
+}
+
+const SPIKE_MCP_SERVER = [
+  "#!/usr/bin/env bun",
+  "// The smallest stdio MCP server: one tool, newline-delimited JSON-RPC.",
+  "let buffer = '';",
+  "const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n');",
+  "process.stdin.on('data', (chunk) => {",
+  "  buffer += chunk.toString();",
+  "  let newline;",
+  "  while ((newline = buffer.indexOf('\\n')) >= 0) {",
+  "    const line = buffer.slice(0, newline).trim();",
+  "    buffer = buffer.slice(newline + 1);",
+  "    if (!line) continue;",
+  "    const request = JSON.parse(line);",
+  "    if (request.id === undefined) continue;",
+  "    if (request.method === 'initialize') {",
+  "      send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'spike', version: '1.0.0' } } });",
+  "    } else if (request.method === 'tools/list') {",
+  "      send({ jsonrpc: '2.0', id: request.id, result: { tools: [{ name: 'ping', description: 'spike ping', inputSchema: { type: 'object', properties: {} } }] } });",
+  "    } else {",
+  "      send({ jsonrpc: '2.0', id: request.id, result: {} });",
+  "    }",
+  "  }",
+  "});",
+  "",
+].join("\n");
+
+const SPIKE_HOOK = [
+  "#!/usr/bin/env bun",
+  'import fs from "node:fs";',
+  "const [log, marker] = process.argv.slice(2);",
+  "let input = {};",
+  "try { input = JSON.parse(fs.readFileSync(0, 'utf8')); } catch {}",
+  "fs.appendFileSync(log, JSON.stringify({ marker, projectDir: process.env.CLAUDE_PROJECT_DIR ?? null, inputCwd: typeof input.cwd === 'string' ? input.cwd : null }) + '\\n');",
+  "",
+].join("\n");
+
+interface SpikeKit {
+  root: string;
+  hookLog: string;
+  hookScript: string;
+  mcpScript: string;
+}
+
+async function spikeKit(scenario: E2EScenario): Promise<SpikeKit> {
+  const kit = {
+    root: scenario.root,
+    hookLog: path.join(scenario.root, "spike-hooks.log"),
+    hookScript: path.join(scenario.root, "spike-hook.ts"),
+    mcpScript: path.join(scenario.root, "spike-mcp.ts"),
+  };
+  await fs.writeFile(kit.hookScript, SPIKE_HOOK, "utf8");
+  await fs.writeFile(kit.mcpScript, SPIKE_MCP_SERVER, "utf8");
+  return kit;
+}
+
+/** A SessionStart hook that logs `marker`, in `folder`'s `.claude/settings.local.json`. */
+async function writeMarkerHook(kit: SpikeKit, folder: string, marker: string): Promise<void> {
+  const settings = path.join(folder, ".claude", "settings.local.json");
+  await fs.mkdir(path.dirname(settings), { recursive: true });
+  const command = `bun ${kit.hookScript} ${kit.hookLog} ${marker}`;
+  await fs.writeFile(
+    settings,
+    JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command }] }] } }),
+    "utf8",
+  );
+}
+
+async function writeMainSkill(folder: string): Promise<void> {
+  const skill = path.join(folder, ".claude", "skills", "spike-main-skill", "SKILL.md");
+  await fs.mkdir(path.dirname(skill), { recursive: true });
+  await fs.writeFile(
+    skill,
+    "---\nname: spike-main-skill\ndescription: Spike skill that only the main worktree holds.\n---\nspike\n",
+    "utf8",
+  );
+}
+
+/** `~/.claude.json` with one MCP server per folder, named after it. */
+async function writeSpikeClaudeJson(
+  scenario: E2EScenario,
+  kit: SpikeKit,
+  servers: Record<string, string>,
+): Promise<void> {
+  const projects = Object.fromEntries(
+    Object.entries(servers).map(([folder, name]) => [
+      folder,
+      {
+        hasTrustDialogAccepted: true,
+        mcpServers: { [name]: { type: "stdio", command: "bun", args: [kit.mcpScript] } },
+      },
+    ]),
+  );
+  await fs.writeFile(
+    path.join(scenario.home, ".claude.json"),
+    JSON.stringify({ hasCompletedOnboarding: true, projects }),
+    "utf8",
+  );
+}
+
+async function readSpikeHookRuns(kit: SpikeKit): Promise<SpikeHookRun[]> {
+  const raw = await fs.readFile(kit.hookLog, "utf8").catch(() => "");
+  return raw
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as SpikeHookRun);
+}
+
+function gitInRoot(cwd: string, args: string[]): void {
+  runGit(cwd, ["-c", "user.email=spike@example.com", "-c", "user.name=Spike", ...args]);
+}
+
+interface SpikeObservation {
+  hooks: SpikeHookRun[];
+  mcpServers: string[];
+  skillListed: boolean;
+}
+
+async function observeSpike(
+  scenario: E2EScenario,
+  kit: SpikeKit,
+  cwd: string,
+  args: string[],
+  serverNames: string[],
+): Promise<SpikeObservation> {
+  await fs.rm(kit.hookLog, { force: true });
+  const mock = await startMockModelServer();
+  try {
+    const result = await runPlainClaude(scenario, cwd, [...args, "--print", "spike hi"], mock);
+    expect(result.exitCode).toBe(0);
+    const body = requestFor(mock, "spike hi").body;
+    return {
+      hooks: await readSpikeHookRuns(kit),
+      mcpServers: serverNames.filter((name) => body.includes(`mcp__${name}__`)),
+      skillListed: body.includes("spike-main-skill"),
+    };
+  } finally {
+    await mock.close();
+  }
+}
+
+describe.skipIf(!runRealAgentTests || !hasClaude)(
+  "real claude agent — worktree spike (share-repository-link-across-worktrees)",
+  () => {
+    test("Claude Code reads a linked worktree's local settings and skills from the main worktree", async () => {
+      const scenario = await createScenario("mate-cli-e2e-spike-worktrees-");
+      const kit = await spikeKit(scenario);
+      const main = scenario.working;
+      gitInRoot(scenario.root, ["init", "-q", "--initial-branch=main", main]);
+      gitInRoot(main, ["commit", "-q", "--allow-empty", "-m", "init"]);
+      const sibling = path.join(scenario.root, "app-sibling");
+      const nested = path.join(main, ".claude", "worktrees", "nest");
+      gitInRoot(main, ["worktree", "add", "-q", "--detach", sibling]);
+      gitInRoot(main, ["worktree", "add", "-q", "--detach", nested]);
+      await writeMarkerHook(kit, main, "main");
+      await writeMarkerHook(kit, sibling, "sibling");
+      await writeMainSkill(main);
+
+      const bareRoot = path.join(scenario.root, "bare");
+      await fs.mkdir(bareRoot);
+      const bare = path.join(bareRoot, "acme.git");
+      gitInRoot(scenario.root, ["clone", "-q", "--bare", main, bare]);
+      const bareA = path.join(bareRoot, "acme-a");
+      const bareB = path.join(bareRoot, "acme-b");
+      gitInRoot(bare, ["worktree", "add", "-q", "--detach", bareA]);
+      gitInRoot(bare, ["worktree", "add", "-q", "--detach", bareB]);
+      await writeMarkerHook(kit, bare, "bare-dir");
+      await writeMarkerHook(kit, bareA, "bare-a");
+      await writeMarkerHook(kit, bareB, "bare-b");
+      await writeMainSkill(bareA);
+
+      const servers: Record<string, string> = {
+        [main]: "spike-main",
+        [sibling]: "spike-sibling",
+        [nested]: "spike-nested",
+        [bare]: "spike-bare-dir",
+        [bareA]: "spike-bare-a",
+        [bareB]: "spike-bare-b",
+      };
+      await writeSpikeClaudeJson(scenario, kit, servers);
+      const names = Object.values(servers);
+
+      /** Nested: its own settings file too, written after the sibling run left only the main's. */
+      const siblingRun = await observeSpike(scenario, kit, sibling, [], names);
+      const nestedBare = await observeSpike(scenario, kit, nested, [], names);
+      await writeMarkerHook(kit, nested, "nested");
+      const nestedRun = await observeSpike(scenario, kit, nested, [], names);
+      const bareRun = await observeSpike(scenario, kit, bareB, [], names);
+      const flagRun = await observeSpike(scenario, kit, main, ["--worktree", "spike-flag"], names);
+      const flagFolder = path.join(main, ".claude", "worktrees", "spike-flag");
+
+      const report = {
+        claudeVersion: spawnSync("claude", ["--version"], { encoding: "utf8" }).stdout.trim(),
+        sibling: siblingRun,
+        nestedWithoutOwnSettings: nestedBare,
+        nestedWithOwnSettings: nestedRun,
+        bareWorktree: bareRun,
+        worktreeFlag: { ...flagRun, folder: flagFolder },
+        layout: { main, sibling, nested, bare, bareA, bareB },
+      };
+      console.log(`WORKTREE-SPIKE ${JSON.stringify(report, null, 2)}`);
+
+      const markers = (observation: SpikeObservation) =>
+        observation.hooks.map((run) => run.marker).toSorted();
+      /**
+       * Outcome C: a linked worktree of a non-bare clone loads the main
+       * worktree's local settings and its own, so a hook both carry runs twice.
+       */
+      expect(markers(siblingRun)).toEqual(["main", "sibling"]);
+      expect(markers(nestedBare)).toEqual(["main"]);
+      expect(markers(nestedRun)).toEqual(["main", "nested"]);
+      expect(markers(flagRun)).toEqual(["main"]);
+      /** A bare repository's worktree loads its own file only. */
+      expect(markers(bareRun)).toEqual(["bare-b"]);
+      /** The hook input's `cwd` and `CLAUDE_PROJECT_DIR` name the worktree, `--worktree` included. */
+      for (const [observation, folder] of [
+        [siblingRun, sibling],
+        [nestedRun, nested],
+        [bareRun, bareB],
+        [flagRun, flagFolder],
+      ] as const) {
+        for (const run of observation.hooks) {
+          expect(run.inputCwd).toBe(folder);
+          expect(run.projectDir).toBe(folder);
+        }
+      }
+      /** MCP servers come from the main worktree's entry; for a bare clone, the bare folder's. */
+      expect(siblingRun.mcpServers).toEqual(["spike-main"]);
+      expect(nestedRun.mcpServers).toEqual(["spike-main"]);
+      expect(bareRun.mcpServers).toEqual(["spike-bare-dir"]);
+      /** Skills read through to the main worktree when the worktree has no `.claude/skills`. */
+      expect(siblingRun.skillListed).toBe(true);
+      expect(nestedRun.skillListed).toBe(true);
+      expect(bareRun.skillListed).toBe(false);
+    }, 240_000);
+  },
+);
