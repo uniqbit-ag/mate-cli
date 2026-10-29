@@ -16,6 +16,7 @@ import { GlobalConfigStore } from "./global-config-store";
 import { runtimeDocumentDeps } from "./projection-runtime-documents";
 import { firstFailure } from "./projection-types";
 import type { RenderedRuntimeDocument } from "../../runtime/runtime-document-manifest";
+import { addWorktree, git } from "../../../test/git-checkouts";
 import { writeRepoLocalRegistryEntry } from "./repository-link";
 import type { LinkedRepository } from "./types";
 import {
@@ -262,6 +263,28 @@ describe("the projection round-trip", () => {
     expect(await snapshot(repoPath)).toEqual(before);
   });
 
+  test("with another Checkout carrying a Projection Root, only the lines it needs stay", async () => {
+    const { repoPath, companionPath, repository } = await makeSeededRepo("projection-sibling-");
+    git(repoPath, "commit", "-q", "-m", "init");
+    const worktree = addWorktree(repoPath, path.join(path.dirname(repoPath), "working-feature"));
+    await fs.mkdir(path.join(worktree, `.${FRAMEWORK_NAME}`));
+    const before = await snapshot(repoPath);
+
+    await projectEveryScope(repoPath, companionPath, repository);
+    await unproject({ repoPath, registeredCompanionPaths: [companionPath] });
+    const after = await snapshot(repoPath);
+
+    const managedBlock = /# mate managed: start\n(?:.*\n)*?# mate managed: end\n/;
+    expect(after.gitExclude).toMatch(managedBlock);
+    /** Status follows from the kept block, which also hides this Checkout's own `.claude/`. */
+    const withoutKept = (tree: Tree) => ({
+      ...tree,
+      gitExclude: tree.gitExclude.replace(managedBlock, ""),
+      gitStatus: "",
+    });
+    expect(withoutKept(after)).toEqual(withoutKept(before));
+  });
+
   test("a directory Mate created is gone and one the user had survives with its files", async () => {
     const { repoPath, companionPath, repository } = await makeSeededRepo("projection-dirs-", {
       claudeDir: false,
@@ -303,6 +326,22 @@ describe("the projection round-trip", () => {
     );
   });
 
+  test("turning tokensave off keeps its line while another Checkout has its index", async () => {
+    const { repoPath, companionPath, repository } = await makeSeededRepo("projection-tokensave-");
+    git(repoPath, "commit", "-q", "-m", "init");
+    const worktree = addWorktree(repoPath, path.join(path.dirname(repoPath), "working-feature"));
+    await projectEveryScope(repoPath, companionPath, repository, [{ name: "tokensave" }]);
+    await fs.mkdir(path.join(worktree, ".tokensave"));
+    const excludePath = path.join(repoPath, ".git", "info", "exclude");
+
+    await project("launch", { repoPath, companionPath, config: { capabilities: [] } });
+    expect(await fs.readFile(excludePath, "utf8")).toContain(".tokensave/\n");
+
+    await fs.rm(path.join(worktree, ".tokensave"), { recursive: true });
+    await project("launch", { repoPath, companionPath, config: { capabilities: [] } });
+    expect(await fs.readFile(excludePath, "utf8")).not.toContain(".tokensave/");
+  });
+
   test("a wrap links the companion's /opsx commands and unwrapping removes only that link", async () => {
     const { repoPath, companionPath, repository } = await makeSeededRepo("projection-commands-");
     const opsx = path.join(companionPath, ".claude", "commands", "opsx");
@@ -322,6 +361,23 @@ describe("the projection round-trip", () => {
 
     expect(await snapshot(repoPath)).toEqual(before);
     expect(await fs.readFile(path.join(opsx, "propose.md"), "utf8")).toBe("propose\n");
+  });
+
+  test("a block kept for another Checkout is a retained outcome naming it", async () => {
+    const { repoPath, companionPath, repository } = await makeSeededRepo("projection-kept-");
+    git(repoPath, "commit", "-q", "-m", "init");
+    const worktree = await fs.realpath(
+      addWorktree(repoPath, path.join(path.dirname(repoPath), "working-feature")),
+    );
+    await fs.mkdir(path.join(worktree, `.${FRAMEWORK_NAME}`));
+    await projectEveryScope(repoPath, companionPath, repository);
+
+    const { outcomes } = await unproject({ repoPath, registeredCompanionPaths: [companionPath] });
+
+    expect(outcomes.find((outcome) => outcome.id === "git-excludes")).toMatchObject({
+      state: "retained",
+      keptFor: [worktree],
+    });
   });
 
   test("unprojecting twice removes nothing further and leaves the tree unchanged", async () => {

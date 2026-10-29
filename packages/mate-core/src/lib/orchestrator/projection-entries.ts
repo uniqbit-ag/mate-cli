@@ -21,6 +21,7 @@ import {
 import { TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES } from "../../tools/setup/capabilities/tokensave-shared";
 import {
   ensureWorkingRepoLocalExcludes,
+  localDataNeeds,
   managedWorkingRepoExcludesPresent,
   reconcileWorkingRepoCapabilityExcludes,
   removeWorkingRepoLocalExcludes,
@@ -75,11 +76,12 @@ import {
   upsertRepoLocalLinkedRepository,
   writeRepoLocalFrameworkConfig,
 } from "./repo-local-store";
-import type {
-  ProjectionEntry,
-  ProjectionInput,
-  ProjectionWriteReport,
-  ProjectionWriteState,
+import {
+  excludeRemovalReport,
+  type ProjectionEntry,
+  type ProjectionInput,
+  type ProjectionWriteReport,
+  type ProjectionWriteState,
 } from "./projection-types";
 
 const WORKSPACE_DOCUMENT_FILE = "workspace.code-workspace";
@@ -195,7 +197,7 @@ function buildEntries(): readonly ProjectionEntry[] {
       removal: {
         by: "self",
         remove: async (input) =>
-          (await removeWorkingRepoLocalExcludes(input.repoPath)) ? "removed" : "absent",
+          excludeRemovalReport(await removeWorkingRepoLocalExcludes(input.repoPath)),
       },
       present: managedWorkingRepoExcludesPresent,
     },
@@ -285,8 +287,7 @@ function buildEntries(): readonly ProjectionEntry[] {
       kind: "merged",
       path: path.join(".git", "info", "exclude"),
       scopes: ["session", "wrap"],
-      write: async (input) =>
-        (await reconcileStorePointerExclude(input.repoPath)) ? "written" : "current",
+      write: (input) => reconcileStorePointerExclude(input.repoPath),
       degradable: true,
       removal: { by: "self", remove: (input) => removeStorePointerExclude(input.repoPath) },
       present: (repoPath) =>
@@ -356,11 +357,14 @@ function buildEntries(): readonly ProjectionEntry[] {
       scopes: ["launch", "wrap"],
       write: async (input) => {
         if (!input.config) return "skipped";
-        return (await reconcileWorkingRepoCapabilityExcludes(
-          input.repoPath,
-          tokensaveEnabled(input) ? TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES : [],
-          TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
-        ))
+        return (
+          await reconcileWorkingRepoCapabilityExcludes(
+            input.repoPath,
+            tokensaveEnabled(input) ? TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES : [],
+            TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
+            localDataNeeds(TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES),
+          )
+        ).changed
           ? "written"
           : "current";
       },

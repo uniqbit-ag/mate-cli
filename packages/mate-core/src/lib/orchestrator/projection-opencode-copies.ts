@@ -13,7 +13,11 @@ import {
 import { writeAtomic } from "../../runtime/write-atomic";
 import { pruneEmptyAncestors } from "../../tools/setup/utils";
 import { reconcileWorkingRepoCopyExcludes } from "../../tools/setup/working-repo-local-state";
-import type { ProjectionWriteReport } from "./projection-types";
+import {
+  excludeRemovalReport,
+  type ProjectionSelfRemoval,
+  type ProjectionWriteReport,
+} from "./projection-types";
 
 /**
  * Copies the companion's `.opencode/` into the Working Repository's own
@@ -136,6 +140,11 @@ async function planCopies(repoPath: string, companionPath: string): Promise<Copy
   return plan;
 }
 
+/** The copies a Checkout records; another Checkout's keep their lines in the shared file. */
+async function recordedCopiesOf(checkout: string): Promise<string[]> {
+  return Object.keys(copies(await readManifest(checkout), "opencode"));
+}
+
 function sameRecords(a: Record<string, CopyRecord>, b: Record<string, CopyRecord>): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -159,7 +168,9 @@ export async function reconcileCompanionCopies(
   );
 
   const covering = [...new Set([...Object.keys(plan.previous), ...Object.keys(plan.records)])];
-  const excludesWidened = await reconcileWorkingRepoCopyExcludes(repoPath, covering);
+  const excludesWidened = (
+    await reconcileWorkingRepoCopyExcludes(repoPath, covering, recordedCopiesOf)
+  ).changed;
   /** Previous records win: a path not yet rewritten keeps the hash on disk. */
   const interim = { ...plan.records, ...plan.previous };
   if (!sameRecords(interim, plan.previous)) {
@@ -180,10 +191,9 @@ export async function reconcileCompanionCopies(
   if (recordsWritten) {
     await updateManifest(repoPath, (manifest) => withCopies(manifest, "opencode", plan.records));
   }
-  const excludesNarrowed = await reconcileWorkingRepoCopyExcludes(
-    repoPath,
-    Object.keys(plan.records),
-  );
+  const excludesNarrowed = (
+    await reconcileWorkingRepoCopyExcludes(repoPath, Object.keys(plan.records), recordedCopiesOf)
+  ).changed;
 
   const written = plan.write.map(({ relativePath }) => relativePath);
   return {
@@ -201,11 +211,12 @@ export async function reconcileCompanionCopies(
 }
 
 /**
- * Deletes every owned copy, then its exclude line, and prunes what that
- * emptied: a copy is never on disk without the line that hides it.
+ * Deletes every owned copy, then its exclude line unless another Checkout
+ * records that copy, and prunes what that emptied: a copy is never on disk
+ * without the line that hides it.
  */
-export async function withdrawCompanionCopies(repoPath: string): Promise<ProjectionWriteReport> {
-  const owned = Object.keys(copies(await readManifest(repoPath), "opencode"));
+async function withdraw(repoPath: string) {
+  const owned = await recordedCopiesOf(repoPath);
   for (const relativePath of owned) {
     // oxlint-disable-next-line no-await-in-loop
     await deleteCopy(repoPath, relativePath);
@@ -213,18 +224,24 @@ export async function withdrawCompanionCopies(repoPath: string): Promise<Project
   if (owned.length > 0) {
     await updateManifest(repoPath, (manifest) => withCopies(manifest, "opencode", {}));
   }
-  const excludesChanged = await reconcileWorkingRepoCopyExcludes(repoPath, []);
+  const excludes = await reconcileWorkingRepoCopyExcludes(repoPath, [], recordedCopiesOf);
+  /** Deleted copies count as a change too: kept lines make a removal `retained` only when nothing else went. */
+  return { ...excludes, owned, changed: owned.length > 0 || excludes.changed };
+}
+
+export async function withdrawCompanionCopies(repoPath: string): Promise<ProjectionWriteReport> {
+  const { owned, changed } = await withdraw(repoPath);
   return {
-    state: owned.length > 0 || excludesChanged ? "written" : "current",
+    state: changed ? "written" : "current",
     changed: { written: [], removed: owned },
   };
 }
 
-export async function removeCompanionCopies(repoPath: string): Promise<"removed" | "absent"> {
-  return (await withdrawCompanionCopies(repoPath)).state === "written" ? "removed" : "absent";
+export async function removeCompanionCopies(repoPath: string): Promise<ProjectionSelfRemoval> {
+  return excludeRemovalReport(await withdraw(repoPath));
 }
 
 /** Whether any owned copy is recorded. */
 export async function companionCopiesPresent(repoPath: string): Promise<boolean> {
-  return Object.keys(copies(await readManifest(repoPath), "opencode")).length > 0;
+  return (await recordedCopiesOf(repoPath)).length > 0;
 }

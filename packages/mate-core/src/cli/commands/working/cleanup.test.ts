@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import type { WorkspaceInventoryV1 } from "../../../lib/orchestrator/workspace-inventory";
+import type { WorkingRepoCleanupResult } from "../../../tools/setup/working-repo-cleanup";
 import { runWorkingCleanupCommand, type WorkingCleanupCommandDeps } from "./cleanup";
 
 const emptyInventory: WorkspaceInventoryV1 = {
@@ -12,6 +13,20 @@ const emptyInventory: WorkspaceInventoryV1 = {
 afterEach(() => {
   process.exitCode = 0;
 });
+
+function cleanupResult(
+  overrides: Partial<WorkingRepoCleanupResult> = {},
+): WorkingRepoCleanupResult {
+  return {
+    changed: true,
+    removed: [],
+    updated: [],
+    retained: [],
+    kept: [],
+    warnings: [],
+    ...overrides,
+  };
+}
 
 function deps(overrides: Partial<WorkingCleanupCommandDeps> = {}): WorkingCleanupCommandDeps {
   return {
@@ -29,7 +44,7 @@ function deps(overrides: Partial<WorkingCleanupCommandDeps> = {}): WorkingCleanu
         },
       ],
     }),
-    cleanup: async () => ({ changed: true, removed: [".mate", "git-excludes"], updated: [] }),
+    cleanup: async () => cleanupResult({ removed: [".mate", "git-excludes"] }),
     ...overrides,
   };
 }
@@ -45,7 +60,7 @@ describe("runWorkingCleanupCommand", () => {
         deps({
           cleanup: async (repoPath, companions) => {
             cleanupCalls.push({ repoPath, companions });
-            return { changed: true, removed: [".mate", "git-excludes"], updated: [] };
+            return cleanupResult({ removed: [".mate", "git-excludes"] });
           },
         }),
       );
@@ -57,13 +72,63 @@ describe("runWorkingCleanupCommand", () => {
     expect(logs).toEqual(["mate: cleaned working repository (removed: .mate, git-excludes)"]);
   });
 
+  test("names what it kept for another worktree and which one needs it", async () => {
+    const logs: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((line: string) => logs.push(line));
+    try {
+      await runWorkingCleanupCommand(
+        [],
+        deps({
+          cleanup: async () =>
+            cleanupResult({
+              removed: [".mate"],
+              kept: [{ label: "git-excludes", keptFor: ["/repo-feature"] }],
+            }),
+        }),
+      );
+    } finally {
+      log.mockRestore();
+    }
+
+    expect(logs).toEqual([
+      "mate: cleaned working repository (removed: .mate; kept: git-excludes (still needed by /repo-feature))",
+    ]);
+  });
+
+  test("passes a removal's warning on to stderr", async () => {
+    const errors: string[] = [];
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    const error = spyOn(console, "error").mockImplementation((line: string) => errors.push(line));
+    try {
+      await runWorkingCleanupCommand(
+        [],
+        deps({
+          cleanup: async () =>
+            cleanupResult({
+              removed: [".mate"],
+              warnings: ["untracked files under /repo/openspec are hidden from Git"],
+            }),
+        }),
+      );
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
+
+    expect(errors).toEqual([
+      "mate: warning: untracked files under /repo/openspec are hidden from Git",
+    ]);
+  });
+
   test("reports idempotent cleanup", async () => {
     const logs: string[] = [];
     const log = spyOn(console, "log").mockImplementation((line: string) => logs.push(line));
     try {
       await runWorkingCleanupCommand(
         [],
-        deps({ cleanup: async () => ({ changed: false, removed: [], updated: [] }) }),
+        deps({
+          cleanup: async () => cleanupResult({ changed: false }),
+        }),
       );
     } finally {
       log.mockRestore();
@@ -88,7 +153,7 @@ describe("runWorkingCleanupCommand", () => {
             ...testCase,
             cleanup: async () => {
               cleaned = true;
-              return { changed: true, removed: [], updated: [] };
+              return cleanupResult();
             },
           }),
         );

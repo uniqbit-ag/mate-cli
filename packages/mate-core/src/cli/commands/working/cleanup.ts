@@ -116,13 +116,22 @@ export async function runWorkingCleanupCommand(
   }
   const companionPaths = [...new Set(matches.map((pairing) => pairing.companionPath))];
   const result = await deps.cleanup(repoPath, companionPaths);
+  const kept = result.kept.map(
+    ({ label, keptFor }) => `${label} (still needed by ${keptFor.join(", ")})`,
+  );
+  const keptDetail = kept.length > 0 ? `kept: ${kept.join(", ")}` : null;
+  for (const warning of result.warnings) {
+    console.error(`${FRAMEWORK_NAME}: warning: ${warning}`);
+  }
   if (!result.changed) {
-    console.log(`${FRAMEWORK_NAME}: working repository already clean`);
+    const suffix = keptDetail ? ` (${keptDetail})` : "";
+    console.log(`${FRAMEWORK_NAME}: working repository already clean${suffix}`);
     return;
   }
   const details = [
     ...(result.removed.length > 0 ? [`removed: ${result.removed.join(", ")}`] : []),
     ...(result.updated.length > 0 ? [`updated: ${result.updated.join(", ")}`] : []),
+    ...(keptDetail ? [keptDetail] : []),
   ];
   console.log(`${FRAMEWORK_NAME}: cleaned working repository (${details.join("; ")})`);
 }

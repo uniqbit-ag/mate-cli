@@ -6,6 +6,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { fileExists } from "../../lib/fs-utils";
+import { reconcileCompanionCopies } from "../../lib/orchestrator/projection-opencode-copies";
+import {
+  reconcileStorePointerExclude,
+  writeStorePointer,
+} from "../../lib/orchestrator/projection-openspec-store";
 import { writeRepoLocalRegistryEntry } from "../../lib/orchestrator/repository-link";
 import { repoLocalDirPath } from "../../runtime/repo-local";
 import {
@@ -13,6 +18,8 @@ import {
   projectionYamlPath,
   writeProjectionPair,
 } from "../../runtime/projection";
+import { addWorktree, initRepo } from "../../../test/git-checkouts";
+import { createTempDir } from "../../../../../test/fixtures";
 import { ensureWorkingRepoLocalExcludes } from "./working-repo-local-state";
 import { cleanupWorkingRepository } from "./working-repo-cleanup";
 
@@ -33,6 +40,69 @@ afterEach(async () => {
 });
 
 describe("cleanupWorkingRepository", () => {
+  test("keeps the managed block a sibling worktree needs and names it", async () => {
+    const root = await createTempDir("mate-cleanup-clone-");
+    tempRoots.push(root);
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme-feature"));
+    await ensureWorkingRepoLocalExcludes(main);
+    await fs.mkdir(repoLocalDirPath(main));
+    await fs.mkdir(repoLocalDirPath(worktree));
+
+    const result = await cleanupWorkingRepository(main);
+
+    expect(await fileExists(repoLocalDirPath(main))).toBe(false);
+    expect(result.removed).toContain(".mate");
+    expect(result.removed).not.toContain("git-excludes");
+    expect(result.kept).toEqual([{ label: "git-excludes", keptFor: [worktree] }]);
+    expect(await fs.readFile(path.join(main, ".git", "info", "exclude"), "utf8")).toContain(
+      "# mate managed: start",
+    );
+  });
+
+  test("a block kept beside a removed legacy line is named once, as kept", async () => {
+    const root = await createTempDir("mate-cleanup-kept-once-");
+    tempRoots.push(root);
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme-feature"));
+    await ensureWorkingRepoLocalExcludes(main);
+    await fs.appendFile(path.join(main, ".git", "info", "exclude"), ".mate/\n", "utf8");
+    await fs.mkdir(repoLocalDirPath(worktree));
+
+    const result = await cleanupWorkingRepository(main);
+
+    expect(result).toMatchObject({
+      changed: true,
+      removed: [],
+      kept: [{ label: "git-excludes", keptFor: [worktree] }],
+    });
+  });
+
+  test("names the pointer and copy lines it kept for a sibling worktree", async () => {
+    const root = await createTempDir("mate-cleanup-kept-labels-");
+    tempRoots.push(root);
+    const companionPath = path.join(root, "companion");
+    await fs.mkdir(path.join(companionPath, ".opencode", "commands"), { recursive: true });
+    await fs.writeFile(path.join(companionPath, ".opencode", "commands", "acme.md"), "acme\n");
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme-feature"));
+    for (const checkout of [main, worktree]) {
+      // oxlint-disable-next-line no-await-in-loop -- two Checkouts, one shared exclude file
+      await reconcileStorePointerExclude(checkout);
+      // oxlint-disable-next-line no-await-in-loop
+      await writeStorePointer(checkout, "acme-companion");
+      // oxlint-disable-next-line no-await-in-loop
+      await reconcileCompanionCopies(checkout, companionPath);
+    }
+
+    const result = await cleanupWorkingRepository(main, [companionPath]);
+
+    expect(result.kept.toSorted((a, b) => a.label.localeCompare(b.label))).toEqual([
+      { label: "opencode-copy-excludes", keptFor: [worktree] },
+      { label: "openspec-exclude", keptFor: [worktree] },
+    ]);
+  });
+
   test("removes Mate-owned state while preserving user agent files and settings", async () => {
     const repoPath = await makeRepo("mate-working-cleanup-");
     const companionPath = path.join(repoPath, "..", "companion");

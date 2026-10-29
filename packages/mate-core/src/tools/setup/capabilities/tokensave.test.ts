@@ -18,6 +18,7 @@ import {
   TOKENSAVE_STORE_DIR,
   TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES,
   ensureTokensaveBranchingPosture,
+  ensureTokensaveStoreExcluded,
   isTokensaveAgentIntegrated,
   isTokensaveIndexed,
   tokensaveDeps,
@@ -51,6 +52,22 @@ function makeCtx(
 describe("TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES", () => {
   test("contains TokenSave local git exclude entries", () => {
     expect(TOKENSAVE_WORKING_REPO_EXCLUDE_ENTRIES).toContain(".tokensave/");
+  });
+});
+
+describe("ensureTokensaveStoreExcluded", () => {
+  test("adds its line and leaves the user's lines as they were", async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "acme-tokensave-exclude-"));
+    tempRoots.push(repo);
+    await fs.mkdir(path.join(repo, ".git", "info"), { recursive: true });
+    const user = "# acme\n  *.indented\n\n*.log\n";
+    await fs.writeFile(path.join(repo, ".git", "info", "exclude"), user, "utf8");
+
+    await ensureTokensaveStoreExcluded(repo);
+
+    expect(await fs.readFile(path.join(repo, ".git", "info", "exclude"), "utf8")).toBe(
+      `${user}.tokensave/\n`,
+    );
   });
 });
 

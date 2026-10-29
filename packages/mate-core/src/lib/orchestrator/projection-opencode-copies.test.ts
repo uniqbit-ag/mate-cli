@@ -7,8 +7,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { copies } from "../../runtime/runtime-document-manifest";
 import { readManifest } from "../../runtime/runtime-document-manifest";
+import { addWorktree, initRepo } from "../../../test/git-checkouts";
 import { unproject, unwrapWorkingRuntimeDocuments } from "./working-repo-projection";
-import { reconcileCompanionCopies, removeCompanionCopies } from "./projection-opencode-copies";
+import {
+  reconcileCompanionCopies,
+  removeCompanionCopies,
+  withdrawCompanionCopies,
+} from "./projection-opencode-copies";
 
 const tempRoots: string[] = [];
 
@@ -309,5 +314,72 @@ describe("unwrapping and cleanup reach the copies", () => {
       "removed",
     );
     expect(await exists(path.join(repoPath, ".opencode", "commands", "acme.md"))).toBe(false);
+  });
+});
+
+describe("copies across Checkouts of one clone", () => {
+  const ACME = ".opencode/commands/acme.md";
+  const OTHER = ".opencode/commands/other.md";
+
+  /** `worktree` records both copies; `main` only `other.md`, because its own `acme.md` shadows the companion's. */
+  async function clone(): Promise<{ companionPath: string; main: string; worktree: string }> {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "acme-copies-clone-")));
+    tempRoots.push(root);
+    const companionPath = path.join(root, "companion");
+    await put(companionPath, ACME, "acme\n");
+    await put(companionPath, OTHER, "other\n");
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme-feature"));
+    await put(main, ACME, "main's own\n");
+    await reconcileCompanionCopies(worktree, companionPath);
+    await reconcileCompanionCopies(main, companionPath);
+    return { companionPath, main, worktree };
+  }
+
+  test("a reconcile keeps the line for a copy only another Checkout records", async () => {
+    const { companionPath, main, worktree } = await clone();
+
+    await reconcileCompanionCopies(main, companionPath);
+
+    expect(await exclude(main)).toContain(`/${ACME}`);
+    expect(gitStatus(worktree)).not.toContain(".opencode");
+  });
+
+  test("withdrawing one Checkout's copies keeps the lines another records", async () => {
+    const { main, worktree } = await clone();
+
+    await withdrawCompanionCopies(main);
+
+    expect(await exists(path.join(main, OTHER))).toBe(false);
+    expect(await exclude(main)).toContain(`/${ACME}`);
+    expect(await exclude(main)).toContain(`/${OTHER}`);
+    expect(gitStatus(worktree)).not.toContain(".opencode");
+  });
+
+  test("removing copies another Checkout records is a removed outcome naming it", async () => {
+    const { main, worktree } = await clone();
+
+    const report = await removeCompanionCopies(main);
+
+    expect(report).toMatchObject({ state: "removed", keptFor: [worktree] });
+    expect(typeof report === "object" && report.kept?.toSorted()).toEqual([
+      `/${ACME}`,
+      `/${OTHER}`,
+    ]);
+  });
+
+  test("unwrapping one Checkout keeps the other's lines; the last one removes them", async () => {
+    const { main, worktree } = await clone();
+
+    const unwrapped = await unwrapWorkingRuntimeDocuments(worktree);
+
+    expect(unwrapped).toMatchObject({ kept: { lines: 1, keptFor: [main] } });
+    expect(await exists(path.join(worktree, ACME))).toBe(false);
+    expect(await exclude(main)).toContain(`/${OTHER}`);
+    expect(await exclude(main)).not.toContain(`/${ACME}`);
+
+    await unwrapWorkingRuntimeDocuments(main);
+
+    expect(await exclude(main)).not.toContain(`/${OTHER}`);
   });
 });

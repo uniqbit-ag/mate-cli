@@ -59,7 +59,12 @@ describe("the launch scope of the Managed Projection", () => {
     });
 
     await ensureWorkingRepoLocalExcludes(workingRepoPath);
-    await reconcileWorkingRepoCapabilityExcludes(workingRepoPath, [".tokensave/"], [".tokensave/"]);
+    await reconcileWorkingRepoCapabilityExcludes(
+      workingRepoPath,
+      [".tokensave/"],
+      [".tokensave/"],
+      async () => [],
+    );
 
     const exclude = await fs.readFile(
       path.join(workingRepoPath, ".git", "info", "exclude"),
