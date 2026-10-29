@@ -4,13 +4,29 @@ import { describe, expect, it } from "bun:test";
 
 import type { StudioCompanionPayload } from "../../payload";
 import { Workflow } from "./index";
-import { workflowPlan, workflowSteps } from "./steps";
+import { buildPath, workflowPlan, type WorkflowMapNode, type WorkflowPath } from "./steps";
+
+const ALL_SKILLS = [
+  "mate-clarify-intent",
+  "mate-interview-me",
+  "mate-grill-me",
+  "mate-grill-with-docs",
+  "mate-explore-change",
+  "mate-propose-change",
+  "mate-apply-change",
+  "mate-show-me",
+  "mate-simplify-code",
+  "mate-archive-change",
+  "mate-publish-artifact",
+];
 
 function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompanionPayload {
   return {
     companionPath: "/home/dev/.mate/companions/acme-companion",
     changes: [],
     specs: [],
+    shipped: [],
+    skills: ALL_SKILLS,
     topology: null,
     warnings: [],
     ...overrides,
@@ -21,286 +37,387 @@ function render(data: StudioCompanionPayload = payload()): string {
   return String(<Workflow payload={data} />);
 }
 
+const labels = (path: WorkflowPath): string[] => path.steps.map((step) => step.label);
+
+/** Consecutive steps of one phase, in stage order. */
+const phaseIds = (path: WorkflowPath) => {
+  const phases: [string, string[]][] = [];
+  for (const step of path.steps) {
+    const last = phases.at(-1);
+    if (last?.[0] === step.phase) last[1].push(step.id);
+    else phases.push([step.phase, [step.id]]);
+  }
+  return phases;
+};
+
+const mapShape = (path: WorkflowPath) =>
+  path.map.map((node: WorkflowMapNode) =>
+    node.kind === "stage" ? node.step.id : { [node.group]: node.steps.map((step) => step.id) },
+  );
+
+const ACME_TOPOLOGY = {
+  schemaName: "acme-v1",
+  workflowCapabilityId: "openspec",
+  source: "project" as const,
+  artifacts: [
+    { id: "brief", description: "States the outcome.", requires: [] },
+    { id: "tasks", requires: ["brief"] },
+  ],
+  edges: [],
+  apply: { requires: ["tasks"] },
+};
+
 describe("workflowPlan", () => {
-  it("starts with optional pre-explore and ends with artifact publish", () => {
-    const plan = workflowPlan();
-    expect(plan.start.id).toBe("pre-explore");
-    expect(plan.finish.id).toBe("finish");
-    expect(plan.start.title).toBe("pre-explore");
-    expect(plan.finish.title).toBe("mate artifact publish");
-  });
-
-  it("offers full and minimal schema profiles", () => {
-    const plan = workflowPlan();
-    expect(plan.branches.map((branch) => branch.profile)).toEqual(["mate-v1", "mate-minimal"]);
-    expect(plan.branches[0]?.steps.map((step) => step.id)).toEqual([
-      "explore",
-      "proposal",
-      "specs",
-      "design",
-      "tasks",
-      "apply",
+  it("presents the full and minimal paths in Delivery Path order", () => {
+    const plan = workflowPlan({ skills: ALL_SKILLS });
+    expect(plan.paths.map((path) => path.schema)).toEqual(["mate-v1", "mate-minimal"]);
+    expect(labels(plan.paths[0])).toEqual([
+      "Clarify intent",
+      "Explore change",
+      "Propose change",
+      "Review proposal",
+      "Review specs",
+      "Review design",
+      "Review tasks",
+      "Apply change",
+      "Inspect outcome",
+      "Refine code",
+      "Archive change",
+      "Publish companion artifacts",
     ]);
-    expect(plan.branches[1]?.steps.map((step) => step.id)).toEqual([
-      "explore",
-      "propose",
-      "specs",
-      "tasks",
-      "apply",
-    ]);
-    expect(plan.branches[1]?.description).toContain("only specs and tasks");
-    expect(plan.shared.map((step) => step.id)).toEqual(["show-me", "simplify", "archive"]);
-  });
-
-  it("flattens either profile into an executable sequence", () => {
-    expect(workflowSteps("mate-v1").map((step) => step.id)).toEqual([
-      "pre-explore",
-      "explore",
-      "proposal",
-      "specs",
-      "design",
-      "tasks",
-      "apply",
-      "show-me",
-      "simplify",
-      "archive",
-      "finish",
-    ]);
-    expect(workflowSteps("mate-minimal").map((step) => step.id)).toEqual([
-      "pre-explore",
-      "explore",
-      "propose",
-      "specs",
-      "tasks",
-      "apply",
-      "show-me",
-      "simplify",
-      "archive",
-      "finish",
+    expect(labels(plan.paths[1])).toEqual([
+      "Clarify intent",
+      "Explore change",
+      "Propose change",
+      "Review specs",
+      "Review tasks",
+      "Apply change",
+      "Inspect outcome",
+      "Refine code",
+      "Archive change",
+      "Publish companion artifacts",
     ]);
   });
 
-  it("keeps the optional pre-explore choices before either profile", () => {
-    const step = workflowPlan().start;
-    expect(step.badges).toEqual(["optional", "skill"]);
-    expect(step.what).toContain("Clarifies intent");
-    expect(step.what).toContain("confidence");
-    expect(step.what).toContain("explicit confirmation");
-    expect(step.prompt).toContain("/mate-grill-me");
-    expect(step.prompt).toContain("/mate-interview-me");
-    expect(step.alternatives?.map((alternative) => alternative.name)).toEqual([
+  it("offers clarify-intent by default and the two explicit modes, never grill-with-docs", () => {
+    const clarify = workflowPlan({ skills: ALL_SKILLS }).paths[0].steps[0];
+    expect(clarify.optional).toBe(true);
+    expect(clarify.alternatives?.map((option) => option.name)).toEqual([
+      "mate-clarify-intent",
       "mate-interview-me",
       "mate-grill-me",
     ]);
-    expect(step.alternatives?.[0]?.description).toContain("Difference: guided");
-    expect(step.alternatives?.[0]?.description).toContain("Best when:");
-    expect(step.alternatives?.[1]?.description).toContain("Difference: adversarial");
-    expect(step.alternatives?.[1]?.description).toContain("Best when:");
-    expect(step.prompt).toBe("/mate-interview-me or /mate-grill-me about <idea>");
-    expect(step.copyPrompt).toBe("/mate-interview-me or /mate-grill-me about");
-    expect(step.alternatives?.map((alternative) => alternative.prompt)).toEqual([
-      "/mate-interview-me about <idea>",
-      "/mate-grill-me about <idea>",
-    ]);
-    expect(step.alternatives?.map((alternative) => alternative.copyPrompt)).toEqual([
-      "/mate-interview-me about",
-      "/mate-grill-me about",
-    ]);
-    for (const prompt of [step.prompt, ...(step.alternatives ?? []).map((a) => a.prompt)]) {
-      expect(prompt).not.toContain("<change-name>");
+    expect(JSON.stringify(clarify)).not.toContain("mate-grill-with-docs");
+  });
+
+  it("marks review stages as human stages with no skill and no prompt", () => {
+    for (const step of workflowPlan({ skills: ALL_SKILLS }).paths[0].steps) {
+      if (step.kind !== "human") continue;
+      expect(step.skill).toBeNull();
+      expect(step.prompt).toBeNull();
+      expect(step.badges).toEqual(["human-review"]);
     }
   });
 
-  it("leaves only the explicit skip path when no pre-explore skill is available", () => {
-    expect(workflowPlan([]).start.alternatives).toEqual([]);
+  it("marks the stages that run on OpenSpec", () => {
+    const openspec = workflowPlan({ skills: ALL_SKILLS })
+      .paths[0].steps.filter((step) => step.badges.includes("openspec"))
+      .map((step) => step.id);
+    expect(openspec).toEqual(["explore", "propose", "apply", "archive"]);
   });
 
-  it("presents the optional review steps as peers after implementation", () => {
-    const plan = workflowPlan();
-    const showMe = plan.shared.find((step) => step.id === "show-me");
-    const simplify = plan.shared.find((step) => step.id === "simplify");
-
-    expect(showMe?.kind).toBe("optional");
-    expect(simplify?.kind).toBe("optional");
-    expect(showMe?.badges).toEqual(["optional", "skill"]);
-    expect(simplify?.badges).toEqual(["optional", "skill"]);
-    expect(showMe?.alternatives).toBeUndefined();
-    expect(simplify?.alternatives).toBeUndefined();
-    expect(showMe?.prompt).toBe("/mate-show-me for <change-name>");
-    expect(showMe?.copyPrompt).toBe("/mate-show-me for");
-    expect(plan.shared.indexOf(showMe!)).toBeLessThan(plan.shared.indexOf(simplify!));
-    expect(plan.shared.at(-1)?.id).toBe("archive");
-  });
-
-  it("omits an optional review step whose skill is not reported", () => {
-    const withoutShowMe = workflowPlan(["mate-simplify-code"]);
-    expect(withoutShowMe.shared.map((step) => step.id)).toEqual(["simplify", "archive"]);
-    expect(withoutShowMe.shared[0]?.sessionBreakBefore).toBe(true);
-
-    const withoutSimplify = workflowPlan(["mate-show-me"]);
-    expect(withoutSimplify.shared.map((step) => step.id)).toEqual(["show-me", "archive"]);
-    expect(withoutSimplify.shared[0]?.sessionBreakBefore).toBe(true);
-
-    expect(workflowPlan([]).shared.map((step) => step.id)).toEqual(["archive"]);
-  });
-
-  it("shows the skill invocation needed for each profile", () => {
-    const full = workflowSteps("mate-v1");
-    const minimal = workflowSteps("mate-minimal");
-    expect(full.find((step) => step.id === "explore")?.prompt).toBe(
-      "/openspec-explore for <change-name>",
-    );
-    expect(full.find((step) => step.id === "proposal")?.prompt).toBe(
-      "/openspec-propose for <change-name>",
-    );
-    expect(minimal.find((step) => step.id === "propose")?.prompt).toBe(
-      "/openspec-propose (use schema: mate-minimal) for <change-name>",
-    );
-    expect(minimal.find((step) => step.id === "explore")?.prompt).toBe(
-      "/openspec-explore (use schema: mate-minimal) for <change-name>",
-    );
-    const reviewSteps = full.filter((step) => step.kind === "review");
-    expect(reviewSteps.map((step) => step.prompt)).toEqual([
-      "Review <change-name>/",
-      "Review <change-name>/",
-      "Review <change-name>/",
-    ]);
-    expect(reviewSteps.map((step) => step.copyPrompt)).toEqual([
-      "Review /",
-      "Review /",
-      "Review /",
-    ]);
-    expect(reviewSteps.every((step) => !step.prompt.includes("use schema"))).toBe(true);
-    expect(minimal.find((step) => step.id === "specs")?.prompt).toBe("Review <change-name>/");
-    expect(full.find((step) => step.id === "apply")?.prompt).toBe(
-      "/openspec-apply-change for <change-name>",
-    );
-    expect(full.find((step) => step.id === "apply")?.copyPrompt).toBe("/openspec-apply-change for");
-    expect(minimal.find((step) => step.id === "apply")?.prompt).toBe(
-      "/openspec-apply-change (use schema: mate-minimal) for <change-name>",
-    );
-    expect(full.find((step) => step.id === "apply")?.sessionBreakBefore).toBe(true);
-    expect(full.find((step) => step.id === "show-me")?.sessionBreakBefore).toBe(true);
-    expect(full.find((step) => step.id === "simplify")?.sessionBreakBefore).toBeUndefined();
-    expect(minimal.find((step) => step.id === "apply")?.sessionBreakBefore).toBe(true);
-    expect(full.find((step) => step.id === "explore")?.sessionBreakBefore).toBeUndefined();
-    expect(full.find((step) => step.id === "finish")?.prompt).toBe(
-      "/mate-artifact-publish for <change-name>",
-    );
-    expect(full.find((step) => step.id === "archive")?.prompt).toBe(
-      "/openspec-archive-change for <change-name>",
-    );
-    expect(full.find((step) => step.id === "archive")?.copyPrompt).toBe(
-      "/openspec-archive-change for",
-    );
-    expect(full.find((step) => step.id === "specs")?.badges).toEqual(["human-in-loop", "openspec"]);
-    expect(full.find((step) => step.id === "design")?.badges).toEqual([
-      "human-in-loop",
-      "openspec",
-    ]);
-    expect(full.find((step) => step.id === "tasks")?.badges).toEqual(["human-in-loop", "openspec"]);
-    expect(full.find((step) => step.id === "explore")?.badges).toEqual(["skill", "openspec"]);
-    expect(full.find((step) => step.id === "proposal")?.badges).toEqual(["skill", "openspec"]);
-    expect(full.find((step) => step.id === "apply")?.badges).toEqual(["skill", "openspec"]);
-    expect(minimal.find((step) => step.id === "propose")?.badges).toEqual(["skill", "openspec"]);
-    expect(minimal.find((step) => step.id === "apply")?.badges).toEqual(["skill", "openspec"]);
-    expect(minimal.find((step) => step.id === "specs")?.badges).toEqual([
-      "human-in-loop",
-      "openspec",
-    ]);
-    expect(minimal.find((step) => step.id === "tasks")?.badges).toEqual([
-      "human-in-loop",
-      "openspec",
+  it("names each skill stage's Mate skill in its prompt", () => {
+    const prompts = workflowPlan({ skills: ALL_SKILLS })
+      .paths[0].steps.filter((step) => step.kind === "skill" && !step.alternatives)
+      .map((step) => step.prompt);
+    expect(prompts).toEqual([
+      "/mate-explore-change for <change-name>",
+      "/mate-propose-change for <change-name>",
+      "/mate-apply-change for <change-name>",
+      "/mate-show-me for <change-name>",
+      "/mate-simplify-code for <change-name>",
+      "/mate-archive-change for <change-name>",
+      "/mate-publish-artifact for <change-name>",
     ]);
   });
 
-  it("states what every stage does and why it is in the sequence", () => {
-    for (const step of workflowSteps()) {
-      expect({ id: step.id, what: step.what.length > 0 }).toEqual({ id: step.id, what: true });
-      expect({ id: step.id, why: step.why.length > 0 }).toEqual({ id: step.id, why: true });
-      expect(step.what).not.toBe(step.why);
-    }
-    const finish = workflowPlan().finish;
-    expect(finish.what).toContain("committed, tagged, and pushed");
-    /** Publishing is terminal over an archive it did not create. */
-    expect(finish.what).toContain("already-archived");
-    expect(finish.what).not.toContain("delta specs");
-    /** Both publication units are named: a change, and a drifted canonical spec. */
-    expect(finish.what).toContain("drifted canonical specs");
-    /** The selection is the go-ahead, so the step announces rather than re-asks. */
-    expect(finish.what).toContain("announcing");
-    expect(finish.what).not.toContain("confirms");
-    expect(finish.why).toContain("only sanctioned completion");
+  it("reports a missing stage skill instead of hiding the stage", () => {
+    const steps = workflowPlan({
+      skills: ALL_SKILLS.filter((skill) => skill !== "mate-archive-change"),
+    }).paths[0].steps;
+    const archive = steps.find((step) => step.id === "archive");
+    expect(archive?.missingSkill).toBe("mate-archive-change");
   });
 
-  it("keeps the change placeholder in every prompt from explore onward", () => {
-    const plan = workflowPlan();
-    const steps = [...plan.branches.flatMap((branch) => branch.steps), ...plan.shared, plan.finish];
-    expect(steps.every((step) => step.prompt.includes("<change-name>"))).toBe(true);
-    expect(steps.every((step) => !step.copyPrompt.includes("<change-name>"))).toBe(true);
-    expect(plan.branches.every((branch) => branch.steps[0]?.prompt.includes("<change-name>"))).toBe(
-      true,
-    );
+  it("reports a missing optional peer skill instead of hiding the stage", () => {
+    const steps = workflowPlan({
+      skills: ALL_SKILLS.filter((skill) => skill !== "mate-show-me"),
+    }).paths[0].steps;
+    expect(steps.find((step) => step.id === "inspect-outcome")?.missingSkill).toBe("mate-show-me");
+    expect(steps.find((step) => step.id === "refine-code")?.sessionBreakBefore).toBeUndefined();
+  });
+
+  it("reports the missing default Clarify skill while its explicit modes remain", () => {
+    const clarify = workflowPlan({
+      skills: ALL_SKILLS.filter((skill) => skill !== "mate-clarify-intent"),
+    }).paths[0].steps[0];
+    expect(clarify.missingSkill).toBe("mate-clarify-intent");
+    expect(clarify.alternatives?.map((mode) => mode.name)).toEqual([
+      "mate-interview-me",
+      "mate-grill-me",
+    ]);
+  });
+
+  it("takes review stages and their purpose from the served topology", () => {
+    const plan = workflowPlan({
+      skills: ALL_SKILLS,
+      topology: ACME_TOPOLOGY,
+    });
+    expect(plan.paths).toHaveLength(1);
+    expect(plan.paths[0].tagline).toBe("custom schema");
+    const brief = plan.paths[0].steps.find((step) => step.id === "review-brief");
+    expect(brief?.what).toBe("States the outcome.");
   });
 });
 
-describe("Workflow", () => {
-  it("renders the command transcript with schema tabs", () => {
-    const markup = render();
-    expect(markup).toContain('<div class="workflow-eyebrow">Workflow</div>');
-    expect(markup).toContain('class="workflow-console"');
-    expect(markup).not.toContain("mate workflow --read-only");
-    expect(markup).not.toContain('if planning_depth = "full"');
-    expect(markup).not.toContain('if planning_depth = "minimal"');
-    expect(markup.match(/class="workflow-console-branch-rule-description"/g)).toHaveLength(2);
-    expect(markup.match(/data-workflow-schema-profile/g)).toHaveLength(2);
-    expect(markup.match(/data-workflow-schema-panel/g)).toHaveLength(2);
-    expect(markup).toContain('data-workflow-schema-panel="mate-v1" data-active="true"');
-    expect(markup).toContain('data-workflow-schema-panel="mate-minimal" data-active="false"');
+describe("workflowPlan phases and map", () => {
+  it("groups the full path into Plan, Review, Build, and Ship", () => {
+    const path = workflowPlan({ skills: ALL_SKILLS }).paths[0];
+    expect(phaseIds(path)).toEqual([
+      ["plan", ["clarify-intent", "explore", "propose"]],
+      ["review", ["review-proposal", "review-specs", "review-design", "review-tasks"]],
+      ["build", ["apply", "inspect-outcome", "refine-code"]],
+      ["ship", ["archive", "publish"]],
+    ]);
+    expect(mapShape(path)).toEqual([
+      "clarify-intent",
+      "explore",
+      "propose",
+      { human: ["review-proposal", "review-specs", "review-design", "review-tasks"] },
+      "apply",
+      { optional: ["inspect-outcome", "refine-code"] },
+      "archive",
+      "publish",
+    ]);
   });
 
-  it("keeps workflow context and copy controls in the transcript", () => {
-    const markup = render();
-    expect(markup.match(/class="runway-step-copy"/g)).toHaveLength(12);
-    expect(markup.match(/class="workflow-option-list"/g)).toHaveLength(1);
-    expect(markup.match(/class="workflow-option"/g)).toHaveLength(2);
-    expect(markup).toContain('class="workflow-console-command-label">Run</span>');
-    expect(markup).toContain('class="workflow-console-command-label">Review</span>');
-    expect(markup).not.toContain(
-      "<code>/mate-interview-me or /mate-grill-me about &lt;idea&gt;</code>",
-    );
-    expect(markup.indexOf('class="workflow-option-list"')).toBeLessThan(
-      markup.indexOf('class="workflow-console-explanation"'),
-    );
-    expect(markup).toContain("<code>/mate-interview-me about &lt;idea&gt;</code>");
-    expect(markup).toContain("<code>/mate-grill-me about &lt;idea&gt;</code>");
-    expect(markup.match(/class="workflow-session-break"/g)).toHaveLength(3);
-    expect(markup).toContain("The desired change, its scope, and the risk involved are clear.");
-    expect(markup).not.toContain("intent = clear");
-    expect(markup).not.toContain("planning_depth = choose");
-    expect(markup).toContain("solution, repository evidence, or risk still needs exploration");
-    expect(markup).toContain("intent and scope are clear");
-    expect(markup).toContain("pre-explore");
-    expect(markup).toContain("mate simplify code");
-    expect(markup).toContain("openspec archive change");
-    expect(markup).toContain("/openspec-archive-change for &lt;change-name&gt;");
-    expect(markup).toContain('data-copy="/openspec-archive-change for"');
-    expect(markup.match(/class="workflow-console-divider"/g)).toHaveLength(2);
-    expect(markup).toContain("feature is on production");
-    expect(markup).toContain("Review &lt;change-name&gt;/");
-    expect(markup).not.toContain('data-copy-label="specs prompt"');
-    expect(markup).not.toContain('data-copy-label="design prompt"');
-    expect(markup).not.toContain('data-copy-label="tasks prompt"');
-    expect(markup).toContain("for &lt;change-name&gt;");
-    expect(markup).toContain('data-copy="/openspec-apply-change for"');
-    expect(markup).not.toMatch(/data-copy="[^"]*change-name/);
-    expect(markup).not.toContain("Skip pre-explore");
+  it("holds only the specs and tasks reviews on the minimal path", () => {
+    const path = workflowPlan({ skills: ALL_SKILLS }).paths[1];
+    expect(phaseIds(path)[1]).toEqual(["review", ["review-specs", "review-tasks"]]);
+    expect(mapShape(path)[3]).toEqual({ human: ["review-specs", "review-tasks"] });
   });
 
-  it("renders the built-in workflow without a resolved schema", () => {
-    const markup = render(payload());
-    expect(markup).not.toContain("mate workflow --read-only");
-    expect(markup).toContain("mate-v1");
-    expect(markup).toContain("mate-minimal");
+  it("derives phases and map groups for a custom schema's reviews", () => {
+    const path = workflowPlan({ skills: ALL_SKILLS, topology: ACME_TOPOLOGY }).paths[0];
+    expect(phaseIds(path)[1]).toEqual(["review", ["review-brief", "review-tasks"]]);
+    expect(mapShape(path)[3]).toEqual({ human: ["review-brief", "review-tasks"] });
+  });
+
+  it("drops the Review phase and group when reviews are unknown", () => {
+    const path = buildPath("acme-v1", undefined, { skills: ALL_SKILLS });
+    expect(path.reviewsKnown).toBe(false);
+    expect(phaseIds(path).map(([phase]) => phase)).toEqual(["plan", "build", "ship"]);
+    expect(path.steps.find((step) => step.id === "apply")?.sessionBreakBefore).toBe(true);
+    expect(path.map.some((node) => node.kind === "group" && node.group === "human")).toBe(false);
+  });
+});
+
+describe("Workflow view", () => {
+  it("renders the stages without a change picker", () => {
+    const markup = render();
+    expect(markup).toContain('class="workflow-delivery-path"');
+    expect(markup).toContain("Archive change");
+    expect(markup).toContain("mate-archive-change");
+    expect(markup).toContain("Review specs yourself — no skill, no prompt");
+    expect(markup).not.toContain('name="change"');
+  });
+
+  it("offers the schema paths in one select, without the prompts note", () => {
+    const markup = render();
+    expect(markup).toContain("OpenSpec schema");
+    expect(markup).toContain('<select data-workflow-schema-select="true">');
+    expect(markup).toContain(
+      '<option value="mate-v1" selected="">mate-v1 – full planning</option>',
+    );
+    expect(markup).toContain(
+      '<option value="mate-minimal">mate-minimal – minimal planning</option>',
+    );
+    expect(markup).toContain('data-workflow-schema-panel="mate-minimal"');
+    expect(markup).not.toContain('role="tablist"');
+    expect(markup).not.toContain("name the change after pasting");
+  });
+
+  it("opens on a hint to select a node and offers no whole-run copy", () => {
+    const markup = render();
+    expect(markup).toContain("Select a node in the graph");
+    expect(markup).not.toContain("the whole run");
+  });
+
+  /** The markup of the mate-v1 panel alone. */
+  const fullPanel = (markup: string): string =>
+    markup.slice(
+      markup.indexOf('data-workflow-schema-panel="mate-v1"'),
+      markup.indexOf('data-workflow-schema-panel="mate-minimal"'),
+    );
+
+  const attributes = (markup: string, name: string): string[] =>
+    [...markup.matchAll(new RegExp(`${name}="([^"]+)"`, "g"))].map((match) => match[1]);
+
+  it("opens each path with a flow map whose boxes link to their cards in stage order", () => {
+    const panel = fullPanel(render());
+    const map = panel.slice(
+      panel.indexOf('aria-label="Delivery Path map"'),
+      panel.indexOf("</nav>"),
+    );
+    const stages = workflowPlan({ skills: ALL_SKILLS }).paths[0].steps.map((step) => step.id);
+    expect(attributes(map, "data-map-stage")).toEqual(stages);
+    expect(attributes(map, "href")).toEqual(stages.map((id) => `#workflow-mate-v1-${id}`));
+    for (const id of stages) expect(panel).toContain(`id="workflow-mate-v1-${id}"`);
+  });
+
+  /** The graph's markup within a panel. */
+  const graphOf = (panel: string): string =>
+    panel.slice(panel.indexOf('aria-label="Delivery Path map"'), panel.indexOf("</nav>"));
+
+  const edgeKeys = (markup: string, kind: "flow" | "bypass"): string[] =>
+    [
+      ...markup.matchAll(
+        new RegExp(`data-edge-kind="${kind}" data-edge-from="([^"]+)" data-edge-to="([^"]+)"`, "g"),
+      ),
+    ].map((match) => `${match[1]}>${match[2]}`);
+
+  it("lists the reviews inside one group node that names no skill", () => {
+    const graph = graphOf(fullPanel(render()));
+    const start = graph.indexOf('data-map-group="human"');
+    const group = graph.slice(start, graph.indexOf("</ol>", start));
+    expect(attributes(group, "data-map-stage")).toEqual([
+      "review-proposal",
+      "review-specs",
+      "review-design",
+      "review-tasks",
+    ]);
+    expect(group.replace(/<[^>]+>/g, " ")).not.toContain("mate-");
+    expect(graph.match(/data-map-group=/g)).toHaveLength(1);
+    expect(graph).toMatch(/data-map-stage="review-specs" data-stage-kind="human"/);
+    expect(graph).toMatch(
+      /data-map-stage="refine-code" data-stage-kind="skill" data-optional="true"/,
+    );
+  });
+
+  it("draws the peer branches, bypasses, session marks, and labelled bands", () => {
+    const graph = graphOf(fullPanel(render()));
+    expect(edgeKeys(graph, "flow")).toEqual(
+      expect.arrayContaining([
+        "apply>inspect-outcome",
+        "apply>refine-code",
+        "inspect-outcome>archive",
+        "refine-code>archive",
+      ]),
+    );
+    expect(edgeKeys(graph, "bypass")).toEqual(["start>explore", "apply>archive"]);
+    expect(attributes(graph, "data-session-mark")).toEqual(["apply"]);
+    expect(attributes(graph, "data-band")).toEqual(["plan", "review", "build", "ship"]);
+    expect(graph).toMatch(/data-band="review"[^>]*>Review</);
+  });
+
+  it("frames the stages each change repeats inside the workset, leaving Publish outside the cycle", () => {
+    const panel = fullPanel(render());
+    const graph = graphOf(panel);
+    const bands = graph.slice(graph.indexOf("workflow-graph-bands"), graph.indexOf("<svg"));
+    expect(bands).toMatch(/class="workflow-graph-cycle" style="top:0%;height:88\.8889%"/);
+    expect(bands).toContain(">repeats for each change<");
+    expect(bands.match(/workflow-graph-cycle/g)).toHaveLength(1);
+    expect(bands).toContain('<div class="workflow-graph-workset"><span>workset</span></div>');
+    expect(panel).toContain("A workset is one or more changes published together");
+  });
+
+  it("marks OpenSpec nodes with a dot the legend explains, hidden from the accessible name", () => {
+    const graph = graphOf(fullPanel(render()));
+    const node = (id: string) => {
+      const start = graph.indexOf(`data-map-stage="${id}"`);
+      return graph.slice(start, graph.indexOf("</a>", start));
+    };
+    expect(node("propose")).toContain('class="workflow-graph-openspec" aria-hidden="true"');
+    expect(node("refine-code")).not.toContain("workflow-graph-openspec");
+    expect(node("publish")).not.toContain("workflow-graph-openspec");
+    const panel = fullPanel(render());
+    const legend = panel.slice(
+      panel.indexOf("workflow-graph-legend"),
+      panel.indexOf("</ul>", panel.indexOf("workflow-graph-legend")),
+    );
+    expect(panel).toContain('<ul class="workflow-graph-legend" aria-hidden="true">');
+    for (const entry of ["optional", "OpenSpec", "new session", "can be skipped"]) {
+      expect(legend).toContain(entry);
+    }
+  });
+
+  it("keeps the drawing out of the accessibility tree", () => {
+    const graph = graphOf(fullPanel(render()));
+    const nodes = graph.indexOf('class="workflow-graph-nodes"');
+    expect(graph).toContain('<div class="workflow-graph-bands" aria-hidden="true">');
+    const layers = [...graph.matchAll(/<svg class="workflow-graph-layer"[^>]*>/g)];
+    expect(layers).toHaveLength(1);
+    expect(layers[0][0]).toContain('aria-hidden="true"');
+    expect(graph.lastIndexOf("</svg>")).toBeLessThan(nodes);
+    expect(graph.slice(nodes)).not.toContain("data-band");
+  });
+
+  it("connects Propose to Apply with no review group when reviews are unknown", () => {
+    const graph = graphOf(render(payload({ topology: { ...ACME_TOPOLOGY, artifacts: [] } })));
+    expect(edgeKeys(graph, "flow")).toContain("propose>apply");
+    expect(attributes(graph, "data-session-mark")[0]).toBe("apply");
+    expect(attributes(graph, "data-band")).toEqual(["plan", "build", "ship"]);
+  });
+
+  it("puts every card in one side panel after the graph, opening on the path overview", () => {
+    const panel = fullPanel(render());
+    const aside = panel.slice(panel.indexOf("<aside"), panel.indexOf("</aside>"));
+    expect(panel.indexOf("</nav>")).toBeLessThan(panel.indexOf("<aside"));
+    const stages = workflowPlan({ skills: ALL_SKILLS }).paths[0].steps.map((step) => step.id);
+    expect(attributes(aside, "data-stage")).toEqual(stages);
+    expect(aside.indexOf('id="workflow-mate-v1-overview"')).toBeLessThan(aside.indexOf("<article"));
+    expect(attributes(aside, "href").filter((href) => href.endsWith("-overview"))).toHaveLength(
+      stages.length,
+    );
+  });
+
+  it("names each card's phase and marks the stages that start a new session", () => {
+    const panel = fullPanel(render());
+    const card = (id: string) => {
+      const start = panel.indexOf(`id="workflow-mate-v1-${id}"`);
+      return panel.slice(start, panel.indexOf("</article>", start));
+    };
+    expect(card("propose")).toContain(">Plan<");
+    expect(card("apply")).toContain("Build");
+    expect(card("apply")).toContain("New session / clean chat");
+    expect(card("inspect-outcome")).not.toContain("New session");
+    expect(card("archive")).not.toContain("New session");
+  });
+
+  it("keeps the stage content and copy controls on each card", () => {
+    const panel = fullPanel(render());
+    const card = panel.slice(
+      panel.indexOf('id="workflow-mate-v1-propose"'),
+      panel.indexOf("</article>", panel.indexOf('id="workflow-mate-v1-propose"')),
+    );
+    expect(card).toContain("mate-propose-change");
+    expect(card).toContain("/mate-propose-change for &lt;change-name&gt;");
+    expect(card).toContain('data-copy="/mate-propose-change for"');
+    expect(card).toContain("What");
+    expect(card).toContain("Why");
+    expect(panel).toContain('data-copy-label="mate-interview-me prompt"');
+  });
+
+  it("puts no arrow text in the markup", () => {
+    const markup = render();
+    for (const arrow of ["→", "↓", "-->", "&rarr;"]) expect(markup).not.toContain(arrow);
+    expect(markup).not.toContain("workflow-console-gutter");
+  });
+
+  it("shows no Review band, group, or card when the schema has no reviews", () => {
+    const markup = render(payload({ topology: { ...ACME_TOPOLOGY, artifacts: [] } }));
+    expect(markup).not.toContain('data-map-group="human"');
+    expect(markup).not.toContain('data-band="review"');
+    expect(markup).not.toContain('data-stage="review-');
   });
 });

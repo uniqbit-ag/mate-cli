@@ -1,4 +1,10 @@
 {
   "title": "Scenarios",
-  "pages": ["index", "first-agent-session", "one-companion-many-repos", "design-a-team-companion"]
+  "pages": [
+    "index",
+    "first-agent-session",
+    "first-change",
+    "one-companion-many-repos",
+    "design-a-team-companion"
+  ]
 }

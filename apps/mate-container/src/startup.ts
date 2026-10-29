@@ -47,11 +47,12 @@ export const SUPPORTED_PACKAGE_MANAGERS: Record<string, string | null> = {
 };
 
 export const SUPPORTED_CAPABILITIES: Record<string, string | null> = {
-  openspec: "openspec",
   graphify: "graphify",
   rtk: "rtk",
   tokensave: "tokensave",
   context7: "context7-mcp",
+  // Shipped inside the Mate package rather than as a command on PATH.
+  openspec: null,
   // Carried as installed packages in the prebuilt workspace rather than as a
   // command on PATH.
   "context-mode": null,

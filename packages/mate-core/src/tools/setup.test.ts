@@ -11,6 +11,7 @@ import { ConfigStore } from "../lib/orchestrator/config-store";
 import { GlobalConfigStore } from "../lib/orchestrator/global-config-store";
 import { writeRepoLocalRegistryEntry } from "../lib/orchestrator/repository-link";
 import { project } from "../lib/orchestrator/working-repo-projection";
+import { openSpecCliDeps } from "../lib/openspec-cli";
 import { MATE_SPECS_RULE } from "./setup/capabilities/openspec";
 import { TOKENSAVE_STORE_DIR, tokensaveDeps } from "./setup/capabilities/tokensave";
 import {
@@ -20,7 +21,7 @@ import {
   syncCompanionFiles,
   updateProjectGitignore,
 } from "./setup";
-import type { SetupContext } from "./setup/plugin";
+import type { Plugin, SetupContext } from "./setup/plugin";
 
 const tempRoots: string[] = [];
 
@@ -94,11 +95,16 @@ async function installOpenSpecStub(root: string): Promise<void> {
   await fs.mkdir(binDir, { recursive: true });
   await fs.writeFile(stubPath, source, "utf8");
   await fs.chmod(stubPath, 0o755);
+  openSpecCliDeps.locate = () => ({ bin: stubPath });
+  // Sibling stubs (graphify, rtk) placed in the same directory are found on PATH.
   process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
 }
 
+const originalOpenSpecCliDeps = { ...openSpecCliDeps };
+
 afterEach(async () => {
   process.env.PATH = originalPath;
+  Object.assign(openSpecCliDeps, originalOpenSpecCliDeps);
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
@@ -335,8 +341,7 @@ describe("executeSetup", () => {
       await expect(fs.access(path.join(root, ".mate", "bin", "openspec"))).rejects.toThrow();
       await expect(fs.access(path.join(root, ".opencode", "bin", "openspec"))).rejects.toThrow();
       await expect(fs.access(path.join(root, ".claude", "bin", "openspec"))).rejects.toThrow();
-      /** OpenSpec `/opsx-*` commands outlive OpenCode deselection by design. */
-      expect(await fs.readdir(path.join(root, ".opencode"))).toEqual(["commands"]);
+      await expect(fs.access(path.join(root, ".opencode"))).rejects.toThrow();
       await expect(fs.access(path.join(root, ".agents"))).rejects.toThrow();
     },
     { timeout: 20000 },
@@ -365,7 +370,7 @@ describe("executeSetup", () => {
     { timeout: 30000 },
   );
 
-  test("setup deploys openspec skills to .claude and the shared .agents root", async () => {
+  test("setup deploys Mate skills with their OpenSpec references and no OpenSpec output", async () => {
     const root = await makeTempDir("mate-setup-openspec-skill-dirs-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
@@ -380,24 +385,26 @@ describe("executeSetup", () => {
       { cwd: root, globalConfigStore },
     );
 
-    for (const skill of [
-      "openspec-explore",
-      "openspec-propose",
-      "openspec-apply-change",
-      "openspec-archive-change",
-    ]) {
-      await fs.access(path.join(root, ".claude", "skills", skill, "SKILL.md"));
-      await fs.access(path.join(root, ".agents", "skills", skill, "SKILL.md"));
+    for (const runtimeDir of [".claude", ".agents"]) {
+      const skills = path.join(root, runtimeDir, "skills");
+      await fs.access(
+        path.join(skills, "mate-explore-change", "references", "openspec-explore.md"),
+      );
+      await fs.access(
+        path.join(skills, "mate-propose-change", "references", "openspec-update-change.md"),
+      );
+      for (const skill of ["mate-grill-me", "mate-domain-modeling"]) {
+        await fs.access(path.join(skills, skill, "SKILL.md"));
+      }
+      await expect(fs.access(path.join(skills, "mate-update-change"))).rejects.toThrow();
+      expect((await fs.readdir(skills)).filter((name) => name.includes("openspec"))).toEqual([]);
     }
-    for (const skill of ["mate-grill-me", "mate-domain-modeling"]) {
-      await fs.access(path.join(root, ".claude", "skills", skill, "SKILL.md"));
-      await fs.access(path.join(root, ".agents", "skills", skill, "SKILL.md"));
-    }
-    await fs.access(path.join(root, ".opencode", "commands", "opsx-propose.md"));
+    await expect(fs.access(path.join(root, ".claude", "commands", "opsx"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, ".opencode", "commands"))).rejects.toThrow();
     await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
   });
 
-  test("openspec skills not deployed to agent dir when that agent is not in allowedAgents", async () => {
+  test("Mate stage skills not deployed to agent dir when that agent is not in allowedAgents", async () => {
     const root = await makeTempDir("mate-setup-openspec-skip-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
@@ -413,11 +420,9 @@ describe("executeSetup", () => {
       { cwd: root, globalConfigStore },
     );
 
-    await fs.access(path.join(root, ".claude", "skills", "openspec-explore", "SKILL.md"));
+    await fs.access(path.join(root, ".claude", "skills", "mate-explore-change", "SKILL.md"));
     await expect(fs.access(path.join(root, ".agents"))).rejects.toThrow();
-    await expect(
-      fs.access(path.join(root, ".opencode", "skills", "openspec-explore")),
-    ).rejects.toThrow();
+    await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
   });
 
   test(
@@ -540,7 +545,7 @@ describe("executeSetup", () => {
       );
 
       await fs.access(path.join(root, ".claude", "skills", "mate-react-doctor", "SKILL.md"));
-      await fs.access(path.join(root, ".claude", "skills", "openspec-explore", "SKILL.md"));
+      await fs.access(path.join(root, ".claude", "skills", "mate-explore-change", "SKILL.md"));
 
       await executeSetup(
         {
@@ -573,7 +578,7 @@ describe("executeSetup", () => {
       );
 
       await fs.access(path.join(root, ".agents", "skills", "mate-react-doctor", "SKILL.md"));
-      await fs.access(path.join(root, ".agents", "skills", "openspec-explore", "SKILL.md"));
+      await fs.access(path.join(root, ".agents", "skills", "mate-explore-change", "SKILL.md"));
       await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
       const setupConfig = await fs.readFile(path.join(root, ".opencode", "opencode.json"), "utf8");
       /** Committed config: the plugin root reaches OpenCode through the launch overlay instead. */
@@ -598,7 +603,7 @@ describe("executeSetup", () => {
         fs.access(path.join(root, ".agents", "skills", "mate-react-doctor")),
       ).rejects.toThrow();
       await expect(
-        fs.access(path.join(root, ".agents", "skills", "openspec-explore")),
+        fs.access(path.join(root, ".agents", "skills", "mate-explore-change")),
       ).rejects.toThrow();
       await expect(
         fs.access(path.join(root, ".agents", "skills", "mate-grill-me")),
@@ -677,7 +682,7 @@ describe("executeSetup", () => {
       await executeSetup(config, { cwd: root, globalConfigStore });
 
       expect((await fs.readdir(legacyRoot)).toSorted()).toEqual(["acme-local"]);
-      for (const skill of ["openspec-explore", "mate-grill-me", "mate-react-doctor"]) {
+      for (const skill of ["mate-explore-change", "mate-grill-me", "mate-react-doctor"]) {
         await fs.access(path.join(root, ".agents", "skills", skill, "SKILL.md"));
       }
       await expect(fs.readFile(thirdParty, "utf8")).resolves.toBe("acme");
@@ -897,8 +902,8 @@ describe("executeSetup", () => {
     expect(config.packageManagers).toEqual(["bun", "uv"]);
   });
 
-  test("setup persists openspec schema profile and writes companion-local openspec config", async () => {
-    const root = await makeTempDir("mate-setup-openspec-schema-profile-");
+  test("setup with the openspec capability activates mate-v1 in companion-local openspec config", async () => {
+    const root = await makeTempDir("mate-setup-openspec-mate-v1-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
     );
@@ -907,15 +912,12 @@ describe("executeSetup", () => {
     const { config } = await executeSetup(
       {
         allowedAgents: ["claude"],
-        capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
+        capabilities: [{ name: "openspec" }],
       },
       { cwd: root, globalConfigStore },
     );
 
-    expect(config.capabilities).toContainEqual({
-      name: "openspec",
-      schemaProfile: "mate-v1",
-    });
+    expect(config.capabilities).toContainEqual({ name: "openspec" });
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
     ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
@@ -931,7 +933,9 @@ describe("executeSetup", () => {
       { cwd: root, globalConfigStore },
     );
 
-    await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
+    expect(
+      parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
+    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
     await expect(
       fs.access(path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml")),
     ).resolves.toBeNull();
@@ -1337,21 +1341,16 @@ describe("applySetupCompatibilities — graphify", () => {
 });
 
 describe("applySetupCompatibilities — openspec", () => {
-  test("setup reports manual OpenSpec install when openspec and npm are missing", async () => {
+  const missingBundledCli = () => ({
+    missing: "bundled OpenSpec CLI is missing. Reinstall Mate to restore it.",
+  });
+
+  test("setup fails naming a reinstall when the bundled OpenSpec CLI is missing", async () => {
     const root = await makeTempDir("mate-setup-openspec-missing-setup-");
-    const emptyBin = path.join(root, "empty-bin");
-    await fs.mkdir(emptyBin, { recursive: true });
-    process.env.PATH = emptyBin;
+    openSpecCliDeps.locate = missingBundledCli;
 
-    const stderrChunks: string[] = [];
-    const originalWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string) => {
-      stderrChunks.push(chunk);
-      return true;
-    }) as typeof process.stderr.write;
-
-    try {
-      await applySetupCompatibilities(
+    await expect(
+      applySetupCompatibilities(
         root,
         {
           allowedAgents: ["claude"],
@@ -1359,22 +1358,16 @@ describe("applySetupCompatibilities — openspec", () => {
           capabilities: [{ name: "openspec" }],
         },
         "setup",
-      );
-    } finally {
-      process.stderr.write = originalWrite;
-    }
-
-    expect(stderrChunks.join("")).toContain("npm install -g @fission-ai/openspec@latest");
+      ),
+    ).rejects.toThrow(/Reinstall Mate/);
     await expect(
       fs.access(path.join(root, ".claude", "skills", "openspec-explore")),
     ).rejects.toThrow();
   });
 
-  test("launch-time sync skips OpenSpec reconciliation when openspec is missing", async () => {
+  test("launch-time sync warns naming a reinstall when the bundled OpenSpec CLI is missing", async () => {
     const root = await makeTempDir("mate-setup-openspec-missing-sync-");
-    const emptyBin = path.join(root, "empty-bin");
-    await fs.mkdir(emptyBin, { recursive: true });
-    process.env.PATH = emptyBin;
+    openSpecCliDeps.locate = missingBundledCli;
 
     const stderrChunks: string[] = [];
     const originalWrite = process.stderr.write.bind(process.stderr);
@@ -1397,7 +1390,7 @@ describe("applySetupCompatibilities — openspec", () => {
       process.stderr.write = originalWrite;
     }
 
-    expect(stderrChunks.join("")).toContain("npm install -g @fission-ai/openspec@latest");
+    expect(stderrChunks.join("")).toContain("Reinstall Mate");
     await expect(
       fs.access(path.join(root, ".claude", "skills", "openspec-explore")),
     ).rejects.toThrow();
@@ -1813,5 +1806,56 @@ describe("updateProjectGitignore", () => {
     expect(gitignore).toContain(".venv/");
     expect(gitignore).toContain(".graphify/*/graphify-out/cache/");
     expect(gitignore).toContain("node_modules/");
+  });
+});
+
+describe("applySetupCompatibilities — managed-output report", () => {
+  function recordingPlugin(record: (ctx: SetupContext) => void): Plugin {
+    return {
+      id: "acme-recorder",
+      kind: "root",
+      label: "acme",
+      description: "acme",
+      defaultSelected: true,
+      isEnabled: () => true,
+      async apply(ctx) {
+        record(ctx);
+      },
+      async teardown() {},
+    };
+  }
+
+  test("returns recorded entries as companion-relative POSIX paths", async () => {
+    const root = await makeTempDir("mate-setup-managed-output-");
+    const plugin = recordingPlugin((ctx) => {
+      const skill = path.join(ctx.companionPath, ".claude", "skills", "mate-acme");
+      ctx.managedOutput?.record({ path: skill, change: "written", owner: "mate" });
+      ctx.managedOutput?.record({ path: skill, change: "written", owner: "mate" });
+      ctx.managedOutput?.record({
+        path: path.join(ctx.companionPath, ".agents", "skills", "openspec-acme"),
+        change: "removed",
+        owner: "openspec",
+      });
+      ctx.managedOutput?.record({
+        path: path.join(os.tmpdir(), "outside-acme"),
+        change: "removed",
+        owner: "openspec",
+      });
+    });
+
+    const outcome = await applySetupCompatibilities(root, { allowedAgents: [] }, "sync", [plugin]);
+
+    expect(outcome.managedOutput).toEqual([
+      { path: ".claude/skills/mate-acme", change: "written", owner: "mate" },
+      { path: ".agents/skills/openspec-acme", change: "removed", owner: "openspec" },
+    ]);
+  });
+
+  test("returns an empty report when nothing is recorded", async () => {
+    const root = await makeTempDir("mate-setup-managed-output-empty-");
+    const outcome = await applySetupCompatibilities(root, { allowedAgents: [] }, "sync", [
+      recordingPlugin(() => {}),
+    ]);
+    expect(outcome.managedOutput).toEqual([]);
   });
 });

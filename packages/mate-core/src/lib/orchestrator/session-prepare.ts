@@ -128,7 +128,8 @@ export const sessionPrepareDeps = {
   syncCompanionGit,
   syncCompanionUnattended,
   recordCompanionSyncUnfinished,
-  syncCompanionFiles,
+  syncCompanionFiles: async (...args: Parameters<typeof syncCompanionFiles>) =>
+    (await syncCompanionFiles(...args)).claudePluginFolders,
   projectLaunch: (input: Parameters<typeof project>[1]) => project("launch", input),
   /**
    * The Projection Root a Claude launch guarantees for itself. Companion

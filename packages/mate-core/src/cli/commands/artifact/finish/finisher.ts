@@ -1,9 +1,17 @@
 import type { CapabilityConfig, LinkedRepository } from "../../../../lib/orchestrator/types";
+import type { PublicationHoldCache } from "./openspec";
 
 export interface FinishContext {
   companionPath: string;
   repositoryId: string;
   repository?: LinkedRepository;
+  /**
+   * The companion's uncommitted paths (porcelain). Without it, publication cannot tell
+   * which other archives are pending and skips the shared-spec check.
+   */
+  changedPaths?: () => Promise<string[]>;
+  /** Shared by every publication of one run; a fresh memo per call without it. */
+  holdCache?: PublicationHoldCache;
 }
 
 /**
@@ -26,6 +34,8 @@ export interface Produced {
    * run reuses under either value: its commit is the tagged one already.
    */
   tagCollision?: "reuse" | "suffix";
+  /** Published anyway, but reported: e.g. a legacy archive whose merge was not checked. */
+  warning?: string;
 }
 
 /** Outcome of {@link ArtifactFinisher.resolve}; the failure carries the user-facing refusal. */

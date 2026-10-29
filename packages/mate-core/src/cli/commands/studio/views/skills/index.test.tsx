@@ -23,11 +23,14 @@ describe("Skills", () => {
     expect(markup.match(/shared-skill/g)).toHaveLength(6);
   });
 
-  it("starts on Claude and keeps an empty runtime explicit", () => {
+  it("starts on Claude in the Agent select and keeps an empty runtime explicit", () => {
     const markup = render({ claude: ["mate-interview-me"], opencode: [], agents: [] });
 
-    expect(markup).toContain('data-skill-profile="claude"');
-    expect(markup).toContain('aria-selected="true"');
+    expect(markup).toContain('<option value="claude" selected="">Claude – 1 skills</option>');
+    expect(markup).toContain('<option value="opencode">OpenCode – 0 skills</option>');
+    expect(markup).toContain("1 skill · installed in this Companion Repository");
+    expect(markup).toMatch(/data-skill-panel="claude" data-active="true"/);
+    expect(markup).toMatch(/aria-hidden="true" data-skill-panel="opencode"/);
     expect(markup).toContain('data-skill-panel="opencode"');
     expect(markup).toContain("No OpenCode skills in this companion.");
     expect(markup).toContain('data-skill-panel="agents"');

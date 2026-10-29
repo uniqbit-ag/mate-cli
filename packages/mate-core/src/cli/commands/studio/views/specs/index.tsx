@@ -96,27 +96,19 @@ function SpecsByArea({ specs, actions }: { specs: StudioSpec[]; actions: SpecAct
   const groups = groupSpecsByArea(specs);
 
   return (
-    <section className="panel">
-      <div className="section-header">
-        <div>
-          <h3>Specs by Area</h3>
-          <p className="section-note">Capabilities grouped by the Areas they serve.</p>
-        </div>
-        <span className="section-count">
-          {specs.length} {specs.length === 1 ? "spec" : "specs"}
-        </span>
-      </div>
+    <section className="view-section" aria-label="Specs by Area">
+      <p className="view-summary">
+        {specs.length} {specs.length === 1 ? "spec" : "specs"} · capabilities grouped by the Areas
+        they serve
+      </p>
       {groups.length === 0 ? (
         <p className="empty">No specs in this companion.</p>
       ) : (
         <div className="specs-area-grid">
-          {groups.map(([area, areaSpecs], index) => (
+          {groups.map(([area, areaSpecs]) => (
             <section key={area} className="specs-area-card" aria-label={`Area ${area}`}>
               <div className="specs-area-card-head">
-                <div className="specs-area-name">
-                  <span className="specs-area-number">{String(index + 1).padStart(2, "0")}</span>
-                  <h4>{area}</h4>
-                </div>
+                <h4 className="specs-area-name">{area}</h4>
                 <span className="specs-area-count">{`${areaSpecs.length} specs`}</span>
               </div>
               <div className="specs-card-list">

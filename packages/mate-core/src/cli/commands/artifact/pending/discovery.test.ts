@@ -502,6 +502,11 @@ describe("explicit retry of a committed, push-failed archive", () => {
 
   test("is excluded from pending yet resumes and retries the push by exact name", async () => {
     const companion = await makeCompanion([{ name: "2026-09-07-acme", kind: "dir" }]);
+    await fs.writeFile(
+      path.join(companion, "openspec", "changes", "archive", "2026-09-07-acme", "delivery.yaml"),
+      "version: 1\ndeliveries:\n  - repository: acme/app\n    notApplicable: docs only\n",
+      "utf8",
+    );
 
     expect(pendingArchives(await discoverArchives(companion, clean))).toEqual([]);
 

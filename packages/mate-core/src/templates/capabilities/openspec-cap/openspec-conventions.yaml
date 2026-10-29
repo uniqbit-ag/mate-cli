@@ -3,7 +3,7 @@ version: 1
 description: Shared scope, frontmatter, delta, and canonical-spec rules for Mate schemas.
 rules: |
   - Every change artifact MUST name at least one paired repository and area in its scopes list: a delta spec in its mate:delta comment, every other change artifact in its frontmatter.
-  - Repository identity comes from the Git remote. Normalize SSH and HTTPS forms such as git@github.com:org/repository.git and https://github.com/org/repository.git to org/repository.
+  - Repository identity comes from the Git remote: its full path on the host, without host, credentials, or .git. Normalize SSH and HTTPS forms such as git@github.com:org/repository.git and https://github.com/org/repository.git to org/repository; keep every nested group, so git@gitlab.example.com:group/subgroup/repository.git becomes group/subgroup/repository.
   - In a monorepo, an Area is the owning workspace or package root: the directory containing the nearest package manifest (package.json, Cargo.toml, go.mod, and similar). A non-monorepo may use the exact affected path and uses . only when the repository root is affected.
   - Do not use a local checkout basename, internal repository ID, synthetic Area, or N/A as durable metadata.
   - Preserve each repository/Area pair. Never use separate repositories and areas arrays.
@@ -20,6 +20,11 @@ verification: |
   - mate-react-doctor: when writing tasks, end the task list of every Area whose tasks change React code (components, hooks, or other .tsx/.jsx modules) with one verification task, numbered like its neighbours, for example `- [ ] N.M Verify React changes with React Doctor [skill:mate-react-doctor]`. Areas whose tasks do not change React code get no verification task.
   - During apply, a tagged verification task is worked like any other task by invoking its skill.
   - Before reporting a change complete, check every Area that changed React code: if its tagged verification task is already checked, do nothing more; otherwise invoke the skill once for that Area.
+skill_tagging: |
+  A task's `[skill:<name>]` tag names only a skill installed in the Companion Repository, so every session runs the task the same way.
+  - Before tagging, check that the Companion Repository has `<name>/SKILL.md` under `.claude/skills/` or `.agents/skills/`.
+  - Never tag user-global, plugin (`<plugin>:<skill>`), or built-in skills, even when the current session offers them.
+  - When no companion skill applies, leave the task untagged.
 example_delta_metadata: |
   <!-- mate:delta
   change: <change-name>

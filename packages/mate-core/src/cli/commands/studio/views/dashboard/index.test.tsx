@@ -10,6 +10,7 @@ function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompani
     companionPath: "/home/dev/.mate/companions/acme-companion",
     changes: [],
     specs: [],
+    shipped: [],
     topology: null,
     warnings: [],
     ...overrides,
@@ -26,8 +27,10 @@ describe("Dashboard", () => {
         })}
       />,
     );
-    expect(markup).toContain("<h3>Changes</h3>");
-    expect(markup).not.toContain("<h3>Specs by Area</h3>");
+    expect(markup).toContain('aria-label="Changes"');
+    expect(markup).toContain("1 change · active work in this Companion Repository");
+    expect(markup).not.toContain('class="panel');
+    expect(markup).not.toContain('aria-label="Specs by Area"');
     expect(markup).not.toContain("acme-login");
   });
 

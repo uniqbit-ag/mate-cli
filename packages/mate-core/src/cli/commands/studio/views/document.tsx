@@ -5,9 +5,14 @@ import {
   openFile,
   openFolder,
   refresh,
+  ROLE_VIEWS,
+  SHARED_VIEWS,
+  STUDIO_ROLES,
+  type StudioRole,
   type StudioSelection,
   type StudioVaultSelection,
   type StudioView,
+  switchRole,
   switchView,
   toHref,
   withMode,
@@ -21,6 +26,7 @@ import {
 } from "../routes";
 import { STUDIO_CLIENT_ROUTE } from "../client-asset";
 import { STUDIO_PREPAINT_SCRIPT } from "./client";
+import { AnalystOverview } from "./analyst-overview/index";
 import { CompanionPicker } from "./companion-picker";
 import { CompanionSelector } from "./companion-selector";
 import { Dashboard } from "./dashboard/index";
@@ -55,33 +61,6 @@ function svgDataUri(svg: string): string {
 const FAVICON_URI = svgDataUri(BRAND_SVGS.favicon);
 const SYMBOL_COLOR_URI = svgDataUri(BRAND_SVGS.symbolColor);
 const SYMBOL_ON_DARK_URI = svgDataUri(BRAND_SVGS.symbolOnDark);
-
-const VIEW_DETAILS = {
-  dashboard: {
-    eyebrow: "Companion lookup",
-    title: "Overview",
-  },
-  specs: {
-    eyebrow: "Companion lookup",
-    title: "Specs",
-  },
-  workflow: {
-    eyebrow: "Companion lookup",
-    title: "Workflow",
-  },
-  skills: {
-    eyebrow: "Agent guidance",
-    title: "Skills",
-  },
-  vault: {
-    eyebrow: "Companion files",
-    title: "Vault",
-  },
-  reports: {
-    eyebrow: "Agent output",
-    title: "Reports",
-  },
-} as const;
 
 /**
  * `<style>` and `<script>` are HTML raw-text elements: a character reference
@@ -187,6 +166,11 @@ function Content({ page }: { page: StudioPage }) {
     );
   }
   if (page.selection.view === "skills") return <Skills skills={page.payload.skillInventory} />;
+  if (page.selection.role === "business-analyst") {
+    return (
+      <AnalystOverview payload={page.payload} selection={page.selection} reports={page.reports} />
+    );
+  }
   return <Dashboard payload={page.payload} />;
 }
 
@@ -201,9 +185,10 @@ function Sidebar({ page }: { page: StudioPage }) {
           <strong>{STUDIO_TITLE}</strong>
         </div>
       </div>
+      <RoleSwitch selection={page.selection} />
       <CompanionSelector inventory={page.inventory} selection={page.selection} />
       <ViewNav selection={page.selection} />
-      <Metrics page={page} />
+      {page.selection.role === "product-engineer" ? <Metrics page={page} /> : null}
       <Footer page={page} />
     </aside>
   );
@@ -212,13 +197,10 @@ function Sidebar({ page }: { page: StudioPage }) {
 function PageHeader({ page }: { page: StudioPage }) {
   if (!page.companion) return null;
 
-  const details = VIEW_DETAILS[page.selection.view];
-
   return (
     <header className="page-header">
       <div className="page-heading">
-        <p className="page-eyebrow">{details.eyebrow}</p>
-        <h1>{details.title}</h1>
+        <h1>{VIEW_TITLES[page.selection.view]}</h1>
       </div>
       <div className="page-context">
         <span className="page-context-label">Companion Repository</span>
@@ -234,29 +216,75 @@ function PageHeader({ page }: { page: StudioPage }) {
   );
 }
 
-const VIEW_NAV: readonly (readonly [StudioView, string])[] = [
-  ["dashboard", "Overview"],
-  ["vault", "Vault"],
-  ["specs", "Specs"],
-  ["workflow", "Workflow"],
-  ["skills", "Skills"],
-  ["reports", "Reports"],
-];
+/** A view's page title is its navigation label. */
+const VIEW_TITLES: Record<StudioView, string> = {
+  dashboard: "Overview",
+  workflow: "Workflow",
+  skills: "Skills",
+  vault: "Vault",
+  specs: "Specs",
+  reports: "Reports",
+};
+
+const ROLE_TITLES: Record<StudioRole, string> = {
+  "product-engineer": "Product Engineer",
+  "business-analyst": "Business Analyst",
+};
 
 /**
- * One GET form per view, so switching a view is a navigation to the URL naming
- * it and the browser's history moves between rendered states.
+ * One GET form with a submit button per role, so switching a role is a
+ * navigation to the URL naming it.
+ */
+function RoleSwitch({ selection }: { selection: StudioSelection }) {
+  return (
+    <div className="role-switch" role="group" aria-label="Role">
+      {STUDIO_ROLES.map((role) => (
+        <form key={role} method="get" action="/" data-studio-role={role}>
+          <SelectionFields selection={switchRole(selection, role)} />
+          <button type="submit" aria-pressed={selection.role === role}>
+            {ROLE_TITLES[role]}
+          </button>
+        </form>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The role's views, then the views every role shares. One GET form per view,
+ * so switching a view is a navigation to the URL naming it and the browser's
+ * history moves between rendered states.
  */
 function ViewNav({ selection }: { selection: StudioSelection }) {
+  const roleViews = ROLE_VIEWS[selection.role];
   return (
     <nav className="sidebar-nav" aria-label="Studio views">
-      <span className="sidebar-label">Views</span>
+      {roleViews.length > 0 ? (
+        <ViewSection label={ROLE_TITLES[selection.role]} views={roleViews} selection={selection} />
+      ) : null}
+      <ViewSection label="Shared" views={SHARED_VIEWS} selection={selection} />
+    </nav>
+  );
+}
+
+function ViewSection({
+  label,
+  views,
+  selection,
+}: {
+  label: string;
+  views: readonly StudioView[];
+  selection: StudioSelection;
+}) {
+  return (
+    <div className="sidebar-nav-section" data-studio-nav-section={label}>
+      <span className="sidebar-label">{label}</span>
       <div className="sidebar-nav-list">
-        {VIEW_NAV.map(([view, label]) => (
+        {views.map((view) => (
           <form key={view} method="get" action="/" data-studio-view={view}>
             <SelectionFields selection={switchView(selection, view)} />
             <button type="submit" aria-pressed={selection.view === view}>
-              <span>{label}</span>
+              <span>{VIEW_TITLES[view]}</span>
               {view === "reports" ? (
                 <span id="reports-badge" className="nav-badge" hidden>
                   new
@@ -266,7 +294,7 @@ function ViewNav({ selection }: { selection: StudioSelection }) {
           </form>
         ))}
       </div>
-    </nav>
+    </div>
   );
 }
 

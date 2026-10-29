@@ -1,6 +1,6 @@
 {
   "name": "@uniqbit/mate-plugin-companion-mentions",
-  "version": "0.18.5",
+  "version": "1.0.0-canary.0",
   "description": "Mate plugin: find and attach Companion Repository files from Claude Code's @ menu as @mate:<path>.",
   "license": "MIT",
   "repository": {
@@ -32,7 +32,7 @@
     "format:check": "oxfmt src/ test/ claude-plugin/ --check"
   },
   "devDependencies": {
-    "@uniqbit/mate-core": "0.18.5"
+    "@uniqbit/mate-core": "1.0.0-canary.0"
   },
   "engines": {
     "node": ">=24"

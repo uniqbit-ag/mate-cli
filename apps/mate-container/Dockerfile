@@ -331,7 +331,6 @@ RUN set -e \
  && command -v git \
  && command -v ssh \
  && command -v uv \
- && command -v openspec \
  && command -v graphify \
  && command -v rtk \
  && command -v tokensave \

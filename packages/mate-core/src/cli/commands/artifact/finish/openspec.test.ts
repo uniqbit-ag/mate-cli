@@ -7,6 +7,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   openspecFinisher,
   openspecSpecsFinisher,
+  publicationHold,
+  publicationHoldCache,
   resolveDriftedSpecs,
   type SpecDriftGit,
 } from "./openspec";
@@ -27,12 +29,26 @@ async function seedArchive(
   const dir = path.join(companionPath, "openspec", "changes", "archive", folder);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, "proposal.md"), "archived\n", "utf8");
+  await seedSettledDelivery(dir);
   await Promise.all(
     capabilities.map(async (capability) => {
       const specPath = path.join(dir, "specs", capability, "spec.md");
       await fs.mkdir(path.dirname(specPath), { recursive: true });
       await fs.writeFile(specPath, "delta\n", "utf8");
     }),
+  );
+}
+
+/** A Delivery Record the merge gate lets through. */
+async function seedSettledDelivery(
+  dir: string,
+  status: "merged" | "open" = "merged",
+): Promise<void> {
+  const merge = `    merge:\n      state: ${status}\n      source: user\n      checkedAt: "2026-01-01T00:00:00.000Z"\n`;
+  await fs.writeFile(
+    path.join(dir, "delivery.yaml"),
+    `version: 1\nchange: ${path.basename(dir)}\ndeliveries:\n  - repository: acme/product\n    branch: change/x\n${merge}`,
+    "utf8",
   );
 }
 
@@ -82,6 +98,30 @@ describe("openspecFinisher.resolve", () => {
     expect(result.ok ? "" : result.message).toContain("openspec archive my-change");
   });
 
+  test("a dated anchor that is a file is not an archive", async () => {
+    const root = await makeCompanion();
+    const archive = path.join(root, "openspec", "changes", "archive");
+    await fs.mkdir(archive, { recursive: true });
+    await fs.writeFile(path.join(archive, "2026-07-14-my-change"), "not a dir\n", "utf8");
+
+    const anchored = await resolve(root, "2026-07-14-my-change");
+    expect(anchored.ok ? "" : anchored.message).toContain(
+      "no archive at openspec/changes/archive/2026-07-14-my-change",
+    );
+    expect((await resolve(root, "my-change")).ok).toBe(false);
+  });
+
+  test("a path-like target resolves to nothing", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-07-14-my-change");
+    await fs.mkdir(path.join(root, "openspec", "my-change"), { recursive: true });
+
+    for (const target of ["../my-change", "archive", "a/b"]) {
+      const result = await resolve(root, target);
+      expect(result.ok ? "" : result.message).toContain(`no archived change matches "${target}"`);
+    }
+  });
+
   test("a bare name matching exactly one archive resolves it", async () => {
     const root = await makeCompanion();
     await seedArchive(root, "2026-07-14-my-change");
@@ -89,6 +129,70 @@ describe("openspecFinisher.resolve", () => {
     const result = await resolve(root, "my-change");
 
     expect(result.ok && result.resolved.anchorName).toBe("2026-07-14-my-change");
+  });
+
+  test("an archive whose delivery is not merged is held back", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-07-14-my-change");
+    const record = path.join(
+      root,
+      "openspec",
+      "changes",
+      "archive",
+      "2026-07-14-my-change",
+      "delivery.yaml",
+    );
+    await fs.writeFile(
+      record,
+      "version: 1\nchange: my-change\ndeliveries:\n  - repository: acme/acme-app\n    branch: change/my-change\n",
+      "utf8",
+    );
+
+    const held = await resolve(root, "my-change");
+    expect(held.ok).toBe(false);
+    expect(held.ok ? "" : held.message).toContain(
+      "held back: its delivery is waiting (acme/acme-app)",
+    );
+
+    await fs.appendFile(
+      record,
+      "    merge:\n      state: merged\n      source: user\n      checkedAt: now\n",
+      "utf8",
+    );
+    expect((await resolve(root, "my-change")).ok).toBe(true);
+  });
+
+  test("an archive is held back while a scoped repository has no delivery", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-07-14-my-change");
+    const dir = path.join(root, "openspec", "changes", "archive", "2026-07-14-my-change");
+    await fs.writeFile(
+      path.join(dir, "proposal.md"),
+      "---\nscopes:\n  - repository: acme/acme-app\n    area: .\n  - repository: acme/acme-docs\n    area: .\n---\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "delivery.yaml"),
+      "version: 1\nchange: my-change\ndeliveries:\n  - repository: acme/acme-app\n    branch: change/my-change\n    merge:\n      state: merged\n      source: forge\n      checkedAt: now\n",
+      "utf8",
+    );
+
+    const held = await resolve(root, "my-change");
+    expect(held.ok ? "" : held.message).toContain("waiting (acme/acme-docs)");
+    expect(held.ok ? "" : held.message).toContain("--repository acme/acme-docs");
+  });
+
+  test("an archive with an unreadable delivery record is refused", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-07-14-my-change");
+    await fs.writeFile(
+      path.join(root, "openspec", "changes", "archive", "2026-07-14-my-change", "delivery.yaml"),
+      "deliveries: nope\n",
+      "utf8",
+    );
+
+    const result = await resolve(root, "my-change");
+    expect(result.ok ? "" : result.message).toContain("malformed delivery.yaml");
   });
 
   test("a bare name matching two archives is refused with both anchors", async () => {
@@ -210,6 +314,87 @@ describe("openspecFinisher scoped commit guard", () => {
   });
 });
 
+describe("openspecFinisher merge gate", () => {
+  test("an archive without a Delivery Record publishes with a legacy warning", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-08-01-acme");
+    await fs.rm(
+      path.join(root, "openspec", "changes", "archive", "2026-08-01-acme", "delivery.yaml"),
+    );
+
+    const result = await resolve(root, "acme");
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.resolved.warning : "").toContain("merge was not checked");
+  });
+
+  test("an archive sharing a canonical spec with a pending held-back archive is held", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-08-01-alpha", ["acme"]);
+    await seedArchive(root, "2026-08-02-beta", ["acme"]);
+    const alpha = path.join(root, "openspec", "changes", "archive", "2026-08-01-alpha");
+    await seedSettledDelivery(alpha, "open");
+    const changed = [
+      "openspec/changes/archive/2026-08-01-alpha/",
+      "openspec/changes/archive/2026-08-02-beta/",
+      "openspec/specs/acme/spec.md",
+    ];
+
+    const hold = await publicationHold(root, "2026-08-02-beta", async () => changed);
+    expect(hold).toContain("openspec/specs/acme/spec.md");
+    expect(hold).toContain("2026-08-01-alpha");
+
+    const viaFinisher = await openspecFinisher({
+      companionPath: root,
+      repositoryId: "",
+      changedPaths: async () => changed,
+    }).resolve("beta");
+    expect(viaFinisher.ok).toBe(false);
+
+    // Once alpha is published (committed), beta is free.
+    expect(await publicationHold(root, "2026-08-02-beta", async () => changed.slice(1))).toBeNull();
+    // A merged neighbour never holds it.
+    await seedSettledDelivery(alpha, "merged");
+    expect(await publicationHold(root, "2026-08-02-beta", async () => changed)).toBeNull();
+  });
+
+  test("a run discovers the pending archives once, however many holds it checks", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-08-01-alpha", ["acme"]);
+    await seedArchive(root, "2026-08-02-beta", ["acme"]);
+    await seedSettledDelivery(
+      path.join(root, "openspec", "changes", "archive", "2026-08-01-alpha"),
+      "open",
+    );
+    let reads = 0;
+    const changedPaths = async (): Promise<string[]> => {
+      reads += 1;
+      return [
+        "openspec/changes/archive/2026-08-01-alpha/",
+        "openspec/changes/archive/2026-08-02-beta/",
+      ];
+    };
+    const cache = publicationHoldCache();
+    const first = await publicationHold(root, "2026-08-02-beta", changedPaths, cache);
+    const again = await publicationHold(root, "2026-08-02-beta", changedPaths, cache);
+    expect(first).toContain("2026-08-01-alpha");
+    expect(again).toBe(first);
+    expect(reads).toBe(1);
+  });
+
+  test("a waiting archive's remedy names its dated anchor, not the bare change name", async () => {
+    const root = await makeCompanion();
+    await seedArchive(root, "2026-08-01-acme", ["acme"]);
+    await seedSettledDelivery(
+      path.join(root, "openspec", "changes", "archive", "2026-08-01-acme"),
+      "open",
+    );
+
+    const hold = await publicationHold(root, "2026-08-01-acme");
+    expect(hold).toContain("mate artifact link 2026-08-01-acme`");
+  });
+});
+
 async function seedArchivedDelta(
   companionPath: string,
   folder: string,
@@ -228,6 +413,7 @@ async function seedArchivedDelta(
     "spec.md",
   );
   await fs.mkdir(path.dirname(specPath), { recursive: true });
+  await seedSettledDelivery(path.join(companionPath, "openspec", "changes", "archive", folder));
   if (schemaMetadata !== null) {
     await fs.writeFile(
       path.join(companionPath, "openspec", "changes", "archive", folder, ".openspec.yaml"),

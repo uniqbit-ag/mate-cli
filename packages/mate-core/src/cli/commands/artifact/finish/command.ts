@@ -8,7 +8,12 @@ import { discoverArchives, pendingArchives } from "../pending/discovery";
 import { type FinishResult, runFinishEngine } from "./engine";
 import type { ArtifactFinisher, FinishContext, FinisherFactory } from "./finisher";
 import { defaultGitOps, type GitOps } from "./git";
-import { openspecSpecsFinisher, resolveDriftedSpecs } from "./openspec";
+import {
+  openspecSpecsFinisher,
+  publicationHold,
+  publicationHoldCache,
+  resolveDriftedSpecs,
+} from "./openspec";
 import { DEFAULT_FINISHER_TYPE, knownFinisherTypes, selectFinisher } from "./registry";
 import { type PublicationSecretScan, scanPublication } from "./secret-scan";
 
@@ -105,7 +110,8 @@ function refusalResult(type: string, name: string, message: string): FinishResul
  *   new `openspec/specs/<date>-<specs>` tag. Bare, it publishes every drifted spec; with paths, only
  *   those. A bare name alongside it is a change target and is refused.
  * - `--all` — publish every pending change in discovery order, then one spec publication for
- *   the drift that remains. Halts at the first conflict or error; with `--json` it emits a
+ *   the drift that remains. Skips an archive the merge gate holds back, reporting why, and
+ *   halts at the first conflict or error; with `--json` it emits a
  *   single array of results in execution order.
  * - `--type <type>` — finisher type to use; see `knownFinisherTypes()`. `--specs` and
  *   `--all` are openspec-only.
@@ -194,10 +200,14 @@ export async function runArtifactPublishCommand(
   const loadCapabilities = deps.loadCapabilities ?? defaultLoadCapabilities;
   const capabilities = await loadCapabilities(context);
 
+  let git: GitOps;
   const finishContext: FinishContext = {
     companionPath: context.companionPath,
     repositoryId: context.repositoryId,
     repository: context.repository,
+    // Resolution runs only after `git` is set below.
+    changedPaths: () => git.changedPaths(),
+    holdCache: publicationHoldCache(),
   };
   const finisher = finisherFactory(finishContext);
   if (!finisher.isEnabled(capabilities)) {
@@ -206,7 +216,6 @@ export async function runArtifactPublishCommand(
     return;
   }
 
-  let git: GitOps;
   try {
     git = (deps.git ?? defaultGitOps)(
       context.companionPath,
@@ -261,6 +270,19 @@ export async function runArtifactPublishCommand(
     const archives = await discoverArchives(context.companionPath, changed, changeKinds);
 
     for (const entry of pendingArchives(archives)) {
+      // A held-back archive waits for its merge; it does not stop the merged ones.
+      // Same cache as the finisher's resolve step, so both see one pending set and agree.
+      const hold = await publicationHold(
+        context.companionPath,
+        entry.anchor,
+        async () => changed,
+        finishContext.holdCache,
+      );
+      if (hold) {
+        if (!quiet) emitErr(hold);
+        results.push(nothingToPublish(entry.anchor, hold));
+        continue;
+      }
       const result = await runChange(entry.anchor);
       results.push(result);
       if (halted(result)) {

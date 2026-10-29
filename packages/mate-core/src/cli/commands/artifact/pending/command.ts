@@ -1,3 +1,6 @@
+import path from "node:path";
+
+import { readDeliveryState, type DeliveryState } from "../../../../lib/delivery/record";
 import { hasOpenspecCapability } from "../../../../lib/orchestrator/capabilities";
 import { resolveForCapability } from "../../../../lib/orchestrator/framework-context";
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
@@ -39,12 +42,20 @@ export interface AllCoverage {
   coveredByAll: boolean;
 }
 
+/**
+ * The archive's Delivery Record and its settlement; held back unless `isPublishable`.
+ * `error` names an unreadable record.
+ */
+export interface PendingDelivery {
+  delivery: DeliveryState;
+}
+
 /** Machine-readable result emitted with `--json`. */
 export interface PendingResult {
   type: string;
   companionPath: string;
   count: number;
-  pending: Array<ArchiveEntry & AllCoverage>;
+  pending: Array<ArchiveEntry & AllCoverage & PendingDelivery>;
   /** Uncommitted canonical specs no pending change accounts for, each with its attribution. */
   unattributedSpecs: Array<UnattributedSpec & AllCoverage>;
 }
@@ -80,6 +91,23 @@ function renderUnattributed(specs: Array<UnattributedSpec & AllCoverage>): strin
   ];
 }
 
+async function withDelivery<T extends ArchiveEntry>(
+  companionPath: string,
+  entries: T[],
+): Promise<Array<T & PendingDelivery>> {
+  return Promise.all(
+    entries.map(async (entry) => {
+      const delivery = await readDeliveryState(path.join(companionPath, entry.path));
+      return { ...entry, delivery };
+    }),
+  );
+}
+
+/** A damaged record is shown with its error, so it is fixed rather than re-linked over. */
+function renderDeliveryStatus(delivery: DeliveryState): string {
+  return delivery.error === undefined ? delivery.status : `unreadable (${delivery.error})`;
+}
+
 function renderHuman(result: PendingResult): string[] {
   const pending =
     result.count === 0
@@ -87,7 +115,7 @@ function renderHuman(result: PendingResult): string[] {
       : [
           `${result.count} archived change${result.count === 1 ? "" : "s"} pending publication:`,
           ...result.pending.flatMap((entry, index) => [
-            `  ${index + 1}. ${entry.name}  ${entry.tag}  ${entry.path}${entry.coveredByAll ? "  [--all]" : ""}`,
+            `  ${index + 1}. ${entry.name}  ${entry.tag}  ${entry.path}${entry.coveredByAll ? "  [--all]" : ""}  delivery: ${renderDeliveryStatus(entry.delivery)}`,
             ...entry.uncommittedPaths.map((uncommitted) => `       ${uncommitted}`),
             ...entry.uncommittedSpecs.map((spec) => `       ${spec}`),
           ]),
@@ -164,7 +192,7 @@ export async function runArtifactPendingCommand(
     type: "openspec",
     companionPath: context.companionPath,
     count: pending.length,
-    pending: markCoveredByAll(pending),
+    pending: await withDelivery(context.companionPath, markCoveredByAll(pending)),
     unattributedSpecs: markCoveredByAll(
       await unattributedSpecs(context.companionPath, changed, archives, changeKinds),
     ),

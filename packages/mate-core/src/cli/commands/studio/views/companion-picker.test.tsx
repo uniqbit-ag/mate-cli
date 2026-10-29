@@ -6,7 +6,12 @@ import type { StudioInventory } from "../inventory";
 import { companionDigest, type StudioSelection } from "../selection";
 import { CompanionPicker } from "./companion-picker";
 
-const dashboard: StudioSelection = { companionDigest: null, view: "dashboard", refresh: false };
+const dashboard: StudioSelection = {
+  companionDigest: null,
+  role: "product-engineer",
+  view: "dashboard",
+  refresh: false,
+};
 
 function render(inventory: StudioInventory, selection: StudioSelection = dashboard): string {
   return String(<CompanionPicker inventory={inventory} selection={selection} />);
@@ -48,6 +53,7 @@ describe("CompanionPicker", () => {
       { companions: [{ path: acme, health: "ready", pairings: [] }] },
       {
         companionDigest: companionDigest(acme),
+        role: "product-engineer",
         view: "vault",
         refresh: true,
         openPath: "docs/note.md",

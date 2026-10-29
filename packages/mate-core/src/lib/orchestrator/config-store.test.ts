@@ -141,17 +141,17 @@ describe("mergeWithDefaults", () => {
     expect(count).toBe(1);
   });
 
-  test("preserves existing openspec schema profile metadata", () => {
+  test("preserves existing openspec capability metadata", () => {
     const existing: FrameworkConfig = {
       allowedAgents: ["claude"],
-      capabilities: [{ name: "openspec", schemaProfile: "mate-v1" }],
+      capabilities: [{ name: "openspec", protectedBranches: ["release/*"] }],
     };
 
     const merged = mergeWithDefaults(existing);
 
     expect(merged.capabilities).toContainEqual({
       name: "openspec",
-      schemaProfile: "mate-v1",
+      protectedBranches: ["release/*"],
     });
   });
 
@@ -706,7 +706,8 @@ describe("the Mate 0.18.4 audiences.base shape", () => {
         "  base:",
         "    capabilities:",
         "      - name: openspec",
-        "        schemaProfile: mate-v1",
+        "        protectedBranches:",
+        '          - "release/*"',
         "  ba:",
         "    plugins:",
         '      - package: "@acme/analyst"',
@@ -718,12 +719,12 @@ describe("the Mate 0.18.4 audiences.base shape", () => {
     const store = new ConfigStore(configPath);
 
     const config = await store.load();
-    expect(config.capabilities).toEqual([{ name: "openspec", schemaProfile: "mate-v1" }]);
+    expect(config.capabilities).toEqual([{ name: "openspec", protectedBranches: ["release/*"] }]);
     expect(Object.keys(config.audiences ?? {})).toEqual(["ba"]);
 
     await store.save(config);
     const saved = parse(await fs.readFile(configPath, "utf8")) as FrameworkConfig;
-    expect(saved.capabilities).toEqual([{ name: "openspec", schemaProfile: "mate-v1" }]);
+    expect(saved.capabilities).toEqual([{ name: "openspec", protectedBranches: ["release/*"] }]);
     expect(Object.keys(saved.audiences ?? {})).toEqual(["ba"]);
   });
 });

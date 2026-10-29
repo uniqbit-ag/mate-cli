@@ -27,6 +27,7 @@ import {
   parse,
   parseVaultSelection,
   resolveCompanion,
+  type StudioSelection,
   type StudioVaultSelection,
 } from "./selection";
 import { createStudioSnapshotCache, type StudioSnapshotCache } from "./snapshot";
@@ -704,6 +705,12 @@ export function createStudioFetch(
     if (url.pathname !== "/") return respond(new Response("not found", { status: 404 }));
 
     const page = await collectStudioPage(url, inventory, snapshots, vault, writable);
+    if (page.payload && page.companion && isAnalystOverview(page.selection)) {
+      page.reports = await reports.list(companionDigest(page.companion.path)).then(
+        (listed) => listed.map(({ id, title, createdAt }) => ({ id, title, createdAt })),
+        () => null,
+      );
+    }
     if (terminal) {
       const target = await effectiveLaunchCompanion(
         page.inventory,
@@ -794,6 +801,11 @@ function changeStream(
       stopTree();
     };
   });
+}
+
+/** Reports are not part of the snapshot: this Overview lists them at render time. */
+function isAnalystOverview(selection: StudioSelection): boolean {
+  return selection.role === "business-analyst" && selection.view === "dashboard";
 }
 
 /**

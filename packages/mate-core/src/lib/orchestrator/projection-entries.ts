@@ -328,7 +328,7 @@ function buildEntries(): readonly ProjectionEntry[] {
     /**
      * A wrapped repository reaches its companion through
      * `permissions.additionalDirectories`, from which Claude loads no commands,
-     * so OpenSpec's `/opsx:*` must be linked in like the skills.
+     * so the companion's commands must be linked in like the skills.
      */
     {
       id: "claude-command-links",

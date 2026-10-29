@@ -1,13 +1,20 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { removeRecorded } from "./managed-output";
+import type { ManagedOutputRecorder } from "./plugin";
 import { pruneEmptyAncestors } from "./utils";
+import { readFrontmatter } from "../../lib/frontmatter";
 
-export const MATE_ARTIFACT_SKILLS = ["mate-artifact-publish"] as const;
 export const MATE_SKILLS = [
-  "mate-artifact-publish",
+  "mate-clarify-intent",
+  "mate-explore-change",
+  "mate-propose-change",
+  "mate-apply-change",
+  "mate-archive-change",
+  "mate-publish-artifact",
+  "mate-backfill-spec",
   "mate-create-report",
-  "mate-openspec-backfill",
   "mate-interview-me",
   "mate-grill-me",
   "mate-grilling",
@@ -17,8 +24,11 @@ export const MATE_SKILLS = [
   "mate-simplify-code",
 ] as const;
 const LEGACY_MATE_SKILLS = ["mate-artifact-finish", "mate-openspec-artifact-finish"] as const;
-/** Every Mate-owned skill name a skill root may hold, current or retired. */
-export const MANAGED_MATE_SKILL_NAMES = [...MATE_SKILLS, ...LEGACY_MATE_SKILLS] as const;
+/**
+ * Renamed without aliases: removed only when Mate wrote them (`metadata.author: mate`),
+ * so a user-authored skill that happens to share a retired name is left alone.
+ */
+const RETIRED_MATE_SKILLS = ["mate-artifact-publish", "mate-openspec-backfill"] as const;
 
 const MATE_SKILLS_SOURCE = path.join(import.meta.dirname, "../../templates/mate-skills");
 
@@ -161,10 +171,41 @@ async function resolveMateSkillSource(skill: string, tool: string): Promise<stri
   throw new Error(`Mate skill source not found: ${skill}`);
 }
 
-export async function applyMateSkills(skillsDir: string, tool: string): Promise<void> {
-  for (const skill of LEGACY_MATE_SKILLS) {
-    await fs.rm(path.join(skillsDir, skill), { recursive: true, force: true });
+/** The `metadata.author` a skill directory's SKILL.md declares, if any. */
+export async function readSkillAuthor(skillDir: string): Promise<unknown> {
+  let source: string;
+  try {
+    source = await fs.readFile(path.join(skillDir, "SKILL.md"), "utf8");
+  } catch {
+    return undefined;
   }
+  const metadata = readFrontmatter(source)?.metadata as { author?: unknown } | null | undefined;
+  return metadata?.author;
+}
+
+async function isMateAuthored(skillDir: string): Promise<boolean> {
+  return (await readSkillAuthor(skillDir)) === "mate";
+}
+
+export async function removeRetiredMateSkills(
+  skillsDir: string,
+  recorder?: ManagedOutputRecorder,
+): Promise<void> {
+  for (const skill of RETIRED_MATE_SKILLS) {
+    const dir = path.join(skillsDir, skill);
+    if (await isMateAuthored(dir)) await removeRecorded(dir, "mate", recorder);
+  }
+}
+
+export async function applyMateSkills(
+  skillsDir: string,
+  tool: string,
+  recorder?: ManagedOutputRecorder,
+): Promise<void> {
+  for (const skill of LEGACY_MATE_SKILLS) {
+    await removeRecorded(path.join(skillsDir, skill), "mate", recorder);
+  }
+  await removeRetiredMateSkills(skillsDir, recorder);
   for (const skill of MATE_SKILLS) {
     const destination = path.join(skillsDir, skill);
     if (skill === "mate-create-report") {
@@ -173,13 +214,19 @@ export async function applyMateSkills(skillsDir: string, tool: string): Promise<
     } else {
       await deployMateSkillDir(await resolveMateSkillSource(skill, tool), destination);
     }
+    recorder?.record({ path: destination, change: "written", owner: "mate" });
   }
 }
 
-export async function teardownMateSkills(skillsDir: string, companionPath: string): Promise<void> {
-  for (const skill of MANAGED_MATE_SKILL_NAMES) {
+export async function teardownMateSkills(
+  skillsDir: string,
+  companionPath: string,
+  recorder?: ManagedOutputRecorder,
+): Promise<void> {
+  await removeRetiredMateSkills(skillsDir, recorder);
+  for (const skill of [...MATE_SKILLS, ...LEGACY_MATE_SKILLS]) {
     try {
-      await fs.rm(path.join(skillsDir, skill), { recursive: true, force: true });
+      await removeRecorded(path.join(skillsDir, skill), "mate", recorder);
     } catch {
       /* not present */
     }

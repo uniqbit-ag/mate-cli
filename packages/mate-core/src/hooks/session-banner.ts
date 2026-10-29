@@ -2,6 +2,7 @@
  * Show the active Mate companion paths in Claude Code, and repair the
  * companion's Git state before the session reads it.
  */
+import { errorMessage } from "../runtime/error-message";
 import { unmanagedClaudeDelivery } from "../runtime/claude-delivery-plan";
 import {
   syncCompanionUnattended,
@@ -13,7 +14,7 @@ import { FRAMEWORK_NAME } from "../runtime/framework";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
 import { mateVersion } from "../runtime/install";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
-import { errorText, hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
+import { hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
 
 /**
  * Resolves in-process from either source — no subprocess in either branch.
@@ -74,7 +75,7 @@ export function run(argv: readonly string[] = process.argv.slice(2)): Promise<nu
     () => buildBanner(process.env, process.cwd(), argv),
     (error) =>
       hookOutcome({
-        systemMessage: `${FRAMEWORK_NAME}: session banner failed: ${errorText(error)}`,
+        systemMessage: `${FRAMEWORK_NAME}: session banner failed: ${errorMessage(error)}`,
       }),
   );
 }

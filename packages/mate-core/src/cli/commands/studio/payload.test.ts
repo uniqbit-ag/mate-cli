@@ -1,6 +1,23 @@
 import { describe, expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
+import type { ArchiveEntry } from "../artifact/pending/discovery";
 import { assembleCompanionPayload, type CompanionPayloadDeps } from "./payload";
+
+function archive(anchor: string, state: ArchiveEntry["state"] = "committed"): ArchiveEntry {
+  return {
+    name: anchor.slice(11),
+    anchor,
+    path: `openspec/changes/archive/${anchor}`,
+    tag: `openspec/${anchor}`,
+    uncommittedPaths: [],
+    uncommittedSpecs: [],
+    uncommittedSpecChanges: [],
+    state,
+  };
+}
 
 function deps(overrides: Partial<CompanionPayloadDeps> = {}): CompanionPayloadDeps {
   return {
@@ -63,6 +80,10 @@ function deps(overrides: Partial<CompanionPayloadDeps> = {}): CompanionPayloadDe
       },
     }),
     readSpecAreas: async () => ["acme"],
+    readUncommittedPaths: async () => [],
+    discoverArchives: async () => [],
+    canonicalSpecsFor: async () => [],
+    hasArchivedProposal: async () => true,
     ...overrides,
   };
 }
@@ -229,5 +250,131 @@ describe("assembleCompanionPayload", () => {
     if ("error" in payload) throw new Error("expected a payload");
     expect(payload.changes).toEqual([]);
     expect(payload.specs).toEqual([]);
+    expect(payload.shipped).toEqual([]);
+  });
+
+  describe("shipped changes", () => {
+    test("carries committed archives newest first with their capabilities", async () => {
+      const seen: string[][] = [];
+      const payload = await assembleCompanionPayload(
+        "/companions/acme",
+        deps({
+          readUncommittedPaths: async () => ["openspec/changes/archive/2026-03-01-acme-pending/"],
+          discoverArchives: async (_companion, uncommitted) => {
+            seen.push(uncommitted);
+            return [
+              archive("2026-01-05-acme-login"),
+              archive("2026-02-10-acme-checkout"),
+              archive("2026-03-01-acme-pending", "uncommitted"),
+            ];
+          },
+          canonicalSpecsFor: async (_companion, anchor) =>
+            anchor === "2026-02-10-acme-checkout"
+              ? ["openspec/specs/acme-checkout/spec.md", "openspec/specs/acme/billing/spec.md"]
+              : ["openspec/specs/acme-login/spec.md"],
+          hasArchivedProposal: async (_companion, anchor) => anchor !== "2026-01-05-acme-login",
+        }),
+      );
+
+      if ("error" in payload) throw new Error("expected a payload");
+      expect(seen).toEqual([["openspec/changes/archive/2026-03-01-acme-pending/"]]);
+      expect(payload.shipped).toEqual([
+        {
+          name: "acme-checkout",
+          anchor: "2026-02-10-acme-checkout",
+          archivedOn: "2026-02-10",
+          specs: ["acme-checkout", "acme/billing"],
+          hasProposal: true,
+        },
+        {
+          name: "acme-login",
+          anchor: "2026-01-05-acme-login",
+          archivedOn: "2026-01-05",
+          specs: ["acme-login"],
+          hasProposal: false,
+        },
+      ]);
+      expect(payload.warnings).toEqual([]);
+    });
+
+    test("ignores undated archive directories", async () => {
+      const payload = await assembleCompanionPayload(
+        "/companions/acme",
+        deps({
+          discoverArchives: async () => [archive("acme-undated"), archive("2026-01-05-acme")],
+        }),
+      );
+
+      if ("error" in payload) throw new Error("expected a payload");
+      expect(payload.shipped.map((change) => change.anchor)).toEqual(["2026-01-05-acme"]);
+    });
+
+    test("carries an archive without delta specs naming no capabilities", async () => {
+      const payload = await assembleCompanionPayload(
+        "/companions/acme",
+        deps({ discoverArchives: async () => [archive("2026-01-05-acme")] }),
+      );
+
+      if ("error" in payload) throw new Error("expected a payload");
+      expect(payload.shipped[0]?.specs).toEqual([]);
+    });
+
+    test("degrades to a warning when working-tree status cannot be read", async () => {
+      const payload = await assembleCompanionPayload(
+        "/companions/acme",
+        deps({
+          readUncommittedPaths: async () => {
+            throw new Error("companion is not a Git root");
+          },
+          discoverArchives: async () => [archive("2026-01-05-acme")],
+        }),
+      );
+
+      if ("error" in payload) throw new Error("expected a payload");
+      expect(payload.shipped).toEqual([]);
+      expect(payload.warnings).toEqual(["shipped changes: companion is not a Git root"]);
+      expect(payload.changes).toHaveLength(2);
+      expect(payload.specs).toHaveLength(1);
+    });
+
+    test("reads real archive directories by name only", async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "studio-shipped-"));
+      try {
+        const archiveDir = path.join(root, "openspec/changes/archive");
+        await fs.mkdir(path.join(archiveDir, "2026-01-05-acme/specs/acme"), { recursive: true });
+        await fs.writeFile(path.join(archiveDir, "2026-01-05-acme/proposal.md"), "x");
+        await fs.writeFile(path.join(archiveDir, "2026-01-05-acme/specs/acme/spec.md"), "x");
+        await fs.mkdir(path.join(archiveDir, "2026-02-01-acme-minimal"), { recursive: true });
+        await fs.mkdir(path.join(archiveDir, "notes"), { recursive: true });
+
+        const {
+          discoverArchives: _discover,
+          canonicalSpecsFor: _specs,
+          hasArchivedProposal: _proposal,
+          ...rest
+        } = deps();
+        const payload = await assembleCompanionPayload(root, rest);
+
+        if ("error" in payload) throw new Error("expected a payload");
+        expect(payload.shipped).toEqual([
+          {
+            name: "acme-minimal",
+            anchor: "2026-02-01-acme-minimal",
+            archivedOn: "2026-02-01",
+            specs: [],
+            hasProposal: false,
+          },
+          {
+            name: "acme",
+            anchor: "2026-01-05-acme",
+            archivedOn: "2026-01-05",
+            specs: ["acme"],
+            hasProposal: true,
+          },
+        ]);
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    });
   });
 });

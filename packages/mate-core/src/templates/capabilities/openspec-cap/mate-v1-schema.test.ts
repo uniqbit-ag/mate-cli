@@ -265,4 +265,25 @@ describe("mate-v1 schema", () => {
     expect(conventions).toContain("distinct Areas as areas in their original order");
     expect(conventions).toContain("split the capability before archive");
   });
+
+  test("defers skill tagging to the shared rule and keeps the no-tag cases", async () => {
+    const { parsed } = await readSchema();
+    const tasks = artifact(parsed, "tasks");
+
+    expect(tasks.instruction).toContain(
+      "only as the skill-tagging rule in `openspec/mate-conventions.yaml` allows",
+    );
+    expect(tasks.instruction).not.toContain("when a skill applies");
+    for (const noTagCase of [
+      "Config file changes",
+      "Constant or route definition additions",
+      "Package exports / index wiring",
+      "Single-file edits that follow no special convention",
+      "Rebuilding or compiling packages",
+      "Running checks / type checks / lint",
+      "Trivial utility functions co-located in a component or hook",
+    ]) {
+      expect(tasks.instruction).toContain(noTagCase);
+    }
+  });
 });

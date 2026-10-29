@@ -30,8 +30,10 @@ release; otherwise it stops and asks you to run `mate update` first. It
 regenerates the companion's Mate-managed files, skills, and OpenSpec output,
 raises `engines.mate` to the running version, and then offers to commit and push
 exactly the files it wrote. `--yes` commits and pushes without asking. Outside
-an interactive shell and without `--yes`, the changes stay uncommitted. A file
-you had edited locally before the update is reported, not silently overwritten.
+an interactive shell and without `--yes`, the changes stay uncommitted. A local
+edit to a Mate-managed skill is overwritten: the update lists it as a warning
+and commits the new version. A local edit to any other file the update rewrites
+blocks the commit: the update lists that file and exits without committing.
 
 `mate working cleanup` runs from a working repository linked to a companion. It
 removes the local `.mate` projection, Mate's Git excludes, and the OpenSpec
@@ -50,6 +52,9 @@ Run from a companion or a repository that is not linked, it exits non-zero.
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
 installs only Mate's core requirements.
+
+For OpenSpec, `mate doctor` reports the CLI bundled with Mate, with its path
+and version, instead of looking for `openspec` on `PATH`.
 
 `mate doctor` also warns when the companion `CLAUDE.md` holds text besides
 `@AGENTS.md` and Mate-managed blocks. Claude sessions in your repositories receive
@@ -290,8 +295,8 @@ the same value yourself, and keeps one you set after it. If you pass your own
 in your own settings.
 
 The wrap also links each companion skill folder (`.claude/skills/<name>`) and each
-companion command folder, such as OpenSpec's `.claude/commands/opsx/`, into your
-repository's `.claude/`, so `/opsx:*` works in plain `claude` too. A path your
+companion command folder (`.claude/commands/<name>/`) into your repository's
+`.claude/`, so they work in plain `claude` too. A path your
 repository already has wins, and `mate unwrap` removes only the links Mate created.
 
 Each enabled Capability's Claude plugin folder is published as its own local
@@ -433,12 +438,14 @@ keeps the rest of the graph. A secret never stops the run. See
 
 ## Artifacts And Updates
 
-| Command                                    | Purpose                                                              |
-| ------------------------------------------ | -------------------------------------------------------------------- |
-| `mate artifact pending [--json]`           | List archived changes and drifted specs that are not published yet.  |
-| `mate artifact publish <target> [options]` | Commit, tag, and push one archived change.                           |
-| `mate update`                              | Upgrade an npm-managed Mate installation and reinstall requirements. |
-| `mate update --check`                      | Check for an update without installing it.                           |
+| Command                                    | Purpose                                                               |
+| ------------------------------------------ | --------------------------------------------------------------------- |
+| `mate artifact pending [--json]`           | List archived changes and drifted specs that are not published yet.   |
+| `mate artifact publish <target> [options]` | Commit, tag, and push one archived change.                            |
+| `mate artifact link <change>... [options]` | Record a change's delivery branch and merge state in `delivery.yaml`. |
+| `mate artifact archive <change> [options]` | Archive a change, before or after its merge, and record its delivery. |
+| `mate update`                              | Upgrade an npm-managed Mate installation and reinstall requirements.  |
+| `mate update --check`                      | Check for an update without installing it.                            |
 
 `mate artifact pending` is read-only. It lists each archived OpenSpec change
 whose files are still uncommitted in the companion, with the canonical specs it
@@ -451,10 +458,66 @@ change first. Options:
 - `--specs [<path>...]` publishes drifted canonical specs as their own
   publication instead of a change; with paths, only those specs.
 - `--all` publishes every pending change in order, then the remaining spec
-  drift, and stops at the first conflict or error.
+  drift. It skips an archive the merge gate holds back, saying why, and stops
+  at the first conflict or error.
 - `--type openspec` selects the publisher; it is the default.
 - `--no-push` commits and tags locally without pushing.
 - `--json` prints machine-readable results.
+
+`mate artifact pending --json` also reports each archive's delivery: `merged`
+and `not-applicable` archives are publishable; `waiting`, `unlinked`, and
+`dropped` ones are held back, and `mate artifact publish` refuses them. A
+`legacy` archive (no `delivery.yaml`) publishes with a warning that its merge
+was not checked. An archive is also held back while it
+shares a canonical spec with a pending archive that is held back, since its
+commit would carry that archive's unmerged requirements.
+
+`mate artifact link` writes the change's `delivery.yaml`, the only writer of
+that file, for active and archived changes. Options:
+
+- `--branch <branch>` records the delivery branch for the Working Repository
+  (or `--repository <org/repo>`, the full path on its host, so a nested group
+  is `<group/subgroup/repo>`). The Working Repository's own identity is the
+  full path of its `origin` remote. A protected branch — the default branch or a
+  pattern in the openspec capability's `protectedBranches`; Mate does not ask
+  GitHub — is refused unless `--direct` records an explicit direct
+  delivery. `--direct` works on any branch: no PR is looked up for it, and only
+  your answer settles it.
+- `--not-applicable <reason>` records that no branch delivers the change.
+- `--pr <url>` records the PR; with `--refresh` it picks that PR when several
+  share the branch.
+- `--refresh` asks GitHub for the merge state, using the
+  [forge token](/docs/concepts/forge-token) when one is available. A direct
+  delivery is never settled automatically, because Git cannot tell its commits
+  from your other pushes. The refresh reports it as needing your answer; check
+  `origin/<branch>` and answer with `--confirm-merged`. The publish skill asks
+  this once per branch, for every direct delivery on it.
+- `--confirm-merged`, `--confirm-open`, and `--confirm-dropped` record your own
+  answer, with source `user`.
+- `--json` prints one result per named change; several changes on one branch
+  can be linked in one call.
+
+Without an edit option or `--refresh`, `mate artifact link` only reads the
+record and writes nothing. When the change's scopes name repositories, a
+recorded delivery whose repository matches none of them gets a warning on
+stderr, naming the scoped spelling it likely means (same last path segment),
+and appears in `--json` as `settlement.unscoped`. The warning changes neither
+the record nor the exit code; fix whichever spelling is wrong.
+A `dependsOn` change that is neither archived nor fully implemented also gets a
+stderr warning and appears in `--json` as `warnings`; it never blocks. For a repository other than the Working Repository,
+the host comes from the `origin` remote of a linked checkout of it, else from the
+Working Repository's remote, and the default branch comes from that host when it
+is github.com. Without a forge token, or when GitHub
+cannot answer, `main` is taken as its default branch.
+
+`mate artifact archive` archives regardless of merge state, prints overlap,
+dependency, incomplete-planning, and unscoped-delivery warnings to stderr before archiving, refreshes merge state when a token is available, always
+leaves a `delivery.yaml`, and then runs `openspec archive`. Without a recorded
+delivery it archives nothing and reports `needs-branch`; answer with
+`--branch <branch>` (`--direct` for a protected one), `--not-applicable <reason>`,
+or `--skip-branch`; add `--repository <org/repo>` when the Working
+Repository has no `origin` remote Mate can read. See [Your First Change](/docs/scenarios/first-change)
+for how the commands fit together.
 
 `mate artifact finish` is the deprecated name of `publish`: it still works but
 prints a warning. Update accepts `--yes` to skip its confirmation prompt.

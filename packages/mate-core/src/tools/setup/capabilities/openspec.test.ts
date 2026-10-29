@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,18 +6,15 @@ import path from "node:path";
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { parse as parseYaml } from "yaml";
 
-import type { SetupContext } from "../plugin";
+import { locateOpenSpec, OPENSPEC_ENV, type OpenSpecRun } from "../../../lib/openspec-cli";
+import type { ManagedOutputEntry, SetupContext } from "../plugin";
 
 import {
   createOpenspecPlugin,
-  deriveOpenSpecTools,
-  MATE_ARTIFACT_SKILLS,
   MATE_SKILLS,
   MATE_SPECS_RULE,
   MATE_SPECS_RULE_MARKER,
-  OPENSPEC_ENV,
   OPENSPEC_SKILLS,
-  readCompanionGeneratedOpenSpecVersion,
 } from "./openspec";
 
 interface MinimalSchema {
@@ -28,16 +25,6 @@ interface MinimalSchema {
 }
 
 const tempRoots: string[] = [];
-
-function setUpdatePolicy(value: string | undefined): () => void {
-  const previous = process.env.MATE_UPDATE_POLICY;
-  if (value === undefined) delete process.env.MATE_UPDATE_POLICY;
-  else process.env.MATE_UPDATE_POLICY = value;
-  return () => {
-    if (previous === undefined) delete process.env.MATE_UPDATE_POLICY;
-    else process.env.MATE_UPDATE_POLICY = previous;
-  };
-}
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -64,28 +51,16 @@ function makeCtx(
   };
 }
 
-const openspecAvailable = {
-  isCommandOnPath: (command: string) => command === "openspec",
-  getInstalledVersion: async () => undefined,
+const OPENSPEC_OK: OpenSpecRun = { code: 0, stdout: "", stderr: "" };
+const OPENSPEC_MISSING = {
+  missing: "bundled OpenSpec CLI is missing. Reinstall Mate to restore it.",
 };
+
+/** Stands in for the bundled CLI. */
+const openspecAvailable = { runOpenSpec: async () => OPENSPEC_OK };
 
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
-});
-
-describe("deriveOpenSpecTools", () => {
-  test("keeps only supported providers in stable runtime order", () => {
-    expect(deriveOpenSpecTools(["tokensave", "claude", "custom", "opencode"])).toEqual([
-      "claude",
-      "agents",
-      "opencode",
-    ]);
-  });
-
-  test("maps opencode to the shared agents tool plus opencode commands", () => {
-    expect(deriveOpenSpecTools(["opencode"])).toEqual(["agents", "opencode"]);
-    expect(deriveOpenSpecTools(["claude"])).toEqual(["claude"]);
-  });
 });
 
 describe("createOpenspecPlugin", () => {
@@ -97,377 +72,147 @@ describe("createOpenspecPlugin", () => {
     expect(plugin.persistGitignoreEntries).toBe(true);
   });
 
-  test("runs openspec init and update for active supported providers", async () => {
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion: async () => undefined,
-    });
-    const ctx = makeCtx("/tmp/companion", ["claude", "opencode"]);
-    await plugin.apply(ctx);
+  test("initializes OpenSpec without tool output and runs no update", async () => {
+    const runOpenSpec = mock(async () => OPENSPEC_OK);
+    const plugin = createOpenspecPlugin({ runOpenSpec });
+    const root = await makeTempDir("mate-openspec-init-none-");
+    await plugin.apply(makeCtx(root, ["claude", "opencode"]));
 
-    expect(installCommand).not.toHaveBeenCalled();
-    expect(runCommand).toHaveBeenNthCalledWith(1, "openspec", ["config", "reset", "--all", "-y"], {
-      cwd: "/tmp/companion",
-      env: OPENSPEC_ENV,
-    });
-    expect(runCommand).toHaveBeenNthCalledWith(
-      2,
-      "openspec",
-      ["init", "--tools", "claude,agents,opencode", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
+    expect(runOpenSpec.mock.calls as unknown[]).toEqual([
+      [["init", "--tools", "none", "--force", root], { cwd: root }],
+    ]);
+    for (const runtimeDir of [".claude", ".agents"]) {
+      await expect(
+        fs.access(
+          path.join(
+            root,
+            runtimeDir,
+            "skills",
+            "mate-explore-change",
+            "references",
+            "openspec-explore.md",
+          ),
+        ),
+      ).resolves.toBeNull();
+      for (const skill of OPENSPEC_SKILLS) {
+        await expect(fs.access(path.join(root, runtimeDir, "skills", skill))).rejects.toThrow();
+      }
+    }
+  });
+
+  test("removes earlier OpenSpec output by name and keeps user entries", async () => {
+    const root = await makeTempDir("mate-openspec-remove-generated-");
+    const write = async (relative: string) => {
+      await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+      await fs.writeFile(path.join(root, relative), "x\n");
+    };
+    for (const runtimeDir of [".claude", ".agents", ".opencode"]) {
+      for (const skill of OPENSPEC_SKILLS) await write(`${runtimeDir}/skills/${skill}/SKILL.md`);
+    }
+    const kept = [
+      ".claude/skills/openspec-acme/SKILL.md",
+      ".agents/skills/acme/SKILL.md",
+      ".claude/commands/acme/run.md",
+      ".opencode/commands/acme.md",
+      ".claude/commands/opsx/acme.md",
+      ".opencode/commands/opsx-acme.md",
+    ];
+    for (const file of [
+      ...kept,
+      ".agents/skills/.openspec-target",
+      ".claude/commands/opsx/propose.md",
+      ".opencode/commands/opsx-propose.md",
+    ]) {
+      await write(file);
+    }
+    const plugin = createOpenspecPlugin(openspecAvailable);
+
+    await plugin.apply(makeCtx(root, ["claude"]));
+
+    for (const runtimeDir of [".claude", ".agents", ".opencode"]) {
+      for (const skill of OPENSPEC_SKILLS) {
+        await expect(fs.access(path.join(root, runtimeDir, "skills", skill))).rejects.toThrow();
+      }
+    }
+    for (const removed of [
+      ".agents/skills/.openspec-target",
+      ".claude/commands/opsx/propose.md",
+      ".opencode/commands/opsx-propose.md",
+    ]) {
+      await expect(fs.access(path.join(root, removed))).rejects.toThrow();
+    }
+    for (const file of kept) {
+      await expect(fs.readFile(path.join(root, file), "utf8")).resolves.toBe("x\n");
+    }
+  });
+
+  test("removes any openspec-* skill OpenSpec authored, beyond the known names", async () => {
+    const root = await makeTempDir("mate-openspec-remove-authored-");
+    const generated = path.join(root, ".agents", "skills", "openspec-onboard");
+    const userOwned = path.join(root, ".agents", "skills", "openspec-acme");
+    await fs.mkdir(generated, { recursive: true });
+    await fs.mkdir(userOwned, { recursive: true });
+    await fs.writeFile(
+      path.join(generated, "SKILL.md"),
+      "---\nname: openspec-onboard\nmetadata:\n  author: openspec\n---\n",
     );
-    expect(runCommand).toHaveBeenNthCalledWith(
-      3,
-      "openspec",
-      ["update", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
+    await fs.writeFile(path.join(userOwned, "SKILL.md"), "---\nname: openspec-acme\n---\n");
+    const plugin = createOpenspecPlugin(openspecAvailable);
+
+    await plugin.apply(makeCtx(root, ["claude"]));
+
+    await expect(fs.access(generated)).rejects.toThrow();
+    await expect(fs.access(path.join(userOwned, "SKILL.md"))).resolves.toBeNull();
+  });
+
+  test("reports what it removed or deployed, and nothing it left or never found", async () => {
+    const root = await makeTempDir("mate-openspec-report-");
+    const skill = async (relative: string, source: string) => {
+      await fs.mkdir(path.join(root, relative), { recursive: true });
+      await fs.writeFile(path.join(root, relative, "SKILL.md"), source);
+    };
+    await skill(".agents/skills/openspec-onboard", "---\nmetadata:\n  author: openspec\n---\n");
+    await skill(".claude/skills/openspec-acme", "---\nname: openspec-acme\n---\n");
+    await skill(".claude/skills/mate-artifact-publish", "---\nmetadata:\n  author: mate\n---\n");
+    await skill(".claude/skills/mate-openspec-backfill", "---\nmetadata:\n  author: me\n---\n");
+    const entries: ManagedOutputEntry[] = [];
+    const ctx = {
+      ...makeCtx(root, ["claude"]),
+      managedOutput: { record: (entry: ManagedOutputEntry) => entries.push(entry) },
+    };
+
+    await createOpenspecPlugin(openspecAvailable).apply(ctx);
+
+    const relative = (change: string, owner: string) =>
+      entries
+        .filter((entry) => entry.change === change && entry.owner === owner)
+        .map((entry) => path.relative(root, entry.path).split(path.sep).join("/"));
+    expect(relative("removed", "openspec")).toEqual([".agents/skills/openspec-onboard"]);
+    expect(relative("removed", "mate")).toEqual([".claude/skills/mate-artifact-publish"]);
+    expect(relative("written", "mate")).toEqual(
+      MATE_SKILLS.map((name) => `.claude/skills/${name}`),
     );
+    await expect(
+      fs.access(path.join(root, ".claude/skills/mate-openspec-backfill/SKILL.md")),
+    ).resolves.toBeNull();
+    await expect(
+      fs.access(path.join(root, ".claude/skills/openspec-acme/SKILL.md")),
+    ).resolves.toBeNull();
   });
 
-  test("setup installs missing openspec with npm before reconciliation", async () => {
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const confirm = mock(async () => true);
-    let openspecAvailable = false;
+  test("setup fails naming a reinstall when the bundled CLI is missing", async () => {
     const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand: async (...args) => {
-        await installCommand(...args);
-        openspecAvailable = true;
-      },
-      confirm,
-      isCommandOnPath: (command) =>
-        command === "npm" || (command === "openspec" && openspecAvailable),
+      runOpenSpec: async () => ({ code: 1, stdout: "", stderr: OPENSPEC_MISSING.missing }),
     });
+    const root = await makeTempDir("mate-openspec-missing-bundled-");
 
-    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
-    try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-      expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining("npm install -g @fission-ai/openspec@latest"),
-      );
-    } finally {
-      stdoutSpy.mockRestore();
-    }
-
-    expect(confirm).toHaveBeenCalledWith("Run this install command now?");
-    expect(installCommand).toHaveBeenCalledWith(
-      "npm",
-      ["install", "-g", "@fission-ai/openspec@latest"],
-      { cwd: "/tmp/companion" },
-    );
-    expect(runCommand).toHaveBeenCalledWith(
-      "openspec",
-      ["init", "--tools", "claude", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
-    );
-  });
-
-  test("a pinned deployment neither checks a registry nor upgrades the tool", async () => {
-    /** Pinned image tools must not trigger a registry lookup or replacement. */
-    const restorePolicy = setUpdatePolicy("pinned");
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const fetchLatestVersion = mock(async () => "1.6.0");
-    const getInstalledVersion = mock(async () => "1.2.0");
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      confirm: mock(async () => true),
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion,
-      fetchLatestVersion,
-    });
-
-    try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-
-      expect(fetchLatestVersion).not.toHaveBeenCalled();
-      expect(installCommand).not.toHaveBeenCalled();
-      /** The capability still reconciles; only the upgrade is declined. */
-      expect(runCommand).toHaveBeenCalledWith(
-        "openspec",
-        ["init", "--tools", "claude", "--force", "/tmp/companion"],
-        { cwd: "/tmp/companion", env: OPENSPEC_ENV },
-      );
-    } finally {
-      restorePolicy();
-    }
-  });
-
-  test("an unpinned deployment still checks and upgrades", async () => {
-    const restorePolicy = setUpdatePolicy(undefined);
-    const fetchLatestVersion = mock(async () => "1.6.0");
-    const installCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({
-      runCommand: mock(async () => {}),
-      installCommand,
-      confirm: mock(async () => true),
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion: async () => "1.2.0",
-      fetchLatestVersion,
-    });
-
-    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
-    try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-    } finally {
-      stdoutSpy.mockRestore();
-      restorePolicy();
-    }
-
-    expect(fetchLatestVersion).toHaveBeenCalled();
-    expect(installCommand).toHaveBeenCalledWith(
-      "npm",
-      ["install", "-g", "@fission-ai/openspec@latest"],
-      { cwd: "/tmp/companion" },
-    );
-  });
-
-  test("setup automatically upgrades when the installed openspec is outdated", async () => {
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const confirm = mock(async () => true);
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      confirm,
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion: async () => "1.2.0",
-      fetchLatestVersion: async () => "1.6.0",
-    });
-
-    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
-    try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-      expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining("installed version 1.2.0 is outdated (latest 1.6.0)"),
-      );
-    } finally {
-      stdoutSpy.mockRestore();
-    }
-
-    expect(confirm).not.toHaveBeenCalled();
-    expect(installCommand).toHaveBeenCalledWith(
-      "npm",
-      ["install", "-g", "@fission-ai/openspec@latest"],
-      { cwd: "/tmp/companion" },
-    );
-    expect(runCommand).toHaveBeenCalledWith(
-      "openspec",
-      ["init", "--tools", "claude", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
-    );
-  });
-
-  test("setup continues with the installed version when the automatic upgrade fails", async () => {
-    const runCommand = mock(async () => {});
-    const confirm = mock(async () => false);
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand: mock(async () => {
-        throw new Error("install failed");
-      }),
-      confirm,
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion: async () => "1.2.0",
-      fetchLatestVersion: async () => "1.6.0",
-    });
-
-    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("upgrade failed"));
-    } finally {
-      stderrSpy.mockRestore();
-    }
-
-    expect(confirm).not.toHaveBeenCalled();
-    expect(runCommand).toHaveBeenCalledWith(
-      "openspec",
-      ["init", "--tools", "claude", "--force", "/tmp/companion"],
-      { cwd: "/tmp/companion", env: OPENSPEC_ENV },
-    );
-  });
-
-  test("sync with a regeneration request upgrades openspec before reconciliation", async () => {
-    const events: string[] = [];
-    const runCommand = mock(async (_command: string, args: string[]) => {
-      events.push(args[0]);
-    });
-    const installCommand = mock(async () => {
-      events.push("npm install");
-    });
-    const confirm = mock(async () => true);
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      confirm,
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion: async () => "1.2.0",
-      fetchLatestVersion: async () => "1.6.0",
-    });
-
-    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      await plugin.apply({
-        ...makeCtx("/tmp/companion", ["claude"], [{ name: "openspec" }], "sync"),
-        regenerateOpenSpec: true,
-      });
-    } finally {
-      stderrSpy.mockRestore();
-    }
-
-    expect(confirm).not.toHaveBeenCalled();
-    expect(installCommand).toHaveBeenCalledWith(
-      "npm",
-      ["install", "-g", "@fission-ai/openspec@latest"],
-      { cwd: "/tmp/companion" },
-    );
-    expect(events).toEqual(["npm install", "config", "init", "update"]);
-  });
-
-  test("does not prompt when the installed openspec version is current", async () => {
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const confirm = mock(async () => true);
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      confirm,
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion: async () => "1.6.0",
-      fetchLatestVersion: async () => "1.6.0",
-    });
-
-    await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-
-    expect(confirm).not.toHaveBeenCalled();
-    expect(installCommand).not.toHaveBeenCalled();
-  });
-
-  test("does not prompt when the version lookup fails", async () => {
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const confirm = mock(async () => true);
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      confirm,
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion: async () => "1.2.0",
-      fetchLatestVersion: async () => undefined,
-    });
-
-    await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-
-    expect(confirm).not.toHaveBeenCalled();
-    expect(installCommand).not.toHaveBeenCalled();
-  });
-
-  test("setup reports manual install and skips reconciliation when npm is unavailable", async () => {
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const confirm = mock(async () => true);
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      confirm,
-      isCommandOnPath: () => false,
-    });
-
-    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-      expect(stderrSpy).toHaveBeenCalledWith(
-        expect.stringContaining("npm install -g @fission-ai/openspec@latest"),
-      );
-    } finally {
-      stderrSpy.mockRestore();
-    }
-
-    expect(confirm).not.toHaveBeenCalled();
-    expect(installCommand).not.toHaveBeenCalled();
-    expect(runCommand).not.toHaveBeenCalled();
-  });
-
-  test("setup skips reconciliation when openspec install fails", async () => {
-    const runCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand: mock(async () => {
-        throw new Error("install failed");
-      }),
-      confirm: mock(async () => true),
-      isCommandOnPath: (command) => command === "npm",
-    });
-
-    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("openspec: install failed"));
-    } finally {
-      stderrSpy.mockRestore();
-    }
-
-    expect(runCommand).not.toHaveBeenCalled();
-  });
-
-  test("setup reports mismatch when install completes but openspec stays unavailable", async () => {
-    const runCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand: mock(async () => {}),
-      confirm: mock(async () => true),
-      isCommandOnPath: (command) => command === "npm",
-    });
-
-    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-      expect(stderrSpy).toHaveBeenCalledWith(
-        expect.stringContaining("openspec install completed but the binary is still not available"),
-      );
-    } finally {
-      stderrSpy.mockRestore();
-    }
-
-    expect(runCommand).not.toHaveBeenCalled();
-  });
-
-  test("sync reports manual install without prompting or running openspec reconciliation", async () => {
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const confirm = mock(async () => true);
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      confirm,
-      isCommandOnPath: () => false,
-    });
-
-    const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      await plugin.apply(makeCtx("/tmp/companion", ["claude"], [{ name: "openspec" }], "sync"));
-      expect(stderrSpy).toHaveBeenCalledWith(
-        expect.stringContaining("npm install -g @fission-ai/openspec@latest"),
-      );
-    } finally {
-      stderrSpy.mockRestore();
-    }
-
-    expect(confirm).not.toHaveBeenCalled();
-    expect(installCommand).not.toHaveBeenCalled();
-    expect(runCommand).not.toHaveBeenCalled();
+    await expect(plugin.apply(makeCtx(root, ["claude"]))).rejects.toThrow(/Reinstall Mate/);
+    await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
   });
 
   test("installs mate-authored openspec skills when Git auto mode is enabled", async () => {
     const root = await makeTempDir("mate-openspec-mate-skills-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     for (const runtimeDir of [".claude", ".opencode"]) {
       for (const name of ["mate-artifact-finish", "mate-openspec-artifact-finish"]) {
@@ -476,17 +221,42 @@ describe("createOpenspecPlugin", () => {
         await fs.writeFile(path.join(retired, "SKILL.md"), "retired\n", "utf8");
       }
     }
+    // Renamed without aliases: Mate's own copy goes, a user-authored namesake stays.
+    const mateWritten = "---\nname: mate-artifact-publish\nmetadata:\n  author: mate\n---\n";
+    const userWritten = "---\nname: mate-openspec-backfill\nmetadata:\n  author: me\n---\n";
+    for (const [name, source] of [
+      ["mate-artifact-publish", mateWritten],
+      ["mate-openspec-backfill", userWritten],
+    ]) {
+      await fs.mkdir(path.join(root, ".claude", "skills", name), { recursive: true });
+      await fs.writeFile(path.join(root, ".claude", "skills", name, "SKILL.md"), source, "utf8");
+    }
 
     await plugin.apply(
       makeCtx(root, ["claude", "opencode"], [{ name: "openspec" }], "setup", "auto"),
     );
 
+    await expect(
+      fs.access(path.join(root, ".claude", "skills", "mate-artifact-publish")),
+    ).rejects.toThrow();
+    expect(
+      await fs.readFile(
+        path.join(root, ".claude", "skills", "mate-openspec-backfill", "SKILL.md"),
+        "utf8",
+      ),
+    ).toBe(userWritten);
+
     await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
     for (const runtimeDir of [".claude", ".agents"]) {
       const markers: Record<(typeof MATE_SKILLS)[number], string> = {
-        "mate-artifact-publish": "artifact pending --json",
+        "mate-publish-artifact": "artifact pending --json",
         "mate-create-report": "open Studio → Reports",
-        "mate-openspec-backfill": "Drifted specs",
+        "mate-backfill-spec": "Drifted specs",
+        "mate-clarify-intent": "../mate-interview-me/SKILL.md",
+        "mate-explore-change": "CONTEXT-MAP.md",
+        "mate-propose-change": "mate-minimal",
+        "mate-apply-change": "mate artifact link",
+        "mate-archive-change": "mate artifact archive",
         "mate-interview-me": "one-question-at-a-time",
         "mate-grill-me": "mate-grilling",
         "mate-grilling": "design tree",
@@ -530,7 +300,7 @@ describe("createOpenspecPlugin", () => {
     // call and keeps the deterministic CLI as the publication primitive.
     for (const runtimeDir of [".claude", ".agents"]) {
       const publishSkill = await fs.readFile(
-        path.join(root, runtimeDir, "skills", "mate-artifact-publish", "SKILL.md"),
+        path.join(root, runtimeDir, "skills", "mate-publish-artifact", "SKILL.md"),
         "utf8",
       );
       expect(publishSkill).toContain("commit, tag, and push");
@@ -544,7 +314,7 @@ describe("createOpenspecPlugin", () => {
             root,
             runtimeDir,
             "skills",
-            "mate-artifact-publish",
+            "mate-publish-artifact",
             "references",
             "openspec.md",
           ),
@@ -554,37 +324,46 @@ describe("createOpenspecPlugin", () => {
     }
   });
 
-  test("removes opencode-tool skill duplicates after update and keeps opsx commands", async () => {
-    const root = await makeTempDir("mate-openspec-opencode-duplicates-");
-    /** Simulates the openspec CLI: `update` re-creates the opencode tool's skills. */
-    const runCommand = mock(async (_command: string, args: string[]) => {
-      if (args[0] !== "update") return;
-      for (const skill of OPENSPEC_SKILLS) {
-        const dir = path.join(root, ".opencode", "skills", skill);
-        await fs.mkdir(dir, { recursive: true });
-        await fs.writeFile(path.join(dir, "SKILL.md"), "opencode\n", "utf8");
-      }
-      await fs.mkdir(path.join(root, ".opencode", "commands"), { recursive: true });
-      await fs.writeFile(path.join(root, ".opencode", "commands", "opsx-propose.md"), "x\n");
-    });
-    const graphify = path.join(root, ".opencode", "skills", "graphify", "SKILL.md");
-    await fs.mkdir(path.dirname(graphify), { recursive: true });
-    await fs.writeFile(graphify, "graphify\n", "utf8");
-    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
+  test("moves Mate skills out of the legacy opencode root and keeps third-party skills", async () => {
+    const root = await makeTempDir("mate-openspec-opencode-legacy-");
+    for (const skill of ["mate-grill-me", "graphify"]) {
+      const file = path.join(root, ".opencode", "skills", skill, "SKILL.md");
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, `${skill}\n`, "utf8");
+    }
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     await plugin.apply(makeCtx(root, ["opencode"]));
 
-    for (const skill of [...OPENSPEC_SKILLS, ...MATE_SKILLS]) {
-      await expect(fs.access(path.join(root, ".opencode", "skills", skill))).rejects.toThrow();
-    }
-    await expect(fs.readFile(graphify, "utf8")).resolves.toBe("graphify\n");
     await expect(
-      fs.access(path.join(root, ".opencode", "commands", "opsx-propose.md")),
-    ).resolves.toBeNull();
+      fs.access(path.join(root, ".opencode", "skills", "mate-grill-me")),
+    ).rejects.toThrow();
+    await expect(
+      fs.readFile(path.join(root, ".opencode", "skills", "graphify", "SKILL.md"), "utf8"),
+    ).resolves.toBe("graphify\n");
     await expect(
       fs.access(path.join(root, ".agents", "skills", "mate-grill-me", "SKILL.md")),
     ).resolves.toBeNull();
     await expect(fs.access(path.join(root, ".claude", "skills"))).rejects.toThrow();
+  });
+
+  test("keeps a user-authored skill of a retired name in every shared root", async () => {
+    const root = await makeTempDir("mate-openspec-retired-user-");
+    const dirs = [".agents", ".opencode"].map((runtimeDir) =>
+      path.join(root, runtimeDir, "skills", "mate-artifact-publish"),
+    );
+    for (const dir of dirs) {
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, "SKILL.md"), "---\nname: mate-artifact-publish\n---\n");
+    }
+    const plugin = createOpenspecPlugin(openspecAvailable);
+
+    await plugin.apply(makeCtx(root, ["opencode"]));
+    await plugin.teardown(makeCtx(root, ["opencode"]));
+
+    for (const dir of dirs) {
+      await expect(fs.access(path.join(dir, "SKILL.md"))).resolves.toBeNull();
+    }
   });
 
   test("removes legacy managed opencode skills even when opencode is inactive", async () => {
@@ -592,7 +371,7 @@ describe("createOpenspecPlugin", () => {
     const legacy = path.join(root, ".opencode", "skills", "mate-grill-me");
     await fs.mkdir(legacy, { recursive: true });
     await fs.writeFile(path.join(legacy, "SKILL.md"), "legacy\n", "utf8");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     await plugin.apply(makeCtx(root, ["claude"]));
 
@@ -602,7 +381,7 @@ describe("createOpenspecPlugin", () => {
 
   test("shared root receives the agents skill variant", async () => {
     const root = await makeTempDir("mate-openspec-agents-variant-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     await plugin.apply(makeCtx(root, ["claude", "opencode"]));
 
@@ -637,7 +416,7 @@ describe("createOpenspecPlugin", () => {
     await fs.mkdir(retired, { recursive: true });
     await fs.writeFile(path.join(retired, "SKILL.md"), "retired\n", "utf8");
 
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
     await plugin.apply(
       makeCtx(root, ["claude", "opencode"], [{ name: "openspec" }], "reconcile", "auto"),
     );
@@ -652,13 +431,13 @@ describe("createOpenspecPlugin", () => {
     expect(tags.stdout.trim()).toBe(`openspec/${anchor}`);
     await expect(fs.access(retired)).rejects.toThrow();
     await expect(
-      fs.access(path.join(root, ".claude", "skills", "mate-artifact-publish", "SKILL.md")),
+      fs.access(path.join(root, ".claude", "skills", "mate-publish-artifact", "SKILL.md")),
     ).resolves.toBeNull();
   });
 
   test("does not install a Claude archive-finish hook file", async () => {
     const root = await makeTempDir("mate-openspec-claude-hook-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     await plugin.forProvider!.claude.apply(
       makeCtx(root, ["claude"], [{ name: "openspec" }], "setup", "auto"),
@@ -674,7 +453,7 @@ describe("createOpenspecPlugin", () => {
     const stateDir = path.join(root, ".claude", "state");
     await fs.mkdir(stateDir, { recursive: true });
     await fs.writeFile(path.join(stateDir, "other.json"), "{}\n");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     await plugin.forProvider!.claude.apply(
       makeCtx(root, ["claude"], [{ name: "openspec" }], "setup", "auto"),
@@ -686,10 +465,18 @@ describe("createOpenspecPlugin", () => {
   test("Claude runtime contributions include mate skill permissions", () => {
     const plugin = createOpenspecPlugin({ wrapperBinPath: () => "/bin" });
     const entries = plugin.getRuntimeContributions?.().claude?.permissionEntries ?? [];
-    expect(entries).toContain("Skill(mate-artifact-publish)");
+    expect(entries).toContain("Skill(mate-publish-artifact)");
     expect(entries).not.toContain("Skill(mate-artifact-finish)");
-    expect(entries).toContain("Skill(mate-openspec-backfill)");
+    expect(entries).toContain("Skill(mate-backfill-spec)");
+    expect(entries).not.toContain("Skill(mate-artifact-publish)");
+    expect(entries).not.toContain("Skill(mate-openspec-backfill)");
+    expect(entries).not.toContain("Skill(mate-update-change)");
     for (const skill of [
+      "mate-clarify-intent",
+      "mate-explore-change",
+      "mate-propose-change",
+      "mate-apply-change",
+      "mate-archive-change",
       "mate-interview-me",
       "mate-grill-me",
       "mate-grilling",
@@ -700,11 +487,12 @@ describe("createOpenspecPlugin", () => {
     ]) {
       expect(entries).toContain(`Skill(${skill})`);
     }
+    expect(entries.filter((entry) => entry.startsWith("Skill(openspec-"))).toEqual([]);
   });
 
   test("does not install mate-authored skills for unsupported providers", async () => {
     const root = await makeTempDir("mate-openspec-mate-skills-inactive-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     await plugin.apply(makeCtx(root, ["custom"]));
 
@@ -715,12 +503,11 @@ describe("createOpenspecPlugin", () => {
 
   test("capability teardown removes mate-authored openspec skills too", async () => {
     const root = await makeTempDir("mate-openspec-mate-skills-teardown-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}) });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     for (const runtimeDir of [".claude", ".agents", ".opencode"]) {
       for (const skill of [
         ...MATE_SKILLS,
-        ...MATE_ARTIFACT_SKILLS,
         "mate-artifact-finish",
         "mate-openspec-artifact-finish",
       ]) {
@@ -740,19 +527,24 @@ describe("createOpenspecPlugin", () => {
     await expect(fs.access(path.join(root, ".opencode", "skills"))).rejects.toThrow();
   });
 
-  test("skips openspec CLI calls when no supported providers are active", async () => {
-    const runCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
+  test("setup initializes OpenSpec even without an active agent runtime", async () => {
+    const root = await makeTempDir("mate-openspec-no-runtime-");
+    const runOpenSpec = mock(async () => OPENSPEC_OK);
+    const plugin = createOpenspecPlugin({ runOpenSpec });
 
-    await plugin.apply(makeCtx("/tmp/companion", []));
+    await plugin.apply(makeCtx(root, []));
 
-    expect(runCommand).not.toHaveBeenCalled();
+    expect(runOpenSpec.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      ["init", "--tools", "none", "--force", root],
+    ]);
+    await expect(fs.access(path.join(root, ".claude", "skills"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, ".agents", "skills"))).rejects.toThrow();
   });
 
   test("re-syncs bundled Mate skills idempotently without duplicating files", async () => {
     const root = await makeTempDir("mate-openspec-mate-skills-resync-");
-    const runCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
+    const runOpenSpec = mock(async () => OPENSPEC_OK);
+    const plugin = createOpenspecPlugin({ runOpenSpec });
     const ctx = makeCtx(root, ["claude"], [{ name: "openspec" }], "sync");
 
     await plugin.apply(ctx);
@@ -768,7 +560,7 @@ describe("createOpenspecPlugin", () => {
     const unmanaged = path.join(root, ".claude", "skills", "custom-skill", "SKILL.md");
     await fs.mkdir(path.dirname(unmanaged), { recursive: true });
     await fs.writeFile(unmanaged, "keep me\n", "utf8");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     await plugin.apply(makeCtx(root, ["claude"]));
     await plugin.teardown(makeCtx(root, []));
@@ -779,40 +571,12 @@ describe("createOpenspecPlugin", () => {
     ).rejects.toThrow();
   });
 
-  test("setup installs openspec even when no supported providers are active", async () => {
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const confirm = mock(async () => true);
-    let openspecAvailable = false;
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand: async (...args) => {
-        await installCommand(...args);
-        openspecAvailable = true;
-      },
-      confirm,
-      isCommandOnPath: (command) =>
-        command === "npm" || (command === "openspec" && openspecAvailable),
-    });
-
-    const root = await makeTempDir("mate-openspec-install-without-provider-");
-    await plugin.apply(makeCtx(root, ["custom"]));
-
-    expect(confirm).toHaveBeenCalledWith("Run this install command now?");
-    expect(installCommand).toHaveBeenCalledWith(
-      "npm",
-      ["install", "-g", "@fission-ai/openspec@latest"],
-      { cwd: root },
-    );
-    expect(runCommand).not.toHaveBeenCalled();
-  });
-
-  test("seeds mate-v1 schema files and config when the schema profile is selected", async () => {
+  test("seeds mate-v1 schema files and activates mate-v1 in config", async () => {
     const root = await makeTempDir("mate-openspec-schema-seed-");
-    const runCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
+    const runOpenSpec = mock(async () => OPENSPEC_OK);
+    const plugin = createOpenspecPlugin({ runOpenSpec });
 
-    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
+    await plugin.apply(makeCtx(root, ["claude"]));
 
     expect(
       parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
@@ -841,9 +605,9 @@ describe("createOpenspecPlugin", () => {
     ).resolves.toContain("name: mate-openspec-conventions");
   });
 
-  test("seeds mate-minimal without activating a companion default", async () => {
+  test("seeds mate-minimal while mate-v1 stays the companion default", async () => {
     const root = await makeTempDir("mate-openspec-minimal-schema-seed-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
 
@@ -862,12 +626,14 @@ describe("createOpenspecPlugin", () => {
       tracks: "tasks.md",
       instruction: expect.any(String),
     });
-    await expect(fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")).rejects.toThrow();
+    expect(
+      parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
+    ).toMatchObject({ schema: "mate-v1" });
   });
 
   test("mate-minimal templates carry parser-compatible user-story rules", async () => {
     const root = await makeTempDir("mate-openspec-minimal-schema-templates-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
 
@@ -900,21 +666,37 @@ describe("createOpenspecPlugin", () => {
     );
   });
 
-  test("deselection leaves a config.yaml Mate did not write", async () => {
+  test("activation replaces another schema in a config Mate did not write", async () => {
     const root = await makeTempDir("mate-openspec-schema-user-config-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
     await fs.mkdir(path.join(root, "openspec"), { recursive: true });
-    const userConfig = "schema: spec-driven\n";
-    await fs.writeFile(path.join(root, "openspec", "config.yaml"), userConfig, "utf8");
+    const configPath = path.join(root, "openspec", "config.yaml");
+    await fs.writeFile(configPath, "schema: spec-driven\n", "utf8");
 
-    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
+    await plugin.apply(makeCtx(root, ["claude"]));
 
-    await expect(fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")).resolves.toBe(
-      userConfig,
-    );
+    expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
+      schema: "mate-v1",
+      rules: { specs: [MATE_SPECS_RULE] },
+    });
     await expect(
       fs.access(path.join(root, "openspec", "schemas", "mate-minimal", "schema.yaml")),
     ).resolves.toBeNull();
+  });
+
+  test("activation keeps mate-minimal chosen by hand", async () => {
+    const root = await makeTempDir("mate-openspec-schema-keep-minimal-");
+    const plugin = createOpenspecPlugin(openspecAvailable);
+    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
+    const configPath = path.join(root, "openspec", "config.yaml");
+    await fs.writeFile(configPath, "schema: mate-minimal\n", "utf8");
+
+    await plugin.apply(makeCtx(root, ["claude"]));
+
+    expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
+      schema: "mate-minimal",
+      rules: { specs: [MATE_SPECS_RULE] },
+    });
   });
 
   test("the Mate specs rule binds only main specs and names the flat header", () => {
@@ -937,8 +719,8 @@ describe("createOpenspecPlugin", () => {
 
   test("rerun leaves a current config byte-for-byte unchanged", async () => {
     const root = await makeTempDir("mate-openspec-schema-rerun-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
-    const ctx = makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]);
+    const plugin = createOpenspecPlugin(openspecAvailable);
+    const ctx = makeCtx(root, ["claude"]);
     const configPath = path.join(root, "openspec", "config.yaml");
 
     await plugin.apply(ctx);
@@ -952,7 +734,7 @@ describe("createOpenspecPlugin", () => {
 
   test("merges the Mate entry into a user-edited config without touching user content", async () => {
     const root = await makeTempDir("mate-openspec-schema-merge-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
     await fs.mkdir(path.join(root, "openspec"), { recursive: true });
     const userConfig = [
       "# acme planning config",
@@ -969,7 +751,7 @@ describe("createOpenspecPlugin", () => {
     const configPath = path.join(root, "openspec", "config.yaml");
     await fs.writeFile(configPath, userConfig, "utf8");
 
-    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
+    await plugin.apply(makeCtx(root, ["claude"]));
 
     const merged = await fs.readFile(configPath, "utf8");
     expect(merged).toContain("# acme planning config");
@@ -983,14 +765,39 @@ describe("createOpenspecPlugin", () => {
     });
   });
 
+  test("activates mate-v1 over the default schema a fresh `openspec init` writes", async () => {
+    const root = await makeTempDir("mate-openspec-schema-after-init-");
+    // The bundled CLI writes `schema: spec-driven` plus commented guidance.
+    const location = locateOpenSpec();
+    if ("missing" in location) throw new Error(location.missing);
+    execFileSync(location.bin, ["init", "--tools", "none", "--force", root], {
+      env: { ...process.env, ...OPENSPEC_ENV },
+      stdio: "ignore",
+    });
+    const configPath = path.join(root, "openspec", "config.yaml");
+    const initialized = await fs.readFile(configPath, "utf8");
+    expect(parseYaml(initialized)).toMatchObject({ schema: "spec-driven" });
+    const plugin = createOpenspecPlugin(openspecAvailable);
+
+    await plugin.apply(makeCtx(root, ["claude"]));
+
+    const activated = await fs.readFile(configPath, "utf8");
+    expect(parseYaml(activated)).toEqual({
+      schema: "mate-v1",
+      rules: { specs: [MATE_SPECS_RULE] },
+    });
+    // OpenSpec's commented guidance stays.
+    expect(activated).toContain("# Project context (optional)");
+  });
+
   test("adds rules.specs to a config that has other rules only", async () => {
     const root = await makeTempDir("mate-openspec-schema-add-specs-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
     await fs.mkdir(path.join(root, "openspec"), { recursive: true });
     const configPath = path.join(root, "openspec", "config.yaml");
     await fs.writeFile(configPath, 'schema: mate-v1\nrules:\n  tasks:\n    - "custom task rule"\n');
 
-    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
+    await plugin.apply(makeCtx(root, ["claude"]));
 
     expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
       schema: "mate-v1",
@@ -1000,7 +807,7 @@ describe("createOpenspecPlugin", () => {
 
   test("replaces an outdated Mate entry in place without duplicating it", async () => {
     const root = await makeTempDir("mate-openspec-schema-outdated-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
     await fs.mkdir(path.join(root, "openspec"), { recursive: true });
     const configPath = path.join(root, "openspec", "config.yaml");
     await fs.writeFile(
@@ -1016,7 +823,7 @@ describe("createOpenspecPlugin", () => {
       ].join("\n"),
     );
 
-    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
+    await plugin.apply(makeCtx(root, ["claude"]));
 
     expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
       schema: "mate-v1",
@@ -1026,7 +833,7 @@ describe("createOpenspecPlugin", () => {
 
   test("leaves an unparseable config alone with one stderr line", async () => {
     const root = await makeTempDir("mate-openspec-schema-broken-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
     await fs.mkdir(path.join(root, "openspec"), { recursive: true });
     const configPath = path.join(root, "openspec", "config.yaml");
     const broken = "schema: mate-v1\nrules: [\n";
@@ -1034,9 +841,7 @@ describe("createOpenspecPlugin", () => {
     const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
 
     try {
-      await plugin.apply(
-        makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]),
-      );
+      await plugin.apply(makeCtx(root, ["claude"]));
       const lines = stderr.mock.calls.map(([chunk]) => String(chunk));
       expect(lines.filter((line) => line.includes("openspec/config.yaml"))).toHaveLength(1);
     } finally {
@@ -1045,78 +850,43 @@ describe("createOpenspecPlugin", () => {
     await expect(fs.readFile(configPath, "utf8")).resolves.toBe(broken);
   });
 
-  test("deselection removes a config holding only Mate content", async () => {
-    const root = await makeTempDir("mate-openspec-schema-deselect-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+  test("ignores a leftover schemaProfile key in the saved capability", async () => {
+    const root = await makeTempDir("mate-openspec-schema-leftover-profile-");
+    const plugin = createOpenspecPlugin(openspecAvailable);
+    const leftover = { name: "openspec", schemaProfile: "default" } as { name: string };
 
-    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec", schemaProfile: "mate-v1" }]));
-    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
+    await plugin.apply(makeCtx(root, ["claude"], [leftover]));
 
-    await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
-    await expect(fs.access(path.join(root, "openspec", "schemas", "mate-v1"))).resolves.toBeNull();
+    expect(
+      parseYaml(await fs.readFile(path.join(root, "openspec", "config.yaml"), "utf8")),
+    ).toEqual({ schema: "mate-v1", rules: { specs: [MATE_SPECS_RULE] } });
   });
 
-  test("deselection removes only the Mate entry from a user-edited config", async () => {
-    const root = await makeTempDir("mate-openspec-schema-deselect-user-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+  test("activation keeps user keys and a user-chosen schema while replacing the Mate entry", async () => {
+    const root = await makeTempDir("mate-openspec-schema-activate-user-");
+    const plugin = createOpenspecPlugin(openspecAvailable);
     await fs.mkdir(path.join(root, "openspec"), { recursive: true });
     const configPath = path.join(root, "openspec", "config.yaml");
     await fs.writeFile(
       configPath,
-      `schema: mate-v1\ncontext: Acme\nrules:\n  proposal:\n    - "Name the customer."\n  specs:\n    - "${MATE_SPECS_RULE_MARKER}old"\n`,
+      `schema: acme-flow\ncontext: Acme\nrules:\n  proposal:\n    - "Name the customer."\n  specs:\n    - "Keep scenarios short."\n    - "${MATE_SPECS_RULE_MARKER}old"\n`,
     );
-
-    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
-
-    expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
-      schema: "mate-v1",
-      context: "Acme",
-      rules: { proposal: ["Name the customer."] },
-    });
-  });
-
-  test("deselection keeps user rules.specs entries next to the removed Mate entry", async () => {
-    const root = await makeTempDir("mate-openspec-schema-deselect-specs-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
-    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
-    const configPath = path.join(root, "openspec", "config.yaml");
-    await fs.writeFile(
-      configPath,
-      `schema: mate-v1\nrules:\n  specs:\n    - "Keep scenarios short."\n    - "${MATE_SPECS_RULE_MARKER}old"\n`,
-    );
-
-    await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }]));
-
-    expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
-      schema: "mate-v1",
-      rules: { specs: ["Keep scenarios short."] },
-    });
-  });
-
-  test("default schema profile keeps schemas available without activating a default", async () => {
-    const root = await makeTempDir("mate-openspec-schema-default-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
-    await fs.mkdir(path.join(root, "openspec", "schemas", "mate-v1"), { recursive: true });
-    await fs.writeFile(
-      path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml"),
-      "name: mate-v1\n",
-      "utf8",
-    );
-    await fs.mkdir(path.join(root, "openspec"), { recursive: true });
-    await fs.writeFile(path.join(root, "openspec", "config.yaml"), "schema: mate-v1\n", "utf8");
 
     await plugin.apply(makeCtx(root, ["claude"]));
 
-    await expect(fs.access(path.join(root, "openspec", "config.yaml"))).rejects.toThrow();
-    await expect(fs.access(path.join(root, "openspec", "schemas", "mate-v1"))).resolves.toBeNull();
-    await expect(
-      fs.access(path.join(root, "openspec", "schemas", "mate-minimal")),
-    ).resolves.toBeNull();
+    expect(parseYaml(await fs.readFile(configPath, "utf8"))).toEqual({
+      schema: "acme-flow",
+      context: "Acme",
+      rules: {
+        proposal: ["Name the customer."],
+        specs: ["Keep scenarios short.", MATE_SPECS_RULE],
+      },
+    });
   });
 
   test("provider teardown removes only that runtime's openspec skills", async () => {
     const root = await makeTempDir("mate-openspec-provider-teardown-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     for (const skill of OPENSPEC_SKILLS) {
       await fs.mkdir(path.join(root, ".claude", "skills", skill), { recursive: true });
@@ -1147,7 +917,7 @@ describe("createOpenspecPlugin", () => {
 
   test("opencode teardown clears the shared root when no reading runtime remains", async () => {
     const root = await makeTempDir("mate-openspec-shared-teardown-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}), ...openspecAvailable });
+    const plugin = createOpenspecPlugin(openspecAvailable);
     const sharedDir = path.join(root, ".agents", "skills");
 
     for (const skill of [...OPENSPEC_SKILLS, ...MATE_SKILLS, "acme-notes"]) {
@@ -1166,7 +936,7 @@ describe("createOpenspecPlugin", () => {
 
   test("capability teardown removes all managed openspec skill runtimes", async () => {
     const root = await makeTempDir("mate-openspec-full-teardown-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}) });
+    const plugin = createOpenspecPlugin(openspecAvailable);
 
     for (const runtimeDir of [".claude", ".agents", ".opencode"]) {
       for (const skill of OPENSPEC_SKILLS) {
@@ -1193,7 +963,7 @@ describe("createOpenspecPlugin", () => {
 
   test("capability teardown removes managed mate-v1 schema state", async () => {
     const root = await makeTempDir("mate-openspec-schema-teardown-");
-    const plugin = createOpenspecPlugin({ runCommand: mock(async () => {}) });
+    const plugin = createOpenspecPlugin(openspecAvailable);
     await fs.mkdir(path.join(root, "openspec", "schemas", "mate-v1"), { recursive: true });
     await fs.writeFile(
       path.join(root, "openspec", "schemas", "mate-v1", "schema.yaml"),
@@ -1217,58 +987,6 @@ describe("createOpenspecPlugin", () => {
   });
 });
 
-describe("OpenSpec environment", () => {
-  test("setup reconcile runs every openspec command with telemetry and update checks off", async () => {
-    const before = {
-      telemetry: process.env.OPENSPEC_TELEMETRY,
-      updateCheck: process.env.OPENSPEC_NO_UPDATE_CHECK,
-    };
-    const runCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({ runCommand, ...openspecAvailable });
-
-    await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-
-    expect(OPENSPEC_ENV).toEqual({
-      OPENSPEC_TELEMETRY: "0",
-      OPENSPEC_NO_UPDATE_CHECK: "1",
-    });
-    const subcommands = runCommand.mock.calls.map((call) => (call as unknown[])[1] as string[]);
-    expect(subcommands.map((args) => args[0])).toEqual(["config", "init", "update"]);
-    for (const call of runCommand.mock.calls) {
-      expect((call as unknown[])[2]).toEqual({
-        cwd: "/tmp/companion",
-        env: OPENSPEC_ENV,
-      });
-    }
-    expect(process.env.OPENSPEC_TELEMETRY).toBe(before.telemetry);
-    expect(process.env.OPENSPEC_NO_UPDATE_CHECK).toBe(before.updateCheck);
-  });
-
-  test("version detection runs openspec --version with both variables set", async () => {
-    const before = process.env.OPENSPEC_TELEMETRY;
-    const bin = await makeTempDir("mate-openspec-version-env-");
-    const record = path.join(bin, "env.txt");
-    await fs.writeFile(
-      path.join(bin, "openspec"),
-      `#!/bin/sh\nprintf '%s %s' "$OPENSPEC_TELEMETRY" "$OPENSPEC_NO_UPDATE_CHECK" > "${record}"\necho 1.6.0\n`,
-      { mode: 0o755 },
-    );
-    const plugin = createOpenspecPlugin({
-      runCommand: mock(async () => {}),
-      installCommand: mock(async () => {}),
-      isCommandOnPath: (command) => command === "openspec",
-      pathValue: () => bin,
-      fetchLatestVersion: async () => "1.6.0",
-      isPinnedDeployment: () => false,
-    });
-
-    await plugin.apply(makeCtx("/tmp/companion", ["claude"]));
-
-    await expect(fs.readFile(record, "utf8")).resolves.toBe("0 1");
-    expect(process.env.OPENSPEC_TELEMETRY).toBe(before);
-  });
-});
-
 /** Writes an OpenSpec-generated skill whose frontmatter records `generatedBy`. */
 async function writeGeneratedSkill(
   root: string,
@@ -1285,30 +1003,19 @@ const generatedBy = (version: string) =>
   `name: acme\nmetadata:\n  author: openspec\n  generatedBy: "${version}"\n`;
 
 describe("launch-time sync", () => {
-  test("invokes no OpenSpec reconcile and no @latest upgrade, and still deploys Mate skills", async () => {
+  test("invokes no OpenSpec command and still deploys Mate skills", async () => {
     const root = await makeTempDir("mate-openspec-launch-");
     await writeGeneratedSkill(root, ".claude", "openspec-explore", generatedBy("1.14.2"));
     const before = await fs.readFile(
       path.join(root, ".claude", "skills", "openspec-explore", "SKILL.md"),
       "utf8",
     );
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {});
-    const fetchLatestVersion = mock(async () => "1.15.0");
-    const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion: async () => "1.14.2",
-      fetchLatestVersion,
-      isPinnedDeployment: () => false,
-    });
+    const runOpenSpec = mock(async () => OPENSPEC_OK);
+    const plugin = createOpenspecPlugin({ runOpenSpec });
 
     await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }], "sync"));
 
-    expect(runCommand).not.toHaveBeenCalled();
-    expect(installCommand).not.toHaveBeenCalled();
-    expect(fetchLatestVersion).not.toHaveBeenCalled();
+    expect(runOpenSpec).not.toHaveBeenCalled();
     await expect(
       fs.readFile(path.join(root, ".claude", "skills", "openspec-explore", "SKILL.md"), "utf8"),
     ).resolves.toBe(before);
@@ -1320,167 +1027,37 @@ describe("launch-time sync", () => {
     ).resolves.toBeNull();
   });
 
-  test("warns about a missing openspec without prompting and still deploys Mate skills", async () => {
+  test("warns naming a reinstall when the bundled CLI is missing, and still deploys Mate skills", async () => {
     const root = await makeTempDir("mate-openspec-launch-missing-");
-    const confirm = mock(async () => true);
-    const installCommand = mock(async () => {});
-    const plugin = createOpenspecPlugin({
-      runCommand: mock(async () => {}),
-      installCommand,
-      confirm,
-      isCommandOnPath: () => false,
-    });
+    const runOpenSpec = mock(async () => OPENSPEC_OK);
+    const plugin = createOpenspecPlugin({ runOpenSpec, locateOpenSpec: () => OPENSPEC_MISSING });
 
     const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }], "sync"));
-      expect(stderrSpy).toHaveBeenCalledWith(
-        expect.stringContaining("npm install -g @fission-ai/openspec@latest"),
-      );
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("Reinstall Mate"));
     } finally {
       stderrSpy.mockRestore();
     }
 
-    expect(confirm).not.toHaveBeenCalled();
-    expect(installCommand).not.toHaveBeenCalled();
+    expect(runOpenSpec).not.toHaveBeenCalled();
     await expect(
       fs.access(path.join(root, ".claude", "skills", "mate-grill-me", "SKILL.md")),
     ).resolves.toBeNull();
   });
-});
-
-describe("readCompanionGeneratedOpenSpecVersion", () => {
-  test("returns undefined when no generated skill exists", async () => {
-    const root = await makeTempDir("mate-openspec-generated-missing-");
-    await expect(readCompanionGeneratedOpenSpecVersion(root)).resolves.toBeUndefined();
-  });
-
-  test("ignores malformed frontmatter and invalid versions", async () => {
-    const root = await makeTempDir("mate-openspec-generated-malformed-");
-    await writeGeneratedSkill(root, ".claude", "openspec-explore", "metadata: [unclosed\n");
-    await writeGeneratedSkill(root, ".claude", "openspec-propose", generatedBy("latest"));
-    const noFrontmatter = path.join(root, ".claude", "skills", "openspec-sync-specs", "SKILL.md");
-    await fs.mkdir(path.dirname(noFrontmatter), { recursive: true });
-    await fs.writeFile(noFrontmatter, "No frontmatter\n", "utf8");
-
-    await expect(readCompanionGeneratedOpenSpecVersion(root)).resolves.toBeUndefined();
-  });
-
-  test("returns the highest valid version across mixed skills, ignoring non-OpenSpec skills", async () => {
-    const root = await makeTempDir("mate-openspec-generated-mixed-");
-    await writeGeneratedSkill(root, ".claude", "openspec-explore", generatedBy("1.14.2"));
-    await writeGeneratedSkill(root, ".claude", "openspec-propose", generatedBy("not-a-version"));
-    await writeGeneratedSkill(root, ".claude", "openspec-apply-change", generatedBy("1.9.0"));
-    await writeGeneratedSkill(root, ".claude", "mate-grill-me", generatedBy("9.9.9"));
-
-    await expect(readCompanionGeneratedOpenSpecVersion(root)).resolves.toBe("1.14.2");
-  });
-
-  test("reads both the Claude and the shared skill roots", async () => {
-    const root = await makeTempDir("mate-openspec-generated-roots-");
-    await writeGeneratedSkill(root, ".claude", "openspec-explore", generatedBy("1.14.2"));
-    await writeGeneratedSkill(root, ".agents", "openspec-explore", generatedBy("1.15.0"));
-
-    await expect(readCompanionGeneratedOpenSpecVersion(root)).resolves.toBe("1.15.0");
-  });
-});
-
-describe("launch-time catch-up to the companion's generated version", () => {
-  async function launch(options: {
-    generated?: string;
-    installed?: string;
-    pinned?: boolean;
-    installFails?: boolean;
-  }) {
-    const root = await makeTempDir("mate-openspec-catch-up-");
-    if (options.generated) {
-      await writeGeneratedSkill(
-        root,
-        ".claude",
-        "openspec-explore",
-        generatedBy(options.generated),
-      );
-    }
-    const runCommand = mock(async () => {});
-    const installCommand = mock(async () => {
-      if (options.installFails) throw new Error("npm exited with code 1");
-    });
+  test("warns about a missing bundled CLI without any skill runtime active", async () => {
+    const root = await makeTempDir("mate-openspec-launch-missing-headless-");
     const plugin = createOpenspecPlugin({
-      runCommand,
-      installCommand,
-      isCommandOnPath: (command) => command === "openspec",
-      getInstalledVersion: async () => options.installed,
-      fetchLatestVersion: async () => "2.0.0",
-      isPinnedDeployment: () => options.pinned ?? false,
+      ...openspecAvailable,
+      locateOpenSpec: () => OPENSPEC_MISSING,
     });
-    const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);
+
     const stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
-    let stderr = "";
     try {
-      await plugin.apply(makeCtx(root, ["claude"], [{ name: "openspec" }], "sync"));
-      stderr = stderrSpy.mock.calls.map((call) => String(call[0])).join("");
+      await plugin.apply(makeCtx(root, [], [{ name: "openspec" }], "sync"));
+      expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("Reinstall Mate"));
     } finally {
-      stdoutSpy.mockRestore();
       stderrSpy.mockRestore();
     }
-    return { root, runCommand, installCommand, stderr };
-  }
-
-  test("a developer behind the companion installs exactly the generated version", async () => {
-    const { root, runCommand, installCommand } = await launch({
-      generated: "1.15.0",
-      installed: "1.14.2",
-    });
-
-    expect(installCommand).toHaveBeenCalledTimes(1);
-    expect(installCommand).toHaveBeenCalledWith(
-      "npm",
-      ["install", "-g", "@fission-ai/openspec@1.15.0"],
-      { cwd: root },
-    );
-    expect(runCommand).not.toHaveBeenCalled();
-  });
-
-  test("a developer ahead of the companion is left alone", async () => {
-    const { installCommand, runCommand } = await launch({
-      generated: "1.14.2",
-      installed: "1.15.0",
-    });
-
-    expect(installCommand).not.toHaveBeenCalled();
-    expect(runCommand).not.toHaveBeenCalled();
-  });
-
-  test("a failed catch-up warns with the manual command and the launch continues", async () => {
-    const { root, stderr } = await launch({
-      generated: "1.15.0",
-      installed: "1.14.2",
-      installFails: true,
-    });
-
-    expect(stderr).toContain("npm exited with code 1");
-    expect(stderr).toContain("npm install -g @fission-ai/openspec@1.15.0");
-    await expect(
-      fs.access(path.join(root, ".claude", "skills", "mate-grill-me", "SKILL.md")),
-    ).resolves.toBeNull();
-  });
-
-  test("no recorded version runs no install", async () => {
-    const { installCommand } = await launch({ installed: "1.14.2" });
-    expect(installCommand).not.toHaveBeenCalled();
-  });
-
-  test("an unknown installed version runs no install", async () => {
-    const { installCommand } = await launch({ generated: "1.15.0" });
-    expect(installCommand).not.toHaveBeenCalled();
-  });
-
-  test("a pinned deployment runs no install", async () => {
-    const { installCommand } = await launch({
-      generated: "1.15.0",
-      installed: "1.14.2",
-      pinned: true,
-    });
-    expect(installCommand).not.toHaveBeenCalled();
   });
 });

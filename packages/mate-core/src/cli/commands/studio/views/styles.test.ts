@@ -61,20 +61,16 @@ describe("studio styles", () => {
   });
 
   it("keeps pre-explore skill choices free of the accent border", () => {
-    expect(STUDIO_STYLES).toContain(
-      ".workflow-option { display: grid; gap: 1px; padding-left: 8px; }",
-    );
-    expect(STUDIO_STYLES).not.toContain(
-      ".workflow-option { display: grid; gap: 1px; padding-left: 8px; border-left:",
-    );
+    expect(STUDIO_STYLES).toContain(".workflow-option { display: grid; }");
+    expect(STUDIO_STYLES).not.toMatch(/\.workflow-option \{[^}]*border-left/);
   });
 
   it("scopes the terminal grid to a shell that carries the terminal", () => {
     expect(STUDIO_STYLES).toContain(
-      ".shell[data-terminal] { grid-template-columns: 224px minmax(0, 1fr) clamp(360px, var(--terminal-width, min(560px, 40vw)), 70vw); }",
+      ".shell[data-terminal] { grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr) clamp(360px, var(--terminal-width, min(560px, 40vw)), 70vw); }",
     );
     expect(STUDIO_STYLES).toContain(
-      ":root[data-terminal-collapsed] .shell[data-terminal] { grid-template-columns: 224px minmax(0, 1fr) var(--terminal-strip, 44px); }",
+      ":root[data-terminal-collapsed] .shell[data-terminal] { grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr) calc(var(--terminal-strip, 44px) + var(--sidebar-inset)); }",
     );
     for (const line of STUDIO_STYLES.split("\n")) {
       if (line.includes("grid-template-columns") && line.includes("--terminal")) {
@@ -89,6 +85,28 @@ describe("studio styles", () => {
     );
     expect(STUDIO_STYLES).toContain(".terminal-view { flex: 1;");
     expect(STUDIO_STYLES).toMatch(/\.terminal-sessions-footer \{[^}]*overflow-y: auto;/);
+  });
+
+  it("detaches the rail and the side-by-side terminal as inset rounded panels", () => {
+    const block = (query: string) => {
+      const start = STUDIO_STYLES.slice(STUDIO_STYLES.indexOf(query));
+      return start.slice(0, start.indexOf("\n}\n"));
+    };
+    const wide = block("@media (min-width: 901px)");
+    expect(wide).toContain(
+      "margin: var(--sidebar-inset) 0 var(--sidebar-inset) var(--sidebar-inset);",
+    );
+    expect(wide).toContain("height: calc(100vh - 2 * var(--sidebar-inset));");
+    expect(wide).toContain("border-radius: var(--sidebar-radius);");
+    const narrow = block("@media (max-width: 900px) {\n  .studio-sidebar");
+    expect(narrow).toContain("margin: var(--sidebar-inset) var(--sidebar-inset) 0;");
+    expect(narrow).toContain("border-radius: var(--sidebar-radius);");
+    const terminal = block("@media (min-width: 1201px)");
+    expect(terminal).toContain(
+      "margin: var(--sidebar-inset) var(--sidebar-inset) var(--sidebar-inset) 0;",
+    );
+    expect(terminal).toContain("border-radius: var(--sidebar-radius);");
+    expect(block("@media (max-width: 1200px)")).not.toContain("--sidebar-inset");
   });
 
   it("collapses only side by side and becomes a drawer below 1200px", () => {
@@ -129,7 +147,7 @@ describe("studio styles", () => {
   };
 
   it("frames cards and panes flat: surface, rule border, 8px corners, no shadow", () => {
-    for (const card of [".panel", ".specs-area-card", ".workflow-console"]) {
+    for (const card of [".panel", ".specs-area-card", ".workflow-detail"]) {
       const rule = ruleFor(card);
       expect(rule).toContain("background: var(--panel)");
       expect(rule).toContain("border: 1px solid var(--border)");
@@ -175,7 +193,7 @@ describe("studio styles", () => {
     const label = ruleFor(".section-header h3");
     expect(label).toContain("color: var(--muted)");
     expect(label).toContain("text-transform: uppercase");
-    expect(ruleFor(".page-eyebrow")).not.toContain("var(--accent)");
+    expect(STUDIO_STYLES).not.toContain(".page-eyebrow");
     for (const tile of [".sidebar-metric", ".specs-summary-item"]) {
       expect(ruleFor(tile)).toContain("border-top: 1px solid var(--border)");
       expect(ruleFor(`${tile} strong`)).toContain("font-variant-numeric: tabular-nums");
@@ -183,7 +201,9 @@ describe("studio styles", () => {
   });
 
   it("keeps the rail compact with the stats stacked as one column", () => {
-    expect(ruleFor(".shell")).toContain("grid-template-columns: 224px minmax(0, 1fr)");
+    expect(ruleFor(".shell")).toContain(
+      "grid-template-columns: calc(224px + var(--sidebar-inset)) minmax(0, 1fr)",
+    );
     expect(ruleFor(".sidebar-metrics")).not.toContain("repeat(3");
     const metric = ruleFor(".sidebar-metric");
     expect(metric).toContain("display: flex");

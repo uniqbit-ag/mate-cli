@@ -10,8 +10,10 @@ import {
   refresh,
   resolveCompanion,
   type StudioSelection,
+  type StudioVaultSelection,
   STUDIO_VIEWS,
   switchCompanion,
+  switchRole,
   switchView,
   toFields,
   toHref,
@@ -67,6 +69,7 @@ describe("parse", () => {
   it("reads the companion and the view", () => {
     expect(parse(at(`?companion=${acme}&view=workflow`))).toEqual({
       companionDigest: acme,
+      role: "product-engineer",
       view: "workflow",
       refresh: false,
     });
@@ -75,6 +78,7 @@ describe("parse", () => {
   it("reads an open vault file and folder", () => {
     expect(parse(at("?view=vault&path=docs%2Fnote.md&dir=docs"))).toEqual({
       companionDigest: null,
+      role: "product-engineer",
       view: "vault",
       refresh: false,
       openPath: "docs/note.md",
@@ -93,11 +97,13 @@ describe("parse", () => {
   it("drops parameters the view does not have", () => {
     expect(parse(at(`?companion=${acme}&path=docs%2Fnote.md&dir=docs`))).toEqual({
       companionDigest: acme,
+      role: "product-engineer",
       view: "dashboard",
       refresh: false,
     });
     expect(parse(at("?view=specs&path=note.md"))).toEqual({
       companionDigest: null,
+      role: "product-engineer",
       view: "specs",
       refresh: false,
     });
@@ -113,6 +119,7 @@ describe("parse", () => {
   it("parses an empty companion to no companion", () => {
     expect(parse(at("?companion="))).toEqual({
       companionDigest: null,
+      role: "product-engineer",
       view: "dashboard",
       refresh: false,
     });
@@ -139,6 +146,7 @@ describe("parseVaultSelection", () => {
       ),
     ).toEqual({
       companionDigest: acme,
+      role: "product-engineer",
       view: "vault",
       refresh: false,
       openPath: "docs/a.md",
@@ -150,6 +158,7 @@ describe("parseVaultSelection", () => {
   it("implies the vault view whatever the view parameter says", () => {
     expect(parseVaultSelection(at("?view=specs&refresh=1"))).toEqual({
       companionDigest: null,
+      role: "product-engineer",
       view: "vault",
       refresh: true,
       openPath: null,
@@ -162,6 +171,7 @@ describe("parseVaultSelection", () => {
 describe("serializing a selection", () => {
   const vault: StudioSelection = {
     companionDigest: acme,
+    role: "product-engineer",
     view: "vault",
     refresh: false,
     openPath: null,
@@ -170,10 +180,22 @@ describe("serializing a selection", () => {
   };
 
   it("omits the defaults", () => {
-    expect(toHref({ companionDigest: null, view: "dashboard", refresh: false })).toBe("/");
-    expect(toHref({ companionDigest: acme, view: "dashboard", refresh: false })).toBe(
-      `/?companion=${acme}`,
-    );
+    expect(
+      toHref({
+        companionDigest: null,
+        role: "product-engineer",
+        view: "dashboard",
+        refresh: false,
+      }),
+    ).toBe("/");
+    expect(
+      toHref({
+        companionDigest: acme,
+        role: "product-engineer",
+        view: "dashboard",
+        refresh: false,
+      }),
+    ).toBe(`/?companion=${acme}`);
   });
 
   it("writes the addresses today's controls lead to", () => {
@@ -220,9 +242,15 @@ describe("serializing a selection", () => {
 });
 
 describe("moves", () => {
-  const dashboard: StudioSelection = { companionDigest: acme, view: "dashboard", refresh: false };
+  const dashboard: StudioSelection = {
+    companionDigest: acme,
+    role: "product-engineer",
+    view: "dashboard",
+    refresh: false,
+  };
   const vaultFile: StudioSelection = {
     companionDigest: acme,
+    role: "product-engineer",
     view: "vault",
     refresh: true,
     openPath: "docs/a.md",
@@ -231,6 +259,7 @@ describe("moves", () => {
   };
   const vaultDir: StudioSelection = {
     companionDigest: acme,
+    role: "product-engineer",
     view: "vault",
     refresh: false,
     openPath: null,
@@ -243,18 +272,19 @@ describe("moves", () => {
     [
       "switching view keeps the companion",
       switchView(dashboard, "workflow"),
-      { companionDigest: acme, view: "workflow", refresh: false },
+      { companionDigest: acme, role: "product-engineer", view: "workflow", refresh: false },
     ],
     [
       "switching view drops the vault's target",
       switchView(vaultFile, "specs"),
-      { companionDigest: acme, view: "specs", refresh: false },
+      { companionDigest: acme, role: "product-engineer", view: "specs", refresh: false },
     ],
     [
       "switching to the vault opens nothing",
       switchView(dashboard, "vault"),
       {
         companionDigest: acme,
+        role: "product-engineer",
         view: "vault",
         refresh: false,
         openPath: null,
@@ -267,6 +297,7 @@ describe("moves", () => {
       switchView(vaultDir, "vault"),
       {
         companionDigest: acme,
+        role: "product-engineer",
         view: "vault",
         refresh: false,
         openPath: null,
@@ -277,13 +308,14 @@ describe("moves", () => {
     [
       "switching view clears a refresh",
       switchView(refreshed, "dashboard"),
-      { companionDigest: acme, view: "dashboard", refresh: false },
+      { companionDigest: acme, role: "product-engineer", view: "dashboard", refresh: false },
     ],
     [
       "switching companion keeps the view and drops the vault's target",
       switchCompanion(vaultFile, beta),
       {
         companionDigest: beta,
+        role: "product-engineer",
         view: "vault",
         refresh: false,
         openPath: null,
@@ -294,13 +326,14 @@ describe("moves", () => {
     [
       "switching companion keeps a plain view",
       switchCompanion(refreshed, beta),
-      { companionDigest: beta, view: "specs", refresh: false },
+      { companionDigest: beta, role: "product-engineer", view: "specs", refresh: false },
     ],
     [
       "switching to no companion keeps the view",
       switchCompanion(vaultDir, null),
       {
         companionDigest: null,
+        role: "product-engineer",
         view: "vault",
         refresh: false,
         openPath: null,
@@ -313,6 +346,7 @@ describe("moves", () => {
       openFile(vaultDir, "docs/b.md"),
       {
         companionDigest: acme,
+        role: "product-engineer",
         view: "vault",
         refresh: false,
         openPath: "docs/b.md",
@@ -325,6 +359,7 @@ describe("moves", () => {
       openFile(vaultFile, "docs/b.md"),
       {
         companionDigest: acme,
+        role: "product-engineer",
         view: "vault",
         refresh: false,
         openPath: "docs/b.md",
@@ -337,6 +372,7 @@ describe("moves", () => {
       openFolder(vaultFile, "docs/a"),
       {
         companionDigest: acme,
+        role: "product-engineer",
         view: "vault",
         refresh: false,
         openPath: null,
@@ -349,6 +385,7 @@ describe("moves", () => {
       openFolder(vaultDir, null),
       {
         companionDigest: acme,
+        role: "product-engineer",
         view: "vault",
         refresh: false,
         openPath: null,
@@ -376,5 +413,72 @@ describe("moves", () => {
     ];
     for (const moved of moves) expect(moved.refresh).toBe(false);
     expect(refresh(dashboard).refresh).toBe(true);
+  });
+});
+
+describe("roles", () => {
+  const ba = "business-analyst" as const;
+  const pe = "product-engineer" as const;
+  const vaultFile: StudioSelection = {
+    companionDigest: acme,
+    role: pe,
+    view: "vault",
+    refresh: false,
+    openPath: "docs/a.md",
+    mode: "edit",
+    openDir: null,
+  };
+
+  it("reads an absent or unknown role as the Product Engineer", () => {
+    expect(parse(at("")).role).toBe(pe);
+    expect(parse(at("?role=bogus&view=workflow"))).toMatchObject({ role: pe, view: "workflow" });
+    expect(parse(at(`?role=${ba}`)).role).toBe(ba);
+  });
+
+  it("falls back to the role's landing view", () => {
+    expect(parse(at(`?role=${ba}`)).view).toBe("dashboard");
+    for (const view of ["workflow", "skills", "unknown"]) {
+      expect(parse(at(`?role=${ba}&view=${view}`)).view).toBe("dashboard");
+    }
+    for (const view of ["dashboard", "vault", "specs", "reports"]) {
+      expect(parse(at(`?role=${ba}&view=${view}`)).view).toBe(view);
+    }
+  });
+
+  it("round-trips the role, omitting the default role and the landing view", () => {
+    const landing = parse(at(`?companion=${acme}&role=${ba}&view=dashboard`));
+    expect(toHref(landing)).toBe(`/?companion=${acme}&role=${ba}`);
+    expect(toHref(switchView(landing, "specs"))).toBe(`/?companion=${acme}&role=${ba}&view=specs`);
+    const reports = switchView(landing, "reports");
+    expect(parse(new URL(toHref(reports), "http://localhost:1"))).toEqual(reports);
+    expect(toHref(switchRole(landing, pe))).toBe(`/?companion=${acme}`);
+  });
+
+  it("switching role keeps a shared view and the vault's target", () => {
+    expect(switchRole(vaultFile, ba)).toEqual({ ...vaultFile, role: ba });
+    expect(switchRole(refresh(vaultFile), ba).refresh).toBe(false);
+  });
+
+  it("switching role away from a role view lands on the new role's landing view", () => {
+    const workflow = switchView(vaultFile, "workflow");
+    expect(switchRole(workflow, ba)).toEqual({
+      companionDigest: acme,
+      role: ba,
+      view: "dashboard",
+      refresh: false,
+    });
+  });
+
+  it("every other move keeps the role", () => {
+    const analyst: StudioSelection = { ...vaultFile, role: ba };
+    const moves = [
+      switchView(analyst, "reports"),
+      switchCompanion(analyst, beta),
+      openFile(analyst, "docs/b.md"),
+      openFolder(analyst, "docs"),
+      withMode(analyst as StudioVaultSelection, "read"),
+      refresh(analyst),
+    ];
+    for (const moved of moves) expect(moved.role).toBe(ba);
   });
 });
