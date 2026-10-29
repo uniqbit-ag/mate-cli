@@ -129,14 +129,32 @@ export {
 } from "./repo-local";
 export {
   SESSION_CONTEXT_PROTOCOL,
-  resolveSessionContext,
-  sessionContextFailure,
+  resolveSession,
+  sessionContextFor,
   sessionContextReply,
+  sessionRefusalNotice,
+  sessionRefusalReason,
+  type LaunchSession,
+  type NoSession,
+  type ProjectionSession,
+  type ResolvedSession,
   type SessionContext,
   type SessionContextError,
   type SessionContextErrorCode,
   type SessionContextResult,
-} from "./session-context";
+  type SessionEnv,
+  type SessionFlags,
+  type SessionRefusal,
+  type SessionRefusalCode,
+  type SessionResolutionDeps,
+} from "./session-resolution";
+export {
+  companionRegistryPath,
+  globalConfigPath,
+  readCompanionRegistrySync,
+  readGlobalCompanionsSync,
+  type RegistryLink,
+} from "./companion-registry-read";
 export {
   DEFAULT_SECRET_ALLOW_PATTERNS,
   DEFAULT_SECRET_DENY_PATTERNS,

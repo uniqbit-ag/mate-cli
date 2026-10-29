@@ -1,12 +1,12 @@
 import { FRAMEWORK_NAME } from "../../../framework";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
-import { querySessionContext } from "../../../lib/orchestrator/session-context-link";
 import { absoluteAsWritten, canonicalPath } from "../../../runtime/physical-path";
 import {
   SESSION_CONTEXT_PROTOCOL,
+  sessionContextFor,
   sessionContextReply,
   type SessionContextResult,
-} from "../../../runtime/session-context";
+} from "../../../runtime/session-resolution";
 import { writeJsonStdout } from "../../write-json-stdout";
 
 export interface SessionContextArgs {
@@ -81,8 +81,8 @@ export async function runSessionContextCommand(
 
   let result: SessionContextResult;
   try {
-    result = await querySessionContext(parsed.repo, {
-      configStore: sessionContextCommandDeps.configStore(),
+    result = sessionContextFor(parsed.repo, {
+      globalConfigPath: sessionContextCommandDeps.configStore().configPath,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

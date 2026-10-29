@@ -17,10 +17,12 @@ import {
   parseSecretsConfig,
   companionFrameworkConfigPath,
   policyDocument,
+  companionRegistryPath,
+  globalConfigPath,
   repoLocalRegistryPath,
-  resolveSessionContext,
   secretRule,
   secretRules,
+  sessionContextFor,
   sessionContextReply,
   writeProjectionPair,
   type SecretPolicy,
@@ -112,8 +114,24 @@ afterEach(() => {
   for (const dir of tempRoots.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** A wrapped repository whose companion's `framework.yaml` holds `config`. */
-function wrappedRepo(config: string): { repoRoot: string; companionPath: string } {
+/** The Mate configuration under `root`, registering `companionPath`. */
+function registeredIn(root: string, companionPath?: string): { globalConfigPath: string } {
+  const configPath = globalConfigPath(path.join(root, "home"));
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  const companions = companionPath ? [{ path: companionPath }] : [];
+  fs.writeFileSync(configPath, JSON.stringify({ version: 1, companions }), "utf8");
+  return { globalConfigPath: configPath };
+}
+
+/**
+ * A wrapped repository whose companion's `framework.yaml` holds `config`; the
+ * companion is registered and links the repository, so the projection is trusted.
+ */
+function wrappedRepo(config: string): {
+  repoRoot: string;
+  companionPath: string;
+  deps: { globalConfigPath: string };
+} {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mentions-context-")));
   tempRoots.push(root);
   const repoRoot = path.join(root, "acme-app");
@@ -134,7 +152,12 @@ function wrappedRepo(config: string): { repoRoot: string; companionPath: string 
       graphifyOut: "/g",
     },
   });
-  return { repoRoot, companionPath };
+  fs.writeFileSync(
+    companionRegistryPath(companionPath),
+    JSON.stringify({ repos: [{ id: "acme-app", path: repoRoot }] }),
+    "utf8",
+  );
+  return { repoRoot, companionPath, deps: registeredIn(root, companionPath) };
 }
 
 describe("the mod reads what mate session context prints", () => {
@@ -154,8 +177,8 @@ describe("the mod reads what mate session context prints", () => {
 
   for (const [label, config, policy] of configs) {
     test(`under ${label}`, () => {
-      const { repoRoot, companionPath } = wrappedRepo(config);
-      const printed = JSON.stringify(sessionContextReply(resolveSessionContext(repoRoot)));
+      const { repoRoot, companionPath, deps } = wrappedRepo(config);
+      const printed = JSON.stringify(sessionContextReply(sessionContextFor(repoRoot, deps)));
 
       const context = parseContext(printed);
       if ("reason" in context) throw new Error(context.reason);
@@ -171,7 +194,7 @@ describe("the mod reads what mate session context prints", () => {
   test("reads a refusal mate prints as no companion", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mentions-context-bare-"));
     tempRoots.push(dir);
-    const printed = JSON.stringify(sessionContextReply(resolveSessionContext(dir)));
+    const printed = JSON.stringify(sessionContextReply(sessionContextFor(dir, registeredIn(dir))));
     const context = parseContext(printed);
     expect("reason" in context && context.reason).toContain("no mate companion");
   });
