@@ -8,11 +8,9 @@ import {
 import { pathIsDirectory } from "../fs-utils";
 import { YamlFileStore } from "./yaml-file-store";
 
-type CompanionEntry = GlobalCompanionEntry;
-
 interface GlobalConfig {
   version: 1;
-  companions: CompanionEntry[];
+  companions: GlobalCompanionEntry[];
 }
 
 /** Parsed as Session Resolution's trust check reads it, so the two agree on who is registered. */
@@ -59,7 +57,7 @@ export class GlobalConfigStore extends YamlFileStore<GlobalConfig> {
     );
 
     const removed: string[] = [];
-    const kept: CompanionEntry[] = [];
+    const kept: GlobalCompanionEntry[] = [];
     for (const entry of checked) {
       if (entry.exists) kept.push({ path: entry.path });
       else removed.push(entry.path);
