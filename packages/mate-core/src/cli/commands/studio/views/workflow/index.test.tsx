@@ -25,6 +25,7 @@ function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompani
     companionPath: "/home/dev/.mate/companions/acme-companion",
     changes: [],
     specs: [],
+    shipped: [],
     skills: ALL_SKILLS,
     topology: null,
     warnings: [],

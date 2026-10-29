@@ -122,6 +122,7 @@ describe("createStudioFetch", () => {
     expect(assembled).toEqual([ACME]);
     expect(pages[0]?.selection).toEqual({
       companionDigest: digest,
+      role: "product-engineer",
       view: "workflow",
       refresh: false,
     });
