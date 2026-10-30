@@ -84,7 +84,26 @@ function deps(overrides: Partial<CompanionPayloadDeps> = {}): CompanionPayloadDe
     discoverArchives: async () => [],
     canonicalSpecsFor: async () => [],
     hasArchivedProposal: async () => true,
+    readWorksets: async () => ({ worksets: [], problems: [] }),
+    linkedRepositoryIdentities: async () => [],
     ...overrides,
+  };
+}
+
+function workset(
+  id: string,
+  changes: string[],
+  stage: "clarify-intent" | "explore" | "ready" = "clarify-intent",
+) {
+  return {
+    id,
+    title: id,
+    intent: "",
+    repositories: ["acme/web"],
+    changes,
+    stage,
+    createdAt: "2026-10-29T10:00:00Z",
+    extra: {},
   };
 }
 
@@ -376,5 +395,86 @@ describe("assembleCompanionPayload", () => {
         await fs.rm(root, { recursive: true, force: true });
       }
     });
+  });
+});
+
+describe("Worksets in the payload", () => {
+  test("derive each Workset's stage from its linked changes", async () => {
+    const payload = await assembleCompanionPayload(
+      "/companions/acme",
+      deps({
+        readWorksets: async () => ({
+          worksets: [
+            workset("acme-explore", [], "explore"),
+            workset("acme-review", ["add-docs"]),
+            workset("acme-ship", ["acme-shipped"]),
+            workset("acme-merge", ["acme-unmerged"]),
+          ],
+          problems: [{ path: "worksets/acme-bad.yaml", reason: "is not a mapping" }],
+        }),
+        readAllChangeStatus: async () => ({
+          ok: true,
+          value: {
+            changes: [
+              {
+                changeName: "add-docs",
+                schemaName: "mate-minimal",
+                artifacts: [
+                  { id: "specs", status: "done" },
+                  { id: "tasks", status: "done" },
+                ],
+              },
+            ],
+          },
+        }),
+        archiveAnchors: async () => ["2026-10-01-acme-shipped", "2026-10-02-acme-unmerged"],
+        discoverArchives: async () => [archive("2026-10-01-acme-shipped")],
+        archiveMergeSettled: async (_companion, anchor) => anchor === "2026-10-01-acme-shipped",
+        linkedRepositoryIdentities: async () => ["acme/web"],
+      }),
+    );
+    if ("error" in payload) throw new Error(payload.error.reason);
+    expect(
+      payload.worksets.map(({ id, stage, stageLabel, turn }) => [id, stage, stageLabel, turn]),
+    ).toEqual([
+      ["acme-explore", "explore", "Explore change", "human"],
+      ["acme-review", "human-review", "Review specs, tasks", "human"],
+      ["acme-ship", "done", "Done", "none"],
+      ["acme-merge", "merge-wait", "Waiting for merge", "human"],
+    ]);
+    expect(payload.worksetProblems).toEqual([
+      { path: "worksets/acme-bad.yaml", reason: "is not a mapping" },
+    ]);
+    expect(payload.linkedRepositories).toEqual(["acme/web"]);
+  });
+
+  test("a companion without Worksets reads no Delivery Record", async () => {
+    let reads = 0;
+    const payload = await assembleCompanionPayload(
+      "/companions/acme",
+      deps({
+        archiveMergeSettled: async () => {
+          reads++;
+          return true;
+        },
+      }),
+    );
+    if ("error" in payload) throw new Error(payload.error.reason);
+    expect(payload.worksets).toEqual([]);
+    expect(reads).toBe(0);
+  });
+
+  test("an unreadable worksets directory degrades to a warning", async () => {
+    const payload = await assembleCompanionPayload(
+      "/companions/acme",
+      deps({
+        readWorksets: async () => {
+          throw new Error("EACCES: permission denied");
+        },
+      }),
+    );
+    if ("error" in payload) throw new Error(payload.error.reason);
+    expect(payload.worksets).toEqual([]);
+    expect(payload.warnings).toContain("worksets: EACCES: permission denied");
   });
 });

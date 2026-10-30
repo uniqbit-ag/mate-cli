@@ -859,6 +859,7 @@ describe("roles", () => {
     expect(navigation(markup)).toEqual([
       "Product Engineer",
       "dashboard",
+      "factory",
       "workflow",
       "skills",
       "Shared",

@@ -1,0 +1,315 @@
+# Release-owned image inputs for the Mate appliance container.
+#
+# Every version here is exact and every download is checked against a digest
+# recorded next to it, so a rebuild of the same release tag resolves the same
+# graph rather than whatever is current. Nothing in this file is a range, a
+# channel, or a "latest" reference — the build fails on a mismatch instead of
+# quietly installing something else.
+#
+# Release preparation updates `mate.version` alongside the package versions and
+# regenerates `locks/*.package-lock.json`; publication verifies that the Mate
+# version here matches the release being built.
+
+schema: 1
+
+# The target set the image is built and verified for. An architecture absent
+# here is not supported by the image, not merely untested.
+targets:
+  - platform: linux
+    arch: amd64
+    node_arch: x64
+  - platform: linux
+    arch: arm64
+    node_arch: arm64
+
+# ---------------------------------------------------------------------------
+# Base images, by immutable digest. The tag is recorded for readability only;
+# the build references the digest.
+# ---------------------------------------------------------------------------
+base_images:
+  node:
+    tag: node:24-trixie-slim
+    digest: sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+    # What that digest actually contains, asserted at build time.
+    node_version: 24.21.0
+    npm_version: 11.19.0
+    debian_version: "13.7"
+  bun:
+    tag: oven/bun:1.4.2-debian
+    digest: sha256:4f6e31d1a54d6a3dd312daef655fc998101b5043d52e12592ac293ef04b9bc73
+    bun_version: 1.4.2
+
+# ---------------------------------------------------------------------------
+# OS packages, at the exact versions the pinned base image resolves. Installed
+# with `=<version>`, so a moved suite fails the build rather than drifting.
+# ---------------------------------------------------------------------------
+os_packages:
+  suite: trixie
+  packages:
+    git: 1:2.47.3-0+deb13u1
+    ca-certificates: "20250419"
+    tar: 1.35+dfsg-3.1
+    gzip: 1.13-1+deb13u1
+    xz-utils: 5.8.1-1+deb13u2
+    openssh-client: 1:10.0p1-7+deb13u4
+
+# ---------------------------------------------------------------------------
+# Mate itself. The image installs the published package at this exact version;
+# it never compiles Mate from the checkout it was built from.
+#
+# `minimum_compatible` is the release that first carries unattended
+# registration, the pinned update policy, launch exit-status propagation and
+# signal forwarding, prebuilt workspace preparation, and preinstalled plugin
+# binding *in a form a pinned deployment can actually launch against*. Those
+# features first appear in 0.17.0-canary.3, but that release refuses the launch
+# on two of its own paths, so the minimum is the release that fixes them.
+# A published image installs its own release version, which is at or above that
+# minimum rather than equal to it.
+# ---------------------------------------------------------------------------
+mate:
+  version: 1.0.0-canary.0
+  minimum_compatible: 0.17.0-canary.5
+  registry: https://registry.npmjs.org/
+
+# ---------------------------------------------------------------------------
+# The agent runtime. OpenCode's version is independent of Mate's; Mate
+# requires 2.x.
+#
+# OpenCode 2.x is published only to npm, as one platform package per target
+# (`@opencode/cli-<target>`), not as GitHub release assets. The image fetches
+# that package's tarball directly and checks it against the digest for the
+# target architecture; no installer runs. Naming the plain `linux-x64` package
+# also pins away the installer's CPU-feature "baseline" variant selection.
+# ---------------------------------------------------------------------------
+opencode:
+  version: 2.0.24
+  release_base_url: https://registry.npmjs.org
+  artifacts:
+    amd64:
+      file: "@opencode/cli-linux-x64/-/cli-linux-x64-2.0.24.tgz"
+      sha256: 21b1ee0683841405d69541fc44481f8e5752e95bea72e8b8ec31dbcdb102e7f8
+    arm64:
+      file: "@opencode/cli-linux-arm64/-/cli-linux-arm64-2.0.24.tgz"
+      sha256: 9d0cd2bfc060fd6c2afdf6db69837f8690d46a8d8327bb864421851ce004f453
+
+# ---------------------------------------------------------------------------
+# Claude Code, the second agent runtime Studio's terminal launches. Its
+# version is independent of Mate's and OpenCode's.
+#
+# The native release binary is fetched directly and checked against the
+# per-architecture digest the release manifest publishes; no installer runs,
+# so nothing resolves a channel such as "stable" at build time.
+# ---------------------------------------------------------------------------
+claude:
+  version: 2.1.286
+  release_base_url: https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
+  artifacts:
+    amd64:
+      file: linux-x64/claude
+      sha256: fe503f65c6289d59c23e5b21ae44f03583f997dd33a2cbfc75ab4f96fb8fc73f
+    arm64:
+      file: linux-arm64/claude
+      sha256: 0292fa22ac2fd43e16be9d0e511ddd8347280d6e0ebaca744ef5b27e05d8d0f8
+
+# ---------------------------------------------------------------------------
+# Factory mode: Sysbox and the Docker engine that runs Workset containers.
+#
+# Installed in every image but started only in factory mode. Sysbox ships as a
+# `.deb` per architecture; only its three binaries are used, since its package
+# scripts expect systemd. The Docker engine comes from Docker's trixie
+# repository as checked `.deb` files rather than through an added apt source.
+# `os_packages` are what Sysbox needs at run time, at the versions the pinned
+# base image resolves.
+# ---------------------------------------------------------------------------
+factory:
+  sysbox:
+    version: 0.7.1
+    base_url: https://github.com/nestybox/sysbox/releases/download
+    artifacts:
+      amd64:
+        file: v0.7.1/sysbox-ce_0.7.1.linux_amd64.deb
+        sha256: 9d6d5484f980d0a17f86c492c1262015c2afb66280bdb97215b79fde6a0261c5
+      arm64:
+        file: v0.7.1/sysbox-ce_0.7.1.linux_arm64.deb
+        sha256: 04ca894ae0b53f0fa54eaacc173ce40363c9a95ea5450f773716a84ef650a69b
+  docker_engine:
+    base_url: https://download.docker.com/linux/debian/dists/trixie/pool/stable
+    packages:
+      containerd.io:
+        version: 2.4.2-3~debian.13~trixie
+        artifacts:
+          amd64:
+            file: amd64/containerd.io_2.4.2-3~debian.13~trixie_amd64.deb
+            sha256: 454998e47186869c1dae0858e9f167a68e47eba7df5794b7206cc845615aeeba
+          arm64:
+            file: arm64/containerd.io_2.4.2-3~debian.13~trixie_arm64.deb
+            sha256: fca3f3a279c0d2675e4a97eae4f0b192632d52c962c8f142fc4a77d3455c9e06
+      docker-ce-cli:
+        version: 5:29.9.2-1~debian.13~trixie
+        artifacts:
+          amd64:
+            file: amd64/docker-ce-cli_29.9.2-1~debian.13~trixie_amd64.deb
+            sha256: 6a266cb8acafa475e87ce2414387707024b55fb169d6ca1fb6c3132f234d4cf1
+          arm64:
+            file: arm64/docker-ce-cli_29.9.2-1~debian.13~trixie_arm64.deb
+            sha256: 57d51835bd8fd02b3f83492aff3ffe1f4990e77effbd4fc81d64a3f1c59eccbf
+      docker-ce:
+        version: 5:29.9.2-1~debian.13~trixie
+        artifacts:
+          amd64:
+            file: amd64/docker-ce_29.9.2-1~debian.13~trixie_amd64.deb
+            sha256: 5971507b332598b0867e005adbe05117f7f97489c0f698d1f19581aa58992a18
+          arm64:
+            file: arm64/docker-ce_29.9.2-1~debian.13~trixie_arm64.deb
+            sha256: 4007107183bd9f9e36fc2efb599fecb4202666d7bb6cf1a0bb23ce57bfb47f8f
+  os_packages:
+    fuse3: 3.17.2-3
+    rsync: 3.5.0+ds1-0+deb13u1
+    iproute2: 6.15.0-1
+    kmod: 34.2-2
+    iptables: 1.8.11-2
+    procps: 2:4.0.4-9
+  # The Workset image is a stage of the same Dockerfile, shipped inside the
+  # appliance as a root filesystem archive and imported under this name with
+  # the Mate version as tag when the inner daemon lacks it.
+  workset_image:
+    archive: /opt/mate/workset-rootfs.tar
+    repository: mate-workset
+
+# ---------------------------------------------------------------------------
+# The capability toolchain. The installation gate is evaluated against the
+# mounted companion's selections, which the image cannot know at build time, so
+# it carries all of it: every supported package manager and every supported
+# capability's tool.
+#
+# Each entry records how the image obtains the tool and how it proves it got
+# the right one. `detect` is the command name the installation gate looks for
+# on PATH.
+# ---------------------------------------------------------------------------
+tools:
+  # Package managers.
+  bun:
+    detect: bun
+    version: 1.4.2
+    source: base_image
+    from: bun
+
+  uv:
+    detect: uv
+    version: 0.12.23
+    source: github_release
+    base_url: https://github.com/astral-sh/uv/releases/download
+    artifacts:
+      amd64:
+        file: uv-x86_64-unknown-linux-gnu.tar.gz
+        sha256: 9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6
+      arm64:
+        file: uv-aarch64-unknown-linux-gnu.tar.gz
+        sha256: 6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f
+
+  # Capability tools.
+  openspec:
+    detect: openspec
+    package: "@fission-ai/openspec"
+    version: 1.15.0
+    source: npm_global
+    # Resolved through locks/global-tools.package-lock.json, not `@latest`.
+    # Mate now ships its own OpenSpec CLI, so the image no longer requires this
+    # global copy. It leaves the global-tools manifest and lock when they are
+    # regenerated after the first release that bundles OpenSpec.
+
+  context7:
+    detect: context7-mcp
+    package: "@upstash/context7-mcp"
+    # Matches CONTEXT7_MCP_VERSION in apps/mate-cli/src/plugins/context7.ts.
+    version: 4.2.0
+    source: npm_global
+
+  graphify:
+    detect: graphify
+    package: graphifyy
+    version: 0.9.80
+    source: uv_tool
+    # Installed from locks/graphify.requirements.txt, which pins the whole
+    # transitive graph with per-artifact hashes. The interpreter is pinned too:
+    # uv would otherwise fetch whatever CPython is current, which is a moving
+    # reference no different from an unpinned package.
+    python_version: 3.14.7
+    index: https://pypi.org/simple
+
+  rtk:
+    detect: rtk
+    version: 0.51.0
+    source: github_release
+    base_url: https://github.com/rtk-ai/rtk/releases/download
+    artifacts:
+      # The project publishes a musl build for x86_64 and a gnu build for
+      # aarch64; the musl binary is static and runs on the glibc base image.
+      amd64:
+        file: rtk-x86_64-unknown-linux-musl.tar.gz
+        sha256: 5028d3b19a8f0990d30fec9fbb07e32782bc5698e618fb1861aad8a9ccba4eb5
+      arm64:
+        file: rtk-aarch64-unknown-linux-gnu.tar.gz
+        sha256: 8d6d1aad9e69b42481eda7039507d1f7ee93698f87713cecd873d287c1931632
+
+  tokensave:
+    detect: tokensave
+    version: 7.15.0
+    source: github_release
+    base_url: https://github.com/aovestdipaperino/tokensave/releases/download
+    # Prebuilt release binaries, so the image needs no Rust toolchain.
+    artifacts:
+      amd64:
+        file: tokensave-v7.15.0-x86_64-linux.tar.gz
+        sha256: 3da8d0e52da38d2b477d92e2548a68795dbda355bb274d120ee6a77f391b57a4
+      arm64:
+        file: tokensave-v7.15.0-aarch64-linux.tar.gz
+        sha256: 0143e3e99c5b3a2a97790fbf50846cfb64a18a1035bf2fd63a60f511c4b7c5e2
+
+# ---------------------------------------------------------------------------
+# npm dependency graphs, direct and transitive, with per-package integrity.
+# These are the files the build installs from; neither is regenerated during a
+# build, so a rebuild cannot resolve a newer graph.
+# ---------------------------------------------------------------------------
+locks:
+  # Installed globally: the Mate CLI and the OpenSpec CLI.
+  global_tools:
+    manifest: locks/global-tools.package.json
+    lockfile: locks/global-tools.package-lock.json
+  # Installed into the prebuilt companion-local workspace the entrypoint
+  # copies into each companion's `.mate/plugins/.local/`.
+  local_workspace:
+    manifest: locks/local-workspace.package.json
+    lockfile: locks/local-workspace.package-lock.json
+
+# ---------------------------------------------------------------------------
+# The prebuilt companion-local workspace the image carries, and the manifest
+# written beside it so preparation can report a bundle that does not match the
+# target by the name of the dependency at fault.
+#
+# The bundle lives outside the companions mount, owned by the image and
+# readable by the unprivileged user. Its declared dependency versions are the
+# distribution-owned pins exactly; preparation rejects anything else.
+# ---------------------------------------------------------------------------
+prebuilt_workspace:
+  path: /opt/mate/prebuilt
+  # Written beside the bundle, not inside it, so what preparation copies into
+  # a companion is exactly the installed workspace and nothing else.
+  manifest_file: /opt/mate/prebuilt-manifest.json
+  packages:
+    context-mode: 1.0.169
+  # Recorded in the bundle manifest at build time and checked before any copy.
+  compatibility:
+    platform: linux
+    node_version: 24.21.0
+
+# ---------------------------------------------------------------------------
+# The identity the container runs as, and the paths it owns.
+# ---------------------------------------------------------------------------
+runtime:
+  user: mate
+  uid: 10001
+  group: mate
+  gid: 10001
+  home: /home/mate
+  companions_dir: /companions

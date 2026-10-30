@@ -1,0 +1,14 @@
+{
+  "name": "mate-local-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "context-mode": "1.0.169"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "context-mode@1.0.169": true,
+    "esbuild": true,
+    "turndown@7.2.4": true
+  }
+}

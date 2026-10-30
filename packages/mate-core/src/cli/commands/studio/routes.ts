@@ -14,3 +14,21 @@ export const VAULT_CHANGES_ROUTE = "/api/vault/changes";
 export const REPORTS_ROUTE = "/api/reports";
 /** A hosted report's HTML is served at this prefix plus its id. */
 export const REPORT_VIEW_PREFIX = "/studio/reports/";
+
+/** `POST` creates a Workset from the Factory board's form. */
+export const FACTORY_WORKSETS_ROUTE = "/api/factory/worksets";
+
+/** `POST` advances a Workset before propose: Clarify intent → Explore change → ready. */
+export function factoryAdvanceRoute(id: string): string {
+  return `${FACTORY_WORKSETS_ROUTE}/${encodeURIComponent(id)}/advance`;
+}
+
+/** `POST` a board action for a Workset's AFK run: start-apply, publish, answer, retry or cancel. */
+export function factoryActionRoute(id: string, action: string): string {
+  return `${FACTORY_WORKSETS_ROUTE}/${encodeURIComponent(id)}/${action}`;
+}
+
+/** `GET` a Workset's bounded run log as text. */
+export function factoryLogRoute(id: string): string {
+  return `${FACTORY_WORKSETS_ROUTE}/${encodeURIComponent(id)}/log`;
+}

@@ -218,6 +218,9 @@ async function reconcileMainSpecFrontmatter(
 }
 
 async function capSync(context: FinishContext): Promise<boolean> {
+  // Without a linked Working Repository, as in the appliance's companion clone, there is
+  // no source to re-index; the capability commands would refuse for want of one.
+  if (!context.repository) return true;
   const previous = process.exitCode;
   process.exitCode = 0;
   const previousEnv = new Map(

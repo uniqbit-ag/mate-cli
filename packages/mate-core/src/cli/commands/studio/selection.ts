@@ -2,10 +2,18 @@ import { createHash } from "node:crypto";
 
 import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 
-export type StudioView = "dashboard" | "workflow" | "specs" | "skills" | "vault" | "reports";
+export type StudioView =
+  | "dashboard"
+  | "factory"
+  | "workflow"
+  | "specs"
+  | "skills"
+  | "vault"
+  | "reports";
 
 export const STUDIO_VIEWS: readonly StudioView[] = [
   "dashboard",
+  "factory",
   "workflow",
   "specs",
   "skills",
@@ -22,7 +30,7 @@ export const DEFAULT_ROLE: StudioRole = "product-engineer";
 
 /** Views only the role is offered, in navigation order. */
 export const ROLE_VIEWS: Readonly<Record<StudioRole, readonly StudioView[]>> = {
-  "product-engineer": ["dashboard", "workflow", "skills"],
+  "product-engineer": ["dashboard", "factory", "workflow", "skills"],
   // The same `dashboard` id; `Content` renders each role's own Overview.
   "business-analyst": ["dashboard"],
 };

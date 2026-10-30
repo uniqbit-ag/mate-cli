@@ -149,3 +149,31 @@ jobs:
             echo "    --field version=$RELEASE_TAG --field channel=$CHANNEL --field ref=$RELEASE_TAG"
             exit 1
           fi
+
+  factory-image:
+    name: Request factory image
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    # Best-effort: a release without an image is a release missing an image, not a failed one.
+    continue-on-error: true
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch publish-factory-image.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ needs.verify.outputs.channel }}
+        run: |
+          if gh workflow run publish-factory-image.yml --repo "$GITHUB_REPOSITORY" \
+              --field version="$RELEASE_TAG" \
+              --field channel="$CHANNEL" \
+              --field ref="$RELEASE_TAG"; then
+            echo "Requested a factory image for $RELEASE_TAG ($CHANNEL) from $RELEASE_TAG."
+            echo "The build runs on its own; this release is complete either way."
+          else
+            echo "::warning::npm publication succeeded; the factory image request was rejected."
+            echo "Retry it with:"
+            echo "  gh workflow run publish-factory-image.yml --repo $GITHUB_REPOSITORY \\"
+            echo "    --field version=$RELEASE_TAG --field channel=$CHANNEL --field ref=$RELEASE_TAG"
+            exit 1
+          fi

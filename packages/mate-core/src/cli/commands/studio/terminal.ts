@@ -177,7 +177,14 @@ export interface TerminalSessionInfo {
   companionPath: string;
   attached: boolean;
   startedAt: number;
+  /** Set for a Workset session: the agent runs in that Workset's container. */
+  workset?: { id: string; title: string };
 }
+
+/** A Workset session start, resolved on the server; the browser named only the Workset. */
+export type WorksetSessionResolution =
+  | { companionPath: string; workset: { id: string; title: string }; argv: string[] }
+  | { reason: string };
 
 /** A registered action and its subject; the client names them, the server builds the prompt. */
 export interface TerminalAction {
@@ -205,6 +212,12 @@ export interface TerminalRegistryOptions {
     companionDigest: string | null,
     action?: TerminalAction,
   ) => Promise<TerminalLaunchResolution>;
+  /** Resolves a Workset session start; absent outside factory mode. */
+  resolveWorkset?: (
+    worksetId: string,
+    companionDigest: string | null,
+    sessionId: string,
+  ) => Promise<WorksetSessionResolution>;
   /** The Mate invocation prefix, e.g. `[bun, cli.mjs]`. */
   mateCommand: string[];
   noGit?: boolean;
@@ -221,6 +234,7 @@ interface Session {
   id: string;
   agent: TerminalAgent;
   companionPath: string;
+  workset?: { id: string; title: string };
   startedAt: number;
   /** In memory only; valid while the session is registered. */
   reportToken: string;
@@ -285,6 +299,7 @@ export class TerminalRegistry {
       companionPath: session.companionPath,
       attached: session.viewer !== null,
       startedAt: session.startedAt,
+      ...(session.workset ? { workset: session.workset } : {}),
     }));
   }
 
@@ -404,6 +419,7 @@ export class TerminalRegistry {
     }
     const size = this.dimensions(message);
     if (!size) return send(viewer, { type: "error", reason: "terminal size out of range" });
+    if (message.workset !== undefined) return this.startWorkset(connection, message, size);
     if (!TERMINAL_AGENTS.includes(message.agent as TerminalAgent)) {
       return send(viewer, { type: "error", reason: "the terminal starts only claude or opencode" });
     }
@@ -417,20 +433,59 @@ export class TerminalRegistry {
     if ("reason" in resolved) return send(viewer, { type: "error", reason: resolved.reason });
     if (connection.session || !this.connections.has(connection)) return;
 
-    if (this.sessions.size >= this.limits.sessions) {
-      const detached = [...this.sessions.values()]
-        .filter((session) => session.viewer === null && session.ending === null)
-        .toSorted((a, b) => a.detachedAt! - b.detachedAt!)[0];
-      if (!detached) {
-        return send(viewer, {
-          type: "error",
-          reason: `Studio already runs ${this.limits.sessions} attached sessions; end one first`,
-        });
-      }
-      void this.finish(detached, { type: "ended", reason: "evicted" });
-    }
-
+    if (!this.makeRoom(viewer)) return;
     const session = this.launch(agent, resolved.companionPath, size, resolved);
+    this.attachTo(connection, session, size);
+  }
+
+  /** Under the cap, or after evicting the longest-detached session; false when every one is attached. */
+  private makeRoom(viewer: TerminalViewer): boolean {
+    if (this.sessions.size < this.limits.sessions) return true;
+    const detached = [...this.sessions.values()]
+      .filter((session) => session.viewer === null && session.ending === null)
+      .toSorted((a, b) => a.detachedAt! - b.detachedAt!)[0];
+    if (!detached) {
+      send(viewer, {
+        type: "error",
+        reason: `Studio already runs ${this.limits.sessions} attached sessions; end one first`,
+      });
+      return false;
+    }
+    void this.finish(detached, { type: "ended", reason: "evicted" });
+    return true;
+  }
+
+  /** A Workset with a live session is attached to, never started twice. */
+  private async startWorkset(
+    connection: Connection,
+    message: Record<string, unknown>,
+    size: { cols: number; rows: number },
+  ): Promise<void> {
+    const viewer = connection.viewer;
+    if (!this.options.resolveWorkset) {
+      return send(viewer, {
+        type: "error",
+        reason: "Workset sessions need the appliance's factory mode",
+      });
+    }
+    if (typeof message.workset !== "string") {
+      return send(viewer, { type: "error", reason: "name the Workset to open a session for" });
+    }
+    const live = [...this.sessions.values()].find(
+      (session) => session.workset?.id === message.workset && session.ending === null,
+    );
+    if (live) return this.attachTo(connection, live, size);
+    const digest = typeof message.companion === "string" ? message.companion : null;
+    const id = randomUUID();
+    const resolved = await this.options.resolveWorkset(message.workset, digest, id);
+    if ("reason" in resolved) return send(viewer, { type: "error", reason: resolved.reason });
+    if (connection.session || !this.connections.has(connection)) return;
+    if (!this.makeRoom(viewer)) return;
+    const session = this.launch("claude", resolved.companionPath, size, {
+      id,
+      argv: resolved.argv,
+      workset: resolved.workset,
+    });
     this.attachTo(connection, session, size);
   }
 
@@ -438,7 +493,15 @@ export class TerminalRegistry {
     agent: TerminalAgent,
     companionPath: string,
     size: { cols: number; rows: number },
-    extras: { agentArgs?: string[]; promptArgs?: string[]; notice?: string } = {},
+    extras: {
+      agentArgs?: string[];
+      promptArgs?: string[];
+      notice?: string;
+      /** A Workset session: its id, its attach-helper argv, and the Workset it shows. */
+      id?: string;
+      argv?: string[];
+      workset?: { id: string; title: string };
+    } = {},
   ): Session {
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(this.options.env ?? process.env)) {
@@ -457,7 +520,7 @@ export class TerminalRegistry {
     }
     env.MATE_ARTIFACT_PATH = companionPath;
     env.TERM = "xterm-256color";
-    const argv = [
+    const argv = extras.argv ?? [
       ...this.options.mateCommand,
       agent,
       "--",
@@ -469,9 +532,10 @@ export class TerminalRegistry {
     ];
 
     const session = {
-      id: randomUUID(),
+      id: extras.id ?? randomUUID(),
       agent,
       companionPath,
+      ...(extras.workset ? { workset: extras.workset } : {}),
       startedAt: this.now(),
       reportToken,
       ring: new RingBuffer(this.limits.ringBytes),
@@ -539,6 +603,7 @@ export class TerminalRegistry {
       sessionId: session.id,
       agent: session.agent,
       companionPath: session.companionPath,
+      ...(session.workset ? { workset: session.workset } : {}),
     });
     const replay = session.ring.snapshot();
     if (replay.byteLength > 0) {

@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       container: ${{ steps.filter.outputs.container }}
+      factory: ${{ steps.filter.outputs.factory }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +37,9 @@ jobs:
           filters: |
             container:
               - "apps/mate-container/**"
+              - ".github/workflows/ci.yml"
+            factory:
+              - "apps/mate-factory/**"
               - ".github/workflows/ci.yml"
             docs:
               - "apps/docs/**"
@@ -89,6 +93,29 @@ jobs:
           MATE_CONTAINER_RUNTIME: docker
         run: bun run --filter @uniqbit/mate-container test
 
+  test-factory:
+    name: Test mate-factory
+    needs: changes
+    if: ${{ needs.changes.outputs.factory == 'true' || github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test mate-factory
+        env:
+          # The runner's preinstalled Podman would be found first.
+          MATE_CONTAINER_RUNTIME: docker
+        run: bun run --filter @uniqbit/mate-factory test
+
   docs:
     name: Check docs
     needs: changes
@@ -115,7 +142,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, static, test-container, docs]
+    needs: [changes, static, test-container, test-factory, docs]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to have succeeded or been skipped

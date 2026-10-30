@@ -42,6 +42,8 @@
     "format:check": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\" --check"
   },
   "dependencies": {
+    "@ai-sdk/harness": "1.0.167",
+    "@ai-sdk/harness-claude-code": "1.0.171",
     "@fission-ai/openspec": "1.15.0",
     "@opencode/plugin": "^2.0.23",
     "@opentui/core": "^0.5.14",
@@ -56,13 +58,15 @@
     "@xterm/addon-unicode11": "^0.9.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
+    "ai": "7.0.156",
     "hono": "^4.13.5",
     "ink": "^7.1.0",
     "marked": "^18.1.1",
     "react": "^19.2.7",
     "react-doctor": "0.9.13",
     "semver": "^7.8.5",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

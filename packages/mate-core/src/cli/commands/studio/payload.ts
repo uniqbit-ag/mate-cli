@@ -1,7 +1,25 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { archiveDirOf, parseAnchor, SPECS_RELATIVE_DIR } from "../../../lib/change-layout";
+import {
+  archiveAnchors,
+  archiveDirOf,
+  parseAnchor,
+  SPECS_RELATIVE_DIR,
+} from "../../../lib/change-layout";
+import { isPublishable, readDeliveryState } from "../../../lib/delivery/record";
+import { linkedRepositoryIdentities } from "../../../lib/workset/repositories";
+import {
+  readWorksets,
+  resolveLinkedChanges,
+  type WorksetProblem,
+} from "../../../lib/workset/record";
+import {
+  type ChangeFacts,
+  deriveWorksetStage,
+  type WorksetStageId,
+  type WorksetTurn,
+} from "../../../lib/workset/stage";
 import { errorMessage } from "../../../runtime/error-message";
 import { canonicalSpecsFor, discoverArchives } from "../artifact/pending/discovery";
 import { defaultGitOps } from "../artifact/finish/git";
@@ -56,6 +74,19 @@ export interface StudioShippedChange {
   hasProposal: boolean;
 }
 
+/** One Workset card: the record plus its derived stage. */
+export interface StudioWorkset {
+  id: string;
+  title: string;
+  intent: string;
+  repositories: string[];
+  changes: string[];
+  stage: WorksetStageId;
+  stageLabel: string;
+  turn: WorksetTurn;
+  problems: string[];
+}
+
 export interface StudioCompanionPayload {
   companionPath: string;
   changes: StudioChange[];
@@ -66,6 +97,11 @@ export interface StudioCompanionPayload {
   skills?: string[];
   skillInventory?: StudioSkillInventory;
   topology: WorkflowTopology | null;
+  worksets: StudioWorkset[];
+  /** `org/repository` identities linked to the companion: what a new Workset may name. */
+  linkedRepositories: string[];
+  /** Records that could not be read, by path and reason. */
+  worksetProblems: WorksetProblem[];
   warnings: string[];
 }
 
@@ -88,6 +124,11 @@ export interface CompanionPayloadDeps {
   /** Porcelain paths with uncommitted changes; throws when status cannot be read. */
   readUncommittedPaths?: (companionPath: string) => Promise<string[]>;
   hasArchivedProposal?: (companionPath: string, anchor: string) => Promise<boolean>;
+  readWorksets?: typeof readWorksets;
+  linkedRepositoryIdentities?: typeof linkedRepositoryIdentities;
+  archiveAnchors?: typeof archiveAnchors;
+  /** Whether an archive's Publication Merge Gate is open: merged, not applicable, or legacy. */
+  archiveMergeSettled?: (companionPath: string, anchor: string) => Promise<boolean>;
 }
 
 function describe(failure: OpenSpecFailure): string {
@@ -160,6 +201,94 @@ async function collectShipped(
     }),
   );
   return shipped.toSorted(byAnchorDescending);
+}
+
+async function archiveMergeSettled(companionPath: string, anchor: string): Promise<boolean> {
+  const state = await readDeliveryState(path.join(archiveDirOf(companionPath), anchor));
+  return isPublishable(state.status);
+}
+
+/**
+ * Worksets with their derived stages. Delivery Records are read only for archives a
+ * Workset links, so a companion without Worksets pays nothing.
+ */
+async function collectWorksets(
+  companionPath: string,
+  changes: StudioChange[],
+  shipped: StudioShippedChange[],
+  deps: CompanionPayloadDeps,
+): Promise<{ worksets: StudioWorkset[]; problems: WorksetProblem[] }> {
+  const listing = await (deps.readWorksets ?? readWorksets)(companionPath);
+  if (listing.worksets.length === 0) return { worksets: [], problems: listing.problems };
+
+  const anchors = await (deps.archiveAnchors ?? archiveAnchors)(companionPath);
+  const linked = resolveLinkedChanges(
+    listing.worksets,
+    changes.map((change) => change.name),
+    anchors,
+  );
+  const published = new Set(shipped.map((change) => change.anchor));
+  const mergeSettled = deps.archiveMergeSettled ?? archiveMergeSettled;
+  const activeByName = new Map(changes.map((change) => [change.name, change]));
+
+  const unique = new Map([...linked.values()].flat().map((change) => [change.name, change]));
+  const entries = await Promise.all(
+    [...unique.values()].map(async (change): Promise<[string, ChangeFacts] | null> => {
+      if (change.kind === "active") {
+        const active = activeByName.get(change.name)!;
+        return [
+          change.name,
+          {
+            name: change.name,
+            archived: false,
+            artifactsComplete:
+              active.artifacts.length > 0 &&
+              active.artifacts.every((artifact) => artifact.status === "done"),
+            reviewArtifacts: active.artifacts.map((artifact) => artifact.id),
+            checkedTasks: active.completedTasks ?? 0,
+            mergeSettled: false,
+            published: false,
+          },
+        ];
+      }
+      if (change.kind === "archived") {
+        return [
+          change.name,
+          {
+            name: change.name,
+            archived: true,
+            artifactsComplete: true,
+            reviewArtifacts: [],
+            checkedTasks: 0,
+            mergeSettled: await mergeSettled(companionPath, change.anchor),
+            published: published.has(change.anchor),
+          },
+        ];
+      }
+      return null;
+    }),
+  );
+  const facts = new Map(entries.filter((entry) => entry !== null));
+
+  return {
+    worksets: listing.worksets.map((record) => {
+      const derived = deriveWorksetStage(record, linked.get(record.id) ?? [], (name) =>
+        facts.get(name),
+      );
+      return {
+        id: record.id,
+        title: record.title,
+        intent: record.intent,
+        repositories: record.repositories,
+        changes: record.changes,
+        stage: derived.stage,
+        stageLabel: derived.label,
+        turn: derived.turn,
+        problems: derived.problems,
+      };
+    }),
+    problems: listing.problems,
+  };
 }
 
 /**
@@ -252,11 +381,25 @@ export async function assembleCompanionPayload(
     })),
   );
 
+  const shippedChanges = "changes" in shipped ? shipped.changes : [];
+  const [worksets, linkedRepositories] = await Promise.all([
+    collectWorksets(companionPath, changes, shippedChanges, deps).catch((error: unknown) => {
+      warnings.push(`worksets: ${errorMessage(error)}`);
+      return { worksets: [], problems: [] };
+    }),
+    (deps.linkedRepositoryIdentities ?? linkedRepositoryIdentities)(companionPath).catch(
+      (error: unknown) => {
+        warnings.push(`linked repositories: ${errorMessage(error)}`);
+        return [];
+      },
+    ),
+  ]);
+
   return {
     companionPath,
     changes,
     specs,
-    shipped: "changes" in shipped ? shipped.changes : [],
+    shipped: shippedChanges,
     skills:
       "skills" in skillInventory
         ? [
@@ -270,6 +413,9 @@ export async function assembleCompanionPayload(
     skillInventory:
       "skills" in skillInventory ? skillInventory.skills : { claude: [], opencode: [], agents: [] },
     topology: topology.ok ? topology.value : null,
+    worksets: worksets.worksets,
+    linkedRepositories,
+    worksetProblems: worksets.problems,
     warnings,
   };
 }

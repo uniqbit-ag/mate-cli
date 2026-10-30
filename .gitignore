@@ -17,3 +17,5 @@ __pycache__/
 
 # local appliance test setup (apps/mate-container/scripts/local-up.ts)
 apps/mate-container/.local/
+# local factory test setup (apps/mate-factory/scripts/local-up.ts)
+apps/mate-factory/.local/

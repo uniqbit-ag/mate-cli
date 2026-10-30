@@ -12,6 +12,19 @@ import { collectStudioInventory, type StudioInventory } from "./inventory";
 import { assembleCompanionPayload, type StudioCompanionResponse } from "./payload";
 import { createReportStore, isReportId, REPORT_LIMITS, type ReportStore } from "./reports";
 import {
+  advanceWorkset,
+  createWorkset,
+  isWorksetId,
+  WorksetError,
+} from "../../../lib/workset/record";
+import { linkedRepositoryIdentities } from "../../../lib/workset/repositories";
+import { StageError } from "../../../lib/factory/runner/workflow";
+import { createStudioFactoryRunner, type StudioFactoryRunner } from "./factory-runner";
+import { factoryRunsView } from "./factory-runs";
+import { FACTORY_BROKER_ENV } from "../../../lib/factory/client";
+import { createWorksetResolver } from "./workset-session";
+import {
+  FACTORY_WORKSETS_ROUTE,
   REPORTS_ROUTE,
   REPORT_VIEW_PREFIX,
   STUDIO_HOSTNAME,
@@ -27,6 +40,7 @@ import {
   parse,
   parseVaultSelection,
   resolveCompanion,
+  toHref,
   type StudioSelection,
   type StudioVaultSelection,
 } from "./selection";
@@ -111,6 +125,8 @@ export interface StudioServerDeps {
   reports?: ReportStore;
   terminal?: Partial<TerminalRegistryOptions>;
   launchableAgents?: typeof launchableAgents;
+  /** The AFK runner; created from the environment in factory mode when absent. */
+  factoryRunner?: StudioFactoryRunner | null;
 }
 
 export interface StudioServerOptions {
@@ -191,6 +207,11 @@ const TOKEN_REQUIRED_PAGE = `<!doctype html>
 <p>Open the address Studio printed when it started; it carries <code>?token=…</code>.
 If the token was pinned with <code>--token</code> or <code>MATE_STUDIO_TOKEN</code>,
 open this address with <code>?token=</code> followed by that value.</p></main></body></html>`;
+
+const FACTORY_ACTION = new RegExp(
+  `^${FACTORY_WORKSETS_ROUTE}/([^/]+)/(advance|start-apply|publish|answer|retry|cancel)$`,
+);
+const FACTORY_LOG = new RegExp(`^${FACTORY_WORKSETS_ROUTE}/([^/]+)/log$`);
 
 function refused(reason: string, status: number): Response {
   return new Response(JSON.stringify({ reason }), {
@@ -306,6 +327,61 @@ export function createStudioFetch(
     deps.snapshots ?? createStudioSnapshotCache({ assembleCompanionPayload: companion });
   const vault = deps.vault ?? createVaultManager();
   const writable = options.writable === true;
+  const runnerReady: Promise<StudioFactoryRunner | null> =
+    deps.factoryRunner !== undefined
+      ? Promise.resolve(deps.factoryRunner)
+      : process.env[FACTORY_BROKER_ENV]
+        ? createStudioFactoryRunner(options.launchCompanion ?? null).catch((error: unknown) => {
+            process.stderr.write(
+              `mate studio: the factory runner did not start: ${(error as Error).message}\n`,
+            );
+            return null;
+          })
+        : Promise.resolve(null);
+
+  /** Board actions; the runner's own checks guard the state each one needs. */
+  const worksetAction = async (
+    companionPath: string,
+    id: string,
+    action: string,
+    answer: string,
+  ) => {
+    if (!isWorksetId(id))
+      throw new WorksetError(`Workset identifier ${JSON.stringify(id)} is not a kebab-case name`);
+    const studioRunner = await runnerReady;
+    if (action === "advance") {
+      const advanced = await advanceWorkset(companionPath, id);
+      // Ready is the one transition that starts the agent by itself.
+      if (advanced.stage === "ready" && studioRunner?.companionPath === companionPath) {
+        await studioRunner.runner.request(id, "propose");
+      }
+      return;
+    }
+    if (!studioRunner || studioRunner.companionPath !== companionPath) {
+      throw new StageError("the AFK runner needs the appliance's factory mode for this companion");
+    }
+    if (action === "answer") return studioRunner.runner.answer(id, answer);
+    if (action === "retry") return studioRunner.runner.retry(id);
+    if (action === "cancel") return studioRunner.runner.cancel(id);
+    const payload = await companion(companionPath);
+    const workset =
+      "error" in payload ? undefined : payload.worksets.find((entry) => entry.id === id);
+    if (!workset) throw new StageError(`this companion has no valid Workset ${id}`);
+    if (action === "start-apply") {
+      if (workset.stage !== "human-review") {
+        throw new StageError(
+          `Workset ${id} is not in the Human Reviews; it is at ${workset.stageLabel}`,
+        );
+      }
+      return studioRunner.runner.request(id, "apply");
+    }
+    if (workset.stage !== "publish") {
+      throw new StageError(
+        `Workset ${id} is not merged and archived; it is at ${workset.stageLabel}`,
+      );
+    }
+    return studioRunner.runner.request(id, "publish");
+  };
   const access =
     options.access ??
     createStudioAccess({
@@ -329,6 +405,16 @@ export function createStudioFetch(
           launchableAgents: (companionPath) => agentsFor(companionPath),
         }),
         mateCommand: process.argv.slice(0, 2),
+        ...(process.env[FACTORY_BROKER_ENV]
+          ? {
+              resolveWorkset: createWorksetResolver({
+                collectInventory: inventory,
+                launchCompanion,
+                mateCommand: process.argv.slice(0, 2),
+                env: process.env,
+              }),
+            }
+          : {}),
         noGit: options.noGit === true,
         reportUrl: options.reportOrigin,
         ...deps.terminal,
@@ -396,9 +482,12 @@ export function createStudioFetch(
 
     const isSave = url.pathname === "/api/vault/save";
     const isEnd = url.pathname === "/api/terminal/sessions/end";
-    const isPost = isSave || isEnd;
+    const factoryAction = FACTORY_ACTION.exec(url.pathname);
+    const isFactory = url.pathname === FACTORY_WORKSETS_ROUTE || factoryAction !== null;
+    const isPost = isSave || isEnd || isFactory;
     if (isPost && request.method !== "POST") {
-      return new Response(`${isSave ? "vault save" : "ending a session"} requires POST`, {
+      const action = isSave ? "vault save" : isEnd ? "ending a session" : "changing a Workset";
+      return new Response(`${action} requires POST`, {
         status: 405,
         headers: { allow: "POST" },
       });
@@ -486,6 +575,7 @@ export function createStudioFetch(
               companion: companionDigest(session.companionPath),
               companionPath: session.companionPath,
               attached: session.attached,
+              ...(session.workset ? { workset: session.workset } : {}),
               ageSeconds: Math.max(0, Math.round((now - session.startedAt) / 1000)),
             })),
           }),
@@ -702,6 +792,71 @@ export function createStudioFetch(
       }
     }
 
+    if (isFactory) {
+      // Guarded exactly like vault save: same origin, the token, the write path.
+      if (!access.originMatches(request, acceptedOrigin)) {
+        return respond(refused("a Workset change must come from Studio's own page", 403));
+      }
+      if (access.requires("save") && !access.hasToken(request)) {
+        return respond(refused(TOKEN_REASON, 401));
+      }
+      if (!writable) {
+        return respond(refused("start Studio with --writable to create or advance Worksets", 403));
+      }
+      const form = await request.formData().catch(() => null);
+      const field = (name: string) => {
+        const value = form?.get(name);
+        return typeof value === "string" ? value : "";
+      };
+      const selected = await selectedCompanion(field(COMPANION_PARAM) || null, inventory);
+      if (!selected) return respond(refused("no registered companion was selected", 400));
+      try {
+        if (factoryAction) {
+          const id = decodeURIComponent(factoryAction[1]!);
+          await worksetAction(selected.path, id, factoryAction[2]!, field("answer"));
+        } else {
+          const repository = field("repository");
+          if (!(await linkedRepositoryIdentities(selected.path)).includes(repository)) {
+            throw new WorksetError(
+              `${JSON.stringify(repository)} is not a Working Repository linked to this companion`,
+            );
+          }
+          await createWorkset(selected.path, {
+            id: field("id"),
+            title: field("title"),
+            intent: field("intent"),
+            repository,
+          });
+        }
+      } catch (error) {
+        if (error instanceof WorksetError || error instanceof StageError) {
+          return respond(refused(error.message, 400));
+        }
+        throw error;
+      }
+      // Back to the board, recollected so the change shows at once.
+      const board = toHref({
+        companionDigest: companionDigest(selected.path),
+        role: "product-engineer",
+        view: "factory",
+        refresh: true,
+      });
+      return new Response(null, { status: 303, headers: { location: board } });
+    }
+
+    const logMatch = FACTORY_LOG.exec(url.pathname);
+    if (logMatch) {
+      const studioRunner = await runnerReady;
+      const id = decodeURIComponent(logMatch[1]!);
+      if (!studioRunner || !isWorksetId(id))
+        return respond(new Response("not found", { status: 404 }));
+      return respond(
+        new Response(await studioRunner.store.readLog(id), {
+          headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+        }),
+      );
+    }
+
     if (url.pathname !== "/") return respond(new Response("not found", { status: 404 }));
 
     const page = await collectStudioPage(url, inventory, snapshots, vault, writable);
@@ -711,12 +866,24 @@ export function createStudioFetch(
         () => null,
       );
     }
+    const studioRunner = await runnerReady;
+    page.factoryRuns =
+      studioRunner && page.companion?.path === studioRunner.companionPath
+        ? await factoryRunsView(studioRunner, page.companion.path)
+        : null;
     if (terminal) {
       const target = await effectiveLaunchCompanion(
         page.inventory,
         launchCompanion,
         page.selection.companionDigest,
       );
+      page.worksetSessions = process.env[FACTORY_BROKER_ENV]
+        ? Object.fromEntries(
+            terminal
+              .list()
+              .flatMap((session) => (session.workset ? [[session.workset.id, session.id]] : [])),
+          )
+        : null;
       page.terminal = {
         pinned: launchCompanion !== null,
         target: target ? { path: target.path, digest: companionDigest(target.path) } : null,

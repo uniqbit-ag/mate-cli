@@ -7,6 +7,7 @@ import {
   type MateSchema,
   type SkillStageId,
 } from "../../../../../lib/delivery/stages";
+import type { WorksetStageId } from "../../../../../lib/workset/stage";
 import { CHANGE_PLACEHOLDER, IDEA_PLACEHOLDER } from "../../selection";
 import type { WorkflowTopology } from "../../topology";
 
@@ -192,6 +193,26 @@ function phaseOf(stage: DeliveryStage, previous: WorkflowPhaseId | undefined): W
   if (stage.id === "apply") return "build";
   if (previous === "build" && stage.optional) return "build";
   return previous === undefined || previous === "plan" ? "plan" : "ship";
+}
+
+/** A Factory board column: a Workflow phase, or done once published. */
+export type FactoryColumnId = WorkflowPhaseId | "done";
+
+/**
+ * The column of a Workset stage, from the same phase assignment the Workflow view uses, so
+ * the two cannot disagree. The Human Reviews are one stage on the board, and waiting for
+ * merge sits between archive and publish.
+ */
+export function factoryColumnOf(stage: WorksetStageId): FactoryColumnId {
+  if (stage === "done") return "done";
+  if (stage === "merge-wait") return "ship";
+  const phases = new Map<string, WorkflowPhaseId>();
+  let previous: WorkflowPhaseId | undefined;
+  for (const entry of deliveryPath(SCHEMA_ARTIFACTS[DEFAULT_SCHEMA]).stages) {
+    previous = phaseOf(entry, previous);
+    phases.set(entry.kind === "human" ? "human-review" : entry.id, previous);
+  }
+  return phases.get(stage) ?? "plan";
 }
 
 function groupOf(step: WorkflowStep): "human" | "optional" | null {

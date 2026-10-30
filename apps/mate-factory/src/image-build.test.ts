@@ -1,0 +1,272 @@
+/** @test-requires containers, network */
+
+import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { DEFAULT_IMAGE, labelArgs } from "../scripts/build";
+import { findContainerRuntime, TEST_BASE_IMAGE } from "./container-runtime";
+import { CONTAINER_ROOT, readImageInputs } from "./image-inputs";
+
+/**
+ * What the build refuses, and what it must never carry.
+ *
+ * These cases build tiny images rather than the whole appliance: the question
+ * is whether the verification step does its job, not whether the appliance
+ * assembles, which `verify-image.ts` answers against a real build.
+ */
+
+const RUNTIME = findContainerRuntime();
+const withContainer = RUNTIME === null ? describe.skip : describe;
+const inputs = readImageInputs();
+
+let scratch: string;
+
+function build(dockerfile: string, context: string): { status: number; output: string } {
+  fs.writeFileSync(path.join(context, "Dockerfile"), dockerfile);
+  const result = spawnSync(
+    RUNTIME!,
+    [
+      "build",
+      ...(RUNTIME === "podman" ? ["--format", "docker"] : []),
+      "--file",
+      path.join(context, "Dockerfile"),
+      "--tag",
+      `mate-build-case:${Math.random().toString(36).slice(2, 8)}`,
+      context,
+    ],
+    { encoding: "utf8" },
+  );
+  return {
+    status: result.status ?? 1,
+    output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+  };
+}
+
+withContainer("a download whose digest does not match fails the build", () => {
+  test("the verified fetch refuses a mismatched artifact and installs nothing", () => {
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), "mate-build-"));
+    try {
+      fs.copyFileSync(
+        path.join(CONTAINER_ROOT, "scripts", "fetch-verified.sh"),
+        path.join(scratch, "fetch-verified.sh"),
+      );
+      const wrongDigest = "0".repeat(64);
+      const result = build(
+        `FROM ${TEST_BASE_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+COPY fetch-verified.sh /usr/local/bin/fetch-verified
+RUN chmod +x /usr/local/bin/fetch-verified
+RUN fetch-verified "${inputs.opencode.release_base_url}/${inputs.opencode.artifacts.arm64!.file}" "${wrongDigest}" /tmp/opencode.tgz
+`,
+        scratch,
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain("expected sha256");
+      expect(result.output).toContain("received sha256");
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  }, 600_000);
+
+  test("a digest that is not a sha256 at all is refused before anything is fetched", () => {
+    scratch = fs.mkdtempSync(path.join(os.tmpdir(), "mate-build-"));
+    try {
+      fs.copyFileSync(
+        path.join(CONTAINER_ROOT, "scripts", "fetch-verified.sh"),
+        path.join(scratch, "fetch-verified.sh"),
+      );
+      const result = build(
+        `FROM ${TEST_BASE_IMAGE}
+COPY fetch-verified.sh /usr/local/bin/fetch-verified
+RUN chmod +x /usr/local/bin/fetch-verified
+RUN fetch-verified "https://example.invalid/thing" "not-a-digest" /tmp/thing
+`,
+        scratch,
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain("is not a sha256");
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  }, 600_000);
+});
+
+describe("the recipe itself", () => {
+  const dockerfile = fs.readFileSync(path.join(CONTAINER_ROOT, "Dockerfile"), "utf8");
+
+  test("references its base images by digest, never by a bare tag", () => {
+    const froms = [...dockerfile.matchAll(/^FROM\s+(\S+)/gm)].map((match) => match[1]!);
+    // The factory stage builds on the Studio stage of this same recipe.
+    for (const from of froms.filter((name) => name !== "studio")) {
+      const isArg = from.startsWith("${");
+      expect(isArg, `FROM ${from} is not a build argument`).toBe(true);
+    }
+    expect(dockerfile).toContain(`ARG NODE_IMAGE=node@${inputs.base_images.node!.digest}`);
+    expect(dockerfile).toContain(`ARG BUN_IMAGE=oven/bun@${inputs.base_images.bun!.digest}`);
+  });
+
+  test("installs Mate from the published package rather than the working tree", () => {
+    // `npm ci` against the checked-in lock, and no copy of the repository's
+    // source into any stage.
+    expect(dockerfile).toContain("npm ci --omit=dev");
+    expect(dockerfile).not.toMatch(/COPY\s+(\.\.\/)?(packages|apps\/mate-cli|apps\/mate-core)/);
+    expect(dockerfile).not.toContain("bun run build");
+  });
+
+  test("names the Mate version exactly rather than resolving a channel", () => {
+    expect(dockerfile).toContain("ARG MATE_VERSION");
+    // No default: a build that is not told which release to install fails.
+    expect(dockerfile).not.toMatch(/ARG MATE_VERSION=/);
+    expect(dockerfile).not.toContain("@latest");
+    expect(dockerfile).not.toContain("@canary");
+  });
+
+  test("installs OS packages at pinned versions", () => {
+    for (const [name, version] of Object.entries(inputs.os_packages.packages)) {
+      if (name === "curl") continue;
+      const argName = `${name.replace(/-/g, "_").toUpperCase()}_VERSION`;
+      expect(dockerfile, `${name} is not pinned`).toContain(`${argName}}`);
+      // The published images are the appliance and factory stages; a pin
+      // installed only in a build stage never reaches them.
+      const publishedStages = dockerfile.slice(dockerfile.indexOf(" AS studio"));
+      expect(publishedStages, `${name} is not installed in a published stage`).toContain(
+        `"${name}=\${${argName}}"`,
+      );
+      expect(version.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("asserts every runtime and tool is present before the image is finished", () => {
+    for (const command of [
+      "bun",
+      "node",
+      "git",
+      "ssh",
+      "uv",
+      "graphify",
+      "rtk",
+      "tokensave",
+      "opencode",
+      "claude",
+    ]) {
+      expect(dockerfile).toContain(`command -v ${command}`);
+    }
+    // OpenSpec ships inside Mate, so the image carries no global copy.
+    expect(dockerfile).not.toContain("command -v openspec");
+  });
+
+  test("checks the pinned Claude Code binary and the terminal-capable Bun", () => {
+    expect(dockerfile).toContain('"${CLAUDE_SHA256_AMD64}"');
+    expect(dockerfile).toContain('"${CLAUDE_SHA256_ARM64}"');
+    expect(dockerfile).toContain('fetch-verified "${CLAUDE_RELEASE_BASE_URL}/${CLAUDE_VERSION}/');
+    expect(dockerfile).toContain("typeof Bun.Terminal");
+  });
+
+  test("publishes Studio's port alone", () => {
+    expect(dockerfile).toMatch(/^EXPOSE 4097$/m);
+    expect(dockerfile).not.toContain("4096");
+  });
+
+  test("applies the pinned update policy to its own build-time Mate checks", () => {
+    expect(dockerfile).toContain("ENV MATE_UPDATE_POLICY=pinned");
+    expect(dockerfile).toContain("MATE_UPDATE_POLICY=pinned mate --version");
+  });
+
+  test("registers the installed Context7 server rather than npx", () => {
+    expect(dockerfile).toMatch(/^\s+MATE_CONTEXT7_MODE=preinstalled \\$/m);
+  });
+
+  test("integrates TokenSave with every agent runtime at build time", () => {
+    for (const agent of ["claude", "opencode"]) {
+      expect(dockerfile).toContain(
+        `HOME=/home/mate tokensave install --agent ${agent} --git-hook no --wildcard-permissions`,
+      );
+    }
+  });
+
+  test("starts as root for the factory, with Studio's unprivileged identity from the inputs", () => {
+    expect(dockerfile).toContain("USER mate");
+    expect(dockerfile).toContain(`ARG MATE_UID=${inputs.runtime.uid}`);
+    expect(dockerfile).toContain(`ARG MATE_GID=${inputs.runtime.gid}`);
+    // The last USER in the file decides what a container runs as: root, whose
+    // supervisor starts Sysbox and the broker, then Studio as mate.
+    const users = [...dockerfile.matchAll(/^USER\s+(\S+)/gm)].map((match) => match[1]!);
+    expect(users.at(-1)).toBe("root");
+  });
+
+  test("bakes no credential, identity, or operator configuration", () => {
+    // Nothing that would write a secret into a layer. Build arguments are
+    // versions and digests; none of them is a token.
+    const args = [...dockerfile.matchAll(/^ARG\s+([A-Z_]+)/gm)].map((match) => match[1]!);
+    for (const arg of args) {
+      // Matched on the trailing word, so `TOKENSAVE_VERSION` — a pinned tool
+      // version — is not mistaken for a secret.
+      expect(arg, `${arg} looks like a credential`).not.toMatch(
+        /(^|_)(TOKEN|SECRET|PASSWORD|KEY|CREDENTIAL|CREDENTIALS)$/,
+      );
+    }
+    expect(dockerfile).not.toContain("NPM_TOKEN");
+    expect(dockerfile).not.toContain(".npmrc");
+    expect(dockerfile).not.toContain("git config --global user.");
+    // And it asserts their absence rather than only avoiding them.
+    expect(dockerfile).toContain("test ! -e /root/.mate");
+    expect(dockerfile).toContain("test ! -e /home/mate/.mate");
+  });
+});
+
+describe("the factory image", () => {
+  const dockerfile = fs.readFileSync(path.join(CONTAINER_ROOT, "Dockerfile"), "utf8");
+  const studio = dockerfile.slice(
+    dockerfile.indexOf(" AS studio"),
+    dockerfile.indexOf(" AS factory"),
+  );
+  const factory = dockerfile.slice(dockerfile.indexOf(" AS factory"));
+
+  test("is Studio plus the factory, built as the last stage", () => {
+    expect(dockerfile).toContain("FROM studio AS factory");
+    expect(dockerfile.trimEnd().endsWith("MATE_WORKSET_ARCHIVE=${WORKSET_ARCHIVE}")).toBe(true);
+    expect(factory).toContain('org.opencontainers.image.title="Mate factory"');
+    expect(factory).toContain("MATE_FACTORY=true");
+    for (const part of [
+      "sysbox",
+      "workset-rootfs.tar",
+      "mate-factory-supervisor",
+      "docker-ce.deb",
+    ]) {
+      expect(factory, `${part} is not in the factory stage`).toContain(part);
+    }
+  });
+
+  test("keeps the factory parts out of the Studio stage", () => {
+    for (const part of ["sysbox", "workset-archive", "mate-factory-supervisor", "docker-ce"]) {
+      expect(studio, `${part} is in the Studio stage`).not.toContain(part);
+    }
+  });
+
+  test("is built and tagged as mate-factory by default", () => {
+    expect(DEFAULT_IMAGE).toBe("mate-factory");
+  });
+});
+
+describe("the build script's labels", () => {
+  test("passes every --label through as a build label, in order", () => {
+    expect(
+      labelArgs(["--tag", "x", "--label", "ai.mate.a=1", "--label", "ai.mate.b=two=2"]),
+    ).toEqual(["--label", "ai.mate.a=1", "--label", "ai.mate.b=two=2"]);
+  });
+
+  test("adds nothing when no label is named", () => {
+    expect(labelArgs(["--tag", "x"])).toEqual([]);
+  });
+
+  test("refuses a label that is not key=value", () => {
+    expect(() => labelArgs(["--label", "novalue"])).toThrow(/key=value/);
+    expect(() => labelArgs(["--label"])).toThrow(/key=value/);
+    expect(() => labelArgs(["--label", "=x"])).toThrow(/key=value/);
+  });
+});

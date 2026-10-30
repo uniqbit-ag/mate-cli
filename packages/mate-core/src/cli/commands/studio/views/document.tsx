@@ -30,6 +30,7 @@ import { AnalystOverview } from "./analyst-overview/index";
 import { CompanionPicker } from "./companion-picker";
 import { CompanionSelector } from "./companion-selector";
 import { Dashboard } from "./dashboard/index";
+import { Factory } from "./factory/index";
 import { CompanionError } from "./error";
 import { MarkdownView } from "./markdown";
 import { formatCollectedAt, type StudioPage, type StudioVaultPage } from "./model";
@@ -156,6 +157,17 @@ function Content({ page }: { page: StudioPage }) {
   if (page.selection.view === "workflow") {
     return <Workflow payload={page.payload} />;
   }
+  if (page.selection.view === "factory") {
+    return (
+      <Factory
+        payload={page.payload}
+        companionDigest={companionDigest(page.companion.path)}
+        writable={page.writable}
+        sessions={page.worksetSessions ?? null}
+        runs={page.factoryRuns ?? null}
+      />
+    );
+  }
   if (page.selection.view === "specs") {
     const { payload } = page;
     return (
@@ -219,6 +231,7 @@ function PageHeader({ page }: { page: StudioPage }) {
 /** A view's page title is its navigation label. */
 const VIEW_TITLES: Record<StudioView, string> = {
   dashboard: "Overview",
+  factory: "Factory",
   workflow: "Workflow",
   skills: "Skills",
   vault: "Vault",

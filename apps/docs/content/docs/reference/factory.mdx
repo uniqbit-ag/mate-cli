@@ -1,0 +1,142 @@
+---
+title: The Factory Container
+description: "Running the Mate factory: the appliance plus Sysbox Workset containers that agents work in, as its own image."
+---
+
+The factory image is the [appliance](/docs/reference/deployment) plus a host for
+**Workset containers**. Each Workset gets its own Sysbox container with its own
+worktree on the Delivery Branch `change/<workset>` and its own Docker daemon, so
+an agent inside it can build and run containers. It is a separate image,
+`mate-factory`, published beside `mate-appliance` at the same versions:
+
+| Image            | For                                                                                     |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `mate-appliance` | People who work through Studio alone, such as Business Analysts. Runs unprivileged.     |
+| `mate-factory`   | Product Engineers running Worksets, attended or unattended. Starts as root, privileged. |
+
+Everything the [appliance page](/docs/reference/deployment) says about mounting,
+configuration, startup, upgrades, saving and the agent terminal applies to the
+factory image too. This page covers only what the factory adds.
+
+```sh
+docker run \
+  --privileged \
+  --volume ./companions:/companions \
+  --volume factory-docker:/var/lib/docker \
+  --volume factory-sysbox:/var/lib/sysbox \
+  --volume factory-state:/var/lib/mate-factory \
+  --publish 127.0.0.1:4097:4097 \
+  ghcr.io/uniqbit-ag/mate-cli/mate-factory:latest
+```
+
+## How it runs
+
+- **Root and privileged, for three processes.** The image starts as root and
+  needs a privileged container. Its supervisor runs only Sysbox, the inner
+  Docker daemon and the **factory broker** as root. Studio and every agent
+  session still run as `mate` (uid 10001). Factory mode is on in this image;
+  `MATE_FACTORY=false` runs Studio alone, as the image's own user.
+- **The host boundary.** A privileged container is bounded by the Docker
+  Desktop VM or the host kernel, not by Docker. Workset containers themselves
+  are unprivileged: root inside them maps to an unprivileged user outside. Run
+  the factory image only where a privileged container is acceptable; people who
+  need Studio alone get the appliance image.
+- **Preflight.** Before anything starts, startup checks for root, full
+  privileges, cgroup v2, `/dev/fuse`, a kernel of 5.19 or newer, user
+  namespaces, and the three volumes. Each failed check stops startup, naming
+  the check and its fix.
+- **Three volumes.** `/var/lib/docker` and `/var/lib/sysbox` hold the inner
+  daemon's and Sysbox's data, which do not work on the container's overlay
+  filesystem. `/var/lib/mate-factory` holds one clone per Working Repository
+  and one worktree per Workset. Worksets survive a restart. Their containers
+  are stopped, never deleted, and nothing resumes them by itself. Workset
+  images of earlier versions that no container uses are removed at start.
+- **The broker is the boundary.** Studio and agent sessions reach Worksets
+  only through the broker's socket, which offers spawn, pause, resume,
+  delete, exec and list, nothing else. They cannot reach the inner Docker
+  daemon, choose a mount or an image, or ask for privileges.
+- **Platforms.** Docker Desktop, OrbStack and Linux hosts with kernel 5.19 or
+  newer, on amd64 and arm64.
+- **Stopping.** A termination signal stops Studio and its sessions first, then
+  Workset containers (10 seconds each), the broker, the inner daemon and
+  Sysbox. Allow for that in the stop grace period.
+
+The image carries Sysbox, the Docker engine and the Workset image, so the
+factory starts offline like the appliance.
+
+## Agents in Worksets
+
+- **One agent credential for Worksets.** Set exactly one of
+  `CLAUDE_CODE_OAUTH_TOKEN` (a Claude subscription token from
+  `claude setup-token`) or `ANTHROPIC_API_KEY`, best in the configuration file
+  as `claudeCodeOauthToken:` or `anthropicApiKey:`. Setting both stops startup.
+  The credential goes to the broker only, which adds it to the commands that
+  start a Workset agent. Studio and its own sessions never receive it. Studio
+  reads a copy of the configuration file without it, so the original can be
+  readable by root only.
+- **The Workset image.** Each Workset container has Claude Code, Bun, the
+  companion's capability tools (TokenSave, RTK, uv, graphify) and the Claude
+  Code harness bridge, all pre-installed. Package commands inside a Workset run
+  through Bun. Nothing is installed when a Workset starts.
+- **Workset sessions.** On the Factory board, a Workset in Clarify intent or
+  Explore change offers **Open session**. Studio's terminal then runs Claude
+  Code inside that Workset's container, in its worktree, linked to the
+  companion. The first session starts Clarify intent with the Workset's intent.
+  A session in Explore change starts Explore change once. Every later session
+  continues the Workset's conversation. A Workset with a live session offers
+  **Attach** instead. Ending the session, its detach window expiring or Studio
+  stopping stops the agent inside the container. The container keeps running.
+- **AFK runs.** Once a Workset is ready for propose, Studio's runner proposes
+  its changes unattended inside the Workset's container, with the companion's
+  skills and instructions, and links the new changes to the Workset. A Workset
+  needs no session first: the run starts its container. People keep the
+  triggers: after the Human Reviews, **Start apply** applies every linked change
+  in dependency order on `change/<workset>`, commits each, pushes the branch
+  from the factory with its own Git credentials, and archives the changes.
+  After the merge, **Publish** publishes them. When the agent needs a decision,
+  the card shows its question as your turn; your answer continues the run. A
+  card shows a running run with its log, offers Cancel, and offers Retry after
+  a failure or a restart. Runs never resume by themselves after a restart.
+  `MATE_FACTORY_MAX_RUNS` caps parallel runs (default 2) and
+  `MATE_FACTORY_STAGE_MINUTES` caps each stage (default 60). The agent runs
+  with all permissions inside its Workset container, which is its isolation
+  boundary. Git credentials never enter a Workset.
+- **Who commits.** Every commit the factory makes, a Workset's work and a
+  publication alike, is authored and committed as `Mate factory
+<factory@mate.invalid>`, so `git log` tells factory commits apart; the
+  `.invalid` domain never belongs to a real mailbox or account. A Workset commit
+  ends with a `Workset: <id>` trailer. When the factory pushes to a forge, name
+  a bot account with `MATE_FACTORY_GIT_NAME` and `MATE_FACTORY_GIT_EMAIL`.
+  `MATE_GIT_USER_NAME` and `MATE_GIT_USER_EMAIL` stay the author of people's own
+  sessions.
+- **Where Worksets are cloned from.** A Workset's repository is cloned from the
+  `origin` of the repository linked to the companion, when that repository's
+  path exists in the container. Linked paths usually come from the host and do
+  not exist there, so list the repositories in `MATE_FACTORY_REPOSITORIES`. The
+  board offers those too. Cloning uses the Git credentials the container
+  already has for its remotes.
+
+## Factory settings
+
+These come on top of the [appliance settings](/docs/reference/deployment#configuration),
+from the environment or the configuration file in the same way.
+
+| Setting                      | Meaning                                                                                                                                                                                                                                                      | Default                | Required |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------- |
+| `MATE_FACTORY`               | Factory mode: Sysbox and an inner Docker daemon run Workset containers. On in this image, which starts as root; it needs a privileged container with volumes at `/var/lib/docker`, `/var/lib/sysbox` and `/var/lib/mate-factory`. `false` runs Studio alone. | `true`                 | no       |
+| `CLAUDE_CODE_OAUTH_TOKEN`    | A Claude subscription token (from `claude setup-token`) for Workset agents. Handed only to the factory broker, never to Studio or its sessions. Set this or `ANTHROPIC_API_KEY`, not both.                                                                   | —                      | no       |
+| `ANTHROPIC_API_KEY`          | An Anthropic API key for Workset agents. Handed only to the factory broker, never to Studio or its sessions. Set this or `CLAUDE_CODE_OAUTH_TOKEN`, not both.                                                                                                | —                      | no       |
+| `MATE_FACTORY_REPOSITORIES`  | Git URLs of Working Repositories Worksets may be created for and cloned from, one per line or comma-separated. Studio offers each by its `org/repository` name, besides the repositories linked to the companion.                                            | —                      | no       |
+| `MATE_FACTORY_MAX_RUNS`      | How many Workset runs Studio's AFK runner starts at once; others wait in order.                                                                                                                                                                              | `2`                    | no       |
+| `MATE_FACTORY_STAGE_MINUTES` | The time budget of one stage of a Workset run, in minutes; a stage past it fails.                                                                                                                                                                            | `60`                   | no       |
+| `MATE_FACTORY_GIT_NAME`      | The author and committer name of every commit the factory makes, its Workset commits and publications.                                                                                                                                                       | `Mate factory`         | no       |
+| `MATE_FACTORY_GIT_EMAIL`     | The author and committer email of every commit the factory makes.                                                                                                                                                                                            | `factory@mate.invalid` | no       |
+
+## Running it locally
+
+From the repository root, `bun run factory:local` builds the factory image with
+this working tree's Mate and starts it on `http://localhost:4098`, beside a local
+appliance on 4097. It passes a Workset agent credential through from your
+shell, or from the file `mate factory setup` stores, and
+`MATE_FACTORY_REPOSITORIES` from your shell. `factory:local:down`,
+`factory:local:reset` and `factory:local:logs` stop, reset and follow it.

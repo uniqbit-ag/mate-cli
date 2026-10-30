@@ -1,0 +1,608 @@
+# The Mate factory image: Studio, as in the appliance image
+# (apps/mate-container), plus Sysbox, the inner Docker engine, the Workset image
+# and the factory broker.
+#
+# Everything the factory needs is installed here, at exact versions checked
+# against apps/mate-factory/image-inputs.yaml. Startup does filesystem work
+# only: it copies a prebuilt workspace and starts two processes. No package
+# manager, dependency resolver, download, native build, or installation script
+# runs in a started container.
+#
+# Build arguments carry the pins rather than defaulting to a moving reference,
+# so a build that is not told which release to install fails instead of
+# inventing one. The publication workflow passes them from image-inputs.yaml.
+#
+# syntax=docker/dockerfile:1
+
+# ---------------------------------------------------------------------------
+# Pins. Kept in sync with image-inputs.yaml, which is the release-owned source
+# and which the workflow reads to pass these in.
+# ---------------------------------------------------------------------------
+ARG NODE_IMAGE=node@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+ARG BUN_IMAGE=oven/bun@sha256:4f6e31d1a54d6a3dd312daef655fc998101b5043d52e12592ac293ef04b9bc73
+
+# ===========================================================================
+# Stage: bun — the runtime the published `mate` command bootstraps into.
+#
+# Copied from the official image rather than installed by the bootstrap. The
+# container's own command line carries `--yes`, which the bootstrap reads as
+# consent to install Bun, so a missing Bun here would not fail loudly — it
+# would quietly run a network installer at container start. The final stage
+# asserts Bun is present instead of relying on the prompt being unanswerable.
+# ===========================================================================
+FROM ${BUN_IMAGE} AS bun
+
+# ===========================================================================
+# Stage: fetch — every standalone download, checked against its digest.
+#
+# Nothing here is installed into the final image without its sha256 matching
+# the release-owned input. A mismatch fails the build.
+# ===========================================================================
+FROM ${NODE_IMAGE} AS fetch
+
+ARG TARGETARCH
+
+ARG OPENCODE_VERSION
+ARG OPENCODE_RELEASE_BASE_URL
+ARG OPENCODE_SHA256_AMD64
+ARG OPENCODE_SHA256_ARM64
+ARG CLAUDE_VERSION
+ARG CLAUDE_RELEASE_BASE_URL
+ARG CLAUDE_SHA256_AMD64
+ARG CLAUDE_SHA256_ARM64
+ARG UV_VERSION
+ARG UV_SHA256_AMD64
+ARG UV_SHA256_ARM64
+ARG RTK_VERSION
+ARG RTK_SHA256_AMD64
+ARG RTK_SHA256_ARM64
+ARG TOKENSAVE_VERSION
+ARG TOKENSAVE_SHA256_AMD64
+ARG TOKENSAVE_SHA256_ARM64
+ARG SYSBOX_VERSION
+ARG SYSBOX_BASE_URL
+ARG SYSBOX_SHA256_AMD64
+ARG SYSBOX_SHA256_ARM64
+ARG DOCKER_ENGINE_BASE_URL
+ARG CONTAINERD_VERSION
+ARG CONTAINERD_SHA256_AMD64
+ARG CONTAINERD_SHA256_ARM64
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_CLI_SHA256_AMD64
+ARG DOCKER_CLI_SHA256_ARM64
+ARG DOCKER_CE_VERSION
+ARG DOCKER_CE_SHA256_AMD64
+ARG DOCKER_CE_SHA256_ARM64
+
+ARG GIT_VERSION
+ARG CA_CERTIFICATES_VERSION
+ARG TAR_VERSION
+ARG GZIP_VERSION
+ARG XZ_UTILS_VERSION
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+# Certificate authorities first: every download below verifies TLS against this
+# trust store, and the exact versions come from the release-owned inputs.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      "ca-certificates=${CA_CERTIFICATES_VERSION}" \
+      "curl=$(apt-cache policy curl | sed -n 's/^  Candidate: //p')" \
+      "tar=${TAR_VERSION}" \
+      "gzip=${GZIP_VERSION}" \
+      "xz-utils=${XZ_UTILS_VERSION}" \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /fetch
+
+# One helper for every checked download: fetch, verify, refuse otherwise.
+COPY scripts/fetch-verified.sh /usr/local/bin/fetch-verified
+RUN chmod +x /usr/local/bin/fetch-verified
+
+# --- uv -------------------------------------------------------------------
+RUN case "${TARGETARCH}" in \
+      amd64) UV_FILE=uv-x86_64-unknown-linux-gnu.tar.gz; UV_SHA="${UV_SHA256_AMD64}" ;; \
+      arm64) UV_FILE=uv-aarch64-unknown-linux-gnu.tar.gz; UV_SHA="${UV_SHA256_ARM64}" ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && fetch-verified "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${UV_FILE}" "${UV_SHA}" /fetch/uv.tar.gz \
+ && mkdir -p /out/bin && tar -xzf /fetch/uv.tar.gz -C /fetch \
+ && find /fetch -type f -name uv -perm -u+x -exec cp {} /out/bin/uv \; \
+ && find /fetch -type f -name uvx -perm -u+x -exec cp {} /out/bin/uvx \; \
+ && /out/bin/uv --version
+
+# --- rtk ------------------------------------------------------------------
+# The project publishes a static musl build for x86_64 and a gnu build for
+# aarch64; the musl binary runs on the glibc base image.
+RUN case "${TARGETARCH}" in \
+      amd64) RTK_FILE=rtk-x86_64-unknown-linux-musl.tar.gz; RTK_SHA="${RTK_SHA256_AMD64}" ;; \
+      arm64) RTK_FILE=rtk-aarch64-unknown-linux-gnu.tar.gz; RTK_SHA="${RTK_SHA256_ARM64}" ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && fetch-verified "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_FILE}" "${RTK_SHA}" /fetch/rtk.tar.gz \
+ && mkdir -p /fetch/rtk && tar -xzf /fetch/rtk.tar.gz -C /fetch/rtk \
+ && find /fetch/rtk -type f -name rtk -perm -u+x -exec cp {} /out/bin/rtk \; \
+ && /out/bin/rtk --version
+
+# --- tokensave ------------------------------------------------------------
+# Prebuilt release binaries, so the image needs no Rust toolchain.
+RUN case "${TARGETARCH}" in \
+      amd64) TS_FILE="tokensave-v${TOKENSAVE_VERSION}-x86_64-linux.tar.gz"; TS_SHA="${TOKENSAVE_SHA256_AMD64}" ;; \
+      arm64) TS_FILE="tokensave-v${TOKENSAVE_VERSION}-aarch64-linux.tar.gz"; TS_SHA="${TOKENSAVE_SHA256_ARM64}" ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && fetch-verified "https://github.com/aovestdipaperino/tokensave/releases/download/v${TOKENSAVE_VERSION}/${TS_FILE}" "${TS_SHA}" /fetch/tokensave.tar.gz \
+ && mkdir -p /fetch/tokensave && tar -xzf /fetch/tokensave.tar.gz -C /fetch/tokensave \
+ && find /fetch/tokensave -type f -name tokensave -perm -u+x -exec cp {} /out/bin/tokensave \; \
+ && /out/bin/tokensave --version
+
+# --- OpenCode -------------------------------------------------------------
+# 2.x ships only as npm platform packages. The exact version's tarball is
+# fetched from the registry and checked; no installer or package manager runs.
+# Naming the plain package also pins away the installer's CPU-feature
+# "baseline" variant selection.
+RUN case "${TARGETARCH}" in \
+      amd64) OC_PKG=cli-linux-x64; OC_SHA="${OPENCODE_SHA256_AMD64}" ;; \
+      arm64) OC_PKG=cli-linux-arm64; OC_SHA="${OPENCODE_SHA256_ARM64}" ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && fetch-verified "${OPENCODE_RELEASE_BASE_URL}/@opencode/${OC_PKG}/-/${OC_PKG}-${OPENCODE_VERSION}.tgz" "${OC_SHA}" /fetch/opencode.tgz \
+ && mkdir -p /fetch/opencode && tar -xzf /fetch/opencode.tgz -C /fetch/opencode \
+ && cp /fetch/opencode/package/bin/opencode /out/bin/opencode \
+ && chmod 0755 /out/bin/opencode \
+ && test "$(/out/bin/opencode --version | sed 's/^opencode v//')" = "${OPENCODE_VERSION}"
+
+# --- Claude Code ----------------------------------------------------------
+# The native release binary for the exact version, checked against the digest
+# its release manifest publishes. No installer runs, so no channel is resolved.
+RUN case "${TARGETARCH}" in \
+      amd64) CC_FILE=linux-x64/claude; CC_SHA="${CLAUDE_SHA256_AMD64}" ;; \
+      arm64) CC_FILE=linux-arm64/claude; CC_SHA="${CLAUDE_SHA256_ARM64}" ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && fetch-verified "${CLAUDE_RELEASE_BASE_URL}/${CLAUDE_VERSION}/${CC_FILE}" "${CC_SHA}" /out/bin/claude \
+ && chmod 0755 /out/bin/claude \
+ && /out/bin/claude --version | grep -q "^${CLAUDE_VERSION} "
+
+# --- factory mode: Sysbox and the Docker engine ----------------------------
+# Kept out of /out/bin: the appliance installs the engine packages, and only
+# Sysbox's three binaries are used, since its package scripts expect systemd.
+# Unpacked beside the system rather than over it, which would replace the
+# usrmerge /bin symlink.
+RUN case "${TARGETARCH}" in \
+      amd64) SB_SHA="${SYSBOX_SHA256_AMD64}"; CD_SHA="${CONTAINERD_SHA256_AMD64}"; CLI_SHA="${DOCKER_CLI_SHA256_AMD64}"; CE_SHA="${DOCKER_CE_SHA256_AMD64}" ;; \
+      arm64) SB_SHA="${SYSBOX_SHA256_ARM64}"; CD_SHA="${CONTAINERD_SHA256_ARM64}"; CLI_SHA="${DOCKER_CLI_SHA256_ARM64}"; CE_SHA="${DOCKER_CE_SHA256_ARM64}" ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && engine="${DOCKER_ENGINE_BASE_URL}/${TARGETARCH}" \
+ && fetch-verified "${engine}/containerd.io_${CONTAINERD_VERSION#*:}_${TARGETARCH}.deb" "${CD_SHA}" /out/factory/debs/containerd.io.deb \
+ && fetch-verified "${engine}/docker-ce-cli_${DOCKER_CLI_VERSION#*:}_${TARGETARCH}.deb" "${CLI_SHA}" /out/factory/debs/docker-ce-cli.deb \
+ && fetch-verified "${engine}/docker-ce_${DOCKER_CE_VERSION#*:}_${TARGETARCH}.deb" "${CE_SHA}" /out/factory/debs/docker-ce.deb \
+ && fetch-verified "${SYSBOX_BASE_URL}/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}.linux_${TARGETARCH}.deb" "${SB_SHA}" /fetch/sysbox.deb \
+ && mkdir -p /fetch/sysbox /out/factory/sysbox \
+ && dpkg-deb -x /fetch/sysbox.deb /fetch/sysbox \
+ && cp /fetch/sysbox/usr/bin/sysbox-runc /fetch/sysbox/usr/bin/sysbox-mgr /fetch/sysbox/usr/bin/sysbox-fs /out/factory/sysbox/ \
+ && /out/factory/sysbox/sysbox-runc --version | grep -q "${SYSBOX_VERSION}"
+
+# ===========================================================================
+# Stage: packages — the npm graphs, installed from checked-in lockfiles.
+#
+# `npm ci` installs exactly what the lock resolves; nothing here re-resolves a
+# version, so a rebuild of the same release gets the same graph.
+# ===========================================================================
+FROM ${NODE_IMAGE} AS packages
+
+ARG MATE_VERSION
+ARG CA_CERTIFICATES_VERSION
+
+# An update check during the build would write update state into a layer and
+# could refuse a build-time `mate` invocation outright. The appliance is
+# version-pinned by construction, so the policy applies here too.
+ENV MATE_UPDATE_POLICY=pinned
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends "ca-certificates=${CA_CERTIFICATES_VERSION}" \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- global tools: the Mate CLI and the OpenSpec CLI ----------------------
+WORKDIR /opt/mate/tools
+COPY locks/global-tools.package.json ./package.json
+COPY locks/global-tools.package-lock.json ./package-lock.json
+# The Mate OpenCode plugin ships inside mate-core and is loaded by path.
+RUN npm ci --omit=dev --no-audit --no-fund \
+ && test "$(node -p 'require("/opt/mate/tools/node_modules/@uniqbit/mate/package.json").version')" = "${MATE_VERSION}" \
+ && test -f /opt/mate/tools/node_modules/@uniqbit/mate-core/opencode-plugin/server.ts
+
+# --- the prebuilt companion-local workspace -------------------------------
+# Built here, outside any companions mount, so a freshly cloned companion can
+# be given a complete workspace by copying rather than installing. Its declared
+# dependency versions are the distribution-owned pins exactly; preparation
+# refuses anything else.
+WORKDIR /opt/mate/prebuilt
+COPY locks/local-workspace.package.json ./package.json
+COPY locks/local-workspace.package-lock.json ./package-lock.json
+# npm 11 runs no install script the manifest has not approved, so the
+# `allowScripts` entries in locks/local-workspace.package.json are what make
+# this a *fully installed* workspace rather than an unpacked one — native
+# builds, generated assets and postinstalls included.
+#
+# What is asserted below is the outcome, not npm's own advisory listing: that
+# listing keeps reporting a package as unreviewed even when the release has
+# approved exactly the key npm wrote for it, and a build must not turn on a
+# tool's opinion of its own bookkeeping. A native module that loads and a
+# generated asset that exists are the facts a session depends on.
+RUN npm ci --omit=dev --no-audit --no-fund \
+ && test -f node_modules/context-mode/build/adapters/opencode/plugin.js \
+ && test -f node_modules/context-mode/.claude-plugin/plugin.json \
+ && test -f node_modules/context-mode/hooks/hooks.json \
+ && test -f node_modules/context-mode/skills/context-mode/SKILL.md \
+ && node -e "require('/opt/mate/prebuilt/node_modules/better-sqlite3')" \
+ && node -e "require('/opt/mate/prebuilt/node_modules/context-mode/node_modules/better-sqlite3')"
+
+# ===========================================================================
+# Stage: graphify — the graphify tool, shared by the runtime and Workset images.
+#
+# `uv tool install graphifyy` would resolve transitive dependencies afresh on
+# every rebuild; installing from the compiled, hashed requirements does not.
+# Paths match where both images keep it, because the tool's environment names
+# its interpreter absolutely.
+# ===========================================================================
+FROM ${NODE_IMAGE} AS graphify
+
+ARG GRAPHIFY_VERSION
+ARG GRAPHIFY_PYTHON_VERSION
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+COPY --from=fetch /out/bin/uv /usr/local/bin/uv
+ENV UV_TOOL_DIR=/opt/mate/uv/tools \
+    UV_TOOL_BIN_DIR=/opt/mate/uv/bin \
+    UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python \
+    UV_NO_MODIFY_PATH=1
+COPY locks/graphify.requirements.txt /opt/mate/locks/graphify.requirements.txt
+RUN uv python install "${GRAPHIFY_PYTHON_VERSION}" \
+ && uv tool install --no-cache \
+      --python "${GRAPHIFY_PYTHON_VERSION}" \
+      --with-requirements /opt/mate/locks/graphify.requirements.txt \
+      "graphifyy==${GRAPHIFY_VERSION}" \
+ && rm -rf /opt/mate/uv/bin \
+ && /opt/mate/uv/tools/graphifyy/bin/graphify --version
+
+# ===========================================================================
+# Stage: workset — the image every Workset container runs.
+#
+# Started by the appliance's inner daemon under sysbox-runc, so its root is
+# unprivileged on the host and its own dockerd can run nested containers. The
+# agent and every command run as `mate`, whose uid matches the appliance's so
+# the bind-mounted worktree keeps its ownership. No credential is baked in;
+# Studio passes one per command.
+# ===========================================================================
+FROM ${NODE_IMAGE} AS workset
+
+ARG MATE_VERSION
+ARG CLAUDE_VERSION
+ARG GIT_VERSION
+ARG CA_CERTIFICATES_VERSION
+ARG TAR_VERSION
+ARG GZIP_VERSION
+ARG XZ_UTILS_VERSION
+ARG OPENSSH_CLIENT_VERSION
+ARG IPTABLES_VERSION
+ARG PROCPS_VERSION
+ARG MATE_UID=10001
+ARG MATE_GID=10001
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+COPY --from=fetch /out/factory/debs/ /tmp/debs/
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      "git=${GIT_VERSION}" \
+      "ca-certificates=${CA_CERTIFICATES_VERSION}" \
+      "tar=${TAR_VERSION}" \
+      "gzip=${GZIP_VERSION}" \
+      "xz-utils=${XZ_UTILS_VERSION}" \
+      "openssh-client=${OPENSSH_CLIENT_VERSION}" \
+      "iptables=${IPTABLES_VERSION}" \
+      "procps=${PROCPS_VERSION}" \
+      /tmp/debs/containerd.io.deb /tmp/debs/docker-ce-cli.deb /tmp/debs/docker-ce.deb \
+ && rm -rf /tmp/debs /var/lib/apt/lists/*
+
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=fetch /out/bin/claude /usr/local/bin/claude
+# The companion's capability tools, as in the appliance, so `mate` inside a Workset
+# passes its installation gate offline and agents get the same tools.
+COPY --from=fetch /out/bin/tokensave /out/bin/rtk /out/bin/uv /out/bin/uvx /usr/local/bin/
+COPY --from=graphify /opt/mate/uv /opt/mate/uv
+COPY --from=packages /opt/mate/tools /opt/mate/tools
+RUN ln -sf /opt/mate/uv/tools/graphifyy/bin/graphify /usr/local/bin/graphify \
+ && ln -sf /usr/local/bin/bun /usr/local/bin/bunx \
+ && ln -sf /opt/mate/tools/node_modules/.bin/mate /usr/local/bin/mate \
+ && ln -sf /opt/mate/tools/node_modules/.bin/openspec /usr/local/bin/openspec
+
+# `docker` group membership lets the agent drive its Workset's own daemon,
+# which is the point of the nested runtime.
+RUN groupadd --gid "${MATE_GID}" mate \
+ && useradd --uid "${MATE_UID}" --gid "${MATE_GID}" --groups docker --create-home --home-dir /home/mate --shell /bin/bash mate \
+ && mkdir -p /home/mate/.claude /home/mate/.config/opencode \
+ && chown -R "${MATE_UID}:${MATE_GID}" /home/mate
+
+# TokenSave's per-agent integration, which the installation gate requires for every
+# allowed agent; an offline config write, as in the appliance image.
+USER mate
+RUN cd /home/mate \
+ && HOME=/home/mate tokensave install --agent claude --git-hook no --wildcard-permissions </dev/null \
+ && HOME=/home/mate tokensave install --agent opencode --git-hook no --wildcard-permissions </dev/null \
+ && test -f /home/mate/.claude/rules/tokensave.md
+USER root
+
+COPY scripts/workset-init.sh /usr/local/bin/mate-workset-init
+COPY scripts/workset-stop.sh /usr/local/bin/mate-workset-stop
+COPY scripts/bake-harness-bridge.sh /usr/local/bin/mate-bake-harness-bridge
+# The Claude Code harness bridge AFK runs start, pre-installed at the pinned
+# version; the build fails when the installed harness differs from the pin.
+RUN chmod +x /usr/local/bin/mate-bake-harness-bridge \
+ && mate-bake-harness-bridge /opt/mate/tools /opt/mate/harness-bridge
+RUN chmod +x /usr/local/bin/mate-workset-init /usr/local/bin/mate-workset-stop \
+ && command -v git && command -v bun && command -v node && command -v docker && command -v dockerd \
+ && command -v tokensave && command -v rtk && command -v uv && command -v uvx && graphify --version \
+ && claude --version | grep -q "^${CLAUDE_VERSION} " \
+ && scratch="$(mktemp -d)" \
+ && test "$(HOME="${scratch}" MATE_UPDATE_POLICY=pinned mate --version | tail -1)" = "${MATE_VERSION}" \
+ && rm -rf "${scratch}" \
+ && { test ! -e /etc/docker/daemon.json || { echo "a Workset's dockerd keeps runc as its default runtime" >&2; exit 1; }; }
+
+# ===========================================================================
+# Stage: workset-archive — the Workset image as a root filesystem archive.
+#
+# The appliance carries it so factory mode starts offline: startup imports it
+# into the inner daemon with the configuration in workset-image.conf, because
+# an imported filesystem has none of its own.
+# ===========================================================================
+FROM ${NODE_IMAGE} AS workset-archive
+
+ARG MATE_VERSION
+
+COPY --from=workset / /rootfs/
+RUN tar --numeric-owner -C /rootfs -cf /workset-rootfs.tar . \
+ && rm -rf /rootfs \
+ && printf '%s\n' \
+      'ENV MATE_VERSION='"${MATE_VERSION}" \
+      'ENV MATE_UPDATE_POLICY=pinned' \
+      'ENV DISABLE_AUTOUPDATER=1' \
+      'ENV UV_TOOL_DIR=/opt/mate/uv/tools' \
+      'ENV UV_TOOL_BIN_DIR=/usr/local/bin' \
+      'ENV UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python' \
+      'ENV UV_NO_MODIFY_PATH=1' \
+      'ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
+      'CMD ["/usr/local/bin/mate-workset-init"]' \
+      > /workset-image.conf
+
+# ===========================================================================
+# Stage: studio — Studio and its agent sessions, as the appliance image has
+# them. The factory stage below adds Sysbox, the inner engine and Worksets.
+# ===========================================================================
+FROM ${NODE_IMAGE} AS studio
+
+ARG TARGETARCH
+ARG MATE_VERSION
+ARG OPENCODE_VERSION
+ARG CLAUDE_VERSION
+ARG GRAPHIFY_VERSION
+ARG GRAPHIFY_PYTHON_VERSION
+ARG GIT_VERSION
+ARG CA_CERTIFICATES_VERSION
+ARG TAR_VERSION
+ARG GZIP_VERSION
+ARG XZ_UTILS_VERSION
+ARG OPENSSH_CLIENT_VERSION
+ARG MATE_UID=10001
+ARG MATE_GID=10001
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+# --- OS packages, at the exact versions the pinned base image resolves -----
+# Git is what the entrypoint clones and what the companion synchronizes with;
+# the certificate authorities and the SSH client are what either needs to reach
+# an HTTPS or an SSH remote.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      "git=${GIT_VERSION}" \
+      "ca-certificates=${CA_CERTIFICATES_VERSION}" \
+      "tar=${TAR_VERSION}" \
+      "gzip=${GZIP_VERSION}" \
+      "xz-utils=${XZ_UTILS_VERSION}" \
+      "openssh-client=${OPENSSH_CLIENT_VERSION}" \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- runtimes and tools ---------------------------------------------------
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -sf /usr/local/bin/bun /usr/local/bin/bunx
+
+COPY --from=fetch /out/bin/ /usr/local/bin/
+COPY --from=packages /opt/mate/tools /opt/mate/tools
+COPY --from=packages /opt/mate/prebuilt /opt/mate/prebuilt
+
+# The CLI entrypoints the appliance calls, and the OpenSpec and Context7
+# capability tools.
+RUN ln -sf /opt/mate/tools/node_modules/.bin/mate /usr/local/bin/mate \
+ && ln -sf /opt/mate/tools/node_modules/.bin/openspec /usr/local/bin/openspec \
+ && ln -sf /opt/mate/tools/node_modules/.bin/context7-mcp /usr/local/bin/context7-mcp
+
+# --- what the prebuilt workspace actually is -------------------------------
+# Recorded beside the bundle so its installed versions, its target, and a
+# content digest can be read without unpacking the image or starting a
+# container. Preparation validates the bundle against the distribution's own
+# pins regardless; this makes it legible rather than trustworthy.
+COPY scripts/write-bundle-manifest.ts /opt/mate/tools/startup/write-bundle-manifest.ts
+RUN bun /opt/mate/tools/startup/write-bundle-manifest.ts /opt/mate/prebuilt "${MATE_VERSION}" \
+ && test -f /opt/mate/prebuilt-manifest.json
+
+# --- graphify, from the shared hash-locked stage ----------------------------
+ENV UV_TOOL_DIR=/opt/mate/uv/tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
+    UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python \
+    UV_NO_MODIFY_PATH=1
+COPY locks/graphify.requirements.txt /opt/mate/locks/graphify.requirements.txt
+COPY --from=graphify /opt/mate/uv /opt/mate/uv
+RUN ln -sf /opt/mate/uv/tools/graphifyy/bin/graphify /usr/local/bin/graphify \
+ && graphify --version
+
+# --- the unprivileged identity the container runs as -----------------------
+# Documented in the deployment page and in image-inputs.yaml, because the
+# operator has to grant this identity write access to the companions volume.
+#
+# The agent runtimes' own home directories are created here too. Capability
+# initialisation writes into them and does not create them: `rtk init -g
+# --auto-patch` fails outright on a missing ~/.claude, and a failed
+# initialisation makes the launch's installation-state repair fail — which
+# refuses the session with advice to run `mate install` that no appliance can
+# act on. Creating them is the image's job, because the image is what decided
+# this user exists.
+RUN groupadd --gid "${MATE_GID}" mate \
+ && useradd --uid "${MATE_UID}" --gid "${MATE_GID}" --create-home --home-dir /home/mate --shell /bin/bash mate \
+ && mkdir -p /companions \
+ && mkdir -p /home/mate/.claude /home/mate/.config/opencode \
+ && chown -R "${MATE_UID}:${MATE_GID}" /companions /home/mate \
+ && chmod 0755 /companions
+
+# TokenSave's per-agent integration lives in those homes, and the launch's
+# installation gate requires it for every allowed agent. `tokensave install`
+# only writes config files, so it runs here, offline, as the identity whose
+# homes it configures — never at launch.
+USER mate
+RUN cd /home/mate \
+ && HOME=/home/mate tokensave install --agent claude --git-hook no --wildcard-permissions </dev/null \
+ && HOME=/home/mate tokensave install --agent opencode --git-hook no --wildcard-permissions </dev/null \
+ && test -f /home/mate/.claude/rules/tokensave.md \
+ && test -f /home/mate/.config/opencode/tokensave.md
+USER root
+
+# --- the entrypoint --------------------------------------------------------
+# The startup program lives under /opt/mate/tools so that `yaml`, which the
+# Mate CLI's own locked graph already installs there, resolves from an ancestor
+# `node_modules` rather than needing a second copy.
+COPY scripts/entrypoint.sh /usr/local/bin/mate-appliance
+COPY scripts/xdg-open.sh /usr/local/bin/xdg-open
+COPY src/config.ts src/discovery.ts src/factory.ts src/startup.ts /opt/mate/tools/startup/
+COPY scripts/setup.sh /opt/mate/tools/startup/setup.sh
+RUN chmod +x /usr/local/bin/mate-appliance /usr/local/bin/xdg-open \
+ && test -d /opt/mate/tools/node_modules/yaml
+
+# --- build-time assertions -------------------------------------------------
+# Everything the appliance needs is present now, and the runtime bootstrap has
+# nothing left to do. Asserted by presence, not by an installer declining.
+# Every `mate` invocation refreshes `~/.mate/runtime`, so the version check runs
+# under a scratch HOME; the real homes must stay untouched.
+RUN set -e \
+ && command -v bun \
+ && command -v node \
+ && command -v git \
+ && command -v ssh \
+ && command -v uv \
+ && command -v graphify \
+ && command -v rtk \
+ && command -v tokensave \
+ && command -v context7-mcp \
+ && command -v opencode \
+ && command -v claude \
+ && command -v xdg-open \
+ && test "$(opencode --version | sed 's/^opencode v//')" = "${OPENCODE_VERSION}" \
+ && claude --version | grep -q "^${CLAUDE_VERSION} " \
+ && bun -e 'if (typeof Bun.Terminal !== "function") { console.error("this Bun has no native pseudo-terminal; the agent terminal needs 1.3.5 or later"); process.exit(1); }' \
+ && scratch="$(mktemp -d)" \
+ && test "$(HOME="${scratch}" MATE_UPDATE_POLICY=pinned mate --version | tail -1)" = "${MATE_VERSION}" \
+ && rm -rf "${scratch}" \
+ && { test ! -e /root/.mate || { echo "unexpected /root/.mate" >&2; exit 1; }; } \
+ && { test ! -e /home/mate/.mate || { echo "unexpected /home/mate/.mate" >&2; exit 1; }; }
+
+# The version the image contains, readable without starting anything.
+LABEL org.opencontainers.image.source="https://github.com/uniqbit-ag/mate-cli" \
+      org.opencontainers.image.licenses="MIT" \
+      ai.mate.version="${MATE_VERSION}" \
+      ai.mate.opencode.version="${OPENCODE_VERSION}" \
+      ai.mate.claude.version="${CLAUDE_VERSION}"
+
+ENV MATE_VERSION=${MATE_VERSION} \
+    MATE_OPENCODE_VERSION=${OPENCODE_VERSION} \
+    MATE_CLAUDE_VERSION=${CLAUDE_VERSION} \
+    MATE_PREBUILT_WORKSPACE=/opt/mate/prebuilt \
+    MATE_COMPANIONS_DIR=/companions \
+    MATE_UPDATE_POLICY=pinned \
+    MATE_CONTEXT7_MODE=preinstalled \
+    DISABLE_AUTOUPDATER=1 \
+    HOME=/home/mate
+
+USER mate
+WORKDIR /home/mate
+
+# Studio alone. Its access token guards it; TLS and anything else in front is the operator's.
+EXPOSE 4097
+
+ENTRYPOINT ["/usr/local/bin/mate-appliance"]
+
+# ===========================================================================
+# Stage: factory — the published factory image: Studio plus Sysbox, the inner
+# Docker engine, the Workset image and the factory broker, for Product
+# Engineers running Worksets. It starts as root, privileged; its supervisor
+# starts Studio as mate. The appliance image (apps/mate-container) stays the
+# image for people who work through Studio alone.
+# ===========================================================================
+FROM studio AS factory
+
+ARG SYSBOX_VERSION
+ARG FUSE3_VERSION
+ARG RSYNC_VERSION
+ARG IPROUTE2_VERSION
+ARG KMOD_VERSION
+ARG IPTABLES_VERSION
+ARG PROCPS_VERSION
+ARG WORKSET_ARCHIVE
+
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+# Root only to start Sysbox, the inner daemon and the broker; Studio runs as mate.
+USER root
+
+# The inner daemon's configuration lives outside /etc/docker so nothing starts
+# it by accident, and its socket is root's alone: Studio and sessions reach
+# Worksets only through the factory broker.
+COPY --from=fetch /out/factory/debs/ /tmp/debs/
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      "fuse3=${FUSE3_VERSION}" \
+      "rsync=${RSYNC_VERSION}" \
+      "iproute2=${IPROUTE2_VERSION}" \
+      "kmod=${KMOD_VERSION}" \
+      "iptables=${IPTABLES_VERSION}" \
+      "procps=${PROCPS_VERSION}" \
+      /tmp/debs/containerd.io.deb /tmp/debs/docker-ce-cli.deb /tmp/debs/docker-ce.deb \
+ && rm -rf /tmp/debs /var/lib/apt/lists/*
+COPY --from=fetch /out/factory/sysbox/ /usr/bin/
+RUN mkdir -p /etc/mate-factory \
+ && printf '%s\n' \
+      '{' \
+      '  "hosts": ["unix:///run/mate-factory/docker.sock"],' \
+      '  "group": "root",' \
+      '  "runtimes": { "sysbox-runc": { "path": "/usr/bin/sysbox-runc" } },' \
+      '  "default-runtime": "sysbox-runc",' \
+      '  "log-level": "warn"' \
+      '}' > /etc/mate-factory/daemon.json
+COPY --from=workset-archive /workset-rootfs.tar ${WORKSET_ARCHIVE}
+COPY --from=workset-archive /workset-image.conf /opt/mate/workset-image.conf
+
+COPY scripts/factory-supervisor.sh /usr/local/bin/mate-factory-supervisor
+COPY scripts/bake-harness-bridge.sh /usr/local/bin/mate-bake-harness-bridge
+RUN chmod +x /usr/local/bin/mate-factory-supervisor /usr/local/bin/mate-bake-harness-bridge \
+ && command -v sysbox-runc && command -v sysbox-mgr && command -v sysbox-fs \
+ && command -v dockerd && command -v docker \
+ && test -s "${WORKSET_ARCHIVE}" && test -s /opt/mate/workset-image.conf
+
+LABEL org.opencontainers.image.title="Mate factory" \
+      org.opencontainers.image.description="A Mate factory: the Mate appliance plus Sysbox Workset containers that agents work in unattended." \
+      ai.mate.sysbox.version="${SYSBOX_VERSION}"
+
+# Factory mode is what this image is for; MATE_FACTORY=false runs Studio alone.
+ENV MATE_FACTORY=true \
+    MATE_WORKSET_ARCHIVE=${WORKSET_ARCHIVE}

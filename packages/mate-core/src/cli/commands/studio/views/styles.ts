@@ -224,6 +224,34 @@ ul.plain li:last-child { border-bottom: 0; }
 .specs-summary-item { display: grid; gap: 2px; padding-top: 10px; border-top: 1px solid var(--border); }
 .specs-summary-item strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; font-weight: 650; line-height: 1.2; }
 .specs-summary-item span { color: var(--muted); font-size: .8rem; }
+/** Factory board: five columns of Workset cards; "your turn" uses the warn tone, the agent's the info tone. */
+.factory-board { display: grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); gap: 12px; align-items: start; overflow-x: auto; }
+@media (max-width: 900px) { .factory-board { grid-template-columns: 1fr; } }
+.factory-column { display: grid; align-content: start; gap: 10px; min-width: 0; padding-top: 10px; border-top: 1px solid var(--border); }
+.factory-column h3 { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.factory-card { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); min-width: 0; }
+.factory-card[data-turn="human"] { border-color: var(--warn); }
+.factory-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.factory-card-title { font-size: .88rem; overflow-wrap: anywhere; }
+.factory-card-stage { font-size: .8rem; }
+.factory-card-meta { color: var(--muted); font-size: .7rem; overflow-wrap: anywhere; }
+.factory-turn { flex: none; font-family: var(--mono); font-size: .64rem; color: var(--info); white-space: nowrap; }
+.factory-turn[data-turn="human"] { color: var(--warn); }
+.factory-turn[data-turn="none"] { color: var(--done); }
+.factory-problems { margin: 4px 0 0; padding-left: 16px; color: var(--warn); font-size: .72rem; }
+.factory-card form { margin-top: 6px; }
+.factory-run { display: grid; gap: 4px; }
+.factory-run-state { color: var(--info); font-size: .74rem; }
+.factory-question { margin: 4px 0 0; padding: 6px 8px; border-left: 2px solid var(--warn); font-size: .8rem; }
+.factory-action { display: grid; gap: 4px; }
+.factory-action textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+.factory-create summary { cursor: pointer; color: var(--accent); font-size: .84rem; }
+.factory-create-form { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; }
+.factory-create-form label { display: grid; gap: 4px; font-size: .74rem; color: var(--muted); }
+.factory-create-intent { grid-column: 1 / -1; }
+.factory-create-form input, .factory-create-form textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+.factory-create-form button { justify-self: start; }
+
 .picker-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(252px, 1fr)); gap: 12px; }
 .picker-card { display: grid; align-content: start; gap: 5px; padding: 16px; }
 .picker-card[data-unready="true"] { border-color: var(--warn); }

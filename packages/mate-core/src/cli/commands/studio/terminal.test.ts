@@ -838,3 +838,95 @@ describe("createLaunchResolver actions", () => {
     expect(await reason("show-me", "acme-capability", "opencode")).toBe(true);
   });
 });
+
+describe("Workset sessions", () => {
+  const WORKSET_START = {
+    type: "start",
+    workset: "acme-login",
+    companion: "abc",
+    cols: 80,
+    rows: 24,
+  };
+  const resolved = (sessionId: string) => ({
+    companionPath: ACME,
+    workset: { id: "acme-login", title: "Login with SSO" },
+    argv: ["bun", "cli.mjs", "factory", "attach", "acme-login", "--session", sessionId],
+  });
+
+  test("start the attach helper the server resolved, under the session id it was given", async () => {
+    const calls: Array<[string, string | null, string]> = [];
+    const r = registry({
+      resolveWorkset: async (id, digest, sessionId) => {
+        calls.push([id, digest, sessionId]);
+        return resolved(sessionId);
+      },
+    });
+    const v = viewer();
+    await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
+    const ready = v.messages.find((message) => message.type === "ready")!;
+    expect(calls).toEqual([["acme-login", "abc", ready.sessionId as string]]);
+    expect(r.spawned[0]!.request.argv).toEqual(resolved(ready.sessionId as string).argv);
+    expect(ready.workset).toEqual({ id: "acme-login", title: "Login with SSO" });
+    expect(r.registry.list()[0]!.workset).toEqual({ id: "acme-login", title: "Login with SSO" });
+  });
+
+  test("a second start for the same Workset attaches to the live session", async () => {
+    let resolutions = 0;
+    const r = registry({
+      resolveWorkset: async (_id, _digest, sessionId) => {
+        resolutions++;
+        return resolved(sessionId);
+      },
+    });
+    const first = viewer();
+    await r.registry.connect(first).message(JSON.stringify(WORKSET_START));
+    const second = viewer();
+    await r.registry.connect(second).message(JSON.stringify(WORKSET_START));
+    expect(resolutions).toBe(1);
+    expect(r.spawned).toHaveLength(1);
+    expect(types(first)).toContain("takenOver");
+    expect(types(second)).toContain("ready");
+  });
+
+  test("a refusal starts no process and is shown", async () => {
+    const r = registry({
+      resolveWorkset: async () => ({ reason: "no Workset agent credential is configured" }),
+    });
+    const v = viewer();
+    await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
+    expect(r.spawned).toEqual([]);
+    expect(v.messages).toContainEqual({
+      type: "error",
+      reason: "no Workset agent credential is configured",
+    });
+  });
+
+  test("outside factory mode a Workset start is refused", async () => {
+    const r = registry();
+    const v = viewer();
+    await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
+    expect(r.spawned).toEqual([]);
+    expect(String(v.messages[0]!.reason)).toContain("factory mode");
+  });
+
+  test("count toward the cap with companion sessions, and ending one ends its helper", async () => {
+    const r = registry({
+      limits: { termGraceMs: 20, reapMs: 20, sessions: 2 },
+      resolveWorkset: async (_id, _digest, sessionId) => resolved(sessionId),
+    });
+    await started(r);
+    const v = viewer();
+    await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
+    expect(r.registry.list().map((session) => session.workset?.id ?? session.agent)).toEqual([
+      "claude",
+      "acme-login",
+    ]);
+    const third = viewer();
+    await r.registry.connect(third).message(JSON.stringify(START));
+    expect(String(third.messages[0]!.reason)).toContain("2 attached sessions");
+
+    const sessionId = v.messages.find((message) => message.type === "ready")!.sessionId as string;
+    await r.registry.end(sessionId);
+    expect(r.signals).toContainEqual([r.spawned[1]!.pid, "SIGTERM"]);
+  });
+});

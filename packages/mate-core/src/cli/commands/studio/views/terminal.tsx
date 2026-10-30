@@ -337,7 +337,7 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
         viewing(message.agent);
         term.reset();
         state("connected");
-        status("Connected to " + message.agent + " in " + message.companionPath + ".");
+        status(message.workset ? "Connected to Workset " + message.workset.id + "." : "Connected to " + message.agent + " in " + message.companionPath + ".");
         term.focus();
       } else if (message.type === "exit") {
         store(${JSON.stringify(TERMINAL_SESSION_KEY)}, null);
@@ -405,6 +405,26 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
     button.addEventListener("click", function () { startAgent(button.getAttribute("data-terminal-start")); });
   });
 
+  /** A Factory board card names only its Workset; the server resolves everything else. */
+  function startWorkset(workset) {
+    var dims = size();
+    var message = { type: "start", workset: workset, companion: companion, tabId: tabId, cols: dims.cols, rows: dims.rows };
+    if (!send(message)) { pending = message; connect(); }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-terminal-workset]"), function (button) {
+    button.addEventListener("click", function () {
+      revealTerminal();
+      if (root.hasAttribute("data-agent-viewed")) { status("End the current session first."); return; }
+      startWorkset(button.getAttribute("data-terminal-workset"));
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-terminal-attach-session]"), function (button) {
+    button.addEventListener("click", function () {
+      revealTerminal();
+      attach(button.getAttribute("data-terminal-attach-session"));
+    });
+  });
+
   /** The sidebar script owns collapse and drawer state, so reveal the terminal through its controls. */
   function revealTerminal() {
     var expand = document.getElementById("terminal-expand");
@@ -467,7 +487,7 @@ export const STUDIO_TERMINAL_SCRIPT = `(function () {
       body.sessions.forEach(function (session) {
         var item = document.createElement("li");
         var label = document.createElement("span");
-        label.textContent = session.agent + " · " + session.companionPath + " · " + (session.id === mine ? "this tab" : session.attached ? "attached elsewhere" : "detached") + " · " + age(session.ageSeconds);
+        label.textContent = (session.workset ? "Workset " + session.workset.id + " (" + session.workset.title + ")" : session.agent + " · " + session.companionPath) + " · " + (session.id === mine ? "this tab" : session.attached ? "attached elsewhere" : "detached") + " · " + age(session.ageSeconds);
         item.appendChild(label);
         if (session.id !== mine) item.appendChild(button(session.attached ? "Take over" : "Attach", function () { attach(session.id); }));
         item.appendChild(button("End", function () {

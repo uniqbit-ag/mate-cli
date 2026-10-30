@@ -22,7 +22,7 @@ const capabilitiesDir = join(coreSrc, "templates", "capabilities");
 const schemasDir = join(capabilitiesDir, "openspec-cap");
 
 /** `mate-*` identifiers the docs name that are not skills or schemas. Trailing `-` is a prefix. */
-const nonSkills = new Set(["mate-home", "mate-plugin-"]);
+const nonSkills = new Set(["mate-home", "mate-plugin-", "mate-appliance", "mate-factory"]);
 
 const BREAKING_START = "{/* breaking:start */}";
 const BREAKING_END = "{/* breaking:end */}";

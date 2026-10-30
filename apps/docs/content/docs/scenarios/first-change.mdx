@@ -73,6 +73,20 @@ phase, and its prompt ready to copy.
 To see where a change's delivery stands, run
 `mate artifact pending`.
 
+Studio's Factory view tracks Worksets on a board with the columns Plan,
+Review, Build, Ship and Done. Each Workset is one file, `worksets/<id>.yaml`,
+in the Companion Repository. It holds an identifier, a title, the intent, its
+Working Repository, and the changes it ships together. Create a Workset from
+the board for a Working Repository linked to the companion; it starts at
+Clarify intent. Before any change exists, you move it on by hand: to Explore
+change, then to ready for propose. Once propose links a change, the board
+derives the stage from the change's artifacts, checked tasks, archive and
+Delivery Record. A Workset with several changes sits at the least advanced
+one. A card says whose turn it is. Clarify intent, Explore change, the reviews
+and waiting for merge are yours, and the board counts those cards. The board
+records no review approval. Creating and advancing Worksets needs Studio's
+write path.
+
 ## Steps
 
 ### 1. Clarify intent (optional)

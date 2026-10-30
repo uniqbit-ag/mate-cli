@@ -126,6 +126,16 @@ if [[ ${#PACKED_TARBALLS[@]} -ne ${#PACKAGE_NAMES[@]} ]]; then
   exit 1
 fi
 
+# The factory image (apps/mate-factory) keeps its own copy of the pins; it must
+# name the very tarballs the appliance's verified, or its image could not install them.
+FACTORY_PACK_DIR="$(mktemp -d)"
+FACTORY_VERIFIED="$(bun "$ROOT_DIR/apps/mate-factory/scripts/image-pins.ts" verify "$VERSION" "$FACTORY_PACK_DIR" "$ROOT_DIR")"
+rm -rf "$FACTORY_PACK_DIR"
+if [[ "$(cut -f1,2 <<< "$FACTORY_VERIFIED")" != "$(cut -f1,2 <<< "$VERIFIED")" ]]; then
+  echo "Error: the factory image's pins differ from the appliance image's; nothing was published." >&2
+  exit 1
+fi
+
 # Prints the registry integrity of an exact version, or nothing when that
 # version does not exist. Any other registry failure stops the release.
 published_integrity() {
