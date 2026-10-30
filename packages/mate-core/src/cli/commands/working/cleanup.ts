@@ -11,6 +11,7 @@ import { checkoutCommonDir } from "../../../runtime/git-layout";
 import type { RootKind } from "../../../lib/orchestrator/root-context";
 import {
   collectWorkspaceInventory,
+  type WorkspaceInventoryPairingEntry,
   type WorkspaceInventoryV1,
 } from "../../../lib/orchestrator/workspace-inventory";
 import {
@@ -73,6 +74,32 @@ const defaultDeps: WorkingCleanupCommandDeps = {
   cleanup: cleanupWorkingRepository,
 };
 
+/**
+ * The pairings of the Checkout at `repoPath`: by path, else by clone for
+ * another Checkout of a linked clone (design Decision 7). The recorded clone
+ * still counts once the entry's folder is gone.
+ */
+async function pairingsOf(
+  repoPath: string,
+  pairings: WorkspaceInventoryPairingEntry[],
+): Promise<{ matches: WorkspaceInventoryPairingEntry[]; byClone: boolean }> {
+  const resolved = await Promise.all(
+    pairings.map(async (pairing) => ({
+      pairing,
+      repositoryPath: await canonicalPath(pairing.repository.path),
+    })),
+  );
+  const atPath = resolved.filter(({ repositoryPath }) => repositoryPath === repoPath);
+  if (atPath.length > 0) return { matches: atPath.map(({ pairing }) => pairing), byClone: false };
+  const clone = checkoutCommonDir(repoPath);
+  const ofClone = resolved.filter(
+    ({ pairing, repositoryPath }) =>
+      clone !== null &&
+      (checkoutCommonDir(repositoryPath) ?? pairing.repository.gitCommonDir) === clone,
+  );
+  return { matches: ofClone.map(({ pairing }) => pairing), byClone: true };
+}
+
 export async function runWorkingCleanupCommand(
   argv: string[],
   deps: WorkingCleanupCommandDeps = defaultDeps,
@@ -98,25 +125,7 @@ export async function runWorkingCleanupCommand(
     process.exitCode = 1;
     return;
   }
-  const inventory = await deps.collectInventory();
-  const resolvedPairings = await Promise.all(
-    inventory.pairings.map(async (pairing) => ({
-      pairing,
-      repositoryPath: await canonicalPath(pairing.repository.path),
-    })),
-  );
-  /**
-   * By path, or by clone for another Checkout of a linked clone (design
-   * Decision 7); the recorded clone still counts once the entry's folder is gone.
-   */
-  const clone = checkoutCommonDir(repoPath);
-  const atPath = resolvedPairings.filter(({ repositoryPath }) => repositoryPath === repoPath);
-  const ofClone = resolvedPairings.filter(
-    ({ pairing, repositoryPath }) =>
-      clone !== null &&
-      (checkoutCommonDir(repositoryPath) ?? pairing.repository.gitCommonDir) === clone,
-  );
-  const matches = (atPath.length > 0 ? atPath : ofClone).map(({ pairing }) => pairing);
+  const { matches, byClone } = await pairingsOf(repoPath, (await deps.collectInventory()).pairings);
   if (matches.length === 0) {
     process.stderr.write(
       `${FRAMEWORK_NAME}: working cleanup must run from a linked Git working repository\n`,
@@ -144,7 +153,7 @@ export async function runWorkingCleanupCommand(
     ...(keptDetail ? [keptDetail] : []),
   ];
   console.log(`${FRAMEWORK_NAME}: cleaned working repository (${details.join("; ")})`);
-  if (atPath.length === 0) {
+  if (byClone) {
     console.log(
       `${FRAMEWORK_NAME}: ${repoPath} is another Checkout of ${matches[0]!.repository.id}; ${FRAMEWORK_NAME} adopts it again the next time it runs here.`,
     );
