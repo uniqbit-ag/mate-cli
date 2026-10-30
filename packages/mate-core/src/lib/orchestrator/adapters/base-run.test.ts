@@ -3,6 +3,8 @@ import { EventEmitter } from "node:events";
 import path from "node:path";
 import type { spawn as SpawnFn } from "node:child_process";
 import type { AdapterContext } from "./base";
+import { policyDocument } from "../../../runtime/policy";
+import { defaultSecretPolicy } from "../../../runtime/secret-patterns";
 
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
@@ -108,7 +110,10 @@ describe("LaunchAdapter runtime", () => {
       MATE_GIT_AUTO_MODE: "0",
       MATE_REPO_ID: "repo",
       MATE_REPO_PATH: "/tmp/repo",
-      MATE_POLICY_JSON: JSON.stringify({ allowedAgents: ["claude"] }),
+      MATE_POLICY_JSON: policyDocument({
+        allowedAgents: ["claude"],
+        secrets: defaultSecretPolicy(),
+      }),
     });
     expect(environment.PATH?.split(path.delimiter)[0]).toBe(wrapperBinPath);
     expect(adapter.extendEnvironment(makeContext())).toEqual({ EXTRA_ENV: "1" });

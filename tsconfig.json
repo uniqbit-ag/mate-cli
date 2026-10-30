@@ -19,7 +19,8 @@
     "packages/mate-core/opencode-plugin/**/*.ts",
     "packages/mate-core/opencode-plugin/**/*.tsx",
     "packages/mate-core/src/**/*.ts",
-    "packages/mate-core/src/**/*.tsx"
+    "packages/mate-core/src/**/*.tsx",
+    "packages/mate-core/claude-capability-plugins/companion-mentions/hooks/companion.ts"
   ],
   "exclude": [
     "apps/mate-cli/src/**/*.test.ts",

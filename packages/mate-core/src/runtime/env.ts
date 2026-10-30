@@ -1,6 +1,6 @@
 import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
-import { isCapabilityEnabled, readCompanionPolicy } from "./policy";
+import { isCapabilityEnabled, policyDocument, readCompanionPolicy } from "./policy";
 import { resolveProjection, type ResolvedProjection } from "./projection";
 
 export { MATE_ENV, type MateEnvVariable } from "./env-names";
@@ -74,7 +74,7 @@ export function resolveCompanionRuntime(
       companionPath: projection.companionPath,
       repositoryPath: projection.repositoryPath,
       repositoryId: projection.repositoryId,
-      policyJson: JSON.stringify({ allowedAgents: policy.allowedAgents }),
+      policyJson: policyDocument(policy),
       graphifyEnabled: isCapabilityEnabled(policy, "graphify"),
       gitAutoModeEnabled: policy.gitAutoMode,
       reactDoctorEnabled: isCapabilityEnabled(policy, "react-doctor"),

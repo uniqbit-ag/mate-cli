@@ -19,6 +19,7 @@
   "hooks": {
     "before:init": [
       "bun run test",
+      "bun run --cwd ../../packages/mate-core test:hooks",
       "bun run typecheck"
     ],
     "after:bump": [
