@@ -3007,6 +3007,116 @@ describe("worktree Checkouts (share-repository-link-across-worktrees)", () => {
     return fs.readFile(path.join(scenario.companion, ".mate", "config", "registry.yaml"), "utf8");
   }
 
+  type Layout = "sibling" | "nested" | "elsewhere" | "bare";
+
+  /** A bare clone whose first worktree, the scenario's working folder, is linked. */
+  async function linkedBareClone(prefix: string): Promise<{ scenario: E2EScenario; bare: string }> {
+    const scenario = await createScenario(prefix);
+    const seed = path.join(scenario.root, "seed");
+    runGit(scenario.root, ["init", "-q", "--initial-branch=main", seed]);
+    await fs.writeFile(path.join(seed, "README.md"), "# app\n", "utf8");
+    runGit(seed, ["add", "README.md"]);
+    runGit(seed, [
+      "-c",
+      "user.email=mate-e2e@example.com",
+      "-c",
+      "user.name=Mate E2E",
+      "commit",
+      "-qm",
+      "initial",
+    ]);
+    const bare = path.join(scenario.root, "app.git");
+    runGit(scenario.root, ["clone", "-q", "--bare", seed, bare]);
+    runGit(bare, ["worktree", "add", "-q", scenario.working, "main"]);
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+    return { scenario, bare };
+  }
+
+  /** The linked Checkout, and another Checkout of its clone in `layout`. */
+  async function checkoutsIn(layout: Layout): Promise<{ scenario: E2EScenario; other: string }> {
+    const prefix = `mate-cli-e2e-worktree-${layout}-`;
+    if (layout === "bare") {
+      const { scenario, bare } = await linkedBareClone(prefix);
+      const other = path.join(scenario.root, "app-fix");
+      runGit(bare, ["worktree", "add", "-q", "-b", "fix", other]);
+      return { scenario, other: await fs.realpath(other) };
+    }
+    const scenario = await linkedClone(prefix);
+    const folders: Record<Exclude<Layout, "bare">, string> = {
+      sibling: path.join(scenario.root, "app-fix"),
+      nested: path.join(scenario.working, ".claude", "worktrees", "fix"),
+      elsewhere: path.join(scenario.root, "elsewhere", "deep", "fix"),
+    };
+    return { scenario, other: await addWorktree(scenario, folders[layout], "fix") };
+  }
+
+  async function repositoryLinkAt(checkout: string): Promise<{ id: string; path: string }> {
+    const raw = await fs.readFile(path.join(checkout, ".mate", "config", "registry.yaml"), "utf8");
+    return (parse(raw) as { repository: { id: string; path: string } }).repository;
+  }
+
+  for (const layout of ["sibling", "nested", "elsewhere", "bare"] as const) {
+    test(`in a ${layout} worktree, resolve, launch, prepare, wrap and cleanup keep one entry per clone`, async () => {
+      const { scenario, other } = await checkoutsIn(layout);
+      const capturePath = await writeAdapterStub(scenario, "claude");
+      const registry = await registryText(scenario);
+      const entries = (parse(registry) as { repos: { id: string; path: string }[] }).repos;
+      expect(entries.map(({ id, path: entryPath }) => ({ id, path: entryPath }))).toEqual([
+        { id: "app", path: scenario.working },
+      ]);
+
+      const doctor = await runMate(scenario, { cwd: other, args: ["doctor", "--json"] });
+      const report = JSON.parse(doctor.stdout) as {
+        repositoryId: string | null;
+        companionPath: string | null;
+        checkout?: { role: string; registeredCheckout: string | null };
+      };
+      expect(report).toMatchObject({
+        repositoryId: "app",
+        companionPath: scenario.companion,
+        checkout: { role: "other", registeredCheckout: scenario.working },
+      });
+
+      const launch = await runMate(scenario, {
+        cwd: other,
+        args: ["claude", "--print", "hello"],
+        input: "y\n",
+        env: { MATE_E2E_CAPTURE_PATH: capturePath },
+      });
+      expect(launch.exitCode).toBe(0);
+      const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as {
+        cwd: string;
+        env: Record<string, string | null>;
+      };
+      expect(capture.cwd).toBe(other);
+      expect(capture.env.MATE_REPO_PATH).toBe(other);
+
+      const prepare = await runMate(scenario, {
+        cwd: other,
+        args: ["session", "prepare", "--repo", other, "--json"],
+      });
+      expect(prepare.exitCode).toBe(0);
+      const wrap = await runMate(scenario, { cwd: other, args: ["wrap"] });
+      expect(wrap.exitCode).toBe(0);
+
+      expect(await repositoryLinkAt(scenario.working)).toEqual({
+        id: "app",
+        path: scenario.working,
+      });
+      expect(await repositoryLinkAt(other)).toEqual({ id: "app", path: other });
+      expect(await registryText(scenario)).toBe(registry);
+
+      const cleanup = await runMate(scenario, { cwd: other, args: ["working", "cleanup"] });
+      expect(cleanup.exitCode).toBe(0);
+      expect(cleanup.stdout).toContain(`${other} is another Checkout of app`);
+      expect(existsSync(path.join(scenario.working, ".mate", "config", "registry.yaml"))).toBe(
+        true,
+      );
+      expect(await registryText(scenario)).toBe(registry);
+    }, 120_000);
+  }
+
   test("mate claude in a nested worktree starts Claude in the worktree, naming it in MATE_REPO_PATH", async () => {
     const scenario = await linkedClone("mate-cli-e2e-worktree-launch-");
     const capturePath = await writeAdapterStub(scenario, "claude");

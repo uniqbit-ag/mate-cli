@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { parse } from "yaml";
 
 import { readCompanionGitRecord } from "../runtime/companion-git-state";
 import { projectionEnvPath, projectionYamlPath } from "../runtime/projection";
@@ -986,6 +987,52 @@ describe.skipIf(!runRealAgentTests || !hasClaude)(
         const body = requestFor(mock, "say hi").body;
         expectExactlyOnce(flattenRequest(body), INSTRUCTIONS_MARKER, "worktree session");
         assertCompanionRulesOnce(body, "worktree session");
+      } finally {
+        await mock.close();
+      }
+    }, 120_000);
+
+    test("a plain session in a new sibling worktree has an artifact write blocked, and adopts the worktree", async () => {
+      const scenario = await claudeScenario("mate-cli-e2e-plain-claude-new-worktree-");
+      expect((await runMate(scenario, { cwd: scenario.working, args: ["wrap"] })).exitCode).toBe(0);
+      runGit(scenario.working, [
+        "-c",
+        "user.email=mate-e2e@example.com",
+        "-c",
+        "user.name=Mate E2E",
+        "commit",
+        "--allow-empty",
+        "-qm",
+        "initial",
+      ]);
+      /** As T3 Code or `claude --worktree` makes it: Git's files only, no `.mate/` and no `.claude/`. */
+      const worktree = path.join(scenario.root, "app-fix");
+      runGit(scenario.working, ["worktree", "add", "-q", "-b", "fix", worktree]);
+      await expect(fs.access(path.join(worktree, ".mate"))).rejects.toThrow();
+      const note = path.join(worktree, "notes", "plan.md");
+      const mock = await startMockModelServer((request) =>
+        request.body.includes('"tool_result"')
+          ? { text: "ok" }
+          : { toolUse: { name: "Write", input: { file_path: note, content: "# plan\n" } } },
+      );
+
+      try {
+        const result = await runPlainClaude(
+          scenario,
+          worktree,
+          ["--print", "write the plan", "--permission-mode", "acceptEdits"],
+          mock,
+        );
+
+        expect(result.exitCode).toBe(0);
+        const blocked = mock.requests.find((request) => request.body.includes('"tool_result"'));
+        if (!blocked) throw new Error(`no tool result among ${mock.requests.length} requests`);
+        expect(flattenRequest(blocked.body)).toContain(scenario.companion);
+        await expect(fs.access(note)).rejects.toThrow();
+        const link = parse(await fs.readFile(repoLocalRegistryPath(worktree), "utf8")) as {
+          repository: { id: string; path: string };
+        };
+        expect(link.repository).toEqual({ id: "app", path: await fs.realpath(worktree) });
       } finally {
         await mock.close();
       }
