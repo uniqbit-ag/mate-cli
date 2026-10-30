@@ -1,7 +1,7 @@
 import { buildOpenCodeGuidance } from "../runtime/companion-guidance";
 import { MATE_ENV } from "../runtime/env-names";
 import { parseGuidanceContent, type MateGuidanceFile } from "../runtime/guidance";
-import { resolveSession } from "../runtime/session-resolution";
+import { resolveSessionWithoutBorrowing } from "../runtime/session-resolution";
 
 /**
  * `null` guidance with no errors is the inert case — no companion resolves, so
@@ -38,7 +38,7 @@ export function resolveOpenCodeGuidance(
     return { guidance: errors.length > 0 ? null : guidance, errors };
   }
 
-  const session = resolveSession(env, cwd);
+  const session = resolveSessionWithoutBorrowing(env, cwd);
   if (session.kind !== "projection") return { guidance: null, errors: [] };
 
   const policy = session.policy();

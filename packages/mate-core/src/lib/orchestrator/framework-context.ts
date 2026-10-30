@@ -7,6 +7,7 @@ import { parse } from "yaml";
 import { CompanionRegistryStore } from "./companion-registry-store";
 import { ConfigStore } from "./config-store";
 import { GlobalConfigStore } from "./global-config-store";
+import { entryAtCheckout } from "./registry-checkouts";
 import {
   backfillCompanionRegistration,
   CompanionResolver,
@@ -37,14 +38,22 @@ export interface LaunchContext extends FrameworkContext {
   repositoryId: string;
 }
 
-function repositoryFromEnvironment(): LinkedRepository | undefined {
+/**
+ * The launch's repository as `folder` sees it: the launch environment's ID,
+ * at the root of the Checkout holding `folder` when that is another Checkout
+ * of `MATE_REPO_PATH`'s clone (design Decision 11), else at `MATE_REPO_PATH`.
+ */
+function repositoryFromEnvironment(folder: string): LinkedRepository | undefined {
   const repositoryPath = process.env.MATE_REPO_PATH;
   if (!repositoryPath) return undefined;
 
-  return {
-    id: process.env.MATE_REPO_ID ?? path.basename(path.resolve(repositoryPath)),
-    path: path.resolve(repositoryPath),
-  };
+  return entryAtCheckout(
+    {
+      id: process.env.MATE_REPO_ID ?? path.basename(path.resolve(repositoryPath)),
+      path: path.resolve(repositoryPath),
+    },
+    folder,
+  );
 }
 
 /**
@@ -171,7 +180,7 @@ export async function resolveFrameworkContext(
 ): Promise<FrameworkContext> {
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
   if (envCompanionPath) {
-    const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
+    const repository = repositoryFromEnvironment(cwd) ?? (await findRepoLocalLinkedRepository(cwd));
     return withResolvedHub(makeContext(envCompanionPath, "env", repository ?? undefined));
   }
 
@@ -214,7 +223,7 @@ export async function resolveForLaunch(
       const context = await withResolvedHub(makeContext(envCompanionPath, "env"));
       return { ...context, repositoryId: "" };
     }
-    const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
+    const repository = repositoryFromEnvironment(cwd) ?? (await findRepoLocalLinkedRepository(cwd));
     const repositoryId = process.env.MATE_REPO_ID ?? repository?.id ?? "";
     const context = await withResolvedHub(
       makeContext(envCompanionPath, "env", repository ?? undefined),
@@ -281,7 +290,7 @@ export async function resolveForCapability(
 ): Promise<LaunchContext> {
   const envCompanionPath = process.env.MATE_ARTIFACT_PATH;
   if (envCompanionPath) {
-    const repository = repositoryFromEnvironment() ?? (await findRepoLocalLinkedRepository(cwd));
+    const repository = repositoryFromEnvironment(cwd) ?? (await findRepoLocalLinkedRepository(cwd));
     const ctx = await withResolvedHub(
       makeContext(envCompanionPath, "env", repository ?? undefined),
     );

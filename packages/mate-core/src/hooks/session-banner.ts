@@ -14,7 +14,7 @@ import { projectionFreshness, projectionStalenessLines } from "../runtime/freshn
 import { mateVersion } from "../runtime/install";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { resolveSession, sessionRefusalNotice } from "../runtime/session-resolution";
-import { hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
+import { hookFolder, hookOutcome, runHook, type HookEnv, type HookOutcome } from "./hook-io";
 
 /**
  * Resolves in-process through Session Resolution — no subprocess. One of the
@@ -76,7 +76,7 @@ export async function buildBanner(
 /** Plugin-shim entry; exits zero even when the banner fails. */
 export function run(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   return runHook(
-    () => buildBanner(process.env, process.cwd(), argv),
+    (input) => buildBanner(process.env, hookFolder(input, process.env, process.cwd()), argv),
     (error) =>
       hookOutcome({
         systemMessage: `${FRAMEWORK_NAME}: session banner failed: ${errorMessage(error)}`,

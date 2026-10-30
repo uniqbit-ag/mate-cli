@@ -12,7 +12,7 @@ import {
   singleWrite,
   type GuardedToolCall,
 } from "../runtime/tool-guard";
-import type { HookEnv } from "./hook-io";
+import { hookFolder, type HookEnv } from "./hook-io";
 
 export interface HookOutcome {
   exitCode: number;
@@ -128,7 +128,7 @@ export async function run(): Promise<number> {
   }
   let outcome: HookOutcome;
   try {
-    outcome = await evaluate(payload, process.env);
+    outcome = await evaluate(payload, process.env, hookFolder(payload, process.env, process.cwd()));
   } catch (error) {
     outcome = { exitCode: 2, stderr: `${guardFailureMessage(error)}\n` };
   }

@@ -6,6 +6,7 @@ import { parse, stringify } from "yaml";
 
 import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
+import { checkoutRootOf, cloneAt, namesOtherCheckout } from "./git-layout";
 import { findRepoLocalRegistryFileSync, repoLocalDirPath } from "./repo-local";
 
 /** Generated projection files, directly under the repo-local `.mate/`. */
@@ -204,21 +205,55 @@ export interface ResolvedProjection extends MateProjection {
   repoRoot: string;
   /** Recorded, never judged here: the verdict needs inputs this module lacks. */
   stamp: string;
+  /**
+   * Set when a linked worktree borrows another Checkout's projection (design
+   * Decision 9): the lender's root, which `repoRoot` also names. `repositoryPath`
+   * is then the worktree's root, the Checkout the session serves.
+   */
+  borrowedFrom?: string;
+}
+
+function projectionAt(root: string): ResolvedProjection | null {
+  const file = readProjectionFile(root);
+  return file ? { repoRoot: root, stamp: file.stamp, ...file.projection } : null;
+}
+
+/**
+ * The projection a linked worktree with none of its own borrows: the main
+ * worktree's, else the first live linked worktree's by record name. The
+ * lender's companion, ID and Graphify output stay; `repositoryPath` becomes
+ * the worktree.
+ */
+function borrowedProjection(cwd: string): ResolvedProjection | null {
+  const checkout = checkoutRootOf(cwd);
+  if (checkout?.layout.kind !== "linked") return null;
+  const clone = cloneAt(checkout.layout.commonDir);
+  if (!clone) return null;
+  const lenders = [
+    clone.mainWorktree,
+    ...clone.linkedWorktrees.filter((worktree) => worktree.live).map((worktree) => worktree.path),
+  ];
+  for (const lender of lenders) {
+    if (lender === null || lender === checkout.root) continue;
+    const lent = projectionAt(lender);
+    if (lent) return { ...lent, repositoryPath: checkout.root, borrowedFrom: lender };
+  }
+  return null;
 }
 
 /**
  * Synchronous, paths only, so a hook or shell that cannot await can use it.
  * Anchored to the directory holding the repo-local `registry.yaml` rather than
  * walking independently for `projection.yaml`, so it cannot resolve a
- * projection belonging to a different ancestor than the registry does. The
+ * projection belonging to a different ancestor than the registry does. A
+ * projection copied from another Checkout of the clone is that Checkout's, so
+ * a linked worktree borrows instead, as it does with none of its own. The
  * projected `companionPath` is not stat-ed: a reader that needs the companion
  * to exist fails in its own terms.
  */
 export function resolveProjection(cwd: string): ResolvedProjection | null {
   const found = findRepoLocalRegistryFileSync(cwd);
-  if (!found) return null;
-
-  const file = readProjectionFile(found.repoRoot);
-  if (!file) return null;
-  return { repoRoot: found.repoRoot, stamp: file.stamp, ...file.projection };
+  const own = found ? projectionAt(found.repoRoot) : null;
+  if (own && !namesOtherCheckout(own.repoRoot, own.repositoryPath)) return own;
+  return borrowedProjection(cwd);
 }

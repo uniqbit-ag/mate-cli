@@ -6,9 +6,17 @@ import {
   globalConfigPath,
   readCompanionRegistrySync,
   readGlobalCompanionsSync,
+  type RegistryLink,
 } from "./companion-registry-read";
 import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
+import {
+  checkoutCommonDir,
+  checkoutRootOf,
+  isDirectory,
+  namesOtherCheckout,
+  sameClone,
+} from "./git-layout";
 import { canonicalPath, physicalPath } from "./physical-path";
 import {
   isCapabilityEnabled,
@@ -114,9 +122,20 @@ function policyReaders(companionPath: string) {
   };
 }
 
-function launchSession(env: SessionEnv): LaunchSession {
+/**
+ * The Checkout a launch serves from `folder`: the root of the Checkout holding
+ * it when that is another Checkout of the launch repository's clone (design
+ * Decision 11), else the launch repository.
+ */
+function launchCheckout(repositoryPath: string, folder: string): string {
+  if (!repositoryPath) return "";
+  const root = checkoutRootOf(folder)?.root;
+  return root && namesOtherCheckout(repositoryPath, root) ? root : repositoryPath;
+}
+
+function launchSession(env: SessionEnv, folder: string): LaunchSession {
   const companionPath = canonicalPath(env[MATE_ENV.companionPath] ?? "");
-  const checkoutRoot = env[MATE_ENV.repositoryPath] ?? "";
+  const checkoutRoot = launchCheckout(env[MATE_ENV.repositoryPath] ?? "", folder);
   const policyJson = env[MATE_ENV.policyJson] ?? "{}";
   const flags: SessionFlags = {
     graphify: env[MATE_ENV.graphifyEnabled] === "1",
@@ -172,8 +191,24 @@ function refused(
 }
 
 /**
+ * The registry links `repositoryId` at `root`, or at another Checkout of its
+ * clone (design Decision 17): a live one by its shared Git folder, one whose
+ * folder is gone by the shared Git folder it records.
+ */
+function linksCheckoutOrClone(link: RegistryLink, repositoryId: string, root: string): boolean {
+  if (link.id !== repositoryId) return false;
+  const linked = physicalPath(link.path);
+  if (linked === root) return true;
+  const clone = checkoutCommonDir(root);
+  if (clone === null) return false;
+  return isDirectory(linked) ? checkoutCommonDir(linked) === clone : link.gitCommonDir === clone;
+}
+
+/**
  * Matches the Checkout the projection was found in, not the one it claims: a
- * cloned repository's projection could name another linked Checkout.
+ * cloned repository's projection could name another linked Checkout. A
+ * borrowed projection is checked at its lender, and serves the borrowing
+ * worktree only as a Checkout of the lender's clone.
  */
 function projectionSession(
   env: SessionEnv,
@@ -207,12 +242,12 @@ function projectionSession(
 
   const registryPath = companionRegistryPath(companionPath);
   const links = readTrustFile(registryPath, () => readCompanionRegistrySync(companionPath));
-  const checkoutRoot = physicalPath(projection.repoRoot);
+  const foundAt = physicalPath(projection.repoRoot);
+  const checkoutRoot = projection.borrowedFrom ? physicalPath(projection.repositoryPath) : foundAt;
   if (
     !links.ok ||
-    !links.value.some(
-      (link) => link.id === projection.repositoryId && physicalPath(link.path) === checkoutRoot,
-    )
+    !links.value.some((link) => linksCheckoutOrClone(link, projection.repositoryId, foundAt)) ||
+    (projection.borrowedFrom !== undefined && !sameClone(foundAt, checkoutRoot))
   ) {
     return refused(
       "repository-not-linked",
@@ -241,8 +276,24 @@ export function resolveSession(
   folder: string,
   deps: SessionResolutionDeps = {},
 ): ResolvedSession {
-  if (hasLaunchEnvironment(env)) return launchSession(env);
+  if (hasLaunchEnvironment(env)) return launchSession(env, folder);
   return projectionSession(env, folder, deps);
+}
+
+/**
+ * Session Resolution for OpenCode: a borrowed projection answers no session,
+ * since plain `opencode` in a worktree Mate never ran in stays out of scope
+ * (design Decision 9).
+ */
+export function resolveSessionWithoutBorrowing(
+  env: SessionEnv,
+  folder: string,
+  deps: SessionResolutionDeps = {},
+): ResolvedSession {
+  const session = resolveSession(env, folder, deps);
+  return session.kind === "projection" && session.projection.borrowedFrom !== undefined
+    ? { kind: "none" }
+    : session;
 }
 
 const REFUSAL_REASONS: Record<SessionRefusalCode, string> = {

@@ -76,3 +76,45 @@ describe("Adoption in resolution", () => {
     expect(errors.join("\n")).toContain(`failed to write the repository link in ${worktree}`);
   });
 });
+
+describe("inside a Mate launch, the folder picks the Checkout", () => {
+  const saved = { ...process.env };
+
+  afterEach(() => {
+    for (const name of ["MATE_ARTIFACT_PATH", "MATE_REPO_PATH", "MATE_REPO_ID"]) {
+      if (saved[name] === undefined) delete process.env[name];
+      else process.env[name] = saved[name];
+    }
+  });
+
+  function launchedFrom(clone: LinkedClone): void {
+    process.env.MATE_ARTIFACT_PATH = clone.companionPath;
+    process.env.MATE_REPO_PATH = clone.main;
+    process.env.MATE_REPO_ID = "acme";
+  }
+
+  test("a folder in another Checkout of the clone is that Checkout, and nothing is written", async () => {
+    const clone = await linkedClone();
+    const worktree = addWorktree(clone.main, path.join(clone.root, "acme-fix"));
+    await fs.mkdir(path.join(worktree, "src"));
+    launchedFrom(clone);
+
+    const context = await resolveForLaunch(path.join(worktree, "src"), clone.store);
+
+    expect(context.repository).toEqual({ id: "acme", path: worktree });
+    expect(context.repositoryId).toBe("acme");
+    expect(context.companionPath).toBe(clone.companionPath);
+    expect(await fs.exists(path.join(worktree, ".mate"))).toBe(false);
+  });
+
+  test("a folder outside the clone keeps MATE_REPO_PATH", async () => {
+    const clone = await linkedClone();
+    const outside = path.join(clone.root, "outside");
+    await fs.mkdir(outside);
+    launchedFrom(clone);
+
+    const context = await resolveForCapability(outside, clone.store);
+
+    expect(context.repository).toEqual({ id: "acme", path: clone.main });
+  });
+});

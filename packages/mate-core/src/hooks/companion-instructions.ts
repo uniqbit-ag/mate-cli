@@ -12,7 +12,7 @@ import { FRAMEWORK_NAME } from "../runtime/framework";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { managedSessionKind, type SessionKind } from "../runtime/session-kind";
 import { resolveSession, type ResolvedSession } from "../runtime/session-resolution";
-import { hookOutcome, runHook, type HookCall } from "./hook-io";
+import { hookFolder, hookOutcome, runHook, type HookCall } from "./hook-io";
 
 export interface InstructionHookPayload {
   hookSpecificOutput?: { hookEventName: InstructionEvent; additionalContext: string };
@@ -108,7 +108,7 @@ function evaluate(
   if (event !== "SessionStart" && event !== "SubagentStart") return null;
   if (event === "SubagentStart" && SKIPPED_AGENTS.has(input.agent_type ?? "")) return null;
 
-  const session = resolveSession(env, directory || input.cwd || cwd);
+  const session = resolveSession(env, directory || hookFolder(input, env, cwd));
   if (!ownsEvent(event, sessionKind(session), projected)) return null;
 
   const reader = readerInput(session);

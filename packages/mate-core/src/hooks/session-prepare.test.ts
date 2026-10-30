@@ -378,7 +378,8 @@ describe("session-start hook", () => {
     expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
   });
 
-  test("the instructions are read from the folder the prepare ran in", async () => {
+  /** The input's `cwd` first: after EnterWorktree, `CLAUDE_PROJECT_DIR` still names the starting folder. */
+  test("the instructions are read from the folder the prepare ran in, the input's cwd first", async () => {
     const repo = projectedRepo("claude");
     companionOf(repo);
     const elsewhere = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "acme-elsewhere-")));
@@ -387,10 +388,10 @@ describe("session-start hook", () => {
 
     const outcome = await runSessionStartHook(
       {
-        env: { ...plainEnv(repo), CLAUDE_PROJECT_DIR: repo },
+        env: { ...plainEnv(repo), CLAUDE_PROJECT_DIR: elsewhere },
         cwd: elsewhere,
         argv: [PROJECTED_FLAG],
-        input: { ...sessionStart, cwd: elsewhere },
+        input: { ...sessionStart, cwd: repo },
       },
       deps,
     );

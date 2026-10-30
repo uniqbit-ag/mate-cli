@@ -5,7 +5,10 @@ import { persistedCompanionGitStalenessLines } from "../runtime/companion-sync";
 import { MATE_ENV } from "../runtime/env-names";
 import { FRAMEWORK_NAME } from "../runtime/framework";
 import { projectionFreshness, projectionStalenessLines } from "../runtime/freshness";
-import { resolveSession, type ResolvedSession } from "../runtime/session-resolution";
+import {
+  resolveSessionWithoutBorrowing,
+  type ResolvedSession,
+} from "../runtime/session-resolution";
 import { readSessionNotes } from "./session-notes";
 
 /**
@@ -72,7 +75,7 @@ export function readContext(
   env: Record<string, string | undefined> = process.env,
   cwd: string = process.cwd(),
 ): CompanionContext {
-  const session = resolveSession(env, cwd);
+  const session = resolveSessionWithoutBorrowing(env, cwd);
   const fields = sessionFields(session, env);
 
   let agentsMd = "";
@@ -107,5 +110,5 @@ export function readStalenessLines(
   env: Record<string, string | undefined> = process.env,
   cwd: string = process.cwd(),
 ): string[] {
-  return stalenessLinesFor(resolveSession(env, cwd));
+  return stalenessLinesFor(resolveSessionWithoutBorrowing(env, cwd));
 }
