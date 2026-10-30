@@ -6,6 +6,10 @@ import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
+import { checkoutCommonDir, checkoutRootOf, sameClone } from "../../runtime/git-layout";
+import { physicalPath } from "../../runtime/physical-path";
+import { servingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
+import { readWrapStateSync } from "../../runtime/wrap-state";
 import { companionClaudeMdHasOwnText } from "../../runtime/companion-instructions";
 import {
   resolveSession,
@@ -14,6 +18,9 @@ import {
 } from "../../runtime/session-resolution";
 import { getActiveDistribution } from "../../distribution";
 import { hasOpenspecCapability } from "../../lib/orchestrator/capabilities";
+import { inheritedWrapRuntimes } from "../../lib/orchestrator/checkout-adoption";
+import { registeredCheckoutOf } from "../../lib/orchestrator/registry-checkouts";
+import { readCompanionRegistry } from "../../lib/orchestrator/repository-link";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { pathIsDirectory } from "../../lib/fs-utils";
@@ -45,6 +52,7 @@ import {
   type ClaudePluginDirectoryReport,
   type ClaudePluginUnpublishedReason,
 } from "../../tools/setup/providers/claude-plugin-folders";
+import { isMateSessionPrepareHookGroup } from "../../tools/setup/providers/claude-plugin-hooks";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
 import { writeJsonStdout } from "../write-json-stdout";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
@@ -126,6 +134,25 @@ export interface DoctorReport {
    * Resolution's own refusal, so doctor and the sessions cannot disagree.
    */
   projectionRefusal?: SessionRefusal;
+  /** Present inside a Git Checkout of a linked clone, or a worktree Git no longer recognizes. */
+  checkout?: DoctorCheckout;
+}
+
+export interface DoctorCheckout {
+  /** The root of the Checkout holding the current directory. */
+  root: string;
+  /**
+   * `registered`: the clone's Registered Checkout. `other`: another Checkout of
+   * the clone. `not-recognized`: a linked worktree whose record in the shared
+   * Git folder names another folder, which `git worktree repair` fixes.
+   */
+  role: "registered" | "other" | "not-recognized";
+  repositoryId: string | null;
+  registeredCheckout: string | null;
+  /** The Checkout whose Claude wrap serves this one. */
+  servingClaudeWrap: string;
+  /** Set when plain `claude` sessions here start without Mate's session prepare. */
+  servingWrapWarning?: string;
 }
 
 interface ToolCheck {
@@ -389,6 +416,73 @@ function collectCompanionInstructionWarnings(
   ];
 }
 
+/** The Checkout's own wraps, or those Adoption would give it (design Decision 8). */
+async function wrappedForClaude(
+  companionPath: string | null,
+  repository: { id: string; path: string } | null,
+): Promise<boolean> {
+  if (!repository) return false;
+  if (readWrapStateSync(repository.path).runtimes.has("claude")) return true;
+  return (
+    companionPath !== null &&
+    (await inheritedWrapRuntimes(companionPath, repository)).includes("claude")
+  );
+}
+
+/**
+ * The Checkout section (design Decision 15): how the Checkout holding `cwd`
+ * relates to its linked clone, and whether plain `claude` sessions there
+ * still reach a session-prepare hook.
+ */
+async function collectCheckout(
+  cwd: string,
+  report: DoctorReport,
+): Promise<DoctorCheckout | undefined> {
+  const found = checkoutRootOf(cwd);
+  if (!found) return undefined;
+  const { root } = found;
+  const servingClaudeWrap = servingClaudeWrapRoot(root);
+  if (found.layout.kind === "linked" && checkoutCommonDir(root) === null) {
+    return {
+      root,
+      role: "not-recognized",
+      repositoryId: null,
+      registeredCheckout: null,
+      servingClaudeWrap: root,
+    };
+  }
+  const { companionPath, repositoryId } = report;
+  if (!companionPath || !repositoryId) return undefined;
+  const { repos } = await readCompanionRegistry(companionPath).catch(() => ({ repos: [] }));
+  const entry = repos.find((repo) => repo.id === repositoryId);
+  const registeredCheckout = entry ? registeredCheckoutOf(entry) : null;
+  if (
+    !registeredCheckout ||
+    !(physicalPath(registeredCheckout) === root || sameClone(registeredCheckout, root))
+  ) {
+    return undefined;
+  }
+  const checkout: DoctorCheckout = {
+    root,
+    role: physicalPath(registeredCheckout) === root ? "registered" : "other",
+    repositoryId,
+    registeredCheckout,
+    servingClaudeWrap,
+  };
+  const carriesPrepare = (checkoutRoot: string) =>
+    readWrapStateSync(checkoutRoot).carriedClaudeHookGroups.some(isMateSessionPrepareHookGroup);
+  if (
+    physicalPath(servingClaudeWrap) !== root &&
+    (await wrappedForClaude(companionPath, { id: repositoryId, path: root })) &&
+    !carriesPrepare(servingClaudeWrap) &&
+    !carriesPrepare(root)
+  ) {
+    const settings = path.join(servingClaudeWrap, ".claude", "settings.local.json");
+    checkout.servingWrapWarning = `Plain \`claude\` sessions in ${root} start without Mate: Claude Code reads its hooks from ${settings}, which carries no ${FRAMEWORK_NAME} session-prepare hook. Run \`${FRAMEWORK_NAME} wrap\` here or in ${servingClaudeWrap}.`;
+  }
+  return checkout;
+}
+
 export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<DoctorReport> {
   const cwd = path.resolve(deps.cwd ?? process.cwd());
   const pathValue = deps.pathValue ?? process.env.PATH ?? "";
@@ -409,6 +503,9 @@ export async function collectDoctorReport(deps: DoctorDeps = {}): Promise<Doctor
   /** What a plain session here would get, so the launch environment doctor runs under is ignored. */
   const session = resolveSession({}, cwd, { globalConfigPath: deps.globalConfigStore?.configPath });
   if (session.kind === "none" && session.refusal) report.projectionRefusal = session.refusal;
+
+  const checkout = await collectCheckout(cwd, report);
+  if (checkout) report.checkout = checkout;
 
   if (kind === "working") {
     await collectWorkingSections(report, root, pathValue);
@@ -569,6 +666,31 @@ function renderClaudePlugins(
   ].join("\n");
 }
 
+const CHECKOUT_ROLES: Record<DoctorCheckout["role"], (checkout: DoctorCheckout) => string> = {
+  registered: ({ repositoryId }) => `the Registered Checkout of ${repositoryId}`,
+  other: ({ repositoryId }) => `another Checkout of ${repositoryId}, adopted from its entry`,
+  "not-recognized": () => "a linked worktree its clone no longer recognizes",
+};
+
+function renderCheckout(checkout: DoctorCheckout): string {
+  const lines = [
+    renderKeyValueTable([
+      ["Checkout", checkout.root],
+      ["Role", CHECKOUT_ROLES[checkout.role](checkout)],
+      ["Registered Checkout", checkout.registeredCheckout ?? "none"],
+      ["Serving Claude Wrap", checkout.servingClaudeWrap],
+    ]),
+  ];
+  if (checkout.role === "not-recognized") {
+    lines.push(
+      "",
+      `Its record in the shared Git folder names another folder, so ${FRAMEWORK_NAME} treats it as no Checkout of the clone. Run \`git worktree repair\` in ${checkout.root}.`,
+    );
+  }
+  if (checkout.servingWrapWarning) lines.push("", `Warning: ${checkout.servingWrapWarning}`);
+  return lines.join("\n");
+}
+
 function renderProjectionRefusal(refusal: SessionRefusal): string {
   return [
     `This folder's projection names ${refusal.companionPath}, a companion that ${sessionRefusalReason(refusal)}.`,
@@ -678,6 +800,7 @@ function renderHumanReport(report: DoctorReport): void {
   if (report.projectionRefusal) {
     printSection("Refused Projection", renderProjectionRefusal(report.projectionRefusal));
   }
+  if (report.checkout) printSection("Checkout", renderCheckout(report.checkout));
 
   printSection(
     "Resolution Failures",
