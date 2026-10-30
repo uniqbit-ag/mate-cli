@@ -141,10 +141,7 @@ export async function runWrapCommand(
             message: "another companion synchronization is still running.",
           },
         };
-  if (served) {
-    const state = served.result.kind === "failed" ? "failed" : served.result.kind;
-    console.log(`Serving Claude wrap: ${served.repository.path} (${state})`);
-  }
+  if (served) console.log(`Serving Claude wrap: ${served.repository.path} (${served.result.kind})`);
   if (result.kind === "failed") {
     console.error(`${FRAMEWORK_NAME}: ${result.message}`);
     process.exitCode = 1;
