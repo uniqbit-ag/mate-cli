@@ -8,7 +8,7 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { gitEnvironment } from "../../runtime/companion-git";
 import { checkoutCommonDir, checkoutRootOf, sameClone } from "../../runtime/git-layout";
 import { physicalPath } from "../../runtime/physical-path";
-import { servingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
+import { otherServingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
 import { readWrapStateSync } from "../../runtime/wrap-state";
 import { companionClaudeMdHasOwnText } from "../../runtime/companion-instructions";
 import {
@@ -18,9 +18,10 @@ import {
 } from "../../runtime/session-resolution";
 import { getActiveDistribution } from "../../distribution";
 import { hasOpenspecCapability } from "../../lib/orchestrator/capabilities";
-import { inheritedWrapRuntimes } from "../../lib/orchestrator/checkout-adoption";
-import { registeredCheckoutOf } from "../../lib/orchestrator/registry-checkouts";
-import { readCompanionRegistry } from "../../lib/orchestrator/repository-link";
+import {
+  inheritedWrapRuntimes,
+  registeredCheckout,
+} from "../../lib/orchestrator/checkout-adoption";
 import { checkEngineRequirement } from "../../lib/orchestrator/engine-guard";
 import type { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { pathIsDirectory } from "../../lib/fs-utils";
@@ -418,13 +419,11 @@ function collectCompanionInstructionWarnings(
 
 /** The Checkout's own wraps, or those Adoption would give it (design Decision 8). */
 async function wrappedForClaude(
-  companionPath: string | null,
-  repository: { id: string; path: string } | null,
+  companionPath: string,
+  repository: { id: string; path: string },
 ): Promise<boolean> {
-  if (!repository) return false;
-  if (readWrapStateSync(repository.path).runtimes.has("claude")) return true;
   return (
-    companionPath !== null &&
+    readWrapStateSync(repository.path).runtimes.has("claude") ||
     (await inheritedWrapRuntimes(companionPath, repository)).includes("claude")
   );
 }
@@ -447,7 +446,7 @@ async function collectCheckout(
   const found = checkoutRootOf(cwd);
   if (!found) return undefined;
   const { root } = found;
-  const servingClaudeWrap = servingClaudeWrapRoot(root);
+  const otherServing = otherServingClaudeWrapRoot(root);
   if (found.layout.kind === "linked" && checkoutCommonDir(root) === null) {
     return {
       root,
@@ -459,30 +458,25 @@ async function collectCheckout(
   }
   const { companionPath, repositoryId } = report;
   if (!companionPath || !repositoryId) return undefined;
-  const { repos } = await readCompanionRegistry(companionPath).catch(() => ({ repos: [] }));
-  const entry = repos.find((repo) => repo.id === repositoryId);
-  const registeredCheckout = entry ? registeredCheckoutOf(entry) : null;
-  if (
-    !registeredCheckout ||
-    !(physicalPath(registeredCheckout) === root || sameClone(registeredCheckout, root))
-  ) {
+  const registered = await registeredCheckout(companionPath, repositoryId);
+  if (!registered || !(physicalPath(registered) === root || sameClone(registered, root))) {
     return undefined;
   }
   const checkout: DoctorCheckout = {
     root,
-    role: physicalPath(registeredCheckout) === root ? "registered" : "other",
+    role: physicalPath(registered) === root ? "registered" : "other",
     repositoryId,
-    registeredCheckout,
-    servingClaudeWrap,
+    registeredCheckout: registered,
+    servingClaudeWrap: otherServing ?? root,
   };
   if (
-    physicalPath(servingClaudeWrap) !== root &&
+    otherServing &&
     (await wrappedForClaude(companionPath, { id: repositoryId, path: root })) &&
-    !carriesPrepareHook(servingClaudeWrap) &&
+    !carriesPrepareHook(otherServing) &&
     !carriesPrepareHook(root)
   ) {
-    const settings = path.join(servingClaudeWrap, ".claude", "settings.local.json");
-    checkout.servingWrapWarning = `Plain \`claude\` sessions in ${root} start without Mate: Claude Code reads its hooks from ${settings}, which carries no ${FRAMEWORK_NAME} session-prepare hook. Run \`${FRAMEWORK_NAME} wrap\` here or in ${servingClaudeWrap}.`;
+    const settings = path.join(otherServing, ".claude", "settings.local.json");
+    checkout.servingWrapWarning = `Plain \`claude\` sessions in ${root} start without Mate: Claude Code reads its hooks from ${settings}, which carries no ${FRAMEWORK_NAME} session-prepare hook. Run \`${FRAMEWORK_NAME} wrap\` here or in ${otherServing}.`;
   }
   return checkout;
 }

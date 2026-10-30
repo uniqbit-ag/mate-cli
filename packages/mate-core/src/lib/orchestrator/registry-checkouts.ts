@@ -1,13 +1,14 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import {
   checkoutCommonDir,
-  checkoutRootOf,
+  checkoutServedFrom,
   cloneAt,
   isDirectory,
-  namesOtherCheckout,
+  liveCheckouts,
+  mainWorktreeOf,
   readGitLayout,
+  realPath,
 } from "../../runtime/git-layout";
 import type { LinkedRepository } from "./types";
 
@@ -18,24 +19,13 @@ import type { LinkedRepository } from "./types";
  * no `git` process.
  */
 
-function realPath(candidate: string): string {
-  try {
-    return fs.realpathSync(candidate);
-  } catch {
-    return path.resolve(candidate);
-  }
-}
-
 /**
  * The live Checkout a clone's entry moves to: the main worktree, else the
  * first live linked worktree by record name. A locked worktree whose folder is
  * away is never one.
  */
 function handoverTarget(gitCommonDir: string | undefined): string | null {
-  const clone = gitCommonDir ? cloneAt(gitCommonDir) : null;
-  if (!clone) return null;
-  if (clone.mainWorktree && isDirectory(clone.mainWorktree)) return clone.mainWorktree;
-  return clone.linkedWorktrees.find((worktree) => worktree.live)?.path ?? null;
+  return gitCommonDir ? (liveCheckouts(gitCommonDir).next().value ?? null) : null;
 }
 
 /**
@@ -51,8 +41,8 @@ export function registeredCheckoutOf(entry: LinkedRepository): string | null {
  * the path when it is another live Checkout of the entry's clone.
  */
 export function entryAtCheckout(entry: LinkedRepository, folder: string): LinkedRepository {
-  const root = checkoutRootOf(folder)?.root;
-  return root && namesOtherCheckout(root, entry.path) ? { ...entry, path: root } : entry;
+  const checkout = checkoutServedFrom(entry.path, folder);
+  return checkout === entry.path ? entry : { ...entry, path: checkout };
 }
 
 /**
@@ -88,6 +78,11 @@ function cloneKey(entry: LinkedRepository): string | null {
   return checkoutCommonDir(entry.path);
 }
 
+/** An entry of the clone whose shared Git folder is `clone`: recorded, else read from its live path. */
+export function entryOfClone(entry: LinkedRepository, clone: string): boolean {
+  return entry.gitCommonDir === clone || (isDirectory(entry.path) && cloneKey(entry) === clone);
+}
+
 /** Entries of one clone keep one: the main worktree's (one it already named first), else the first listed. */
 function mergeClones(
   entries: LinkedRepository[],
@@ -101,7 +96,7 @@ function mergeClones(
   const merged: MergedEntry[] = [];
   for (const [key, group] of groups) {
     if (group.length < 2) continue;
-    const main = cloneAt(key)?.mainWorktree ?? null;
+    const main = mainWorktreeOf(key);
     const atMain = group.filter((entry) => main !== null && realPath(entry.path) === main);
     const kept = atMain.find((entry) => !handedOver.has(entry)) ?? atMain[0] ?? group[0]!;
     for (const entry of group) if (entry !== kept) merged.push({ removed: entry, kept });
@@ -171,9 +166,7 @@ export function registryListsRepository(
   if (!key) {
     return entries.some((entry) => entry.id === repository.id && entry.path === repository.path);
   }
-  const ofClone = entries.filter(
-    (entry) => entry.gitCommonDir === key || (isDirectory(entry.path) && cloneKey(entry) === key),
-  );
+  const ofClone = entries.filter((entry) => entryOfClone(entry, key));
   const [only] = ofClone;
   return (
     ofClone.length === 1 &&

@@ -19,15 +19,13 @@ export interface WrapCommandDependencies {
   /** A new Checkout of a linked clone is adopted before it is wrapped (design Decision 7). */
   adoptNewCheckout?: (folder: string) => ReturnType<typeof adoptNewCheckout>;
   runWrapPass?: typeof runWrapPass;
-  reconcileServingClaudeWrap?: typeof reconcileServingClaudeWrap;
   resolveLinkedCompanions?: typeof launchAmbiguityDeps.resolveLinkedCompanions;
 }
 
 export const wrapCommandDeps: Required<WrapCommandDependencies> = {
   findRepoLocalLinkedRepository,
-  adoptNewCheckout: (folder) => adoptNewCheckout(folder),
+  adoptNewCheckout,
   runWrapPass,
-  reconcileServingClaudeWrap,
   resolveLinkedCompanions: (cwd: string) => launchAmbiguityDeps.resolveLinkedCompanions(cwd),
 };
 
@@ -84,7 +82,6 @@ export async function runWrapCommand(
   const wrap = deps.runWrapPass ?? wrapCommandDeps.runWrapPass;
   const resolveLinked = deps.resolveLinkedCompanions ?? wrapCommandDeps.resolveLinkedCompanions;
   const adopt = deps.adoptNewCheckout ?? wrapCommandDeps.adoptNewCheckout;
-  const serve = deps.reconcileServingClaudeWrap ?? wrapCommandDeps.reconcileServingClaudeWrap;
 
   const parsed = parseWrapArgs(argv);
   if ("error" in parsed) {
@@ -127,7 +124,7 @@ export async function runWrapCommand(
     companionPath,
     attendedLockOptions(companionPath),
     async () => {
-      const served = await serve(companionPath, repository, { create: true });
+      const served = await reconcileServingClaudeWrap(companionPath, repository, { create: true });
       if (served?.result.kind === "failed") return { served, result: served.result };
       return { served, result: await wrap(companionPath, repository) };
     },

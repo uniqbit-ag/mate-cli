@@ -1,8 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { physicalPath } from "../../runtime/physical-path";
-import { servingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
+import { otherServingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
 import {
   carriesClaudeLinks,
   holdsOnlyMateLinks,
@@ -33,8 +32,8 @@ async function servedByMainWorktree(
   companionPath: string | null,
   registeredCompanionPaths: string[],
 ): Promise<boolean> {
-  const serving = servingClaudeWrapRoot(repoPath);
-  if (physicalPath(serving) === physicalPath(repoPath)) return false;
+  const serving = otherServingClaudeWrapRoot(repoPath);
+  if (!serving) return false;
   return (
     (await carriesClaudeLinks(SKILLS, serving)) &&
     (await holdsOnlyMateLinks(SKILLS, repoPath, companionPath, registeredCompanionPaths))

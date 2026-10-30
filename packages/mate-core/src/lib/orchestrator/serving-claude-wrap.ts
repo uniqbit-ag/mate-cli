@@ -1,5 +1,4 @@
-import { physicalPath } from "../../runtime/physical-path";
-import { servingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
+import { otherServingClaudeWrapRoot } from "../../runtime/serving-claude-wrap";
 import { readWrapStateSync } from "../../runtime/wrap-state";
 import { adoptNewCheckout } from "./checkout-adoption";
 import { readCompanionConfig } from "./config-store";
@@ -11,12 +10,6 @@ export interface ServingClaudeWrap {
   repository: LinkedRepository;
   result: WrapPassResult;
 }
-
-export const servingClaudeWrapDeps = {
-  readCompanionConfig,
-  runWrapPass,
-  adoptNewCheckout: (folder: string) => adoptNewCheckout(folder),
-};
 
 /**
  * Reconciles the Claude wrap of the Checkout that serves `repository` when
@@ -31,18 +24,18 @@ export async function reconcileServingClaudeWrap(
   repository: LinkedRepository,
   options: { create: boolean; config?: FrameworkConfig },
 ): Promise<ServingClaudeWrap | null> {
-  const serving = servingClaudeWrapRoot(repository.path);
-  if (physicalPath(serving) === physicalPath(repository.path)) return null;
+  const serving = otherServingClaudeWrapRoot(repository.path);
+  if (!serving) return null;
   if (!options.create && !readWrapStateSync(serving).runtimes.has("claude")) return null;
-  const config = options.config ?? (await servingClaudeWrapDeps.readCompanionConfig(companionPath));
+  const config = options.config ?? (await readCompanionConfig(companionPath));
   if (!config.allowedAgents.includes("claude")) return null;
 
   const servingRepository = (await findRepoLocalLinkedRepository(serving)) ??
-    (options.create ? await servingClaudeWrapDeps.adoptNewCheckout(serving) : null) ?? {
+    (options.create ? await adoptNewCheckout(serving) : null) ?? {
       id: repository.id,
       path: serving,
     };
-  const result = await servingClaudeWrapDeps.runWrapPass(companionPath, servingRepository, {
+  const result = await runWrapPass(companionPath, servingRepository, {
     runtimes: ["claude"],
     config,
   });

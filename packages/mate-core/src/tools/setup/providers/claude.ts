@@ -5,9 +5,8 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { getClaudePluginRoot } from "../../../lib/package-paths";
-import { physicalPath } from "../../../runtime/physical-path";
-import { servingClaudeWrapRoot } from "../../../runtime/serving-claude-wrap";
-import { readWrapStateSync } from "../../../runtime/wrap-state";
+import { otherServingClaudeWrapRoot } from "../../../runtime/serving-claude-wrap";
+import { NOT_WRAPPED, readWrapStateSync, type WrapState } from "../../../runtime/wrap-state";
 import { writeAtomicThroughLink } from "../../../runtime/write-atomic";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import {
@@ -41,7 +40,6 @@ import {
 import { patchSkillTreeMarkdownFiles } from "./skill-tree";
 import {
   filterClaudeHookGroups,
-  hookGroupKey,
   mergeClaudeHookGroups,
   removeManagedHookGroups,
   readClaudeMcpConfig,
@@ -375,13 +373,13 @@ function claudeSettingsRegions(
     SubagentStart: mateInstructionHookGroups(),
   };
   const events = [...new Set([...Object.keys(mateHooks), ...Object.keys(capabilityHooks)])];
-  const served = servedHookGroupKeys(repoRoot);
+  const served = servingWrapState(repoRoot);
   return [
     ...events.map((event): ManagedRegion => ({
       at: ["hooks", event],
       kind: "list",
       values: [...(mateHooks[event] ?? []), ...(capabilityHooks[event] ?? [])].filter(
-        (group) => !served.has(hookGroupKey(group as ClaudeHookGroup)),
+        (group) => !served.carriesClaudeHookGroup(group as ClaudeHookGroup),
       ),
     })),
     /**
@@ -441,15 +439,14 @@ function claudeSettingsRegions(
 }
 
 /**
- * The hook groups the Claude wrap of the Checkout serving `repoRoot` carries,
- * when that is another Checkout (design Decisions 1 and 12): Claude Code loads
- * both settings files there, so a group either one carries runs once only
- * when the Checkout's own leaves it out.
+ * The wrap state of the Checkout serving `repoRoot`, when that is another
+ * Checkout (design Decisions 1 and 12): Claude Code loads both settings files
+ * there, so a group either one carries runs once only when the Checkout's own
+ * leaves it out.
  */
-function servedHookGroupKeys(repoRoot: string): ReadonlySet<string> {
-  const serving = servingClaudeWrapRoot(repoRoot);
-  if (physicalPath(serving) === physicalPath(repoRoot)) return new Set();
-  return new Set(readWrapStateSync(serving).carriedClaudeHookGroups.map(hookGroupKey));
+function servingWrapState(repoRoot: string): WrapState {
+  const serving = otherServingClaudeWrapRoot(repoRoot);
+  return serving ? readWrapStateSync(serving) : NOT_WRAPPED;
 }
 
 /**

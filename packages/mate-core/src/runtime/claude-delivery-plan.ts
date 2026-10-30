@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import type { ClaudeHookGroup } from "./claude-hook-group";
-import { servingClaudeWrapRoot } from "./serving-claude-wrap";
+import { otherServingClaudeWrapRoot } from "./serving-claude-wrap";
 import type { SessionKind } from "./session-kind";
 import { NOT_WRAPPED, readWrapStateSync, type WrapState } from "./wrap-state";
 
@@ -176,7 +176,8 @@ function planChannels(
  */
 export function unmanagedClaudeDelivery(checkoutRoot: string | undefined): ClaudeDeliveryPlan {
   if (!checkoutRoot) return planClaudeDelivery("unmanaged", NOT_WRAPPED);
-  const serving = readWrapStateSync(servingClaudeWrapRoot(checkoutRoot));
-  const wrap = serving.runtimes.has("claude") ? serving : readWrapStateSync(checkoutRoot);
+  const other = otherServingClaudeWrapRoot(checkoutRoot);
+  const serving = other ? readWrapStateSync(other) : null;
+  const wrap = serving?.runtimes.has("claude") ? serving : readWrapStateSync(checkoutRoot);
   return planClaudeDelivery("unmanaged", wrap);
 }

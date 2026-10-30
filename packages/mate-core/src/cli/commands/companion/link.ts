@@ -231,7 +231,7 @@ export async function runCompanionLinkCommandWithDeps(
   // Managed companions are git-backed; explicitly pasted paths retain local provenance.
   const persistedSource: CompanionSource = companionSource === "local" ? "local" : "git";
 
-  const keptIds: string[] = [];
+  let keptId: string | undefined;
   /* oxlint-disable no-await-in-loop -- each companion is set up, linked and installed in turn; a declined install stops the rest */
   for (const companionPath of companionPaths) {
     const preflight = await inspectPreflight(companionPath);
@@ -243,7 +243,7 @@ export async function runCompanionLinkCommandWithDeps(
       companionPath,
       companionSource: persistedSource,
     });
-    keptIds.push(kept.id);
+    keptId ??= kept.id;
     await registerCompanion(companionPath);
     await invalidateInstallState({ kind: "companion", companionPath });
     if ((await installCompanion(companionPath)) === false) return;
@@ -270,7 +270,7 @@ export async function runCompanionLinkCommandWithDeps(
     );
   }
 
-  console.log(`Successfully linked companion for ${keptIds[0] ?? repository.id}`);
+  console.log(`Successfully linked companion for ${keptId ?? repository.id}`);
   for (const companionPath of companionPaths) {
     console.log(`  Companion: ${companionPath}`);
   }

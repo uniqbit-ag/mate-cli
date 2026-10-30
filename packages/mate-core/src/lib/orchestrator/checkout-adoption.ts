@@ -5,11 +5,11 @@ import { physicalPath } from "../../runtime/physical-path";
 import type { WrapRuntime } from "../../runtime/runtime-document-manifest";
 import { readWrapStateSync, WRAP_RUNTIMES } from "../../runtime/wrap-state";
 import { GlobalConfigStore } from "./global-config-store";
+import { registeredCheckoutOf } from "./registry-checkouts";
 import {
   CompanionResolver,
   findRepoLocalLinkedRepository,
   readCompanionRegistry,
-  registeredCheckoutOf,
 } from "./repository-link";
 import type { LinkedRepository } from "./types";
 import { projectWorkingRepositoryBestEffort } from "./working-repo-projection";
@@ -34,7 +34,7 @@ function wrappedAt(checkout: string): WrapRuntime[] {
 }
 
 /** The Registered Checkout of the entry `repositoryId` names, read without writing. */
-async function registeredCheckout(
+export async function registeredCheckout(
   companionPath: string,
   repositoryId: string,
 ): Promise<string | null> {

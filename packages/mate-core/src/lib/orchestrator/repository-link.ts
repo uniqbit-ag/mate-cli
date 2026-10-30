@@ -1,10 +1,10 @@
-import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { errorMessage } from "../../runtime/error-message";
 import { companionRegistryPath, registryLinks } from "../../runtime/companion-registry-read";
 import { withPathLock } from "../../runtime/companion-lock";
 import { checkoutCommonDir, checkoutRootOf, namesOtherCheckout } from "../../runtime/git-layout";
@@ -26,9 +26,9 @@ import {
   RepoLocalRegistryStore,
 } from "./repo-local-store";
 import {
+  entryOfClone,
   type MergedEntry,
   reconcileRegistry,
-  registeredCheckoutOf,
   registryListsRepository,
 } from "./registry-checkouts";
 import { project, projectWorkingRepository } from "./working-repo-projection";
@@ -84,7 +84,8 @@ export class CompanionStore {
     const registryPath = this.companionRegistryStore.configPath;
     const locked = await withPathLock(
       REGISTRY_LOCK_NAMESPACE,
-      existingRealPath(registryPath),
+      /** Its real path, missing segments as written: a first link has no file yet. */
+      physicalPath(registryPath),
       {},
       async () => {
         // A companion's registry.yaml may not exist yet (its first-ever link):
@@ -147,22 +148,6 @@ export class CompanionStore {
 /** The companion registry's own lock, apart from the companion's sync lock. */
 const REGISTRY_LOCK_NAMESPACE = "companion-registry";
 
-/** Real path of the nearest existing ancestor, plus the rest: a first link has no file yet. */
-function existingRealPath(target: string): string {
-  const rest: string[] = [];
-  let current = path.resolve(target);
-  for (;;) {
-    try {
-      return path.join(fsSync.realpathSync(current), ...rest);
-    } catch {
-      const parent = path.dirname(current);
-      if (parent === current) return path.resolve(target);
-      rest.unshift(path.basename(current));
-      current = parent;
-    }
-  }
-}
-
 /**
  * Points a merged-away Checkout's link, and its projection when it has one, at
  * the kept ID, and says that the Graphify graph under the old ID is unused.
@@ -185,14 +170,10 @@ async function relinkMergedCheckout(
     }
   } catch (error) {
     console.error(
-      `${FRAMEWORK_NAME}: warning: failed to point ${removed.path} at ${kept.id}: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `${FRAMEWORK_NAME}: warning: failed to point ${removed.path} at ${kept.id}: ${errorMessage(error)}`,
     );
   }
 }
-
-export { registeredCheckoutOf };
 
 // ---------------------------------------------------------------------------
 // Pure read of the companion registry (never writes)
@@ -276,7 +257,7 @@ export interface CompanionResolutionResult {
   failures: CompanionResolutionFailure[];
 }
 
-export interface ResolveOptions {
+interface ResolveOptions {
   logFailures?: boolean;
   /** `false` looks up without the self-heal or the stale-pointer prune, so a caller can refuse first. */
   write?: boolean;
@@ -291,7 +272,7 @@ export interface ResolveOptions {
  * For a new Checkout of a linked clone this is its Adoption, and its contents
  * depend only on the match, so concurrent Adoptions end in the same file.
  */
-export async function writeRepoLocalCache(folder: string, match: CompanionMatch): Promise<void> {
+async function writeRepoLocalCache(folder: string, match: CompanionMatch): Promise<void> {
   const store = new RepoLocalRegistryStore(repoLocalRegistryPath(folder));
   /** `repository` too: wrap and unwrap resolve the Repository Link from it. */
   await store.save({
@@ -376,9 +357,7 @@ export class CompanionResolver {
       /** Best-effort like the backfill: a Checkout that can't be written still resolves. */
       await writeRepoLocalCache(folder, matches[0]!).catch((error: unknown) =>
         console.error(
-          `${FRAMEWORK_NAME}: warning: failed to write the repository link in ${folder}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `${FRAMEWORK_NAME}: warning: failed to write the repository link in ${folder}: ${errorMessage(error)}`,
         ),
       );
     }
@@ -457,14 +436,6 @@ export class CompanionResolver {
       ),
     );
   }
-}
-
-/** An entry of the clone whose shared Git folder is `clone`: recorded, else read from its live path. */
-function entryOfClone(entry: LinkedRepository, clone: string): boolean {
-  return (
-    entry.gitCommonDir === clone ||
-    (fsSync.existsSync(entry.path) && checkoutCommonDir(entry.path) === clone)
-  );
 }
 
 /** Keeps the first match per companion, so one companion linking a path twice is not ambiguous. */

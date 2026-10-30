@@ -50,8 +50,8 @@ export function parseSessionPrepareArgs(
 
 export const sessionPrepareCommandDeps = {
   findRepoLocalLinkedRepository,
-  lookUpAdoption: (folder: string) => lookUpAdoption(folder),
-  adoptCheckout: (...args: Parameters<typeof adoptCheckout>) => adoptCheckout(...args),
+  lookUpAdoption,
+  adoptCheckout,
   prepareSession,
   resolveLinkedCompanions: launchAmbiguityDeps.resolveLinkedCompanions,
 };
@@ -92,7 +92,7 @@ export async function runSessionPrepareCommand(
   const wrapped = repository ? (await readWrapState(repository.path)).runtimes : new Set();
   let runtimes = WRAP_RUNTIMES.filter((runtime) => wrapped.has(runtime));
   let companionPath: string | undefined;
-  if (runtimes.length === 0) {
+  if (!repository || runtimes.length === 0) {
     /**
      * A new Checkout, or one whose manifest records none, takes its Registered
      * Checkout's wraps (design Decision 8). Looked up first, so a refusal writes nothing.
@@ -109,7 +109,6 @@ export async function runSessionPrepareCommand(
      */
     repository = await deps.adoptCheckout(parsed.repo, adoption);
   }
-  if (!repository) return fail(`${parsed.repo} is not linked.`);
 
   companionPath ??= await resolveCompanionPath(repository.path);
   if (!companionPath) return fail(`no companion is linked to ${repository.id}.`);

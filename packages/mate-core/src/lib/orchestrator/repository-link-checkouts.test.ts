@@ -22,8 +22,8 @@ import {
   findRepoLocalLinkedRepository,
   findRepoLocalRegistryFile,
   readCompanionRegistry,
-  registeredCheckoutOf,
 } from "./repository-link";
+import { registeredCheckoutOf } from "./registry-checkouts";
 import type { LinkedRepository } from "./types";
 import { projectWorkingRepository } from "./working-repo-projection";
 

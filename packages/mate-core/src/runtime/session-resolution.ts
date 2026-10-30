@@ -10,13 +10,7 @@ import {
 } from "./companion-registry-read";
 import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
-import {
-  checkoutCommonDir,
-  checkoutRootOf,
-  isDirectory,
-  namesOtherCheckout,
-  sameClone,
-} from "./git-layout";
+import { checkoutCommonDir, checkoutServedFrom, isDirectory, sameClone } from "./git-layout";
 import { canonicalPath, physicalPath } from "./physical-path";
 import {
   isCapabilityEnabled,
@@ -128,9 +122,7 @@ function policyReaders(companionPath: string) {
  * Decision 11), else the launch repository.
  */
 function launchCheckout(repositoryPath: string, folder: string): string {
-  if (!repositoryPath) return "";
-  const root = checkoutRootOf(folder)?.root;
-  return root && namesOtherCheckout(repositoryPath, root) ? root : repositoryPath;
+  return repositoryPath ? checkoutServedFrom(repositoryPath, folder) : "";
 }
 
 function launchSession(env: SessionEnv, folder: string): LaunchSession {

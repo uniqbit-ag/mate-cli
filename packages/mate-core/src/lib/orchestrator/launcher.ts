@@ -41,7 +41,6 @@ interface ResolvedLaunchState {
 
 export const launcherDeps = {
   prepareSession,
-  inheritedWrapRuntimes,
 };
 
 /** The wrap notice is informational: `process.stderr.write`, since Bun renders `console.error` red. */
@@ -92,10 +91,7 @@ export class FrameworkLauncher {
       runtime: request.tool as PrepareRuntime,
       ...(state.repository
         ? {
-            adoptedRuntimes: await launcherDeps.inheritedWrapRuntimes(
-              state.companionPath,
-              state.repository,
-            ),
+            adoptedRuntimes: await inheritedWrapRuntimes(state.companionPath, state.repository),
           }
         : {}),
       companionPath: state.companionPath,

@@ -6,7 +6,7 @@ import { parse, stringify } from "yaml";
 
 import { MATE_ENV } from "./env-names";
 import { FRAMEWORK_NAME } from "./framework";
-import { checkoutRootOf, cloneAt, namesOtherCheckout } from "./git-layout";
+import { checkoutRootOf, liveCheckouts, namesOtherCheckout } from "./git-layout";
 import { findRepoLocalRegistryFileSync, repoLocalDirPath } from "./repo-local";
 
 /** Generated projection files, directly under the repo-local `.mate/`. */
@@ -227,14 +227,8 @@ function projectionAt(root: string): ResolvedProjection | null {
 function borrowedProjection(cwd: string): ResolvedProjection | null {
   const checkout = checkoutRootOf(cwd);
   if (checkout?.layout.kind !== "linked") return null;
-  const clone = cloneAt(checkout.layout.commonDir);
-  if (!clone) return null;
-  const lenders = [
-    clone.mainWorktree,
-    ...clone.linkedWorktrees.filter((worktree) => worktree.live).map((worktree) => worktree.path),
-  ];
-  for (const lender of lenders) {
-    if (lender === null || lender === checkout.root) continue;
+  for (const lender of liveCheckouts(checkout.layout.commonDir)) {
+    if (lender === checkout.root) continue;
     const lent = projectionAt(lender);
     if (lent) return { ...lent, repositoryPath: checkout.root, borrowedFrom: lender };
   }
