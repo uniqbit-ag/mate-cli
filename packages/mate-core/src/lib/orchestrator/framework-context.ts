@@ -43,7 +43,7 @@ export interface LaunchContext extends FrameworkContext {
  * at the root of the Checkout holding `folder` when that is another Checkout
  * of `MATE_REPO_PATH`'s clone (design Decision 11), else at `MATE_REPO_PATH`.
  */
-function repositoryFromEnvironment(folder: string): LinkedRepository | undefined {
+export function repositoryFromEnvironment(folder: string): LinkedRepository | undefined {
   const repositoryPath = process.env.MATE_REPO_PATH;
   if (!repositoryPath) return undefined;
 
@@ -242,7 +242,8 @@ export async function resolveForLaunch(
   }
 
   if (resolution.match) {
-    const repository = (await findRepoLocalLinkedRepository(cwd)) ?? undefined;
+    let repository = (await findRepoLocalLinkedRepository(cwd)) ?? undefined;
+    let repositoryId = resolution.match.repositoryId;
     if (scope === "companion") {
       const context = await withResolvedHub(
         makeContext(resolution.match.companionPath, "working-repo"),
@@ -250,16 +251,18 @@ export async function resolveForLaunch(
       return { ...context, repositoryId: "" };
     }
     if (repository) {
-      await backfillCompanionRegistration(resolution.match.companionPath, repository);
+      /** A merge of hand-linked worktrees gives this Checkout the kept ID (design Decision 5). */
+      const kept = await backfillCompanionRegistration(resolution.match.companionPath, repository);
+      if (kept !== repository.id) {
+        repository = { ...repository, id: kept };
+        repositoryId = kept;
+      }
       await projectWorkingRepositoryBestEffort(resolution.match.companionPath, repository);
     }
     const context = await withResolvedHub(
       makeContext(resolution.match.companionPath, "working-repo", repository),
     );
-    return {
-      ...context,
-      repositoryId: resolution.match.repositoryId,
-    };
+    return { ...context, repositoryId };
   }
 
   if (scope === "companion") {

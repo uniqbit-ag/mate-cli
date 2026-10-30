@@ -103,8 +103,11 @@ export async function runSessionPrepareCommand(
     }
     runtimes = adoption.runtimes;
     companionPath = adoption.companionPath;
-    /** The link and the projection, outside the companion lock the wrap pass takes. */
-    repository ??= await deps.adoptCheckout(parsed.repo, adoption);
+    /**
+     * The link and the projection, outside the companion lock the wrap pass
+     * takes; also when an earlier command already wrote the link.
+     */
+    repository = await deps.adoptCheckout(parsed.repo, adoption);
   }
   if (!repository) return fail(`${parsed.repo} is not linked.`);
 

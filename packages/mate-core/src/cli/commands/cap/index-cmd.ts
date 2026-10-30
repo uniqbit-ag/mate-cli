@@ -2,7 +2,10 @@ import {
   hasGraphifyCapability,
   hasTokensaveCapability,
 } from "../../../lib/orchestrator/capabilities";
-import { resolveForCapability } from "../../../lib/orchestrator/framework-context";
+import {
+  repositoryFromEnvironment,
+  resolveForCapability,
+} from "../../../lib/orchestrator/framework-context";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import {
@@ -154,7 +157,8 @@ export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {})
 
   if (!options.includeGraphify && hasTokensaveCapability(capabilities)) {
     onStepStart("tokensave");
-    const repoPath = process.env.MATE_REPO_PATH ?? process.cwd();
+    /** The Checkout this folder is in, also after a launch moved into another (design Decision 11). */
+    const repoPath = repositoryFromEnvironment(process.cwd())?.path ?? process.cwd();
     if (!(await isTokensaveInitialized())) {
       await ensureStoreExcluded(repoPath);
       const initOk = await runCapStep(() => runTokensave(["init", "--no-git-hook"]));

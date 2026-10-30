@@ -191,4 +191,21 @@ describe("mate session prepare in a new worktree", () => {
     /** The wrap waits for the next prepare that gets the lock. */
     expect(readWrapStateSync(clone.worktree).runtimes.size).toBe(0);
   });
+
+  test("a link an earlier command wrote still gets its projection with the lock held elsewhere", async () => {
+    const clone = await cloneWithWorktree();
+    await recordWrap(clone.main, ["claude"]);
+    await writeRepoLocalRegistryEntry(
+      clone.worktree,
+      clone.companionPath,
+      { id: "acme", path: clone.worktree },
+      "git",
+    );
+    sessionPrepareDeps.withCompanionLock = (async () => ({ acquired: false })) as never;
+
+    await runQuietly(["--repo", clone.worktree, "--json"]);
+
+    expect(process.exitCode).toBe(0);
+    expect(readProjectionFile(clone.worktree)?.projection.repositoryPath).toBe(clone.worktree);
+  });
 });

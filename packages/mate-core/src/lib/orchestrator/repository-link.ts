@@ -231,19 +231,20 @@ export async function readCompanionRegistry(
 export async function backfillCompanionRegistration(
   companionPath: string,
   repository: LinkedRepository,
-): Promise<void> {
+): Promise<string> {
   try {
     const { repos } = await readCompanionRegistry(companionPath).catch(() => ({ repos: [] }));
     /** A launch from another Checkout of the clone never moves the entry to it. */
-    if (registryListsRepository(repos, repository)) return;
+    if (registryListsRepository(repos, repository)) return repository.id;
 
-    await companionRootedStore(companionPath).registerRepository(repository);
+    return (await companionRootedStore(companionPath).registerRepository(repository)).id;
   } catch (error) {
     console.error(
       `${FRAMEWORK_NAME}: warning: failed to backfill companion registry for ${repository.id}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
+    return repository.id;
   }
 }
 

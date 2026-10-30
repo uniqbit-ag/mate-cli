@@ -34,8 +34,9 @@ export interface HydrateDynamicPluginsDeps extends DynamicPluginLoadDeps {
 }
 
 /**
- * Quiet variant of companion resolution: never prompts, never errors. An
- * ambiguous or absent companion means hydration is a no-op —
+ * Quiet variant of companion resolution: never prompts, never errors, never
+ * writes, so a command that refuses writes nothing (a new worktree's link
+ * included). An ambiguous or absent companion means hydration is a no-op —
  * `ensureUnambiguousCompanion` later in `main()` stays the authoritative,
  * user-facing resolution.
  */
@@ -46,7 +47,7 @@ async function resolveCompanionQuietly(
   const pinned = env.MATE_ARTIFACT_PATH;
   if (pinned) return path.resolve(pinned);
   const resolver = new CompanionResolver(new GlobalConfigStore());
-  const resolution = await resolver.resolveWithDiagnostics(path.resolve(cwd));
+  const resolution = await resolver.resolveWithDiagnostics(path.resolve(cwd), { write: false });
   if (resolution.ambiguousMatches.length > 1) return null;
   if (resolution.match) return resolution.match.companionPath;
   try {

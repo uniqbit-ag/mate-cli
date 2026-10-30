@@ -1,4 +1,10 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
+import { createTempDir } from "../../../../../../test/fixtures";
+import { addWorktree, initRepo } from "../../../../test/git-checkouts";
 
 import type { CapabilityConfig } from "../../../lib/orchestrator/types";
 import { runIndexCapCommand, type SyncCapDeps } from "./index-cmd";
@@ -355,5 +361,38 @@ describe("runIndexCapCommand", () => {
 
     expect(invocations).toEqual([]);
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("runIndexCapCommand in another Checkout of a launch's clone", () => {
+  const roots: string[] = [];
+  const saved = { cwd: process.cwd(), env: { ...process.env } };
+
+  afterEach(async () => {
+    process.chdir(saved.cwd);
+    for (const name of ["MATE_REPO_PATH", "MATE_REPO_ID"]) {
+      if (saved.env[name] === undefined) delete process.env[name];
+      else process.env[name] = saved.env[name];
+    }
+    await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
+  });
+
+  test("reconciles the TokenSave posture of the Checkout it runs in", async () => {
+    const root = await createTempDir("mate-index-checkout-");
+    roots.push(root);
+    const main = initRepo(path.join(root, "acme"));
+    const worktree = addWorktree(main, path.join(root, "acme-fix"));
+    process.env.MATE_REPO_PATH = main;
+    process.env.MATE_REPO_ID = "acme";
+    process.chdir(path.join(worktree));
+    const reconciled: string[] = [];
+    const { deps } = makeDeps({ capabilities: [cap("tokensave")] });
+
+    await runIndexCapCommand(["--tokensave"], {
+      ...deps,
+      ensureTokensaveBranchingPosture: async (repoPath) => void reconciled.push(repoPath),
+    });
+
+    expect(reconciled).toEqual([worktree]);
   });
 });

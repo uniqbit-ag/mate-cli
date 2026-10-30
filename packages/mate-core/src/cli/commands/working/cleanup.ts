@@ -105,11 +105,16 @@ export async function runWorkingCleanupCommand(
       repositoryPath: await canonicalPath(pairing.repository.path),
     })),
   );
-  /** By path, or by clone for another Checkout of a linked clone (design Decision 7). */
+  /**
+   * By path, or by clone for another Checkout of a linked clone (design
+   * Decision 7); the recorded clone still counts once the entry's folder is gone.
+   */
   const clone = checkoutCommonDir(repoPath);
   const atPath = resolvedPairings.filter(({ repositoryPath }) => repositoryPath === repoPath);
   const ofClone = resolvedPairings.filter(
-    ({ repositoryPath }) => clone !== null && checkoutCommonDir(repositoryPath) === clone,
+    ({ pairing, repositoryPath }) =>
+      clone !== null &&
+      (checkoutCommonDir(repositoryPath) ?? pairing.repository.gitCommonDir) === clone,
   );
   const matches = (atPath.length > 0 ? atPath : ofClone).map(({ pairing }) => pairing);
   if (matches.length === 0) {

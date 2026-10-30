@@ -36,6 +36,7 @@ function depsFor(
   checkout: string,
   registered: string,
   cleanups: string[],
+  gitCommonDir?: string,
 ): WorkingCleanupCommandDeps {
   return {
     cwd: checkout,
@@ -47,7 +48,7 @@ function depsFor(
       pairings: [
         {
           companionPath: "/companion",
-          repository: { id: "acme", path: registered },
+          repository: { id: "acme", path: registered, ...(gitCommonDir ? { gitCommonDir } : {}) },
           health: "ready",
           ambiguous: false,
         },
@@ -92,6 +93,18 @@ describe("mate working cleanup in a worktree", () => {
 
     expect(cleanups).toEqual([main]);
     expect(output).not.toContain("adopts it again");
+  });
+
+  test("matches by the recorded clone once the Registered Checkout is gone", async () => {
+    const { root, main } = await clone();
+    const worktree = addWorktree(main, path.join(root, "acme-fix"));
+    const cleanups: string[] = [];
+    await fs.rm(worktree, { recursive: true, force: true });
+
+    await run(depsFor(main, worktree, cleanups, path.join(main, ".git")));
+
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(cleanups).toEqual([main]);
   });
 
   test("a separate clone is not matched", async () => {

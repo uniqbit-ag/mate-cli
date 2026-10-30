@@ -6,6 +6,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { addWorktree } from "../../../test/git-checkouts";
 import { linkedClone as cloneIn, type LinkedClone } from "../../../test/linked-clone";
 import { readProjectionFile } from "../../runtime/projection";
+import { stringify } from "yaml";
 import { resolveForCapability, resolveForLaunch } from "./framework-context";
 import { companionRegistryPath, findRepoLocalLinkedRepository } from "./repository-link";
 
@@ -74,6 +75,41 @@ describe("Adoption in resolution", () => {
       await fs.chmod(worktree, 0o755);
     }
     expect(errors.join("\n")).toContain(`failed to write the repository link in ${worktree}`);
+  });
+});
+
+describe("a launch in a hand-linked worktree", () => {
+  test("merges its entry and launches with the kept ID", async () => {
+    const clone = await linkedClone();
+    const worktree = addWorktree(clone.main, path.join(clone.root, "acme-fix"));
+    await fs.writeFile(
+      companionRegistryPath(clone.companionPath),
+      stringify({
+        repos: [
+          { id: "acme", path: clone.main, gitCommonDir: path.join(clone.main, ".git") },
+          { id: "acme-fix", path: worktree },
+        ],
+      }),
+    );
+    const local = path.join(worktree, ".mate", "config", "registry.yaml");
+    await fs.mkdir(path.dirname(local), { recursive: true });
+    await fs.writeFile(
+      local,
+      stringify({
+        repository: { id: "acme-fix", path: worktree },
+        companions: [{ path: clone.companionPath, repositoryId: "acme-fix" }],
+      }),
+    );
+    const error = spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const context = await resolveForLaunch(worktree, clone.store);
+      expect(context.repositoryId).toBe("acme");
+      expect(context.repository).toEqual({ id: "acme", path: worktree });
+    } finally {
+      error.mockRestore();
+    }
+    expect(readProjectionFile(worktree)?.projection.repositoryId).toBe("acme");
   });
 });
 
