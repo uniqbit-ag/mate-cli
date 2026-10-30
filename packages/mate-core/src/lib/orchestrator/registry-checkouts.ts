@@ -55,6 +55,21 @@ export function entryAtCheckout(entry: LinkedRepository, folder: string): Linked
   return root && namesOtherCheckout(root, entry.path) ? { ...entry, path: root } : entry;
 }
 
+/**
+ * The ID a first link from the Checkout at `root` proposes (design Decision
+ * 14): a linked worktree is named after its clone, the main worktree's folder,
+ * or a bare clone's folder without `.git`; any other folder after itself. The
+ * registry keeps an ID the clone's entry already has.
+ */
+export function linkIdFor(root: string): string {
+  const layout = readGitLayout(root);
+  const clone = layout?.kind === "linked" ? cloneAt(layout.commonDir) : null;
+  if (!clone) return path.basename(root);
+  return clone.mainWorktree
+    ? path.basename(clone.mainWorktree)
+    : path.basename(clone.commonDir).replace(/\.git$/, "");
+}
+
 /** A hand-linked entry merged into its clone's kept entry. */
 export interface MergedEntry {
   removed: LinkedRepository;

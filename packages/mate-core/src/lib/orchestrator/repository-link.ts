@@ -8,7 +8,7 @@ import { FRAMEWORK_NAME } from "../../framework";
 import { companionRegistryPath, registryLinks } from "../../runtime/companion-registry-read";
 import { withPathLock } from "../../runtime/companion-lock";
 import { checkoutCommonDir, checkoutRootOf, namesOtherCheckout } from "../../runtime/git-layout";
-import { canonicalPath, normalisedCanonicalPath } from "../../runtime/physical-path";
+import { canonicalPath, normalisedCanonicalPath, physicalPath } from "../../runtime/physical-path";
 import {
   ancestorDirectories,
   repoLocalDirName,
@@ -347,7 +347,13 @@ export class CompanionResolver {
           if (byPath) {
             return { companionPath, repositoryId: byPath.id, folder: resolvedCwd };
           }
-          const byClone = clone ? repos.find((r) => entryOfClone(r, clone)) : undefined;
+          /**
+           * Another Checkout of the clone only: a subfolder of the entry's own
+           * folder matches nothing, as before, so `mate working cleanup` there sticks.
+           */
+          const byClone = clone
+            ? repos.find((r) => entryOfClone(r, clone) && physicalPath(r.path) !== checkoutRoot)
+            : undefined;
           return byClone && checkoutRoot
             ? { companionPath, repositoryId: byClone.id, folder: checkoutRoot }
             : null;

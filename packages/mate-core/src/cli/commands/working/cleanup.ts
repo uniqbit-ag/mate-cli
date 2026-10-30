@@ -7,6 +7,7 @@ import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../../framework";
 import { gitEnvironment } from "../../../runtime/companion-git";
+import { checkoutCommonDir } from "../../../runtime/git-layout";
 import type { RootKind } from "../../../lib/orchestrator/root-context";
 import {
   collectWorkspaceInventory,
@@ -104,9 +105,13 @@ export async function runWorkingCleanupCommand(
       repositoryPath: await canonicalPath(pairing.repository.path),
     })),
   );
-  const matches = resolvedPairings
-    .filter(({ repositoryPath }) => repositoryPath === repoPath)
-    .map(({ pairing }) => pairing);
+  /** By path, or by clone for another Checkout of a linked clone (design Decision 7). */
+  const clone = checkoutCommonDir(repoPath);
+  const atPath = resolvedPairings.filter(({ repositoryPath }) => repositoryPath === repoPath);
+  const ofClone = resolvedPairings.filter(
+    ({ repositoryPath }) => clone !== null && checkoutCommonDir(repositoryPath) === clone,
+  );
+  const matches = (atPath.length > 0 ? atPath : ofClone).map(({ pairing }) => pairing);
   if (matches.length === 0) {
     process.stderr.write(
       `${FRAMEWORK_NAME}: working cleanup must run from a linked Git working repository\n`,
@@ -134,4 +139,9 @@ export async function runWorkingCleanupCommand(
     ...(keptDetail ? [keptDetail] : []),
   ];
   console.log(`${FRAMEWORK_NAME}: cleaned working repository (${details.join("; ")})`);
+  if (atPath.length === 0) {
+    console.log(
+      `${FRAMEWORK_NAME}: ${repoPath} is another Checkout of ${matches[0]!.repository.id}; ${FRAMEWORK_NAME} adopts it again the next time it runs here.`,
+    );
+  }
 }

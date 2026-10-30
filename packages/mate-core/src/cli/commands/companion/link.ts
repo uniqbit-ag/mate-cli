@@ -10,11 +10,15 @@ import {
 } from "../../companion-link-wizard";
 import { extractRepoName } from "../artifact/extract-repo-name";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
+import { linkIdFor } from "../../../lib/orchestrator/registry-checkouts";
+import { RepoLocalRegistryStore } from "../../../lib/orchestrator/repo-local-store";
 import {
   CompanionResolver,
   companionRootedStore,
   findDescendantRepoLocalRegistries,
 } from "../../../lib/orchestrator/repository-link";
+import { namesOtherCheckout } from "../../../runtime/git-layout";
+import { repoLocalRegistryPath } from "../../../runtime/repo-local";
 import { inspectSetupPreflight } from "../../../lib/orchestrator/setup-preflight";
 import { runSetupFlowAtPath } from "../setup";
 import { runInstallCommand } from "../install";
@@ -42,6 +46,24 @@ interface CompanionLinkCommandDeps {
   installCompanion?: (companionPath: string) => Promise<boolean | void>;
   isDirectory?: (candidatePath: string) => Promise<boolean>;
   findDescendantRepoLocalRegistries?: typeof findDescendantRepoLocalRegistries;
+}
+
+/**
+ * A registry in another Checkout of this clone that names a companion just
+ * linked is that Checkout's Adoption, not a shadow: resolution from inside a
+ * linked worktree never reaches this folder's link (design Decisions 3 and 14).
+ */
+async function adoptedCheckout(
+  cwd: string,
+  shadowedPath: string,
+  companionPaths: readonly string[],
+): Promise<boolean> {
+  if (!namesOtherCheckout(cwd, shadowedPath)) return false;
+  const linked = new Set(companionPaths.map((companionPath) => path.resolve(companionPath)));
+  const local = await new RepoLocalRegistryStore(repoLocalRegistryPath(shadowedPath))
+    .load()
+    .catch(() => null);
+  return (local?.companions ?? []).some((pointer) => linked.has(path.resolve(pointer.path)));
 }
 
 /** All companions surfaced by the "existing companion" picker live under this directory. */
@@ -190,8 +212,9 @@ export async function runCompanionLinkCommandWithDeps(
     companionPaths = [resolvedCompanionPath];
   }
 
+  /** The registry keeps the ID of an entry the clone already has, and the link names the kept one. */
   const repository: LinkedRepository = {
-    id: path.basename(cwd),
+    id: linkIdFor(cwd),
     path: cwd,
   };
 
@@ -208,6 +231,7 @@ export async function runCompanionLinkCommandWithDeps(
   // Managed companions are git-backed; explicitly pasted paths retain local provenance.
   const persistedSource: CompanionSource = companionSource === "local" ? "local" : "git";
 
+  const keptIds: string[] = [];
   /* oxlint-disable no-await-in-loop -- each companion is set up, linked and installed in turn; a declined install stops the rest */
   for (const companionPath of companionPaths) {
     const preflight = await inspectPreflight(companionPath);
@@ -215,7 +239,11 @@ export async function runCompanionLinkCommandWithDeps(
       await runSetup(companionPath);
     }
 
-    await registerRepository(repository, { companionPath, companionSource: persistedSource });
+    const kept = await registerRepository(repository, {
+      companionPath,
+      companionSource: persistedSource,
+    });
+    keptIds.push(kept.id);
     await registerCompanion(companionPath);
     await invalidateInstallState({ kind: "companion", companionPath });
     if ((await installCompanion(companionPath)) === false) return;
@@ -224,7 +252,11 @@ export async function runCompanionLinkCommandWithDeps(
 
   let shadowedPaths: string[] = [];
   try {
-    shadowedPaths = await findShadowedRegistries(cwd);
+    const found = await findShadowedRegistries(cwd);
+    const adopted = await Promise.all(
+      found.map((shadowedPath) => adoptedCheckout(cwd, shadowedPath, companionPaths)),
+    );
+    shadowedPaths = found.filter((_shadowedPath, index) => !adopted[index]);
   } catch {
     // A diagnostic scan must never fail an otherwise successful link.
   }
@@ -238,7 +270,7 @@ export async function runCompanionLinkCommandWithDeps(
     );
   }
 
-  console.log(`Successfully linked companion for ${repository.id}`);
+  console.log(`Successfully linked companion for ${keptIds[0] ?? repository.id}`);
   for (const companionPath of companionPaths) {
     console.log(`  Companion: ${companionPath}`);
   }
