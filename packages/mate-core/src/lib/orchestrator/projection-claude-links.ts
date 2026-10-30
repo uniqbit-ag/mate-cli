@@ -166,17 +166,18 @@ export async function holdsOnlyMateLinks(
   const roots = await registeredRoots(root, repoPath, companionPath, registeredCompanionPaths);
   const manifest = await readManifest(repoPath).catch(() => null);
   const recorded = manifest ? links(manifest, "claude", { prefix: keyPrefix(root) }) : {};
-  for (const entry of existing) {
-    if (!entry.isSymbolicLink()) return false;
-    const target = await linkTarget(path.join(targetRoot, entry.name));
-    if (target === null) return false;
-    const record = recorded[`${keyPrefix(root)}${entry.name}`];
-    const owned = record
-      ? (await realOrResolved(record.target)) === target
-      : roots.some((candidate) => path.dirname(target) === candidate);
-    if (!owned) return false;
-  }
-  return true;
+  const owned = await Promise.all(
+    existing.map(async (entry) => {
+      if (!entry.isSymbolicLink()) return false;
+      const target = await linkTarget(path.join(targetRoot, entry.name));
+      if (target === null) return false;
+      const record = recorded[`${keyPrefix(root)}${entry.name}`];
+      return record
+        ? (await realOrResolved(record.target)) === target
+        : roots.some((candidate) => path.dirname(target) === candidate);
+    }),
+  );
+  return owned.every(Boolean);
 }
 
 function sortedEntries(records: Record<string, LinkRecord>): [string, LinkRecord][] {

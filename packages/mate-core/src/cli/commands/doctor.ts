@@ -429,6 +429,12 @@ async function wrappedForClaude(
   );
 }
 
+function carriesPrepareHook(checkoutRoot: string): boolean {
+  return readWrapStateSync(checkoutRoot).carriedClaudeHookGroups.some(
+    isMateSessionPrepareHookGroup,
+  );
+}
+
 /**
  * The Checkout section (design Decision 15): how the Checkout holding `cwd`
  * relates to its linked clone, and whether plain `claude` sessions there
@@ -469,13 +475,11 @@ async function collectCheckout(
     registeredCheckout,
     servingClaudeWrap,
   };
-  const carriesPrepare = (checkoutRoot: string) =>
-    readWrapStateSync(checkoutRoot).carriedClaudeHookGroups.some(isMateSessionPrepareHookGroup);
   if (
     physicalPath(servingClaudeWrap) !== root &&
     (await wrappedForClaude(companionPath, { id: repositoryId, path: root })) &&
-    !carriesPrepare(servingClaudeWrap) &&
-    !carriesPrepare(root)
+    !carriesPrepareHook(servingClaudeWrap) &&
+    !carriesPrepareHook(root)
   ) {
     const settings = path.join(servingClaudeWrap, ".claude", "settings.local.json");
     checkout.servingWrapWarning = `Plain \`claude\` sessions in ${root} start without Mate: Claude Code reads its hooks from ${settings}, which carries no ${FRAMEWORK_NAME} session-prepare hook. Run \`${FRAMEWORK_NAME} wrap\` here or in ${servingClaudeWrap}.`;
