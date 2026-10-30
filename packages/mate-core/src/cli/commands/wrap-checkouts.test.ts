@@ -82,6 +82,17 @@ describe("mate wrap and unwrap in a worktree", () => {
     );
   });
 
+  test("mate wrap in a worktree wraps the main worktree for Claude first and names it", async () => {
+    const linked = await clone();
+    const worktree = addWorktree(linked.main, path.join(linked.root, "acme-fix"));
+
+    const output = await quietly(() => runWrapCommand([], worktree, depsFor(linked)));
+
+    expect(output).toContain(`Serving Claude wrap: ${linked.main} (written)`);
+    expect(readWrapStateSync(linked.main).runtimes.has("claude")).toBe(true);
+    expect(readWrapStateSync(worktree).carriedClaudeHookGroups).toEqual([]);
+  });
+
   test("mate unwrap in a worktree of a wrapped clone says the next prepare wraps it again", async () => {
     const linked = await clone();
     await quietly(() => runWrapCommand([], linked.main, depsFor(linked)));

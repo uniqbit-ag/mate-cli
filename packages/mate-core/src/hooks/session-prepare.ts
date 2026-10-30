@@ -122,7 +122,7 @@ async function prepare(
   const session = resolveSession(env, folder);
   if (session.kind !== "projection") return nothing;
   const checkoutRoot = session.checkoutRoot;
-  const plan = unmanagedClaudeDelivery(session.projection.repoRoot);
+  const plan = unmanagedClaudeDelivery(checkoutRoot);
   const reconciles = plan.reconcile === "prepare-hook";
   const syncs = plan.gitSync === "prepare-hook";
   if (!reconciles && !syncs) return nothing;

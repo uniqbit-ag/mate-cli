@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { ClaudeHookGroup } from "./claude-hook-group";
+import { servingClaudeWrapRoot } from "./serving-claude-wrap";
 import type { SessionKind } from "./session-kind";
 import { NOT_WRAPPED, readWrapStateSync, type WrapState } from "./wrap-state";
 
@@ -166,7 +167,16 @@ function planChannels(
   }
 }
 
-/** For session-start hooks: a plain session's plan from a lenient read; no root, not wrapped. */
-export function unmanagedClaudeDelivery(repoRoot: string | undefined): ClaudeDeliveryPlan {
-  return planClaudeDelivery("unmanaged", repoRoot ? readWrapStateSync(repoRoot) : NOT_WRAPPED);
+/**
+ * For session-start hooks: the plan of a plain session in the Checkout at
+ * `checkoutRoot`, from a lenient read; no root, not wrapped. Planned from the
+ * wrap serving it while that one is wrapped for Claude, else from its own:
+ * Claude Code loads both settings files there, and each hook group runs from
+ * the one that carries it (design Decisions 1 and 12).
+ */
+export function unmanagedClaudeDelivery(checkoutRoot: string | undefined): ClaudeDeliveryPlan {
+  if (!checkoutRoot) return planClaudeDelivery("unmanaged", NOT_WRAPPED);
+  const serving = readWrapStateSync(servingClaudeWrapRoot(checkoutRoot));
+  const wrap = serving.runtimes.has("claude") ? serving : readWrapStateSync(checkoutRoot);
+  return planClaudeDelivery("unmanaged", wrap);
 }

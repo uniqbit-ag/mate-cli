@@ -71,6 +71,7 @@ function stub(overrides: Partial<FrameworkConfig> = {}): void {
       wrapState: passWrapState,
     };
   });
+  sessionPrepareDeps.reconcileServingClaudeWrap = mock(async () => null);
   sessionPrepareDeps.runCapabilityPreflight = mock(async () => {
     calls.push("preflight");
   });
@@ -538,6 +539,100 @@ describe("adopted runtimes (share-repository-link-across-worktrees)", () => {
     expect(sessionPrepareDeps.runCapabilityPreflight).toHaveBeenCalledWith(
       expect.objectContaining({ providerId: "opencode" }),
     );
+  });
+});
+
+describe("the serving Claude wrap (share-repository-link-across-worktrees)", () => {
+  function served(kind: "current" | "failed") {
+    return mock(async () => {
+      calls.push("serving-wrap");
+      return {
+        repository: { id: "acme", path: "/acme/main" },
+        result:
+          kind === "failed"
+            ? { kind: "failed" as const, message: "acme broke" }
+            : {
+                kind: "current" as const,
+                projectionRoot: "",
+                companionPath,
+                documents: [],
+                writtenDocuments: [],
+                changed: { written: [], removed: [] },
+                warnings: [],
+                runtimes: new Set<"claude" | "opencode">(["claude"]),
+                wrapState: passWrapState,
+              },
+      };
+    });
+  }
+
+  test("a local prepare reconciles an existing serving wrap first and never creates one", async () => {
+    sessionPrepareDeps.reconcileServingClaudeWrap = served("current");
+
+    await prepareSession({
+      runtime: "claude",
+      runtimes: ["claude"],
+      companionPath,
+      repository,
+      mode: "local",
+    });
+
+    expect(calls).toEqual(["config", "files", "serving-wrap", "wrap", "preflight"]);
+    expect(sessionPrepareDeps.reconcileServingClaudeWrap).toHaveBeenCalledWith(
+      companionPath,
+      repository,
+      expect.objectContaining({ create: false }),
+    );
+  });
+
+  test("a Claude launch creates the serving wrap when it is missing", async () => {
+    sessionPrepareDeps.reconcileServingClaudeWrap = served("current");
+
+    await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+      config,
+    });
+
+    expect(sessionPrepareDeps.reconcileServingClaudeWrap).toHaveBeenCalledWith(
+      companionPath,
+      repository,
+      expect.objectContaining({ create: true }),
+    );
+  });
+
+  test("an OpenCode-only prepare leaves the serving Claude wrap alone", async () => {
+    sessionPrepareDeps.reconcileServingClaudeWrap = served("current");
+
+    await prepareSession({
+      runtime: "opencode",
+      runtimes: ["opencode"],
+      companionPath,
+      repository,
+      mode: "local",
+    });
+
+    expect(sessionPrepareDeps.reconcileServingClaudeWrap).not.toHaveBeenCalled();
+  });
+
+  test("a failed serving wrap fails the launch, naming the main worktree", async () => {
+    sessionPrepareDeps.reconcileServingClaudeWrap = served("failed");
+
+    const result = await prepareSession({
+      runtime: "claude",
+      companionPath,
+      repository,
+      mode: "attended",
+      config,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.steps.find((step) => step.step === "working-target")?.detail).toContain(
+      "/acme/main",
+    );
+    expect(sessionPrepareDeps.runWrapPass).not.toHaveBeenCalled();
   });
 });
 

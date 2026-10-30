@@ -5,6 +5,9 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { getClaudePluginRoot } from "../../../lib/package-paths";
+import { physicalPath } from "../../../runtime/physical-path";
+import { servingClaudeWrapRoot } from "../../../runtime/serving-claude-wrap";
+import { readWrapStateSync } from "../../../runtime/wrap-state";
 import { writeAtomicThroughLink } from "../../../runtime/write-atomic";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import {
@@ -38,6 +41,7 @@ import {
 import { patchSkillTreeMarkdownFiles } from "./skill-tree";
 import {
   filterClaudeHookGroups,
+  hookGroupKey,
   mergeClaudeHookGroups,
   removeManagedHookGroups,
   readClaudeMcpConfig,
@@ -371,11 +375,14 @@ function claudeSettingsRegions(
     SubagentStart: mateInstructionHookGroups(),
   };
   const events = [...new Set([...Object.keys(mateHooks), ...Object.keys(capabilityHooks)])];
+  const served = servedHookGroupKeys(repoRoot);
   return [
     ...events.map((event): ManagedRegion => ({
       at: ["hooks", event],
       kind: "list",
-      values: [...(mateHooks[event] ?? []), ...(capabilityHooks[event] ?? [])],
+      values: [...(mateHooks[event] ?? []), ...(capabilityHooks[event] ?? [])].filter(
+        (group) => !served.has(hookGroupKey(group as ClaudeHookGroup)),
+      ),
     })),
     /**
      * `stripPrefix` heals a repository an older Mate wrapped. That version wrote
@@ -431,6 +438,18 @@ function claudeSettingsRegions(
           } satisfies ManagedRegion,
         ]),
   ];
+}
+
+/**
+ * The hook groups the Claude wrap of the Checkout serving `repoRoot` carries,
+ * when that is another Checkout (design Decisions 1 and 12): Claude Code loads
+ * both settings files there, so a group either one carries runs once only
+ * when the Checkout's own leaves it out.
+ */
+function servedHookGroupKeys(repoRoot: string): ReadonlySet<string> {
+  const serving = servingClaudeWrapRoot(repoRoot);
+  if (physicalPath(serving) === physicalPath(repoRoot)) return new Set();
+  return new Set(readWrapStateSync(serving).carriedClaudeHookGroups.map(hookGroupKey));
 }
 
 /**

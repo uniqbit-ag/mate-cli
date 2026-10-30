@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { addWorktree, git } from "../../test/git-checkouts";
-import { projectedClone, type ProjectedClone } from "../../test/projected-clone";
+import { project, projectedClone, type ProjectedClone } from "../../test/projected-clone";
 import type { InstructionReader } from "../runtime/companion-instructions";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
 import { manifestPath } from "../runtime/runtime-document-manifest";
@@ -149,6 +149,21 @@ describe("the session-prepare hook in a worktree", () => {
         argv: [PROJECTED_FLAG],
         input: start(path.join(worktree, "src")),
       },
+      deps,
+    );
+
+    expect(prepared).toEqual([worktree]);
+  });
+
+  test("an adopted worktree with no wrap of its own is planned from the main worktree's", async () => {
+    const clone = projectedClone(roots);
+    wrapMainForClaude(clone);
+    const worktree = addWorktree(clone.main, path.join(clone.root, "acme-fix"));
+    project(clone, worktree);
+    const { deps, prepared } = fakeDeps();
+
+    await runSessionStartHook(
+      { env: clone.env, cwd: clone.main, argv: [PROJECTED_FLAG], input: start(worktree) },
       deps,
     );
 

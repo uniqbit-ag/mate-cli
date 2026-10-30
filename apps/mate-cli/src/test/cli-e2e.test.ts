@@ -3062,10 +3062,54 @@ describe("worktree Checkouts (share-repository-link-across-worktrees)", () => {
     expect(projection).toMatchObject({ repositoryPath: worktree, repositoryId: "app" });
     expect(await fs.readlink(path.join(worktree, ".mate", "companion"))).toBe(scenario.companion);
     expect(await registryText(scenario)).toBe(registry);
-    /** One run wrapped it, or both did; a run that found the lock held left the wrap to the other. */
-    const settings = JSON.parse(
-      await fs.readFile(path.join(worktree, ".claude", "settings.local.json"), "utf8"),
-    ) as { hooks?: { SessionStart?: unknown[] } };
-    expect(JSON.stringify(settings.hooks?.SessionStart ?? [])).toContain("session-prepare");
+    /**
+     * One run wrapped it, or both did; a run that found the lock held left the
+     * wrap to the other. The main worktree's settings carry the session-prepare
+     * hook that serves it, so its own leave that hook out.
+     */
+    const hooksOf = async (checkout: string) =>
+      JSON.stringify(
+        (
+          JSON.parse(
+            await fs.readFile(path.join(checkout, ".claude", "settings.local.json"), "utf8"),
+          ) as { hooks?: unknown }
+        ).hooks ?? {},
+      );
+    expect(await hooksOf(scenario.working)).toContain("session-prepare");
+    expect(await hooksOf(worktree)).not.toContain("session-prepare");
+  });
+
+  test("mate claude in a sibling worktree loads each hook group once across the settings it reads", async () => {
+    const scenario = await linkedClone("mate-cli-e2e-worktree-hooks-");
+    const capturePath = await writeAdapterStub(scenario, "claude");
+    const worktree = await addWorktree(scenario, path.join(scenario.root, "app-fix"), "fix");
+
+    const result = await runMate(scenario, {
+      cwd: worktree,
+      args: ["claude", "--print", "hello"],
+      input: "y\n",
+      env: { MATE_E2E_CAPTURE_PATH: capturePath },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const { argv } = JSON.parse(await fs.readFile(capturePath, "utf8")) as { argv: string[] };
+    expect(argv).not.toContain("--mcp-config");
+    const settingsAt = argv.indexOf("--settings");
+    const files = [
+      path.join(scenario.working, ".claude", "settings.local.json"),
+      path.join(worktree, ".claude", "settings.local.json"),
+      ...(settingsAt >= 0 ? [argv[settingsAt + 1]!] : []),
+    ];
+    const keys: string[] = [];
+    for (const file of files) {
+      const raw = await fs.readFile(file, "utf8").catch(() => "{}");
+      const hooks = (JSON.parse(raw) as { hooks?: Record<string, unknown[]> }).hooks ?? {};
+      for (const [event, groups] of Object.entries(hooks)) {
+        for (const group of groups) keys.push(`${event} ${JSON.stringify(group)}`);
+      }
+    }
+    expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual([]);
+    expect(keys.some((key) => key.startsWith("SubagentStart "))).toBe(true);
+    expect(keys.some((key) => key.includes("session-prepare"))).toBe(true);
   });
 });

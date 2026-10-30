@@ -9,13 +9,14 @@ import {
   type UnattendedSyncOutcome,
 } from "../../runtime/companion-sync";
 import { managedSessionKind, type SessionKind } from "../../runtime/session-kind";
-import type { WrapState } from "../../runtime/wrap-state";
+import { joinedClaudeWrapState, type WrapState } from "../../runtime/wrap-state";
 import { syncCompanionFiles } from "../../tools/setup";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
 import type { ClaudePluginFolders } from "../../tools/setup/providers/claude-plugin-folders";
 import { attendedLockOptions, syncCompanionGit } from "./companion-git-sync";
 import { readCompanionConfig } from "./config-store";
 import { entryFailureMessage, firstFailure, type ProjectionChangedPaths } from "./projection-types";
+import { reconcileServingClaudeWrap } from "./serving-claude-wrap";
 import { LaunchPreflightError, type FrameworkConfig, type LinkedRepository } from "./types";
 import { project, projectWorkingRepositoryBestEffort } from "./working-repo-projection";
 import { runWrapPass } from "./wrap-pass";
@@ -144,6 +145,7 @@ export const sessionPrepareDeps = {
    */
   refreshProjectionRoot: projectWorkingRepositoryBestEffort,
   runWrapPass,
+  reconcileServingClaudeWrap,
   runCapabilityPreflight,
   withCompanionLock,
   /** As the launch decides it: Git may prompt only with a terminal on both ends. */
@@ -261,6 +263,20 @@ async function reconcileWrap(
   config: FrameworkConfig,
   run: StepLog,
 ): Promise<void> {
+  /** First, so the Checkout's own Claude wrap leaves out what the serving one carries. */
+  const served = runtimes.includes("claude")
+    ? await sessionPrepareDeps.reconcileServingClaudeWrap(input.companionPath, repository, {
+        create: input.mode === "attended",
+        config,
+      })
+    : null;
+  if (served?.result.kind === "failed") {
+    const failure = `the Claude wrap of ${served.repository.path}, which serves ${repository.id} there, failed: ${served.result.message}`;
+    run.fail("working-target", new LaunchPreflightError(failure), { runtimes: ["claude"] });
+    if (run.stopped) return;
+  } else if (served) {
+    run.warnings.push(...served.result.warnings);
+  }
   const wrapped = await sessionPrepareDeps.runWrapPass(input.companionPath, repository, {
     runtimes,
     config,
@@ -273,7 +289,10 @@ async function reconcileWrap(
   if (reportsClaudePluginFolders(input)) {
     run.warnings.push(...publicationWarnings(wrapped.claudePluginFolders));
   }
-  run.wrapState = wrapped.wrapState;
+  run.wrapState =
+    served && served.result.kind !== "failed"
+      ? joinedClaudeWrapState(wrapped.wrapState, served.result.wrapState)
+      : wrapped.wrapState;
   run.push({
     step: "working-target",
     outcome: "ok",

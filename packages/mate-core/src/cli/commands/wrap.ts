@@ -5,6 +5,10 @@ import { adoptNewCheckout } from "../../lib/orchestrator/checkout-adoption";
 import { findRepoLocalLinkedRepository } from "../../lib/orchestrator/repository-link";
 import type { ProjectionChangedPaths } from "../../lib/orchestrator/projection-types";
 import { attendedLockOptions } from "../../lib/orchestrator/companion-git-sync";
+import {
+  reconcileServingClaudeWrap,
+  type ServingClaudeWrap,
+} from "../../lib/orchestrator/serving-claude-wrap";
 import { runWrapPass, type WrapPassResult } from "../../lib/orchestrator/wrap-pass";
 import { withCompanionLock } from "../../runtime/companion-lock";
 import { WRAP_RUNTIMES } from "../../runtime/wrap-state";
@@ -15,6 +19,7 @@ export interface WrapCommandDependencies {
   /** A new Checkout of a linked clone is adopted before it is wrapped (design Decision 7). */
   adoptNewCheckout?: (folder: string) => ReturnType<typeof adoptNewCheckout>;
   runWrapPass?: typeof runWrapPass;
+  reconcileServingClaudeWrap?: typeof reconcileServingClaudeWrap;
   resolveLinkedCompanions?: typeof launchAmbiguityDeps.resolveLinkedCompanions;
 }
 
@@ -22,6 +27,7 @@ export const wrapCommandDeps: Required<WrapCommandDependencies> = {
   findRepoLocalLinkedRepository,
   adoptNewCheckout: (folder) => adoptNewCheckout(folder),
   runWrapPass,
+  reconcileServingClaudeWrap,
   resolveLinkedCompanions: (cwd: string) => launchAmbiguityDeps.resolveLinkedCompanions(cwd),
 };
 
@@ -78,6 +84,7 @@ export async function runWrapCommand(
   const wrap = deps.runWrapPass ?? wrapCommandDeps.runWrapPass;
   const resolveLinked = deps.resolveLinkedCompanions ?? wrapCommandDeps.resolveLinkedCompanions;
   const adopt = deps.adoptNewCheckout ?? wrapCommandDeps.adoptNewCheckout;
+  const serve = deps.reconcileServingClaudeWrap ?? wrapCommandDeps.reconcileServingClaudeWrap;
 
   const parsed = parseWrapArgs(argv);
   if ("error" in parsed) {
@@ -111,13 +118,33 @@ export async function runWrapCommand(
     return;
   }
 
-  /** Serialized with Session Prepare and every sync, which rewrite the same manifest. */
-  const locked = await withCompanionLock(companionPath, attendedLockOptions(companionPath), () =>
-    wrap(companionPath, repository),
+  /**
+   * Serialized with Session Prepare and every sync, which rewrite the same
+   * manifest. In a linked worktree the Claude wrap serving it comes first, so
+   * the worktree's own leaves out what that one carries (design Decision 12).
+   */
+  const locked = await withCompanionLock(
+    companionPath,
+    attendedLockOptions(companionPath),
+    async () => {
+      const served = await serve(companionPath, repository, { create: true });
+      if (served?.result.kind === "failed") return { served, result: served.result };
+      return { served, result: await wrap(companionPath, repository) };
+    },
   );
-  const result: WrapPassResult = locked.acquired
-    ? locked.value
-    : { kind: "failed", message: "another companion synchronization is still running." };
+  const { served, result }: { served?: ServingClaudeWrap | null; result: WrapPassResult } =
+    locked.acquired
+      ? locked.value
+      : {
+          result: {
+            kind: "failed",
+            message: "another companion synchronization is still running.",
+          },
+        };
+  if (served) {
+    const state = served.result.kind === "failed" ? "failed" : served.result.kind;
+    console.log(`Serving Claude wrap: ${served.repository.path} (${state})`);
+  }
   if (result.kind === "failed") {
     console.error(`${FRAMEWORK_NAME}: ${result.message}`);
     process.exitCode = 1;

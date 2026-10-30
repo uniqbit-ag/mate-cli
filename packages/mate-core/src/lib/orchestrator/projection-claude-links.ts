@@ -140,6 +140,45 @@ export async function reconcileClaudeLinks(
   return changed ? "written" : "current";
 }
 
+/** Mate has linked at least one entry of `root` in the Working Repository at `repoPath`. */
+export async function carriesClaudeLinks(root: ClaudeLinkRoot, repoPath: string): Promise<boolean> {
+  const manifest = await readManifest(repoPath).catch(() => null);
+  return (
+    manifest !== null &&
+    Object.keys(links(manifest, "claude", { prefix: keyPrefix(root) })).length > 0
+  );
+}
+
+/**
+ * `root`'s folder in the Working Repository is missing or holds only Mate's
+ * links: recorded ones, or ones resolving into a registered, current or
+ * projected companion.
+ */
+export async function holdsOnlyMateLinks(
+  root: ClaudeLinkRoot,
+  repoPath: string,
+  companionPath: string | null,
+  registeredCompanionPaths: string[] = [],
+): Promise<boolean> {
+  const targetRoot = path.join(path.resolve(repoPath), rootPath(root));
+  const existing = await fs.readdir(targetRoot, { withFileTypes: true }).catch(() => []);
+  if (existing.length === 0) return true;
+  const roots = await registeredRoots(root, repoPath, companionPath, registeredCompanionPaths);
+  const manifest = await readManifest(repoPath).catch(() => null);
+  const recorded = manifest ? links(manifest, "claude", { prefix: keyPrefix(root) }) : {};
+  for (const entry of existing) {
+    if (!entry.isSymbolicLink()) return false;
+    const target = await linkTarget(path.join(targetRoot, entry.name));
+    if (target === null) return false;
+    const record = recorded[`${keyPrefix(root)}${entry.name}`];
+    const owned = record
+      ? (await realOrResolved(record.target)) === target
+      : roots.some((candidate) => path.dirname(target) === candidate);
+    if (!owned) return false;
+  }
+  return true;
+}
+
 function sortedEntries(records: Record<string, LinkRecord>): [string, LinkRecord][] {
   return Object.entries(records)
     .map(([key, record]): [string, LinkRecord] => [

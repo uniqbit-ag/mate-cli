@@ -50,7 +50,7 @@ export async function buildBanner(
    */
   const projection = session.kind === "projection" ? session.projection : undefined;
   const ownsGitSync =
-    projection !== undefined && unmanagedClaudeDelivery(projection.repoRoot).gitSync === "banner";
+    projection !== undefined && unmanagedClaudeDelivery(session.checkoutRoot).gitSync === "banner";
   const gitNotes = ownsGitSync
     ? unattendedSyncStalenessLines(
         await syncCompanionUnattended(session.companionPath, { lock: "try", ...syncOptions }),
