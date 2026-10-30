@@ -127,6 +127,57 @@ mate: this folder's projection names a companion that is not registered in your 
 fix it, run `mate companion link` in the repository to register and link a
 companion, or run `mate wrap` from a checkout the companion links.
 
+## Mate Is Missing In A Git Worktree
+
+Mate adopts a new worktree of a linked clone the first time it runs there (see
+[Worktrees](/docs/concepts/repositories#worktrees)). Run `mate doctor` in the
+worktree: its Checkout section names the clone's Registered Checkout, the
+checkout whose Claude wrap serves this one, and any warning.
+
+### The main worktree is not wrapped for Claude
+
+In a linked worktree, plain `claude` runs the hooks of the main worktree's
+`.claude/settings.local.json`. After `mate unwrap` or `mate working cleanup` in
+the main worktree, plain `claude` in every linked worktree starts without Mate's
+session-prepare hook, and `mate doctor` in each warns and names that file. Run
+`mate wrap` in the worktree: it wraps the main worktree for Claude again, then
+the worktree.
+
+### Claude Code is older than 2.1.211
+
+Claude Code reads the main worktree's settings in a linked worktree from 2.1.211
+on, and its skills from 2.1.277 on. With an older Claude Code, a plain session
+in a new worktree reads only the worktree's own settings, which Mate writes once
+it has run there: start the first session with `mate claude`, or run `mate wrap`
+first. Update Claude Code to get Mate in the first plain session too.
+
+### Windows and bare clones
+
+On Windows, and in a worktree of a bare clone, each worktree uses only its own
+Claude wrap. The first plain `claude` session in a new worktree therefore starts
+without Mate; start it with `mate claude`, or run `mate wrap` there first.
+
+In a worktree of a bare clone, Claude Code reads MCP servers from the bare
+folder's entry in `~/.claude.json`, which no wrap writes. Mate's MCP servers are
+therefore missing there, in plain and in `mate claude` sessions. This is a known
+limit.
+
+### The main worktree belongs to another user
+
+`mate wrap` and `mate claude` in a linked worktree write the main worktree's
+`.claude/settings.local.json`. When that file or folder belongs to another user,
+they stop with the write error. Ask the main worktree's owner to run
+`mate wrap` there, or work in a clone of your own.
+
+### The worktree was moved by hand
+
+Git finds a worktree through a record in the clone's shared Git folder. A
+worktree moved without `git worktree move` keeps a record naming its old
+folder, so Git, and Mate, no longer count it as a checkout of the clone: Mate
+neither adopts it nor lends it the main worktree's projection, and `mate doctor`
+shows it as not recognized. Run `git worktree repair` in the moved worktree, or
+`git worktree repair <path>` in the main worktree.
+
 ## A Capability's Claude Plugin Does Not Load In Plain `claude`
 
 Run `mate doctor`. Its Claude Plugins table has a Plain Sessions column showing

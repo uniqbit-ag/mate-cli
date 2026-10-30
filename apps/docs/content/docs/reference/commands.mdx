@@ -25,6 +25,15 @@ mate companion link
 mate opencode
 ```
 
+In a Git worktree, `mate companion link` attaches the worktree to its clone's
+entry when the chosen companion already lists the clone: the worktree's link
+takes that entry's ID, and the success line names it. The first link of a clone,
+run in a linked worktree, names the entry after the main worktree's folder, or
+for a bare clone after the bare folder without `.git`, and that worktree becomes
+the clone's Registered Checkout. The check for other links that would shadow
+this one skips the clone's other checkouts that already name the same companion.
+See [Worktrees](/docs/concepts/repositories#worktrees).
+
 `mate companion update` requires a stable Mate that is also the newest stable
 release; otherwise it stops and asks you to run `mate update` first. It
 regenerates the companion's Mate-managed files, skills, and OpenSpec output,
@@ -45,6 +54,10 @@ All worktrees of a clone share one Git exclude file. Cleanup in one worktree kee
 any exclude line that another worktree still needs, because that worktree still
 holds a file the line hides, and names it:
 `kept: git-excludes (still needed by <path>)`.
+
+In a worktree other than the clone's Registered Checkout, cleanup removes only
+that worktree's integration and says that it does not stick:
+`<path> is another Checkout of <id>; mate adopts it again the next time it runs here.`
 
 ## Installation And Health
 
@@ -77,6 +90,20 @@ reason, and that plain agent sessions there run without Mate. It suggests
 projection writes it, and `message`. When a file the check needs cannot be read,
 `unreadable` names it and its error. The field is absent when no projection is
 refused, and it does not change the exit status.
+
+Inside a Git checkout of a linked clone, `mate doctor` shows a Checkout section:
+the checkout, its role (the clone's Registered Checkout, or another checkout of
+it), the Registered Checkout, and the checkout whose Claude wrap serves it (the
+main worktree for a linked worktree). It warns when plain `claude` sessions in a
+checkout wrapped for Claude would start without Mate, because neither the
+serving wrap's `.claude/settings.local.json` nor the checkout's own carries
+Mate's session-prepare hook, and it names that file and `mate wrap`. A linked
+worktree whose record in the shared Git folder names another folder, as after
+moving it by hand, is shown as not recognized, with `git worktree repair`.
+`--json` carries the section as `checkout`, with `root`, `role` (`registered`,
+`other` or `not-recognized`), `repositoryId`, `registeredCheckout`,
+`servingClaudeWrap` and, when it applies, `servingWrapWarning`. The section does
+not change the exit status.
 
 ## Comment Guidance
 
@@ -355,6 +382,17 @@ keeps the repository link; the withdrawal holds until the next `mate claude` or
 another worktree of the clone still has that copy, and unwrap says so:
 `Kept: <n> copy exclude lines still needed by <path>`.
 
+In a Git worktree, `mate wrap` first adopts the worktree when it has no link of
+its own. For Claude it then creates or reconciles the main worktree's wrap,
+which Claude Code also reads in the worktree, and prints
+`Serving Claude wrap: <path> (written)` (or `current`, or `failed`). The worktree's own
+`.claude/settings.local.json` then leaves out the hook groups the main
+worktree's wrap carries. A worktree of a bare clone and every worktree on
+Windows get only their own wrap. `mate unwrap` in a worktree other than the
+Registered Checkout adds that the next `mate session prepare` wraps it again
+with the Registered Checkout's runtimes. See
+[Worktrees](/docs/concepts/repositories#worktrees).
+
 ## Session Preparation
 
 ```sh
@@ -376,6 +414,13 @@ refuses a repository wrapped for neither runtime and names `mate wrap`. `--json`
 prints each step's outcome, the runtimes each step answered for, and the warnings.
 It reports no Claude plugin-folder problems; `mate wrap` and `mate doctor` name
 them. The OpenCode plugin and the Claude session-prepare hook call this for you.
+
+In a checkout with no wrap of its own whose clone a companion lists, such as a
+new worktree, the command adopts the checkout and prepares it for the runtimes
+the clone's Registered Checkout is wrapped for. When the Registered Checkout is
+wrapped for neither runtime, it refuses as above and writes nothing. In a linked
+worktree, its Claude reconcile also reconciles the main worktree's wrap when one
+exists, but never creates it.
 
 ## Session Context
 
