@@ -41,6 +41,7 @@ import {
   type ClaudePluginUnpublishedReason,
 } from "../../tools/setup/providers/claude-plugin-folders";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
+import { isUvNeeded } from "../../tools/setup/package-managers/uv";
 import { writeJsonStdout } from "../write-json-stdout";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
 
@@ -160,7 +161,7 @@ function getSelectedToolChecks(config: {
   if (selectedPackageManagers.has("bun")) {
     checks.push({ name: "bun", command: "bun", source: "package manager" });
   }
-  if (selectedPackageManagers.has("uv")) {
+  if (isUvNeeded(config)) {
     checks.push({ name: "uv", command: "uv", source: "package manager" });
   }
   if (selectedCapabilities.has("openspec")) {

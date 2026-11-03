@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
 
 import type { Plugin, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
@@ -17,6 +19,34 @@ export function isInstalledViaUvTool(pkgName: string): boolean {
   }
 }
 
+/** Capabilities whose installers run through uv; uv is installed only for them. */
+export const UV_DEPENDENT_CAPABILITIES = ["graphify"];
+
+export function isUvNeeded(config: { capabilities?: { name: string }[] }): boolean {
+  return (config.capabilities ?? []).some((capability) =>
+    UV_DEPENDENT_CAPABILITIES.includes(capability.name),
+  );
+}
+
+/**
+ * Directories the uv installer may put `uv` (and `uv tool` binaries) in, in
+ * its own precedence order. The installer only edits shell profiles, so a
+ * fresh install is not on this process's PATH yet.
+ */
+export function uvInstallDirs(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = os.homedir(),
+): string[] {
+  const dirs = [
+    env.UV_INSTALL_DIR,
+    env.XDG_BIN_HOME,
+    env.XDG_DATA_HOME ? path.join(env.XDG_DATA_HOME, "..", "bin") : undefined,
+    path.join(home, ".local", "bin"),
+    path.join(home, ".cargo", "bin"),
+  ];
+  return [...new Set(dirs.filter((dir): dir is string => Boolean(dir)))];
+}
+
 export interface PackageManagerSetupDeps {
   confirm?: typeof confirm;
   isCommandOnPath?: (command: string, pathValue: string) => boolean;
@@ -24,6 +54,8 @@ export interface PackageManagerSetupDeps {
   platform?: NodeJS.Platform;
   runCommand?: (command: string, args: string[], options?: { cwd?: string }) => Promise<void>;
   runShellCommand?: (command: string, options?: { cwd?: string }) => Promise<void>;
+  /** Install locations probed when uv is not on PATH; defaults to {@link uvInstallDirs}. */
+  installDirs?: string[];
 }
 
 const UV_GITIGNORE_ENTRIES = [
@@ -43,6 +75,23 @@ export function createUvPlugin(deps: PackageManagerSetupDeps = {}): Plugin & { l
   const platform = deps.platform ?? process.platform;
   const execCommand = deps.runCommand ?? runCommand;
   const execShellCommand = deps.runShellCommand ?? runShellCommand;
+  const currentPath = () => deps.pathValue ?? process.env.PATH ?? "";
+
+  /**
+   * Find uv on PATH or in an install location. A uv found only in an install
+   * location joins this process's PATH, so the installers that run through
+   * it later in the same run (`uv tool install graphifyy`) find uv and the
+   * tool binaries it puts next to itself.
+   */
+  function locateUv(): boolean {
+    if (onPath("uv", currentPath())) return true;
+    const dir = (deps.installDirs ?? uvInstallDirs()).find((candidate) => onPath("uv", candidate));
+    if (!dir) return false;
+    if (deps.pathValue === undefined) {
+      process.env.PATH = [dir, process.env.PATH].filter(Boolean).join(path.delimiter);
+    }
+    return true;
+  }
 
   function installPlan(): { command: string; install: () => Promise<void> } {
     const pathValue = deps.pathValue ?? process.env.PATH ?? "";
@@ -83,14 +132,17 @@ export function createUvPlugin(deps: PackageManagerSetupDeps = {}): Plugin & { l
     id: "uv",
     kind: "packageManager",
     label: "uv",
-    description: "Python package manager project bootstrap companion capabilities.",
+    description: "Python package manager, installed only for capabilities that need it (Graphify).",
     defaultSelected: false,
+    selectable: false,
     language: "python",
-    isEnabled: (config) => (config.packageManagers ?? ["bun"]).includes("uv"),
+    // Derived from the capabilities that install through uv. A `uv` entry in
+    // `packageManagers` is a leftover from when uv was required for every
+    // companion and carries no choice, so it neither enables nor requires uv.
+    isEnabled: (config) => isUvNeeded(config),
     gitignoreEntries: () => UV_GITIGNORE_ENTRIES,
     getInstallRequirements: (): InstallRequirement[] => {
       const plan = installPlan();
-      const pathValue = deps.pathValue ?? process.env.PATH ?? "";
       return [
         {
           id: "core:uv",
@@ -99,20 +151,20 @@ export function createUvPlugin(deps: PackageManagerSetupDeps = {}): Plugin & { l
           source: "Mate package manager",
           command: plan.command,
           fingerprint: `uv:${platform}:${plan.command}`,
-          detect: () => onPath("uv", pathValue),
+          detect: locateUv,
           install: async () => {
             await plan.install();
-            await runUpdateShell();
+            if (locateUv()) await runUpdateShell();
           },
-          verify: () => onPath("uv", deps.pathValue ?? process.env.PATH ?? ""),
+          verify: locateUv,
         },
       ];
     },
     async apply(ctx: SetupContext) {
-      const pathValue = deps.pathValue ?? process.env.PATH ?? "";
-      if (onPath("uv", pathValue)) {
+      if (locateUv()) {
         return;
       }
+      const pathValue = currentPath();
 
       if (ctx.mode !== "setup") {
         return;

@@ -121,8 +121,9 @@ describe("runDoctorCommand", () => {
     await makeExecutable(binPath, "uv");
     const companionPath = await setupCompanion(root, repoPath, {
       allowedAgents: ["claude"],
-      packageManagers: ["uv", "bun"],
-      capabilities: [{ name: "openspec" }],
+      packageManagers: ["bun"],
+      // uv is checked because Graphify installs through it.
+      capabilities: [{ name: "openspec" }, { name: "graphify" }],
     });
     const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
     await globalConfigStore.register(companionPath);
@@ -143,7 +144,29 @@ describe("runDoctorCommand", () => {
     expect(output).toContain("ok");
     expect(output).toContain("missing");
     expect(output).not.toContain("tokensave");
-    expect(output).not.toContain("graphify");
+    expect(output).toContain("graphify");
+  });
+
+  test("does not check uv for a legacy uv entry without graphify", async () => {
+    const root = await makeTempDir("doctor-legacy-uv-");
+    const repoPath = path.join(root, "working");
+    const binPath = path.join(root, "bin");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(binPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath, {
+      allowedAgents: ["claude"],
+      packageManagers: ["bun", "uv"],
+      capabilities: [{ name: "openspec" }],
+    });
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], { cwd: repoPath, globalConfigStore, pathValue: binPath }),
+    );
+
+    expect(output).toContain("Tool Installations");
+    expect(output).not.toMatch(/^\W*uv\b/m);
   });
 
   test("reports the bundled OpenSpec CLI as ok when only its version is unreadable", async () => {

@@ -23,15 +23,16 @@ export interface MateCli {
 /**
  * Assemble a distribution from an identity config and plugin registration
  * entries. Distributions choose their plugin set; the framework always adds
- * bun and uv as required runtime substrate, plus gitignore management named
- * after the framework identity (built last since it reads the full plugin
- * set). Returns the runnable CLI.
+ * bun as the required runtime substrate, uv for the capabilities that install
+ * through it (enabled only by them, e.g. Graphify), plus gitignore management
+ * named after the framework identity (built last since it reads the full
+ * plugin set). Returns the runnable CLI.
  */
 export function createMate({ config, plugins, main: runMain = main }: CreateMateOptions): MateCli {
   const registry = new PluginRegistry([
     ...plugins,
     { plugin: createBunPlugin(), policy: "required" },
-    { plugin: createUvPlugin(), policy: "required" },
+    { plugin: createUvPlugin(), policy: "optional" },
     createGitignorePlugin(FRAMEWORK_NAME),
   ]);
   setActiveDistribution({ config, registry });

@@ -150,7 +150,14 @@ export function buildInstallPlan(
 ): InstallPlan {
   const requirements: InstallRequirement[] = [];
   const bunPlugin = createBunPlugin();
-  const allPlugins = [bunPlugin, ...plugins.filter((plugin) => plugin.id !== bunPlugin.id)];
+  // Package managers install first: capability installers run through them
+  // (Graphify's `uv tool install`).
+  const rest = plugins.filter((plugin) => plugin.id !== bunPlugin.id);
+  const allPlugins = [
+    bunPlugin,
+    ...rest.filter((plugin) => plugin.kind === "packageManager"),
+    ...rest.filter((plugin) => plugin.kind !== "packageManager"),
+  ];
   for (const plugin of allPlugins) {
     if (plugin.id !== "bun" && !plugin.isEnabled(context.config)) continue;
     requirements.push(

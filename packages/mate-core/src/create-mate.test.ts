@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe("createMate", () => {
-  test("builds the registry from bun, uv, the provided plugin entries, and the built-in gitignore plugin", () => {
+  test("builds the registry from bun, uv (enabled only by its dependents), the provided plugin entries, and the built-in gitignore plugin", () => {
     const pluginA = makePlugin("acme-a");
     const pluginB = makePlugin("acme-b");
     const cli = createMate({
@@ -44,7 +44,7 @@ describe("createMate", () => {
     const all = cli.registry.getAll();
     expect(all.map((plugin) => plugin.id)).toEqual(["acme-a", "acme-b", "bun", "uv", "gitignore"]);
     expect(cli.registry.getPolicy("bun")).toBe("required");
-    expect(cli.registry.getPolicy("uv")).toBe("required");
+    expect(cli.registry.getPolicy("uv")).toBe("optional");
     expect(cli.registry.getPolicy("acme-b")).toBe("required");
   });
 
