@@ -13,7 +13,10 @@ npm install -g @uniqbit/mate
 ```
 
 The published package bootstraps Bun when Bun is not already available. Bun is
-Mate's core runtime package manager.
+Mate's core runtime package manager. On a machine without Bun, run
+`mate install --yes` once: it installs Bun to `~/.bun/bin` and continues in the
+same run, even before your shell picks up the new `PATH` entry. Without a
+terminal, any other command only prints this hint and exits.
 
 ## Install Core Requirements
 
@@ -94,7 +97,6 @@ mate companion setup \
   --allowed-agent opencode \
   --capability openspec \
   --capability react-doctor \
-  --package-manager uv \
   --git-mode default
 ```
 
