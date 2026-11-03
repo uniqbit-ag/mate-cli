@@ -132,6 +132,39 @@ async function listSkillNames(root: string): Promise<string[]> {
 }
 
 describe("bundled Mate pre-explore skills", () => {
+  test("show-me reviews an active change's plan, in both trees", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      // oxlint-disable-next-line no-await-in-loop -- two small files
+      const body = await readSkillFrom(root, "mate-show-me");
+      expect(body).toContain("## Reviewing A Proposed Change");
+      expect(body).toContain("review the change");
+      expect(body).toContain("git diff --no-index");
+      expect(body).toContain("columns Area | Task | Done");
+    }
+  });
+
+  test("skills carry no factory text; the factory's harness owns its asking policy", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      for (const name of [
+        "mate-clarify-intent",
+        "mate-explore-change",
+        "mate-apply-change",
+        "mate-propose-change",
+        "mate-interview-me",
+        "mate-grill-me",
+      ]) {
+        // oxlint-disable-next-line no-await-in-loop -- a handful of small files
+        const body = await readSkillFrom(root, name);
+        expect(body).not.toContain("Mate factory");
+        expect(body).not.toContain("ask_human");
+      }
+      await expect(
+        // oxlint-disable-next-line no-await-in-loop -- two small checks
+        fs.access(path.join(root, "mate-propose-change", "references", "factory-run.md")),
+      ).rejects.toThrow();
+    }
+  });
+
   test("keeps shared Mate skills outside capability-specific templates", async () => {
     await expect(
       fs.access(path.join(import.meta.dir, "capabilities", "openspec-cap")),
@@ -1066,9 +1099,11 @@ describe("bundled Delivery Path stage skills", () => {
   test("apply records the branch and avoids protected branches by default", async () => {
     const source = await readSkill("mate-apply-change");
     expect(source).toContain(
-      'mate artifact link "<change-name>" --branch "change/<change-name>" --json',
+      'mate artifact link "<change-name>" --branch "<defaultBranch>" --json',
     );
-    expect(source).toContain("**Create `change/<change-name>`** (default)");
+    expect(source).toContain("**Create or switch to `defaultBranch`**");
+    expect(source).toContain("`defaultBranch: null` means ask");
+    expect(source).toContain("relinking requires explicit user confirmation");
     expect(source).toContain("only when the user explicitly chooses it");
     expect(source).toContain("--direct");
     expect(source).toContain("git log --oneline HEAD --not --remotes");
@@ -1108,6 +1143,15 @@ describe("bundled Mate publish skill merge hold-back", () => {
     expect(source).toContain("with `—` instead of a number and `waiting for merge`");
     expect(source).toContain("A held-back archive is not selectable, by number or by name");
     expect(source).toContain("publishes it with a warning that its merge was not checked");
+  });
+
+  test("both publish variants preserve delivery and use only safe defaults", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = await readSkillFrom(root, "mate-publish-artifact");
+      expect(source).toContain("non-null `defaultBranch`");
+      expect(source).toContain("Never reconstruct a suppressed Workset candidate");
+      expect(source).toContain("Membership changes never relink recorded delivery");
+    }
   });
 
   test("never uses --all while an archive is held back", async () => {

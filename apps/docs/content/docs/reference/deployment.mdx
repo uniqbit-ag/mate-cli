@@ -476,6 +476,9 @@ versions, so nothing is installed when one starts.
   (`MATE_STUDIO_DETACH_MINUTES`, 30 minutes), and reloading or opening Studio in
   another tab reattaches it.
 - **At most four sessions** run at once, detached ones included.
+- **The terminal renders with wterm.** Its script, stylesheet and WebAssembly
+  core are served by Studio itself, so a terminal loads without network access.
+  Links an application marks as links open when they are `http` or `https`.
 
 ## Migrating from port 4096
 

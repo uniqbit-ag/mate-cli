@@ -46,6 +46,12 @@ any exclude line that another worktree still needs, because that worktree still
 holds a file the line hides, and names it:
 `kept: git-excludes (still needed by <path>)`.
 
+`mate working link --companion <path> --yes` links the working repository it
+runs in to that companion without asking. It is for machine callers, such as a
+container linking its worktree. It writes only the working repository's
+own, locally excluded link and never the companion's registry. The interactive
+`mate companion link` stays the way to link a repository by hand.
+
 ## Installation And Health
 
 | Command                  | Purpose                                                                            |
@@ -446,7 +452,11 @@ that file, for active and archived changes. Options:
 - `--confirm-merged`, `--confirm-open`, and `--confirm-dropped` record your own
   answer, with source `user`.
 - `--json` prints one result per named change; several changes on one branch
-  can be linked in one call.
+  can be linked in one call. Each result includes `defaultBranch` (the resolved
+  `workset/<workset-id>` or `null`) and `diagnostics`. A standalone change uses
+  its change name as the implicit Workset id. Diagnostics also go to stderr;
+  ambiguous membership, identity collisions, or invalid records suppress unsafe
+  defaults. Recorded branches remain unchanged when membership changes.
 
 Without an edit option or `--refresh`, `mate artifact link` only reads the
 record and writes nothing. When the change's scopes name repositories, a

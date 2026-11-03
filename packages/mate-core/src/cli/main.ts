@@ -22,6 +22,7 @@ import { runUpdateCommand } from "./commands/update";
 import { runUnwrapCommand } from "./commands/unwrap";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
+import { runFactoryCommand } from "./commands/factory/factory";
 import { runInstallCommand } from "./commands/install";
 import { parseDirectLaunchArgs } from "./commands/launch/shared";
 import {
@@ -289,6 +290,12 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     case "working":
       if (!(await gate({}))) return;
       await runWorkingCommand(subcommand, rest);
+      return;
+    case "factory":
+      // The appliance's factory broker, started by its root supervisor: no
+      // companion, no installation, no prompt may block it.
+      if (!(await gate({}))) return;
+      await runFactoryCommand(subcommand, rest);
       return;
     case "wrap": {
       // Recording the answer is the point, so a recorded one must not suppress

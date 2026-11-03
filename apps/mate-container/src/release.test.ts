@@ -130,12 +130,19 @@ describe("publication asks for an image only after npm has succeeded", () => {
     path.join(WORKSPACE_ROOT, ".github", "workflows", "release.yml"),
     "utf8",
   );
-  const imageJob = release.slice(release.indexOf("\n  image:"));
+  const imageJob = release.slice(
+    release.indexOf("\n  image:"),
+    release.indexOf("\n  factory-image:"),
+  );
 
   test("the dispatch runs in its own job after the publish job", () => {
     expect(publish).not.toContain("gh workflow run");
     expect(imageJob).toContain("needs: [verify, publish]");
     expect(imageJob).toContain("gh workflow run publish-image.yml");
+  });
+
+  test("the dispatch is off unless the repository opts in", () => {
+    expect(imageJob).toContain("if: vars.MATE_PUBLISH_APPLIANCE_IMAGE == 'true'");
   });
 
   test("a partial npm failure never reaches the dispatch", () => {

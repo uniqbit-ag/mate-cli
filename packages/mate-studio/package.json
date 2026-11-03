@@ -1,0 +1,36 @@
+{
+  "name": "@uniqbit/mate-studio",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Mate Studio: the local control room, built into @uniqbit/mate-core's package.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vite build && bun test src && bun test test/server-build.test.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.105.3",
+    "@tanstack/react-router": "^1.170.46",
+    "@tanstack/react-router-ssr-query": "^1.167.3",
+    "@tanstack/react-start": "^1.169.4",
+    "@uniqbit/mate-core": "workspace:*",
+    "@wterm/dom": "0.5.7",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^21.0.4",
+    "@testing-library/react": "^16.3.3",
+    "@types/bun": "^1.4.4",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}

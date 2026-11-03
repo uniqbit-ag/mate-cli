@@ -289,6 +289,15 @@ describe("openspecFinisher.resolve", () => {
     expect(finisher.isEnabled([{ name: "openspec" }])).toBe(true);
     expect(finisher.isEnabled([{ name: "graphify" }])).toBe(false);
   });
+
+  test("capability sync has nothing to re-index without a linked Working Repository", async () => {
+    // A companion clone, as in the appliance: no registry, so indexing would refuse.
+    const companionPath = await makeCompanion();
+    const before = process.exitCode;
+    expect(await openspecFinisher(companionPath).capSync!()).toBe(true);
+    expect(await openspecSpecsFinisher(companionPath, []).capSync!()).toBe(true);
+    expect(process.exitCode).toBe(before);
+  });
 });
 
 describe("openspecFinisher scoped commit guard", () => {

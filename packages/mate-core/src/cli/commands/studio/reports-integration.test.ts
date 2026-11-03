@@ -32,7 +32,6 @@ async function studioSession() {
       collectStudioInventory: async () => ({
         companions: [{ path: ACME, health: "ready", pairings: [] }],
       }),
-      renderDocument: () => "<!doctype html>",
       launchableAgents: async () => ["claude"],
       reports: createReportStore({ root }),
       terminal: {

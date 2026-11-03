@@ -2768,7 +2768,7 @@ describe("mate studio e2e", () => {
       expect(document.headers.get("content-type")).toContain("text/html");
 
       const markup = await document.text();
-      expect(markup).toContain("<!doctype html>");
+      expect(markup.toLowerCase()).toContain("<!doctype html>");
       expect(markup).toContain("Mate Studio");
       expect(markup).toContain('aria-label="Companion Repository"');
       expect(markup).toContain(scenario.companion);
@@ -2793,27 +2793,29 @@ describe("mate studio e2e", () => {
 
       const dashboard = await fetch(`${studio.url}/?companion=${digest}`);
       expect(dashboard.status).toBe(200);
+      /** Views render in the browser; the first response carries each view's data. */
       const dashboardMarkup = await dashboard.text();
-      expect(dashboardMarkup).toContain('aria-label="Changes"');
-      expect(dashboardMarkup).not.toContain('aria-label="Specs by Area"');
-      expect(dashboardMarkup).toContain("add-acme-checkout");
+      expect(dashboardMarkup).toContain("<h1>Overview</h1>");
+      expect(dashboardMarkup).toContain(`["dashboard","${digest}"`);
+      expect(dashboardMarkup).toContain('name:"add-acme-checkout"');
       expect(dashboardMarkup).not.toContain("<h3>Choose a Companion Repository</h3>");
 
       /** Areas are their own view, read apart from the changes. */
-      const specs = await fetch(`${studio.url}/?companion=${digest}&view=specs`);
+      const specs = await fetch(`${studio.url}/specs?companion=${digest}`);
       expect(specs.status).toBe(200);
       const specsMarkup = await specs.text();
-      expect(specsMarkup).toContain('aria-label="Specs by Area"');
-      expect(specsMarkup).not.toContain('aria-label="Changes"');
+      expect(specsMarkup).toContain("<h1>Specs</h1>");
+      expect(specsMarkup).toContain(`["specs","${digest}"`);
+      expect(specsMarkup).toContain('capability:"acme-checkout"');
+      expect(specsMarkup).not.toContain('name:"add-acme-checkout"');
 
-      /** The workflow console is change-agnostic: prompts carry the placeholder. */
-      const workflow = await fetch(`${studio.url}/?companion=${digest}&view=workflow`);
+      const workflow = await fetch(`${studio.url}/workflow?companion=${digest}`);
       expect(workflow.status).toBe(200);
       const workflowMarkup = await workflow.text();
       expect(workflowMarkup).toContain("<h1>Workflow</h1>");
-      expect(workflowMarkup).toContain('class="workflow-delivery-path"');
-      expect(workflowMarkup).toContain("&lt;change-name&gt;");
-      expect(workflowMarkup).not.toContain('aria-label="Changes"');
+      expect(workflowMarkup).toContain(`["workflow","${digest}"`);
+      expect(workflowMarkup).toContain('schemaName:"mate-v1"');
+      expect(workflowMarkup).not.toContain('name:"add-acme-checkout"');
     } finally {
       await studio.stop("SIGINT");
     }
@@ -2833,6 +2835,8 @@ describe("mate studio e2e", () => {
       expect(markup).toContain(scenario.companion);
       expect(markup).toContain("<h3>Choose a Companion Repository</h3>");
       expect(markup).not.toContain("Could not read this companion");
+      /** The picker stands in for the view, so no view data is loaded. */
+      expect(markup).not.toContain('["dashboard","deadbeef00"');
     } finally {
       await studio.stop("SIGINT");
     }
@@ -2851,7 +2855,7 @@ describe("mate studio e2e", () => {
         const response = await fetch(`${studio.url}${route}`);
         expect(response.status).toBe(404);
         expect(response.headers.get("content-type") ?? "").not.toContain("application/json");
-        expect(await response.text()).not.toContain("companions");
+        expect((await response.text()).trimStart()).not.toMatch(/^[[{]/);
       }
     } finally {
       await studio.stop("SIGINT");

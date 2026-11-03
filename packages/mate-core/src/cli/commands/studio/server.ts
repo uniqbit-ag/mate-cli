@@ -9,16 +9,39 @@ import {
 } from "./access";
 import { MERMAID_RUNTIME_URL } from "../report/renderer";
 import { collectStudioInventory, type StudioInventory } from "./inventory";
-import { assembleCompanionPayload, type StudioCompanionResponse } from "./payload";
-import { createReportStore, isReportId, REPORT_LIMITS, type ReportStore } from "./reports";
 import {
+  assembleCompanionPayload,
+  readCompanionWorksetStages,
+  type StudioCompanionResponse,
+} from "./payload";
+import { createReportStore, isReportId, REPORT_LIMITS, type ReportStore } from "./reports";
+import { isWorksetId, WorksetError } from "../../../lib/workset/record";
+import type { WorksetWithStage } from "../../../lib/workset/stages";
+import type { LiveViewer } from "../../../lib/factory/runner/live";
+import {
+  createFactoryOutcomes,
+  type FactoryOutcomes,
+  type Outcomes,
+  type OutcomesPorts,
+  recordOutcomes,
+} from "../../../lib/factory/outcomes";
+import { LiveSessions } from "../../../lib/factory/outcomes/sessions";
+import { FACTORY_BROKER_ENV, factoryClient, type FactoryClient } from "../../../lib/factory/client";
+import { factoryCredentialResponse } from "./factory-credential";
+import { createWorksetResolver } from "./workset-session";
+import {
+  FACTORY_CREDENTIAL_ROUTE,
+  FACTORY_WORKSETS_ROUTE,
   REPORTS_ROUTE,
   REPORT_VIEW_PREFIX,
+  STUDIO_EVENTS_ROUTE,
   STUDIO_HOSTNAME,
-  VAULT_CHANGES_ROUTE,
-  VAULT_DIR_ROUTE,
-  VAULT_FILTER_ROUTE,
-  VAULT_PANE_ROUTE,
+  type StudioEvent,
+  TERMINAL_ASSET_PREFIX,
+  TERMINAL_SESSIONS_END_ROUTE,
+  TERMINAL_SESSIONS_ROUTE,
+  TERMINAL_SOCKET_ROUTE,
+  VAULT_EVENTS_ROUTE,
 } from "./routes";
 import {
   COMPANION_DIGEST_PATTERN,
@@ -28,10 +51,10 @@ import {
   parseVaultSelection,
   resolveCompanion,
   type StudioSelection,
-  type StudioVaultSelection,
 } from "./selection";
+import { errorMessage } from "../../../runtime/error-message";
 import { createStudioSnapshotCache, type StudioSnapshotCache } from "./snapshot";
-import type { StudioPage, StudioVaultPage } from "./views/model";
+import type { StudioPage } from "./views/model";
 import { createVaultManager, resolveVaultPath, VaultPathError, type VaultManager } from "./vault";
 import {
   DEFAULT_DETACH_MINUTES,
@@ -39,7 +62,8 @@ import {
   type TerminalConnection,
   type TerminalRegistryOptions,
 } from "./terminal";
-import { studioClientAsset } from "./client-asset";
+import type { StudioFormField, StudioServices } from "./services";
+import { studioAppAsset, type StudioApp } from "./studio-app";
 import { terminalAsset } from "./terminal-assets";
 import {
   createLaunchResolver,
@@ -49,8 +73,8 @@ import {
 
 export { STUDIO_HOSTNAME } from "./routes";
 
-/** Read methods; every other method is refused before any collection runs. */
-const READ_METHODS = new Set(["GET", "HEAD"]);
+/** Where Start's server functions are called; the only POSTs the application makes. */
+const STUDIO_APP_CALL_PREFIX = "/_serverFn/";
 
 /** The socket Bun hands a WebSocket handler; `data` is what the upgrade attached. */
 export interface StudioSocket {
@@ -104,13 +128,21 @@ export interface StudioServerHandle {
 export interface StudioServerDeps {
   collectStudioInventory?: () => Promise<StudioInventory>;
   assembleCompanionPayload?: (companionPath: string) => Promise<StudioCompanionResponse>;
-  renderDocument?: (page: StudioPage) => string | Promise<string>;
   serve?: (options: StudioServeOptions) => StudioBoundServer;
   snapshots?: StudioSnapshotCache;
   vault?: VaultManager;
   reports?: ReportStore;
   terminal?: Partial<TerminalRegistryOptions>;
   launchableAgents?: typeof launchableAgents;
+  /**
+   * The factory's Outcomes, built from the ports Studio creates first for the companion it
+   * serves; from the environment in factory mode when absent.
+   */
+  factoryOutcomes?: (portsFor: (companionPath: string) => OutcomesPorts) => FactoryOutcomes | null;
+  /** A companion's Workset stages; read from OpenSpec when absent. */
+  worksetStages?: (companionPath: string) => Promise<{ worksets: WorksetWithStage[] }>;
+  /** The factory broker's client; from the environment when absent, null outside factory mode. */
+  factoryClient?: FactoryClient | null;
 }
 
 export interface StudioServerOptions {
@@ -130,55 +162,21 @@ export interface StudioServerOptions {
   idleTimeout?: number;
   /** Terminal launches skip companion Git synchronization. */
   noGit?: boolean;
+  /** Studio's built application, loaded by the studio command. */
+  app?: StudioApp | null;
 }
 
-/**
- * Loaded at the point of use so no other command pays for the renderer: `hono/jsx`
- * is reachable from the studio path alone.
- */
-async function renderStudioDocument(page: StudioPage): Promise<string> {
-  const views = await import("./views/document");
-  return views.renderStudioDocument(page);
-}
+/** Answered to a document request when no Studio build is installed; carries no companion data. */
+const MISSING_BUILD_PAGE = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Mate Studio</title></head>
+<body><p>Studio's application build is missing. Run <code>bun run build</code> in <code>packages/mate-studio</code>, then reload.</p></body>
+</html>
+`;
 
-async function renderVaultView(page: StudioPage): Promise<string> {
-  const views = await import("./views/document");
-  return views.renderVaultView(page);
-}
-
-async function renderVaultPane(page: StudioPage): Promise<string> {
-  const views = await import("./views/document");
-  return views.renderVaultPane(page);
-}
-
-async function renderVaultChildren(page: StudioPage): Promise<string | null> {
-  const views = await import("./views/document");
-  return views.renderVaultChildren(page);
-}
-
-async function renderVaultMatches(page: StudioPage, query: string): Promise<string> {
-  const views = await import("./views/document");
-  return views.renderVaultMatches(page, query);
-}
-
-/** Keep the CLI entry free of eager Studio view imports. */
-async function collectVaultState(
-  vault: VaultManager,
-  companionPath: string,
-  selection: StudioVaultSelection,
-  options: { tree: "prefetch" | "await" | "skip" },
-): Promise<StudioVaultPage> {
-  const { vaultState } = await import("./views/vault/state");
-  return vaultState(vault, companionPath, selection, options);
-}
-
-/** A pane is never a refresh, so the listing it skips is not asked to be rebuilt. */
-function plainSelection(selection: StudioVaultSelection): StudioVaultSelection {
-  return { ...selection, refresh: false };
-}
-
-function html(body: string): Response {
+function html(body: string, status = 200): Response {
   return new Response(body, {
+    status,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
 }
@@ -191,6 +189,59 @@ const TOKEN_REQUIRED_PAGE = `<!doctype html>
 <p>Open the address Studio printed when it started; it carries <code>?token=…</code>.
 If the token was pinned with <code>--token</code> or <code>MATE_STUDIO_TOKEN</code>,
 open this address with <code>?token=</code> followed by that value.</p></main></body></html>`;
+
+/** A Workset's run log, or its live stream when the second group matched. */
+const FACTORY_LOG = new RegExp(`^${FACTORY_WORKSETS_ROUTE}/([^/]+)/log(/stream)?$`);
+
+/**
+ * What a route is, for its guard. A read needs the token where the invocation requires it
+ * for reading; a write also needs the same origin, the token for saving and, when it names
+ * a reason, the write path; a terminal call needs the token for the terminal and, when
+ * privileged, the same origin; a session call is checked by its own bearer credential only.
+ */
+type RouteKind =
+  | { kind: "read"; methods: readonly string[] }
+  | { kind: "write"; methods: readonly string[]; writable?: string }
+  | { kind: "terminal"; methods: readonly string[]; privileged: boolean }
+  | { kind: "session"; methods: readonly string[] };
+
+const ORIGIN_REASON = {
+  write: "a change must come from Studio's own page",
+  terminal: "the terminal is reachable only from Studio's own page",
+} as const;
+
+const READS = ["GET", "HEAD"] as const;
+
+/** Every route core answers, by kind; the rest are reads the application answers. */
+function routeOf(url: URL, method: string, hasApp: boolean): RouteKind {
+  const { pathname } = url;
+  if (pathname === REPORTS_ROUTE && method === "POST")
+    return { kind: "session", methods: ["POST"] };
+  if (pathname === FACTORY_CREDENTIAL_ROUTE) {
+    return method === "GET" || method === "HEAD"
+      ? { kind: "read", methods: [method] }
+      : {
+          kind: "write",
+          methods: [method],
+          writable: "start Studio with --writable to set the agent credential",
+        };
+  }
+  if (pathname === TERMINAL_SOCKET_ROUTE) {
+    return { kind: "terminal", methods: READS, privileged: true };
+  }
+  if (pathname === TERMINAL_SESSIONS_END_ROUTE) {
+    return { kind: "terminal", methods: ["POST"], privileged: true };
+  }
+  if (pathname.startsWith(`${TERMINAL_SOCKET_ROUTE}/`)) {
+    return { kind: "terminal", methods: READS, privileged: false };
+  }
+  // A server function is a read when called with GET and a write when called with POST; the
+  // write path for its changes is checked by the services it calls.
+  if (hasApp && pathname.startsWith(STUDIO_APP_CALL_PREFIX) && method === "POST") {
+    return { kind: "write", methods: ["POST"] };
+  }
+  return { kind: "read", methods: READS };
+}
 
 function refused(reason: string, status: number): Response {
   return new Response(JSON.stringify({ reason }), {
@@ -217,14 +268,10 @@ const REPORT_CSP = [
   "connect-src 'none'",
 ].join("; ");
 
-/** Page-facing report announcement; carries no path and no content. */
-interface ReportPublishedEvent {
-  type: "report-published";
-  /** Digest of the companion the report belongs to. */
-  companion: string;
+/** A published report as open pages are told of it; carries no path and no content. */
+interface PublishedReport {
   id: string;
   title: string;
-  createdAt: number;
 }
 
 /**
@@ -257,8 +304,16 @@ async function readCapped(request: Request, limit: number): Promise<string | nul
   return over ? null : Buffer.concat(chunks).toString("utf8");
 }
 
+const NOT_WRITABLE = "start Studio with --writable to create or start Worksets";
+
 const TOKEN_REASON =
   "Studio's access token is required; open the address Studio printed when it started";
+
+const NO_COMPANION = "no registered companion was selected";
+
+function notFound(): Response {
+  return new Response("not found", { status: 404 });
+}
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
@@ -270,6 +325,7 @@ function json(value: unknown, status = 200): Response {
 interface StudioFetch {
   (request: Request, server?: StudioUpgrader): Promise<Response | undefined>;
   terminal: TerminalRegistry | null;
+  services: StudioServices;
   close(): Promise<void>;
 }
 
@@ -284,6 +340,8 @@ export interface StudioFetchOptions extends Pick<
   publicOrigin?: string | null;
   /** Enables the terminal; the invocation sets its default detach window. */
   terminal?: boolean;
+  /** Studio's built application; paths the handler does not serve itself go to it. */
+  app?: StudioApp | null;
 }
 
 /**
@@ -301,11 +359,41 @@ export function createStudioFetch(
 ): StudioFetch {
   const inventory = deps.collectStudioInventory ?? collectStudioInventory;
   const companion = deps.assembleCompanionPayload ?? assembleCompanionPayload;
-  const render = deps.renderDocument ?? renderStudioDocument;
   const snapshots =
     deps.snapshots ?? createStudioSnapshotCache({ assembleCompanionPayload: companion });
   const vault = deps.vault ?? createVaultManager();
   const writable = options.writable === true;
+  const broker = deps.factoryClient !== undefined ? deps.factoryClient : factoryClient();
+  const reports = deps.reports ?? createReportStore();
+  const stagesOf = deps.worksetStages ?? ((path: string) => readCompanionWorksetStages(path));
+  // Created before the terminal and the Outcomes, so neither needs the other.
+  const sessions = new LiveSessions();
+  const launchCompanion = options.launchCompanion ?? null;
+  const outcomesPorts = (companionPath: string): OutcomesPorts => ({
+    stages: () => stagesOf(companionPath),
+    reports: {
+      publish: (report) => reports.publish(companionDigest(companionPath), report),
+      ids: async () =>
+        (await reports.list(companionDigest(companionPath))).map((report) => report.id),
+    },
+    sessions,
+  });
+  const outcomes = (() => {
+    try {
+      if (deps.factoryOutcomes) return deps.factoryOutcomes(outcomesPorts);
+      return createFactoryOutcomes(launchCompanion, outcomesPorts(launchCompanion ?? ""));
+    } catch (error) {
+      process.stderr.write(
+        `mate studio: the factory runner did not start: ${(error as Error).message}\n`,
+      );
+      return null;
+    }
+  })();
+  /** A companion's Outcomes: the factory's for the companion it runs, record-only otherwise. */
+  const outcomesFor = (companionPath: string): Outcomes =>
+    outcomes?.companionPath === companionPath
+      ? outcomes
+      : recordOutcomes(companionPath, () => stagesOf(companionPath));
   const access =
     options.access ??
     createStudioAccess({
@@ -314,11 +402,9 @@ export function createStudioFetch(
       hostname: STUDIO_HOSTNAME,
       port: () => 80,
     });
-  const reports = deps.reports ?? createReportStore();
   void reports.cleanup().catch(() => {});
   const publicOrigin = options.publicOrigin ? normalizeOrigin(options.publicOrigin) : null;
-  const reportListeners = new Map<string, Set<(event: ReportPublishedEvent) => void>>();
-  const launchCompanion = options.launchCompanion ?? null;
+  const reportListeners = new Map<string, Set<(event: PublishedReport) => void>>();
   const agentsFor = deps.launchableAgents ?? launchableAgents;
   const terminal = options.terminal
     ? new TerminalRegistry({
@@ -329,12 +415,25 @@ export function createStudioFetch(
           launchableAgents: (companionPath) => agentsFor(companionPath),
         }),
         mateCommand: process.argv.slice(0, 2),
+        sessions,
+        ...(process.env[FACTORY_BROKER_ENV]
+          ? {
+              resolveWorkset: createWorksetResolver({
+                collectInventory: inventory,
+                launchCompanion,
+                mateCommand: process.argv.slice(0, 2),
+                env: process.env,
+                noGit: options.noGit === true,
+                // A person in control continues the factory's own conversation.
+                takenOver: async (id) => (outcomes ? outcomes.takenOver(id) : null),
+              }),
+            }
+          : {}),
         noGit: options.noGit === true,
         reportUrl: options.reportOrigin,
         ...deps.terminal,
       })
     : null;
-
   /** Stores a report for the live terminal session holding the bearer credential. */
   const publishReport = async (request: Request): Promise<Response> => {
     const token = readBearer(request);
@@ -363,13 +462,7 @@ export function createStudioFetch(
       html: body.html,
     });
     for (const notify of reportListeners.get(digest) ?? []) {
-      notify({
-        type: "report-published",
-        companion: digest,
-        id: stored.id,
-        title: stored.title,
-        createdAt: stored.createdAt,
-      });
+      notify({ id: stored.id, title: stored.title });
     }
     const path = `${REPORT_VIEW_PREFIX}${stored.id}`;
     return json({
@@ -377,6 +470,120 @@ export function createStudioFetch(
       path,
       ...(publicOrigin ? { url: `${publicOrigin}${path}` } : {}),
     });
+  };
+
+  /** One document's model, with the factory, report and terminal state its address needs. */
+  const collectPage = async (url: URL): Promise<StudioPage> => {
+    const page = await collectStudioPage(url, inventory, snapshots, vault, writable);
+    if (page.payload && page.companion && isAnalystOverview(page.selection)) {
+      page.reports = await reports.list(companionDigest(page.companion.path)).then(
+        (listed) => listed.map(({ id, title, createdAt }) => ({ id, title, createdAt })),
+        () => null,
+      );
+    }
+    page.renderedAt = Date.now();
+    page.factoryRuns = page.companion ? await outcomesFor(page.companion.path).runs() : null;
+    if (terminal) {
+      const target = await effectiveLaunchCompanion(
+        page.inventory,
+        launchCompanion,
+        page.selection.companionDigest,
+      );
+      page.worksetSessions = process.env[FACTORY_BROKER_ENV]
+        ? Object.fromEntries(
+            terminal
+              .list()
+              .flatMap((session) => (session.workset ? [[session.workset.id, session.id]] : [])),
+          )
+        : null;
+      page.terminal = {
+        pinned: launchCompanion !== null,
+        target: target ? { path: target.path, digest: companionDigest(target.path) } : null,
+        agents: target ? await agentsFor(target.path) : [],
+      };
+    }
+    return page;
+  };
+
+  /** A registered companion by digest, or a refusal the caller reports. */
+  const companionPathOf = async (digest: string): Promise<string> => {
+    const selected = await selectedCompanion(digest || null, inventory);
+    if (!selected) throw new WorksetError(NO_COMPANION);
+    return selected.path;
+  };
+
+  /** Viewers of a companion's board, by digest; told when an Outcome or run changes. */
+  const boardListeners = new Map<string, Set<() => void>>();
+  const boardChanged = (digest: string) => {
+    for (const notify of boardListeners.get(digest) ?? []) notify();
+  };
+  if (outcomes) {
+    const digest = companionDigest(outcomes.companionPath);
+    outcomes.onChanged(() => boardChanged(digest));
+  }
+
+  const services: StudioServices = {
+    writable,
+    factoryMode: broker !== null,
+    page: collectPage,
+    worksetAction: async (digest, id, action, field: StudioFormField) => {
+      if (!writable) throw new WorksetError(NOT_WRITABLE);
+      await outcomesFor(await companionPathOf(digest)).act(id, action, field);
+      boardChanged(digest);
+    },
+    createOutcome: async (digest, field) => {
+      if (!writable) throw new WorksetError(NOT_WRITABLE);
+      await outcomesFor(await companionPathOf(digest)).create(field);
+      boardChanged(digest);
+    },
+    vault: async (digest, request) => {
+      const { vaultView } = await import("./views/vault/view");
+      return vaultView(vault, await companionPathOf(digest), request);
+    },
+    vaultChildren: async (digest, dir) => {
+      const { vaultChildren } = await import("./views/vault/view");
+      return vaultChildren(vault, await companionPathOf(digest), dir);
+    },
+    vaultMatches: async (digest, query) => {
+      const { vaultMatches } = await import("./views/vault/view");
+      return vaultMatches(vault, await companionPathOf(digest), query);
+    },
+    vaultSave: async (digest, path, content, token) => {
+      if (!writable) throw new VaultPathError("start Studio with --writable to enable saving");
+      return vault.save(await companionPathOf(digest), path, content, token);
+    },
+  };
+  const app = options.app ?? null;
+
+  /** The route's refusal under its kind, decided once before it acts (design D4); `null` lets it act. */
+  const refusalFor = (
+    route: Exclude<RouteKind, { kind: "session" }>,
+    request: Request,
+    url: URL,
+    acceptedOrigin: string,
+  ): Response | null => {
+    if (access.requires("read") && !access.hasToken(request)) {
+      if (url.pathname !== "/") return refused(TOKEN_REASON, 401);
+      return html(TOKEN_REQUIRED_PAGE, 401);
+    }
+    if (route.kind === "read") return null;
+    if (route.kind === "terminal" && !terminal) {
+      return refused("start Studio with --writable --terminal to enable the terminal", 404);
+    }
+    const privileged = route.kind === "write" || route.privileged;
+    if (privileged && !access.originMatches(request, acceptedOrigin)) {
+      return refused(ORIGIN_REASON[route.kind], 403);
+    }
+    if (
+      access.requires(route.kind === "write" ? "save" : "terminal") &&
+      !access.hasToken(request)
+    ) {
+      return refused(TOKEN_REASON, 401);
+    }
+    if (route.kind === "write" && route.writable && !writable) {
+      return refused(route.writable, 403);
+    }
+    return null;
   };
 
   const handler = async (
@@ -390,23 +597,11 @@ export function createStudioFetch(
     const exchanged = exchangeStudioToken(request, access, acceptedOrigin);
     if (exchanged) return exchanged;
 
-    if (url.pathname === REPORTS_ROUTE && request.method === "POST") {
-      return publishReport(request);
-    }
-
-    const isSave = url.pathname === "/api/vault/save";
-    const isEnd = url.pathname === "/api/terminal/sessions/end";
-    const isPost = isSave || isEnd;
-    if (isPost && request.method !== "POST") {
-      return new Response(`${isSave ? "vault save" : "ending a session"} requires POST`, {
+    const route = routeOf(url, request.method, app !== null);
+    if (!route.methods.includes(request.method)) {
+      return new Response(`${request.method} is not served here`, {
         status: 405,
-        headers: { allow: "POST" },
-      });
-    }
-    if (!READ_METHODS.has(request.method) && !(isPost && request.method === "POST")) {
-      return new Response("studio serves read requests only", {
-        status: 405,
-        headers: { allow: isPost ? "POST" : "GET, HEAD" },
+        headers: { allow: route.methods.join(", ") },
       });
     }
 
@@ -415,18 +610,14 @@ export function createStudioFetch(
         ? new Response(null, { status: response.status, headers: response.headers })
         : response;
 
-    if (access.requires("read") && !access.hasToken(request)) {
-      if (url.pathname === "/") {
-        const page = html(TOKEN_REQUIRED_PAGE);
-        return respond(new Response(page.body, { status: 401, headers: page.headers }));
-      }
-      return respond(refused(TOKEN_REASON, 401));
-    }
+    if (route.kind === "session") return publishReport(request);
+    const refusal = refusalFor(route, request, url, acceptedOrigin);
+    if (refusal) return respond(refusal);
 
     if (url.pathname === REPORTS_ROUTE) {
       const digest = url.searchParams.get(COMPANION_PARAM) ?? "";
       if (!COMPANION_DIGEST_PATTERN.test(digest)) {
-        return respond(json({ reason: "no registered companion was selected" }, 400));
+        return respond(json({ reason: NO_COMPANION }, 400));
       }
       return respond(json({ reports: await reports.list(digest) }));
     }
@@ -434,7 +625,7 @@ export function createStudioFetch(
     if (url.pathname.startsWith(REPORT_VIEW_PREFIX)) {
       const id = url.pathname.slice(REPORT_VIEW_PREFIX.length);
       const stored = isReportId(id) ? await reports.read(id) : null;
-      if (stored === null) return respond(new Response("not found", { status: 404 }));
+      if (stored === null) return respond(notFound());
       return respond(
         new Response(stored, {
           headers: {
@@ -448,35 +639,31 @@ export function createStudioFetch(
       );
     }
 
-    const clientAsset = await studioClientAsset(url.pathname);
-    if (clientAsset) return respond(clientAsset);
+    if (url.pathname === FACTORY_CREDENTIAL_ROUTE) {
+      if (broker === null) return respond(notFound());
+      return respond(await factoryCredentialResponse(broker, request));
+    }
 
-    if (url.pathname.startsWith("/studio/terminal/") && terminal) {
-      const asset = await terminalAsset(url.pathname);
+    if (app) {
+      const asset = await studioAppAsset(app, url.pathname);
       if (asset) return respond(asset);
     }
 
-    if (url.pathname === "/api/terminal" || url.pathname.startsWith("/api/terminal/")) {
-      if (!terminal) {
-        return respond(
-          refused("start Studio with --writable --terminal to enable the terminal", 404),
-        );
-      }
-      const privileged = url.pathname === "/api/terminal" || isEnd;
-      if (privileged && !access.originMatches(request, acceptedOrigin)) {
-        return respond(refused("the terminal is reachable only from Studio's own page", 403));
-      }
-      if (access.requires("terminal") && !access.hasToken(request)) {
-        return respond(refused(TOKEN_REASON, 401));
-      }
-      if (url.pathname === "/api/terminal") {
+    // The terminal's asset prefix is core's own, with or without the terminal.
+    if (url.pathname.startsWith(TERMINAL_ASSET_PREFIX)) {
+      const asset = terminal ? await terminalAsset(url.pathname) : null;
+      return respond(asset ?? notFound());
+    }
+
+    if (route.kind === "terminal" && terminal) {
+      if (url.pathname === TERMINAL_SOCKET_ROUTE) {
         if (request.headers.get("upgrade")?.toLowerCase() !== "websocket" || !server) {
           return respond(refused("the terminal is a WebSocket endpoint", 426));
         }
         if (server.upgrade(request, { data: {} })) return undefined;
         return respond(refused("the terminal connection could not be upgraded", 400));
       }
-      if (url.pathname === "/api/terminal/sessions") {
+      if (url.pathname === TERMINAL_SESSIONS_ROUTE) {
         const now = Date.now();
         return respond(
           json({
@@ -486,12 +673,13 @@ export function createStudioFetch(
               companion: companionDigest(session.companionPath),
               companionPath: session.companionPath,
               attached: session.attached,
+              ...(session.workset ? { workset: session.workset } : {}),
               ageSeconds: Math.max(0, Math.round((now - session.startedAt) / 1000)),
             })),
           }),
         );
       }
-      if (isEnd) {
+      if (url.pathname === TERMINAL_SESSIONS_END_ROUTE) {
         let body: { id?: unknown };
         try {
           body = (await request.json()) as typeof body;
@@ -503,230 +691,50 @@ export function createStudioFetch(
         }
         return respond(json({ ended: body.id }));
       }
-      return respond(new Response("not found", { status: 404 }));
+      return respond(notFound());
     }
 
-    if (url.pathname === "/api/vault/tree") {
-      const selection = parseVaultSelection(url);
-      const selected = await selectedCompanion(selection.companionDigest, inventory);
-      if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
-      try {
-        return respond(json(await vault.tree(selected.path, selection.refresh)));
-      } catch (error) {
-        return respond(
-          json({ reason: error instanceof Error ? error.message : String(error) }, 400),
-        );
-      }
-    }
-
-    if (url.pathname === "/api/vault/view") {
-      const collected = await inventory();
-      const selection = parseVaultSelection(url);
-      const companion = resolveCompanion(collected, selection.companionDigest);
-      if (!companion) return respond(json({ reason: "no registered companion was selected" }, 400));
-      const state = await collectVaultState(vault, companion.path, selection, { tree: "await" });
-      return respond(
-        new Response(
-          await renderVaultView({
-            inventory: collected,
-            selection,
-            companion,
-            payload: null,
-            error: null,
-            collectedAt: null,
-            writable,
-            vault: state,
-            terminal: null,
-          }),
-          { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
-        ),
-      );
-    }
-
-    if (url.pathname === VAULT_PANE_ROUTE) {
-      const collected = await inventory();
-      const selection = parseVaultSelection(url);
-      const companion = resolveCompanion(collected, selection.companionDigest);
-      if (!companion) return respond(json({ reason: "no registered companion was selected" }, 400));
-      const state = await collectVaultState(vault, companion.path, plainSelection(selection), {
-        tree: "skip",
-      });
-      return respond(
-        new Response(
-          await renderVaultPane({
-            inventory: collected,
-            selection,
-            companion,
-            payload: null,
-            error: null,
-            collectedAt: null,
-            writable,
-            vault: state,
-            terminal: null,
-          }),
-          { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
-        ),
-      );
-    }
-
-    if (url.pathname === VAULT_DIR_ROUTE || url.pathname === VAULT_FILTER_ROUTE) {
-      const selection = parseVaultSelection(url);
-      const selected = await selectedCompanion(selection.companionDigest, inventory);
-      if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
-      let listed;
-      try {
-        listed = await vault.tree(selected.path);
-      } catch (error) {
-        return respond(
-          json({ reason: error instanceof Error ? error.message : String(error) }, 400),
-        );
-      }
-      const page: StudioPage = {
-        inventory: await inventory(),
-        selection,
-        companion: selected,
-        payload: null,
-        error: null,
-        collectedAt: null,
-        writable,
-        vault: {
-          tree: listed.tree,
-          open: null,
-          refusal: null,
-          incoming: null,
-          overwritten: null,
-          watching: listed.watching,
-          warning: listed.warning,
-          generation: listed.generation,
-        },
-        terminal: null,
-      };
-      const headers = {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-        "x-vault-generation": String(listed.generation),
-      };
-      if (url.pathname === VAULT_FILTER_ROUTE) {
-        const matches = await renderVaultMatches(page, url.searchParams.get("q") ?? "");
-        return respond(new Response(matches, { headers }));
-      }
-      const children = await renderVaultChildren(page);
-      if (children === null) {
-        return respond(json({ reason: "that folder is not in the listed tree" }, 404));
-      }
-      return respond(new Response(children, { headers }));
-    }
-
-    if (url.pathname === VAULT_CHANGES_ROUTE) {
-      const selection = parseVaultSelection(url);
-      const selected = await selectedCompanion(selection.companionDigest, inventory);
-      if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
+    if (url.pathname === STUDIO_EVENTS_ROUTE) {
+      const digest = url.searchParams.get(COMPANION_PARAM) ?? "";
+      const selected = await selectedCompanion(digest || null, inventory);
+      if (!selected) return respond(json({ reason: NO_COMPANION }, 400));
       server?.timeout?.(request, 0);
-      const reportsOnly = url.searchParams.get("scope") === "reports";
-      return respond(
-        changeStream(vault, selected.path, reportsOnly, (notify) => {
-          const digest = companionDigest(selected.path);
-          const set = reportListeners.get(digest) ?? new Set();
-          set.add(notify);
-          reportListeners.set(digest, set);
-          return () => {
-            set.delete(notify);
-            if (set.size === 0) reportListeners.delete(digest);
-          };
-        }),
-      );
+      return respond(studioEvents(vault, selected.path, boardListeners, reportListeners));
     }
 
-    if (url.pathname === "/api/vault/file") {
+    if (url.pathname === VAULT_EVENTS_ROUTE) {
       const selection = parseVaultSelection(url);
       const selected = await selectedCompanion(selection.companionDigest, inventory);
-      if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
-      try {
-        return respond(json(await vault.open(selected.path, selection.openPath ?? "")));
-      } catch (error) {
-        return respond(
-          json({ reason: error instanceof Error ? error.message : String(error) }, 400),
-        );
-      }
-    }
-
-    if (url.pathname === "/api/vault/events") {
-      const selection = parseVaultSelection(url);
-      const selected = await selectedCompanion(selection.companionDigest, inventory);
-      if (!selected) return respond(json({ reason: "no registered companion was selected" }, 400));
+      if (!selected) return respond(json({ reason: NO_COMPANION }, 400));
       try {
         const opened = await resolveVaultPath(selected.path, selection.openPath ?? "");
         server?.timeout?.(request, 0);
         return respond(vaultEvents(vault, selected.path, opened.relative));
       } catch (error) {
-        return respond(
-          json({ reason: error instanceof Error ? error.message : String(error) }, 400),
-        );
+        return respond(json({ reason: errorMessage(error) }, 400));
       }
     }
 
-    if (isSave) {
-      if (!access.originMatches(request, acceptedOrigin)) {
-        return respond(refused("a save must come from Studio's own page", 403));
-      }
-      if (access.requires("save") && !access.hasToken(request)) {
-        return respond(refused(TOKEN_REASON, 401));
-      }
-      if (!writable)
-        return respond(json({ reason: "start Studio with --writable to enable saving" }, 403));
-      let body: { companion?: string; path?: string; content?: string; token?: string };
-      try {
-        body = (await request.json()) as typeof body;
-      } catch {
-        return respond(json({ reason: "save requires a JSON body" }, 400));
-      }
-      const selected = await selectedCompanion(
-        typeof body.companion === "string" ? body.companion : null,
-        inventory,
+    const logMatch = FACTORY_LOG.exec(url.pathname);
+    if (logMatch) {
+      const id = decodeURIComponent(logMatch[1]!);
+      if (!outcomes || !isWorksetId(id)) return respond(notFound());
+      if (logMatch[2]) return respond(logStream(outcomes, id));
+      return respond(
+        new Response(await outcomes.log(id), {
+          headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+        }),
       );
-      if (!selected || typeof body.path !== "string" || typeof body.content !== "string") {
-        return respond(
-          json({ reason: "save requires a registered companion, path, and content" }, 400),
-        );
-      }
-      try {
-        const result = await vault.save(selected.path, body.path, body.content, body.token);
-        return respond(json(result, result.kind === "conflict" ? 409 : 200));
-      } catch (error) {
-        return respond(
-          json(
-            { reason: error instanceof Error ? error.message : String(error) },
-            error instanceof VaultPathError ? 400 : 500,
-          ),
-        );
-      }
     }
 
-    if (url.pathname !== "/") return respond(new Response("not found", { status: 404 }));
-
-    const page = await collectStudioPage(url, inventory, snapshots, vault, writable);
-    if (page.payload && page.companion && isAnalystOverview(page.selection)) {
-      page.reports = await reports.list(companionDigest(page.companion.path)).then(
-        (listed) => listed.map(({ id, title, createdAt }) => ({ id, title, createdAt })),
-        () => null,
-      );
-    }
-    if (terminal) {
-      const target = await effectiveLaunchCompanion(
-        page.inventory,
-        launchCompanion,
-        page.selection.companionDigest,
-      );
-      page.terminal = {
-        pinned: launchCompanion !== null,
-        target: target ? { path: target.path, digest: companionDigest(target.path) } : null,
-        agents: target ? await agentsFor(target.path) : [],
-      };
-    }
-    return respond(html(await render(page)));
+    // Everything else is the application's: its documents, views and server functions.
+    if (app) return respond(await app.fetch(request, { context: { studio: services } }));
+    if (url.pathname === "/") return respond(html(MISSING_BUILD_PAGE));
+    return respond(notFound());
   };
 
   handler.terminal = terminal;
+  handler.services = services;
   handler.close = async () => {
     vault.stop();
     await terminal?.stopAll();
@@ -772,35 +780,59 @@ function eventStream(
   });
 }
 
+/**
+ * A Workset's run log as it grows: one `replay` (the stored log and the text still
+ * streaming), then the live events. Read-only; leaving never touches the run.
+ */
+function logStream(live: { watch(id: string): LiveViewer }, id: string): Response {
+  return eventStream("studio factory log", (send) => {
+    const viewer = live.watch(id);
+    void (async () => {
+      send({ type: "replay", ...(await viewer.replay) });
+      // oxlint-disable-next-line no-await-in-loop -- events arrive one at a time, in order
+      for (let event = await viewer.next(); event; event = await viewer.next()) send(event);
+    })().catch(() => viewer.close());
+    return () => viewer.close();
+  });
+}
+
+/** One stream per page, so a view updates in place instead of reloading (design D7). */
+function studioEvents(
+  vault: VaultManager,
+  companionPath: string,
+  boards: Map<string, Set<() => void>>,
+  reports: Map<string, Set<(event: PublishedReport) => void>>,
+): Response {
+  const digest = companionDigest(companionPath);
+  const join = <T>(map: Map<string, Set<T>>, listener: T) => {
+    const set = map.get(digest) ?? new Set<T>();
+    set.add(listener);
+    map.set(digest, set);
+    return () => {
+      set.delete(listener);
+      if (set.size === 0) map.delete(digest);
+    };
+  };
+  return eventStream("studio events", (send: (event: StudioEvent) => void) => {
+    const leaveBoard = join(boards, () => send({ type: "board" }));
+    const leaveReports = join(reports, (report) =>
+      send({ type: "reports", id: report.id, title: report.title }),
+    );
+    const stopTree = vault.subscribeTree(companionPath, (generation) =>
+      send({ type: "vault-tree", generation }),
+    );
+    return () => {
+      leaveBoard();
+      leaveReports();
+      stopTree();
+    };
+  });
+}
+
 function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: string): Response {
   return eventStream("studio vault events", (send) =>
     vault.subscribe(companionPath, requestedPath, send),
   );
-}
-
-/**
- * Typed events for one companion: `vault-tree-changed` (a generation) and
- * `report-published`. No paths and no file content leave through this stream.
- * `reportsOnly` skips the vault subscription, which starts a watcher and listing.
- */
-function changeStream(
-  vault: VaultManager,
-  companionPath: string,
-  reportsOnly: boolean,
-  subscribeReports: (notify: (event: ReportPublishedEvent) => void) => () => void,
-): Response {
-  return eventStream("studio changes", (send) => {
-    const stopReports = subscribeReports(send);
-    const stopTree = reportsOnly
-      ? () => {}
-      : vault.subscribeTree(companionPath, (generation) =>
-          send({ type: "vault-tree-changed", generation }),
-        );
-    return () => {
-      stopReports();
-      stopTree();
-    };
-  });
 }
 
 /** Reports are not part of the snapshot: this Overview lists them at render time. */
@@ -834,19 +866,8 @@ async function collectStudioPage(
     terminal: null,
   };
 
-  if (!companion) {
-    vault.deactivate();
-    return page;
-  }
-
-  if (selection.view === "vault") {
-    return {
-      ...page,
-      vault: await collectVaultState(vault, companion.path, selection, { tree: "prefetch" }),
-    };
-  }
-
   vault.deactivate();
+  if (!companion) return page;
 
   try {
     const snapshot = await snapshots.read(companion.path, selection.refresh);
@@ -858,7 +879,7 @@ async function collectStudioPage(
       ...page,
       error: {
         companionPath: companion.path,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: errorMessage(error),
       },
     };
   }
@@ -879,15 +900,15 @@ function bunServe(options: StudioServeOptions): StudioBoundServer {
   return runtime.serve(options);
 }
 
+/** An IPv6 literal in brackets, as a URL needs it; any other host as it is. */
+function urlHost(hostname: string): string {
+  return hostname.includes(":") && !hostname.startsWith("[") ? `[${hostname}]` : hostname;
+}
+
 /** Where a process on this host reaches the server: loopback for wildcard binds. */
 function reportOrigin(hostname: string, port: number): string {
   const wildcard = hostname === "0.0.0.0" || hostname === "::" || hostname === "[::]";
-  const host = wildcard
-    ? "127.0.0.1"
-    : hostname.includes(":") && !hostname.startsWith("[")
-      ? `[${hostname}]`
-      : hostname;
-  return `http://${host}:${port}`;
+  return `http://${wildcard ? "127.0.0.1" : urlHost(hostname)}:${port}`;
 }
 
 /**
@@ -920,6 +941,7 @@ export function startStudioServer(
     detachMinutes: options.detachMinutes,
     launchCompanion: options.launchCompanion,
     noGit: options.noGit,
+    app: options.app,
   });
   const registry = fetchHandler.terminal;
   const server = serve({
@@ -956,12 +978,8 @@ export function startStudioServer(
       : {}),
   });
   boundPort = server.port;
-  const urlHostname =
-    hostname === STUDIO_HOSTNAME || hostname === "localhost" || hostname === "::1"
-      ? "localhost"
-      : hostname.includes(":") && !hostname.startsWith("[")
-        ? `[${hostname}]`
-        : hostname;
+  const loopback = hostname === STUDIO_HOSTNAME || hostname === "localhost" || hostname === "::1";
+  const urlHostname = loopback ? "localhost" : urlHost(hostname);
 
   return {
     url: `http://${urlHostname}:${server.port}`,

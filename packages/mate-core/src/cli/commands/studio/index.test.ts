@@ -43,6 +43,7 @@ function recording(overrides: Partial<StudioCommandDeps> = {}): Recorded {
     served,
     deps: {
       startStudioServer: () => handle(),
+      loadStudioApp: async () => null,
       serveUntilInterrupted: async (server) => {
         served.push(server);
       },
