@@ -187,7 +187,7 @@ describe("mergeWithDefaults", () => {
     expect(merged.allowedAgents).toEqual(existing.allowedAgents);
   });
 
-  test("preserves existing packageManagers when present and defaults to bun and uv otherwise", () => {
+  test("preserves existing packageManagers when present and defaults to bun otherwise", () => {
     expect(
       mergeWithDefaults({
         allowedAgents: ["claude"],
@@ -199,7 +199,7 @@ describe("mergeWithDefaults", () => {
       mergeWithDefaults({
         allowedAgents: ["claude"],
       }).packageManagers,
-    ).toEqual(["bun", "uv"]);
+    ).toEqual(["bun"]);
   });
 });
 
@@ -610,7 +610,7 @@ describe("ConfigStore", () => {
     const config = await store.load();
 
     expect(config.allowedAgents).toContain("claude");
-    expect(config.packageManagers).toEqual(["bun", "uv"]);
+    expect(config.packageManagers).toEqual(["bun"]);
     await fs.access(configPath);
   });
 
@@ -625,7 +625,7 @@ describe("ConfigStore", () => {
 
     expect(await fs.readFile(configPath, "utf8")).toBe(original);
     expect(config.capabilities).not.toContainEqual({ name: "rtk" });
-    expect(config.packageManagers).toEqual(["bun", "uv"]);
+    expect(config.packageManagers).toEqual(["bun"]);
   });
 
   test("repeated loads persist nothing and agree with one another", async () => {
