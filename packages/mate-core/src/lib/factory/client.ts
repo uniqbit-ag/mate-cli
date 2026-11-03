@@ -1,7 +1,7 @@
 import path from "node:path";
 
-import type { AgentCredentialName } from "./broker";
 import type { CommandResult } from "./command";
+import type { CredentialKind, CredentialStatus } from "./credential-store";
 import { FactoryError } from "./ids";
 import type { ExecRequest, SpawnRequest, WorksetInfo } from "./runtime";
 
@@ -19,8 +19,13 @@ export interface FactoryClient {
   /** The Workset container's address on the inner network, for reaching a port inside it. */
   address(id: string): Promise<string>;
   list(): Promise<WorksetInfo[]>;
-  /** Which Workset agent credential the broker holds, by name; null when none. */
-  info(): Promise<{ credential: AgentCredentialName | null }>;
+  /** Which kind of Workset agent credential the broker holds; null when none. */
+  info(): Promise<{ credential: CredentialKind | null }>;
+  credential: {
+    status(): Promise<CredentialStatus>;
+    set(kind: CredentialKind, value: string): Promise<void>;
+    clear(): Promise<void>;
+  };
 }
 
 /** The broker serves attaches on a second socket beside its own. */
@@ -49,9 +54,18 @@ export function factoryClient(
         `the factory broker at ${socket} is not reachable: ${(error as Error).message}`,
       );
     }
-    const answer = (await response.json()) as { ok: boolean; result?: T; error?: string };
-    if (!answer.ok)
-      throw new FactoryError(answer.error ?? "the factory broker refused the request");
+    const answer = (await response.json()) as {
+      ok: boolean;
+      result?: T;
+      error?: string;
+      code?: string;
+    };
+    if (!answer.ok) {
+      throw new FactoryError(
+        answer.error ?? "the factory broker refused the request",
+        answer.code === "busy" ? "busy" : undefined,
+      );
+    }
     return answer.result as T;
   };
 
@@ -69,5 +83,10 @@ export function factoryClient(
     address: async (id) => (await call<{ address: string }>("address", { id })).address,
     list: async () => (await call<{ worksets: WorksetInfo[] }>("list", {})).worksets,
     info: () => call("info", {}),
+    credential: {
+      status: () => call("credential.status", {}),
+      set: async (kind, value) => void (await call("credential.set", { kind, value })),
+      clear: async () => void (await call("credential.clear", {})),
+    },
   };
 }

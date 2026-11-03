@@ -2,24 +2,19 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import {
-  archiveAnchors,
+  type archiveAnchors,
   archiveDirOf,
   parseAnchor,
   SPECS_RELATIVE_DIR,
 } from "../../../lib/change-layout";
-import { isPublishable, readDeliveryState } from "../../../lib/delivery/record";
 import { linkedRepositoryIdentities } from "../../../lib/workset/repositories";
+import type { readWorksets, WorksetProblem } from "../../../lib/workset/record";
+import type { WorksetStageId, WorksetTurn } from "../../../lib/workset/stage";
 import {
-  readWorksets,
-  resolveLinkedChanges,
-  type WorksetProblem,
-} from "../../../lib/workset/record";
-import {
-  type ChangeFacts,
-  deriveWorksetStage,
-  type WorksetStageId,
-  type WorksetTurn,
-} from "../../../lib/workset/stage";
+  readWorksetStages,
+  type WorksetStageSources,
+  type WorksetWithStage,
+} from "../../../lib/workset/stages";
 import { errorMessage } from "../../../runtime/error-message";
 import { canonicalSpecsFor, discoverArchives } from "../artifact/pending/discovery";
 import { defaultGitOps } from "../artifact/finish/git";
@@ -85,6 +80,8 @@ export interface StudioWorkset {
   stageLabel: string;
   turn: WorksetTurn;
   problems: string[];
+  /** When it was started; absent while Later. */
+  queuedAt?: string;
 }
 
 export interface StudioCompanionPayload {
@@ -173,44 +170,95 @@ function byAnchorDescending(a: StudioShippedChange, b: StudioShippedChange): num
   return a.anchor < b.anchor ? 1 : -1;
 }
 
+/** Committed (published) archives with their parsed anchors, in discovery order. */
+async function committedArchives(
+  companionPath: string,
+  deps: CompanionPayloadDeps,
+): Promise<{ anchor: string; name: string; date: string }[]> {
+  const uncommitted = await (deps.readUncommittedPaths ?? readUncommittedPaths)(companionPath);
+  const archives = await (deps.discoverArchives ?? discoverArchives)(companionPath, uncommitted);
+  return archives.flatMap((archive) => {
+    const anchor = parseAnchor(archive.anchor);
+    if (archive.state !== "committed" || !anchor) return [];
+    return [{ anchor: archive.anchor, name: anchor.name, date: anchor.date }];
+  });
+}
+
 /** Committed archives, newest first. Shares pending's discovery so the two never disagree. */
 async function collectShipped(
   companionPath: string,
   deps: CompanionPayloadDeps,
 ): Promise<StudioShippedChange[]> {
-  const uncommitted = await (deps.readUncommittedPaths ?? readUncommittedPaths)(companionPath);
-  const archives = await (deps.discoverArchives ?? discoverArchives)(companionPath, uncommitted);
   const specsFor = deps.canonicalSpecsFor ?? canonicalSpecsFor;
   const proposalOf = deps.hasArchivedProposal ?? hasArchivedProposal;
   const shipped = await Promise.all(
-    archives.flatMap((archive) => {
-      const anchor = parseAnchor(archive.anchor);
-      if (archive.state !== "committed" || !anchor) return [];
-      return [
-        Promise.all([
-          specsFor(companionPath, archive.anchor),
-          proposalOf(companionPath, archive.anchor),
-        ]).then(([specPaths, hasProposal]) => ({
-          name: anchor.name,
-          anchor: archive.anchor,
-          archivedOn: anchor.date,
-          specs: capabilityIdsOf(specPaths),
-          hasProposal,
-        })),
-      ];
-    }),
+    (await committedArchives(companionPath, deps)).map((archive) =>
+      Promise.all([
+        specsFor(companionPath, archive.anchor),
+        proposalOf(companionPath, archive.anchor),
+      ]).then(([specPaths, hasProposal]) => ({
+        name: archive.name,
+        anchor: archive.anchor,
+        archivedOn: archive.date,
+        specs: capabilityIdsOf(specPaths),
+        hasProposal,
+      })),
+    ),
   );
   return shipped.toSorted(byAnchorDescending);
 }
 
-async function archiveMergeSettled(companionPath: string, anchor: string): Promise<boolean> {
-  const state = await readDeliveryState(path.join(archiveDirOf(companionPath), anchor));
-  return isPublishable(state.status);
+/** The stage readers a caller overrode; absent ones fall back to lib's defaults. */
+function stageSourceOverrides(
+  deps: CompanionPayloadDeps,
+): Pick<WorksetStageSources, "readWorksets" | "archiveAnchors" | "archiveMergeSettled"> {
+  return {
+    readWorksets: deps.readWorksets,
+    archiveAnchors: deps.archiveAnchors,
+    archiveMergeSettled: deps.archiveMergeSettled,
+  };
 }
 
 /**
- * Worksets with their derived stages. Delivery Records are read only for archives a
- * Workset links, so a companion without Worksets pays nothing.
+ * A companion's Worksets with their derived stages, read on their own: for callers such as
+ * the factory runner that need stages without assembling the whole payload.
+ */
+export async function readCompanionWorksetStages(
+  companionPath: string,
+  deps: CompanionPayloadDeps = {},
+): Promise<{ worksets: WorksetWithStage[]; problems: WorksetProblem[] }> {
+  return readWorksetStages(companionPath, {
+    activeChanges: async () => {
+      const [list, status] = await Promise.all([
+        (deps.listChanges ?? listChanges)(companionPath),
+        (deps.readAllChangeStatus ?? readAllChangeStatus)(companionPath),
+      ]);
+      if (!list.ok) throw new Error(describe(list.failure));
+      if (!status.ok) throw new Error(describe(status.failure));
+      const artifactsOf = new Map(
+        (status.value.changes ?? []).map((entry) => [entry.changeName, entry.artifacts ?? []]),
+      );
+      return (list.value.changes ?? []).map((change) => ({
+        name: change.name,
+        artifacts: (artifactsOf.get(change.name) ?? []).map((artifact) => ({
+          id: artifact.id,
+          ...(artifact.status === undefined ? {} : { status: artifact.status }),
+        })),
+        ...(change.completedTasks === undefined ? {} : { completedTasks: change.completedTasks }),
+      }));
+    },
+    // As in the payload: unreadable archives count as none published, never as an error.
+    publishedAnchors: async () =>
+      (await committedArchives(companionPath, deps).catch(() => [])).map(
+        (archive) => archive.anchor,
+      ),
+    ...stageSourceOverrides(deps),
+  });
+}
+
+/**
+ * Worksets with their derived stages, from the changes and archives this payload already
+ * collected.
  */
 async function collectWorksets(
   companionPath: string,
@@ -218,76 +266,25 @@ async function collectWorksets(
   shipped: StudioShippedChange[],
   deps: CompanionPayloadDeps,
 ): Promise<{ worksets: StudioWorkset[]; problems: WorksetProblem[] }> {
-  const listing = await (deps.readWorksets ?? readWorksets)(companionPath);
-  if (listing.worksets.length === 0) return { worksets: [], problems: listing.problems };
-
-  const anchors = await (deps.archiveAnchors ?? archiveAnchors)(companionPath);
-  const linked = resolveLinkedChanges(
-    listing.worksets,
-    changes.map((change) => change.name),
-    anchors,
-  );
-  const published = new Set(shipped.map((change) => change.anchor));
-  const mergeSettled = deps.archiveMergeSettled ?? archiveMergeSettled;
-  const activeByName = new Map(changes.map((change) => [change.name, change]));
-
-  const unique = new Map([...linked.values()].flat().map((change) => [change.name, change]));
-  const entries = await Promise.all(
-    [...unique.values()].map(async (change): Promise<[string, ChangeFacts] | null> => {
-      if (change.kind === "active") {
-        const active = activeByName.get(change.name)!;
-        return [
-          change.name,
-          {
-            name: change.name,
-            archived: false,
-            artifactsComplete:
-              active.artifacts.length > 0 &&
-              active.artifacts.every((artifact) => artifact.status === "done"),
-            reviewArtifacts: active.artifacts.map((artifact) => artifact.id),
-            checkedTasks: active.completedTasks ?? 0,
-            mergeSettled: false,
-            published: false,
-          },
-        ];
-      }
-      if (change.kind === "archived") {
-        return [
-          change.name,
-          {
-            name: change.name,
-            archived: true,
-            artifactsComplete: true,
-            reviewArtifacts: [],
-            checkedTasks: 0,
-            mergeSettled: await mergeSettled(companionPath, change.anchor),
-            published: published.has(change.anchor),
-          },
-        ];
-      }
-      return null;
-    }),
-  );
-  const facts = new Map(entries.filter((entry) => entry !== null));
-
+  const { worksets, problems } = await readWorksetStages(companionPath, {
+    activeChanges: async () => changes,
+    publishedAnchors: async () => shipped.map((change) => change.anchor),
+    ...stageSourceOverrides(deps),
+  });
   return {
-    worksets: listing.worksets.map((record) => {
-      const derived = deriveWorksetStage(record, linked.get(record.id) ?? [], (name) =>
-        facts.get(name),
-      );
-      return {
-        id: record.id,
-        title: record.title,
-        intent: record.intent,
-        repositories: record.repositories,
-        changes: record.changes,
-        stage: derived.stage,
-        stageLabel: derived.label,
-        turn: derived.turn,
-        problems: derived.problems,
-      };
-    }),
-    problems: listing.problems,
+    worksets: worksets.map(({ record, derived }) => ({
+      id: record.id,
+      title: record.title,
+      intent: record.intent,
+      repositories: record.repositories,
+      changes: record.changes,
+      stage: derived.stage,
+      stageLabel: derived.label,
+      turn: derived.turn,
+      problems: derived.problems,
+      ...(record.queuedAt ? { queuedAt: record.queuedAt } : {}),
+    })),
+    problems,
   };
 }
 

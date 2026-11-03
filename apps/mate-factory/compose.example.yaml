@@ -53,9 +53,11 @@ services:
     environment:
       MATE_COMPANION: acme
 
-      # The Workset agents' credential, one of the two; better placed in
-      # factory.yaml as `claudeCodeOauthToken:` or `anthropicApiKey:`. It
-      # reaches the factory broker only, never Studio or its own sessions.
+      # The Workset agents' credential is set in Studio's Factory view, under
+      # Agents. For a headless start, supply one of the two here or, better, in
+      # factory.yaml as `claudeCodeOauthToken:` or `anthropicApiKey:`; one set
+      # in Studio takes precedence. It reaches the factory broker only, never
+      # Studio or its own sessions.
       # CLAUDE_CODE_OAUTH_TOKEN: ...   # from `claude setup-token`
       # ANTHROPIC_API_KEY: ...
 
@@ -68,9 +70,31 @@ services:
       # MATE_FACTORY_GIT_NAME: acme-mate-bot
       # MATE_FACTORY_GIT_EMAIL: mate-bot@acme.test
 
-      # How many Workset runs start at once, and each stage's time budget.
-      # MATE_FACTORY_MAX_RUNS: "2"
+      # How many AFK runs work at once, and each stage's time budget. Workset
+      # containers follow: the parallel runs plus one, kept free for a session.
+      # MATE_FACTORY_PARALLEL_RUNS: "2"
       # MATE_FACTORY_STAGE_MINUTES: "60"
+
+      # How many of those runs may build (apply) at once; agent stages go ahead
+      # while a build waits for a build slot.
+      # MATE_FACTORY_PARALLEL_BUILDS: "2"
+
+      # Workset containers: minutes idle before one is stopped (0 never), and
+      # each one's limits.
+      # MATE_FACTORY_IDLE_MINUTES: "15"
+      # MATE_FACTORY_WORKSET_MEMORY: 4g   # builds and sessions; swap included
+      # MATE_FACTORY_AGENT_MEMORY: 1536m  # agent stages; at most the above
+      # MATE_FACTORY_WORKSET_PIDS: "1024"
+      # MATE_FACTORY_WORKSET_CPUS: "2"    # unset: no CPU limit
+
+      # Advanced: overrides the container count; at least the parallel runs.
+      # MATE_FACTORY_MAX_WORKSETS: "3"
+
+    # A ceiling for the whole factory: about 1 GB for Studio, the broker and the
+    # inner daemon, plus (builds + 1) times MATE_FACTORY_WORKSET_MEMORY, plus
+    # (parallel runs - builds) times MATE_FACTORY_AGENT_MEMORY. 13g at the
+    # defaults; 8 parallel runs with 2 builds is about 22g.
+    # mem_limit: 13g
 
     restart: unless-stopped
 

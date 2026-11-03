@@ -1,36 +1,23 @@
+import {
+  AGENT_CREDENTIAL_NAMES,
+  checkedCredential,
+  credentialKind,
+  type CredentialStore,
+  NO_CREDENTIAL,
+} from "./credential-store";
 import { FactoryError } from "./ids";
 import type { WorksetRuntime } from "./runtime";
 
-/**
- * The factory broker's API: the six Workset operations over HTTP on a Unix
- * socket, and nothing else. It is the boundary between processes running as
- * the unprivileged user and the inner Docker daemon, so every request is
- * checked field by field and an unexpected field is refused rather than
- * ignored: a caller cannot ask for a mount, an image or a privilege.
- */
-
-export const AGENT_CREDENTIAL_NAMES = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
-export type AgentCredentialName = (typeof AGENT_CREDENTIAL_NAMES)[number];
-
-export interface AgentCredential {
-  name: AgentCredentialName;
-  value: string;
-}
+export { AGENT_CREDENTIAL_NAMES, takeAgentCredential } from "./credential-store";
 
 /**
- * Takes the Workset agent credential out of the process environment so no
- * child — Git runs as the unprivileged user — inherits it. Held in memory and
- * added only to an `exec` that starts an agent.
+ * The factory broker's API: the Workset operations and the Workset agent
+ * credential, over HTTP on a Unix socket, and nothing else. It is the boundary
+ * between processes running as the unprivileged user and the inner Docker
+ * daemon, so every request is checked field by field and an unexpected field is
+ * refused rather than ignored: a caller cannot ask for a mount, an image or a
+ * privilege. No answer carries the credential's value.
  */
-export function takeAgentCredential(env: NodeJS.ProcessEnv = process.env): AgentCredential | null {
-  let credential: AgentCredential | null = null;
-  for (const name of AGENT_CREDENTIAL_NAMES) {
-    const value = env[name];
-    delete env[name];
-    if (value && credential === null) credential = { name, value };
-  }
-  return credential;
-}
 
 type Body = Record<string, unknown>;
 
@@ -63,12 +50,12 @@ export interface BrokerHandler {
 
 export function brokerHandler(
   runtime: WorksetRuntime,
-  credential: AgentCredential | null,
+  credentials: CredentialStore,
 ): BrokerHandler {
   return async (operation, body) => {
     switch (operation) {
       case "spawn":
-        only(body, ["id", "repository", "remoteUrl", "companion"]);
+        only(body, ["id", "repository", "remoteUrl", "companion", "size"]);
         return runtime.spawn(body as never);
       case "pause":
         only(body, ["id"]);
@@ -91,10 +78,23 @@ export function brokerHandler(
       case "address":
         only(body, ["id"]);
         return { address: await runtime.address(body.id as string) };
-      case "info":
+      case "info": {
         only(body, []);
-        // The name only: callers may know whether an agent can start, never the value.
-        return { credential: credential?.name ?? null };
+        // The kind only: callers may know whether an agent can start, never the value.
+        const credential = credentials.current();
+        return { credential: credential ? credentialKind(credential.name) : null };
+      }
+      case "credential.status":
+        only(body, []);
+        return credentials.status();
+      case "credential.set":
+        only(body, ["kind", "value"]);
+        credentials.set(checkedCredential(body.kind, body.value));
+        return {};
+      case "credential.clear":
+        only(body, []);
+        credentials.clear();
+        return {};
       case "exec": {
         only(body, ["id", "command", "env", "cwd", "agent", "stdin"]);
         if (body.stdin !== undefined && typeof body.stdin !== "string") {
@@ -115,11 +115,8 @@ export function brokerHandler(
           throw new FactoryError("cwd must be a path relative to the worktree");
         }
         if (body.agent === true) {
-          if (credential === null) {
-            throw new FactoryError(
-              "no Workset agent credential is configured; set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY",
-            );
-          }
+          const credential = credentials.current();
+          if (credential === null) throw new FactoryError(NO_CREDENTIAL);
           env[credential.name] = credential.value;
         }
         const result = await runtime.exec({
@@ -142,7 +139,7 @@ export function brokerHandler(
 /** `POST /v1/<operation>` with a JSON object; answers `{ ok, result | error }`. */
 export async function handleRequest(handler: BrokerHandler, request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const match = /^\/v1\/([a-z]+)$/.exec(url.pathname);
+  const match = /^\/v1\/([a-z]+(?:\.[a-z]+)*)$/.exec(url.pathname);
   if (request.method !== "POST" || !match) {
     return Response.json({ ok: false, error: "not found" }, { status: 404 });
   }
@@ -162,7 +159,10 @@ export async function handleRequest(handler: BrokerHandler, request: Request): P
     return Response.json({ ok: true, result: await handler(match[1]!, body as Body) });
   } catch (error) {
     if (error instanceof FactoryError) {
-      return Response.json({ ok: false, error: error.message }, { status: 400 });
+      return Response.json(
+        { ok: false, error: error.message, ...(error.code ? { code: error.code } : {}) },
+        { status: 400 },
+      );
     }
     // Never echo an unexpected error: it could carry anything, the credential included.
     process.stderr.write(

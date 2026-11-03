@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { FRAMEWORK_NAME } from "../../../framework";
+import { LiveSessions } from "../../../lib/factory/outcomes/sessions";
 
 import {
   bunTerminalSpawn,
@@ -907,6 +908,26 @@ describe("Workset sessions", () => {
     await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
     expect(r.spawned).toEqual([]);
     expect(String(v.messages[0]!.reason)).toContain("factory mode");
+  });
+
+  test("are recorded as live sessions, whose end is announced once after the reap", async () => {
+    const sessions = new LiveSessions();
+    const ended: string[] = [];
+    sessions.onEnded((id) => ended.push(id));
+    const r = registry({
+      sessions,
+      limits: { termGraceMs: 20, reapMs: 20 },
+      resolveWorkset: async (_id, _digest, sessionId) => resolved(sessionId),
+    });
+    const v = viewer();
+    await r.registry.connect(v).message(JSON.stringify(WORKSET_START));
+    expect([...sessions.busy()]).toEqual(["acme-login"]);
+
+    const sessionId = v.messages.find((message) => message.type === "ready")!.sessionId as string;
+    await Promise.all([r.registry.end(sessionId), r.registry.end(sessionId)]);
+    await Promise.resolve();
+    expect([...sessions.busy()]).toEqual([]);
+    expect(ended).toEqual(["acme-login"]);
   });
 
   test("count toward the cap with companion sessions, and ending one ends its helper", async () => {

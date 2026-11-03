@@ -10,13 +10,33 @@ import { FactoryError } from "./ids";
  * adds it. Closing the helper closes the attach, which makes the broker stop the agent.
  */
 
-export const ATTACH_STARTS = ["clarify", "explore", "continue"] as const;
+export const ATTACH_STARTS = ["clarify", "explore", "continue", "resume"] as const;
 export type AttachStart = (typeof ATTACH_STARTS)[number];
 
+export interface AgentLaunchOptions {
+  /** Skip the companion's Git synchronization, as Studio's own launches do. */
+  noGit?: boolean;
+  /** The factory's Claude session a `resume` start continues. */
+  resumeSession?: string;
+}
+
+/** A Claude session id; anything else never reaches the command line. */
+export const CLAUDE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** The managed launch inside the Workset container, with the server-built first turn. */
-export function agentCommand(start: AttachStart, intent: string): string[] {
-  const launch = ["mate", "claude", "--", "--yes"];
+export function agentCommand(
+  start: AttachStart,
+  intent: string,
+  options: AgentLaunchOptions = {},
+): string[] {
+  const launch = ["mate", "claude", "--", "--yes", ...(options.noGit ? ["--no-git"] : [])];
   if (start === "continue") return [...launch, "--continue"];
+  if (start === "resume") {
+    if (!options.resumeSession || !CLAUDE_SESSION_ID.test(options.resumeSession)) {
+      throw new FactoryError("a resume start needs the factory's Claude session id");
+    }
+    return [...launch, "--resume", options.resumeSession];
+  }
   if (start === "explore") return [...launch, "/mate-explore-change"];
   const text = intent.trim();
   return [...launch, text ? `/mate-clarify-intent ${text}` : "/mate-clarify-intent"];

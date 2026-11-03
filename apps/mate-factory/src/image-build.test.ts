@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { DEFAULT_IMAGE, labelArgs } from "../scripts/build";
+import { buildArgs, DEFAULT_IMAGE, labelArgs } from "../scripts/build";
 import { findContainerRuntime, TEST_BASE_IMAGE } from "./container-runtime";
 import { CONTAINER_ROOT, readImageInputs } from "./image-inputs";
 
@@ -240,6 +240,60 @@ describe("the factory image", () => {
     ]) {
       expect(factory, `${part} is not in the factory stage`).toContain(part);
     }
+  });
+
+  test("ships the Workset archive zstd-compressed, with zstd pinned", () => {
+    expect(inputs.factory.workset_image.archive.endsWith(".tar.zst")).toBe(true);
+    expect(inputs.factory.os_packages.zstd).toBeTruthy();
+    expect(dockerfile).toContain("| zstd -T0 -12 -q -o /workset-rootfs.tar.zst");
+    expect(factory).toContain('"zstd=${ZSTD_VERSION}"');
+    expect(factory).toContain(
+      "COPY --from=workset-archive /workset-rootfs.tar.zst ${WORKSET_ARCHIVE}",
+    );
+    expect(inputs.factory.workset_image.rootfs_budget_mb).toBeGreaterThan(0);
+  });
+
+  test("bakes a bridge that keeps only its own Agent SDK binary and still loads", () => {
+    const bake = fs.readFileSync(
+      path.join(CONTAINER_ROOT, "scripts", "bake-harness-bridge.sh"),
+      "utf8",
+    );
+    expect(bake).toContain('keep="claude-agent-sdk-linux-$arch"');
+    expect(bake).toContain(
+      "node_modules/@anthropic-ai/claude-code-* node_modules/@anthropic-ai/claude-agent-sdk-*",
+    );
+    // The harness bootstrap runs `./node_modules/.bin/claude --version`.
+    expect(bake).toContain('ln -sfn "../@anthropic-ai/$keep/claude" node_modules/.bin/claude');
+    expect(bake).toContain("./node_modules/.bin/claude --version");
+    expect(bake).toContain("Missing --workdir");
+    expect(bake).toContain('BUN_INSTALL_CACHE_DIR="$cache" bun install --frozen-lockfile');
+  });
+
+  test("starts a Workset's Docker daemon on first use, with socat pinned", () => {
+    const workset = dockerfile.slice(
+      dockerfile.indexOf(" AS workset"),
+      dockerfile.indexOf(" AS workset-archive"),
+    );
+    expect(inputs.factory.os_packages.socat).toBeTruthy();
+    expect(buildArgs(inputs, inputs.mate.version)).toContain(
+      `SOCAT_VERSION=${inputs.factory.os_packages.socat}`,
+    );
+    expect(workset).toContain('"socat=${SOCAT_VERSION}"');
+    expect(workset).toContain(
+      "COPY scripts/workset-docker-proxy.sh /usr/local/bin/mate-workset-docker-proxy",
+    );
+    expect(workset).toContain("COPY scripts/workset-prune.sh /usr/local/bin/mate-workset-prune");
+    for (const command of ["socat", "flock", "mate-workset-docker-proxy", "mate-workset-prune"]) {
+      expect(workset).toContain(`command -v ${command}`);
+    }
+    const init = fs.readFileSync(path.join(CONTAINER_ROOT, "scripts", "workset-init.sh"), "utf8");
+    expect(init).toContain("EXEC:/usr/local/bin/mate-workset-docker-proxy");
+    expect(init).not.toMatch(/^dockerd /m);
+  });
+
+  test("gives Workset containers a mate-owned Bun cache directory for the shared volume", () => {
+    expect(dockerfile).toContain('chown -R "${MATE_UID}:${MATE_GID}" /home/mate /var/cache/bun');
+    expect(dockerfile).toContain("'ENV BUN_INSTALL_CACHE_DIR=/var/cache/bun'");
   });
 
   test("keeps the factory parts out of the Studio stage", () => {

@@ -169,12 +169,20 @@ factory:
     kmod: 34.2-2
     iptables: 1.8.11-2
     procps: 2:4.0.4-9
+    # Compresses the Workset archive at build time and unpacks the local
+    # Workset overlay at startup.
+    zstd: 1.5.7+dfsg-1
+    # The Workset image's Docker socket listener, which starts the nested
+    # daemon on first connection.
+    socat: 1.8.0.3-1+deb13u1
   # The Workset image is a stage of the same Dockerfile, shipped inside the
-  # appliance as a root filesystem archive and imported under this name with
-  # the Mate version as tag when the inner daemon lacks it.
+  # appliance as a zstd-compressed root filesystem archive and imported under
+  # this name with the Mate version as tag when the inner daemon lacks it.
   workset_image:
-    archive: /opt/mate/workset-rootfs.tar
+    archive: /opt/mate/workset-rootfs.tar.zst
     repository: mate-workset
+    # The uncompressed root filesystem's ceiling, checked by verify-image.ts.
+    rootfs_budget_mb: 2600
 
 # ---------------------------------------------------------------------------
 # The capability toolchain. The installation gate is evaluated against the

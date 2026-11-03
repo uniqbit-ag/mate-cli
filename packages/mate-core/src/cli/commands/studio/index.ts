@@ -11,6 +11,7 @@ import {
   type StudioServerHandle,
   type StudioServerOptions,
 } from "./server";
+import { loadStudioApp, type StudioApp } from "./studio-app";
 import { terminalUnsupportedReason } from "./terminal";
 
 export interface StudioCommandDeps {
@@ -19,6 +20,8 @@ export interface StudioCommandDeps {
   openInBrowser?: (url: string) => Promise<void>;
   collectStudioInventory?: () => Promise<StudioInventory>;
   terminalUnsupportedReason?: () => string | null;
+  /** Studio's built application; `null` keeps the server's own views. */
+  loadStudioApp?: () => Promise<StudioApp | null>;
   env?: NodeJS.ProcessEnv;
   log?: (message: string) => void;
   warn?: (message: string) => void;
@@ -242,7 +245,7 @@ export async function runStudioCommand(
 
   let server;
   try {
-    server = start({}, parsed);
+    server = start({}, await withStudioApp(parsed, deps));
   } catch (error) {
     warn(
       `${FRAMEWORK_NAME}: studio could not bind a port: ${
@@ -312,7 +315,7 @@ async function runStudioServeCommand(
   const serve = deps.serveUntilInterrupted ?? serveUntilInterrupted;
   let server: StudioServerHandle;
   try {
-    server = start({}, parsed);
+    server = start({}, await withStudioApp(parsed, deps));
   } catch (error) {
     warn(
       `${FRAMEWORK_NAME}: studio serve could not bind ${parsed.hostname}:${parsed.port}: ${
@@ -326,4 +329,13 @@ async function runStudioServeCommand(
   log(server.address);
   if (parsed.token) log("Access token: the value pinned by --token / MATE_STUDIO_TOKEN.");
   await serve(server);
+}
+
+/** Adds Studio's built application when one is installed; without it the server keeps its own views. */
+async function withStudioApp<T extends StudioServerOptions>(
+  options: T,
+  deps: StudioCommandDeps,
+): Promise<T> {
+  const app = await (deps.loadStudioApp ?? loadStudioApp)();
+  return app ? { ...options, app } : options;
 }

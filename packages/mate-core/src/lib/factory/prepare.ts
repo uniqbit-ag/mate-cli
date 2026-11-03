@@ -2,6 +2,7 @@ import { readWorksets, type WorksetRecord } from "../workset/record";
 import { repositorySources } from "../workset/repositories";
 import type { FactoryClient } from "./client";
 import { FactoryError } from "./ids";
+import type { MemorySize } from "./runtime";
 
 /**
  * Makes a Workset's container ready for work: cloned or fetched, its worktree on the
@@ -14,6 +15,7 @@ export async function prepareWorkset(
   companionPath: string,
   id: string,
   env: NodeJS.ProcessEnv = process.env,
+  size?: MemorySize,
 ): Promise<WorksetRecord> {
   const record = (await readWorksets(companionPath)).worksets.find((entry) => entry.id === id);
   if (!record) throw new FactoryError(`this companion has no valid Workset ${id}`);
@@ -29,7 +31,13 @@ export async function prepareWorkset(
       `${repository} is neither linked here nor a configured factory repository`,
     );
   }
-  await client.spawn({ id, repository, remoteUrl, companion: companionPath });
+  await client.spawn({
+    id,
+    repository,
+    remoteUrl,
+    companion: companionPath,
+    ...(size ? { size } : {}),
+  });
   const link = await client.exec({
     id,
     command: ["mate", "working", "link", "--companion", companionPath, "--yes"],

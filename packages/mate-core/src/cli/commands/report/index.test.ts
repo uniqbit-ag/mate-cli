@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import { runReportCommand } from "./index";
@@ -9,6 +9,11 @@ const REPORT_NOW = new Date("2026-08-31T12:00:00Z");
 
 beforeEach(async () => {
   await fs.mkdir(COMPANION_PATH, { recursive: true });
+});
+
+// Failure-path cases set process.exitCode = 1; `= undefined` does not reset it under Bun.
+afterEach(() => {
+  process.exitCode = 0;
 });
 
 const makeResolveContext = () => ({
@@ -410,5 +415,68 @@ describe("runReportCommand", () => {
       expect(() => JSON.parse(String(logSpy.mock.calls[0]?.[0]))).not.toThrow();
       logSpy.mockRestore();
     });
+  });
+});
+
+describe("MATE_REPORT_OUTPUT", () => {
+  const document = JSON.stringify({
+    version: REPORT_DOCUMENT_VERSION,
+    title: "Review acme-login",
+    generatedAt: "2026-01-01T00:00:00Z",
+    metadata: [],
+    summary: [],
+    sections: [{ id: "notes", title: "Notes", type: "text", content: "Supplied" }],
+  });
+
+  test("writes the HTML to the file, opens no browser and prints no path", async () => {
+    const dir = await fs.mkdtemp("/tmp/mate-report-output-");
+    const output = `${dir}/nested/review.html`;
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    let opened = 0;
+    await runReportCommand(["--input", "r.json"], {
+      ensureUnambiguousCompanion: async () => true,
+      readInput: async () => document,
+      publishReportToStudio: async () => null,
+      openReportInBrowser: async () => {
+        opened += 1;
+      },
+      env: { MATE_REPORT_OUTPUT: output },
+    });
+    const logs = logSpy.mock.calls.map(String).join();
+    logSpy.mockRestore();
+    expect(await fs.readFile(output, "utf8")).toContain("Review acme-login");
+    expect(opened).toBe(0);
+    expect(logs).toContain("Report saved");
+    expect(logs).not.toContain(dir);
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  test("--json writes no file", async () => {
+    const dir = await fs.mkdtemp("/tmp/mate-report-output-");
+    const output = `${dir}/review.html`;
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    await runReportCommand(["--input", "r.json", "--json"], {
+      ensureUnambiguousCompanion: async () => true,
+      readInput: async () => document,
+      env: { MATE_REPORT_OUTPUT: output },
+    });
+    logSpy.mockRestore();
+    await expect(fs.access(output)).rejects.toThrow();
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  test("Studio hosting takes precedence", async () => {
+    const dir = await fs.mkdtemp("/tmp/mate-report-output-");
+    const output = `${dir}/review.html`;
+    const logSpy = spyOn(console, "log").mockImplementation(() => {});
+    await runReportCommand(["--input", "r.json"], {
+      ensureUnambiguousCompanion: async () => true,
+      readInput: async () => document,
+      publishReportToStudio: async () => ({ id: "abc" }),
+      env: { MATE_REPORT_OUTPUT: output },
+    });
+    logSpy.mockRestore();
+    await expect(fs.access(output)).rejects.toThrow();
+    await fs.rm(dir, { recursive: true, force: true });
   });
 });

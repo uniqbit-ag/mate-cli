@@ -57,8 +57,15 @@ describe("every setting is readable from both sources", () => {
       MATE_FACTORY: "true",
       CLAUDE_CODE_OAUTH_TOKEN: "acme-token",
       MATE_FACTORY_REPOSITORIES: "https://git.acme.test/acme/web.git",
-      MATE_FACTORY_MAX_RUNS: "3",
+      MATE_FACTORY_PARALLEL_RUNS: "3",
+      MATE_FACTORY_PARALLEL_BUILDS: "1",
       MATE_FACTORY_STAGE_MINUTES: "45",
+      MATE_FACTORY_MAX_WORKSETS: "6",
+      MATE_FACTORY_IDLE_MINUTES: "0",
+      MATE_FACTORY_WORKSET_MEMORY: "6G",
+      MATE_FACTORY_AGENT_MEMORY: "2G",
+      MATE_FACTORY_WORKSET_PIDS: "2048",
+      MATE_FACTORY_WORKSET_CPUS: "1.5",
       MATE_FACTORY_GIT_NAME: "acme-mate-bot",
       MATE_FACTORY_GIT_EMAIL: "mate-bot@acme.test",
     };
@@ -93,7 +100,14 @@ describe("every setting is readable from both sources", () => {
         credential: { name: "CLAUDE_CODE_OAUTH_TOKEN", value: "acme-token" },
         repositories: ["https://git.acme.test/acme/web.git"],
         maxRuns: 3,
+        maxBuilds: 1,
         stageMinutes: 45,
+        maxWorksets: 6,
+        idleMinutes: 0,
+        worksetMemory: "6g",
+        agentMemory: "2g",
+        worksetPids: 2048,
+        worksetCpus: "1.5",
         gitName: "acme-mate-bot",
         gitEmail: "mate-bot@acme.test",
       },
@@ -390,11 +404,24 @@ describe("the factory's Git author", () => {
 });
 
 describe("the documented settings", () => {
-  const reference = path.join(import.meta.dir, "..", "..", "docs", "content", "docs", "reference");
-  const documented = ["deployment.mdx", "factory.mdx"].flatMap((page) =>
-    [
-      ...fs.readFileSync(path.join(reference, page), "utf8").matchAll(/^\| `([A-Z][A-Z0-9_]+)`/gm),
-    ].map((match) => match[1]),
+  const pages = [
+    path.join(
+      import.meta.dir,
+      "..",
+      "..",
+      "docs",
+      "content",
+      "docs",
+      "reference",
+      "deployment.mdx",
+    ),
+    // Unpublished until the factory ships.
+    path.join(import.meta.dir, "..", "docs", "factory.mdx"),
+  ];
+  const documented = pages.flatMap((page) =>
+    [...fs.readFileSync(page, "utf8").matchAll(/^\| `([A-Z][A-Z0-9_]+)`/gm)].map(
+      (match) => match[1],
+    ),
   );
 
   test("the appliance and factory tables together list exactly the settings the image has", () => {
@@ -409,7 +436,14 @@ describe("factory mode", () => {
       credential: null,
       repositories: [],
       maxRuns: 2,
+      maxBuilds: 2,
       stageMinutes: 60,
+      maxWorksets: 3,
+      idleMinutes: 15,
+      worksetMemory: "4g",
+      agentMemory: "1536m",
+      worksetPids: 1024,
+      worksetCpus: null,
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     });
@@ -423,7 +457,14 @@ describe("factory mode", () => {
       credential: null,
       repositories: [],
       maxRuns: 2,
+      maxBuilds: 2,
       stageMinutes: 60,
+      maxWorksets: 3,
+      idleMinutes: 15,
+      worksetMemory: "4g",
+      agentMemory: "1536m",
+      worksetPids: 1024,
+      worksetCpus: null,
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     });
@@ -448,7 +489,14 @@ describe("factory mode", () => {
       credential: null,
       repositories: [],
       maxRuns: 2,
+      maxBuilds: 2,
       stageMinutes: 60,
+      maxWorksets: 3,
+      idleMinutes: 15,
+      worksetMemory: "4g",
+      agentMemory: "1536m",
+      worksetPids: 1024,
+      worksetCpus: null,
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     });
@@ -515,7 +563,14 @@ describe("runner limits", () => {
   test("default to two runs and sixty minutes", () => {
     expect(resolveConfig({ MATE_FACTORY: "1" }, noFile).factory).toMatchObject({
       maxRuns: 2,
+      maxBuilds: 2,
       stageMinutes: 60,
+      maxWorksets: 3,
+      idleMinutes: 15,
+      worksetMemory: "4g",
+      agentMemory: "1536m",
+      worksetPids: 1024,
+      worksetCpus: null,
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     });
@@ -528,7 +583,39 @@ describe("runner limits", () => {
     ).toMatchObject({ maxRuns: 4, stageMinutes: 90 });
   });
 
+  test("are read from the file under the parallel-runs key", () => {
+    expect(
+      resolveConfig({}, file({ factory: true, factoryParallelRuns: 4 })).factory,
+    ).toMatchObject({ maxRuns: 4, maxWorksets: 5 });
+  });
+
+  test("the older name MATE_FACTORY_MAX_RUNS sets the parallel runs", () => {
+    expect(
+      resolveConfig({ MATE_FACTORY: "1", MATE_FACTORY_MAX_RUNS: "3" }, noFile).factory.maxRuns,
+    ).toBe(3);
+  });
+
+  test("both names set to the same value are accepted", () => {
+    expect(
+      resolveConfig(
+        { MATE_FACTORY: "1", MATE_FACTORY_PARALLEL_RUNS: "3", MATE_FACTORY_MAX_RUNS: "3" },
+        noFile,
+      ).factory.maxRuns,
+    ).toBe(3);
+  });
+
+  test("both names disagreeing stops startup naming both settings", () => {
+    expect(() =>
+      resolveConfig(
+        { MATE_FACTORY: "1", MATE_FACTORY_PARALLEL_RUNS: "2", MATE_FACTORY_MAX_RUNS: "3" },
+        noFile,
+      ),
+    ).toThrow(/MATE_FACTORY_PARALLEL_RUNS.*MATE_FACTORY_MAX_RUNS/);
+  });
+
   test.each([
+    ["MATE_FACTORY_PARALLEL_RUNS", "0"],
+    ["MATE_FACTORY_PARALLEL_RUNS", "two"],
     ["MATE_FACTORY_MAX_RUNS", "0"],
     ["MATE_FACTORY_MAX_RUNS", "two"],
     ["MATE_FACTORY_STAGE_MINUTES", "-5"],
@@ -536,5 +623,162 @@ describe("runner limits", () => {
     expect(() => resolveConfig({ MATE_FACTORY: "1", [name]: value }, noFile)).toThrow(
       new RegExp(`${name}.*${value}`),
     );
+  });
+});
+
+describe("build runs and agent memory", () => {
+  test("default to two builds and 1536m", () => {
+    expect(resolveConfig({ MATE_FACTORY: "1" }, noFile).factory).toMatchObject({
+      maxBuilds: 2,
+      agentMemory: "1536m",
+    });
+  });
+
+  test("a Workset memory below 1536m is the agent memory too, unless set", () => {
+    expect(
+      resolveConfig({ MATE_FACTORY: "1", MATE_FACTORY_WORKSET_MEMORY: "1g" }, noFile).factory
+        .agentMemory,
+    ).toBe("1g");
+  });
+
+  test("a single parallel run defaults to a single build", () => {
+    expect(
+      resolveConfig({ MATE_FACTORY: "1", MATE_FACTORY_PARALLEL_RUNS: "1" }, noFile).factory
+        .maxBuilds,
+    ).toBe(1);
+  });
+
+  test("are read from the file", () => {
+    expect(
+      resolveConfig(
+        {},
+        file({
+          factory: true,
+          factoryParallelRuns: 4,
+          factoryParallelBuilds: 3,
+          factoryAgentMemory: "2g",
+        }),
+      ).factory,
+    ).toMatchObject({ maxBuilds: 3, agentMemory: "2g" });
+  });
+
+  test.each([
+    ["MATE_FACTORY_AGENT_MEMORY", "lots"],
+    ["MATE_FACTORY_PARALLEL_BUILDS", "0"],
+  ])("%s=%s stops startup naming the setting and value", (name, value) => {
+    expect(() => resolveConfig({ MATE_FACTORY: "1", [name]: value }, noFile)).toThrow(
+      new RegExp(`${name}.*${value}`),
+    );
+  });
+
+  test("more builds than parallel runs stops startup naming both settings", () => {
+    expect(() =>
+      resolveConfig(
+        { MATE_FACTORY: "1", MATE_FACTORY_PARALLEL_RUNS: "2", MATE_FACTORY_PARALLEL_BUILDS: "3" },
+        noFile,
+      ),
+    ).toThrow(/MATE_FACTORY_PARALLEL_BUILDS.*MATE_FACTORY_PARALLEL_RUNS/);
+  });
+
+  test("an agent memory above the Workset memory stops startup naming both settings", () => {
+    expect(() =>
+      resolveConfig(
+        { MATE_FACTORY: "1", MATE_FACTORY_WORKSET_MEMORY: "2g", MATE_FACTORY_AGENT_MEMORY: "3g" },
+        noFile,
+      ),
+    ).toThrow(/MATE_FACTORY_AGENT_MEMORY.*MATE_FACTORY_WORKSET_MEMORY/);
+  });
+
+  test("an agent memory equal to the Workset memory runs every stage at that size", () => {
+    expect(
+      resolveConfig(
+        {
+          MATE_FACTORY: "1",
+          MATE_FACTORY_WORKSET_MEMORY: "4096m",
+          MATE_FACTORY_AGENT_MEMORY: "4g",
+        },
+        noFile,
+      ).factory,
+    ).toMatchObject({ worksetMemory: "4096m", agentMemory: "4g" });
+  });
+});
+
+describe("Workset resources", () => {
+  test("default to three containers, fifteen idle minutes, 4g, 1024 pids and no CPU limit", () => {
+    expect(resolveConfig({ MATE_FACTORY: "1" }, noFile).factory).toMatchObject({
+      maxWorksets: 3,
+      idleMinutes: 15,
+      worksetMemory: "4g",
+      worksetPids: 1024,
+      worksetCpus: null,
+    });
+  });
+
+  test("are read from the file", () => {
+    expect(
+      resolveConfig(
+        {},
+        file({
+          factory: true,
+          factoryMaxWorksets: 2,
+          factoryIdleMinutes: 5,
+          factoryWorksetMemory: "512m",
+          factoryWorksetPids: 512,
+          factoryWorksetCpus: 2,
+        }),
+      ).factory,
+    ).toMatchObject({
+      maxWorksets: 2,
+      idleMinutes: 5,
+      worksetMemory: "512m",
+      worksetPids: 512,
+      worksetCpus: "2",
+    });
+  });
+
+  test("an idle time of 0 disables idle stops", () => {
+    expect(
+      resolveConfig({ MATE_FACTORY: "1", MATE_FACTORY_IDLE_MINUTES: "0" }, noFile).factory
+        .idleMinutes,
+    ).toBe(0);
+  });
+
+  test.each([
+    ["MATE_FACTORY_WORKSET_MEMORY", "lots"],
+    ["MATE_FACTORY_WORKSET_MEMORY", "4gb"],
+    ["MATE_FACTORY_MAX_WORKSETS", "0"],
+    ["MATE_FACTORY_IDLE_MINUTES", "-1"],
+    ["MATE_FACTORY_WORKSET_PIDS", "many"],
+    ["MATE_FACTORY_WORKSET_CPUS", "0"],
+    ["MATE_FACTORY_WORKSET_CPUS", "two"],
+  ])("%s=%s stops startup naming the setting and value", (name, value) => {
+    expect(() => resolveConfig({ MATE_FACTORY: "1", [name]: value }, noFile)).toThrow(
+      new RegExp(`${name}.*${value}`),
+    );
+  });
+
+  test("the container cap follows the parallel runs, plus one", () => {
+    expect(
+      resolveConfig({ MATE_FACTORY: "1", MATE_FACTORY_PARALLEL_RUNS: "4" }, noFile).factory
+        .maxWorksets,
+    ).toBe(5);
+  });
+
+  test("more parallel runs than running containers stops startup naming both settings", () => {
+    expect(() =>
+      resolveConfig(
+        { MATE_FACTORY: "1", MATE_FACTORY_PARALLEL_RUNS: "3", MATE_FACTORY_MAX_WORKSETS: "2" },
+        noFile,
+      ),
+    ).toThrow(/MATE_FACTORY_MAX_WORKSETS.*MATE_FACTORY_PARALLEL_RUNS/);
+  });
+
+  test("as many containers as parallel runs is allowed, with no slot kept free", () => {
+    expect(
+      resolveConfig(
+        { MATE_FACTORY: "1", MATE_FACTORY_PARALLEL_RUNS: "3", MATE_FACTORY_MAX_WORKSETS: "3" },
+        noFile,
+      ).factory,
+    ).toMatchObject({ maxRuns: 3, maxWorksets: 3 });
   });
 });

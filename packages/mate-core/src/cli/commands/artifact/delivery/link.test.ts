@@ -84,6 +84,35 @@ afterEach(async () => {
 });
 
 describe("mate artifact link", () => {
+  test("read-only defaults and invalid-record diagnostics are exposed without writes", async () => {
+    expect((await run(["x"]))[0]).toMatchObject({ defaultBranch: "workset/x", diagnostics: [] });
+    await fs.mkdir(path.join(companion, "worksets"));
+    await fs.writeFile(path.join(companion, "worksets/acme-invalid.yaml"), "id: wrong\n");
+    const [result] = await run(["x"]);
+    expect(result.defaultBranch).toBeNull();
+    expect(result.diagnostics.join()).toContain("worksets/acme-invalid.yaml");
+    expect(err.join()).toContain("worksets/acme-invalid.yaml");
+    await expect(readRaw("x")).rejects.toThrow();
+  });
+
+  test("regrouping preserves recorded delivery until an explicit branch edit", async () => {
+    await run(["x", "--branch", "workset/x"]);
+    await fs.mkdir(path.join(companion, "worksets"));
+    await fs.writeFile(
+      path.join(companion, "worksets/acme-login.yaml"),
+      `id: acme-login\nrepositories: [${REPO}]\nchanges: [x]\n`,
+    );
+    const [read] = await run(["x"]);
+    expect(read.defaultBranch).toBe("workset/acme-login");
+    expect(read.record.deliveries[0].branch).toBe("workset/x");
+    expect(err.join()).toContain(
+      "Recorded branch workset/x differs from default workset/acme-login",
+    );
+    expect(await readRaw("x")).toContain("workset/x");
+    const [edited] = await run(["x", "--branch", "workset/acme-login"]);
+    expect(edited.record.deliveries[0].branch).toBe("workset/acme-login");
+  });
+
   test("--branch records the Working Repository's delivery branch", async () => {
     const [result] = await run(["x", "--branch", "change/x"]);
     expect(result.record.deliveries).toEqual([{ repository: REPO, branch: "change/x" }]);

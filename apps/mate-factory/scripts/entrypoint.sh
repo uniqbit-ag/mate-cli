@@ -98,6 +98,7 @@ fi
 # The AFK runner's limits and Git author; only factory mode's Studio reads them.
 if [[ -n "${MATE_FACTORY_ACTIVE:-}" ]]; then
   export MATE_FACTORY_MAX_RUNS="${MATE_PLAN_FACTORY_MAX_RUNS:-2}"
+  export MATE_FACTORY_PARALLEL_BUILDS="${MATE_PLAN_FACTORY_PARALLEL_BUILDS:-$MATE_FACTORY_MAX_RUNS}"
   export MATE_FACTORY_STAGE_MINUTES="${MATE_PLAN_FACTORY_STAGE_MINUTES:-60}"
   export MATE_FACTORY_GIT_NAME="${MATE_PLAN_FACTORY_GIT_NAME:-Mate factory}"
   export MATE_FACTORY_GIT_EMAIL="${MATE_PLAN_FACTORY_GIT_EMAIL:-factory@mate.invalid}"

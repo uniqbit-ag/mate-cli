@@ -19,3 +19,5 @@ __pycache__/
 apps/mate-container/.local/
 # local factory test setup (apps/mate-factory/scripts/local-up.ts)
 apps/mate-factory/.local/
+# Studio's application, built into mate-core at pack time (scripts/studio-app/pack.ts)
+packages/mate-core/studio-dist/

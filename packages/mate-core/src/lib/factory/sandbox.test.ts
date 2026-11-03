@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { CredentialStore } from "./credential-store";
 import { serveAttach } from "./attach";
 import type { FactoryClient } from "./client";
 import type { PipeSpawn, PtyRequest } from "./pty";
@@ -174,10 +175,11 @@ describe("the Workset sandbox", () => {
         }) => ["docker", "exec", String(request.tty), ...request.envNames, ...request.command],
         stopMarked: async (_id: string, session: string) => void stopped.push(session),
         dockerEnv: () => ({}),
+        beginSession: () => () => {},
       } as unknown as WorksetRuntime;
       stop = serveAttach(socket, {
         runtime,
-        credential: { name: "ANTHROPIC_API_KEY", value: "acme-key" },
+        credentials: new CredentialStore(null, { name: "ANTHROPIC_API_KEY", value: "acme-key" }),
         spawnPipe,
       }).stop;
 

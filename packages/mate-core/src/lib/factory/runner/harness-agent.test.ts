@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { followTurn, type TurnPart } from "./harness-agent";
+import { followTurn, toolSummary, type TurnPart } from "./harness-agent";
 
 async function* parts(...list: TurnPart[]): AsyncIterable<TurnPart> {
   for (const part of list) yield part;
@@ -54,5 +54,39 @@ describe("following an agent turn", () => {
     expect(await followTurn(parts({ type: "finish", finishReason: "error" }), () => {})).toBe(
       "the agent ended with an error",
     );
+  });
+});
+
+describe("live turn events", () => {
+  test("text streams as it arrives and is logged as streamed; tools show a short summary", async () => {
+    const logged: [string, boolean | undefined][] = [];
+    const events: unknown[] = [];
+    await followTurn(
+      parts(
+        { type: "text-delta", id: "a", text: "Reading " },
+        { type: "tool-call", toolName: "Bash", input: { command: "git   status\n--short" } },
+        { type: "tool-result", toolName: "Bash" },
+        { type: "tool-error", toolName: "Read" },
+        { type: "text-delta", id: "a", text: "done." },
+        { type: "text-end", id: "a" },
+      ),
+      (text, streamed) => logged.push([text, streamed]),
+      (event) => events.push(event),
+    );
+    expect(events).toEqual([
+      { type: "text", id: "a", delta: "Reading " },
+      { type: "tool", name: "Bash", summary: "git status --short" },
+      { type: "tool-done", name: "Bash", failed: false },
+      { type: "tool-done", name: "Read", failed: true },
+      { type: "text", id: "a", delta: "done." },
+      { type: "text-end", id: "a" },
+    ]);
+    expect(logged).toEqual([["Reading done.\n", true]]);
+  });
+
+  test("tool summaries stay one short line", () => {
+    expect(toolSummary({ file_path: "a".repeat(200) })).toHaveLength(80);
+    expect(toolSummary({ count: 3 })).toBe("");
+    expect(toolSummary(null)).toBe("");
   });
 });

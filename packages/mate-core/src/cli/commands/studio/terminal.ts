@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
+import type { LiveSessions } from "../../../lib/factory/outcomes/sessions";
 import { tokensEqual } from "./access";
 
 export const TERMINAL_AGENTS = ["claude", "opencode"] as const;
@@ -228,6 +229,8 @@ export interface TerminalRegistryOptions {
   signalGroup?: (pid: number, signal: NodeJS.Signals) => void;
   now?: () => number;
   limits?: Partial<typeof TERMINAL_LIMITS>;
+  /** Where Workset sessions are recorded, for the factory's pickup and waiting runs. */
+  sessions?: LiveSessions;
 }
 
 interface Session {
@@ -555,6 +558,7 @@ export class TerminalRegistry {
       onData: (data) => this.output(session, data),
     });
     this.sessions.set(session.id, session);
+    if (session.workset) this.options.sessions?.begin(session.workset.id);
     void session.process.exited.then((status) => {
       session.exited = true;
       if (!session.ending) void this.finish(session, { type: "exit", status });
@@ -708,6 +712,7 @@ export class TerminalRegistry {
         /** Already closed. */
       }
     })();
+    if (session.workset) this.options.sessions?.end(session.workset.id, session.ending);
     return session.ending;
   }
 }

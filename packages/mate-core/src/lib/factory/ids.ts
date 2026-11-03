@@ -1,9 +1,14 @@
 import { isRepositoryIdentity, isWorksetId } from "../workset/record";
+import { defaultDeliveryBranch } from "../delivery/record";
 
 /** Workset identifiers and the names derived from them. */
 
 export class FactoryError extends Error {
-  constructor(message: string) {
+  /** `busy`: every running Workset container is in use; retry once one frees. */
+  constructor(
+    message: string,
+    readonly code?: "busy",
+  ) {
     super(message);
     this.name = "FactoryError";
   }
@@ -42,8 +47,12 @@ export function repositoryFromKey(key: string): string | null {
   return isRepositoryIdentity(repository) ? repository : null;
 }
 
-export const deliveryBranch = (id: string) => `change/${id}`;
+export const deliveryBranch = defaultDeliveryBranch;
 export const containerName = (id: string) => `workset-${id}`;
+/** The inner daemon's volume holding a Workset's `/home/mate`, which outlives its container. */
+export const homeVolume = (id: string) => `workset-home-${id}`;
+/** The Bun install cache every Workset container shares. */
+export const BUN_CACHE_VOLUME = "workset-bun-cache";
 
 export const LABEL_WORKSET = "dev.mate.workset";
 export const LABEL_REPOSITORY = "dev.mate.repository";

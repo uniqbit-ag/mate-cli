@@ -1,0 +1,328 @@
+---
+title: The Factory Container
+description: "Running the Mate factory: the appliance plus Sysbox Workset containers that agents work in, as its own image."
+---
+
+{/* Unpublished while the factory is not released: moved out of apps/docs. Move it back to apps/docs/content/docs/reference/ when it ships. */}
+
+The factory image is the [appliance](/docs/reference/deployment) plus a host for
+**Workset containers**. Each Workset gets its own Sysbox container with its own
+worktree on the Delivery Branch `change/<workset>` and its own Docker daemon, so
+an agent inside it can build and run containers. It is a separate image,
+`mate-factory`, published beside `mate-appliance` at the same versions:
+
+| Image            | For                                                                                     |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `mate-appliance` | People who work through Studio alone, such as Business Analysts. Runs unprivileged.     |
+| `mate-factory`   | Product Engineers running Worksets, attended or unattended. Starts as root, privileged. |
+
+Everything the [appliance page](/docs/reference/deployment) says about mounting,
+configuration, startup, upgrades, saving and the agent terminal applies to the
+factory image too. This page covers only what the factory adds.
+
+```sh
+docker run \
+  --privileged \
+  --volume ./companions:/companions \
+  --volume factory-docker:/var/lib/docker \
+  --volume factory-sysbox:/var/lib/sysbox \
+  --volume factory-state:/var/lib/mate-factory \
+  --publish 127.0.0.1:4097:4097 \
+  ghcr.io/uniqbit-ag/mate-cli/mate-factory:latest
+```
+
+## How it runs
+
+- **Root and privileged, for three processes.** The image starts as root and
+  needs a privileged container. Its supervisor runs only Sysbox, the inner
+  Docker daemon and the **factory broker** as root. Studio and every agent
+  session still run as `mate` (uid 10001). Factory mode is on in this image;
+  `MATE_FACTORY=false` runs Studio alone, as the image's own user.
+- **The host boundary.** A privileged container is bounded by the Docker
+  Desktop VM or the host kernel, not by Docker. Workset containers themselves
+  are unprivileged: root inside them maps to an unprivileged user outside. Run
+  the factory image only where a privileged container is acceptable; people who
+  need Studio alone get the appliance image.
+- **Preflight.** Before anything starts, startup checks for root, full
+  privileges, cgroup v2, `/dev/fuse`, a kernel of 5.19 or newer, user
+  namespaces, and the three volumes. Each failed check stops startup, naming
+  the check and its fix.
+- **Three volumes.** `/var/lib/docker` and `/var/lib/sysbox` hold the inner
+  daemon's and Sysbox's data, which do not work on the container's overlay
+  filesystem. `/var/lib/mate-factory` holds one clone per Working Repository
+  and one worktree per Workset. Worksets survive a restart. Their containers
+  are stopped, and nothing resumes them by itself. Workset images of earlier
+  versions that no container uses are removed at start, together with the inner
+  daemon's dangling images and build cache.
+- **Workset resources.** During a build (apply) or a session, each Workset
+  container is limited to `MATE_FACTORY_WORKSET_MEMORY` (default `4g`, swap
+  included); during an agent stage (clarify, explore, propose, revise, publish)
+  to the smaller `MATE_FACTORY_AGENT_MEMORY` (default `1536m`). A running
+  container grows when its next stage builds, and shrinks only while nobody has
+  a session or a command in it. Every container is also limited to
+  `MATE_FACTORY_WORKSET_PIDS` (default 1024), and to
+  `MATE_FACTORY_WORKSET_CPUS` when set. The limits cover everything the agent
+  starts inside, nested containers too, and apply to existing containers when
+  they next start. Past 90% of the memory limit the kernel reclaims cache and
+  slows the container down before the hard limit stops a process. At most
+  `MATE_FACTORY_PARALLEL_RUNS` plus one Workset containers run at once (3 by
+  default), so one stays free for your own session or Take control. Starting
+  another first stops the least recently used one that has no session and no
+  command. When every running one is busy, an AFK run waits in the queue, shown
+  as waiting for a Workset slot, and a session is refused with the reason.
+- **Docker on first use.** A Workset container's own Docker daemon starts the
+  first time anything in it uses Docker, and runs until the container stops. A
+  stage that never uses Docker runs no daemon; the first Docker command waits a
+  few seconds for it.
+- **Idle stop.** A Workset container with no session and no command for
+  `MATE_FACTORY_IDLE_MINUTES` (default 15, `0` never) is stopped, after its own
+  Docker daemon's dangling images and build cache are removed when that daemon
+  runs. Its worktree and home are kept, and it starts again on its next use.
+- **A home that outlives its container.** Each Workset's `/home/mate`, with the
+  agent's settings and Claude conversations, lives on its own volume of the inner
+  daemon. A container made from an earlier Workset image is recreated from the
+  current one on its next start, keeping its worktree, home and branches; a
+  container from before this volume existed has its home copied over first. The
+  nested daemon's own images are not kept: they are a cache. Workset containers
+  share one Bun install cache.
+- **Reclaimed at Done.** When every change of a Workset is Done, Studio removes
+  its container, worktree, home and run files. Its branches and its record stay.
+  A Workset with unpushed commits keeps everything, and its card names the
+  commit.
+- **The broker is the boundary.** Studio and agent sessions reach Worksets
+  only through the broker's socket, which offers spawn, pause, resume,
+  delete, exec and list, nothing else. They cannot reach the inner Docker
+  daemon, choose a mount or an image, or ask for privileges.
+- **Platforms.** Docker Desktop, OrbStack and Linux hosts with kernel 5.19 or
+  newer, on amd64 and arm64.
+- **Stopping.** A termination signal stops Studio and its sessions first, then
+  Workset containers (10 seconds each), the broker, the inner daemon and
+  Sysbox. Allow for that in the stop grace period.
+
+The image carries Sysbox, the Docker engine and the Workset image, so the
+factory starts offline like the appliance.
+
+## Agents in Worksets
+
+- **One agent credential for Worksets, set in Studio.** In the Factory view,
+  **Agents** sets it. For a Claude subscription, run `claude setup-token` on
+  your own machine, sign in in the browser it opens, and paste the token it
+  prints (`sk-ant-oat…`, valid for a year); or paste an Anthropic API key
+  (`sk-ant-api…`). The panel shows which kind is set, where it came from and
+  when, never the value, and can replace or remove it. Studio passes the value
+  to the broker in one request and keeps nothing.
+- **Stored by the broker.** The broker keeps the credential in
+  `agent-credential.env` in the factory state volume, readable by root only, in
+  a directory `mate` cannot list. The next agent start uses it; no restart is
+  needed. Deleting the `factory-state` volume removes it. For an agent product
+  offered to others, Anthropic asks for an API key rather than subscription
+  logins.
+- **Startup credential as a fallback.** For a headless start, set exactly one
+  of `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`, best in the
+  configuration file as `claudeCodeOauthToken:` or `anthropicApiKey:`. Setting
+  both stops startup. One set in Studio takes precedence; removing that falls
+  back to this one. Either goes to the broker only, which adds it to the
+  commands that start a Workset agent. Studio and its own sessions never
+  receive it. Studio reads a copy of the configuration file without it, so the
+  original can be readable by root only.
+- **The Workset image.** Each Workset container has Claude Code, Bun, the
+  companion's capability tools (TokenSave, RTK, uv, graphify) and the Claude
+  Code harness bridge, all pre-installed. Package commands inside a Workset run
+  through Bun. Nothing is installed when a Workset starts.
+- **Outcomes.** The Factory view is an outcome-driven home. Each Workset shows
+  as an **Outcome**: what you want, in your words. Type it into **What should we
+  build or improve?** and press **Start** (or Ctrl/Cmd+Enter). The factory
+  takes it from there: its title comes from the first sentence, the whole text
+  is the intent, and the repository is asked for only when several are linked.
+  **Save for later** keeps it unstarted under **Later**.
+- **The home.** Below the input, Outcomes are listed in **Needs you**,
+  **Running**, **Later** and **Done**, one row each and each Outcome once: its
+  title, where it is, the milestones reached (such as `4/7`) and how long ago it last changed. A queued
+  Outcome says it is waiting for a free slot. Click a row to open the Outcome.
+  Its dialog leads with what needs you (a question round, a review, a merge, a
+  problem or control), then the live log, then the situation with the next
+  step, the checks, **Review plan** and **View changes**, and the run's actions
+  (**Start**, **Cancel run**, **Regenerate reports**, **Move to later**, **Take
+  control**). What happened so far, the intent and **Request a change** follow.
+  Beside it, the Delivery Path map marks where the Outcome is (milestones
+  Understood, Approach chosen, Plan ready, Plan approved, Built, Merged,
+  Delivered), with the stage, the run, the changes and the branch under it.
+  Escape or a click outside closes it. The view refreshes itself every 30 seconds unless you are typing
+  or have an Outcome open.
+- **Started and Later.** A started Outcome runs by itself; started Outcomes run
+  in the order they were started, `MATE_FACTORY_PARALLEL_RUNS` at a time, and
+  at most `MATE_FACTORY_PARALLEL_BUILDS` of them in apply. A build waits for a
+  build slot, keeping its place, while agent stages behind it go ahead. A Later
+  one waits until you press **Start**, in its row or its dialog. Moving an
+  Outcome to Later drops a queued run, and a running one finishes. No stage is
+  set by hand: the runner moves an Outcome through Clarify intent and Explore
+  change, and you step in through its questions, Take control or Request a
+  change.
+- **Needs you.** Only decisions show here, oldest first, each opening on its
+  decision:
+  **You have control** (after Take control, see below),
+  **Decision needed** (one click per offered answer, the recommended one marked,
+  or your own words; **Decisions needed (n)** when several questions came
+  together), **Plan ready for review** (each change's review report,
+  **Approve** to build it, **Request a change**, **Regenerate** when a report is
+  missing), **Ready to merge** (the compare page), **Ready to publish**
+  (**Publish**) and **Something went wrong** (the reason and **Retry**). Only
+  these interrupt you: the tab title counts them, and **Notify me about
+  decisions** turns on browser notifications for them.
+- **Asking you.** The agent asks through the runner, and asks together: every
+  question it can already ask goes into one round, up to five, and only a
+  follow-up that depends on your answer waits for the next one. Each question
+  usually comes with two to four answers and the one it recommends, marked as
+  recommended. One question shows its answers as single clicks, also on the
+  number keys 1–9, and a field for your own words. Several show as one form
+  with the same choices per question, none chosen for you, and a field for
+  your own words that overrides the choice; **Send answers** sends them once
+  every question has an answer. **Accept all recommendations** sends the
+  recommended answers in one click when every question has one. The agent asks only for permission, missing facts it cannot
+  reasonably assume, anything hard to undo, or a choice between real
+  alternatives; for the rest it takes the answer it would recommend and records
+  each as `Assumed: …` in its handoff, the proposal and its last message, so
+  you see them at the review. Each round answers once: when the card and the
+  terminal answer the same round, the second is told it was already answered.
+  A question the agent only writes in its text, without asking through the
+  runner, waits for nobody. This asking policy comes from the runner on every
+  factory turn; skills, your own included, need no factory text.
+- **Situations.** Before it ends a stage, the agent reports one plain sentence
+  for you, such as "A three-step signup is built and waiting for the merge.",
+  and, after verification, the checks it ran. The row shows the latest; without
+  one, a sentence derived from the stage.
+- **Request a change.** Your feedback continues the same Outcome. At the review,
+  the plan is revised and its reports rebuilt. While building, the plan is
+  revised and the build continues on the same branch. While waiting for merge,
+  a follow-up change is proposed for the same branch and comes back for review.
+  Once published, the field starts a new outcome instead.
+- **The live log.** An Outcome with a run log or a running stage shows its log
+  in its dialog, right under what needs you. It starts when you open the
+  Outcome: the stored log first, then the running stage's text and tool calls
+  as they happen. The factory's own lines (stage prompts, links, commits,
+  pushes) stand apart from the agent's text, tool calls are quiet and failed
+  ones red. The log follows the end until you scroll up; **Jump to latest**
+  takes you back. **Full log** opens the whole stored log. Closing the dialog
+  only stops following the log. **Cancel run** is the only way to stop a run.
+- **Take control.** An Outcome with a factory conversation offers **Take
+  control** in its dialog, with a line saying what it does. No further stage
+  starts; a running stage finishes first, and nothing is cancelled. Until then
+  the dialog shows **Taking control** above the live log. Once control passes
+  to you, the Outcome is under **You have control**, and its dialog gives a
+  terminal its whole width: Claude Code in the Workset's container on the
+  factory's own conversation, where you work as in any session, with **Return
+  to automation** above it. Stepping onto the Outcome with J or K attaches the
+  terminal without giving it your keys; click into it to type. Closing the
+  dialog only detaches the terminal;
+  reopening the Outcome attaches to it again. A waiting question stays
+  waiting, and answers are refused until you hand back. Closing the browser
+  and restarting Studio keep control with you. Exit Claude, then press
+  **Return to automation**: the factory links the changes you proposed, logs
+  task progress, and continues in the same conversation, told that a person
+  worked in it. A waiting question stays waiting. If this fails, control stays
+  with you and the reason is shown.
+- **Unattended planning.** A started Outcome at Clarify intent runs
+  `/mate-clarify-intent` with its title and intent. A clear intent goes
+  straight to Explore change; an unclear one is interviewed or grilled.
+  Explore change then runs in the same conversation and ends with the agreed
+  slices, and propose continues from there. The runner gives every factory
+  turn the asking policy above; in your own sessions the skills work as
+  before.
+- **AFK runs.** Once a started Outcome is ready for propose, Studio's runner proposes
+  its changes unattended inside the Workset's container, with the companion's
+  skills and instructions, and links the new changes to the Workset. A Workset
+  needs no session first: the run starts its container. People keep the
+  triggers: after the review, **Approve** applies every linked change
+  in dependency order on `change/<workset>`, commits each, pushes the branch
+  from the factory with its own Git credentials, and archives the changes.
+  After the merge, **Publish** publishes them. When the agent needs a decision,
+  its question appears under Needs you; your answer continues the run.
+  A run's log and Cancel run are in the Outcome's dialog; Retry is offered after a
+  failure or a restart. Runs never resume by themselves after a restart.
+  `MATE_FACTORY_PARALLEL_RUNS` caps parallel runs (default 2),
+  `MATE_FACTORY_PARALLEL_BUILDS` the builds among them (default 2) and
+  `MATE_FACTORY_STAGE_MINUTES` caps each stage (default 60). The agent runs
+  with all permissions inside its Workset container, which is its isolation
+  boundary. Git credentials never enter a Workset.
+- **Review reports.** After propose links its changes, the runner asks
+  `/mate-show-me <change>` for each one. The report shows the change's intent, a
+  diagram of its flow, each spec delta as a diff against the current spec, and
+  its tasks. `mate report` writes it to the file `MATE_REPORT_OUTPUT` names
+  instead of opening a browser; the runner sets that to a place in the clone's
+  Git directory, so nothing lands in the worktree, and Studio moves the report
+  into its Reports. A failed report never fails the propose. Approve stays the
+  only approval.
+- **Who commits.** Every commit the factory makes, a Workset's work and a
+  publication alike, is authored and committed as `Mate factory
+<factory@mate.invalid>`, so `git log` tells factory commits apart; the
+  `.invalid` domain never belongs to a real mailbox or account. A Workset commit
+  ends with a `Workset: <id>` trailer. When the factory pushes to a forge, name
+  a bot account with `MATE_FACTORY_GIT_NAME` and `MATE_FACTORY_GIT_EMAIL`.
+  `MATE_GIT_USER_NAME` and `MATE_GIT_USER_EMAIL` stay the author of people's own
+  sessions.
+- **Where Worksets are cloned from.** A Workset's repository is cloned from the
+  `origin` of the repository linked to the companion, when that repository's
+  path exists in the container. Linked paths usually come from the host and do
+  not exist there, so list the repositories in `MATE_FACTORY_REPOSITORIES`. The
+  outcome input offers those too. Cloning uses the Git credentials the container
+  already has for its remotes.
+
+## Factory settings
+
+These come on top of the [appliance settings](/docs/reference/deployment#configuration),
+from the environment or the configuration file in the same way.
+
+| Setting                        | Meaning                                                                                                                                                                                                                                                      | Default                | Required |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | -------- |
+| `MATE_FACTORY`                 | Factory mode: Sysbox and an inner Docker daemon run Workset containers. On in this image, which starts as root; it needs a privileged container with volumes at `/var/lib/docker`, `/var/lib/sysbox` and `/var/lib/mate-factory`. `false` runs Studio alone. | `true`                 | no       |
+| `CLAUDE_CODE_OAUTH_TOKEN`      | A Claude subscription token (from `claude setup-token`) for Workset agents. Handed only to the factory broker, never to Studio or its sessions. Set this or `ANTHROPIC_API_KEY`, not both.                                                                   | —                      | no       |
+| `ANTHROPIC_API_KEY`            | An Anthropic API key for Workset agents. Handed only to the factory broker, never to Studio or its sessions. Set this or `CLAUDE_CODE_OAUTH_TOKEN`, not both.                                                                                                | —                      | no       |
+| `MATE_FACTORY_REPOSITORIES`    | Git URLs of Working Repositories Worksets may be created for and cloned from, one per line or comma-separated. Studio offers each by its `org/repository` name, besides the repositories linked to the companion.                                            | —                      | no       |
+| `MATE_FACTORY_PARALLEL_RUNS`   | How many AFK runs work at once; others wait in order. Workset containers follow from it: the parallel runs plus one, so one stays free for your session.                                                                                                     | `2`                    | no       |
+| `MATE_FACTORY_PARALLEL_BUILDS` | How many of the parallel runs may be in a build stage (apply) at once; a build waits for a build slot while agent stages go ahead. At most `MATE_FACTORY_PARALLEL_RUNS`.                                                                                     | `2`                    | no       |
+| `MATE_FACTORY_STAGE_MINUTES`   | The time budget of one stage of a Workset run, in minutes; a stage past it fails.                                                                                                                                                                            | `60`                   | no       |
+| `MATE_FACTORY_IDLE_MINUTES`    | Minutes a Workset container may sit with no session and no command before it is stopped; its worktree and home are kept. `0` never stops one.                                                                                                                | `15`                   | no       |
+| `MATE_FACTORY_WORKSET_MEMORY`  | Each Workset container's memory limit, swap included, as a Docker size such as `4g` or `512m`. Covers everything the agent starts in it, nested containers too.                                                                                              | `4g`                   | no       |
+| `MATE_FACTORY_AGENT_MEMORY`    | A Workset container's memory limit during an agent stage (clarify, explore, propose, revise, publish), swap included; builds and sessions get `MATE_FACTORY_WORKSET_MEMORY`. At most that.                                                                   | `1536m`                | no       |
+| `MATE_FACTORY_WORKSET_PIDS`    | Each Workset container's process limit.                                                                                                                                                                                                                      | `1024`                 | no       |
+| `MATE_FACTORY_WORKSET_CPUS`    | Each Workset container's CPU limit, such as `2` or `1.5`. Unset sets none.                                                                                                                                                                                   | —                      | no       |
+| `MATE_FACTORY_GIT_NAME`        | The author and committer name of every commit the factory makes, its Workset commits and publications.                                                                                                                                                       | `Mate factory`         | no       |
+| `MATE_FACTORY_GIT_EMAIL`       | The author and committer email of every commit the factory makes.                                                                                                                                                                                            | `factory@mate.invalid` | no       |
+
+### Advanced settings
+
+Older names and overrides; most factories leave them unset.
+
+| Setting                     | Meaning                                                                                                                                                                                                                                                  | Default           | Required |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------- |
+| `MATE_FACTORY_MAX_RUNS`     | The older name of `MATE_FACTORY_PARALLEL_RUNS`. Setting both to different values stops startup naming both.                                                                                                                                              | —                 | no       |
+| `MATE_FACTORY_MAX_WORKSETS` | Overrides how many Workset containers run at once. Starting another stops the least recently used idle one; when none is idle, an AFK run waits and a session is refused. At least `MATE_FACTORY_PARALLEL_RUNS`; equal keeps no slot free for a session. | parallel runs + 1 | no       |
+
+## Sizing the factory
+
+A factory needs about 1 GB for Studio, the broker and the inner Docker daemon,
+plus `MATE_FACTORY_WORKSET_MEMORY` (default 4 GB) for each build and the spare
+session slot, and `MATE_FACTORY_AGENT_MEMORY` (default 1.5 GB) for each other
+run: about 1 GB + (builds + 1) × `MATE_FACTORY_WORKSET_MEMORY` + (parallel runs
+− builds) × `MATE_FACTORY_AGENT_MEMORY`. That is 13 GB at the defaults of two
+runs that may both build. Eight parallel runs with two builds
+(`MATE_FACTORY_PARALLEL_RUNS=8`, `MATE_FACTORY_PARALLEL_BUILDS=2`) need about
+1 + 3 × 4 + 6 × 1.5 = 22 GB. Lower any of them to fit the machine. To keep the
+factory itself within that, give its container a ceiling, for example
+`mem_limit: 13g` in Compose or `--memory 13g` with `docker run`; on Docker
+Desktop, the VM's memory setting bounds it as well. Disk grows with the Workset
+images, which startup trims to the ones in use, and with each Workset's
+worktree, home and nested images, which go when the Workset is Done.
+
+## Running it locally
+
+From the repository root, `bun run factory:local` builds the factory image with
+this working tree's Mate and starts it on `http://localhost:4098`, beside a local
+appliance on 4097. It passes a Workset agent credential set in your shell
+through as a fallback, and `MATE_FACTORY_REPOSITORIES` from your shell; set the
+credential in Studio's Agents panel otherwise. `factory:local:down`,
+`factory:local:reset` and `factory:local:logs` stop, reset and follow it.
+The local image also refreshes the Mate skills of its companion clone from this
+working tree at every start, so a local run uses the skills you are changing;
+your companion checkout itself is mounted read-only and never written. Release
+images never do this.

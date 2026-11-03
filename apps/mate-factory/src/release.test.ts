@@ -141,6 +141,10 @@ describe("publication asks for an image only after npm has succeeded", () => {
     expect(imageJob).toContain("gh workflow run publish-factory-image.yml");
   });
 
+  test("the dispatch is off unless the repository opts in", () => {
+    expect(imageJob).toContain("if: vars.MATE_PUBLISH_FACTORY_IMAGE == 'true'");
+  });
+
   test("a partial npm failure never reaches the dispatch", () => {
     // `set -e` fails the publish job on the first failed `npm publish`, and the
     // image job only runs after the publish job succeeded.

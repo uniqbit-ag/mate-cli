@@ -253,34 +253,33 @@ describe("factory mode locally", () => {
     expect(environment.MATE_FACTORY_GIT_NAME).toBeNull();
     expect(environment.MATE_FACTORY_GIT_EMAIL).toBeNull();
   });
+
+  test("passes the runner and Workset resource limits through from the shell", () => {
+    const environment = parse(composeFile(options)).services.mate.environment;
+    for (const name of [
+      "MATE_FACTORY_PARALLEL_RUNS",
+      "MATE_FACTORY_PARALLEL_BUILDS",
+      "MATE_FACTORY_MAX_RUNS",
+      "MATE_FACTORY_MAX_WORKSETS",
+      "MATE_FACTORY_IDLE_MINUTES",
+      "MATE_FACTORY_WORKSET_MEMORY",
+      "MATE_FACTORY_AGENT_MEMORY",
+      "MATE_FACTORY_WORKSET_PIDS",
+      "MATE_FACTORY_WORKSET_CPUS",
+    ]) {
+      expect(environment[name], name).toBeNull();
+    }
+  });
 });
 
 describe("the factory credential for a local run", () => {
-  const stored = (text: string) => () => text;
-
-  test("the shell's own credential wins", () => {
+  test("is the shell's own, by name", () => {
     expect(
-      factoryCredentialEnv(
-        { ANTHROPIC_API_KEY: "acme-key" },
-        stored("CLAUDE_CODE_OAUTH_TOKEN=acme-token\n"),
-      ),
-    ).toEqual({
-      name: "ANTHROPIC_API_KEY",
-      value: "acme-key",
-      source: "shell",
-    });
+      factoryCredentialEnv({ ANTHROPIC_API_KEY: "acme-key", CLAUDE_CODE_OAUTH_TOKEN: "" }),
+    ).toEqual({ name: "ANTHROPIC_API_KEY", value: "acme-key" });
   });
 
-  test("otherwise the one `mate factory setup` stored is used", () => {
-    expect(factoryCredentialEnv({}, stored("CLAUDE_CODE_OAUTH_TOKEN=acme-token\n"))).toEqual({
-      name: "CLAUDE_CODE_OAUTH_TOKEN",
-      value: "acme-token",
-      source: "file",
-    });
-  });
-
-  test("none stored and none in the shell is null", () => {
-    expect(factoryCredentialEnv({}, () => null)).toBeNull();
-    expect(factoryCredentialEnv({}, stored("OTHER=x\n"))).toBeNull();
+  test("none in the shell is null; no file is read", () => {
+    expect(factoryCredentialEnv({})).toBeNull();
   });
 });

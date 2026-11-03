@@ -82,7 +82,10 @@ function stubs(options: Options = {}): void {
     `case "$2" in
   --factory)
     ${factory ? "" : 'echo "mate-appliance: the container runs as root without factory mode" >&2; exit 1'}
-    printf '%s\\n' MATE_FACTORY_ENABLED=1 "MATE_FACTORY_CREDENTIAL_NAME='CLAUDE_CODE_OAUTH_TOKEN'" "MATE_FACTORY_CREDENTIAL_VALUE='acme-token'" ;;
+    printf '%s\\n' MATE_FACTORY_ENABLED=1 "MATE_FACTORY_CREDENTIAL_NAME='CLAUDE_CODE_OAUTH_TOKEN'" "MATE_FACTORY_CREDENTIAL_VALUE='acme-token'" \
+      "MATE_PLAN_FACTORY_MAX_WORKSETS='3'" "MATE_PLAN_FACTORY_IDLE_MINUTES='0'" \
+      "MATE_PLAN_FACTORY_WORKSET_MEMORY='2g'" "MATE_PLAN_FACTORY_WORKSET_PIDS='512'" \
+      "MATE_PLAN_FACTORY_WORKSET_CPUS=''" "MATE_PLAN_FACTORY_AGENT_MEMORY='1g'" ;;
   --factory-preflight)
     ${options.preflightFails ? 'echo "mate-appliance: factory mode needs the container is privileged" >&2; exit 1' : "exit 0"} ;;
   --factory-config)
@@ -105,15 +108,22 @@ esac`,
     if [[ "$*" == *Runtimes* ]]; then echo '{"runc":{},"sysbox-runc":{}}'; fi ;;
   image)
     case "$2" in
-      ls) printf '%s\n' mate-workset:0.9.0-acme mate-workset:1.0.0-acme mate-workset:0.8.0-acme ;;
+      ls) printf '%s\n' mate-workset:0.9.0-acme mate-workset:1.0.0-acme mate-workset:0.8.0-acme \
+            mate-workset-base:old mate-workset-base:current acme:1 ;;
       rm) note "docker image rm $3"; [[ "$3" != mate-workset:0.8.0-acme ]] ;;
+      prune) note "docker image prune $3" ;;
       *) exit 1 ;;
     esac ;;
+  builder) note "docker builder $2 $3" ;;
   import) note "docker import $*" ;;
+  run) note "docker run $* stdin=$(cat)" ;;
+  commit) note "docker commit $*" ;;
+  rm) ;;
   ps) echo workset-acme ;;
   stop) note "docker $*" ;;
 esac`,
   );
+  writeExecutable("zstd", 'echo "overlay of $*"');
   writeExecutable(
     "mate",
     longRunning(
@@ -124,7 +134,8 @@ esac`,
   writeExecutable(
     "appliance",
     `readable=no; [[ -r "$MATE_APPLIANCE_CONFIG" ]] && readable=yes
-note "studio started uid=$(id -u) home=$HOME token=\${CLAUDE_CODE_OAUTH_TOKEN:-none} docker=\${DOCKER_HOST:-none} active=$MATE_FACTORY_ACTIVE broker=$MATE_FACTORY_BROKER config=$MATE_APPLIANCE_CONFIG config-readable=$readable"
+runs=no; [[ -w "$MATE_FACTORY_STATE_DIR/runs" ]] && runs=yes
+note "studio started uid=$(id -u) home=$HOME token=\${CLAUDE_CODE_OAUTH_TOKEN:-none} docker=\${DOCKER_HOST:-none} active=$MATE_FACTORY_ACTIVE broker=$MATE_FACTORY_BROKER config=$MATE_APPLIANCE_CONFIG config-readable=$readable state-mode=$(stat -c %a "$MATE_FACTORY_STATE_DIR") runs-writable=$runs"
 trap 'note "studio stopped"; exit 0' TERM
 while :; do sleep 0.05 & wait $!; done`,
   );
@@ -135,6 +146,7 @@ while :; do sleep 0.05 & wait $!; done`,
 
 async function runSupervisor(
   stopWhenReady: boolean,
+  extraEnv: Record<string, string> = {},
 ): Promise<{ status: number; stderr: string; log: string }> {
   const runtime = RUNTIME!;
   const name = `mate-factory-supervisor-${Math.random().toString(36).slice(2, 10)}`;
@@ -153,6 +165,7 @@ async function runSupervisor(
     MATE_WORKSET_CONF: `${CASE}/workset-image.conf`,
     MATE_FACTORY_DAEMON_CONFIG: `${CASE}/daemon.json`,
     MATE_FACTORY_READY_SECONDS: "10",
+    ...extraEnv,
   };
   fs.writeFileSync(
     path.join(root, "workset-image.conf"),
@@ -223,6 +236,10 @@ withContainer("the factory supervisor", () => {
       "docker import",
       "docker image",
       "docker image",
+      "docker image",
+      "docker image",
+      "docker image",
+      "docker builder",
       "broker factory",
       "studio started",
       "studio stopped",
@@ -244,6 +261,54 @@ withContainer("the factory supervisor", () => {
     );
   }, 180_000);
 
+  test("passes the Workset resource limits to the broker, leaving out an unset CPU limit", async () => {
+    stubs();
+    const outcome = await runSupervisor(true);
+    const broker = outcome.log.split("\n").find((entry) => entry.startsWith("broker")) ?? "";
+    expect(broker).toContain(
+      "--max-worksets 3 --idle-minutes 0 --memory 2g --pids 512 --agent-memory 1g started",
+    );
+    expect(broker).not.toContain("--cpus");
+  }, 180_000);
+
+  test("keeps only the Workset images in use, then prunes the inner daemon", async () => {
+    stubs();
+    const outcome = await runSupervisor(true);
+    expect(outcome.log).toContain("docker image rm mate-workset-base:old");
+    expect(outcome.log).not.toContain("docker image rm acme:1");
+    expect(outcome.log).toContain("docker image prune --force");
+    expect(outcome.log).toContain("docker builder prune --force");
+    const lines = outcome.log.split("\n");
+    const lastRm = lines.findLastIndex((line) => line.startsWith("docker image rm"));
+    expect(lines.findIndex((line) => line.startsWith("docker image prune"))).toBeGreaterThan(
+      lastRm,
+    );
+  }, 180_000);
+
+  test("a local build imports the base once and commits its overlay as the Workset image", async () => {
+    stubs();
+    const outcome = await runSupervisor(true, {
+      MATE_WORKSET_OVERLAY: `${CASE}/workset-overlay.tar.zst`,
+      MATE_WORKSET_BASE_IMAGE: "mate-workset-base:current",
+    });
+    expect(outcome.status).toBe(0);
+    const line = (start: string) =>
+      outcome.log.split("\n").find((entry) => entry.startsWith(start)) ?? "";
+    expect(line("docker import")).toContain(`${CASE}/workset-rootfs.tar mate-workset-base:current`);
+    expect(line("docker run")).toContain(
+      "--name mate-workset-overlay --runtime runc --network none --user root -i mate-workset-base:current",
+    );
+    expect(line("docker run")).toContain(
+      "rm -rf /opt/mate/tools /opt/mate/harness-bridge && tar -x -C /",
+    );
+    expect(line("docker run")).toContain(`stdin=overlay of -dcq ${CASE}/workset-overlay.tar.zst`);
+    expect(line("docker commit")).toContain("--change ENV MATE_UPDATE_POLICY=pinned --change CMD");
+    expect(line("docker commit")).toContain("mate-workset-overlay mate-workset:1.0.0-acme");
+    // The current base stays for the next local build; superseded ones go.
+    expect(outcome.log).not.toContain("docker image rm mate-workset-base:current");
+    expect(outcome.log).toContain("docker image rm mate-workset-base:old");
+  }, 180_000);
+
   test("hands the credential to the broker only, and starts Studio as mate without it", async () => {
     stubs();
     const outcome = await runSupervisor(true);
@@ -257,6 +322,8 @@ withContainer("the factory supervisor", () => {
     expect(line("studio started")).toContain(`broker=${CASE}/run/mate-factory/broker.sock`);
     expect(line("studio started")).toContain(`config=${CASE}/run/mate-factory/appliance.yaml`);
     expect(line("studio started")).toContain("config-readable=yes");
+    // The stored agent credential lies in the state directory, which mate may pass but not list.
+    expect(line("studio started")).toContain("state-mode=711 runs-writable=yes");
     for (const name of ["sysbox-mgr", "sysbox-fs", "dockerd"]) {
       expect(line(`${name} started`)).toContain("token=none");
     }

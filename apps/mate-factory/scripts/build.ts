@@ -68,6 +68,8 @@ function factoryBuildArgs(factory: ReturnType<typeof readImageInputs>["factory"]
     KMOD_VERSION: factory.os_packages.kmod!,
     IPTABLES_VERSION: factory.os_packages.iptables!,
     PROCPS_VERSION: factory.os_packages.procps!,
+    ZSTD_VERSION: factory.os_packages.zstd!,
+    SOCAT_VERSION: factory.os_packages.socat!,
 
     WORKSET_ARCHIVE: factory.workset_image.archive,
   };

@@ -112,6 +112,34 @@ afterEach(async () => {
 });
 
 describe("archiveChange", () => {
+  test("regrouping preserves delivery and exposes mismatch through archive", async () => {
+    await writeDeliveryRecord(
+      changeDir("x"),
+      upsertDelivery(unlinkedRecord("x"), REPO, { branch: "workset/x" }),
+    );
+    await fs.mkdir(path.join(companion, "worksets"));
+    await fs.writeFile(
+      path.join(companion, "worksets/acme-login.yaml"),
+      `id: acme-login\nrepositories: [${REPO}]\nchanges: [x]\n`,
+    );
+    const result = await archive();
+    expect(result.defaultBranch).toBe("workset/acme-login");
+    expect(result.diagnostics.join()).toContain(
+      "Recorded branch workset/x differs from default workset/acme-login",
+    );
+    expect(await archivedRecord("x")).toContain("workset/x");
+  });
+
+  test("safe Workset default precedes legacy suggestion", async () => {
+    const result = await archive({}, {}, environment({ existing: ["change/x", "workset/x"] }));
+    expect(result).toMatchObject({
+      status: "needs-branch",
+      defaultBranch: "workset/x",
+      suggestedBranch: "workset/x",
+      diagnostics: [],
+    });
+    expect(calls).not.toContain("archive");
+  });
   test("a linked, unmerged change is archived and reported as waiting", async () => {
     await writeDeliveryRecord(
       changeDir("x"),

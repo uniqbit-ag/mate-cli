@@ -30,7 +30,7 @@ function fakeClient(
   const calls: Array<[string, unknown]> = [];
   const client = {
     info: async () => ({
-      credential: options.credential === undefined ? "CLAUDE_CODE_OAUTH_TOKEN" : options.credential,
+      credential: options.credential === undefined ? "subscription" : options.credential,
     }),
     spawn: async (request: unknown) => {
       calls.push(["spawn", request]);
@@ -38,6 +38,7 @@ function fakeClient(
     },
     exec: async (request: { command: string[] }) => {
       calls.push(["exec", request.command]);
+      if (request.command[0] === "node") return { status: 0, stdout: "", stderr: "" };
       if (request.command[1] === "working") {
         return options.linkFails
           ? { status: 1, stdout: "", stderr: "acme link broke" }
@@ -49,7 +50,10 @@ function fakeClient(
   return { client, calls };
 }
 
-function resolver(client: FactoryClient | null) {
+function resolver(
+  client: FactoryClient | null,
+  extra: Partial<Parameters<typeof createWorksetResolver>[0]> = {},
+) {
   return createWorksetResolver({
     collectInventory: async () => ({
       companions: [{ path: companion, health: "ready", pairings: [] }],
@@ -59,6 +63,7 @@ function resolver(client: FactoryClient | null) {
     client: () => client,
     env: { MATE_FACTORY_REPOSITORIES: "https://git.acme.test/acme/web.git" },
     now: () => new Date("2026-10-29T12:00:00.000Z"),
+    ...extra,
   });
 }
 
@@ -123,6 +128,8 @@ describe("resolving a Workset session", () => {
       "exec",
       ["mate", "working", "link", "--companion", companion, "--yes"],
     ]);
+    // Interactive Claude would otherwise open on its login screen.
+    expect(calls[2]![1]).toEqual(["node", "-e", expect.stringContaining("hasCompletedOnboarding")]);
     expect(result).toEqual({
       companionPath: companion,
       workset: { id: "acme-login", title: "Login with SSO" },
@@ -173,5 +180,44 @@ describe("resolving a Workset session", () => {
       SESSION,
     );
     expect(result).toEqual({ reason: "linking the worktree failed: acme link broke" });
+  });
+
+  test("a Studio without companion Git sync starts the session without it", async () => {
+    record("acme-login", "repositories: [acme/web]\n");
+    const result = await resolver(fakeClient().client, { noGit: true })(
+      "acme-login",
+      null,
+      SESSION,
+    );
+    expect("argv" in result && result.argv.at(-1)).toBe("--no-git");
+  });
+
+  test("a person in control resumes the factory's own Claude session", async () => {
+    record("acme-login", "repositories: [acme/web]\nstage: explore\n");
+    const claudeSession = "2a41e812-a0fa-4908-a871-6df87d4ea2bc";
+    const result = await resolver(fakeClient({ conversation: true }).client, {
+      takenOver: async () => ({ claudeSession }),
+    })("acme-login", null, SESSION);
+    expect("argv" in result && result.argv.slice(-6)).toEqual([
+      "--start",
+      "resume",
+      "--companion",
+      companion,
+      "--resume-session",
+      claudeSession,
+    ]);
+    // Never a new conversation, and Explore change is not recorded as started.
+    const saved = parse(
+      fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"),
+    );
+    expect(saved.exploreStartedAt).toBeUndefined();
+  });
+
+  test("control without a saved conversation opens nothing", async () => {
+    record("acme-login", "repositories: [acme/web]\n");
+    const result = await resolver(fakeClient().client, {
+      takenOver: async () => ({ claudeSession: null }),
+    })("acme-login", null, SESSION);
+    expect(result).toEqual({ reason: "this Outcome has no factory conversation to take over" });
   });
 });

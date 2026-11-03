@@ -1,0 +1,43 @@
+import { describe, expect, it } from "bun:test";
+
+import { staticMarkup } from "../../../test/render";
+
+import type { StudioSkillInventory } from "@uniqbit/mate-core/studio";
+import { Skills } from "./skills-view";
+
+function render(skills: StudioSkillInventory): string {
+  return staticMarkup(<Skills skills={skills} />);
+}
+
+describe("Skills", () => {
+  it("lists every runtime's skills without merging them", () => {
+    const markup = render({
+      claude: ["claude-only", "shared-skill"],
+      opencode: ["opencode-only", "shared-skill"],
+      agents: ["agent-only", "shared-skill"],
+    });
+
+    expect(markup).toContain("claude-only");
+    expect(markup).toContain("opencode-only");
+    expect(markup).toContain("agent-only");
+    expect(markup.match(/shared-skill/g)).toHaveLength(6);
+  });
+
+  it("starts on Claude in the Agent select and keeps an empty runtime explicit", () => {
+    const markup = render({ claude: ["mate-interview-me"], opencode: [], agents: [] });
+
+    expect(markup).toContain('<option value="claude" selected="">Claude – 1 skills</option>');
+    expect(markup).toContain('<option value="opencode">OpenCode – 0 skills</option>');
+    expect(markup).toContain("1 skill · installed in this Companion Repository");
+    expect(markup).toMatch(/data-skill-panel="claude" data-active="true"/);
+    expect(markup).toMatch(/aria-hidden="true" data-skill-panel="opencode"/);
+    expect(markup).toContain('data-skill-panel="opencode"');
+    expect(markup).toContain("No OpenCode skills in this companion.");
+    expect(markup).toContain('data-skill-panel="agents"');
+    expect(markup).toContain("No Agents skills in this companion.");
+  });
+
+  it("renders no skills when the inventory is absent", () => {
+    expect(staticMarkup(<Skills />)).toContain("No Claude skills in this companion.");
+  });
+});

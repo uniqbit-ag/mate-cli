@@ -41,7 +41,6 @@ export function usage(): string {
     ` ${n} studio serve --port <port> [--host <host>] [--writable] [--terminal]`,
     "   [--detach-timeout <minutes>] [--token <value>] [--allowed-host <host>]",
     "   [--public-origin <origin>] [--companion <path>] [--no-git]",
-    ` ${n} factory setup (store the Claude Code credential the factory's Workset agents use)`,
     ` ${n} factory serve --socket <path> --docker-host <url> --state-dir <dir> --image <image>`,
     "   --user <name> --companions-dir <dir> (the appliance's factory broker, run as root)",
     ` ${n} factory attach <workset> --session <id> --companion <path> [--start clarify|explore|continue]`,

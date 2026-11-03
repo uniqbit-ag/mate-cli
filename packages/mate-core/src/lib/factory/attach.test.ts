@@ -9,6 +9,7 @@ import { PassThrough } from "node:stream";
 
 import { agentCommand, runAttach } from "./attach-client";
 import { serveAttach } from "./attach";
+import { CredentialStore } from "./credential-store";
 import { encodeControl, encodeData, FRAME_CONTROL, FRAME_STDERR, FrameDecoder } from "./frames";
 import type { PipeSpawn, PtyRequest, PtySpawn } from "./pty";
 import type { WorksetRuntime } from "./runtime";
@@ -33,6 +34,7 @@ const SESSION = "acme-session-0001";
 function fakeRuntime() {
   const stopped: Array<[string, string]> = [];
   const commands: unknown[] = [];
+  const sessions = new Map<string, number>();
   const runtime = {
     attachCommand: async (request: { id: string; command: string[]; envNames: string[] }) => {
       commands.push(request);
@@ -51,8 +53,12 @@ function fakeRuntime() {
     },
     stopMarked: async (id: string, session: string) => void stopped.push([id, session]),
     dockerEnv: () => ({ DOCKER_HOST: "unix:///run/acme/docker.sock" }),
+    beginSession: (id: string) => {
+      sessions.set(id, (sessions.get(id) ?? 0) + 1);
+      return () => sessions.set(id, sessions.get(id)! - 1);
+    },
   } as unknown as WorksetRuntime;
-  return { runtime, stopped, commands };
+  return { runtime, stopped, commands, sessions };
 }
 
 /** A PTY that echoes input back and exits when it reads `exit`. */
@@ -115,7 +121,10 @@ describe("the broker's attach socket", () => {
     const pty = fakePty();
     stop = serveAttach(socket, {
       runtime,
-      credential: { name: "CLAUDE_CODE_OAUTH_TOKEN", value: "acme-token" },
+      credentials: new CredentialStore(null, {
+        name: "CLAUDE_CODE_OAUTH_TOKEN",
+        value: "acme-token",
+      }),
       spawn: pty.spawn,
       env: { PATH: "/usr/bin" },
     }).stop;
@@ -146,7 +155,11 @@ describe("the broker's attach socket", () => {
   test("closing the attach stops the marked processes inside the container", async () => {
     const { runtime, stopped } = fakeRuntime();
     const pty = fakePty();
-    stop = serveAttach(socket, { runtime, credential: null, spawn: pty.spawn }).stop;
+    stop = serveAttach(socket, {
+      runtime,
+      credentials: new CredentialStore(null, null),
+      spawn: pty.spawn,
+    }).stop;
     const client = net.connect(socket);
     const seen = collect(client);
     client.write(start({ agent: false }));
@@ -157,6 +170,24 @@ describe("the broker's attach socket", () => {
     expect(pty.killed).toEqual(["SIGHUP"]);
   });
 
+  test("an attached session counts as activity until the connection closes", async () => {
+    const { runtime, stopped, sessions } = fakeRuntime();
+    const pty = fakePty();
+    stop = serveAttach(socket, {
+      runtime,
+      credentials: new CredentialStore(null, null),
+      spawn: pty.spawn,
+    }).stop;
+    const client = net.connect(socket);
+    const seen = collect(client);
+    client.write(start({ agent: false }));
+    await until(() => seen.output.length > 0);
+    expect(sessions.get("acme-login")).toBe(1);
+    client.destroy();
+    await until(() => stopped.length > 0);
+    expect(sessions.get("acme-login")).toBe(0);
+  });
+
   test.each([
     ["an extra field", { user: "root" }, /does not accept user/],
     ["an agent without a credential", {}, /no Workset agent credential/],
@@ -165,7 +196,11 @@ describe("the broker's attach socket", () => {
   ])("refuses %s and starts nothing", async (_name, overrides, reason) => {
     const { runtime, stopped } = fakeRuntime();
     const pty = fakePty();
-    stop = serveAttach(socket, { runtime, credential: null, spawn: pty.spawn }).stop;
+    stop = serveAttach(socket, {
+      runtime,
+      credentials: new CredentialStore(null, null),
+      spawn: pty.spawn,
+    }).stop;
     const client = net.connect(socket);
     const seen = collect(client);
     client.write(start(overrides));
@@ -202,12 +237,27 @@ describe("the attach helper", () => {
     ]);
   });
 
+  test("resumes the factory's Claude session, and skips companion Git sync when asked", () => {
+    const session = "2a41e812-a0fa-4908-a871-6df87d4ea2bc";
+    expect(agentCommand("resume", "ignored", { resumeSession: session, noGit: true })).toEqual([
+      "mate",
+      "claude",
+      "--",
+      "--yes",
+      "--no-git",
+      "--resume",
+      session,
+    ]);
+    expect(() => agentCommand("resume", "")).toThrow("needs the factory's Claude session id");
+    expect(() => agentCommand("resume", "", { resumeSession: "--dangerous" })).toThrow();
+  });
+
   test("relays the terminal both ways and exits with the agent's status", async () => {
     const { runtime } = fakeRuntime();
     const pty = fakePty();
     stop = serveAttach(socket, {
       runtime,
-      credential: { name: "ANTHROPIC_API_KEY", value: "acme-key" },
+      credentials: new CredentialStore(null, { name: "ANTHROPIC_API_KEY", value: "acme-key" }),
       spawn: pty.spawn,
     }).stop;
     const input = new PassThrough();
@@ -229,7 +279,11 @@ describe("the attach helper", () => {
 
   test("reports a refusal and exits 1", async () => {
     const { runtime } = fakeRuntime();
-    stop = serveAttach(socket, { runtime, credential: null, spawn: fakePty().spawn }).stop;
+    stop = serveAttach(socket, {
+      runtime,
+      credentials: new CredentialStore(null, null),
+      spawn: fakePty().spawn,
+    }).stop;
     const error = new PassThrough();
     let message = "";
     error.on("data", (chunk: Buffer) => (message += chunk.toString()));
@@ -267,7 +321,10 @@ describe("a non-TTY attach", () => {
     };
     stop = serveAttach(socket, {
       runtime,
-      credential: { name: "CLAUDE_CODE_OAUTH_TOKEN", value: "acme-token" },
+      credentials: new CredentialStore(null, {
+        name: "CLAUDE_CODE_OAUTH_TOKEN",
+        value: "acme-token",
+      }),
       spawn: fakePty().spawn,
       spawnPipe,
     }).stop;

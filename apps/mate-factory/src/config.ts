@@ -44,8 +44,22 @@ export interface FactoryConfig {
   repositories: string[];
   /** How many Workset runs Studio's AFK runner starts at once. */
   maxRuns: number;
+  /** How many of those runs may be in a build stage at once. */
+  maxBuilds: number;
   /** The time budget of one stage of a run, in minutes. */
   stageMinutes: number;
+  /** How many Workset containers run at once. */
+  maxWorksets: number;
+  /** Minutes without activity before a Workset container is stopped; 0 never stops one. */
+  idleMinutes: number;
+  /** Each Workset container's memory limit, swap included, as a Docker size such as `4g`. */
+  worksetMemory: string;
+  /** The memory limit during an agent stage; builds and sessions get `worksetMemory`. */
+  agentMemory: string;
+  /** Each Workset container's pid limit. */
+  worksetPids: number;
+  /** Each Workset container's CPU limit; null sets none. */
+  worksetCpus: string | null;
   /** The author and committer of every commit the factory makes. */
   gitName: string;
   gitEmail: string;
@@ -54,10 +68,17 @@ export interface FactoryConfig {
 /** Factory commits are told apart by name; `.invalid` never reaches a real mailbox. */
 export const FACTORY_GIT_AUTHOR = { name: "Mate factory", email: "factory@mate.invalid" };
 
-type FactoryRunner = Pick<FactoryConfig, "maxRuns" | "stageMinutes" | "gitName" | "gitEmail">;
+type FactoryRunner = Omit<FactoryConfig, "enabled" | "credential" | "repositories">;
 const RUNNER_DEFAULTS: FactoryRunner = {
   maxRuns: 2,
+  maxBuilds: 2,
   stageMinutes: 60,
+  maxWorksets: 3,
+  idleMinutes: 15,
+  worksetMemory: "4g",
+  agentMemory: "1536m",
+  worksetPids: 1024,
+  worksetCpus: null,
   gitName: FACTORY_GIT_AUTHOR.name,
   gitEmail: FACTORY_GIT_AUTHOR.email,
 };
@@ -321,10 +342,26 @@ export const SETTINGS: Setting[] = [
     required: false,
   },
   {
+    env: "MATE_FACTORY_PARALLEL_RUNS",
+    key: "factoryParallelRuns",
+    meaning:
+      "Factory mode: how many AFK runs work at once; others wait in order. Workset containers follow from it: the parallel runs plus one, so one stays free for a person's session.",
+    default: "2",
+    required: false,
+  },
+  {
     env: "MATE_FACTORY_MAX_RUNS",
     key: "factoryMaxRuns",
     meaning:
-      "Factory mode: how many Workset runs Studio's AFK runner starts at once; others wait in order.",
+      "Factory mode: the older name of `MATE_FACTORY_PARALLEL_RUNS`. Setting both to different values stops startup.",
+    default: null,
+    required: false,
+  },
+  {
+    env: "MATE_FACTORY_PARALLEL_BUILDS",
+    key: "factoryParallelBuilds",
+    meaning:
+      "Factory mode: how many of the parallel runs may be in a build stage (apply) at once; a build waits for a build slot while agent stages go ahead. At most `MATE_FACTORY_PARALLEL_RUNS`.",
     default: "2",
     required: false,
   },
@@ -334,6 +371,53 @@ export const SETTINGS: Setting[] = [
     meaning:
       "Factory mode: the time budget of one stage of a Workset run, in minutes; a stage past it fails.",
     default: "60",
+    required: false,
+  },
+  {
+    env: "MATE_FACTORY_MAX_WORKSETS",
+    key: "factoryMaxWorksets",
+    meaning:
+      "Factory mode: overrides how many Workset containers run at once, by default `MATE_FACTORY_PARALLEL_RUNS` plus one. Starting another stops the least recently used idle one; when none is idle, an AFK run waits and a session is refused. At least `MATE_FACTORY_PARALLEL_RUNS`.",
+    default: null,
+    required: false,
+  },
+  {
+    env: "MATE_FACTORY_IDLE_MINUTES",
+    key: "factoryIdleMinutes",
+    meaning:
+      "Factory mode: minutes a Workset container may sit with no session and no command before it is stopped; its worktree and home are kept. `0` never stops one.",
+    default: "15",
+    required: false,
+  },
+  {
+    env: "MATE_FACTORY_WORKSET_MEMORY",
+    key: "factoryWorksetMemory",
+    meaning:
+      "Factory mode: each Workset container's memory limit, swap included, as a Docker size such as `4g` or `512m`. Covers everything the agent starts in it, nested containers too.",
+    default: "4g",
+    required: false,
+  },
+  {
+    env: "MATE_FACTORY_AGENT_MEMORY",
+    key: "factoryAgentMemory",
+    meaning:
+      "Factory mode: a Workset container's memory limit during an agent stage (clarify, explore, propose, revise, publish), swap included. Builds and a person's session get `MATE_FACTORY_WORKSET_MEMORY`. At most `MATE_FACTORY_WORKSET_MEMORY`.",
+    default: "1536m",
+    required: false,
+  },
+  {
+    env: "MATE_FACTORY_WORKSET_PIDS",
+    key: "factoryWorksetPids",
+    meaning: "Factory mode: each Workset container's process limit.",
+    default: "1024",
+    required: false,
+  },
+  {
+    env: "MATE_FACTORY_WORKSET_CPUS",
+    key: "factoryWorksetCpus",
+    meaning:
+      "Factory mode: each Workset container's CPU limit, such as `2` or `1.5`. Unset sets none.",
+    default: null,
     required: false,
   },
   {
@@ -514,6 +598,47 @@ function positiveInteger(setting: Setting, raw: unknown, fallback: number): numb
   return Number(value);
 }
 
+function nonNegativeInteger(setting: Setting, raw: unknown, fallback: number): number {
+  if (raw === null || raw === undefined || raw === "") return fallback;
+  const value = String(raw).trim();
+  if (!/^\d+$/.test(value)) throw new ConfigError(setting.env, value, "must be a whole number");
+  return Number(value);
+}
+
+/** A Docker size: a whole number with an optional `b`, `k`, `m` or `g` unit. */
+const SIZE_UNITS: Record<string, number> = { b: 1, k: 1024, m: 1024 ** 2, g: 1024 ** 3 };
+
+/** Bytes in a size `dockerSize` accepted. */
+function sizeBytes(size: string): number {
+  const [, digits, unit] = /^(\d+)([bkmg])?$/.exec(size)!;
+  return Number(digits) * SIZE_UNITS[unit ?? "b"]!;
+}
+
+/** Unset, the agent size is at most the Workset size, so lowering that alone stays valid. */
+function defaultAgentMemory(worksetMemory: string): string {
+  return sizeBytes(worksetMemory) < sizeBytes(RUNNER_DEFAULTS.agentMemory)
+    ? worksetMemory
+    : RUNNER_DEFAULTS.agentMemory;
+}
+
+function dockerSize(setting: Setting, raw: unknown, fallback: string): string {
+  if (raw === null || raw === undefined || raw === "") return fallback;
+  const value = String(raw).trim().toLowerCase();
+  if (!/^[1-9]\d*[bkmg]?$/.test(value)) {
+    throw new ConfigError(setting.env, String(raw).trim(), "must be a size such as 4g or 512m");
+  }
+  return value;
+}
+
+function positiveDecimal(setting: Setting, raw: unknown): string | null {
+  const value = optionalText(raw);
+  if (value === null) return null;
+  if (!/^\d+(\.\d+)?$/.test(value) || Number(value) <= 0) {
+    throw new ConfigError(setting.env, value, "must be a number above 0, such as 2 or 1.5");
+  }
+  return value;
+}
+
 function token(setting: Setting, raw: unknown): string | null {
   const value = optionalText(raw);
   if (value === null) return null;
@@ -672,6 +797,27 @@ function factory(
   limits: FactoryRunner = RUNNER_DEFAULTS,
 ): FactoryConfig {
   if (!enabled) return { enabled, credential: null, repositories: [], ...limits };
+  if (limits.maxBuilds > limits.maxRuns) {
+    throw new ConfigError(
+      "MATE_FACTORY_PARALLEL_BUILDS",
+      String(limits.maxBuilds),
+      `must not exceed MATE_FACTORY_PARALLEL_RUNS (${limits.maxRuns})`,
+    );
+  }
+  if (sizeBytes(limits.agentMemory) > sizeBytes(limits.worksetMemory)) {
+    throw new ConfigError(
+      "MATE_FACTORY_AGENT_MEMORY",
+      limits.agentMemory,
+      `must not exceed MATE_FACTORY_WORKSET_MEMORY (${limits.worksetMemory})`,
+    );
+  }
+  if (limits.maxRuns > limits.maxWorksets) {
+    throw new ConfigError(
+      "MATE_FACTORY_MAX_WORKSETS",
+      String(limits.maxWorksets),
+      `must be at least MATE_FACTORY_PARALLEL_RUNS (${limits.maxRuns}), or runs would wait for containers forever`,
+    );
+  }
   const subscription = optionalText(oauthToken);
   const key = optionalText(apiKey);
   if (subscription !== null && key !== null) {
@@ -713,6 +859,79 @@ function setting(env: string): Setting {
   const found = SETTINGS.find((candidate) => candidate.env === env);
   if (!found) throw new Error(`no such setting: ${env}`);
   return found;
+}
+
+/** `MATE_FACTORY_PARALLEL_RUNS`, or its older name; both set must agree. */
+function parallelRuns(read: (name: string) => unknown): number {
+  const current = positiveInteger(
+    setting("MATE_FACTORY_PARALLEL_RUNS"),
+    read("MATE_FACTORY_PARALLEL_RUNS"),
+    0,
+  );
+  const older = positiveInteger(setting("MATE_FACTORY_MAX_RUNS"), read("MATE_FACTORY_MAX_RUNS"), 0);
+  if (current && older && current !== older) {
+    throw new ConfigError(
+      "MATE_FACTORY_PARALLEL_RUNS",
+      String(current),
+      `disagrees with its older name MATE_FACTORY_MAX_RUNS (${older}); set one`,
+    );
+  }
+  return current || older || RUNNER_DEFAULTS.maxRuns;
+}
+
+/** The runner limits, each setting read once, in the order their errors are reported. */
+function factoryLimits(read: (name: string) => unknown): FactoryRunner {
+  const maxRuns = parallelRuns(read);
+  const maxBuilds = positiveInteger(
+    setting("MATE_FACTORY_PARALLEL_BUILDS"),
+    read("MATE_FACTORY_PARALLEL_BUILDS"),
+    // Unset, at most the parallel runs, so a single-run factory needs no second setting.
+    Math.min(RUNNER_DEFAULTS.maxBuilds, maxRuns),
+  );
+  const stageMinutes = positiveInteger(
+    setting("MATE_FACTORY_STAGE_MINUTES"),
+    read("MATE_FACTORY_STAGE_MINUTES"),
+    RUNNER_DEFAULTS.stageMinutes,
+  );
+  const maxWorksets = positiveInteger(
+    setting("MATE_FACTORY_MAX_WORKSETS"),
+    read("MATE_FACTORY_MAX_WORKSETS"),
+    maxRuns + 1,
+  );
+  const idleMinutes = nonNegativeInteger(
+    setting("MATE_FACTORY_IDLE_MINUTES"),
+    read("MATE_FACTORY_IDLE_MINUTES"),
+    RUNNER_DEFAULTS.idleMinutes,
+  );
+  const worksetMemory = dockerSize(
+    setting("MATE_FACTORY_WORKSET_MEMORY"),
+    read("MATE_FACTORY_WORKSET_MEMORY"),
+    RUNNER_DEFAULTS.worksetMemory,
+  );
+  return {
+    maxRuns,
+    maxBuilds,
+    stageMinutes,
+    maxWorksets,
+    idleMinutes,
+    worksetMemory,
+    agentMemory: dockerSize(
+      setting("MATE_FACTORY_AGENT_MEMORY"),
+      read("MATE_FACTORY_AGENT_MEMORY"),
+      defaultAgentMemory(worksetMemory),
+    ),
+    worksetPids: positiveInteger(
+      setting("MATE_FACTORY_WORKSET_PIDS"),
+      read("MATE_FACTORY_WORKSET_PIDS"),
+      RUNNER_DEFAULTS.worksetPids,
+    ),
+    worksetCpus: positiveDecimal(
+      setting("MATE_FACTORY_WORKSET_CPUS"),
+      read("MATE_FACTORY_WORKSET_CPUS"),
+    ),
+    gitName: optionalText(read("MATE_FACTORY_GIT_NAME")) ?? FACTORY_GIT_AUTHOR.name,
+    gitEmail: gitEmail(read("MATE_FACTORY_GIT_EMAIL")),
+  };
 }
 
 export function resolveConfig(
@@ -769,20 +988,7 @@ export function resolveConfig(
       read("CLAUDE_CODE_OAUTH_TOKEN"),
       read("ANTHROPIC_API_KEY"),
       factoryRepositories(setting("MATE_FACTORY_REPOSITORIES"), read("MATE_FACTORY_REPOSITORIES")),
-      {
-        maxRuns: positiveInteger(
-          setting("MATE_FACTORY_MAX_RUNS"),
-          read("MATE_FACTORY_MAX_RUNS"),
-          2,
-        ),
-        stageMinutes: positiveInteger(
-          setting("MATE_FACTORY_STAGE_MINUTES"),
-          read("MATE_FACTORY_STAGE_MINUTES"),
-          60,
-        ),
-        gitName: optionalText(read("MATE_FACTORY_GIT_NAME")) ?? FACTORY_GIT_AUTHOR.name,
-        gitEmail: gitEmail(read("MATE_FACTORY_GIT_EMAIL")),
-      },
+      factoryLimits(read),
     ),
   };
 }

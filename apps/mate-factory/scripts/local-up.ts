@@ -11,9 +11,9 @@
  *   bun scripts/local-up.ts [up|down|reset|logs] [--companion <path>] [--rebuild-base] [--port <n>]
  *
  * It runs as root, privileged, with the three factory volumes. A Workset agent
- * credential is passed through from the shell's `CLAUDE_CODE_OAUTH_TOKEN` or
- * `ANTHROPIC_API_KEY`, else from the file `mate factory setup` stores, and
- * `MATE_FACTORY_REPOSITORIES` from the shell.
+ * credential set in the shell (`CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`)
+ * is passed through as a startup fallback, and `MATE_FACTORY_REPOSITORIES` too;
+ * otherwise Studio's Agents panel sets one.
  *
  * See README.md, "Running the factory locally", for the walkthrough.
  */
@@ -181,6 +181,15 @@ export function composeFile(options: { companion: string; port: number }): strin
     MATE_FACTORY_REPOSITORIES: null,
     MATE_FACTORY_GIT_NAME: null,
     MATE_FACTORY_GIT_EMAIL: null,
+    MATE_FACTORY_PARALLEL_RUNS: null,
+    MATE_FACTORY_PARALLEL_BUILDS: null,
+    MATE_FACTORY_MAX_RUNS: null,
+    MATE_FACTORY_MAX_WORKSETS: null,
+    MATE_FACTORY_IDLE_MINUTES: null,
+    MATE_FACTORY_WORKSET_MEMORY: null,
+    MATE_FACTORY_AGENT_MEMORY: null,
+    MATE_FACTORY_WORKSET_PIDS: null,
+    MATE_FACTORY_WORKSET_CPUS: null,
   };
   const project = {
     name: PROJECT,
@@ -333,6 +342,9 @@ function buildOverlay(runtime: string): string {
   // pack-local.sh writes both tarballs to a temporary directory of its own.
   fs.rmSync(path.dirname(packedPaths[1]!), { recursive: true, force: true });
 
+  const baseId = baseImageLabel(runtime);
+  if (baseId === null) throw new Error(`${BASE_TAG} has no ${INPUTS_LABEL} label; rebuild it`);
+
   say(`building ${LOCAL_TAG}`);
   run(runtime, [
     "build",
@@ -341,6 +353,8 @@ function buildOverlay(runtime: string): string {
     path.join(CONTAINER_ROOT, "local.Dockerfile"),
     "--build-arg",
     `BASE_IMAGE=${BASE_TAG}`,
+    "--build-arg",
+    `BASE_ID=${baseId.replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 12)}`,
     "--build-arg",
     `LOCAL_VERSION=${version}`,
     "--build-arg",
@@ -405,38 +419,14 @@ function waitForStudio(runtime: string, port: number): Promise<string | null> {
   });
 }
 
-/** `mate factory setup` stores the Workset agents' credential here. */
-export const FACTORY_CREDENTIAL_FILE = path.join(
-  os.homedir(),
-  ".mate",
-  "factory",
-  "credential.env",
-);
 const CREDENTIAL_NAMES = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"];
 
-/**
- * The credential compose passes through: the shell's own when it sets one, else the
- * stored one. Only the variable's name is ever reported.
- */
+/** The shell's credential compose passes through; only the variable's name is ever reported. */
 export function factoryCredentialEnv(
   env: NodeJS.ProcessEnv,
-  readFile: (file: string) => string | null = (file) => {
-    try {
-      return fs.readFileSync(file, "utf8");
-    } catch {
-      return null;
-    }
-  },
-): { name: string; value: string; source: "shell" | "file" } | null {
+): { name: string; value: string } | null {
   for (const name of CREDENTIAL_NAMES) {
-    if (env[name]) return { name, value: env[name]!, source: "shell" };
-  }
-  for (const line of (readFile(FACTORY_CREDENTIAL_FILE) ?? "").split("\n")) {
-    const separator = line.indexOf("=");
-    const name = line.slice(0, separator);
-    const value = line.slice(separator + 1).trim();
-    if (separator > 0 && CREDENTIAL_NAMES.includes(name) && value)
-      return { name, value, source: "file" };
+    if (env[name]) return { name, value: env[name]! };
   }
   return null;
 }
@@ -445,13 +435,9 @@ async function up(runtime: string, options: LocalOptions): Promise<number> {
   checkCompanion(options.companion);
   const credential = factoryCredentialEnv(process.env);
   if (credential === null) {
-    say("no Workset agent credential; run `mate factory setup` to store one");
+    say("no Workset agent credential in the shell; set one in Studio's Factory view, under Agents");
   } else {
-    // Only compose, started from this process, inherits it.
-    process.env[credential.name] = credential.value;
-    say(
-      `Workset agents use ${credential.name} from ${credential.source === "shell" ? "your shell" : FACTORY_CREDENTIAL_FILE}`,
-    );
+    say(`Workset agents fall back to ${credential.name} from your shell`);
   }
   buildBase(runtime, options.rebuildBase);
   const version = buildOverlay(runtime);

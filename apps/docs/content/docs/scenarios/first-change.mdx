@@ -66,26 +66,12 @@ share one group node. Apply change branches to the optional Inspect outcome and
 Refine code, which rejoin at Archive change. A dashed bypass edge skips each
 optional stage, and a mark on an edge shows where a new session starts. An
 inner frame marks the stages each change repeats, up to Archive change. An
-outer frame holds the workset: one or more changes published together once they
-are archived. Select a
+outer frame holds the Workset: one or more changes delivered together on one
+branch per Working Repository. Select a
 node to open its stage in the side panel: what it does, why it is there, its
 phase, and its prompt ready to copy.
 To see where a change's delivery stands, run
 `mate artifact pending`.
-
-Studio's Factory view tracks Worksets on a board with the columns Plan,
-Review, Build, Ship and Done. Each Workset is one file, `worksets/<id>.yaml`,
-in the Companion Repository. It holds an identifier, a title, the intent, its
-Working Repository, and the changes it ships together. Create a Workset from
-the board for a Working Repository linked to the companion; it starts at
-Clarify intent. Before any change exists, you move it on by hand: to Explore
-change, then to ready for propose. Once propose links a change, the board
-derives the stage from the change's artifacts, checked tasks, archive and
-Delivery Record. A Workset with several changes sits at the least advanced
-one. A card says whose turn it is. Clarify intent, Explore change, the reviews
-and waiting for merge are yours, and the board counts those cards. The board
-records no review approval. Creating and advancing Worksets needs Studio's
-write path.
 
 ## Steps
 
@@ -135,9 +121,16 @@ passing validation is not a review.
 ### 5. Apply change on a delivery branch
 
 `/mate-apply-change for <change-name>` first records the **delivery branch**:
-the Working Repository branch your change is merged through. On
-`change/<change-name>` it records it without asking; on another branch, such as
-a shared feature branch, it asks once.
+the Working Repository branch your change is merged through. Its default is
+`workset/<workset-id>`. A Workset groups changes delivered in one merge per
+repository. A standalone change has an implicit single-change Workset whose id
+is its change name; no Workset record is written. On the resolved default branch,
+apply records it without asking; on another branch it asks once.
+
+Existing recorded branches, including `change/*` and custom names, remain valid.
+Regrouping a change never replaces its recorded branch: Mate reports the mismatch,
+and relinking requires your confirmation. Ambiguous membership, identity collisions,
+or invalid Workset records suppress unsafe defaults and ask you for a branch name.
 
 On a **protected branch** it does not implement by default. A branch is
 protected when it is the default branch or matches a pattern configured on the
@@ -151,7 +144,7 @@ capabilities:
     protectedBranches: ["release/*", "develop"]
 ```
 
-It offers to create `change/<change-name>` (uncommitted edits carry over), to
+It offers to create or switch to `workset/<workset-id>` (uncommitted edits carry over), to
 switch to another branch, or, only when you explicitly choose it, to work there
 as a recorded direct delivery. It names local commits that are not pushed yet
 and never moves them. Then it implements the tasks. Open your PR whenever you
@@ -207,7 +200,9 @@ Large features work best as several small changes:
 1. Let explore suggest slices, or propose when you skipped explore, and propose
    one change per slice. A later slice declares `dependsOn: [<earlier-change>]`
    in its first artifact's frontmatter.
-2. Apply every slice on the same feature branch; each records it.
+2. Group slices delivered in one merge into one Workset and apply them on
+   `workset/<workset-id>`; each records it. A slice needing its own merge is a
+   separate Workset connected by dependencies.
 3. Archive each slice as soon as it is applied, so the next one builds on its
    specs.
 4. After the feature PR merges, publish them together: one lookup or one answer

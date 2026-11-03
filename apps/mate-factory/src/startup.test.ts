@@ -17,6 +17,7 @@ import {
 import {
   assertFactorySupervised,
   assertRequirementsCarried,
+  overlayLocalSkills,
   parsePluginCapabilities,
   prepareStartup,
   readCompanionAudiences,
@@ -112,7 +113,14 @@ function config(overrides: Partial<ApplianceConfig> = {}): ApplianceConfig {
       credential: null,
       repositories: [],
       maxRuns: 2,
+      maxBuilds: 2,
       stageMinutes: 60,
+      maxWorksets: 3,
+      idleMinutes: 15,
+      worksetMemory: "4g",
+      agentMemory: "1536m",
+      worksetPids: 1024,
+      worksetCpus: null,
       gitName: "Mate factory",
       gitEmail: "factory@mate.invalid",
     },
@@ -454,6 +462,7 @@ describe("what startup hands the supervisor", () => {
       audience: "ba",
       factoryRepositories: ["https://git.acme.test/acme/web.git", "git@git.acme.test:acme/api.git"],
       factoryMaxRuns: 3,
+      factoryMaxBuilds: 1,
       factoryStageMinutes: 45,
       factoryGitName: "acme-mate-bot",
       factoryGitEmail: "mate-bot@acme.test",
@@ -461,6 +470,7 @@ describe("what startup hands the supervisor", () => {
     expect(rendered).toContain("MATE_PLAN_FACTORY_GIT_NAME='acme-mate-bot'");
     expect(rendered).toContain("MATE_PLAN_FACTORY_GIT_EMAIL='mate-bot@acme.test'");
     expect(rendered).toContain("MATE_PLAN_FACTORY_MAX_RUNS='3'");
+    expect(rendered).toContain("MATE_PLAN_FACTORY_PARALLEL_BUILDS='1'");
     expect(rendered).toContain("MATE_PLAN_FACTORY_STAGE_MINUTES='45'");
     expect(rendered).toContain("MATE_PLAN_AUDIENCE='ba'");
     expect(rendered).toContain(
@@ -490,6 +500,7 @@ describe("what startup hands the supervisor", () => {
       gitSync: false,
       factoryRepositories: [],
       factoryMaxRuns: 2,
+      factoryMaxBuilds: 2,
       factoryStageMinutes: 60,
       factoryGitName: "Mate factory",
       factoryGitEmail: "factory@mate.invalid",
@@ -914,7 +925,14 @@ describe("factory mode startup", () => {
         credential,
         repositories: [],
         maxRuns: 2,
+        maxBuilds: 2,
         stageMinutes: 60,
+        maxWorksets: 4,
+        idleMinutes: 15,
+        worksetMemory: "4g",
+        agentMemory: "1536m",
+        worksetPids: 1024,
+        worksetCpus: null,
         gitName: "Mate factory",
         gitEmail: "factory@mate.invalid",
       },
@@ -929,6 +947,16 @@ describe("factory mode startup", () => {
     expect(plan).toContain("MATE_FACTORY_ENABLED=1");
     expect(plan).toContain("MATE_FACTORY_CREDENTIAL_NAME='ANTHROPIC_API_KEY'");
     expect(plan).toContain("MATE_FACTORY_CREDENTIAL_VALUE='acme-key'");
+  });
+
+  test("the supervisor's plan carries the Workset resource limits for the broker", () => {
+    const plan = renderFactory(factoryOn());
+    expect(plan).toContain("MATE_PLAN_FACTORY_MAX_WORKSETS='4'");
+    expect(plan).toContain("MATE_PLAN_FACTORY_IDLE_MINUTES='15'");
+    expect(plan).toContain("MATE_PLAN_FACTORY_WORKSET_MEMORY='4g'");
+    expect(plan).toContain("MATE_PLAN_FACTORY_AGENT_MEMORY='1536m'");
+    expect(plan).toContain("MATE_PLAN_FACTORY_WORKSET_PIDS='1024'");
+    expect(plan).toContain("MATE_PLAN_FACTORY_WORKSET_CPUS=''");
   });
 
   test("a missing credential does not stop startup", () => {
@@ -954,5 +982,53 @@ describe("factory mode startup", () => {
     expect(written).toContain("factory: true");
     expect(written).not.toContain("acme-");
     expect(fs.statSync(destination).mode & 0o777).toBe(0o640);
+  });
+});
+
+describe("local build skills", () => {
+  function bundle(): string {
+    const dir = path.join(root, "bundle");
+    for (const [tree, name, file, text] of [
+      ["claude", "mate-acme", "SKILL.md", "new claude"],
+      ["claude", "mate-acme", "references/acme.md", "reference"],
+      ["claude", "mate-other", "SKILL.md", "not deployed"],
+      ["agents", "mate-acme", "SKILL.md", "new agents"],
+    ] as const) {
+      fs.mkdirSync(path.dirname(path.join(dir, tree, name, file)), { recursive: true });
+      fs.writeFileSync(path.join(dir, tree, name, file), text);
+    }
+    return dir;
+  }
+
+  function deployed(companion: string, tree: string, file: string): string | null {
+    const target = path.join(companion, tree, "skills", file);
+    return fs.existsSync(target) ? fs.readFileSync(target, "utf8") : null;
+  }
+
+  test("refreshes only the skills the companion carries, with their new files", () => {
+    const companion = makeCompanion(path.join(root, "acme"));
+    for (const tree of [".claude", ".agents"]) {
+      fs.mkdirSync(path.join(companion, tree, "skills", "mate-acme"), { recursive: true });
+      fs.writeFileSync(path.join(companion, tree, "skills", "mate-acme", "SKILL.md"), "old");
+      fs.writeFileSync(path.join(companion, tree, "skills", "mate-acme", "stale.md"), "gone");
+    }
+    expect(overlayLocalSkills(companion, bundle())).toBe(2);
+    expect(deployed(companion, ".claude", "mate-acme/SKILL.md")).toBe("new claude");
+    expect(deployed(companion, ".claude", "mate-acme/references/acme.md")).toBe("reference");
+    expect(deployed(companion, ".claude", "mate-acme/stale.md")).toBeNull();
+    expect(deployed(companion, ".agents", "mate-acme/SKILL.md")).toBe("new agents");
+    expect(deployed(companion, ".claude", "mate-other/SKILL.md")).toBeNull();
+  });
+
+  test("startup refreshes them only when the local image names its skills", () => {
+    const companion = makeCompanion(path.join(root, "acme"));
+    fs.mkdirSync(path.join(companion, ".claude", "skills", "mate-acme"), { recursive: true });
+    fs.writeFileSync(path.join(companion, ".claude", "skills", "mate-acme", "SKILL.md"), "old");
+    const logs: string[] = [];
+    prepareStartup(config(), deps({ log: (line) => logs.push(line) }));
+    expect(deployed(companion, ".claude", "mate-acme/SKILL.md")).toBe("old");
+    prepareStartup(config(), deps({ localSkills: bundle(), log: (line) => logs.push(line) }));
+    expect(deployed(companion, ".claude", "mate-acme/SKILL.md")).toBe("new claude");
+    expect(logs.join("\n")).toContain("local build: refreshed 1 Mate skills");
   });
 });

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import net from "node:net";
 
-import type { AgentCredential } from "./broker";
+import { type AgentCredentials, NO_CREDENTIAL } from "./credential-store";
 import {
   encodeControl,
   encodeData,
@@ -40,7 +40,7 @@ function inRange(value: unknown, [min, max]: readonly [number, number]): value i
 
 export interface AttachServerOptions {
   runtime: WorksetRuntime;
-  credential: AgentCredential | null;
+  credentials: AgentCredentials;
   spawn?: PtySpawn;
   /** For `tty: false` attaches, such as the harness bridge. */
   spawnPipe?: PipeSpawn;
@@ -55,6 +55,8 @@ export function handleAttach(socket: net.Socket, options: AttachServerOptions): 
   const decoder = new FrameDecoder();
   let pty: PtyProcess | PipeProcess | null = null;
   let started: { id: string; session: string } | null = null;
+  // An attached session keeps its Workset container from an idle stop.
+  let endSession: (() => void) | null = null;
   let starting = false;
   let closed = false;
 
@@ -76,12 +78,8 @@ export function handleAttach(socket: net.Socket, options: AttachServerOptions): 
     if (message.agent !== undefined && typeof message.agent !== "boolean") {
       return fail("agent must be true or false");
     }
-    if (message.agent === true && options.credential === null) {
-      return fail(
-        "no Workset agent credential is configured; set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY",
-      );
-    }
-    const credential = message.agent === true ? options.credential : null;
+    const credential = message.agent === true ? options.credentials.current() : null;
+    if (message.agent === true && credential === null) return fail(NO_CREDENTIAL);
     let argv: string[];
     try {
       argv = await options.runtime.attachCommand({
@@ -96,6 +94,7 @@ export function handleAttach(socket: net.Socket, options: AttachServerOptions): 
     }
     if (closed) return;
     started = { id: message.id as string, session: message.session as string };
+    endSession = options.runtime.beginSession(started.id);
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(options.env ?? process.env)) {
       if (value !== undefined) env[key] = value;
@@ -157,6 +156,7 @@ export function handleAttach(socket: net.Socket, options: AttachServerOptions): 
   socket.on("close", () => {
     closed = true;
     pty?.kill("SIGHUP");
+    endSession?.();
     if (started) {
       void options.runtime.stopMarked(started.id, started.session).catch((error: unknown) => {
         process.stderr.write(

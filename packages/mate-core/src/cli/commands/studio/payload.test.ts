@@ -448,20 +448,32 @@ describe("Worksets in the payload", () => {
     expect(payload.linkedRepositories).toEqual(["acme/web"]);
   });
 
-  test("a companion without Worksets reads no Delivery Record", async () => {
-    let reads = 0;
+  test("Worksets reuse the change list and archives the payload collected", async () => {
+    const calls = { list: 0, status: 0, archives: 0 };
+    const base = deps();
     const payload = await assembleCompanionPayload(
       "/companions/acme",
       deps({
-        archiveMergeSettled: async () => {
-          reads++;
-          return true;
+        readWorksets: async () => ({
+          worksets: [workset("acme-review", ["add-docs"])],
+          problems: [],
+        }),
+        listChanges: async (companion) => {
+          calls.list++;
+          return base.listChanges!(companion);
+        },
+        readAllChangeStatus: async (companion) => {
+          calls.status++;
+          return base.readAllChangeStatus!(companion);
+        },
+        discoverArchives: async () => {
+          calls.archives++;
+          return [];
         },
       }),
     );
     if ("error" in payload) throw new Error(payload.error.reason);
-    expect(payload.worksets).toEqual([]);
-    expect(reads).toBe(0);
+    expect(calls).toEqual({ list: 1, status: 1, archives: 1 });
   });
 
   test("an unreadable worksets directory degrades to a warning", async () => {

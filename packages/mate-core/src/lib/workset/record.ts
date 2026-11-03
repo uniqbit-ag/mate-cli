@@ -5,7 +5,8 @@ import path from "node:path";
 import { parse, stringify } from "yaml";
 
 import { errorMessage } from "../../runtime/error-message";
-import { parseAnchor } from "../change-layout";
+import { changeNameOf, locateChange, parseAnchor } from "../change-layout";
+import { scopedRepositories } from "../openspec-scopes";
 
 /**
  * The Workset record: `worksets/<id>.yaml` in the Companion Repository. It groups
@@ -28,6 +29,8 @@ export interface WorksetRecord {
   /** Meaningful only while `changes` is empty. */
   stage: PreProposeStage;
   createdAt: string;
+  /** When the Workset was started; absent while Later, which never runs by itself. */
+  queuedAt?: string;
   /** Fields this version does not know, kept so a write preserves them. */
   extra: Record<string, unknown>;
 }
@@ -45,7 +48,16 @@ export interface WorksetListing {
 
 const WORKSET_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/;
-const KNOWN_FIELDS = ["id", "title", "intent", "repositories", "changes", "stage", "createdAt"];
+const KNOWN_FIELDS = [
+  "id",
+  "title",
+  "intent",
+  "repositories",
+  "changes",
+  "stage",
+  "createdAt",
+  "queuedAt",
+];
 
 export class WorksetError extends Error {
   constructor(message: string) {
@@ -71,6 +83,12 @@ function stringList(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : null;
 }
 
+/** A YAML timestamp as text: the parser yields a Date for an unquoted one. */
+function timestampText(value: unknown): string | undefined {
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === "string" ? value : undefined;
+}
+
 /** Validates one parsed document against its file name; returns the record or the reason it is invalid. */
 export function toWorksetRecord(fileId: string, document: unknown): WorksetRecord | string {
   if (!document || typeof document !== "object" || Array.isArray(document)) {
@@ -92,9 +110,12 @@ export function toWorksetRecord(fileId: string, document: unknown): WorksetRecor
   if (!PRE_PROPOSE_STAGES.includes(stage as PreProposeStage)) {
     return `stage ${JSON.stringify(stage)} is not one of ${PRE_PROPOSE_STAGES.join(", ")}`;
   }
-  const extra = Object.fromEntries(
-    Object.entries(raw).filter(([key]) => !KNOWN_FIELDS.includes(key)),
-  );
+  const queuedAt = timestampText(raw.queuedAt);
+  if (queuedAt !== undefined && Number.isNaN(Date.parse(queuedAt))) {
+    return "queuedAt must be a timestamp";
+  }
+  const known = new Set(KNOWN_FIELDS);
+  const extra = Object.fromEntries(Object.entries(raw).filter(([key]) => !known.has(key)));
   return {
     id: fileId,
     title: typeof raw.title === "string" ? raw.title : fileId,
@@ -102,12 +123,8 @@ export function toWorksetRecord(fileId: string, document: unknown): WorksetRecor
     repositories,
     changes,
     stage: stage as PreProposeStage,
-    createdAt:
-      raw.createdAt instanceof Date
-        ? raw.createdAt.toISOString()
-        : typeof raw.createdAt === "string"
-          ? raw.createdAt
-          : "",
+    createdAt: timestampText(raw.createdAt) ?? "",
+    ...(queuedAt ? { queuedAt } : {}),
     extra,
   };
 }
@@ -145,6 +162,93 @@ export async function readWorksets(companionPath: string): Promise<WorksetListin
   };
 }
 
+/** The valid record with this id; undefined when missing or unreadable. */
+export async function findWorkset(
+  companionPath: string,
+  id: string,
+): Promise<WorksetRecord | undefined> {
+  return (await readWorksets(companionPath)).worksets.find((entry) => entry.id === id);
+}
+
+export type WorksetResolution =
+  | { id: string; implicit: boolean; diagnostics: string[] }
+  | { id: null; diagnostics: string[] };
+
+function problemDiagnostics(problems: WorksetProblem[]): string[] {
+  return problems.map((problem) => `${problem.path}: ${problem.reason}`);
+}
+
+function listsChange(record: WorksetRecord, change: string): boolean {
+  return record.changes.some((entry) => changeNameOf(entry) === changeNameOf(change));
+}
+
+/** Checks branch ownership for an explicit Workset without inferring change membership. */
+export async function resolveWorksetBranch(
+  companionPath: string,
+  id: string,
+  repository?: string,
+): Promise<WorksetResolution> {
+  const listing = await readWorksets(companionPath);
+  return resolveWorksetIdentity(companionPath, id, false, repository, listing);
+}
+
+async function resolveWorksetIdentity(
+  companionPath: string,
+  id: string,
+  implicit: boolean,
+  repository: string | undefined,
+  { worksets, problems }: WorksetListing,
+): Promise<WorksetResolution> {
+  const diagnostics = problemDiagnostics(problems);
+  if (diagnostics.length) return { id: null, diagnostics };
+  const explicit = worksets.find((record) => record.id === id);
+  const standalone = await locateChange(companionPath, id);
+  if (explicit && standalone && !worksets.some((record) => listsChange(record, id))) {
+    const repositories = await scopedRepositories(standalone.dir);
+    const overlaps = explicit.repositories.some(
+      (owner) =>
+        (!repository || owner.toLowerCase() === repository.toLowerCase()) &&
+        (repositories.length === 0 ||
+          repositories.some((candidate) => candidate.toLowerCase() === owner.toLowerCase())),
+    );
+    if (overlaps) {
+      return {
+        id: null,
+        diagnostics: [
+          `Workset ${id} and standalone change ${id} collide${repository ? ` in ${repository}` : ""}; select a branch explicitly or repair the identities.`,
+        ],
+      };
+    }
+  }
+  return { id, implicit, diagnostics };
+}
+
+/** Resolves membership and branch ownership; malformed records never imply standalone work. */
+export async function resolveWorksetOf(
+  companionPath: string,
+  change: string,
+  repository?: string,
+): Promise<WorksetResolution> {
+  const listing = await readWorksets(companionPath);
+  const members = listing.worksets.filter((record) => listsChange(record, change));
+  if (members.length > 1) {
+    return {
+      id: null,
+      diagnostics: [
+        `Change ${change} belongs to several Worksets: ${members.map((record) => record.id).join(", ")}.`,
+        ...problemDiagnostics(listing.problems),
+      ],
+    };
+  }
+  return resolveWorksetIdentity(
+    companionPath,
+    members[0]?.id ?? changeNameOf(change),
+    members.length === 0,
+    repository,
+    listing,
+  );
+}
+
 function documentOf(record: WorksetRecord): Record<string, unknown> {
   return {
     id: record.id,
@@ -154,6 +258,7 @@ function documentOf(record: WorksetRecord): Record<string, unknown> {
     changes: record.changes,
     stage: record.stage,
     createdAt: record.createdAt,
+    ...(record.queuedAt ? { queuedAt: record.queuedAt } : {}),
     ...record.extra,
   };
 }
@@ -170,6 +275,8 @@ export interface NewWorkset {
   title: string;
   intent: string;
   repository: string;
+  /** Starts the Workset at once; otherwise it is Later. */
+  start?: boolean;
 }
 
 /** Writes a new record at stage Clarify intent; an existing identifier is refused and nothing is written. */
@@ -186,6 +293,7 @@ export async function createWorkset(
   if (!isRepositoryIdentity(input.repository)) {
     throw new WorksetError(`${JSON.stringify(input.repository)} is not an org/repository name`);
   }
+  const createdAt = now().toISOString();
   const record: WorksetRecord = {
     id: input.id,
     title: input.title.trim() || input.id,
@@ -193,7 +301,8 @@ export async function createWorkset(
     repositories: [input.repository],
     changes: [],
     stage: "clarify-intent",
-    createdAt: now().toISOString(),
+    createdAt,
+    ...(input.start ? { queuedAt: createdAt } : {}),
     extra: {},
   };
   const dir = worksetsDirOf(companionPath);
@@ -212,6 +321,95 @@ export async function createWorkset(
   return record;
 }
 
+const ID_LIMIT = 63;
+
+/**
+ * An identifier from a title: kebab-case, cut to the limit, then `-2`, `-3`, … while taken.
+ * `null` when the title has no letter or digit.
+ */
+export function worksetIdFor(title: string, taken: ReadonlySet<string>): string | null {
+  const base = title
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .normalize("NFKD")
+    // Accents only: `ü` is `u` plus a combining mark.
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!base) return null;
+  for (let n = 1; ; n += 1) {
+    const suffix = n === 1 ? "" : `-${n}`;
+    const id = `${base.slice(0, ID_LIMIT - suffix.length).replace(/-+$/, "")}${suffix}`;
+    if (!taken.has(id)) return id;
+  }
+}
+
+const TITLE_LIMIT = 72;
+
+/** An Outcome's title: its text's first sentence or line, cut at a word boundary. */
+export function outcomeTitle(text: string): string {
+  const first =
+    text
+      .trim()
+      .split(/\n|(?<=[.!?])\s/)[0]
+      ?.trim()
+      .replace(/[.!?]+$/, "") ?? "";
+  if (first.length <= TITLE_LIMIT) return first;
+  const cut = first.slice(0, TITLE_LIMIT + 1);
+  const space = cut.lastIndexOf(" ");
+  return (space > 0 ? cut.slice(0, space) : cut.slice(0, TITLE_LIMIT)).trim();
+}
+
+export interface NewOutcome {
+  /** What the person wants, in their words; becomes the intent. */
+  text: string;
+  /** Required when the companion links several Working Repositories. */
+  repository?: string;
+  /** Starts it at once; otherwise it is Later. */
+  start?: boolean;
+}
+
+/** Creates a Workset from an outcome text; identifier and title are derived, the repository defaults to the only linked one. */
+export async function createOutcome(
+  companionPath: string,
+  input: NewOutcome,
+  linkedRepositories: readonly string[],
+  now: () => Date = () => new Date(),
+): Promise<WorksetRecord> {
+  const repository =
+    input.repository?.trim() ||
+    (linkedRepositories.length === 1 ? linkedRepositories[0] : undefined);
+  if (!repository) {
+    throw new WorksetError(
+      linkedRepositories.length === 0
+        ? "link a Working Repository to this companion first"
+        : "choose the Working Repository for this outcome",
+    );
+  }
+  if (!linkedRepositories.includes(repository)) {
+    throw new WorksetError(`${repository} is not linked to this companion`);
+  }
+  const { worksets, problems } = await readWorksets(companionPath);
+  const taken = new Set([
+    ...worksets.map((workset) => workset.id),
+    ...problems.map((problem) => path.basename(problem.path, ".yaml")),
+  ]);
+  const title = outcomeTitle(input.text);
+  const id = worksetIdFor(title, taken);
+  if (!id) throw new WorksetError(`the outcome ${JSON.stringify(input.text)} gives no title`);
+  return createWorkset(
+    companionPath,
+    {
+      id,
+      title,
+      intent: input.text,
+      repository,
+      ...(input.start ? { start: true } : {}),
+    },
+    now,
+  );
+}
+
 /** Replaces a record atomically, keeping fields this version does not know. */
 export async function writeWorkset(companionPath: string, record: WorksetRecord): Promise<void> {
   const dir = worksetsDirOf(companionPath);
@@ -226,17 +424,7 @@ const NEXT_STAGE: Partial<Record<PreProposeStage, PreProposeStage>> = {
 
 /** Clarify intent → Explore change → ready, and only while no change is linked. */
 export async function advanceWorkset(companionPath: string, id: string): Promise<WorksetRecord> {
-  if (!isWorksetId(id)) {
-    throw new WorksetError(`Workset identifier ${JSON.stringify(id)} is not a kebab-case name`);
-  }
-  const { worksets, problems } = await readWorksets(companionPath);
-  const record = worksets.find((workset) => workset.id === id);
-  if (!record) {
-    const problem = problems.find(
-      (entry) => entry.path === path.join(WORKSETS_RELATIVE_DIR, `${id}.yaml`),
-    );
-    throw new WorksetError(problem ? `${problem.path} ${problem.reason}` : `no Workset ${id}`);
-  }
+  const record = await recordFor(companionPath, id);
   if (record.changes.length > 0) {
     throw new WorksetError(`Workset ${id} has linked changes; its stage follows them`);
   }
@@ -246,6 +434,40 @@ export async function advanceWorkset(companionPath: string, id: string): Promise
   const advanced = { ...record, stage: next };
   await writeWorkset(companionPath, advanced);
   return advanced;
+}
+
+async function recordFor(companionPath: string, id: string): Promise<WorksetRecord> {
+  if (!isWorksetId(id)) {
+    throw new WorksetError(`Workset identifier ${JSON.stringify(id)} is not a kebab-case name`);
+  }
+  const { worksets, problems } = await readWorksets(companionPath);
+  const record = worksets.find((workset) => workset.id === id);
+  if (record) return record;
+  const problem = problems.find(
+    (entry) => entry.path === path.join(WORKSETS_RELATIVE_DIR, `${id}.yaml`),
+  );
+  throw new WorksetError(problem ? `${problem.path} ${problem.reason}` : `no Workset ${id}`);
+}
+
+/**
+ * Starts a Workset, stamping `queuedAt` (kept when already started), or makes it Later
+ * again, which clears it.
+ */
+export async function setWorksetStarted(
+  companionPath: string,
+  id: string,
+  started: boolean,
+  now: () => Date = () => new Date(),
+): Promise<WorksetRecord> {
+  const record = await recordFor(companionPath, id);
+  const { queuedAt: _queuedAt, ...rest } = record;
+  // Fields of earlier factory versions; dropped so they cannot mislead a reader.
+  const { lane: _lane, priority: _priority, ...extra } = record.extra;
+  const next: WorksetRecord = started
+    ? { ...rest, extra, queuedAt: record.queuedAt ?? now().toISOString() }
+    : { ...rest, extra };
+  await writeWorkset(companionPath, next);
+  return next;
 }
 
 /** Where a linked change name resolves. */

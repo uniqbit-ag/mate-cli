@@ -48,7 +48,7 @@ holds a file the line hides, and names it:
 
 `mate working link --companion <path> --yes` links the working repository it
 runs in to that companion without asking. It is for machine callers, such as a
-Workset container linking its worktree. It writes only the working repository's
+container linking its worktree. It writes only the working repository's
 own, locally excluded link and never the companion's registry. The interactive
 `mate companion link` stays the way to link a repository by hand.
 
@@ -452,7 +452,11 @@ that file, for active and archived changes. Options:
 - `--confirm-merged`, `--confirm-open`, and `--confirm-dropped` record your own
   answer, with source `user`.
 - `--json` prints one result per named change; several changes on one branch
-  can be linked in one call.
+  can be linked in one call. Each result includes `defaultBranch` (the resolved
+  `workset/<workset-id>` or `null`) and `diagnostics`. A standalone change uses
+  its change name as the implicit Workset id. Diagnostics also go to stderr;
+  ambiguous membership, identity collisions, or invalid records suppress unsafe
+  defaults. Recorded branches remain unchanged when membership changes.
 
 Without an edit option or `--refresh`, `mate artifact link` only reads the
 record and writes nothing. When the change's scopes name repositories, a
@@ -484,30 +488,6 @@ before the commit step. A finding stops the publication at a `secret-scan`
 step with no commit, tag, or push, and reports each file, line, and rule id
 without the value. With `secrets.guardrails: false` the scan is skipped with a
 one-line notice.
-
-## Factory
-
-`mate factory serve` is the factory image's broker. The [factory
-image](/docs/reference/factory)'s root supervisor starts it; it is not run by
-hand. It serves the Workset operations (spawn, pause, resume,
-delete, exec and list) on a Unix socket that Studio uses, and it alone holds
-the inner Docker daemon's socket and the Workset agent credential.
-
-`mate factory setup` stores the one Claude Code credential the factory's Workset
-agents use. It asks whether you have a Claude subscription token (from
-`claude setup-token`) or an Anthropic API key, reads the value without showing
-it, and writes it to `~/.mate/factory/credential.env`, readable by you only. A
-new setup replaces the old credential. The factory image loads that file;
-your own `claude` does not see it. For an agent product offered to others,
-Anthropic asks for an API key rather than subscription logins.
-
-`mate factory attach <workset> --session <id> --companion <path>` is what
-Studio's terminal runs for a Workset session. It asks the broker to start
-Claude Code inside the Workset's container and relays the terminal both ways.
-`--start` picks the first turn: `clarify` runs Clarify intent with the
-Workset's intent, `explore` runs Explore change, and `continue`, the default,
-resumes the Workset's last conversation. It holds no credential; the broker adds
-it. When the command ends, the broker stops the agent inside the container.
 
 ## Exit And Recovery Behavior
 

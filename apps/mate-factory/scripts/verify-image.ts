@@ -168,6 +168,7 @@ export function runChecks(
     claudeVersion: string;
     uid: number;
     user: string;
+    worksetRootfsBudgetMb: number;
   },
 ): Check[] {
   const checks: Check[] = [];
@@ -345,9 +346,12 @@ export function runChecks(
   const workset = probe(
     [
       'test -s "$MATE_WORKSET_ARCHIVE" && test -s /opt/mate/workset-image.conf',
-      '&& tar -tf "$MATE_WORKSET_ARCHIVE" > /tmp/workset.list',
+      `&& ${LIST_WORKSET} > /tmp/workset.list`,
       "&& grep -qx './usr/local/bin/mate-workset-init' /tmp/workset.list",
       "&& grep -qx './usr/local/bin/mate-workset-stop' /tmp/workset.list",
+      "&& grep -qx './usr/local/bin/mate-workset-docker-proxy' /tmp/workset.list",
+      "&& grep -qx './usr/local/bin/mate-workset-prune' /tmp/workset.list",
+      "&& grep -qx './usr/bin/socat' /tmp/workset.list",
       "&& grep -qx './usr/local/bin/claude' /tmp/workset.list",
       "&& grep -qx './usr/bin/dockerd' /tmp/workset.list",
       "&& echo ok",
@@ -362,9 +366,9 @@ export function runChecks(
   // npm's own distribution `.npmrc` ships in the pinned node base image.
   const worksetClean = probe(
     [
-      'tar -tf "$MATE_WORKSET_ARCHIVE"',
+      LIST_WORKSET,
       "| grep -vx './usr/local/lib/node_modules/npm/.npmrc'",
-      `| grep -E '${CREDENTIAL_PATHS.source.replaceAll("\\/", "/")}' || echo none`,
+      `| grep -E '${egrepPattern(CREDENTIAL_PATHS)}' || echo none`,
     ],
     { network: false },
   );
@@ -373,6 +377,7 @@ export function runChecks(
     worksetClean.stdout.trim() === "none",
     worksetClean.stdout.trim(),
   );
+  checks.push(...runWorksetBudgetChecks(probe, expected.worksetRootfsBudgetMb));
 
   // The image pins the agent, so it must not download another into the
   // persistent home.
@@ -381,6 +386,83 @@ export function runChecks(
     "the Claude auto-updater is disabled so the pinned version stays in force",
     updater.stdout.includes("ok"),
     updater.stderr.trim(),
+  );
+
+  return checks;
+}
+
+/** Lists the Workset archive's paths. */
+const LIST_WORKSET = 'zstd -dcq "$MATE_WORKSET_ARCHIVE" | tar -tf -';
+
+/** A regex's source as a `grep -E` pattern: ERE needs no escaped `/`. */
+function egrepPattern(pattern: RegExp): string {
+  return pattern.source.replaceAll("\\/", "/");
+}
+
+/** The Claude native packages the Workset may hold: the bridge's own Agent SDK binary only. */
+const FOREIGN_CLAUDE_PACKAGE = /node_modules\/@anthropic-ai\/claude-(code|agent-sdk)-[^/]+\/$/;
+
+/**
+ * The Workset archive is zstd, holds one platform's Claude binaries, stays
+ * under its recorded size, and its pruned harness bridge still loads offline.
+ */
+function runWorksetBudgetChecks(probe: ImageProbe, budgetMb: number): Check[] {
+  const checks: Check[] = [];
+  const add = (name: string, ok: boolean, detail: string) => checks.push({ name, ok, detail });
+
+  const magic = probe(['od -An -tx1 -N4 "$MATE_WORKSET_ARCHIVE" | tr -d " \\n"'], {
+    network: false,
+  });
+  add(
+    "factory mode: the Workset archive is zstd-compressed",
+    magic.stdout.trim() === "28b52ffd",
+    `magic ${magic.stdout.trim() || magic.stderr.trim()}`,
+  );
+
+  const claude = probe(
+    [
+      LIST_WORKSET,
+      `| grep -E '${egrepPattern(FOREIGN_CLAUDE_PACKAGE)}' | sort -u`,
+      "; echo arch=$(node -p process.arch)",
+    ],
+    { network: false },
+  );
+  const lines = claude.stdout.trim().split("\n");
+  const arch = lines.pop()?.replace("arch=", "") ?? "";
+  const keep = `node_modules/@anthropic-ai/claude-agent-sdk-linux-${arch}/`;
+  const foreign = lines.filter(
+    (line) =>
+      FOREIGN_CLAUDE_PACKAGE.test(line) && !line.endsWith(`/opt/mate/harness-bridge/${keep}`),
+  );
+  add(
+    "factory mode: the Workset image holds no Claude binary for another platform or libc",
+    arch !== "" && foreign.length === 0,
+    foreign.join("\n") || `only ${keep}`,
+  );
+
+  const size = probe(['zstd -dcq "$MATE_WORKSET_ARCHIVE" | wc -c'], { network: false });
+  const mb = Math.round(Number(size.stdout.trim()) / 1_000_000);
+  add(
+    `factory mode: the Workset root filesystem is within its ${budgetMb} MB budget`,
+    size.status === 0 && mb > 0 && mb <= budgetMb,
+    `${mb} MB`,
+  );
+
+  const bridge = probe(
+    [
+      "d=$(mktemp -d)",
+      '&& zstd -dcq "$MATE_WORKSET_ARCHIVE" | tar -xf - -C "$d" ./opt/mate/harness-bridge',
+      '&& cd "$d/opt/mate/harness-bridge"',
+      "&& ./node_modules/.bin/claude --version >/dev/null",
+      "&& { bun bridge.mjs 2>&1 || true; } | grep -q 'Missing --workdir'",
+      "&& echo ok",
+    ],
+    { network: false },
+  );
+  add(
+    "factory mode: the pruned harness bridge and its Agent SDK binary load offline",
+    bridge.stdout.includes("ok"),
+    bridge.stderr.trim(),
   );
 
   return checks;
@@ -878,6 +960,7 @@ function main(argv: string[]): number {
       claudeVersion: inputs.claude.version,
       uid: inputs.runtime.uid,
       user: inputs.runtime.user,
+      worksetRootfsBudgetMb: inputs.factory.workset_image.rootfs_budget_mb,
     }),
   );
 

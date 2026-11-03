@@ -7,9 +7,15 @@ import { parse } from "yaml";
 
 import {
   advanceWorkset,
+  createOutcome,
   createWorkset,
+  outcomeTitle,
   readWorksets,
   resolveLinkedChanges,
+  resolveWorksetOf,
+  resolveWorksetBranch,
+  setWorksetStarted,
+  worksetIdFor,
   type WorksetRecord,
   writeWorkset,
 } from "./record";
@@ -28,6 +34,82 @@ function write(id: string, body: string): void {
 }
 
 const fixed = () => new Date("2026-10-29T10:00:00.000Z");
+
+describe("delivery Workset resolution", () => {
+  const workset = (id: string, changes: string[], repository = "acme/web") =>
+    write(id, `id: ${id}\nrepositories: [${repository}]\nchanges: ${JSON.stringify(changes)}\n`);
+  const change = (name: string, repository = "acme/web") => {
+    const dir = path.join(companion, "openspec/changes", name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "proposal.md"),
+      `---\nscopes:\n  - repository: ${repository}\n    area: .\n---\n`,
+    );
+  };
+
+  test("standalone resolution writes nothing", async () => {
+    expect(await resolveWorksetOf(companion, "acme-fix")).toEqual({
+      id: "acme-fix",
+      implicit: true,
+      diagnostics: [],
+    });
+    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+  });
+
+  test("members and archive anchors resolve to the explicit Workset", async () => {
+    workset("acme-login", ["acme-form", "2026-10-01-acme-api"]);
+    for (const name of ["acme-form", "acme-api", "2026-10-01-acme-form"]) {
+      expect(await resolveWorksetOf(companion, name)).toEqual({
+        id: "acme-login",
+        implicit: false,
+        diagnostics: [],
+      });
+    }
+  });
+
+  test("ambiguous membership has no default", async () => {
+    workset("acme-one", ["acme-fix"]);
+    workset("acme-two", ["2026-10-01-acme-fix"]);
+    const result = await resolveWorksetOf(companion, "acme-fix");
+    expect(result.id).toBeNull();
+    expect(result.diagnostics.join()).toContain("acme-one, acme-two");
+  });
+
+  test("invalid records report path and reason and suppress inference", async () => {
+    write("acme-invalid", "id: wrong\n");
+    const result = await resolveWorksetOf(companion, "acme-fix");
+    expect(result.id).toBeNull();
+    expect(result.diagnostics.join()).toContain("worksets/acme-invalid.yaml: id");
+  });
+
+  test("explicit and implicit identity collision blocks both owners and Factory", async () => {
+    change("acme-login");
+    workset("acme-login", ["acme-form"]);
+    for (const result of [
+      await resolveWorksetOf(companion, "acme-login", "acme/web"),
+      await resolveWorksetOf(companion, "acme-form", "acme/web"),
+      await resolveWorksetBranch(companion, "acme-login", "acme/web"),
+    ]) {
+      expect(result.id).toBeNull();
+      expect(result.diagnostics.join()).toContain(
+        "Workset acme-login and standalone change acme-login collide",
+      );
+    }
+  });
+
+  test("same-name membership is safe", async () => {
+    change("acme-login");
+    workset("acme-login", ["acme-login"]);
+    expect((await resolveWorksetOf(companion, "acme-login", "acme/web")).id).toBe("acme-login");
+  });
+
+  test("different repositories do not collide", async () => {
+    change("acme-login", "acme/api");
+    workset("acme-login", ["acme-form"]);
+    expect((await resolveWorksetOf(companion, "acme-login", "acme/api")).id).toBe("acme-login");
+    expect((await resolveWorksetOf(companion, "acme-form", "acme/web")).id).toBe("acme-login");
+  });
+});
 
 describe("the record", () => {
   test("is created with its shape, an empty change list and stage Clarify intent", async () => {
@@ -186,5 +268,128 @@ describe("linked changes", () => {
   test("writeWorkset replaces a record atomically", async () => {
     await writeWorkset(companion, record("acme-a", []));
     expect(fs.readdirSync(path.join(companion, "worksets"))).toEqual(["acme-a.yaml"]);
+  });
+});
+
+describe("started and Later", () => {
+  test("a started record reads with its start time", async () => {
+    write(
+      "acme-login",
+      "id: acme-login\nrepositories: [acme/web]\nqueuedAt: 2026-11-02T09:00:00.000Z\n",
+    );
+    const [record] = (await readWorksets(companion)).worksets;
+    expect(record?.queuedAt).toBe("2026-11-02T09:00:00.000Z");
+  });
+
+  test("a start time that is no timestamp is reported naming queuedAt, and the others still read", async () => {
+    write("acme-a", "id: acme-a\nrepositories: [acme/web]\nqueuedAt: soon\n");
+    write("acme-b", "id: acme-b\nrepositories: [acme/web]\n");
+    const listing = await readWorksets(companion);
+    expect(listing.worksets.map((workset) => workset.id)).toEqual(["acme-b"]);
+    expect(listing.problems[0]?.reason).toContain("queuedAt");
+  });
+
+  test("a record with an earlier priority reads as started and keeps the field", async () => {
+    write(
+      "acme-a",
+      "id: acme-a\nrepositories: [acme/web]\npriority: focus\nqueuedAt: 2026-11-02T09:00:00.000Z\n",
+    );
+    const [record] = (await readWorksets(companion)).worksets;
+    expect(record?.queuedAt).toBe("2026-11-02T09:00:00.000Z");
+    await writeWorkset(companion, record!);
+    const document = parse(
+      fs.readFileSync(path.join(companion, "worksets", "acme-a.yaml"), "utf8"),
+    );
+    expect(document).toMatchObject({ priority: "focus", queuedAt: "2026-11-02T09:00:00.000Z" });
+  });
+
+  test("starting stamps queuedAt, starting again keeps it, Later clears it", async () => {
+    write(
+      "acme-login",
+      "id: acme-login\nrepositories: [acme/web]\nlane: noise\npriority: background\n",
+    );
+    const monday = () => new Date("2026-11-02T09:00:00.000Z");
+    const wednesday = () => new Date("2026-11-04T09:00:00.000Z");
+    expect(await setWorksetStarted(companion, "acme-login", true, monday)).toMatchObject({
+      queuedAt: "2026-11-02T09:00:00.000Z",
+    });
+    expect(await setWorksetStarted(companion, "acme-login", true, wednesday)).toMatchObject({
+      queuedAt: "2026-11-02T09:00:00.000Z",
+    });
+    const read = () =>
+      parse(fs.readFileSync(path.join(companion, "worksets", "acme-login.yaml"), "utf8"));
+    expect(read().lane).toBeUndefined();
+    expect(read().priority).toBeUndefined();
+    await setWorksetStarted(companion, "acme-login", false);
+    expect(read().queuedAt).toBeUndefined();
+  });
+});
+
+describe("outcomes", () => {
+  test("the identifier is the kebab-case title, suffixed while taken", () => {
+    expect(worksetIdFor("Login with SSO", new Set())).toBe("login-with-sso");
+    expect(worksetIdFor("Login with SSO", new Set(["login-with-sso"]))).toBe("login-with-sso-2");
+    expect(worksetIdFor("Login with SSO", new Set(["login-with-sso", "login-with-sso-2"]))).toBe(
+      "login-with-sso-3",
+    );
+    expect(worksetIdFor("Über die Größe", new Set())).toBe("uber-die-grosse");
+    expect(worksetIdFor("!!!", new Set())).toBeNull();
+    expect(worksetIdFor("a".repeat(80), new Set())?.length).toBe(63);
+  });
+
+  test("the title is the first sentence or line, cut at a word boundary", () => {
+    expect(outcomeTitle("Make onboarding easier. Fewer steps, keep auth working.")).toBe(
+      "Make onboarding easier",
+    );
+    expect(outcomeTitle("  Export to CSV\nwith headers")).toBe("Export to CSV");
+    const long = outcomeTitle(`${"word ".repeat(30)}end`);
+    expect(long.length).toBeLessThanOrEqual(72);
+    expect(long.endsWith("word")).toBe(true);
+  });
+
+  test("an outcome text creates a Workset for the only linked repository", async () => {
+    const text = "Make onboarding easier. Fewer steps, keep auth working.";
+    const record = await createOutcome(companion, { text }, ["acme/web"], fixed);
+    expect(record).toMatchObject({
+      id: "make-onboarding-easier",
+      title: "Make onboarding easier",
+      intent: text,
+      repositories: ["acme/web"],
+      stage: "clarify-intent",
+    });
+    expect(record.queuedAt).toBeUndefined();
+  });
+
+  test("a started outcome is written with its start time", async () => {
+    const record = await createOutcome(
+      companion,
+      { text: "Acme export", start: true },
+      ["acme/web"],
+      fixed,
+    );
+    expect(record).toMatchObject({ queuedAt: "2026-10-29T10:00:00.000Z" });
+    const document = parse(
+      fs.readFileSync(path.join(companion, "worksets", "acme-export.yaml"), "utf8"),
+    );
+    expect(document.queuedAt).toBe("2026-10-29T10:00:00.000Z");
+  });
+
+  test("a taken identifier gets the next suffix", async () => {
+    write("login-with-sso", "id: login-with-sso\nrepositories: [acme/web]\n");
+    const record = await createOutcome(companion, { text: "Login with SSO" }, ["acme/web"]);
+    expect(record.id).toBe("login-with-sso-2");
+  });
+
+  test("several repositories and none chosen is refused and nothing is written", async () => {
+    await expect(
+      createOutcome(companion, { text: "Acme export" }, ["acme/web", "acme/api"]),
+    ).rejects.toThrow("choose the Working Repository");
+    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+  });
+
+  test("a text without letters or digits is refused", async () => {
+    await expect(createOutcome(companion, { text: "???" }, ["acme/web"])).rejects.toThrow(
+      "gives no title",
+    );
   });
 });

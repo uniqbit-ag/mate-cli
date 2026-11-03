@@ -54,7 +54,7 @@ export interface ImageInputs {
       packages: Record<string, { version: string; artifacts: Record<string, CheckedArtifact> }>;
     };
     os_packages: Record<string, string>;
-    workset_image: { archive: string; repository: string };
+    workset_image: { archive: string; repository: string; rootfs_budget_mb: number };
   };
   tools: Record<string, ToolInput>;
   locks: Record<string, { manifest: string; lockfile: string }>;

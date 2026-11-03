@@ -57,6 +57,16 @@ describe("preparing a Workset's container", () => {
     ]);
   });
 
+  test("a size is passed to the spawn; none leaves the broker's default", async () => {
+    record("acme-greet", "title: Greet\nstage: ready\nrepositories: [acme/web]\n");
+    const { client, calls } = fakeClient();
+    await prepareWorkset(client, companion, "acme-greet", ENV, "agent");
+    expect(calls[0]).toEqual([
+      "spawn",
+      expect.objectContaining({ id: "acme-greet", size: "agent" }),
+    ]);
+  });
+
   test("an unknown repository spawns nothing", async () => {
     record("acme-greet", "repositories: [acme/other]\n");
     const { client, calls } = fakeClient();

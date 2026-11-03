@@ -1,5 +1,5 @@
 import type { StudioInventory, StudioInventoryCompanion } from "../inventory";
-import type { FactoryRunView } from "../factory-runs";
+import type { FactoryRunView } from "../../../../lib/factory/outcomes/runs";
 import type { StudioCompanionPayload } from "../payload";
 import type { StoredReport } from "../reports";
 import type { StudioSelection } from "../selection";
@@ -30,6 +30,8 @@ export interface StudioPage {
   worksetSessions?: Record<string, string> | null;
   /** AFK runs by Workset id, in factory mode for the served companion; `null` otherwise. */
   factoryRuns?: Record<string, FactoryRunView> | null;
+  /** When the server rendered the page, for ages on the Factory view. */
+  renderedAt?: number;
   /**
    * Hosted reports, newest first, listed at render time for the Business Analyst
    * Overview only; `null` when the listing failed.

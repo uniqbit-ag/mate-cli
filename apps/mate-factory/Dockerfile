@@ -291,6 +291,7 @@ ARG XZ_UTILS_VERSION
 ARG OPENSSH_CLIENT_VERSION
 ARG IPTABLES_VERSION
 ARG PROCPS_VERSION
+ARG SOCAT_VERSION
 ARG MATE_UID=10001
 ARG MATE_GID=10001
 
@@ -307,6 +308,7 @@ RUN apt-get update \
       "openssh-client=${OPENSSH_CLIENT_VERSION}" \
       "iptables=${IPTABLES_VERSION}" \
       "procps=${PROCPS_VERSION}" \
+      "socat=${SOCAT_VERSION}" \
       /tmp/debs/containerd.io.deb /tmp/debs/docker-ce-cli.deb /tmp/debs/docker-ce.deb \
  && rm -rf /tmp/debs /var/lib/apt/lists/*
 
@@ -324,10 +326,12 @@ RUN ln -sf /opt/mate/uv/tools/graphifyy/bin/graphify /usr/local/bin/graphify \
 
 # `docker` group membership lets the agent drive its Workset's own daemon,
 # which is the point of the nested runtime.
+# /var/cache/bun is the Bun install cache volume every Workset shares; Docker
+# seeds the empty volume from this directory, ownership included.
 RUN groupadd --gid "${MATE_GID}" mate \
  && useradd --uid "${MATE_UID}" --gid "${MATE_GID}" --groups docker --create-home --home-dir /home/mate --shell /bin/bash mate \
- && mkdir -p /home/mate/.claude /home/mate/.config/opencode \
- && chown -R "${MATE_UID}:${MATE_GID}" /home/mate
+ && mkdir -p /home/mate/.claude /home/mate/.config/opencode /var/cache/bun \
+ && chown -R "${MATE_UID}:${MATE_GID}" /home/mate /var/cache/bun
 
 # TokenSave's per-agent integration, which the installation gate requires for every
 # allowed agent; an offline config write, as in the appliance image.
@@ -340,13 +344,18 @@ USER root
 
 COPY scripts/workset-init.sh /usr/local/bin/mate-workset-init
 COPY scripts/workset-stop.sh /usr/local/bin/mate-workset-stop
+COPY scripts/workset-docker-proxy.sh /usr/local/bin/mate-workset-docker-proxy
+COPY scripts/workset-prune.sh /usr/local/bin/mate-workset-prune
 COPY scripts/bake-harness-bridge.sh /usr/local/bin/mate-bake-harness-bridge
 # The Claude Code harness bridge AFK runs start, pre-installed at the pinned
 # version; the build fails when the installed harness differs from the pin.
 RUN chmod +x /usr/local/bin/mate-bake-harness-bridge \
  && mate-bake-harness-bridge /opt/mate/tools /opt/mate/harness-bridge
 RUN chmod +x /usr/local/bin/mate-workset-init /usr/local/bin/mate-workset-stop \
+      /usr/local/bin/mate-workset-docker-proxy /usr/local/bin/mate-workset-prune \
  && command -v git && command -v bun && command -v node && command -v docker && command -v dockerd \
+ && command -v socat && command -v flock \
+ && command -v mate-workset-docker-proxy && command -v mate-workset-prune \
  && command -v tokensave && command -v rtk && command -v uv && command -v uvx && graphify --version \
  && claude --version | grep -q "^${CLAUDE_VERSION} " \
  && scratch="$(mktemp -d)" \
@@ -364,9 +373,18 @@ RUN chmod +x /usr/local/bin/mate-workset-init /usr/local/bin/mate-workset-stop \
 FROM ${NODE_IMAGE} AS workset-archive
 
 ARG MATE_VERSION
+ARG ZSTD_VERSION
 
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends "zstd=${ZSTD_VERSION}" \
+ && rm -rf /var/lib/apt/lists/*
+
+# zstd-compressed: `docker import` reads it as is, and it is the largest file
+# the factory image carries.
 COPY --from=workset / /rootfs/
-RUN tar --numeric-owner -C /rootfs -cf /workset-rootfs.tar . \
+RUN tar --numeric-owner -C /rootfs -cf - . | zstd -T0 -12 -q -o /workset-rootfs.tar.zst \
  && rm -rf /rootfs \
  && printf '%s\n' \
       'ENV MATE_VERSION='"${MATE_VERSION}" \
@@ -376,6 +394,7 @@ RUN tar --numeric-owner -C /rootfs -cf /workset-rootfs.tar . \
       'ENV UV_TOOL_BIN_DIR=/usr/local/bin' \
       'ENV UV_PYTHON_INSTALL_DIR=/opt/mate/uv/python' \
       'ENV UV_NO_MODIFY_PATH=1' \
+      'ENV BUN_INSTALL_CACHE_DIR=/var/cache/bun' \
       'ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
       'CMD ["/usr/local/bin/mate-workset-init"]' \
       > /workset-image.conf
@@ -559,6 +578,7 @@ ARG IPROUTE2_VERSION
 ARG KMOD_VERSION
 ARG IPTABLES_VERSION
 ARG PROCPS_VERSION
+ARG ZSTD_VERSION
 ARG WORKSET_ARCHIVE
 
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
@@ -577,6 +597,7 @@ RUN apt-get update \
       "kmod=${KMOD_VERSION}" \
       "iptables=${IPTABLES_VERSION}" \
       "procps=${PROCPS_VERSION}" \
+      "zstd=${ZSTD_VERSION}" \
       /tmp/debs/containerd.io.deb /tmp/debs/docker-ce-cli.deb /tmp/debs/docker-ce.deb \
  && rm -rf /tmp/debs /var/lib/apt/lists/*
 COPY --from=fetch /out/factory/sysbox/ /usr/bin/
@@ -589,14 +610,14 @@ RUN mkdir -p /etc/mate-factory \
       '  "default-runtime": "sysbox-runc",' \
       '  "log-level": "warn"' \
       '}' > /etc/mate-factory/daemon.json
-COPY --from=workset-archive /workset-rootfs.tar ${WORKSET_ARCHIVE}
+COPY --from=workset-archive /workset-rootfs.tar.zst ${WORKSET_ARCHIVE}
 COPY --from=workset-archive /workset-image.conf /opt/mate/workset-image.conf
 
 COPY scripts/factory-supervisor.sh /usr/local/bin/mate-factory-supervisor
 COPY scripts/bake-harness-bridge.sh /usr/local/bin/mate-bake-harness-bridge
 RUN chmod +x /usr/local/bin/mate-factory-supervisor /usr/local/bin/mate-bake-harness-bridge \
  && command -v sysbox-runc && command -v sysbox-mgr && command -v sysbox-fs \
- && command -v dockerd && command -v docker \
+ && command -v dockerd && command -v docker && command -v zstd \
  && test -s "${WORKSET_ARCHIVE}" && test -s /opt/mate/workset-image.conf
 
 LABEL org.opencontainers.image.title="Mate factory" \

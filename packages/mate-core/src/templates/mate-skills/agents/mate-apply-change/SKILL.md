@@ -1,6 +1,6 @@
 ---
 name: mate-apply-change
-description: Implement a change on a recorded delivery branch, offering change/<change-name> instead of a protected branch. Builds on the OpenSpec apply workflow. Use when the user wants to implement, apply, or continue implementing a reviewed change.
+description: Implement a change on a recorded delivery branch, offering workset/<workset-id> instead of a protected branch. Builds on the OpenSpec apply workflow. Use when the user wants to implement, apply, or continue implementing a reviewed change.
 allowed-tools: Bash(mate:*), Bash(openspec:*), Bash(git:*)
 license: MIT
 compatibility: Requires the mate CLI and the openspec capability enabled.
@@ -32,6 +32,11 @@ mate artifact link "<change-name>" --json
 
 ## Step 2: Settle the delivery branch
 
+Read `defaultBranch` and `diagnostics` from the link result. Report every diagnostic;
+never derive a default from a change or Workset name. `defaultBranch: null` means ask
+for a branch name, not infer one. Preserve recorded branches after membership changes;
+a mismatch is informational, and relinking requires explicit user confirmation.
+
 A branch is **protected** when it is the default branch or matches a configured
 protected pattern; `mate artifact link` refuses a
 protected branch unless it is recorded as a direct delivery.
@@ -39,16 +44,19 @@ protected branch unless it is recorded as a direct delivery.
 - **A branch is already recorded** and it is the current branch → continue. When the
   current branch differs, warn, name both branches, and ask before implementing
   whether to switch to the recorded branch or record the current one.
-- **On `change/<change-name>`** → record it without asking:
-  `mate artifact link "<change-name>" --branch "change/<change-name>" --json`.
+- **On the safe `defaultBranch`** → record it without asking:
+  `mate artifact link "<change-name>" --branch "<defaultBranch>" --json`.
 - **On another unprotected branch** (a shared feature branch) → ask once whether this
   change is delivered through it, then record it on confirmation.
 - **Detached HEAD** → ask for the branch name, then record it.
 - **On a protected branch** → do not implement there by default. First name every
   local commit that is not on the remote (`git log --oneline HEAD --not --remotes`) and
   leave them where they are; never move, reset, or rebase them. Then offer:
-  1. **Create `change/<change-name>`** (default): `git switch -c change/<change-name>`;
-     uncommitted edits carry over. Record it.
+  1. **Create or switch to `defaultBranch`** (default, normally `workset/<workset-id>`):
+     check local and `origin` refs; `git switch "<defaultBranch>"` when local,
+     `git switch --track -c "<defaultBranch>" "origin/<defaultBranch>"` when remote-only,
+     otherwise `git switch -c "<defaultBranch>"`. Uncommitted edits carry over. Record it.
+     When `defaultBranch` is null, ask for a name instead; do not offer an inferred branch.
   2. **Use an existing branch**: switch to the branch the user names and record it.
   3. **Work directly here** — only when the user explicitly chooses it. Record it as a
      direct delivery: `mate artifact link "<change-name>" --branch "<branch>" --direct --json`.

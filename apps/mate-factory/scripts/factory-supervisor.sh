@@ -27,9 +27,11 @@ RUN_DIR="${MATE_FACTORY_RUN_DIR:-/run/mate-factory}"
 STATE_DIR="${MATE_FACTORY_STATE_DIR:-/var/lib/mate-factory}"
 SYSBOX_RUN_DIR="${MATE_SYSBOX_RUN_DIR:-/run/sysbox}"
 CGROUP_ROOT="${MATE_CGROUP_ROOT:-/sys/fs/cgroup}"
-WORKSET_ARCHIVE="${MATE_WORKSET_ARCHIVE:-/opt/mate/workset-rootfs.tar}"
+WORKSET_ARCHIVE="${MATE_WORKSET_ARCHIVE:-/opt/mate/workset-rootfs.tar.zst}"
 WORKSET_CONF="${MATE_WORKSET_CONF:-/opt/mate/workset-image.conf}"
 WORKSET_IMAGE="mate-workset:${MATE_VERSION:?mate-appliance: MATE_VERSION is not set}"
+WORKSET_OVERLAY="${MATE_WORKSET_OVERLAY:-}"
+WORKSET_BASE_IMAGE="${MATE_WORKSET_BASE_IMAGE:-}"
 READY_SECONDS="${MATE_FACTORY_READY_SECONDS:-60}"
 USER_NAME=mate
 # The image's HOME is mate's volume: root's own processes keep their state out of
@@ -151,25 +153,51 @@ chmod 0600 "$RUN_DIR/docker.sock" || fail "the inner daemon's socket could not b
 "$DOCKER" info --format '{{json .Runtimes}}' | grep -q '"sysbox-runc"' \
   || fail "the inner Docker daemon does not offer the sysbox-runc runtime"
 
-if ! "$DOCKER" image inspect "$WORKSET_IMAGE" >/dev/null 2>&1; then
+CHANGES=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && CHANGES+=(--change "$line")
+done < "$WORKSET_CONF"
+
+# A local build ships its tools as an overlay: the base archive is imported
+# once per base, and the local image is that base plus one committed layer.
+if [[ -n "$WORKSET_OVERLAY" ]]; then
+  if ! "$DOCKER" image inspect "$WORKSET_BASE_IMAGE" >/dev/null 2>&1; then
+    log "loading the base Workset image $WORKSET_BASE_IMAGE"
+    "$DOCKER" import "${CHANGES[@]}" "$WORKSET_ARCHIVE" "$WORKSET_BASE_IMAGE" >/dev/null \
+      || fail "the base Workset image could not be loaded from $WORKSET_ARCHIVE"
+  fi
+  if ! "$DOCKER" image inspect "$WORKSET_IMAGE" >/dev/null 2>&1; then
+    log "building the Workset image $WORKSET_IMAGE from $WORKSET_BASE_IMAGE and the local overlay"
+    "$DOCKER" rm --force mate-workset-overlay >/dev/null 2>&1
+    # runc, not Sysbox: a plain filesystem edit, committed without uid shifting.
+    zstd -dcq "$WORKSET_OVERLAY" \
+      | "$DOCKER" run --name mate-workset-overlay --runtime runc --network none --user root -i \
+          "$WORKSET_BASE_IMAGE" /bin/sh -c 'rm -rf /opt/mate/tools /opt/mate/harness-bridge && tar -x -C /' \
+      && "$DOCKER" commit "${CHANGES[@]}" mate-workset-overlay "$WORKSET_IMAGE" >/dev/null
+    status=$?
+    "$DOCKER" rm --force mate-workset-overlay >/dev/null 2>&1
+    (( status == 0 )) || fail "the Workset image could not be built from $WORKSET_OVERLAY"
+  fi
+elif ! "$DOCKER" image inspect "$WORKSET_IMAGE" >/dev/null 2>&1; then
   log "loading the Workset image $WORKSET_IMAGE"
-  CHANGES=()
-  while IFS= read -r line; do
-    [[ -n "$line" ]] && CHANGES+=(--change "$line")
-  done < "$WORKSET_CONF"
   "$DOCKER" import "${CHANGES[@]}" "$WORKSET_ARCHIVE" "$WORKSET_IMAGE" >/dev/null \
     || fail "the Workset image could not be loaded from $WORKSET_ARCHIVE"
 fi
 
-# Each update imports a new Workset image; older ones go unless a Workset container
-# still uses them, which `image rm` refuses to remove.
+# Each update loads a new Workset image; older ones and superseded bases go
+# unless a Workset container still uses them, which `image rm` refuses. Then
+# the inner daemon's dangling images and build cache.
 while IFS= read -r old; do
-  [[ -n "$old" && "$old" != "$WORKSET_IMAGE" ]] || continue
+  [[ -n "$old" && "$old" != "$WORKSET_IMAGE" && "$old" != "$WORKSET_BASE_IMAGE" ]] || continue
   "$DOCKER" image rm "$old" >/dev/null 2>&1 && log "removed the unused Workset image $old"
-done < <("$DOCKER" image ls --format '{{.Repository}}:{{.Tag}}' mate-workset 2>/dev/null)
+done < <("$DOCKER" image ls --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^mate-workset(-base)?:')
+"$DOCKER" image prune --force >/dev/null 2>&1
+"$DOCKER" builder prune --force >/dev/null 2>&1
 
-# Clones and worktrees belong to mate, whose uid the Workset containers share.
-install -d -m 0755 -o root -g root "$STATE_DIR" \
+# Clones and worktrees belong to mate, whose uid the Workset containers share. mate may
+# pass through the state directory but not list it: the agent credential set in Studio
+# lies there, root-only.
+install -d -m 0711 -o root -g root "$STATE_DIR" \
   && install -d -m 0755 -o "$USER_NAME" -g "$USER_NAME" "$STATE_DIR/repos" "$STATE_DIR/worktrees" "$STATE_DIR/runs" \
   || fail "the factory state directories under $STATE_DIR could not be prepared"
 
@@ -177,13 +205,20 @@ install -d -m 0755 -o root -g root "$STATE_DIR" \
 # The broker: the only process with the inner socket and the credential.
 # ---------------------------------------------------------------------------
 BROKER_SOCKET="$RUN_DIR/broker.sock"
+LIMITS=()
+[[ -n "${MATE_PLAN_FACTORY_MAX_WORKSETS:-}" ]] && LIMITS+=(--max-worksets "$MATE_PLAN_FACTORY_MAX_WORKSETS")
+[[ -n "${MATE_PLAN_FACTORY_IDLE_MINUTES:-}" ]] && LIMITS+=(--idle-minutes "$MATE_PLAN_FACTORY_IDLE_MINUTES")
+[[ -n "${MATE_PLAN_FACTORY_WORKSET_MEMORY:-}" ]] && LIMITS+=(--memory "$MATE_PLAN_FACTORY_WORKSET_MEMORY")
+[[ -n "${MATE_PLAN_FACTORY_WORKSET_PIDS:-}" ]] && LIMITS+=(--pids "$MATE_PLAN_FACTORY_WORKSET_PIDS")
+[[ -n "${MATE_PLAN_FACTORY_WORKSET_CPUS:-}" ]] && LIMITS+=(--cpus "$MATE_PLAN_FACTORY_WORKSET_CPUS")
+[[ -n "${MATE_PLAN_FACTORY_AGENT_MEMORY:-}" ]] && LIMITS+=(--agent-memory "$MATE_PLAN_FACTORY_AGENT_MEMORY")
 (
   if [[ -n "$MATE_FACTORY_CREDENTIAL_NAME" ]]; then
     export "$MATE_FACTORY_CREDENTIAL_NAME=$MATE_FACTORY_CREDENTIAL_VALUE"
   fi
   exec "$MATE" factory serve --socket "$BROKER_SOCKET" --docker-host "$DOCKER_HOST" \
     --state-dir "$STATE_DIR" --image "$WORKSET_IMAGE" --user "$USER_NAME" \
-    --companions-dir "${MATE_COMPANIONS_DIR:-/companions}"
+    --companions-dir "${MATE_COMPANIONS_DIR:-/companions}" "${LIMITS[@]}"
 ) &
 BROKER_PID=$!
 unset MATE_FACTORY_CREDENTIAL_VALUE

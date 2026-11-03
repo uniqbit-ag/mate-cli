@@ -125,6 +125,8 @@ jobs:
   image:
     name: Request appliance image
     needs: [verify, publish]
+    # Opt in with the repository variable MATE_PUBLISH_APPLIANCE_IMAGE set to true.
+    if: vars.MATE_PUBLISH_APPLIANCE_IMAGE == 'true'
     runs-on: ubuntu-latest
     # Best-effort: a release without an image is a release missing an image, not a failed one.
     continue-on-error: true
@@ -153,6 +155,8 @@ jobs:
   factory-image:
     name: Request factory image
     needs: [verify, publish]
+    # Off until the factory ships: set the repository variable MATE_PUBLISH_FACTORY_IMAGE to true.
+    if: vars.MATE_PUBLISH_FACTORY_IMAGE == 'true'
     runs-on: ubuntu-latest
     # Best-effort: a release without an image is a release missing an image, not a failed one.
     continue-on-error: true

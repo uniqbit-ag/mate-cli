@@ -43,6 +43,11 @@ import { preflight, renderFailures } from "./factory";
 export const PREBUILT_WORKSPACE_ENV = "MATE_PREBUILT_WORKSPACE";
 export const DEFAULT_PREBUILT_WORKSPACE = "/opt/mate/prebuilt";
 export const SETUP_SCRIPT_ENV = "MATE_SETUP_SCRIPT";
+/**
+ * Set only by the local test image: the bundled skill templates of the Mate it was built
+ * from. Its companion clone then runs this working tree's skills, not the committed ones.
+ */
+export const LOCAL_SKILLS_ENV = "MATE_FACTORY_LOCAL_SKILLS";
 export const DEFAULT_SETUP_SCRIPT = "/opt/mate/tools/startup/setup.sh";
 
 /**
@@ -233,6 +238,7 @@ export interface StartupPlan {
   factoryRepositories: string[];
   /** Factory mode's runner limits, handed to Studio. */
   factoryMaxRuns: number;
+  factoryMaxBuilds: number;
   factoryStageMinutes: number;
   /** The factory's Git author, handed to Studio's runner. */
   factoryGitName: string;
@@ -247,6 +253,36 @@ export interface StartupDeps {
   identity: string;
   onPath: (command: string) => boolean;
   log: (line: string) => void;
+  /** The local image's bundled skills; null in a release image. */
+  localSkills?: string | null;
+}
+
+/** Each bundled tree and the companion directory its skills are deployed to. */
+const SKILL_TREES = [
+  { bundle: "claude", target: path.join(".claude", "skills") },
+  { bundle: "agents", target: path.join(".agents", "skills") },
+] as const;
+
+/**
+ * Replaces each Mate skill the served companion already has with the bundled one, in the
+ * container's own clone only; skills the companion does not carry stay absent, and nothing
+ * is committed. Returns how many skills were refreshed.
+ */
+export function overlayLocalSkills(companion: string, bundled: string): number {
+  let refreshed = 0;
+  for (const tree of SKILL_TREES) {
+    const source = path.join(bundled, tree.bundle);
+    const target = path.join(companion, tree.target);
+    if (!fs.existsSync(source) || !fs.existsSync(target)) continue;
+    for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+      const deployed = path.join(target, entry.name);
+      if (!entry.isDirectory() || !fs.existsSync(deployed)) continue;
+      fs.rmSync(deployed, { recursive: true, force: true });
+      fs.cpSync(path.join(source, entry.name), deployed, { recursive: true });
+      refreshed += 1;
+    }
+  }
+  return refreshed;
 }
 
 function defaultIdentity(): string {
@@ -260,6 +296,7 @@ export function defaultDeps(): StartupDeps {
     mate: "mate",
     prebuilt: process.env[PREBUILT_WORKSPACE_ENV]?.trim() || DEFAULT_PREBUILT_WORKSPACE,
     setupScript: process.env[SETUP_SCRIPT_ENV]?.trim() || DEFAULT_SETUP_SCRIPT,
+    localSkills: process.env[LOCAL_SKILLS_ENV]?.trim() || null,
     identity: defaultIdentity(),
     onPath: (command) => commandOnPath(command),
     log: (line) => process.stderr.write(`${line}\n`),
@@ -375,6 +412,11 @@ export function prepareStartup(
     deps.log(`serving audience ${config.audience}`);
   }
 
+  if (deps.localSkills) {
+    const refreshed = overlayLocalSkills(companion, deps.localSkills);
+    deps.log(`local build: refreshed ${refreshed} Mate skills of ${companion} from this image`);
+  }
+
   if (config.pluginRegistry !== null)
     restorePlugins(config.pluginRegistry, companion, deps, secrets, config.audience);
 
@@ -433,6 +475,7 @@ export function prepareStartup(
     gitSync: config.gitSync,
     factoryRepositories: config.factory.repositories,
     factoryMaxRuns: config.factory.maxRuns,
+    factoryMaxBuilds: config.factory.maxBuilds,
     factoryStageMinutes: config.factory.stageMinutes,
     factoryGitName: config.factory.gitName,
     factoryGitEmail: config.factory.gitEmail,
@@ -458,6 +501,7 @@ export function renderPlan(plan: StartupPlan): string {
     `MATE_PLAN_GIT_SYNC=${shellQuote(plan.gitSync ? "1" : "")}`,
     `MATE_PLAN_FACTORY_REPOSITORIES=${shellQuote(plan.factoryRepositories.join(","))}`,
     `MATE_PLAN_FACTORY_MAX_RUNS=${shellQuote(String(plan.factoryMaxRuns))}`,
+    `MATE_PLAN_FACTORY_PARALLEL_BUILDS=${shellQuote(String(plan.factoryMaxBuilds))}`,
     `MATE_PLAN_FACTORY_STAGE_MINUTES=${shellQuote(String(plan.factoryStageMinutes))}`,
     `MATE_PLAN_FACTORY_GIT_NAME=${shellQuote(plan.factoryGitName)}`,
     `MATE_PLAN_FACTORY_GIT_EMAIL=${shellQuote(plan.factoryGitEmail)}`,
@@ -493,9 +537,10 @@ export function renderCredentials(config: ApplianceConfig): string {
 export const FACTORY_ACTIVE_ENV = "MATE_FACTORY_ACTIVE";
 
 /**
- * What the root factory supervisor evaluates: whether factory mode is on and
- * the Workset agent credential, which it hands to the broker only. Root is
- * refused without factory mode, so "not root by default" keeps its meaning.
+ * What the root factory supervisor evaluates: whether factory mode is on, the
+ * Workset agent credential, which it hands to the broker only, and the Workset
+ * resource limits the broker enforces. Root is refused without factory mode, so
+ * "not root by default" keeps its meaning.
  */
 export function renderFactory(config: ApplianceConfig): string {
   if (!config.factory.enabled) {
@@ -508,6 +553,12 @@ export function renderFactory(config: ApplianceConfig): string {
     "MATE_FACTORY_ENABLED=1",
     `MATE_FACTORY_CREDENTIAL_NAME=${shellQuote(credential?.name ?? "")}`,
     `MATE_FACTORY_CREDENTIAL_VALUE=${shellQuote(credential?.value ?? "")}`,
+    `MATE_PLAN_FACTORY_MAX_WORKSETS=${shellQuote(String(config.factory.maxWorksets))}`,
+    `MATE_PLAN_FACTORY_IDLE_MINUTES=${shellQuote(String(config.factory.idleMinutes))}`,
+    `MATE_PLAN_FACTORY_WORKSET_MEMORY=${shellQuote(config.factory.worksetMemory)}`,
+    `MATE_PLAN_FACTORY_AGENT_MEMORY=${shellQuote(config.factory.agentMemory)}`,
+    `MATE_PLAN_FACTORY_WORKSET_PIDS=${shellQuote(String(config.factory.worksetPids))}`,
+    `MATE_PLAN_FACTORY_WORKSET_CPUS=${shellQuote(config.factory.worksetCpus ?? "")}`,
   ].join("\n");
 }
 

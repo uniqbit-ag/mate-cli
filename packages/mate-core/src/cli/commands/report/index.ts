@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
 import { ensureUnambiguousCompanion } from "../shared/companion-selection";
@@ -22,7 +23,11 @@ interface ReportCommandDeps extends CollectorDeps {
   openReportInBrowser?: typeof openReportInBrowser;
   publishReportToStudio?: typeof publishReportToStudio;
   readInput?: (input: string) => Promise<string>;
+  env?: NodeJS.ProcessEnv;
 }
+
+/** Set by Mate's factory runner: the report goes to this file instead of a browser. */
+const REPORT_OUTPUT_ENV = "MATE_REPORT_OUTPUT";
 
 function parseOptions(argv: string[]): ReportOptions {
   let days = 7;
@@ -214,6 +219,20 @@ export async function runReportCommand(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`Unable to host the report in Studio: ${message}; opening it locally instead`);
+  }
+
+  const output = (deps.env ?? process.env)[REPORT_OUTPUT_ENV];
+  if (output) {
+    try {
+      await mkdir(path.dirname(output), { recursive: true });
+      await writeFile(output, html, "utf8");
+      console.log("Report saved for Studio; it appears in the Factory once the run ends");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Unable to save the report: ${message}`);
+      console.log(renderJSON(reportDocument));
+    }
+    return;
   }
 
   let reportPath: string | undefined;
