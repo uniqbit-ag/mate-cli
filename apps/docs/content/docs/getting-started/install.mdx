@@ -67,6 +67,26 @@ mate companion link
 mate opencode
 ```
 
+### Tools The Companion Recommends
+
+RTK, TokenSave, Graphify (with uv) and Context Mode are selected per companion,
+but each member decides whether their tool is installed on their machine. In a
+terminal, `mate install` asks once per tool and remembers the answer for that
+companion in `~/.mate/member-choices.yaml`. A tool that is already installed
+counts as yes and is not asked about.
+
+`mate install --yes` never installs a recommended tool on its own; it lists the
+ones it left out. Choose explicitly with repeatable flags:
+
+```sh
+mate install --yes --with rtk --with tokensave
+mate install --yes --without graphify
+```
+
+A tool you have not installed does not block a launch: Mate skips its
+machine-local wiring, such as TokenSave's hooks or the Context Mode plugin for
+Claude, until you install it with `mate install --with <capability>`.
+
 Run installation again after any of these changes:
 
 - the Mate package is installed or updated (this also refreshes

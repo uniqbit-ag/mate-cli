@@ -141,14 +141,18 @@ export function createUvPlugin(deps: PackageManagerSetupDeps = {}): Plugin & { l
     // companion and carries no choice, so it neither enables nor requires uv.
     isEnabled: (config) => isUvNeeded(config),
     gitignoreEntries: () => UV_GITIGNORE_ENTRIES,
-    getInstallRequirements: (): InstallRequirement[] => {
+    getInstallRequirements: ({ config }): InstallRequirement[] => {
       const plan = installPlan();
       return [
         {
           id: "core:uv",
           label: "uv package manager",
-          group: "core",
-          source: "Mate package manager",
+          group: "companion",
+          source: "Graphify capability",
+          // Installed exactly when a capability that needs it is.
+          recommendedBy: UV_DEPENDENT_CAPABILITIES.filter((id) =>
+            (config.capabilities ?? []).some((capability) => capability.name === id),
+          ),
           command: plan.command,
           fingerprint: `uv:${platform}:${plan.command}`,
           detect: locateUv,

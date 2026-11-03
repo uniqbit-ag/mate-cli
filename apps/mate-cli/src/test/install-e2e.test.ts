@@ -191,14 +191,19 @@ describe("install lifecycle CLI", () => {
     expect(result.stderr).toContain("repaired installation state");
   });
 
-  test("blocks a linked companion when a requirement is unsatisfied", async () => {
+  test("blocks a linked companion when a requirement the member accepted is unsatisfied", async () => {
     const entry = await scenario();
-    // OpenSpec ships with Mate; RTK is still an external requirement.
+    // OpenSpec ships with Mate; RTK is an external tool the companion recommends.
     await writeCompanionConfig(entry.companion, ["rtk"]);
     await fs.mkdir(path.join(entry.working, ".mate", "config"), { recursive: true });
     await fs.writeFile(
       path.join(entry.working, ".mate", "config", "registry.yaml"),
       `repository:\n  id: working\n  path: ${entry.working}\n  profile: default\ncompanions:\n  - path: ${entry.companion}\n    repositoryId: working\n    source: existing\n`,
+    );
+    await fs.mkdir(path.join(entry.root, "home", ".mate"), { recursive: true });
+    await fs.writeFile(
+      path.join(entry.root, "home", ".mate", "member-choices.yaml"),
+      `companions:\n  ${JSON.stringify(path.resolve(entry.companion))}:\n    rtk: accepted\n`,
     );
 
     const result = await runMate(entry.root, entry.working, ["report", "--json"]);
@@ -206,6 +211,24 @@ describe("install lifecycle CLI", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("RTK CLI");
     expect(result.stderr).toContain("Run `mate install`");
+  });
+
+  test("a recommended tool the member has not chosen does not block a launch", async () => {
+    const entry = await scenario();
+    await writeCompanionConfig(entry.companion, ["rtk"]);
+    await fs.mkdir(path.join(entry.working, ".mate", "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(entry.working, ".mate", "config", "registry.yaml"),
+      `repository:\n  id: working\n  path: ${entry.working}\n  profile: default\ncompanions:\n  - path: ${entry.companion}\n    repositoryId: working\n    source: existing\n`,
+    );
+
+    const installed = await runMate(entry.root, entry.working, ["install", "--yes"]);
+    expect(installed.status).toBe(0);
+    expect(installed.stdout).toContain("RTK: not chosen yet");
+
+    const result = await runMate(entry.root, entry.working, ["report", "--json"]);
+    expect(result.stderr).not.toContain("RTK CLI");
+    expect(result.status).toBe(0);
   });
 
   test("repairs a stale contract over a satisfied plan", async () => {

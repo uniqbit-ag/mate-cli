@@ -182,6 +182,7 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
         label: "Graphify CLI",
         group: "companion",
         source: "Graphify capability",
+        recommendedBy: ["graphify"],
         command: GRAPHIFY_INSTALL_CMD,
         fingerprint: `graphify:${GRAPHIFY_INSTALL_CMD}`,
         detect: () => checkPath("graphify", process.env.PATH ?? "") || checkUvTool("graphifyy"),

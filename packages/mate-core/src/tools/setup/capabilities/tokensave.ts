@@ -455,6 +455,7 @@ export function createTokensavePlugin(): CapabilityPlugin {
           label: "TokenSave CLI",
           group: "companion",
           source: "TokenSave capability",
+          recommendedBy: ["tokensave"],
           command: plan?.command ?? "cargo install tokensave",
           fingerprint: `tokensave:${plan?.command ?? "manual"}`,
           detect: () => tokensaveDeps.run(["--version"], process.cwd()).ok,
@@ -477,6 +478,7 @@ export function createTokensavePlugin(): CapabilityPlugin {
             label: `TokenSave ${agent} integration`,
             group: "companion",
             source: "TokenSave capability",
+            recommendedBy: ["tokensave"],
             command: `tokensave install --agent ${agent} --git-hook no --wildcard-permissions`,
             fingerprint: `tokensave-agent:${agent}`,
             detect: () => isTokensaveAgentIntegrated(agent),
@@ -499,37 +501,40 @@ export function createTokensavePlugin(): CapabilityPlugin {
     getRuntimeContributions(): RuntimeContributionsByRuntime {
       const mcpServers = [{ name: "tokensave", command: "tokensave", args: ["serve"] }];
       // Hook commands pin the resolved binary path (hooks run without the
-      // launch environment's PATH guarantees).
-      const tokensaveCommandPath =
-        resolveCommandOnPath("tokensave", process.env.PATH ?? "") ?? "tokensave";
-      const hookGroups = [
-        {
-          event: "PreToolUse",
-          marker: "tokensave",
-          group: {
-            matcher: "Agent|Grep|Bash",
-            hooks: [
-              { type: "command", command: tokensaveCommandPath, args: ["hook-pre-tool-use"] },
-            ],
-          },
-        },
-        {
-          event: "UserPromptSubmit",
-          marker: "tokensave",
-          group: {
-            hooks: [
-              { type: "command", command: tokensaveCommandPath, args: ["hook-prompt-submit"] },
-            ],
-          },
-        },
-        {
-          event: "Stop",
-          marker: "tokensave",
-          group: {
-            hooks: [{ type: "command", command: tokensaveCommandPath, args: ["hook-stop"] }],
-          },
-        },
-      ];
+      // launch environment's PATH guarantees). Hooks live in the machine-local
+      // settings, so a member who has not installed TokenSave gets none rather
+      // than a failing hook on every tool call.
+      const tokensaveCommandPath = resolveCommandOnPath("tokensave", process.env.PATH ?? "");
+      const hookGroups = !tokensaveCommandPath
+        ? []
+        : [
+            {
+              event: "PreToolUse",
+              marker: "tokensave",
+              group: {
+                matcher: "Agent|Grep|Bash",
+                hooks: [
+                  { type: "command", command: tokensaveCommandPath, args: ["hook-pre-tool-use"] },
+                ],
+              },
+            },
+            {
+              event: "UserPromptSubmit",
+              marker: "tokensave",
+              group: {
+                hooks: [
+                  { type: "command", command: tokensaveCommandPath, args: ["hook-prompt-submit"] },
+                ],
+              },
+            },
+            {
+              event: "Stop",
+              marker: "tokensave",
+              group: {
+                hooks: [{ type: "command", command: tokensaveCommandPath, args: ["hook-stop"] }],
+              },
+            },
+          ];
       return {
         claude: { mcpServers, hookGroups, permissionEntries: ["mcp__tokensave__*"] },
         opencode: { mcpServers },
@@ -542,13 +547,13 @@ export function createTokensavePlugin(): CapabilityPlugin {
       if (ctx.activeProviders.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).length === 0) return;
 
       const targetPath = ctx.repoPath ?? ctx.companionPath;
-      if (
-        !(await ensureTokensaveInstalled(targetPath, {
-          upgrade: ctx.mode === "setup",
-        }))
-      ) {
-        return;
-      }
+      // Installing is the member's choice (`mate install`); a launch sync
+      // never installs TokenSave behind their back.
+      const installed =
+        ctx.mode === "setup"
+          ? await ensureTokensaveInstalled(targetPath, { upgrade: true })
+          : await tokensaveInstalled(targetPath);
+      if (!installed) return;
       await ensureTokensaveBranchingPosture(targetPath, resolveSecretPolicy(ctx.companionPath));
       if (ctx.mode === "setup") {
         installTokensaveAgentIntegrations(ctx.activeProviders, targetPath);

@@ -45,6 +45,30 @@ function declaredContributions(
   ];
 }
 
+/** For capabilities whose declaration reads the machine (Context Mode). */
+async function declaredContributionsAsync(
+  plugin: CapabilityPlugin,
+  companionPath: string,
+  enabled: boolean,
+): Promise<CapabilityContributionInput[]> {
+  const ctx: SetupContext = {
+    companionPath,
+    config: {
+      allowedAgents: ["claude"],
+      capabilities: enabled ? [{ name: plugin.id }] : [],
+    },
+    mode: "setup",
+    activeProviders: ["claude"],
+  };
+  return [
+    {
+      pluginId: plugin.id,
+      enabled,
+      contributions: (await plugin.getRuntimeContributions!(ctx)).claude!,
+    },
+  ];
+}
+
 function reactDoctorContributions(
   companionPath: string,
   enabled: boolean,
@@ -597,7 +621,7 @@ describe("syncCompanionClaudeSettings", () => {
         allowedAgents: ["claude"],
         capabilities: [{ name: plugin.id }],
       },
-      declaredContributions(plugin, companionPath, true),
+      await declaredContributionsAsync(plugin, companionPath, true),
     );
 
     const settings = await readCompanionSettings(companionPath);

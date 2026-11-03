@@ -73,13 +73,43 @@ describe("createContextModePlugin", () => {
     const ctx = await makeContext();
     const installPackage = mock(async () => {});
     const validatePackage = mock(async () => {});
-    const plugin = createContextModePlugin({ installPackage, validatePackage });
+    const plugin = createContextModePlugin({
+      installPackage,
+      validatePackage,
+      readMemberChoices: async () => ({ "context-mode": "accepted" }),
+    });
 
     await plugin.apply({ ...ctx, mode: "setup" });
     await plugin.apply(ctx);
 
     expect(installPackage).toHaveBeenCalledTimes(1);
     expect(validatePackage).toHaveBeenCalledTimes(1);
+  });
+
+  test("leaves a member who has not installed it alone: no validation, no plugin folder, no preflight error", async () => {
+    const ctx = await makeContext();
+    const validatePackage = mock(async () => {
+      throw new Error("not installed");
+    });
+    for (const choice of [undefined, "declined" as const]) {
+      const plugin = createContextModePlugin({
+        validatePackage,
+        readMemberChoices: async () => (choice ? { "context-mode": choice } : {}),
+      });
+
+      await plugin.apply(ctx);
+      const claude = (await plugin.getRuntimeContributions!(ctx)).claude!;
+      const problems = await plugin.forProvider!.claude!.preflight!({
+        companionPath: ctx.companionPath,
+        config: ctx.config,
+        providerId: "claude",
+        sessionKind: "managed-repo",
+      });
+
+      expect(claude.pluginDirectories).toEqual([]);
+      expect(problems).toEqual([]);
+    }
+    expect(validatePackage).not.toHaveBeenCalled();
   });
 
   test("declares a companion install requirement that provisions a missing package", async () => {
@@ -162,7 +192,7 @@ describe("createContextModePlugin", () => {
       {
         pluginId: "context-mode",
         enabled: true,
-        contributions: plugin.getRuntimeContributions!(ctx).opencode!,
+        contributions: (await plugin.getRuntimeContributions!(ctx)).opencode!,
       },
     ];
 
@@ -376,7 +406,10 @@ describe("createContextModePlugin", () => {
   test("declares its package root as a Claude plugin folder beside its permissions", async () => {
     const ctx = await makeContext();
 
-    const claude = createContextModePlugin().getRuntimeContributions!(ctx).claude!;
+    const plugin = createContextModePlugin({
+      readMemberChoices: async () => ({ "context-mode": "accepted" }),
+    });
+    const claude = (await plugin.getRuntimeContributions!(ctx)).claude!;
 
     expect(claude.pluginDirectories).toEqual([
       { path: getContextModePackageRoot(ctx.companionPath) },
@@ -473,7 +506,11 @@ describe("context-mode Claude preflight", () => {
       providerId: "claude",
       sessionKind,
     };
-    const run = () => createContextModePlugin().forProvider!.claude!.preflight!(launch);
+    // The member asked for Context Mode, so a missing package is a launch problem.
+    const plugin = createContextModePlugin({
+      readMemberChoices: async () => ({ "context-mode": "accepted" }),
+    });
+    const run = () => plugin.forProvider!.claude!.preflight!(launch);
     return { companionPath: ctx.companionPath, run };
   }
 

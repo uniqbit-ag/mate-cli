@@ -63,6 +63,7 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
           label: "RTK CLI",
           group: "companion",
           source: "RTK capability",
+          recommendedBy: ["rtk"],
           command,
           fingerprint: `rtk:${command}`,
           detect: checkRtkPath,

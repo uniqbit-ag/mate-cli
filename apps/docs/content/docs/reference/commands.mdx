@@ -56,7 +56,10 @@ holds a file the line hides, and names it:
 
 `mate install --yes` skips interactive confirmation and is required when the
 process has no TTY. It can run before a companion is linked; in that context it
-installs only Mate's core requirements.
+installs only Mate's core requirements. It does not install the tools a
+companion only recommends (RTK, TokenSave, Graphify, Context Mode): add
+`--with <capability>` to install one, or `--without <capability>` to decline
+it. Both flags repeat, and Mate remembers the choice per companion.
 
 For OpenSpec, `mate doctor` reports the CLI bundled with Mate, with its path
 and version, instead of looking for `openspec` on `PATH`.

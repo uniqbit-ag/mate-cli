@@ -1049,6 +1049,7 @@ describe("contributed Claude plugins", () => {
 
   test("marks a folder without a plugin manifest as missing one", async () => {
     const { folder, deps } = await companion(["context-mode"]);
+    await fs.mkdir(folder, { recursive: true });
 
     const output = await captureStdout(() => runDoctorCommand([], deps));
 
@@ -1057,6 +1058,14 @@ describe("contributed Claude plugins", () => {
         `\\| context-mode +\\| ${folder} +\\| missing \\.claude-plugin/plugin\\.json +\\|`,
       ),
     );
+  });
+
+  test("lists no Context Mode folder for a member who has not installed it", async () => {
+    const { deps } = await companion(["context-mode"]);
+
+    const output = await captureStdout(() => runDoctorCommand([], deps));
+
+    expect(output).not.toContain("Claude Plugins");
   });
 
   test("prints no section when no enabled Capability ships a Claude plugin", async () => {
