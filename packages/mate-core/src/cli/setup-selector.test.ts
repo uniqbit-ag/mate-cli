@@ -222,7 +222,7 @@ describe("selectSetupCompatibilities", () => {
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude", "opencode"],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }, { name: "rtk" }],
       selectedGitMode: "default",
     });
@@ -256,7 +256,7 @@ describe("selectSetupCompatibilities", () => {
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude"],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [{ name: "rtk" }],
       selectedGitMode: "default",
     });
@@ -302,7 +302,7 @@ describe("selectSetupCompatibilities", () => {
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude", "opencode"],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
     });
@@ -329,7 +329,7 @@ describe("selectSetupCompatibilities", () => {
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude"],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }],
       selectedGitMode: "default",
     });
@@ -370,7 +370,7 @@ describe("selectSetupCompatibilities", () => {
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude"],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }],
       selectedGitMode: "default",
     });
@@ -402,7 +402,7 @@ describe("selectSetupCompatibilities", () => {
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: [],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
     });
@@ -430,7 +430,7 @@ describe("selectSetupCompatibilities", () => {
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: [],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
     });
@@ -463,7 +463,7 @@ describe("selectSetupCompatibilities", () => {
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: [],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
     });
@@ -493,7 +493,7 @@ describe("selectSetupCompatibilities", () => {
 
     await expect(selectionPromise).resolves.toEqual({
       allowedAgents: ["claude"],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [],
       selectedGitMode: "default",
     });

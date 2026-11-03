@@ -899,7 +899,7 @@ describe("executeSetup", () => {
       { cwd: root, globalConfigStore },
     );
 
-    expect(config.packageManagers).toEqual(["bun", "uv"]);
+    expect(config.packageManagers).toEqual(["bun"]);
   });
 
   test("setup with the openspec capability activates mate-v1 in companion-local openspec config", async () => {
