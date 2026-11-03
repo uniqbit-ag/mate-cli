@@ -111,7 +111,8 @@ unset MATE_PLUGIN_REGISTRY_TOKEN MATE_GIT_CLONE_TOKEN MATE_PLUGIN_REGISTRY
 : "${MATE_PLAN_COMPANION:?startup produced no companion}"
 : "${MATE_PLAN_STUDIO_PORT:?startup produced no Studio port}"
 
-STUDIO_ARGS=(studio serve --port "$MATE_PLAN_STUDIO_PORT" --host "$MATE_PLAN_STUDIO_HOST")
+# Standard Studio modes whether or not the factory broker runs; only the appliance differs.
+STUDIO_ARGS=(studio serve --port "$MATE_PLAN_STUDIO_PORT" --host "$MATE_PLAN_STUDIO_HOST" --profile standard)
 [[ -n "$MATE_PLAN_STUDIO_WRITABLE" ]] && STUDIO_ARGS+=(--writable)
 if [[ -n "${MATE_PLAN_STUDIO_TERMINAL:-}" ]]; then
   # Every launch targets the startup-selected companion, whatever the page is

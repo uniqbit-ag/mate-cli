@@ -30,7 +30,7 @@ const contextRoot = createRootRoute();
 const contextRouter = createRouter({
   routeTree: contextRoot,
   history: createMemoryHistory({
-    initialEntries: ["/?companion=0123456789&role=business-analyst"],
+    initialEntries: ["/?companion=0123456789&studioMode=analysis"],
   }),
 });
 await contextRouter.load();

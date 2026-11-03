@@ -47,9 +47,12 @@ import {
   COMPANION_DIGEST_PATTERN,
   COMPANION_PARAM,
   companionDigest,
+  modePolicy,
   parse,
   parseVaultSelection,
   resolveCompanion,
+  type StudioModePolicy,
+  type StudioProfile,
   type StudioSelection,
 } from "./selection";
 import { errorMessage } from "../../../runtime/error-message";
@@ -162,6 +165,8 @@ export interface StudioServerOptions {
   idleTimeout?: number;
   /** Terminal launches skip companion Git synchronization. */
   noGit?: boolean;
+  /** Which Studio modes are enabled; `standard` when absent. Never read from a request. */
+  profile?: StudioProfile;
   /** Studio's built application, loaded by the studio command. */
   app?: StudioApp | null;
 }
@@ -331,7 +336,7 @@ interface StudioFetch {
 
 export interface StudioFetchOptions extends Pick<
   StudioServerOptions,
-  "writable" | "launchCompanion" | "noGit" | "detachMinutes"
+  "writable" | "launchCompanion" | "noGit" | "detachMinutes" | "profile"
 > {
   access?: StudioAccess;
   /** Loopback origin the terminal's processes publish to; read at spawn. */
@@ -363,6 +368,7 @@ export function createStudioFetch(
     deps.snapshots ?? createStudioSnapshotCache({ assembleCompanionPayload: companion });
   const vault = deps.vault ?? createVaultManager();
   const writable = options.writable === true;
+  const policy = modePolicy(options.profile ?? "standard");
   const broker = deps.factoryClient !== undefined ? deps.factoryClient : factoryClient();
   const reports = deps.reports ?? createReportStore();
   const stagesOf = deps.worksetStages ?? ((path: string) => readCompanionWorksetStages(path));
@@ -474,7 +480,7 @@ export function createStudioFetch(
 
   /** One document's model, with the factory, report and terminal state its address needs. */
   const collectPage = async (url: URL): Promise<StudioPage> => {
-    const page = await collectStudioPage(url, inventory, snapshots, vault, writable);
+    const page = await collectStudioPage(url, policy, inventory, snapshots, vault, writable);
     if (page.payload && page.companion && isAnalystOverview(page.selection)) {
       page.reports = await reports.list(companionDigest(page.companion.path)).then(
         (listed) => listed.map(({ id, title, createdAt }) => ({ id, title, createdAt })),
@@ -525,6 +531,7 @@ export function createStudioFetch(
   const services: StudioServices = {
     writable,
     factoryMode: broker !== null,
+    modePolicy: policy,
     page: collectPage,
     worksetAction: async (digest, id, action, field: StudioFormField) => {
       if (!writable) throw new WorksetError(NOT_WRITABLE);
@@ -703,7 +710,7 @@ export function createStudioFetch(
     }
 
     if (url.pathname === VAULT_EVENTS_ROUTE) {
-      const selection = parseVaultSelection(url);
+      const selection = parseVaultSelection(url, policy);
       const selected = await selectedCompanion(selection.companionDigest, inventory);
       if (!selected) return respond(json({ reason: NO_COMPANION }, 400));
       try {
@@ -837,7 +844,7 @@ function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: 
 
 /** Reports are not part of the snapshot: this Overview lists them at render time. */
 function isAnalystOverview(selection: StudioSelection): boolean {
-  return selection.role === "business-analyst" && selection.view === "dashboard";
+  return selection.studioMode === "analysis" && selection.view === "dashboard";
 }
 
 /**
@@ -846,12 +853,13 @@ function isAnalystOverview(selection: StudioSelection): boolean {
  */
 async function collectStudioPage(
   url: URL,
+  policy: StudioModePolicy,
   collectInventory: () => Promise<StudioInventory>,
   snapshots: StudioSnapshotCache,
   vault: VaultManager,
   writable: boolean,
 ): Promise<StudioPage> {
-  const selection = parse(url);
+  const selection = parse(url, policy);
   const inventory = await collectInventory();
   const companion = resolveCompanion(inventory, selection.companionDigest);
   const page: StudioPage = {
@@ -941,6 +949,7 @@ export function startStudioServer(
     detachMinutes: options.detachMinutes,
     launchCompanion: options.launchCompanion,
     noGit: options.noGit,
+    profile: options.profile,
     app: options.app,
   });
   const registry = fetchHandler.terminal;

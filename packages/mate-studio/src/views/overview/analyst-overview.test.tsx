@@ -109,9 +109,9 @@ describe("AnalystOverview", () => {
     expect(markup).toContain("newest 8 of 12");
   });
 
-  it("links into the vault, Specs, and Reports, keeping the role", () => {
+  it("links into the vault, Specs, and Reports, keeping the mode", () => {
     const links = hrefs(render());
-    for (const link of links) expect(link.searchParams.get("role")).toBe("business-analyst");
+    for (const link of links) expect(link.searchParams.get("studioMode")).toBe("analysis");
     // Each view has its own path now; the vault target is still named by `path` or `dir`.
     const targets = links.map((link) => [
       link.pathname.slice(1) || "dashboard",

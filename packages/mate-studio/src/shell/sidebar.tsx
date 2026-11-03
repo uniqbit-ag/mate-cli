@@ -2,11 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   BRAND_SVGS,
-  ROLE_VIEWS,
+  MODE_VIEWS,
   SHARED_VIEWS,
-  STUDIO_ROLES,
+  STUDIO_MODES,
   viewsFor,
-  type StudioRole,
+  type StudioMode,
   type StudioView,
 } from "@uniqbit/mate-core/studio";
 import { useEffect } from "react";
@@ -15,7 +15,7 @@ import type { StudioSearch } from "../lib/search";
 import { getShell, type ShellData } from "../server/shell";
 import { useAppearance } from "../stores/appearance";
 import { LocalTime } from "./local-time";
-import { ROLE_TITLES, VIEW_PATHS, VIEW_TITLES } from "./views";
+import { MODE_TITLES, VIEW_PATHS, VIEW_TITLES } from "./views";
 import { usePageUi } from "../stores/page-ui";
 
 const svgUri = (svg: string) => `data:image/svg+xml;base64,${btoa(svg)}`;
@@ -39,10 +39,15 @@ export function Sidebar({ shell, search, view }: SidebarProps) {
           <strong>Mate Studio</strong>
         </div>
       </div>
-      <RoleSwitch role={shell.role} search={search} view={view} />
+      <ModeSwitch shell={shell} search={search} view={view} />
       <CompanionSelector shell={shell} />
-      <ViewNav role={shell.role} factoryMode={shell.factoryMode} search={search} view={view} />
-      {shell.role === "product-engineer" && shell.metrics ? (
+      <ViewNav
+        studioMode={shell.studioMode}
+        factoryMode={shell.factoryMode}
+        search={search}
+        view={view}
+      />
+      {shell.studioMode === "engineering" && shell.metrics ? (
         <Metrics metrics={shell.metrics} />
       ) : null}
       <Footer shell={shell} search={search} />
@@ -50,30 +55,69 @@ export function Sidebar({ shell, search, view }: SidebarProps) {
   );
 }
 
-function RoleSwitch({
-  role,
+const MODE_NOTE_ID = "studio-mode-note";
+
+/** Why a mode is shown but cannot be chosen; only the appliance disables one. */
+function unavailableNote(shell: ShellData): string | null {
+  const disabled = STUDIO_MODES.filter((mode) => !shell.enabledModes.includes(mode));
+  if (disabled.length === 0) return null;
+  const names = disabled.map((mode) => MODE_TITLES[mode]).join(" and ");
+  return shell.profile === "appliance"
+    ? `${names} is unavailable in the appliance.`
+    : `${names} is unavailable here.`;
+}
+
+function ModeSwitch({
+  shell,
   search,
   view,
 }: {
-  role: StudioRole;
+  shell: ShellData;
   search: StudioSearch;
   view: StudioView;
 }) {
+  const note = unavailableNote(shell);
   return (
-    <div className="role-switch" role="group" aria-label="Role">
-      {STUDIO_ROLES.map((next) => (
-        <Link
-          key={next}
-          className="role-switch-option"
-          // A view the other role is not offered lands on its Overview.
-          to={viewsFor(next).includes(view) ? VIEW_PATHS[view] : "/"}
-          search={{ ...search, role: next }}
-          aria-pressed={role === next}
-          role="button"
-        >
-          {ROLE_TITLES[next]}
-        </Link>
-      ))}
+    <div className="mode-switch-block">
+      <div
+        className="mode-switch"
+        role="group"
+        aria-label="Mode"
+        aria-describedby={note ? MODE_NOTE_ID : undefined}
+      >
+        {STUDIO_MODES.map((next) =>
+          shell.enabledModes.includes(next) ? (
+            <Link
+              key={next}
+              className="mode-switch-option"
+              // A view the other mode is not offered lands on its Overview.
+              to={viewsFor(next).includes(view) ? VIEW_PATHS[view] : "/"}
+              search={{ ...search, studioMode: next }}
+              aria-pressed={shell.studioMode === next}
+              role="button"
+            >
+              {MODE_TITLES[next]}
+            </Link>
+          ) : (
+            // No target at all: a disabled button takes neither pointer nor keyboard activation.
+            <button
+              key={next}
+              type="button"
+              className="mode-switch-option"
+              disabled
+              aria-pressed={false}
+              aria-describedby={MODE_NOTE_ID}
+            >
+              {MODE_TITLES[next]}
+            </button>
+          ),
+        )}
+      </div>
+      {note ? (
+        <p className="mode-switch-note" id={MODE_NOTE_ID}>
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -127,21 +171,26 @@ function PlaceholderOption({ shell }: { shell: ShellData }) {
 }
 
 function ViewNav({
-  role,
+  studioMode,
   factoryMode,
   search,
   view,
 }: {
-  role: StudioRole;
+  studioMode: StudioMode;
   factoryMode: boolean;
   search: StudioSearch;
   view: StudioView;
 }) {
-  const roleViews = ROLE_VIEWS[role].filter((entry) => factoryMode || entry !== "factory");
+  const modeViews = MODE_VIEWS[studioMode].filter((entry) => factoryMode || entry !== "factory");
   return (
     <nav className="sidebar-nav" aria-label="Studio views">
-      {roleViews.length > 0 ? (
-        <ViewSection label={ROLE_TITLES[role]} views={roleViews} search={search} current={view} />
+      {modeViews.length > 0 ? (
+        <ViewSection
+          label={MODE_TITLES[studioMode]}
+          views={modeViews}
+          search={search}
+          current={view}
+        />
       ) : null}
       <ViewSection label="Shared" views={SHARED_VIEWS} search={search} current={view} />
     </nav>

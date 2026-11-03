@@ -1,8 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
+  COMPANION_PARAM,
   companionDigest,
   healthNote,
-  type StudioRole,
+  STUDIO_MODE_PARAM,
+  type StudioMode,
+  type StudioProfile,
   type TerminalAgent,
 } from "@uniqbit/mate-core/studio";
 
@@ -21,7 +24,11 @@ export interface ShellCompanion {
 export interface ShellData {
   companions: ShellCompanion[];
   selected: ShellCompanion | null;
-  role: StudioRole;
+  /** The effective mode, resolved by the server's startup profile. */
+  studioMode: StudioMode;
+  /** Modes the startup profile enables; the others are shown disabled. */
+  enabledModes: StudioMode[];
+  profile: StudioProfile;
   collectedAt: number | null;
   metrics: { changes: number; done: number; specs: number } | null;
   writable: boolean;
@@ -48,8 +55,8 @@ export const getShell = createServerFn({ method: "GET" })
   }))
   .handler(async ({ data, context }): Promise<ShellData> => {
     const url = new URL("http://studio.local/");
-    if (data.companion) url.searchParams.set("companion", data.companion);
-    if (data.role) url.searchParams.set("role", data.role);
+    if (data.companion) url.searchParams.set(COMPANION_PARAM, data.companion);
+    if (data.studioMode) url.searchParams.set(STUDIO_MODE_PARAM, data.studioMode);
     if (data.refresh) url.searchParams.set("refresh", "1");
     const page = await context.studio.page(url);
     const companions = page.inventory.companions.map((companion) => ({
@@ -65,7 +72,9 @@ export const getShell = createServerFn({ method: "GET" })
       selected: page.companion
         ? (companions.find((entry) => entry.path === page.companion!.path) ?? null)
         : null,
-      role: page.selection.role,
+      studioMode: page.selection.studioMode,
+      enabledModes: [...context.studio.modePolicy.enabled],
+      profile: context.studio.modePolicy.profile,
       collectedAt: page.collectedAt,
       metrics: payload
         ? {

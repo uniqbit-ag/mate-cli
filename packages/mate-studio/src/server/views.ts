@@ -1,11 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import {
   COMPANION_DIGEST_PATTERN,
+  COMPANION_PARAM,
   companionDigest,
   type SpecActionOffer,
   specActionOffers,
+  STUDIO_MODE_PARAM,
   type StudioCompanionPayload,
+  type StudioMode,
   type StudioReportSummary,
+  VIEW_PARAM,
 } from "@uniqbit/mate-core/studio";
 
 import { validateStudioSearch, type StudioSearch } from "../lib/search";
@@ -16,9 +20,11 @@ export type CompanionView = "dashboard" | "workflow" | "skills" | "specs";
 /** What each view reads from the payload; nothing else crosses to the browser. */
 export interface CompanionViewData {
   error: { companionPath: string; reason: string } | null;
-  /** Overview, product engineer. */
+  /** The effective mode the server answered for; it picks the Overview. */
+  studioMode: StudioMode;
+  /** Overview, Engineering. */
   changes?: StudioCompanionPayload["changes"];
-  /** Overview, business analyst. */
+  /** Overview, Analysis. */
   shipped?: StudioCompanionPayload["shipped"];
   reports?: StudioReportSummary[] | null;
   specs?: StudioCompanionPayload["specs"];
@@ -50,14 +56,15 @@ export const getCompanionView = createServerFn({ method: "GET" })
   })
   .handler(async ({ data, context }): Promise<CompanionViewData> => {
     const url = new URL("http://studio.local/");
-    url.searchParams.set("companion", data.companion!);
-    url.searchParams.set("view", data.view);
-    if (data.role) url.searchParams.set("role", data.role);
+    url.searchParams.set(COMPANION_PARAM, data.companion!);
+    url.searchParams.set(VIEW_PARAM, data.view);
+    if (data.studioMode) url.searchParams.set(STUDIO_MODE_PARAM, data.studioMode);
     const page = await context.studio.page(url);
     if (!page.companion || companionDigest(page.companion.path) !== data.companion) {
       throw new Error("no registered companion was selected");
     }
-    if (page.error) return { error: page.error, warnings: [] };
+    const studioMode = page.selection.studioMode;
+    if (page.error) return { error: page.error, studioMode, warnings: [] };
     const payload = page.payload;
     if (!payload)
       return {
@@ -65,13 +72,15 @@ export const getCompanionView = createServerFn({ method: "GET" })
           companionPath: page.companion.path,
           reason: "No state collected for this companion.",
         },
+        studioMode,
         warnings: [],
       };
-    const base = { error: null, warnings: payload.warnings };
-    if (data.view === "workflow")
-      return { ...base, skills: payload.skills, topology: payload.topology };
-    if (data.view === "skills") return { ...base, skillInventory: payload.skillInventory };
-    if (data.view === "specs") {
+    const base = { error: null, studioMode, warnings: payload.warnings };
+    // The view the server resolved, not the one asked for: a mode never answers another's view.
+    const view = page.selection.view;
+    if (view === "workflow") return { ...base, skills: payload.skills, topology: payload.topology };
+    if (view === "skills") return { ...base, skillInventory: payload.skillInventory };
+    if (view === "specs") {
       return {
         ...base,
         specs: payload.specs,
@@ -80,7 +89,7 @@ export const getCompanionView = createServerFn({ method: "GET" })
         ),
       };
     }
-    return page.selection.role === "business-analyst"
+    return studioMode === "analysis"
       ? { ...base, specs: payload.specs, shipped: payload.shipped, reports: page.reports ?? null }
       : { ...base, changes: payload.changes };
   });

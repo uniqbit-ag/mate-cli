@@ -14,11 +14,11 @@ export const Route = createFileRoute("/factory")({
       : {},
   // Only offered where the factory broker runs; elsewhere the address lands on the Overview.
   beforeLoad: async ({ context, search }) => {
-    const studioSearch = { companion: search.companion, role: search.role };
+    const studioSearch = { companion: search.companion, studioMode: search.studioMode };
     const shell = await context.queryClient.ensureQueryData(shellQuery(studioSearch));
     if (!shell.factoryMode) throw redirect({ to: "/", search: studioSearch });
   },
-  loaderDeps: ({ search }) => ({ companion: search.companion, role: search.role }),
+  loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
   loader: async ({ context, deps }) => {
     const companion = await registeredCompanion(context.queryClient, deps);
     return companion ? context.queryClient.ensureQueryData(factoryQuery(companion)) : null;

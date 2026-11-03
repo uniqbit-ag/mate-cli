@@ -8,7 +8,7 @@ import { Dashboard } from "../views/overview/dashboard";
 
 export const Route = createFileRoute("/")({
   staticData: { view: "dashboard" },
-  loaderDeps: ({ search }) => ({ companion: search.companion, role: search.role }),
+  loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
   loader: async ({ context, deps }) =>
     (await registeredCompanion(context.queryClient, deps))
       ? context.queryClient.ensureQueryData(companionViewQuery("dashboard", deps))
@@ -16,13 +16,13 @@ export const Route = createFileRoute("/")({
   component: Overview,
 });
 
-/** Each role reads its own Overview. */
+/** Each mode reads its own Overview; the server's effective mode picks it, not the address. */
 function Overview() {
   const search = Route.useSearch();
   return (
     <CompanionView view="dashboard" search={search}>
       {(data) =>
-        search.role === "business-analyst" ? (
+        data.studioMode === "analysis" ? (
           <AnalystOverview
             payload={{
               specs: data.specs ?? [],

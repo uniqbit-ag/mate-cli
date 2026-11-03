@@ -6,7 +6,7 @@ import { getShell } from "../server/shell";
 /** Query keys start with the view, then the companion, so an event can invalidate one view. */
 const studioKeys = {
   shell: (search: StudioSearch) =>
-    ["shell", search.companion ?? null, search.role ?? null] as const,
+    ["shell", search.companion ?? null, search.studioMode ?? null] as const,
 };
 
 export const shellQuery = (search: StudioSearch) =>
@@ -25,7 +25,7 @@ export async function registeredCompanion(
 ): Promise<string | null> {
   if (!search.companion) return null;
   const shell = await queryClient.ensureQueryData(
-    shellQuery({ companion: search.companion, role: search.role }),
+    shellQuery({ companion: search.companion, studioMode: search.studioMode }),
   );
   return shell.selected?.digest ?? null;
 }

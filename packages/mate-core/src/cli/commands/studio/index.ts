@@ -11,6 +11,7 @@ import {
   type StudioServerHandle,
   type StudioServerOptions,
 } from "./server";
+import { STUDIO_PROFILES, type StudioProfile } from "./selection";
 import { loadStudioApp, type StudioApp } from "./studio-app";
 import { terminalUnsupportedReason } from "./terminal";
 
@@ -26,6 +27,8 @@ export interface StudioCommandDeps {
   log?: (message: string) => void;
   warn?: (message: string) => void;
 }
+
+const PROFILE_VALUES = STUDIO_PROFILES.join(" or ");
 
 export type StudioServeArgs = StudioServerOptions & { port: number; hostname: string };
 
@@ -114,6 +117,7 @@ export function parseStudioServeArgs(
   let token: string | undefined;
   let publicOrigin: string | undefined;
   let companion: string | undefined;
+  let profile: StudioProfile = "standard";
   let noGit = false;
   const allowedHosts: string[] = [];
   const state: ParseState = { writable: false, terminal: false };
@@ -140,6 +144,16 @@ export function parseStudioServeArgs(
       }
       port = parsed;
       index += portFlag.consumed;
+      continue;
+    }
+    const profileFlag = flagValue(argv, index, "--profile");
+    if (profileFlag) {
+      if ("error" in profileFlag) return { error: `--profile requires a value: ${PROFILE_VALUES}` };
+      if (!STUDIO_PROFILES.includes(profileFlag.value as StudioProfile)) {
+        return { error: `invalid --profile value: ${profileFlag.value} (${PROFILE_VALUES})` };
+      }
+      profile = profileFlag.value as StudioProfile;
+      index += profileFlag.consumed;
       continue;
     }
     const valued = (
@@ -189,6 +203,7 @@ export function parseStudioServeArgs(
     hostname,
     writable: state.writable,
     invocation: "serve",
+    profile,
     ...(state.terminal ? { terminal: true } : {}),
     ...(state.detachMinutes !== undefined ? { detachMinutes: state.detachMinutes } : {}),
     ...(token !== undefined ? { token } : {}),

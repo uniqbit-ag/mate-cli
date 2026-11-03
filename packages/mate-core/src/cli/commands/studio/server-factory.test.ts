@@ -377,3 +377,44 @@ describe("the Agents panel's credential routes", () => {
     handler.close();
   });
 });
+
+describe("Studio modes in the factory", () => {
+  let stopBroker: () => void = () => {};
+  afterEach(() => stopBroker());
+
+  function broker(): FactoryClient {
+    const socket = path.join(root, "modes-broker.sock");
+    const store = new CredentialStore(path.join(root, CREDENTIAL_FILE), null);
+    stopBroker = serveBroker(socket, brokerHandler({} as WorksetRuntime, store)).stop;
+    return factoryClient(socket)!;
+  }
+
+  test("default to Engineering with both modes enabled, broker on or off", async () => {
+    for (const factory of [broker(), null]) {
+      const handler = handlerFor({ factory });
+      expect(handler.services.factoryMode).toBe(factory !== null);
+      expect(handler.services.modePolicy).toMatchObject({
+        profile: "standard",
+        enabled: ["engineering", "analysis"],
+        defaultMode: "engineering",
+      });
+      const page = await handler.services.page(new URL(`http://localhost/?companion=${digest}`));
+      expect(page.selection.studioMode).toBe("engineering");
+      const factoryView = await handler.services.page(
+        new URL(`http://localhost/?companion=${digest}&view=factory`),
+      );
+      expect(factoryView.selection.view).toBe("factory");
+      await handler.close();
+    }
+  });
+
+  test("serve an explicit Analysis selection without stopping the broker", async () => {
+    const handler = handlerFor({ factory: broker() });
+    const page = await handler.services.page(
+      new URL(`http://localhost/?companion=${digest}&studioMode=analysis&view=factory`),
+    );
+    expect(page.selection).toMatchObject({ studioMode: "analysis", view: "dashboard" });
+    expect(handler.services.factoryMode).toBe(true);
+    await handler.close();
+  });
+});

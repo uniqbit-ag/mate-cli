@@ -38,6 +38,12 @@ docker run \
   Docker daemon and the **factory broker** as root. Studio and every agent
   session still run as `mate` (uid 10001). Factory mode is on in this image;
   `MATE_FACTORY=false` runs Studio alone, as the image's own user.
+- **Both Studio modes.** Unlike the appliance, whose Studio offers Analysis
+  only, the factory starts Studio in the standard profile: Engineering is
+  selected by default and Analysis can be chosen from the sidebar's Mode
+  switch. This holds with factory mode on or off. The Factory view appears in
+  Engineering only while the factory broker runs; choosing Analysis neither
+  stops nor reconfigures the broker.
 - **The host boundary.** A privileged container is bounded by the Docker
   Desktop VM or the host kernel, not by Docker. Workset containers themselves
   are unprivileged: root inside them maps to an unprivileged user outside. Run

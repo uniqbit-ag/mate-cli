@@ -444,6 +444,31 @@ after that wait.
 Each architecture is verified offline before anything is pushed. If either one
 fails, no exact-version image is published and the channel tag does not move.
 
+## Studio modes
+
+Studio has two modes, chosen with the **Mode** switch at the top of its sidebar.
+**Engineering** offers the Overview of active changes, Workflow and Skills;
+**Analysis** offers an Overview of published state: specs, recently shipped
+changes and hosted reports. Vault, Specs and Reports are offered in both.
+
+- **The appliance offers Analysis only.** Its entrypoint starts Studio with
+  `mate studio serve --profile appliance`. Engineering stays visible in the
+  switch, disabled, with the note that it is unavailable in the appliance. No
+  setting re-enables it.
+- **Local Studio offers both.** `mate studio` and `mate studio serve` use the
+  `standard` profile: Engineering by default, Analysis one click away.
+  `--profile` accepts only `standard` or `appliance`; any other value stops
+  startup before Studio binds its port.
+- **A mode is a lens, not a permission.** It is independent of the audience
+  (`MATE_AUDIENCE`), the terminal, writability and the access token. Changing
+  any of those never enables Engineering in the appliance, and choosing a mode
+  never grants or removes access to an endpoint.
+- **Addresses name the mode.** Studio's URLs carry `studioMode=engineering` or
+  `studioMode=analysis`; the vault's own `mode=read|edit` is separate. Older
+  bookmarks with `role=product-engineer` or `role=business-analyst` still open,
+  as Engineering and Analysis. Every address passes through the profile, so an
+  Engineering bookmark opens Analysis in the appliance.
+
 ## Saving, and the conflict you will meet
 
 The agent and the human write the same files, in the same companion, at the
