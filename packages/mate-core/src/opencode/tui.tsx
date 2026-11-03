@@ -4,8 +4,10 @@
  * OpenCode V2 TUI plugin module (`{ id, setup }`), OpenCode 2.x only.
  * Solid JSX, not React: `key` is not a reconciliation prop here and `TextProps`
  * does not accept it, so the jsx-key rules cannot be satisfied — only suppressed.
- * Arrays render through `.map`: Solid re-runs it whole on a store change, fine for a few lines.
+ * The line list is a function child: Solid re-runs its `.map` whole on a store change, fine for a few lines.
  */
+import type { JSX } from "@opentui/solid";
+
 import { BRAND_ACCENT } from "../brand/palette";
 import { mateVersion } from "../runtime/install";
 import { readContext, readStalenessLines } from "./companion-policy";
@@ -77,9 +79,11 @@ function SessionContext({
       <text fg={MATE_VERSION_COLOR}>mate v{MATE_VERSION}</text>
       <text fg={text.muted}>repo: {context.repositoryPath}</text>
       <text fg={text.muted}>mate: {context.companionPath}</text>
-      {notes.lines.map((note) => (
-        <text fg={warning}>{note}</text>
-      ))}
+      {/* OpenTUI's Solid transform skips node_modules, so only a function child stays reactive; its children types omit functions. */}
+      {
+        (() =>
+          notes.lines.map((note) => <text fg={warning}>{note}</text>)) as unknown as JSX.Element
+      }
     </box>
   );
 }
