@@ -8,12 +8,8 @@ name: Verify factory image
 # It builds the Mate version image-inputs.yaml pins, which a release has
 # already published to npm, so the image under test installs exactly what the
 # next dispatch would.
+# Manual only, to save runner minutes: dispatch it before merging an image change.
 on:
-  pull_request:
-    paths:
-      - "apps/mate-factory/**"
-      - ".github/workflows/verify-factory-image.yml"
-      - ".github/workflows/publish-factory-image.yml"
   workflow_dispatch:
 
 permissions:
