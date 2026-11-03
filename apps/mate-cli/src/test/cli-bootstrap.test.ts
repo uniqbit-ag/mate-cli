@@ -32,9 +32,11 @@ async function fixture(): Promise<{ root: string; bin: string; bun: string; capt
 }
 
 function run(entry: Awaited<ReturnType<typeof fixture>>, args: string[] = []) {
+  // The fixture HOME's ~/.bun/bin is the install location under test.
+  const { BUN_INSTALL: _bunInstall, ...inherited } = process.env;
   return spawnSync(process.execPath, [bootstrap, ...args], {
     env: {
-      ...process.env,
+      ...inherited,
       HOME: entry.root,
       PATH: `${entry.bin}${path.delimiter}/usr/bin:/bin`,
       BUN_CAPTURE: entry.capture,
@@ -77,8 +79,57 @@ describe("Node package bootstrap", () => {
     const result = run(entry, ["opencode", "--", "--yes"]);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("Bun installation declined");
+    expect(result.stderr).toContain("mate install --yes");
     await expect(fs.access(marker)).rejects.toThrow();
+  });
+
+  test("without a TTY a plain command explains how to set Mate up instead of reporting a declined install", async () => {
+    const entry = await fixture();
+    for (const args of [["--version"], ["--help"]]) {
+      const result = run(entry, args);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Mate runs on Bun, which is not installed yet.");
+      expect(result.stderr).toContain("mate install --yes");
+      expect(result.stderr).not.toContain("declined");
+    }
+  });
+
+  test("delegates in the same run when the installer puts Bun under ~/.bun/bin only", async () => {
+    const entry = await fixture();
+    const installer =
+      process.platform === "darwin" ? "brew" : process.platform === "win32" ? "powershell" : "sh";
+    const bunBin = path.join(entry.root, ".bun", "bin");
+    const installerScript = [
+      "#!/bin/sh",
+      `mkdir -p ${JSON.stringify(bunBin)}`,
+      `cp ${JSON.stringify(entry.bun)} ${JSON.stringify(path.join(bunBin, "bun"))}`,
+      `chmod +x ${JSON.stringify(path.join(bunBin, "bun"))}`,
+      "exit 0",
+      "",
+    ].join("\n");
+    await fs.writeFile(path.join(entry.bin, installer), installerScript);
+    await fs.chmod(path.join(entry.bin, installer), 0o755);
+
+    const result = run(entry, ["install", "--yes"]);
+
+    expect(result.stderr).not.toContain("still unavailable");
+    expect(result.status).toBe(0);
+    const forwarded = await fs.readFile(entry.capture, "utf8");
+    expect(forwarded).toContain("install");
+    expect(forwarded).toContain("--yes");
+  });
+
+  test("uses a Bun under ~/.bun/bin that is not on PATH without reinstalling", async () => {
+    const entry = await fixture();
+    const bunBin = path.join(entry.root, ".bun", "bin");
+    await fs.mkdir(bunBin, { recursive: true });
+    await fs.copyFile(entry.bun, path.join(bunBin, "bun"));
+    await fs.chmod(path.join(bunBin, "bun"), 0o755);
+
+    const result = run(entry, ["--version"]);
+
+    expect(result.status).toBe(0);
+    expect(await fs.readFile(entry.capture, "utf8")).toContain("--version");
   });
 
   test("delegates after a successful platform installer", async () => {
