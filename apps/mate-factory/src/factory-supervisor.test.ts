@@ -29,6 +29,11 @@ let root: string;
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "mate-factory-supervisor-"));
+  // On Linux the bind mount keeps host modes: Studio's side runs as uid 10001, so it needs
+  // to reach the stubs and append to the log that root's stubs write first.
+  fs.chmodSync(root, 0o755);
+  fs.writeFileSync(path.join(root, "order.log"), "");
+  fs.chmodSync(path.join(root, "order.log"), 0o666);
   fs.mkdirSync(path.join(root, "bin"), { recursive: true });
   fs.copyFileSync(SUPERVISOR, path.join(root, "supervisor.sh"));
 });
