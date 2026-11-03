@@ -43,9 +43,9 @@ describe("the pre-paint script", () => {
   it("names the remembered companion in the address of any view", () => {
     const { replaced } = prepaint(
       { [COMPANION_STORAGE_KEY]: "0123456789" },
-      { pathname: "/factory", search: "?role=product-engineer" },
+      { pathname: "/factory", search: "?studioMode=engineering" },
     );
-    expect(replaced).toEqual(["/factory?role=product-engineer&companion=0123456789"]);
+    expect(replaced).toEqual(["/factory?studioMode=engineering&companion=0123456789"]);
   });
 
   it("leaves a deliberate empty companion and an unknown stored value alone", () => {

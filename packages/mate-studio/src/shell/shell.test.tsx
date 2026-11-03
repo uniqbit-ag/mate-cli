@@ -23,7 +23,9 @@ const broken: ShellCompanion = {
 const shell = (overrides: Partial<ShellData> = {}): ShellData => ({
   companions: [acme, broken],
   selected: null,
-  role: "product-engineer",
+  studioMode: "engineering",
+  enabledModes: ["engineering", "analysis"],
+  profile: "standard",
   collectedAt: null,
   metrics: null,
   writable: false,
@@ -91,11 +93,11 @@ describe("the sidebar's companion selector", () => {
     expect(markup).toContain("no companion registered");
   });
 
-  it("keeps companion and role in every view link, and marks the current view", () => {
+  it("keeps companion and mode in every view link, and marks the current view", () => {
     const markup = staticMarkup(
       <Sidebar
-        shell={shell({ selected: acme, role: "business-analyst" })}
-        search={{ companion: acme.digest, role: "business-analyst" }}
+        shell={shell({ selected: acme, studioMode: "analysis" })}
+        search={{ companion: acme.digest, studioMode: "analysis" }}
         view="specs"
       />,
     );
@@ -107,9 +109,134 @@ describe("the sidebar's companion selector", () => {
     expect(links.length).toBeGreaterThan(2);
     for (const link of links) {
       expect(link.searchParams.get("companion")).toBe(acme.digest);
-      expect(link.searchParams.get("role")).toBe("business-analyst");
+      expect(link.searchParams.get("studioMode")).toBe("analysis");
+      expect(link.searchParams.has("role")).toBe(false);
     }
     expect(markup).toMatch(/aria-current="page"[^>]*>.*?Specs|Specs/);
+  });
+});
+
+/** The Mode control's segments: tag, attributes, and label, in order. */
+function segments(markup: string) {
+  const group = /<div class="mode-switch"[^>]*>([\s\S]*?)<\/div>/.exec(markup)?.[1] ?? "";
+  return [...group.matchAll(/<(a|button)([^>]*)>([^<]*)<\/\1>/g)].map(([, tag, attrs, label]) => ({
+    tag,
+    attrs: attrs!,
+    label,
+  }));
+}
+
+describe("the Mode switch", () => {
+  const appliance = shell({
+    selected: acme,
+    studioMode: "analysis",
+    enabledModes: ["analysis"],
+    profile: "appliance",
+  });
+
+  it("names the group Mode and offers Engineering and Analysis, marking the effective one", () => {
+    const markup = staticMarkup(
+      <Sidebar
+        shell={shell({ selected: acme, studioMode: "analysis" })}
+        search={{ companion: acme.digest, studioMode: "analysis" }}
+        view="dashboard"
+      />,
+    );
+    expect(markup).toContain('role="group" aria-label="Mode"');
+    expect(markup).not.toMatch(/Product Engineer|Business Analyst/);
+    const [engineering, analysis] = segments(markup);
+    expect([engineering?.label, analysis?.label]).toEqual(["Engineering", "Analysis"]);
+    expect(engineering?.attrs).toContain('aria-pressed="false"');
+    expect(analysis?.attrs).toContain('aria-pressed="true"');
+    expect(markup).not.toContain("mode-switch-note");
+  });
+
+  it("enables both modes locally and in the factory, each linking with its own mode", () => {
+    for (const factoryMode of [false, true]) {
+      const markup = staticMarkup(
+        <Sidebar
+          shell={shell({ selected: acme, factoryMode })}
+          search={{ companion: acme.digest, studioMode: "engineering" }}
+          view="workflow"
+        />,
+      );
+      const found = segments(markup);
+      expect(found.map((segment) => segment.tag)).toEqual(["a", "a"]);
+      const hrefs = found.map(
+        (segment) =>
+          new URL(/href="([^"]*)"/.exec(segment.attrs)![1]!.replaceAll("&amp;", "&"), "http://x"),
+      );
+      expect(hrefs.map((href) => href.searchParams.get("studioMode"))).toEqual([
+        "engineering",
+        "analysis",
+      ]);
+      // Analysis is not offered Workflow, so it lands on its Overview.
+      expect(hrefs.map((href) => href.pathname)).toEqual(["/workflow", "/"]);
+    }
+  });
+
+  it("keeps a shared view and its target when switching", () => {
+    const markup = staticMarkup(
+      <Sidebar
+        shell={shell({ selected: acme })}
+        search={{ companion: acme.digest, studioMode: "engineering" }}
+        view="vault"
+      />,
+    );
+    const analysis = segments(markup)[1]!;
+    expect(analysis.attrs).toContain('href="/vault?');
+  });
+
+  it("shows appliance Engineering disabled, without a target, and says why", () => {
+    const markup = staticMarkup(
+      <Sidebar
+        shell={appliance}
+        search={{ companion: acme.digest, studioMode: "analysis" }}
+        view="dashboard"
+      />,
+    );
+    const [engineering, analysis] = segments(markup);
+    expect(engineering?.tag).toBe("button");
+    expect(engineering?.label).toBe("Engineering");
+    expect(engineering?.attrs).toContain('disabled=""');
+    expect(engineering?.attrs).not.toContain("href");
+    expect(engineering?.attrs).toContain('aria-describedby="studio-mode-note"');
+    expect(analysis?.attrs).toContain('aria-pressed="true"');
+    expect(markup).toContain('aria-describedby="studio-mode-note"');
+    expect(markup).toMatch(
+      /<p class="mode-switch-note" id="studio-mode-note">Engineering is unavailable in the appliance\.<\/p>/,
+    );
+  });
+
+  it("gives Analysis its own heading, only the shared views, and no metrics", () => {
+    const markup = staticMarkup(
+      <Sidebar
+        shell={{
+          ...appliance,
+          factoryMode: true,
+          metrics: { changes: 3, done: 1, specs: 2 },
+        }}
+        search={{ companion: acme.digest, studioMode: "analysis" }}
+        view="dashboard"
+      />,
+    );
+    expect(markup).toContain('data-studio-nav-section="Analysis"');
+    expect(markup).not.toMatch(/href="\/(factory|workflow|skills)/);
+    expect(markup).not.toContain('id="studio-stats"');
+  });
+
+  it("gives Engineering its heading, views, and metrics", () => {
+    const markup = staticMarkup(
+      <Sidebar
+        shell={shell({ selected: acme, metrics: { changes: 3, done: 1, specs: 2 } })}
+        search={{ companion: acme.digest, studioMode: "engineering" }}
+        view="dashboard"
+      />,
+    );
+    expect(markup).toContain('data-studio-nav-section="Engineering"');
+    expect(markup).toMatch(/href="\/workflow/);
+    expect(markup).toMatch(/href="\/skills/);
+    expect(markup).toContain('id="studio-stats"');
   });
 });
 

@@ -33,7 +33,7 @@ export interface StudioPage {
   /** When the server rendered the page, for ages on the Factory view. */
   renderedAt?: number;
   /**
-   * Hosted reports, newest first, listed at render time for the Business Analyst
+   * Hosted reports, newest first, listed at render time for the Analysis
    * Overview only; `null` when the listing failed.
    */
   reports?: StudioReportSummary[] | null;

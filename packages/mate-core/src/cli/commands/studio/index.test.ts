@@ -161,6 +161,8 @@ describe("runStudioCommand", () => {
           hostname: "0.0.0.0",
           writable: false,
           invocation: "serve",
+          profile: "standard",
+          profile: "standard",
         });
         return {
           ...handle(),
@@ -198,6 +200,7 @@ describe("runStudioCommand", () => {
       hostname: "127.0.0.1",
       writable: true,
       invocation: "serve",
+      profile: "standard",
     });
     expect(recorded.err).toEqual([]);
   });
@@ -208,6 +211,10 @@ describe("runStudioCommand", () => {
     { argv: ["--port"], text: "--port" },
     { argv: ["--port", "nope"], text: "nope" },
     { argv: ["--port", "65536"], text: "65536" },
+    { argv: ["--port", "4180", "--profile"], text: "standard or appliance" },
+    { argv: ["--port", "4180", "--profile", "--writable"], text: "standard or appliance" },
+    { argv: ["--port", "4180", "--profile", "factory"], text: "standard or appliance" },
+    { argv: ["--port", "4180", "--profile="], text: "standard or appliance" },
   ])("rejects invalid serve arguments before binding: $argv", async ({ argv, text }) => {
     let started = false;
     const recorded = recording({
@@ -243,12 +250,25 @@ describe("runStudioCommand", () => {
 });
 
 describe("parseStudioServeArgs", () => {
+  test("reads the profile in both flag forms, standard when absent", () => {
+    for (const argv of [
+      ["--port", "4180", "--profile", "appliance"],
+      ["--port", "4180", "--profile=appliance"],
+    ]) {
+      expect(parseStudioServeArgs(argv)).toMatchObject({ profile: "appliance" });
+    }
+    expect(parseStudioServeArgs(["--port", "4180", "--profile", "standard"])).toMatchObject({
+      profile: "standard",
+    });
+  });
+
   test("parses a port and optional host", () => {
     expect(parseStudioServeArgs(["--port", "4180", "--host", "0.0.0.0"])).toEqual({
       port: 4180,
       hostname: "0.0.0.0",
       writable: false,
       invocation: "serve",
+      profile: "standard",
     });
   });
 
@@ -258,6 +278,7 @@ describe("parseStudioServeArgs", () => {
       hostname: "127.0.0.1",
       writable: false,
       invocation: "serve",
+      profile: "standard",
     });
   });
 });
@@ -402,6 +423,8 @@ describe("terminal flags", () => {
         "--public-origin",
         "https://studio.acme.test",
         "--no-git",
+        "--profile",
+        "appliance",
       ],
       recorded.deps,
     );
@@ -410,6 +433,7 @@ describe("terminal flags", () => {
       hostname: "127.0.0.1",
       writable: true,
       invocation: "serve",
+      profile: "appliance",
       terminal: true,
       allowedHosts: ["studio.acme.test"],
       publicOrigin: "https://studio.acme.test",
@@ -460,6 +484,7 @@ describe("terminal flags", () => {
       hostname: "127.0.0.1",
       writable: false,
       invocation: "serve",
+      profile: "standard",
       allowedHosts: ["studio.acme.test", "admin.acme.test"],
       publicOrigin: "https://studio.acme.test",
     });

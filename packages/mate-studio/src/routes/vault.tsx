@@ -17,7 +17,7 @@ export const Route = createFileRoute("/vault")({
   }),
   loaderDeps: ({ search }) => ({
     companion: search.companion,
-    role: search.role,
+    studioMode: search.studioMode,
     path: search.path,
     dir: search.dir,
   }),
@@ -31,7 +31,7 @@ export const Route = createFileRoute("/vault")({
 function VaultRoute() {
   const search = Route.useSearch();
   const { data: shell } = useSuspenseQuery(
-    shellQuery({ companion: search.companion, role: search.role }),
+    shellQuery({ companion: search.companion, studioMode: search.studioMode }),
   );
   if (!search.companion || !shell.selected) return null;
   const rootName = shell.selected.path.split(/[\\/]/).findLast(Boolean) ?? "companion";

@@ -1,4 +1,4 @@
-import type { StudioRole, StudioView } from "@uniqbit/mate-core/studio";
+import type { StudioMode, StudioView } from "@uniqbit/mate-core/studio";
 
 /** The path each view is served at. */
 export const VIEW_PATHS: Record<StudioView, string> = {
@@ -22,7 +22,13 @@ export const VIEW_TITLES: Record<StudioView, string> = {
   reports: "Reports",
 };
 
-export const ROLE_TITLES: Record<StudioRole, string> = {
-  "product-engineer": "Product Engineer",
-  "business-analyst": "Business Analyst",
+export const MODE_TITLES: Record<StudioMode, string> = {
+  engineering: "Engineering",
+  analysis: "Analysis",
 };
+
+/** The view a path serves, for guards that see only the location. */
+export function viewAt(pathname: string): StudioView | undefined {
+  const entry = Object.entries(VIEW_PATHS).find(([, path]) => path === pathname);
+  return entry?.[0] as StudioView | undefined;
+}

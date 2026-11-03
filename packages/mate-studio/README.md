@@ -28,7 +28,7 @@ reload shows the change. `bun run test` builds, then runs the tests against the 
 | State                                                                     | Owner                                                                    |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | Server data and every call                                                | TanStack Query: `lib/queries.ts` keys, `useSuspenseQuery`, `useMutation` |
-| Anything in the address (companion, role, open Outcome, vault path)       | Router search params                                                     |
+| Anything in the address (companion, mode, open Outcome, vault path)       | Router search params                                                     |
 | Global client state (filter, terminal sidebar, unsaved edits, appearance) | Zustand stores in `stores/`, read through selectors                      |
 | Local UI                                                                  | `useState`                                                               |
 

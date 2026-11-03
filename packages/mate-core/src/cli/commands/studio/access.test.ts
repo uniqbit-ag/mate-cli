@@ -403,6 +403,40 @@ describe("per-invocation token requirements", () => {
   });
 });
 
+describe("Studio modes are not access control", () => {
+  test("no mode or profile changes the token, origin, or write checks", async () => {
+    await withFixture(async (state) => {
+      for (const profile of ["standard", "appliance"] as const) {
+        const handler = serve(state, {
+          writable: true,
+          profile,
+          access: access({ invocation: "serve", token: TOKEN }),
+        });
+        for (const query of [
+          "studioMode=engineering",
+          "studioMode=analysis",
+          "role=product-engineer",
+        ]) {
+          for (const pathname of [
+            `/?companion=${state.digest}&${query}`,
+            `/_serverFn/getShell?companion=${state.digest}&${query}`,
+            `/api/events?companion=${state.digest}&${query}`,
+          ]) {
+            expect((await handler(get(pathname)))!.status).toBe(401);
+          }
+        }
+        const origin = `http://localhost:${PORT}`;
+        expect((await save(handler, state, { origin })).status).toBe(401);
+        expect(
+          (await save(handler, state, { origin: "https://evil.test", cookie: COOKIE })).status,
+        ).toBe(403);
+        expect(await fs.readFile(path.join(state.root, "note.md"), "utf8")).toBe("one");
+        await handler.close();
+      }
+    });
+  });
+});
+
 describe("guards by request kind", () => {
   const origin = `http://localhost:${PORT}`;
   const credentialBroker = () => {

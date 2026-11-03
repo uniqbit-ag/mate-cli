@@ -220,6 +220,31 @@ describe("the vault in a browser", () => {
     unmount();
   });
 
+  it("asks before a Mode switch leaves unsaved text, keeping the file and its edit mode", async () => {
+    const { doc, app, unmount } = await mount(
+      "/vault?companion=0123456789&studioMode=engineering&path=acme/notes.md&mode=edit",
+    );
+    fireEvent.change(doc.querySelector("#vault-editor")!, { target: { value: "# Unsaved" } });
+    const asked: string[] = [];
+    window.confirm = (message?: string) => {
+      asked.push(String(message));
+      return false;
+    };
+    await act(async () => {
+      void app.navigate({
+        to: "/vault",
+        search: (previous: object) => ({ ...previous, studioMode: "analysis" }) as never,
+      });
+    });
+    await waitFor(() => expect(asked).toHaveLength(1));
+    expect(app.state.location.search).toMatchObject({
+      studioMode: "engineering",
+      path: "acme/notes.md",
+      mode: "edit",
+    });
+    unmount();
+  });
+
   it("asks for a collapsed folder's entries only when it is first opened", async () => {
     const { doc, unmount } = await mount("/vault?companion=0123456789");
     expect(server.children).toEqual([]);

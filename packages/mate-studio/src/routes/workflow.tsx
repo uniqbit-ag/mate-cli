@@ -7,7 +7,7 @@ import { Workflow } from "../views/workflow/workflow-view";
 
 export const Route = createFileRoute("/workflow")({
   staticData: { view: "workflow" },
-  loaderDeps: ({ search }) => ({ companion: search.companion, role: search.role }),
+  loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
   loader: async ({ context, deps }) =>
     (await registeredCompanion(context.queryClient, deps))
       ? context.queryClient.ensureQueryData(companionViewQuery("workflow", deps))

@@ -8,7 +8,7 @@ import { Specs } from "../views/specs/specs-view";
 
 export const Route = createFileRoute("/specs")({
   staticData: { view: "specs" },
-  loaderDeps: ({ search }) => ({ companion: search.companion, role: search.role }),
+  loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
   loader: async ({ context, deps }) =>
     (await registeredCompanion(context.queryClient, deps))
       ? context.queryClient.ensureQueryData(companionViewQuery("specs", deps))

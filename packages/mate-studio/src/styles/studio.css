@@ -608,7 +608,7 @@ ul.plain li:last-child {
   font-size: 0.72rem;
 }
 /** Segmented: one track, the active role raised on the panel surface. */
-.role-switch {
+.mode-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2px;
@@ -617,7 +617,7 @@ ul.plain li:last-child {
   border-radius: 8px;
   background: var(--border-soft);
 }
-.role-switch button {
+.mode-switch button {
   width: 100%;
   padding: 5px 4px;
   border-color: transparent;
@@ -629,16 +629,35 @@ ul.plain li:last-child {
   line-height: 1.25;
   text-align: center;
 }
-.role-switch button:hover {
+.mode-switch button:hover {
   border-color: transparent;
   background: var(--accent-soft);
   color: var(--text);
 }
-.role-switch button[aria-pressed="true"] {
+.mode-switch button[aria-pressed="true"] {
   border-color: var(--border);
   background: var(--panel);
   color: var(--text);
   font-weight: 700;
+}
+/* Unavailable, not merely unselected: dashed and struck through, so it does not rely on colour. */
+.mode-switch button:disabled,
+.mode-switch button:disabled:hover {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+.mode-switch-block {
+  display: grid;
+  gap: 4px;
+}
+.mode-switch-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
 }
 .sidebar-nav {
   display: grid;
@@ -699,7 +718,7 @@ ul.plain li:last-child {
   color: var(--text);
   font-weight: 700;
 }
-.role-switch a.role-switch-option {
+.mode-switch a.mode-switch-option {
   display: block;
   padding: 5px 4px;
   border: 1px solid transparent;
@@ -711,11 +730,11 @@ ul.plain li:last-child {
   text-align: center;
   text-decoration: none;
 }
-.role-switch a.role-switch-option:hover {
+.mode-switch a.mode-switch-option:hover {
   background: var(--accent-soft);
   color: var(--text);
 }
-.role-switch a.role-switch-option[aria-pressed="true"] {
+.mode-switch a.mode-switch-option[aria-pressed="true"] {
   border-color: var(--border);
   background: var(--panel);
   color: var(--text);

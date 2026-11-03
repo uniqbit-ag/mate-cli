@@ -1,4 +1,5 @@
 import type { OutcomeAction } from "../../../lib/factory/outcomes/actions";
+import type { StudioModePolicy } from "./selection";
 import type { VaultConflict, VaultSaved } from "./vault";
 import type { StudioPage } from "./views/model";
 import type { VaultEntry, VaultView, VaultViewRequest } from "./views/vault/view";
@@ -16,6 +17,8 @@ export interface StudioServices {
   readonly writable: boolean;
   /** Whether the factory broker is reachable, so the Agents panel can be offered. */
   readonly factoryMode: boolean;
+  /** The startup profile's Studio modes; every page selection is resolved through it. */
+  readonly modePolicy: StudioModePolicy;
   /** Everything one view is derived from, for the address that asked for it. */
   page(url: URL): Promise<StudioPage>;
   /**

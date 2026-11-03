@@ -1,12 +1,13 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { createRootRouteWithContext, HeadContent, Scripts } from "@tanstack/react-router";
+import { createRootRouteWithContext, HeadContent, redirect, Scripts } from "@tanstack/react-router";
 import { BRAND_SVGS } from "@uniqbit/mate-core/studio";
 import { STUDIO_PREPAINT_SCRIPT } from "../shell/prepaint";
 import { studioPaletteCss } from "../styles/palette";
 import type { ReactNode } from "react";
 
 import { shellQuery } from "../lib/queries";
-import { validateStudioSearch } from "../lib/search";
+import { canonicalHref, validateStudioSearch } from "../lib/search";
+import { viewAt } from "../shell/views";
 import stylesheet from "../styles/studio.css?url";
 import { TERMINAL_PREPAINT_SCRIPT } from "../stores/terminal-ui";
 import { StudioLayout } from "../shell/layout";
@@ -18,6 +19,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   loaderDeps: ({ search }) => search,
   // The shell and sidebar render with the document; views below render in the browser (D4).
   ssr: true,
+  // The address names the server's effective mode, so every link built from it carries that.
+  beforeLoad: async ({ context, search, location }) => {
+    const shell = await context.queryClient.ensureQueryData(shellQuery(search));
+    const href = canonicalHref(
+      location.pathname,
+      location.searchStr,
+      viewAt(location.pathname),
+      shell.studioMode,
+    );
+    if (href) throw redirect({ href, replace: true });
+  },
   loader: ({ context, deps }) => context.queryClient.ensureQueryData(shellQuery(deps)),
   head: () => ({
     meta: [

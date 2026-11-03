@@ -97,12 +97,42 @@ describe("createStudioFetch", () => {
     expect(assembled).toEqual([ACME]);
     expect(pages[0]?.selection).toEqual({
       companionDigest: digest,
-      role: "product-engineer",
+      studioMode: "engineering",
       view: "workflow",
       refresh: false,
     });
     expect(pages[0]?.companion?.path).toBe(ACME);
     expect(pages[0]?.payload?.companionPath).toBe(ACME);
+  });
+
+  test("resolves every page through the startup profile, never the request", async () => {
+    const standard = capturing();
+    await standard.open("http://localhost/?studioMode=analysis&view=specs");
+    await standard.open("http://localhost/?role=business-analyst");
+    await standard.open("http://localhost/");
+    expect(standard.fetch.services.modePolicy.enabled).toEqual(["engineering", "analysis"]);
+    expect(standard.pages.map((page) => page.selection.studioMode)).toEqual([
+      "analysis",
+      "analysis",
+      "engineering",
+    ]);
+
+    const fetch = createStudioFetch(deps(), { profile: "appliance" });
+    expect(fetch.services.modePolicy).toMatchObject({
+      profile: "appliance",
+      enabled: ["analysis"],
+    });
+    for (const address of [
+      "http://localhost/",
+      "http://localhost/?studioMode=engineering&view=workflow",
+      "http://localhost/?role=product-engineer&view=factory",
+      "http://localhost/?studioMode=bogus&profile=standard",
+    ]) {
+      const page = await fetch.services.page(new URL(address));
+      expect(page.selection).toMatchObject({ studioMode: "analysis", view: "dashboard" });
+    }
+    await fetch.close();
+    await standard.fetch.close();
   });
 
   test("assembles nothing when no companion is named", async () => {
