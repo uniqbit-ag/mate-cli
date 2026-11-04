@@ -6,10 +6,12 @@ import { useEffect } from "react";
 
 import { useStudioEvents } from "../lib/events";
 import { useStudioClicks } from "../lib/page-actions";
+import { usePrefetchViews } from "../lib/prefetch-views";
 import { usePageUi } from "../stores/page-ui";
 import { CompanionPicker } from "./companion-picker";
-import { shellQuery } from "../lib/queries";
+import { shellQuery } from "../lib/studio-queries";
 import type { StudioSearch } from "../lib/search";
+import { NavigationProgress } from "./navigation-progress";
 import { PageHeader } from "./page-header";
 import { Sidebar } from "./sidebar";
 import { TerminalDrawerButton, TerminalSidebar } from "../terminal/terminal-sidebar";
@@ -24,6 +26,7 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
   const digest = shell.selected?.digest;
   useStudioEvents(digest);
   useStudioClicks();
+  usePrefetchViews(shell.selected ? search : {}, shell.studioMode, view);
   useEffect(() => {
     if (!digest) return;
     try {
@@ -39,6 +42,7 @@ export function StudioLayout({ search }: { search: StudioSearch }) {
         data-companion={digest}
         data-terminal={shell.terminal ? "" : undefined}
       >
+        <NavigationProgress />
         <Sidebar shell={shell} search={search} view={view} />
         <main className="main">
           <PageHeader shell={shell} view={view} />

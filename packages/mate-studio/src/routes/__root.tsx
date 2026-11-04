@@ -5,7 +5,8 @@ import { STUDIO_PREPAINT_SCRIPT } from "../shell/prepaint";
 import { studioPaletteCss } from "../styles/palette";
 import type { ReactNode } from "react";
 
-import { shellQuery } from "../lib/queries";
+import { loadHeld } from "../lib/queries";
+import { shellQuery } from "../lib/studio-queries";
 import { canonicalHref, validateStudioSearch } from "../lib/search";
 import { viewAt } from "../shell/views";
 import stylesheet from "../styles/studio.css?url";
@@ -21,7 +22,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   ssr: true,
   // The address names the server's effective mode, so every link built from it carries that.
   beforeLoad: async ({ context, search, location }) => {
-    const shell = await context.queryClient.ensureQueryData(shellQuery(search));
+    const shell = await loadHeld(context.queryClient, shellQuery(search));
     const href = canonicalHref(
       location.pathname,
       location.searchStr,
@@ -30,7 +31,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     );
     if (href) throw redirect({ href, replace: true });
   },
-  loader: ({ context, deps }) => context.queryClient.ensureQueryData(shellQuery(deps)),
+  loader: ({ context, deps }) => loadHeld(context.queryClient, shellQuery(deps)),
   head: () => ({
     meta: [
       { charSet: "utf-8" },

@@ -3482,3 +3482,67 @@ a.vault-row:hover span {
     box-shadow: var(--drawer-shadow);
   }
 }
+/** Navigation feedback: shown only after a short wait, so a fast load shows nothing. */
+.nav-progress {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 50;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left;
+  pointer-events: none;
+}
+.nav-progress[data-pending="true"],
+.shell:has(.view-placeholder) .nav-progress {
+  animation: nav-progress 2.4s cubic-bezier(0.16, 1, 0.3, 1) 150ms forwards;
+}
+@keyframes nav-progress {
+  from {
+    opacity: 1;
+    transform: scaleX(0.05);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(0.85);
+  }
+}
+.view-placeholder {
+  display: grid;
+  gap: 14px;
+  padding-top: 8px;
+  opacity: 0;
+  animation: view-placeholder-in 200ms ease-out 150ms forwards;
+}
+.view-placeholder-line {
+  display: block;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--border);
+}
+.view-placeholder-line:nth-of-type(1) {
+  width: 42%;
+}
+.view-placeholder-line:nth-of-type(2) {
+  width: 78%;
+}
+.view-placeholder-line:nth-of-type(3) {
+  width: 64%;
+}
+@keyframes view-placeholder-in {
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No motion, but the same delay, so a fast load still shows nothing; a partial bar still reads as under way. */
+  .nav-progress[data-pending="true"],
+  .shell:has(.view-placeholder) .nav-progress {
+    transform: scaleX(0.4);
+    animation: view-placeholder-in 1ms 150ms forwards;
+  }
+  .view-placeholder {
+    animation-duration: 1ms;
+  }
+}

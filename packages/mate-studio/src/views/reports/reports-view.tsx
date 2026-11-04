@@ -5,8 +5,11 @@ import { useEffect, useState } from "react";
 
 import { usePageUi } from "../../stores/page-ui";
 import { formatReportTime } from "../../lib/report-time";
-import { REPORT_ID, reportsQuery, type ReportSummary } from "./reports-query";
+import { reportsQuery, type ReportSummary } from "../../lib/studio-queries";
 import { type Theme, useAppearance } from "../../stores/appearance";
+
+/** The report the address names, as `#report=<id>`. */
+const REPORT_ID = /(?:^|[#&])report=([0-9a-f]{32})/;
 
 /** The chosen report while listed, else the one the address names, else the newest. */
 function shownReport(

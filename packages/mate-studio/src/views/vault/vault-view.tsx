@@ -3,8 +3,15 @@ import { Link } from "@tanstack/react-router";
 import type { VaultEntry, VaultView as VaultData } from "@uniqbit/mate-core/studio";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { getVault, getVaultChildren, getVaultMatches } from "../../server/vault";
-import { type VaultSearch, vaultQuery } from "./vault-query";
+import {
+  afterVaultRefresh,
+  vaultChildrenQuery,
+  vaultMatchesQuery,
+  type VaultSearch,
+  vaultQuery,
+} from "../../lib/studio-queries";
+import { getVault } from "../../server/vault";
+import { ViewPlaceholder } from "../../shell/navigation-progress";
 import { useVaultUi } from "../../stores/vault-ui";
 import { VaultFile } from "./vault-file";
 
@@ -93,8 +100,7 @@ function TreeFolder({
 }) {
   const [open, setOpen] = useState(entry.children !== undefined);
   const children = useQuery({
-    queryKey: ["vault", companion, "children", entry.path],
-    queryFn: () => getVaultChildren({ data: { companion, dir: entry.path } }),
+    ...vaultChildrenQuery(companion, entry.path),
     enabled: open && entry.children === undefined,
   });
   const entries = entry.children ?? children.data?.entries;
@@ -185,8 +191,7 @@ function FilterResults({
     return () => clearTimeout(timer);
   }, [query]);
   const matches = useQuery({
-    queryKey: ["vault", companion, "matches", settled],
-    queryFn: () => getVaultMatches({ data: { companion, query: settled } }),
+    ...vaultMatchesQuery(companion, settled),
     enabled: settled.trim().length > 0,
   });
   if (!matches.data) return null;
@@ -365,12 +370,10 @@ export function VaultLayout({
       getVault({
         data: { companion, path: search.path, dir: search.dir, refresh: true, wait: true },
       }),
-    onSuccess: (fresh) => {
-      queryClient.setQueryData(vaultQuery(companion, search).queryKey, fresh);
-      void queryClient.invalidateQueries({ queryKey: ["vault", companion], exact: false });
-    },
+    onSuccess: (fresh) => void afterVaultRefresh(queryClient, companion, search, fresh),
   });
-  if (!data) return <p className="empty">Listing files…</p>;
+  // The shared placeholder also shows the navigation progress bar.
+  if (!data) return <ViewPlaceholder />;
   const stale = latest !== null && data.generation !== null && latest > data.generation;
   return (
     <section className="vault-layout" data-vault-layout>

@@ -1,8 +1,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { registeredCompanion, shellQuery } from "../lib/queries";
-import { type VaultSearch, vaultQuery } from "../views/vault/vault-query";
+import { loadView, registeredCompanion } from "../lib/queries";
+import { shellQuery, type VaultSearch, vaultQuery } from "../lib/studio-queries";
 import { VaultLayout } from "../views/vault/vault-view";
 
 const text = (value: unknown) => (typeof value === "string" && value ? value : undefined);
@@ -23,7 +23,7 @@ export const Route = createFileRoute("/vault")({
   }),
   loader: async ({ context, deps }) => {
     const companion = await registeredCompanion(context.queryClient, deps);
-    return companion ? context.queryClient.ensureQueryData(vaultQuery(companion, deps)) : null;
+    return companion ? loadView(context.queryClient, vaultQuery(companion, deps)) : null;
   },
   component: VaultRoute,
 });
