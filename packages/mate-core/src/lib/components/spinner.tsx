@@ -1,3 +1,5 @@
+/** @jsxRuntime automatic */
+/** @jsxImportSource react */
 import { useEffect, useState } from "react";
 
 const SPINNER_FRAMES = ["·", "✦", "✧", "✦"];

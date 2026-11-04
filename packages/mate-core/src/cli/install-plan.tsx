@@ -1,3 +1,5 @@
+/** @jsxRuntime automatic */
+/** @jsxImportSource react */
 import React, { useState } from "react";
 import { Box, Text, render } from "ink";
 

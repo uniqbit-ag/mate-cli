@@ -1,3 +1,5 @@
+/** @jsxRuntime automatic */
+/** @jsxImportSource react */
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { renderToString } from "ink";
