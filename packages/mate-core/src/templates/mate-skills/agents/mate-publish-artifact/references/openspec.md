@@ -70,13 +70,13 @@ The branch guard, capability sync, remote sync, conflict handoff, and push behav
 
 `mate artifact publish --all` publishes every pending change in discovery order, then one spec publication for the drift that remains. Drift is recomputed after the changes publish, so a spec a change already committed is not published twice.
 
-With `--json` the output is a **single array** of results in execution order — one element per publication attempted — not one document per publication. The run halts at the first `conflict` or `error` and attempts nothing later; publications already completed stay published, because each is independently durable and a pushed commit has no rollback. An empty queue emits `[]` and exits 0.
+With `--json` the output is a **single array** of results in execution order — one element per publication attempted — not one document per publication. The run halts at the first `conflict`, `error`, or `deferred` and attempts nothing later; publications already completed stay published, because each is independently durable and a pushed commit has no rollback. An empty queue emits `[]` and exits 0.
 
 `--all` is refused alongside any other target, and it never substitutes for the user's selection: it publishes everything only when that is what the user picked.
 
 ## Resumable Behavior
 
-The publish CLI is **resumable**. Re-running a publication that already committed or tagged is safe: the commit is skipped when nothing is staged, the tag is left in place when it exists, and the push is retried. The result then carries `resumed: true`.
+The publish CLI is **resumable**. Re-running a publication that already committed or tagged is safe: the commit is skipped when nothing is staged, the tag is left in place when it exists, and the push is retried. A deferred publication resumes the same way. The result then carries `resumed: true`.
 
 `resumed` means _this same publication_ is being retried — typically after a failed push. It never means content was borrowed from another change. A spec publication that is resumed keeps its existing `openspec/specs/<date>-<specs>` tag rather than taking a new suffix, because its commit is the one that tag already points at.
 
@@ -106,6 +106,7 @@ Always invoke with `--json` and parse the single JSON line the command prints:
   - `ok`: published successfully
   - `conflict`: rebase handoff for agent resolution
   - `error`: a step failed
+  - `deferred`: the fetch (`step: "sync-remote"`) or push (`step: "push"`) stayed unreachable after the command retried an authentication or network failure. The command exits 0. After a deferred fetch the commit exists but is not tagged; after a deferred push the commit and tag exist. Re-running the same publication resumes and completes it.
   - `skipped`: nothing was pushed on purpose — a local-only publication from `--no-push`, or a `--specs` run that found no drift. `local` and `tag` tell the two apart: a `--no-push` run reports `committed` and `tagged` true with a real tag, a no-drift run reports all three false with a null tag.
 - `resumed` is true when this same publication already committed or tagged and is being retried.
 

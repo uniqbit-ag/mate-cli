@@ -3,7 +3,7 @@ import path from "node:path";
 
 import {
   companionGit,
-  isAuthenticationFailure,
+  isTransientRemoteFailure,
   type NetworkGitResult,
 } from "../../../../runtime/companion-git";
 
@@ -15,6 +15,19 @@ export interface RebaseResult {
 export interface PushResult {
   ok: boolean;
   error: string;
+  /** The failure may clear on its own (authentication rejection or network); retries are spent. */
+  transient?: boolean;
+}
+
+/** A fetch failure; `transient` as on `PushResult`. */
+export class RemoteFetchError extends Error {
+  constructor(
+    message: string,
+    readonly transient: boolean,
+  ) {
+    super(message);
+    this.name = "RemoteFetchError";
+  }
 }
 
 export type WorkingTreeChange = "new" | "modified";
@@ -41,6 +54,7 @@ export interface GitOps {
   /** Commit only the supplied pathspecs, leaving unrelated staged work untouched. */
   commit(message: string, paths?: string[]): Promise<void>;
   hasUpstream(): Promise<boolean>;
+  /** Throws `RemoteFetchError` once transient failures have used up their retries. */
   fetch(): Promise<void>;
   rebaseOntoUpstream(): Promise<RebaseResult>;
   tagExists(name: string): Promise<boolean>;
@@ -52,20 +66,30 @@ export interface GitOps {
 export interface GitOpsOptions {
   /** Environment Git runs with. */
   env?: Record<string, string | undefined>;
+  /** Waits between retries of a remote step; injectable so tests do not sleep. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
-/**
- * Publication never prompts, so a credential failure must say how to supply
- * credentials non-interactively; the retained commit and tag make a re-run safe.
- */
+/** Waits before the second and third attempt of a remote step. */
+const REMOTE_RETRY_DELAYS_MS = [1_000, 3_000];
+
+const sleepFor = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function withRemoteRetry(
+  attempt: () => Promise<NetworkGitResult>,
+  sleep: (ms: number) => Promise<void>,
+): Promise<NetworkGitResult> {
+  let result = await attempt();
+  for (const delay of REMOTE_RETRY_DELAYS_MS) {
+    if (!isTransientRemoteFailure(result)) break;
+    await sleep(delay);
+    result = await attempt();
+  }
+  return result;
+}
+
 function remoteFailureDetail(result: NetworkGitResult): string {
-  const detail = result.stderr.trim() || result.stdout.trim() || "unknown Git error";
-  if (!isAuthenticationFailure(result)) return detail;
-  const remedy =
-    result.transport === "ssh"
-      ? "load the SSH key into an agent (`ssh-add`)"
-      : "configure a Git credential helper (`git config --global credential.helper <helper>`)";
-  return `${detail}\nPublication does not prompt for credentials: ${remedy}, then re-run \`mate artifact publish\`.`;
+  return result.stderr.trim() || result.stdout.trim() || "unknown Git error";
 }
 
 function resolvedPath(candidate: string): string {
@@ -123,6 +147,7 @@ export function defaultGitOps(
 ): GitOps {
   assertSafeCompanionRoot(companionPath, workingRepoPath);
   const git = companionGit(companionPath, { prompt: "never", env: options.env });
+  const sleep = options.sleep ?? sleepFor;
   const exec = async (args: readonly string[]) => {
     const res = await git.run(args);
     return { status: res.status, out: res.stdout.trimEnd(), err: res.stderr.trim() };
@@ -208,8 +233,13 @@ export function defaultGitOps(
       );
     },
     async fetch() {
-      const res = await git.fetch();
-      if (res.status !== 0) throw new Error(`git fetch failed: ${remoteFailureDetail(res)}`);
+      const res = await withRemoteRetry(() => git.fetch(), sleep);
+      if (res.status !== 0) {
+        throw new RemoteFetchError(
+          `git fetch failed: ${remoteFailureDetail(res)}`,
+          isTransientRemoteFailure(res),
+        );
+      }
     },
     async rebaseOntoUpstream() {
       const res = await exec(["rebase", "--autostash", "@{u}"]);
@@ -229,8 +259,13 @@ export function defaultGitOps(
       await execOrThrow(["tag", "-a", name, "-m", message]);
     },
     async push() {
-      const res = await git.push(["--follow-tags"]);
-      return { ok: res.status === 0, error: res.status === 0 ? "" : remoteFailureDetail(res) };
+      const res = await withRemoteRetry(() => git.push(["--follow-tags"]), sleep);
+      if (res.status === 0) return { ok: true, error: "" };
+      return {
+        ok: false,
+        error: remoteFailureDetail(res),
+        transient: isTransientRemoteFailure(res),
+      };
     },
   };
 }

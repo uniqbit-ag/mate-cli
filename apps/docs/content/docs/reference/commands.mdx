@@ -508,10 +508,18 @@ change first. Options:
   publication instead of a change; with paths, only those specs.
 - `--all` publishes every pending change in order, then the remaining spec
   drift. It skips an archive the merge gate holds back, saying why, and stops
-  at the first conflict or error.
+  at the first conflict, error, or deferral.
 - `--type openspec` selects the publisher; it is the default.
 - `--no-push` commits and tags locally without pushing.
 - `--json` prints machine-readable results.
+
+Publishing never prompts for credentials. When the fetch or push fails with an
+authentication rejection or a network error, it retries twice after a short
+wait. If the remote is still unreachable, the publication is `deferred`: the
+command exits 0 and keeps the commit (and, after a failed push, the tag) in
+the companion. A deferred fetch leaves the commit untagged. Re-run
+`mate artifact publish` with the same target to finish it. Other remote
+failures, such as a rejected push, still fail the command.
 
 `mate artifact pending --json` also reports each archive's delivery: `merged`
 and `not-applicable` archives are publishable; `waiting`, `unlinked`, and

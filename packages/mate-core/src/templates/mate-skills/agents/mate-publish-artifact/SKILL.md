@@ -197,7 +197,7 @@ A drifted spec is published in its own right. It is never shipped by republishin
    mate artifact publish --all --json
    ```
 
-   This publishes every pending change in discovery order, then one spec publication for the drift that remains, and emits a **single JSON array** of results in execution order. It halts at the first `conflict` or `error` without attempting anything later; publications already completed stay published. Use it only when the user asked for all of it and no shown archive is waiting for merge — `--all` skips a held-back archive, but never let it decide what ships. Never widen a narrower selection into it.
+   This publishes every pending change in discovery order, then one spec publication for the drift that remains, and emits a **single JSON array** of results in execution order. It halts at the first `conflict`, `error`, or `deferred` without attempting anything later; publications already completed stay published. Use it only when the user asked for all of it and no shown archive is waiting for merge — `--all` skips a held-back archive, but never let it decide what ships. Never widen a narrower selection into it.
 
    Publish changes before specs when the selection mixes both, so a spec a change carries is not published twice. Add `--no-push` only when the user explicitly asked for a local-only publication; it is still refused off the default branch.
 
@@ -205,6 +205,7 @@ A drifted spec is published in its own right. It is never shipped by republishin
 
    - **`ok`** → record it as published using its `anchorName` and `tag`; mention `resumed` when true. Continue.
    - **`skipped`** → either a `--no-push` run (committed and tagged locally, not pushed) or, for `--specs`, nothing drifted to publish. Report which. Continue.
+   - **`deferred`** → the remote stayed unreachable after the command's own retries; the failure may be transient. This does not block: report the publication as committed locally with its push pending, naming the `step` and what `local` says exists (after `sync-remote` it is committed but not tagged; after `push` it is committed and tagged). Do not invoke publish for any remaining selection and report those as not attempted. Do not retry in this run, and never ask the user to load a key, configure credentials, change Git or SSH configuration, or run a command in a terminal.
    - **`conflict`** → stop. Do not invoke publish for any remaining selection. Report the conflicted paths and follow the recovery workflow in [references/openspec.md](references/openspec.md).
    - **`error`** → stop. Report the failing `step`, the `message`, and what `local` says still exists. Do not invoke publish for any remaining selection. Several `error` steps are refusals that mutated nothing and need a different answer than a retry:
      - **`step: "resolve"`** → the target is not publishable. When a change is not archived, report that it must be archived with `mate-archive-change` first and archive nothing yourself. When the message lists more than one matching anchor, report every anchor and ask which to publish; never pick one. When a supplied spec path is reported as not drifted or not a canonical spec, re-run step 1 rather than guessing a different path.
@@ -212,9 +213,11 @@ A drifted spec is published in its own right. It is never shipped by republishin
 
    `resumed: true` means this same publication already committed or tagged and is being retried — typically after a failed push. It is not a sign that anything was borrowed from another change.
 
-8. **Report completed, failed, and remaining.** Name every selection in exactly one bucket. If any is unfinished, say so explicitly — never report the selected set as published while one remains. After an `--all` run that halted, report which array elements completed, which failed, and that later ones were never attempted.
+8. **Report completed, failed, and remaining.** Name every selection in exactly one bucket. If any is unfinished, say so explicitly — never report the selected set as published while one remains. A `deferred` publication goes in a "committed locally, push pending" bucket, not the failed one. After an `--all` run that halted, report which array elements completed, which failed or were deferred, and that later ones were never attempted.
 
-   When work remains (an unmerged branch, a conflict, a failed step): End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. For example, merging `workset/acme-queue` before `/mate-publish-artifact`. When everything selected is published and nothing remains, report completion and stop: no `Next steps` section, no invented command.
+   When a publication was deferred, the only next step for it and the selections after it is re-invoking `/mate-publish-artifact`, which re-runs the deferred publication first.
+
+   When work remains (an unmerged branch, a conflict, a failed step, a deferral): End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. For example, merging `workset/acme-queue` before `/mate-publish-artifact`. When everything selected is published and nothing remains, report completion and stop: no `Next steps` section, no invented command.
 
 ## Example output
 

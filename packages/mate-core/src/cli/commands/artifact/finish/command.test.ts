@@ -9,7 +9,7 @@ import type { CapabilityConfig } from "../../../../lib/orchestrator/types";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
 import { runArtifactPublishCommand, type PublishCommandDeps } from "./command";
 import type { ArtifactFinisher, FinisherFactory } from "./finisher";
-import type { GitOps } from "./git";
+import { type GitOps, RemoteFetchError } from "./git";
 
 const COMPANION = "/companion";
 
@@ -630,6 +630,34 @@ describe("runArtifactPublishCommand — --all sequencing", () => {
     const results = JSON.parse(stdout[0] ?? "[]") as Array<{ status: string }>;
     expect(results.length).toBe(1);
     expect(results[0].status).toBe("error");
+  });
+
+  test("a deferred publication halts the queue without failing the run", async () => {
+    const companion = await companionWithArchives(["2026-09-10-alpha", "2026-09-14-beta"]);
+    const record: string[] = [];
+    const changed = [
+      "openspec/changes/archive/2026-09-10-alpha/",
+      "openspec/changes/archive/2026-09-14-beta/",
+    ];
+    const { deps: d, stdout } = deps(record, companion, changed);
+    const base = d.git!;
+    d.git = (...args) => ({
+      ...base(...args),
+      async hasUpstream() {
+        return true;
+      },
+      async fetch() {
+        throw new RemoteFetchError("git fetch failed: Permission denied (publickey).", true);
+      },
+    });
+
+    await runArtifactPublishCommand(["--all", "--json"], d);
+
+    expect(record).toEqual(["change:2026-09-10-alpha"]);
+    const results = JSON.parse(stdout[0] ?? "[]") as Array<{ status: string; step: string }>;
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ status: "deferred", step: "sync-remote" });
+    expect(process.exitCode ?? 0).toBe(0);
   });
 
   test("a secret-scan failure halts the queue at that publication", async () => {
