@@ -1215,8 +1215,21 @@ describe("bundled Mate publish skill merge hold-back", () => {
       }
       expect(source).toContain("offer a Git restore");
       expect(source).toContain("show this once in the run");
-      expect(source).toContain("never when the forge answered everything");
+      expect(source).toContain("never when the forge or local Git answered everything");
       expect(source).toContain("`MATE_GIT_TOKEN` (read-only: Pull requests and Metadata)");
+    }
+  });
+
+  test("confirms Git suggestions and offers a fetch only with consent", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = await readSkillFrom(root, "mate-publish-artifact");
+      expect(source).toContain("`likely-merged`");
+      expect(source).toContain("record it only after the user confirms");
+      expect(source).toContain("only after the user agrees");
+      expect(source).toContain("--refresh --fetch --json");
+      expect(source).toContain("Mate starts only `git` and reads no credential");
+      const archive = await readSkillFrom(root, "mate-archive-change");
+      expect(archive).toContain("(`forge`, `git`, or `user`)");
     }
   });
 

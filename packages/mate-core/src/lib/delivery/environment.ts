@@ -21,6 +21,10 @@ export interface DeliveryEnvironment {
    * `origin` remote, else the Working Repository's host; null when neither is known.
    */
   hostOf?: (repository: string) => Promise<string | null>;
+  /** Path of a local checkout of the repository: the Working Repository or a linked one. */
+  checkoutOf?: (repository: string) => Promise<string | null>;
+  /** The companion's Git mode is `auto`: merge checks fetch before reading local refs. */
+  gitAutoMode?: boolean;
 }
 
 /** `dir` relative to the companion, with forward slashes. */

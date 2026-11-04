@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import type { ForgeAdapter, PullClassification } from "./forge";
 import { unlinkedRecord, upsertDelivery } from "./record";
-import { refreshRecord, type ForgeAccess } from "./refresh";
+import type { MergeGit, PatchMatch } from "./merge-git";
+import { refreshRecord, type ForgeAccess, type LocalMergeAccess } from "./refresh";
 
 const REPO = "acme/acme-app";
 const now = () => new Date("2026-10-28T10:00:00.000Z");
@@ -189,5 +190,183 @@ describe("refreshRecord", () => {
     const { record } = await refreshRecord(recorded, { now, forgeAccess: access(forge) });
     expect(calls).toHaveLength(2);
     expect(record.deliveries[0].merge?.state).toBe("closed-unmerged");
+  });
+});
+
+const HEAD = "a".repeat(40);
+const SQUASH = "b".repeat(40);
+
+interface LocalState {
+  tip?: string | null;
+  known?: string[];
+  onDefault?: string[];
+  /** Heads on the default branch's own first-parent line: a fast-forward or no own commits. */
+  firstParent?: string[];
+  match?: PatchMatch | null;
+  fetchOk?: boolean;
+}
+
+/** A checkout whose answers are fixed; records which queries ran. */
+function local(state: LocalState, calls: string[] = []): () => Promise<LocalMergeAccess> {
+  const git: MergeGit = {
+    isRepository: async () => true,
+    tip: async () => {
+      calls.push("tip");
+      return state.tip === undefined ? HEAD : state.tip;
+    },
+    hasCommit: async (commit) => (state.known ?? []).includes(commit),
+    isAncestor: async (commit) => {
+      calls.push("isAncestor");
+      return (state.onDefault ?? []).includes(commit);
+    },
+    onFirstParent: async (commit) => (state.firstParent ?? []).includes(commit),
+    patchMatch: async () => state.match ?? null,
+    lastFetchedAt: async () => "2026-11-01T00:00:00.000Z",
+    fetch: async () => ({ ok: true }),
+  };
+  return async () => ({
+    git,
+    defaultBranch: "main",
+    fetch: async () => {
+      calls.push("fetch");
+      return state.fetchOk === false
+        ? { ok: false, message: "git fetch failed: offline" }
+        : { ok: true };
+    },
+  });
+}
+
+const noToken = async (): Promise<ForgeAccess> => ({ unavailable: "no-token" });
+
+describe("refreshRecord with a local checkout", () => {
+  test("without a token Git settles a merge and records the head", async () => {
+    const { record, outcomes } = await refreshRecord(linked(), {
+      now,
+      forgeAccess: noToken,
+      localAccess: local({ onDefault: [HEAD] }),
+    });
+    expect(outcomes[0]).toMatchObject({ result: "merged", needsAnswer: false });
+    expect(record.deliveries[0]).toMatchObject({
+      head: HEAD,
+      merge: { state: "merged", source: "git", checkedAt: now().toISOString() },
+    });
+  });
+
+  test("the forge answer wins and Git only adds the head", async () => {
+    const calls: string[] = [];
+    const { record } = await refreshRecord(linked(), {
+      now,
+      forgeAccess: access(adapter({ kind: "open", pr: { number: 7, url: "u7" } })),
+      localAccess: local({ onDefault: [HEAD] }, calls),
+    });
+    expect(record.deliveries[0].merge).toMatchObject({ state: "open", source: "forge" });
+    expect(record.deliveries[0].head).toBe(HEAD);
+    expect(calls).toEqual(["tip"]);
+  });
+
+  test("a head on the default branch's own line is only a fast-forward suggestion", async () => {
+    const { record, outcomes } = await refreshRecord(linked(), {
+      now,
+      forgeAccess: noToken,
+      localAccess: local({ onDefault: [HEAD], firstParent: [HEAD] }),
+    });
+    expect(outcomes[0]).toMatchObject({
+      needsAnswer: true,
+      answerReason: "likely-merged",
+      suggestion: { commit: HEAD, style: "fast-forward" },
+    });
+    expect(record.deliveries[0].merge).toBeUndefined();
+  });
+
+  test("a patch-identity match is a suggestion and records no merge", async () => {
+    const { record, outcomes } = await refreshRecord(linked(), {
+      now,
+      forgeAccess: noToken,
+      localAccess: local({ match: { commit: SQUASH, style: "squash" } }),
+    });
+    expect(outcomes[0]).toMatchObject({
+      result: "unknown",
+      needsAnswer: true,
+      answerReason: "likely-merged",
+      suggestion: { commit: SQUASH, style: "squash" },
+    });
+    expect(record.deliveries[0].merge).toBeUndefined();
+    expect(record.deliveries[0].head).toBe(HEAD);
+  });
+
+  test("a head nowhere on the default branch asks, with the last fetch time", async () => {
+    const { outcomes } = await refreshRecord(linked(), {
+      now,
+      forgeAccess: noToken,
+      localAccess: local({}),
+    });
+    expect(outcomes[0]).toMatchObject({
+      needsAnswer: true,
+      answerReason: "not-on-default",
+      fetchedAt: "2026-11-01T00:00:00.000Z",
+    });
+    expect(outcomes[0]).not.toHaveProperty("fetch");
+  });
+
+  test("a deleted branch is answered through the recorded head", async () => {
+    const record = upsertDelivery(linked(), REPO, { head: HEAD });
+    const { outcomes } = await refreshRecord(record, {
+      now,
+      forgeAccess: noToken,
+      localAccess: local({ tip: null, known: [HEAD], onDefault: [HEAD] }),
+    });
+    expect(outcomes[0]).toMatchObject({ result: "merged" });
+  });
+
+  test("a direct delivery never reaches local Git", async () => {
+    const calls: string[] = [];
+    const direct = upsertDelivery(unlinkedRecord("x"), REPO, { branch: "main", direct: true });
+    const { outcomes } = await refreshRecord(direct, {
+      now,
+      forgeAccess: noToken,
+      localAccess: local({ onDefault: [HEAD] }, calls),
+      fetch: true,
+    });
+    expect(outcomes[0]).toMatchObject({ answerReason: "direct" });
+    expect(calls).toEqual([]);
+  });
+
+  test("a user's not-yet-merged answer is settled by Git", async () => {
+    const answered = upsertDelivery(linked(), REPO, {
+      merge: { state: "open", source: "user", checkedAt: "earlier" },
+    });
+    const { record } = await refreshRecord(answered, {
+      now,
+      forgeAccess: noToken,
+      localAccess: local({ onDefault: [HEAD] }),
+    });
+    expect(record.deliveries[0].merge).toMatchObject({ state: "merged", source: "git" });
+  });
+
+  test("fetch runs only when asked, and a failed fetch still checks local refs", async () => {
+    const calls: string[] = [];
+    await refreshRecord(linked(), { now, forgeAccess: noToken, localAccess: local({}, calls) });
+    expect(calls).not.toContain("fetch");
+
+    const { outcomes } = await refreshRecord(linked(), {
+      now,
+      forgeAccess: noToken,
+      localAccess: local({ onDefault: [HEAD], fetchOk: false }, calls),
+      fetch: true,
+    });
+    expect(calls).toContain("fetch");
+    expect(outcomes[0]).toMatchObject({
+      result: "merged",
+      fetch: { ok: false, message: "git fetch failed: offline" },
+    });
+  });
+
+  test("without a checkout the forge's reason stands", async () => {
+    const { outcomes } = await refreshRecord(linked(), {
+      now,
+      forgeAccess: noToken,
+      localAccess: async () => null,
+    });
+    expect(outcomes[0]).toMatchObject({ answerReason: "no-token" });
   });
 });

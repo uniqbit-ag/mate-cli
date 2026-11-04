@@ -179,3 +179,48 @@ describe("repositoryAccessFor", () => {
     expect(resolved).toBe(1);
   });
 });
+
+describe("repositoryAccessFor local checkouts", () => {
+  const fakeCheckout = (isRepository: boolean, fetches: string[]) => () => ({
+    defaultBranch: async () => "trunk",
+    git: {
+      isRepository: async () => isRepository,
+      tip: async () => null,
+      hasCommit: async () => false,
+      isAncestor: async () => false,
+      onFirstParent: async () => false,
+      patchMatch: async () => null,
+      lastFetchedAt: async () => null,
+      fetch: async (_default: string, branch: string) => {
+        fetches.push(branch);
+        return { ok: true };
+      },
+    },
+  });
+
+  test("a repository without a checkout, or a path that is not a work tree, has none", async () => {
+    const env = {
+      ...environment(),
+      checkoutOf: async (repository: string) => (repository === APP ? "/repo" : null),
+    };
+    expect(
+      await repositoryAccessFor(env, { openCheckout: fakeCheckout(true, []) })(LIB).local?.(),
+    ).toBeNull();
+    expect(
+      await repositoryAccessFor(env, { openCheckout: fakeCheckout(false, []) })(APP).local?.(),
+    ).toBeNull();
+  });
+
+  test("the checkout's default branch is used and each branch is fetched once", async () => {
+    const fetches: string[] = [];
+    const env = { ...environment(), checkoutOf: async () => "/repo" };
+    const local = await repositoryAccessFor(env, { openCheckout: fakeCheckout(true, fetches) })(
+      APP,
+    ).local?.();
+    expect(local?.defaultBranch).toBe("trunk");
+    await local?.fetch("change/x");
+    await local?.fetch("change/x");
+    await local?.fetch("change/y");
+    expect(fetches).toEqual(["change/x", "change/y"]);
+  });
+});

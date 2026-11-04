@@ -20,7 +20,8 @@ const BUILTIN_GIT_MODE_COMPATIBILITIES: GitModeCompatibility[] = [
   {
     id: "auto",
     label: "On (auto mode)",
-    description: "Automatically synchronize the companion Git state before agent launches.",
+    description:
+      "Automatically synchronize the companion Git state before agent launches, and fetch delivery branches when checking merge state.",
     defaultSelected: false,
   },
 ];

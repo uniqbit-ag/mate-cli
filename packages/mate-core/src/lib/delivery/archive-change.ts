@@ -43,6 +43,8 @@ export interface ArchiveRequest {
   delivery?: DeliveryEdit["delivery"];
   /** Archive with an unlinked record instead of answering `needs-branch`. */
   skipBranch?: boolean;
+  /** Fetch before the local merge check even when the companion's Git mode is not `auto`. */
+  fetch?: boolean;
 }
 
 export type ArchiveOutcome = { refusal: DeliveryRefusal } | { result: ArchiveResult };
@@ -75,6 +77,7 @@ export async function archiveChange(
       ...(request.repository ? { repository: request.repository } : {}),
       ...(request.delivery ? { edit: { delivery: request.delivery } } : {}),
       refresh: true,
+      ...(request.fetch ? { fetch: true } : {}),
       // The settlement covers every repository, so each delivery's merge state is refreshed.
       refreshAll: true,
       requireDelivery: !request.skipBranch,

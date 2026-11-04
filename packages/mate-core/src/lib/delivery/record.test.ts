@@ -229,6 +229,36 @@ describe("delivery record", () => {
     await expect(readDeliveryRecord(companion)).rejects.toThrow(/delivery.yaml/);
   });
 
+  test("a git result and a recorded head round-trip; a record without head stays valid", async () => {
+    const head = "a".repeat(40);
+    const record = upsertDelivery(unlinkedRecord("x"), REPO, {
+      branch: "change/x",
+      head,
+      merge: { state: "merged", source: "git", checkedAt: "2026-11-04T10:00:00.000Z" },
+    });
+    await writeDeliveryRecord(companion, record);
+    expect(await readDeliveryRecord(companion)).toEqual(record);
+
+    await fs.writeFile(
+      path.join(companion, DELIVERY_FILE),
+      `deliveries:\n  - repository: ${REPO}\n    branch: change/x\n`,
+    );
+    expect((await readDeliveryRecord(companion))?.deliveries[0].head).toBeUndefined();
+  });
+
+  test("a head that is not a full commit id is malformed", async () => {
+    await fs.writeFile(
+      path.join(companion, DELIVERY_FILE),
+      `deliveries:\n  - repository: ${REPO}\n    branch: b\n    head: abc123\n`,
+    );
+    await expect(readDeliveryRecord(companion)).rejects.toThrow(/head must be a full commit id/);
+  });
+
+  test("a new branch drops the old head", () => {
+    const linked = upsertDelivery(unlinkedRecord("x"), REPO, { branch: "a", head: "b".repeat(40) });
+    expect(upsertDelivery(linked, REPO, { branch: "c" }).deliveries[0].head).toBeUndefined();
+  });
+
   test("a base from an earlier version is ignored on read and dropped on the next write", async () => {
     await fs.writeFile(
       path.join(companion, DELIVERY_FILE),

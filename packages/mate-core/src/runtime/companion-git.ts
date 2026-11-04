@@ -252,18 +252,27 @@ function spawnGit(
  * free to prompt, so `never` clears every askpass source: both variables, and
  * `core.askPass` through an appended `GIT_CONFIG_*` entry.
  */
-function withoutAskPass(
+export function withoutAskPass(
   env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
   const { GIT_ASKPASS: _gitAskPass, SSH_ASKPASS: _sshAskPass, ...rest } = env;
-  const count = Number.parseInt(rest.GIT_CONFIG_COUNT ?? "0", 10) || 0;
-  return {
-    ...rest,
-    SSH_ASKPASS_REQUIRE: "never",
-    GIT_CONFIG_COUNT: String(count + 1),
-    [`GIT_CONFIG_KEY_${count}`]: "core.askPass",
-    [`GIT_CONFIG_VALUE_${count}`]: "",
-  };
+  return withGitConfig({ ...rest, SSH_ASKPASS_REQUIRE: "never" }, { "core.askPass": "" });
+}
+
+/** `env` with `config` appended as `GIT_CONFIG_*` entries, after any already there. */
+export function withGitConfig(
+  env: Record<string, string | undefined>,
+  config: Record<string, string>,
+): Record<string, string | undefined> {
+  const next: Record<string, string | undefined> = { ...env };
+  let count = Number.parseInt(next.GIT_CONFIG_COUNT ?? "0", 10) || 0;
+  for (const [key, value] of Object.entries(config)) {
+    next[`GIT_CONFIG_KEY_${count}`] = key;
+    next[`GIT_CONFIG_VALUE_${count}`] = value;
+    count += 1;
+  }
+  next.GIT_CONFIG_COUNT = String(count);
+  return next;
 }
 
 /** The operation's policy is fixed when it is opened; every step below inherits it. */

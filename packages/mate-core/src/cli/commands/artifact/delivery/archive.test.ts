@@ -247,6 +247,7 @@ describe("mate artifact archive", () => {
     expect(out).toEqual([
       "Archived x; publication waits until its delivery is merged (waiting).",
       `  ${REPO}  change/x  no merge recorded`,
+      "  change/x: needs an answer (no-token)",
       "  delivery: waiting",
     ]);
   });

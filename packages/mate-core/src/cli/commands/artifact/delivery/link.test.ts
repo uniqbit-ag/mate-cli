@@ -113,6 +113,12 @@ describe("mate artifact link", () => {
     expect(edited.record.deliveries[0].branch).toBe("workset/acme-login");
   });
 
+  test("--fetch needs --refresh", async () => {
+    await runArtifactLinkCommand(["x", "--fetch"], deps());
+    expect(err.join("\n")).toContain("--fetch needs --refresh");
+    expect(process.exitCode).toBe(1);
+  });
+
   test("--branch records the Working Repository's delivery branch", async () => {
     const [result] = await run(["x", "--branch", "change/x"]);
     expect(result.record.deliveries).toEqual([{ repository: REPO, branch: "change/x" }]);
@@ -225,7 +231,10 @@ describe("mate artifact link", () => {
 
     out = [];
     await runArtifactLinkCommand(["x", "--refresh"], {
-      ...deps({ forge: { fetch }, resolveToken: async () => ({ token: TOKEN, source: "gh" }) }),
+      ...deps({
+        forge: { fetch },
+        resolveToken: async () => ({ token: TOKEN, source: "MATE_GIT_TOKEN" }),
+      }),
     });
     expect([...out, ...err].join("\n")).not.toContain(TOKEN);
     expect(out.join("\n")).toContain("Pull requests: read");
