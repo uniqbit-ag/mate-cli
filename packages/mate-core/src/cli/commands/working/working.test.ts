@@ -4,6 +4,7 @@ import { resetActiveDistribution, setActiveDistribution } from "../../../distrib
 import { PluginRegistry } from "../../../tools/setup/registry";
 import * as cleanup from "./cleanup";
 import { runWorkingCommand } from "./working";
+import * as worktree from "./worktree";
 
 beforeEach(() => {
   setActiveDistribution({
@@ -23,6 +24,16 @@ describe("runWorkingCommand", () => {
     try {
       await runWorkingCommand("cleanup", []);
       expect(run).toHaveBeenCalledTimes(1);
+    } finally {
+      run.mockRestore();
+    }
+  });
+
+  test("dispatches worktree", async () => {
+    const run = spyOn(worktree, "runWorkingWorktreeCommand").mockImplementation(async () => {});
+    try {
+      await runWorkingCommand("worktree", ["acme-login"]);
+      expect(run).toHaveBeenCalledWith(["acme-login"]);
     } finally {
       run.mockRestore();
     }

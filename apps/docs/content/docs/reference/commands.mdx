@@ -5,16 +5,17 @@ description: Current Mate CLI commands and their execution contexts.
 
 ## Setup And Linking
 
-| Command                         | Context                 | Purpose                                                                    |
-| ------------------------------- | ----------------------- | -------------------------------------------------------------------------- |
-| `mate companion setup`          | Companion root          | Create or reconfigure a companion explicitly.                              |
-| `mate companion link`           | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
-| `mate companion list [--json]`  | Linked context          | List linked repositories.                                                  |
-| `mate companion open`           | Linked context          | Add the working repository and companion to the preferred editor.          |
-| `mate companion tui`            | Linked context, TTY     | Open a shell in the resolved companion.                                    |
-| `mate companion sync`           | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
-| `mate companion update [--yes]` | Linked context          | Regenerate the companion's Mate-managed files with the newest stable Mate. |
-| `mate working cleanup`          | Working repository      | Remove Mate's local integration from a linked working repository.          |
+| Command                              | Context                 | Purpose                                                                    |
+| ------------------------------------ | ----------------------- | -------------------------------------------------------------------------- |
+| `mate companion setup`               | Companion root          | Create or reconfigure a companion explicitly.                              |
+| `mate companion link`                | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
+| `mate companion list [--json]`       | Linked context          | List linked repositories.                                                  |
+| `mate companion open`                | Linked context          | Add the working repository and companion to the preferred editor.          |
+| `mate companion tui`                 | Linked context, TTY     | Open a shell in the resolved companion.                                    |
+| `mate companion sync`                | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
+| `mate companion update [--yes]`      | Linked context          | Regenerate the companion's Mate-managed files with the newest stable Mate. |
+| `mate working cleanup`               | Working repository      | Remove Mate's local integration from a linked working repository.          |
+| `mate working worktree <workset-id>` | Working repository      | Give a Workset its own Git worktree in each of its Working Repositories.   |
 
 `mate companion link` does not accept flags. Its selection and any required
 installation confirmation are interactive. The default workflow is:
@@ -51,6 +52,37 @@ runs in to that companion without asking. It is for machine callers, such as a
 container linking its worktree. It writes only the working repository's
 own, locally excluded link and never the companion's registry. The interactive
 `mate companion link` stays the way to link a repository by hand.
+
+`mate working worktree <workset-id>` lets you work on several Worksets in
+parallel. For each Working Repository of the Workset, it creates a Git worktree
+next to the main checkout linked to the companion, at
+`<checkout>.worktrees/<workset-id>`; for a checkout at `~/src/web` that is
+`~/src/web.worktrees/acme-login`. The worktree is on the Workset's Delivery
+Branch `workset/<workset-id>`: the local branch, else a new branch tracking
+`origin/workset/<workset-id>`, else a new branch from `origin/HEAD`. It fetches
+`origin` first and warns when that fails. It checks every repository before it
+creates anything: an unknown Workset, a repository not linked on this machine,
+a branch already checked out elsewhere, or a foreign directory at the target
+path stops the command without changes. Run it again and it reuses the
+worktree.
+
+Each new worktree gets the companion link `mate working link` writes, and the
+install step of its first lockfile: `bun install`, `pnpm install`,
+`yarn install`, or `npm ci`. `--no-install` skips the install. A failed install
+keeps the worktree and exits non-zero. Env files are never read, copied, or
+linked: the command names the ignored `.env` and `.env.*` files of the main
+checkout that the worktree lacks, by path only, so you can provide them
+yourself. Example files such as `.env.example` are not named.
+
+The companion is the one the current checkout is paired with. When it is paired
+with several, pass `--companion <path>`. `--json` prints one object with each
+repository's path, branch, `created` or `reused`, the install command and its
+outcome (`ok`, `failed`, or `skipped`), and the missing env paths.
+
+`mate working worktree prune` removes the worktrees of Done Worksets. It keeps
+and names any worktree with uncommitted changes, untracked files, or commits on
+no remote, and exits 0 either way. It never deletes the branch. It takes
+`--companion <path>` and `--json` as well.
 
 ## Installation And Health
 

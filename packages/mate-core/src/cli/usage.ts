@@ -22,6 +22,8 @@ export function usage(): string {
     ` ${n} companion tui`,
     ` ${n} working cleanup`,
     ` ${n} working link --companion <path> --yes`,
+    ` ${n} working worktree <workset-id> [--companion <path>] [--no-install] [--json]`,
+    ` ${n} working worktree prune [--companion <path>] [--json]`,
     ` ${n} wrap [--companion PATH]`,
     ` ${n} unwrap`,
     ` ${n} session prepare --repo <dir> [--json] [--sync]`,
