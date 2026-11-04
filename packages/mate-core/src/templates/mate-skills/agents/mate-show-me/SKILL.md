@@ -35,6 +35,13 @@ Explain the current topic visually in a browser-rendered Mate report. Skip the p
 - Never commit, push, or create a pull request.
 - When reviewing an applied change and handing off: End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. Mention `/mate-simplify-code` above it as optional; list `/mate-archive-change <change-name>` in it.
 
+**Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+and Cursor and the fallback. When the current runtime uses another syntax, swap only
+the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+user's statement or the harness's own identity sets the runtime, never a skill's
+folder or an older example. Arguments, commands, paths, and order stay, and naming
+never invokes.
+
 ## Browser Report Required
 
 Always assemble and open a Mate report, even when a small inline sketch would be sufficient. Do not answer with an inline-only visual or paste the complete diagram or diff into the conversation. The final response should briefly state what the report shows, relaying the link or Studio instruction `mate report` printed, without repeating any temporary file path.

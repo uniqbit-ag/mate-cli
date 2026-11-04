@@ -51,6 +51,14 @@ merge. Archiving is local and uncommitted; it publishes nothing.
    execution order, with exact commands and known change names, prerequisites first.
    Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
    follows it. Listing an action never invokes it.
+
+   **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+   and Cursor and the fallback. When the current runtime uses another syntax, swap only
+   the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+   user's statement or the harness's own identity sets the runtime, never a skill's
+   folder or an older example. Arguments, commands, paths, and order stay, and naming
+   never invokes.
+
    When the delivery branch is not merged yet, list merging it before
    `/mate-publish-artifact`, and say above the section that publication, not archive,
    waits for the merge. Never commit, push, open a PR, or merge for the user.

@@ -22,6 +22,27 @@ OpenSpec's workflows, which ship inside them, and call the **Mate CLI**
 (`mate artifact …`) for the deterministic parts. You only ever invoke the Mate
 skills listed here.
 
+### Invoking a skill
+
+How you type a skill depends on your agent runtime. Mate skills write their
+handoffs in the syntax of the runtime you are using:
+
+| Agent runtime       | Syntax        | Example                                 |
+| ------------------- | ------------- | --------------------------------------- |
+| Claude Code, Cursor | `/name`       | `/mate-propose-change acme-queue`       |
+| OpenCode            | `@name`       | `@mate-propose-change acme-queue`       |
+| Codex               | `$name`       | `$mate-propose-change acme-queue`       |
+| Pi                  | `/skill:name` | `/skill:mate-propose-change acme-queue` |
+
+Skills and this page write invocations as `/name`. A skill swaps only the
+prefix when it knows your runtime, because you said which one you use or the
+runtime identifies itself; otherwise it keeps `/name`, such as
+`/mate-propose-change acme-queue`. In another runtime, type its prefix instead.
+
+This table is invocation syntax only. It adds no Mate runtime integration:
+Mate's launch and setup support stays as described in
+[Capabilities](/docs/capabilities#skill-locations).
+
 The full schema, `mate-v1`, writes a proposal, specs, a design, and tasks:
 
 {/* delivery-path:mate-v1 */}
@@ -78,7 +99,7 @@ nothing after it. The list holds only the actions to take now, in order, with
 exact commands and change names; a prerequisite comes before what depends on it.
 Summaries, warnings, optional stages, and deferred slices stay above it. A
 skill never runs an action just because it listed it, and a completed
-publication ends without one. After propose, for example:
+publication ends without one. After propose in Claude Code, for example:
 
 ```text
 Validation passed; validation is not approval.

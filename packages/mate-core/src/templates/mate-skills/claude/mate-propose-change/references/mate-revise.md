@@ -33,6 +33,7 @@ them, and keeps them consistent with each other. Not a Delivery Path stage.
    execution order, with exact commands and known change names, prerequisites first.
    Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
    follows it. Listing an action never invokes it.
+   Swap skill prefixes per **Skill invocation** in `SKILL.md`.
    Start with reviewing the revised artifacts. When the change already has checked
    tasks, then list `/mate-apply-change <change-name>` to carry the revision into code;
    when every task is checked, `/mate-archive-change <change-name>`.

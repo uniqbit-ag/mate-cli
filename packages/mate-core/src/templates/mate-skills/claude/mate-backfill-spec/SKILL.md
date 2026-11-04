@@ -70,7 +70,14 @@ Specify one feature that already exists in the working repository. A backfill re
 
    Fix every reported error and re-validate until it passes. Do not hand off a spec that fails validation.
 
-8. **Hand off.** Report the written path and show the uncommitted diff (`git diff -- openspec/specs/<capability>/`, or the file itself when it is new). Point the user to `mate-publish-artifact`: the spec appears there under **Drifted specs** and can be published on its own or with the rest.
+8. **Hand off.** Report the written path and show the uncommitted diff (`git diff -- openspec/specs/<capability>/`, or the file itself when it is new). Point the user to `/mate-publish-artifact`: the spec appears there under **Drifted specs** and can be published on its own or with the rest.
+
+   **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+   and Cursor and the fallback. When the current runtime uses another syntax, swap only
+   the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+   user's statement or the harness's own identity sets the runtime, never a skill's
+   folder or an older example. Arguments, commands, paths, and order stay, and naming
+   never invokes.
 
 ## Guardrails
 

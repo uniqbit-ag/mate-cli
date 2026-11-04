@@ -11,8 +11,8 @@ metadata:
 
 # Mate Grill With Docs
 
-First invoke `/mate-grilling` and wait for explicit decisions. Then invoke
-`/mate-domain-modeling` only for confirmed project terminology or durable
+First load the `mate-grilling` skill and wait for explicit decisions. Then load the
+`mate-domain-modeling` skill only for confirmed project terminology or durable
 decisions.
 
 The grilling phase remains dependency-ordered and conversational. Do not write

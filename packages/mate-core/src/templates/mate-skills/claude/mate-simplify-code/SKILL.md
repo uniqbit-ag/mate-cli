@@ -369,6 +369,13 @@ Summaries, evidence, warnings, optional work, and deferred context go above it; 
 follows it. Listing an action never invokes it. Mention
 `/mate-show-me` above it as optional; list `/mate-archive-change <change-name>` in it.
 
+**Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+and Cursor and the fallback. When the current runtime uses another syntax, swap only
+the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+user's statement or the harness's own identity sets the runtime, never a skill's
+folder or an older example. Arguments, commands, paths, and order stay, and naming
+never invokes.
+
 ## Language-Specific Guidance
 
 ### TypeScript / JavaScript

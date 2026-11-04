@@ -150,6 +150,13 @@ Confirmed points are settled; explore should not ask them again. Then tell the
 user the next step is `/mate-explore-change`; do not invoke it. The user starts it
 in this conversation.
 
+**Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+and Cursor and the fallback. When the current runtime uses another syntax, swap only
+the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+user's statement or the harness's own identity sets the runtime, never a skill's
+folder or an older example. Arguments, commands, paths, and order stay, and naming
+never invokes.
+
 If the session stopped on a blocker, still emit the block. Put only explicitly
 confirmed fields under Confirmed, list the blocker first under Unresolved, and
 do not present the result as confirmed.
