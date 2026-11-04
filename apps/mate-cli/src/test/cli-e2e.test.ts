@@ -453,6 +453,8 @@ async function linkRepository(scenario: E2EScenario): Promise<CliRunResult> {
       { chunk: "\r", delayMs: 1000 },
       { chunk: "\r", delayMs: 1000 },
     ],
+    // Cold starts under full-suite load can pass the 8s default before the prompt opens.
+    timeoutSeconds: 15,
   });
   if (linkResult.exitCode !== 0) return linkResult;
 
@@ -2823,7 +2825,7 @@ describe("mate studio e2e", () => {
       /** Views render in the browser; the first response carries each view's data. */
       const dashboardMarkup = await dashboard.text();
       expect(dashboardMarkup).toContain("<h1>Overview</h1>");
-      expect(dashboardMarkup).toContain(`["dashboard","${digest}"`);
+      expect(dashboardMarkup).toContain(`["${digest}","view","dashboard"`);
       expect(dashboardMarkup).toContain('name:"add-acme-checkout"');
       expect(dashboardMarkup).not.toContain("<h3>Choose a Companion Repository</h3>");
 
@@ -2832,7 +2834,7 @@ describe("mate studio e2e", () => {
       expect(specs.status).toBe(200);
       const specsMarkup = await specs.text();
       expect(specsMarkup).toContain("<h1>Specs</h1>");
-      expect(specsMarkup).toContain(`["specs","${digest}"`);
+      expect(specsMarkup).toContain(`["${digest}","view","specs"`);
       expect(specsMarkup).toContain('capability:"acme-checkout"');
       expect(specsMarkup).not.toContain('name:"add-acme-checkout"');
 
@@ -2840,7 +2842,7 @@ describe("mate studio e2e", () => {
       expect(workflow.status).toBe(200);
       const workflowMarkup = await workflow.text();
       expect(workflowMarkup).toContain("<h1>Workflow</h1>");
-      expect(workflowMarkup).toContain(`["workflow","${digest}"`);
+      expect(workflowMarkup).toContain(`["${digest}","view","workflow"`);
       expect(workflowMarkup).toContain('schemaName:"mate-v1"');
       expect(workflowMarkup).not.toContain('name:"add-acme-checkout"');
     } finally {
@@ -2863,7 +2865,7 @@ describe("mate studio e2e", () => {
       expect(markup).toContain("<h3>Choose a Companion Repository</h3>");
       expect(markup).not.toContain("Could not read this companion");
       /** The picker stands in for the view, so no view data is loaded. */
-      expect(markup).not.toContain('["dashboard","deadbeef00"');
+      expect(markup).not.toContain('["deadbeef00","view","dashboard"');
     } finally {
       await studio.stop("SIGINT");
     }
