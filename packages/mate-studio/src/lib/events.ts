@@ -4,14 +4,7 @@ import { useEffect } from "react";
 
 import { usePageUi } from "../stores/page-ui";
 import { useVaultUi } from "../stores/vault-ui";
-
-/** Query keys each event makes stale; views refetch them in place (design D7). */
-const EVENT_KEYS: Record<StudioEvent["type"], (digest: string) => readonly unknown[][]> = {
-  board: (digest) => [["factory", digest], ["shell"]],
-  reports: (digest) => [["reports", digest]],
-  // The vault only marks its tree stale; the viewer refreshes it (studio-vault).
-  "vault-tree": () => [],
-};
+import { afterEvent } from "./studio-queries";
 
 /** Follows the companion's event stream for as long as the page shows it. */
 export function useStudioEvents(digest: string | undefined): void {
@@ -33,9 +26,7 @@ export function useStudioEvents(digest: string | undefined): void {
       if (event.type === "reports" && !location.pathname.startsWith("/reports")) {
         usePageUi.getState().announceReport({ id: event.id, title: event.title });
       }
-      for (const queryKey of EVENT_KEYS[event.type]?.(digest) ?? []) {
-        void queryClient.invalidateQueries({ queryKey });
-      }
+      void afterEvent(queryClient, digest, event.type);
     });
     return () => source.close();
   }, [digest, queryClient]);

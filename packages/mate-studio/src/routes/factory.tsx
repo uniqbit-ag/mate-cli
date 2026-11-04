@@ -2,8 +2,8 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-import { factoryQuery } from "../lib/factory-query";
-import { registeredCompanion, shellQuery } from "../lib/queries";
+import { loadHeld, loadView, registeredCompanion } from "../lib/queries";
+import { factoryQuery, shellQuery } from "../lib/studio-queries";
 import { Factory } from "../views/factory/factory-view";
 
 export const Route = createFileRoute("/factory")({
@@ -15,13 +15,13 @@ export const Route = createFileRoute("/factory")({
   // Only offered where the factory broker runs; elsewhere the address lands on the Overview.
   beforeLoad: async ({ context, search }) => {
     const studioSearch = { companion: search.companion, studioMode: search.studioMode };
-    const shell = await context.queryClient.ensureQueryData(shellQuery(studioSearch));
+    const shell = await loadHeld(context.queryClient, shellQuery(studioSearch));
     if (!shell.factoryMode) throw redirect({ to: "/", search: studioSearch });
   },
   loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
   loader: async ({ context, deps }) => {
     const companion = await registeredCompanion(context.queryClient, deps);
-    return companion ? context.queryClient.ensureQueryData(factoryQuery(companion)) : null;
+    return companion ? loadView(context.queryClient, factoryQuery(companion)) : null;
   },
   component: FactoryRoute,
 });

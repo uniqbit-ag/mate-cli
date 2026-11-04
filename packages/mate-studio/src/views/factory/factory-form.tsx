@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useContext, type FormEvent, type ReactNode } from "react";
 
+import { afterFactoryAction } from "../../lib/studio-queries";
 import { type FactoryAction, runFactoryAction } from "../../server/factory";
 import { FactoryCompanion } from "./factory-companion";
 
@@ -24,7 +25,7 @@ export function FactoryForm({ action, id, className, children, ...rest }: Factor
   const mutation = useMutation({
     mutationFn: (fields: Record<string, string>) =>
       runFactoryAction({ data: { companion, action, id, fields } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["factory", companion] }),
+    onSuccess: () => afterFactoryAction(queryClient, companion),
   });
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -12,6 +12,7 @@ import {
 import { useEffect } from "react";
 
 import type { StudioSearch } from "../lib/search";
+import { afterRefresh } from "../lib/studio-queries";
 import { getShell, type ShellData } from "../server/shell";
 import { useAppearance } from "../stores/appearance";
 import { LocalTime } from "./local-time";
@@ -242,12 +243,12 @@ function Metrics({ metrics }: { metrics: NonNullable<ShellData["metrics"]> }) {
   );
 }
 
-/** The refresh control is the only thing that collects again. */
+/** The refresh control is the only thing that collects again, and only the selected companion. */
 function Footer({ shell, search }: { shell: ShellData; search: StudioSearch }) {
   const queryClient = useQueryClient();
   const refresh = useMutation({
     mutationFn: () => getShell({ data: { ...search, refresh: true } }),
-    onSuccess: () => queryClient.invalidateQueries(),
+    onSuccess: () => afterRefresh(queryClient, search.companion),
   });
   const theme = useAppearance((state) => state.theme);
   const cycle = useAppearance((state) => state.cycle);

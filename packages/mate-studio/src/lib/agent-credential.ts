@@ -9,7 +9,7 @@ import {
  * an entered value goes in one request body and is never kept, keyed or put in an address.
  */
 
-export const agentCredentialKey = ["factory", "agent-credential"] as const;
+export const agentCredentialKey = ["agent-credential"] as const;
 
 async function call<T>(method: string, route: string, body?: object): Promise<T> {
   const response = await fetch(route, {

@@ -3,10 +3,10 @@ import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import type { VaultView } from "@uniqbit/mate-core/studio";
 import { useEffect, useRef, useState } from "react";
 
+import { afterVaultFileChange, type VaultSearch } from "../../lib/studio-queries";
 import { saveVaultFile } from "../../server/vault";
 import { useVaultUi } from "../../stores/vault-ui";
 import { MarkdownView } from "./markdown-view";
-import type { VaultSearch } from "./vault-query";
 
 /** What the open file's stream reports: a new version, a removal, or an overwritten save. */
 interface VaultWatchEvent {
@@ -109,7 +109,7 @@ function Reader({
   const [status, setStatus] = useState("");
   useFileEvents(companion, open.path, (event) => {
     if (event.kind === "removed") setStatus("this file no longer exists on disk");
-    else void queryClient.invalidateQueries({ queryKey: ["vault", companion, "view"] });
+    else void afterVaultFileChange(queryClient, companion);
   });
   return (
     <div
@@ -201,7 +201,7 @@ function Editor({ companion, data }: { companion: string; data: VaultView }) {
       setDirty(false);
       setStatus("saved");
       // The rendered file refreshes in the background; read is shown at once.
-      void queryClient.invalidateQueries({ queryKey: ["vault", companion, "view"] });
+      void afterVaultFileChange(queryClient, companion);
       // Back to read, showing the saved content, where the viewer was.
       void navigate({
         to: "/vault",

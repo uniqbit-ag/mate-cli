@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { registeredCompanion } from "../lib/queries";
-import { companionViewQuery } from "../lib/view-query";
+import { loadView, registeredCompanion } from "../lib/queries";
+import { companionViewQuery } from "../lib/studio-queries";
 import { CompanionView } from "../shell/companion-view";
 import { AnalystOverview } from "../views/overview/analyst-overview";
 import { Dashboard } from "../views/overview/dashboard";
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/")({
   loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
   loader: async ({ context, deps }) =>
     (await registeredCompanion(context.queryClient, deps))
-      ? context.queryClient.ensureQueryData(companionViewQuery("dashboard", deps))
+      ? loadView(context.queryClient, companionViewQuery("dashboard", deps))
       : null,
   component: Overview,
 });

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import {
+  companionDigest,
   modePolicy,
   parseSelection,
   type StudioProfile,
@@ -87,6 +88,37 @@ describe("built server", () => {
       { context: { studio: services } },
     );
     expect(await response.text()).toContain("/acme-b");
+  });
+
+  test("sends a selected companion's view data with the first response", async () => {
+    const companion = page.inventory.companions[0]!;
+    const withCompanion = {
+      ...services,
+      page: async (url: URL) => ({
+        ...(await services.page(url)),
+        companion,
+        payload: {
+          companionPath: companion.path,
+          changes: [],
+          specs: [],
+          skills: [],
+          topology: null,
+          worksets: [],
+          linkedRepositories: [],
+          worksetProblems: [],
+          warnings: ["acme-view-data"],
+        },
+      }),
+    } as unknown as StudioServices;
+    const digest = companionDigest(companion.path);
+    for (const view of ["workflow", "factory"]) {
+      const { response } = await follow(
+        `/${view}?companion=${digest}&studioMode=engineering`,
+        withCompanion,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain("acme-view-data");
+    }
   });
 
   test("sends the Factory view to the Overview without the factory broker", async () => {
