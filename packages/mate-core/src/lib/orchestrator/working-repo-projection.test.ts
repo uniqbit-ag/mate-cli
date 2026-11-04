@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { parse as parseJsonc } from "jsonc-parser";
 
 import { getActiveDistribution, setActiveDistribution } from "../../distribution";
 import { FRAMEWORK_NAME } from "../../framework";
@@ -1152,5 +1153,52 @@ describe("workspace-document entry", () => {
     await project("workspace", input);
 
     expect(workspaceState(await project("workspace", input))).toBe("current");
+  });
+
+  test("merges into an existing document and adds the managed settings", async () => {
+    const [repoPath, companionPath, extraPath] = await makeFolders("workspace-merge-", [
+      "working",
+      "companion",
+      "extra",
+    ]);
+    const target = path.join(repoPath!, `.${FRAMEWORK_NAME}`, "workspace.code-workspace");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(
+      target,
+      `{\n  // acme\n  "folders": [{ "path": "${extraPath}" },],\n  "settings": { "git.detectWorktrees": false },\n}\n`,
+    );
+
+    const result = await project("workspace", {
+      repoPath: repoPath!,
+      companionPath: companionPath!,
+    });
+
+    expect(workspaceState(result)).toBe("written");
+    const text = await fs.readFile(target, "utf8");
+    expect(text).toContain("// acme");
+    expect(parseJsonc(text)).toEqual({
+      folders: [{ path: extraPath }, { path: repoPath }, { path: companionPath }],
+      settings: { "git.detectWorktrees": false, "scm.alwaysShowRepositories": true },
+    });
+  });
+
+  test("reports a broken document as failed and leaves it unchanged", async () => {
+    const [repoPath, companionPath] = await makeFolders("workspace-broken-", [
+      "working",
+      "companion",
+    ]);
+    const target = path.join(repoPath!, `.${FRAMEWORK_NAME}`, "workspace.code-workspace");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, '{ "folders": {} }');
+
+    const result = await project("workspace", {
+      repoPath: repoPath!,
+      companionPath: companionPath!,
+    });
+
+    const outcome = result.outcomes.find((entry) => entry.id === "workspace-document");
+    expect(outcome?.state).toBe("failed");
+    expect(outcome?.error?.message).toBe('"folders" is not an array');
+    expect(await fs.readFile(target, "utf8")).toBe('{ "folders": {} }');
   });
 });

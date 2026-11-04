@@ -6,7 +6,7 @@ import {
   findRepoLocalRegistryFile,
 } from "../../../lib/orchestrator/repository-link";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
-import { injectEditorFolder, getPreferredEditorCli } from "../../../lib/orchestrator/editor";
+import { openEditorWorkspace, getPreferredEditorCli } from "../../../lib/orchestrator/editor";
 import { WorkingRepoRequiredError } from "../../../lib/orchestrator/types";
 import { resolveProjection } from "../../../runtime/projection";
 
@@ -32,7 +32,7 @@ export const workspaceOpenCommandDeps = {
   },
   resolveProjection,
   getPreferredEditorCli: () => getPreferredEditorCli(),
-  injectEditorFolder,
+  openEditorWorkspace,
 };
 
 /**
@@ -49,14 +49,15 @@ function orderCompanionPaths(cwd: string, matches: CompanionMatch[]): string[] {
 
 /**
  * @command mate companion open
- * @description Updates the managed `.mate/workspace.code-workspace` file with
- * the active working repository and every Linked Companion, then adds those
- * folders to the current editor window via `--add`.
+ * @description Merges the active working repository, every Linked Companion,
+ * and the worktree-detection settings into `.mate/workspace.code-workspace`,
+ * keeping developer edits, then opens that file in the editor.
  * @remarks Never selects a companion: no picker, no `MATE_ARTIFACT_PATH`
  * narrowing, and the companion recorded at the Projection Root is left as it
  * was. Stale companion pointers are skipped with a stderr warning. Throws
  * {@link WorkingRepoRequiredError} when no existing Linked Companion remains;
- * sets a non-zero exit code if the editor CLI is unavailable.
+ * sets a non-zero exit code if the editor CLI is unavailable or the workspace
+ * file cannot be read, leaving that file unchanged.
  */
 export async function runWorkspaceOpenCommand(): Promise<void> {
   const cwd = workspaceOpenCommandDeps.cwd();
@@ -64,18 +65,16 @@ export async function runWorkspaceOpenCommand(): Promise<void> {
   if (matches.length === 0) throw new WorkingRepoRequiredError("companion open");
 
   const repoPath = await workspaceOpenCommandDeps.findRepoRoot(cwd);
-  const injected = await workspaceOpenCommandDeps.injectEditorFolder(
+  const opened = await workspaceOpenCommandDeps.openEditorWorkspace(
     orderCompanionPaths(cwd, matches),
     repoPath,
     workspaceOpenCommandDeps.getPreferredEditorCli(),
   );
 
-  if (!injected) {
+  if (!opened) {
     process.exitCode = 1;
     return;
   }
 
-  console.log(
-    "Workspace: added to the current editor window; persistent file at .mate/workspace.code-workspace",
-  );
+  console.log("Workspace: opened .mate/workspace.code-workspace in the editor");
 }

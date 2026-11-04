@@ -83,6 +83,7 @@ import {
   type ProjectionWriteReport,
   type ProjectionWriteState,
 } from "./projection-types";
+import { mergeWorkspaceDocument } from "./workspace-document";
 
 const WORKSPACE_DOCUMENT_FILE = "workspace.code-workspace";
 
@@ -421,11 +422,19 @@ function buildEntries(): readonly ProjectionEntry[] {
           input.workspaceCompanionPaths ?? (input.companionPath ? [input.companionPath] : []);
         if (companionPaths.length === 0) return "skipped";
         const target = workspaceDocumentPath(input.repoPath);
-        const folders = [input.repoPath, ...companionPaths].map((folder) => path.resolve(folder));
-        const next = `${JSON.stringify({ folders: folders.map((candidate) => ({ path: candidate })) }, null, 2)}\n`;
-        if ((await fs.readFile(target, "utf8").catch(() => null)) === next) return "current";
+        const existing = await fs.readFile(target, "utf8").catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        });
+        const merge = mergeWorkspaceDocument({
+          existing,
+          documentDir: path.dirname(target),
+          folders: [input.repoPath, ...companionPaths],
+        });
+        if (merge.kind === "invalid") throw new Error(merge.problem);
+        if (merge.kind === "unchanged") return "current";
         await fs.mkdir(path.dirname(target), { recursive: true });
-        await fs.writeFile(target, next, "utf8");
+        await fs.writeFile(target, merge.text, "utf8");
         return "written";
       },
       removal: { by: "entry", entry: "projection-root" },

@@ -465,7 +465,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
     const detectInvokingEditorCli = spyOn(editor, "detectInvokingEditorCli").mockReturnValue(
       "cursor",
     );
-    const injectEditorFolder = spyOn(editor, "injectEditorFolder");
+    const openEditorWorkspace = spyOn(editor, "openEditorWorkspace");
     const originalTermProgram = process.env.TERM_PROGRAM;
     process.env.TERM_PROGRAM = "cursor";
 
@@ -489,7 +489,7 @@ describe("runCompanionLinkCommandWithDeps", () => {
     }
 
     expect(detectInvokingEditorCli).not.toHaveBeenCalled();
-    expect(injectEditorFolder).not.toHaveBeenCalled();
+    expect(openEditorWorkspace).not.toHaveBeenCalled();
   });
 
   test("writes both the repo-local pointer and the companion-side registry entry", async () => {

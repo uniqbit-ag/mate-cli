@@ -18,15 +18,15 @@ function match(companionPath: string) {
   return { companionPath, repositoryId: "repo-a" };
 }
 
-let injectEditorFolder: ReturnType<typeof mock>;
+let openEditorWorkspace: ReturnType<typeof mock>;
 
 beforeEach(() => {
-  injectEditorFolder = mock(async () => true);
+  openEditorWorkspace = mock(async () => true);
   workspaceOpenCommandDeps.cwd = () => "/tmp/repo-a";
   workspaceOpenCommandDeps.findRepoRoot = async () => "/tmp/repo-a";
   workspaceOpenCommandDeps.resolveProjection = () => null;
   workspaceOpenCommandDeps.getPreferredEditorCli = () => "cursor";
-  workspaceOpenCommandDeps.injectEditorFolder = injectEditorFolder as never;
+  workspaceOpenCommandDeps.openEditorWorkspace = openEditorWorkspace as never;
   spyOn(console, "log").mockImplementation(() => {});
 });
 
@@ -45,7 +45,7 @@ describe("runWorkspaceOpenCommand", () => {
 
     await runWorkspaceOpenCommand();
 
-    expect(injectEditorFolder).toHaveBeenCalledWith(["/tmp/companion"], "/tmp/repo-a", "cursor");
+    expect(openEditorWorkspace).toHaveBeenCalledWith(["/tmp/companion"], "/tmp/repo-a", "cursor");
   });
 
   test("passes every Linked Companion, sorted by resolved path", async () => {
@@ -57,7 +57,7 @@ describe("runWorkspaceOpenCommand", () => {
 
     await runWorkspaceOpenCommand();
 
-    expect(injectEditorFolder).toHaveBeenCalledWith(
+    expect(openEditorWorkspace).toHaveBeenCalledWith(
       ["/tmp/companion-a", "/tmp/companion-b", "/tmp/companion-c"],
       "/tmp/repo-a",
       "cursor",
@@ -75,7 +75,7 @@ describe("runWorkspaceOpenCommand", () => {
 
     await runWorkspaceOpenCommand();
 
-    expect(injectEditorFolder).toHaveBeenCalledWith(
+    expect(openEditorWorkspace).toHaveBeenCalledWith(
       ["/tmp/companion-b", "/tmp/companion-a", "/tmp/companion-c"],
       "/tmp/repo-a",
       "cursor",
@@ -92,7 +92,7 @@ describe("runWorkspaceOpenCommand", () => {
 
     await runWorkspaceOpenCommand();
 
-    expect(injectEditorFolder).toHaveBeenCalledWith(
+    expect(openEditorWorkspace).toHaveBeenCalledWith(
       ["/tmp/companion-a", "/tmp/companion-b"],
       "/tmp/repo-a",
       "cursor",
@@ -108,7 +108,7 @@ describe("runWorkspaceOpenCommand", () => {
 
     await runWorkspaceOpenCommand();
 
-    expect(injectEditorFolder).toHaveBeenCalledWith(
+    expect(openEditorWorkspace).toHaveBeenCalledWith(
       ["/tmp/companion-a", "/tmp/companion-b"],
       "/tmp/repo-a",
       "cursor",
@@ -129,9 +129,9 @@ describe("runWorkspaceOpenCommand", () => {
     expect(projectBestEffort).not.toHaveBeenCalled();
   });
 
-  test("sets exitCode 1 when the selected editor CLI is unavailable", async () => {
+  test("sets exitCode 1 when the editor CLI is unavailable or the workspace file is broken", async () => {
     workspaceOpenCommandDeps.resolveCompanions = async () => [match("/tmp/companion")];
-    workspaceOpenCommandDeps.injectEditorFolder = async () => false;
+    workspaceOpenCommandDeps.openEditorWorkspace = async () => false;
 
     await runWorkspaceOpenCommand();
 
@@ -142,7 +142,7 @@ describe("runWorkspaceOpenCommand", () => {
     workspaceOpenCommandDeps.resolveCompanions = async () => [];
 
     await expect(runWorkspaceOpenCommand()).rejects.toThrow(WorkingRepoRequiredError);
-    expect(injectEditorFolder).not.toHaveBeenCalled();
+    expect(openEditorWorkspace).not.toHaveBeenCalled();
   });
 
   describe("with the real resolver", () => {
@@ -196,7 +196,7 @@ describe("runWorkspaceOpenCommand", () => {
       await runWorkspaceOpenCommand();
 
       expect(errors.join("\n")).toContain(stale);
-      expect(injectEditorFolder).toHaveBeenCalledWith([live], repoPath, "cursor");
+      expect(openEditorWorkspace).toHaveBeenCalledWith([live], repoPath, "cursor");
     });
 
     test("fails after warning when every pointer is stale, writing and spawning nothing", async () => {
@@ -210,7 +210,7 @@ describe("runWorkspaceOpenCommand", () => {
       for (const companionPath of companionPaths) {
         expect(errors.join("\n")).toContain(companionPath);
       }
-      expect(injectEditorFolder).not.toHaveBeenCalled();
+      expect(openEditorWorkspace).not.toHaveBeenCalled();
       expect(await fs.stat(workspaceFile(repoPath)).catch(() => null)).toBeNull();
     });
   });
