@@ -11,6 +11,7 @@ import { YamlFileStore } from "./orchestrator/yaml-file-store";
 import { FRAMEWORK_NAME } from "../framework";
 import type { FrameworkConfig } from "./orchestrator/types";
 import { getActiveDistribution } from "../distribution";
+import { MemberChoicesStore, type MemberChoices } from "./member-choices";
 import { createBunPlugin } from "../tools/setup/package-managers/bun";
 import type { InstallRequirement } from "../tools/setup/install-contract";
 import type { Plugin } from "../tools/setup/plugin";
@@ -23,6 +24,8 @@ export interface InstallContext {
   config: FrameworkConfig;
   fingerprint: string;
   message?: string;
+  /** The member's answers to the companion's recommended tools; empty outside a companion or hub. */
+  choices?: MemberChoices;
 }
 
 export type InstallStateScope = Pick<InstallContext, "kind" | "companionPath">;
@@ -32,9 +35,17 @@ export interface InstallPlanItem extends InstallRequirement {
   error?: string;
 }
 
+/** A recommended requirement left out of the plan: the member declined it or has not decided. */
+export interface DeferredInstallItem extends InstallPlanItem {
+  choice: "declined" | "undecided";
+}
+
 export interface InstallPlan {
   context: InstallContext;
+  /** What this run installs and verifies: the mandatory requirements and the accepted recommendations. */
   requirements: InstallPlanItem[];
+  /** Filled by {@link inspectInstallPlan}; nothing in it is installed or blocks a launch. */
+  deferred: DeferredInstallItem[];
   fingerprint: string;
 }
 
@@ -91,6 +102,7 @@ export class InstallStateStore extends YamlFileStore<InstallState> {
 
 export interface InstallContextDeps {
   globalConfigStore?: GlobalConfigStore;
+  memberChoicesStore?: MemberChoicesStore;
 }
 
 function fingerprint(value: unknown): string {
@@ -136,6 +148,7 @@ export async function resolveInstallContext(
     kind: root.kind,
     companionPath: root.rootPath,
     config: root.config,
+    choices: await (deps.memberChoicesStore ?? new MemberChoicesStore()).read(root.rootPath),
     fingerprint: fingerprint({
       kind: root.kind,
       companionPath: root.rootPath,
@@ -150,7 +163,14 @@ export function buildInstallPlan(
 ): InstallPlan {
   const requirements: InstallRequirement[] = [];
   const bunPlugin = createBunPlugin();
-  const allPlugins = [bunPlugin, ...plugins.filter((plugin) => plugin.id !== bunPlugin.id)];
+  // Package managers install first: capability installers run through them
+  // (Graphify's `uv tool install`).
+  const rest = plugins.filter((plugin) => plugin.id !== bunPlugin.id);
+  const allPlugins = [
+    bunPlugin,
+    ...rest.filter((plugin) => plugin.kind === "packageManager"),
+    ...rest.filter((plugin) => plugin.kind !== "packageManager"),
+  ];
   for (const plugin of allPlugins) {
     if (plugin.id !== "bun" && !plugin.isEnabled(context.config)) continue;
     requirements.push(
@@ -168,22 +188,41 @@ export function buildInstallPlan(
     ...requirement,
     satisfied: false,
   }));
-  return {
-    context,
-    requirements: items,
-    fingerprint: fingerprint(
-      unique.map((requirement) => ({
-        id: requirement.id,
-        command: requirement.command,
-        fingerprint: requirement.fingerprint,
-      })),
-    ),
-  };
+  return { context, requirements: items, deferred: [], fingerprint: planFingerprint(items) };
 }
 
+function planFingerprint(requirements: InstallRequirement[]): string {
+  return fingerprint(
+    requirements.map((requirement) => ({
+      id: requirement.id,
+      command: requirement.command,
+      fingerprint: requirement.fingerprint,
+    })),
+  );
+}
+
+/** How the member answered for a recommended requirement; undefined for a mandatory one. */
+export function recommendationChoice(
+  requirement: Pick<InstallRequirement, "recommendedBy">,
+  choices: MemberChoices = {},
+): "accepted" | "declined" | "undecided" | undefined {
+  const capabilities = requirement.recommendedBy;
+  if (!capabilities?.length) return undefined;
+  if (capabilities.some((id) => choices[id] === "accepted")) return "accepted";
+  if (capabilities.every((id) => choices[id] === "declined")) return "declined";
+  return "undecided";
+}
+
+/**
+ * Detect every requirement, then defer the recommended ones the member has
+ * not accepted. An undecided recommendation whose tool is already present
+ * stays in the plan: there is nothing to install, and it keeps being verified
+ * and updated as before the member was ever asked.
+ */
 export async function inspectInstallPlan(plan: InstallPlan): Promise<InstallPlan> {
+  const all = [...plan.requirements, ...(plan.deferred ?? [])];
   await Promise.all(
-    plan.requirements.map(async (item) => {
+    all.map(async (item) => {
       try {
         item.satisfied = await item.detect();
         if (item.satisfied && item.verify) item.satisfied = await item.verify();
@@ -193,6 +232,19 @@ export async function inspectInstallPlan(plan: InstallPlan): Promise<InstallPlan
       }
     }),
   );
+  const requirements: InstallPlanItem[] = [];
+  const deferred: DeferredInstallItem[] = [];
+  for (const item of all) {
+    const choice = recommendationChoice(item, plan.context.choices);
+    if (choice === "declined" || (choice === "undecided" && !item.satisfied)) {
+      deferred.push(Object.assign(item, { choice }));
+    } else {
+      requirements.push(item);
+    }
+  }
+  plan.requirements = requirements;
+  plan.deferred = deferred;
+  plan.fingerprint = planFingerprint(requirements);
   return plan;
 }
 
@@ -292,7 +344,7 @@ export function isRepairableInstallPreflight(result: InstallPreflightResult): bo
 
 export async function inspectInstallPreflight(
   cwd = process.cwd(),
-  deps: { stateStore?: InstallStateStore; globalConfigStore?: GlobalConfigStore } = {},
+  deps: InstallContextDeps & { stateStore?: InstallStateStore } = {},
 ): Promise<InstallPreflightResult> {
   const context = await resolveInstallContext(cwd, deps);
   const distribution = getActiveDistribution().config;

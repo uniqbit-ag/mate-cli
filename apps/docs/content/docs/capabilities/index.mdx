@@ -7,7 +7,9 @@ Capabilities are optional tools that Mate can configure during `mate companion s
 
 Capabilities are selected per companion. They affect the dependency plan used by
 `mate install`; selecting a capability never silently enables another optional
-capability.
+capability. The tools behind RTK, TokenSave, Graphify and Context Mode are
+recommendations: each member accepts or declines them in `mate install`, see
+[Tools The Companion Recommends](/docs/getting-started/install#tools-the-companion-recommends).
 
 ## Projects
 
@@ -153,7 +155,9 @@ from clarifying intent to publication, is walked through in
 ### Graphify
 
 Graphify manages a repository knowledge graph and companion-managed agent
-wrappers. Refresh its index directly or through the combined index command:
+wrappers. It installs through [uv](https://docs.astral.sh/uv/), so selecting
+Graphify also makes `mate install` install uv; without Graphify, Mate needs no
+uv. Refresh its index directly or through the combined index command:
 
 ```sh
 mate cap graphify <subcommand> [args...]

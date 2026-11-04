@@ -87,7 +87,10 @@ function getDistributionSelectorItems(knownIds: Set<string>): SetupSelectorItem[
   return getActiveDistribution()
     .registry.getEntries()
     .filter(
-      (entry) => SELECTABLE_PLUGIN_KINDS.has(entry.plugin.kind) && !knownIds.has(entry.plugin.id),
+      (entry) =>
+        SELECTABLE_PLUGIN_KINDS.has(entry.plugin.kind) &&
+        entry.plugin.selectable !== false &&
+        !knownIds.has(entry.plugin.id),
     )
     .map((entry) => ({
       kind: entry.plugin.kind as "provider" | "packageManager" | "capability",

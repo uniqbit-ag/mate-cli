@@ -9,7 +9,11 @@ import {
   resetActiveDistribution,
   setActiveDistribution,
 } from "../distribution";
-import { getOpenCodePluginRoot, validateOpenCodePluginAssets } from "./package-paths";
+import {
+  getOpenCodePluginRoot,
+  validateOpenCodePluginAssets,
+  withoutMateWrapperDirs,
+} from "./package-paths";
 
 const tempRoots: string[] = [];
 
@@ -68,5 +72,26 @@ describe("validateOpenCodePluginAssets", () => {
     expect(() => validateOpenCodePluginAssets(broken)).toThrow(/server\.ts/);
     expect(() => validateOpenCodePluginAssets(broken)).toThrow(/tui\.tsx/);
     expect(() => validateOpenCodePluginAssets(broken)).toThrow(/[Rr]einstall/);
+  });
+});
+
+describe("withoutMateWrapperDirs", () => {
+  test("drops Mate's wrapper directories, also through a symlink, and keeps the rest", async () => {
+    const root = await makeTempDir("mate-wrapper-dirs-");
+    const wrappers = path.join(root, "wrappers", "bin");
+    const linked = path.join(root, "linked-wrappers");
+    const tools = path.join(root, "tools");
+    await fs.mkdir(wrappers, { recursive: true });
+    await fs.mkdir(tools);
+    await fs.symlink(wrappers, linked);
+
+    const pathValue = [wrappers, tools, linked].join(path.delimiter);
+
+    expect(withoutMateWrapperDirs(pathValue, [wrappers])).toBe(tools);
+  });
+
+  test("leaves PATH unchanged without wrapper directories", () => {
+    const pathValue = ["/acme/bin", "/usr/bin"].join(path.delimiter);
+    expect(withoutMateWrapperDirs(pathValue, [""])).toBe(pathValue);
   });
 });

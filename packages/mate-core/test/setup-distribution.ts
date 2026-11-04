@@ -33,7 +33,7 @@ function buildTestPluginEntries(): PluginRegistration[] {
   return [
     ...providers,
     { plugin: bun, policy: "required" },
-    { plugin: uv, policy: "required" },
+    { plugin: uv, policy: "optional" },
     ...capabilities,
     createGitignorePlugin("mate"),
   ];

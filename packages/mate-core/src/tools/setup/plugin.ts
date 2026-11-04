@@ -128,6 +128,11 @@ export interface Plugin {
   label: string;
   description: string;
   defaultSelected: boolean;
+  /**
+   * `false` keeps the plugin out of setup selectors: it is enabled by other
+   * selections (uv by Graphify), never chosen directly. Defaults to true.
+   */
+  selectable?: boolean;
   isEnabled(config: FrameworkConfig): boolean;
   apply(ctx: SetupContext): Promise<void>;
   teardown(ctx: SetupContext): Promise<void>;

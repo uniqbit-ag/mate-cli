@@ -4,25 +4,27 @@ import path from "node:path";
 
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 
-import * as realInstall from "../../lib/install";
+import type { InstallPlan } from "../../lib/install";
+import { runInstallCommand } from "./install";
 import type { PluginDeclaration } from "../../lib/orchestrator/types";
 import * as frozenModule from "../../tools/setup/dynamic-plugins/frozen";
 import * as hydrateModule from "../../tools/setup/dynamic-plugins/hydrate";
 import * as installModule from "../../tools/setup/dynamic-plugins/install";
 import * as verifyModule from "../../tools/setup/dynamic-plugins/verify";
 
-mock.module("../../lib/install", () => ({
-  ...realInstall,
-  inspectInstallPlan: async (plan: realInstall.InstallPlan) => ({ ...plan, requirements: [] }),
-  runInstallPlan: async () => ({ ok: true, results: [] }),
-}));
+/**
+ * Core requirements would shell out to network installers, so only plan
+ * inspection and execution are stubbed; context, reconcile and state are real.
+ */
+const STUBBED_INSTALLERS = {
+  inspectPlan: async (plan: InstallPlan) => ({ ...plan, requirements: [], deferred: [] }),
+  runPlan: async () => ({ ok: true, results: [] }),
+};
 
 const ordinaryCalls: PluginDeclaration[][] = [];
 const frozenCalls: PluginDeclaration[][] = [];
 
 const spies: Array<{ mockRestore: () => void }> = [];
-
-const { runInstallCommand } = await import("./install");
 
 const originalHome = process.env.HOME;
 const originalArtifactPath = process.env.MATE_ARTIFACT_PATH;
@@ -88,7 +90,7 @@ afterEach(async () => {
 const packages = (declarations: PluginDeclaration[]) => declarations.map((d) => d.package);
 
 test("ordinary install writes the union of base and every audience with no audience selected", async () => {
-  expect(await runInstallCommand(["--yes"], companion)).toBe(true);
+  expect(await runInstallCommand(["--yes"], companion, STUBBED_INSTALLERS)).toBe(true);
 
   expect(ordinaryCalls.map(packages)).toEqual([["@acme/base", "@acme/analyst", "@acme/reviewer"]]);
 });
@@ -97,7 +99,9 @@ test("frozen install restores the same union for every valid audience and for no
   for (const audience of [undefined, "ba", "qa"]) {
     if (audience) process.env.MATE_AUDIENCE = audience;
     else delete process.env.MATE_AUDIENCE;
-    expect(await runInstallCommand(["--yes", "--frozen-plugins"], companion)).toBe(true);
+    expect(
+      await runInstallCommand(["--yes", "--frozen-plugins"], companion, STUBBED_INSTALLERS),
+    ).toBe(true);
   }
 
   expect(frozenCalls.map(packages)).toEqual([
@@ -112,8 +116,10 @@ test("an unknown audience exits 1 before any install, naming requested and decla
   const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
 
   try {
-    expect(await runInstallCommand(["--yes", "--frozen-plugins"], companion)).toBe(false);
-    expect(await runInstallCommand(["--yes"], companion)).toBe(false);
+    expect(
+      await runInstallCommand(["--yes", "--frozen-plugins"], companion, STUBBED_INSTALLERS),
+    ).toBe(false);
+    expect(await runInstallCommand(["--yes"], companion, STUBBED_INSTALLERS)).toBe(false);
     const output = stderr.mock.calls.map((call) => String(call[0])).join("");
     expect(output).toContain('"dev"');
     expect(output).toContain("ba, qa");
@@ -132,7 +138,7 @@ test("without audiences the declared base list installs unchanged", async () => 
     JSON.stringify({ packageManagers: [], capabilities: [], plugins: [BASE] }),
   );
 
-  expect(await runInstallCommand(["--yes"], companion)).toBe(true);
+  expect(await runInstallCommand(["--yes"], companion, STUBBED_INSTALLERS)).toBe(true);
 
   expect(ordinaryCalls.map(packages)).toEqual([["@acme/base"]]);
 });

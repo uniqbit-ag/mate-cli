@@ -15,7 +15,7 @@ import { pathIsDirectory } from "../../lib/fs-utils";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
 import { locateOpenSpec, type OpenSpecLocation } from "../../lib/openspec-cli";
-import { MATE_CLAUDE_PLUGIN_NAME } from "../../lib/package-paths";
+import { MATE_CLAUDE_PLUGIN_NAME, withoutMateWrapperDirs } from "../../lib/package-paths";
 import {
   describeUnknownAudience,
   readAudienceSelection,
@@ -41,6 +41,7 @@ import {
   type ClaudePluginUnpublishedReason,
 } from "../../tools/setup/providers/claude-plugin-folders";
 import { resolveCommandOnPath } from "../../tools/setup/utils";
+import { isUvNeeded } from "../../tools/setup/package-managers/uv";
 import { writeJsonStdout } from "../write-json-stdout";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
 
@@ -160,7 +161,7 @@ function getSelectedToolChecks(config: {
   if (selectedPackageManagers.has("bun")) {
     checks.push({ name: "bun", command: "bun", source: "package manager" });
   }
-  if (selectedPackageManagers.has("uv")) {
+  if (isUvNeeded(config)) {
     checks.push({ name: "uv", command: "uv", source: "package manager" });
   }
   if (selectedCapabilities.has("openspec")) {
@@ -204,7 +205,8 @@ function collectToolInstallations(
         ...(location.version ? { version: location.version } : {}),
       };
     }
-    const resolved = resolveCommandOnPath(check.command, pathValue);
+    // A Mate wrapper on PATH only forwards to the real CLI; it is not the tool.
+    const resolved = resolveCommandOnPath(check.command, withoutMateWrapperDirs(pathValue));
     return {
       tool: check.name,
       source: check.source,

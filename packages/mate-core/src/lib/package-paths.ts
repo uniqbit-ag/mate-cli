@@ -18,6 +18,30 @@ export function getWrapperBinPath(): string {
   return path.resolve(import.meta.dirname, "../../wrappers/bin");
 }
 
+function canonicalDir(dir: string): string {
+  try {
+    return fs.realpathSync(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+}
+
+/**
+ * `pathValue` without Mate's wrapper directories (this install's and the
+ * launch's `MATE_WRAPPER_BIN_PATH`). A wrapper only forwards to the real CLI,
+ * so finding it on PATH says nothing about whether the tool is installed.
+ */
+export function withoutMateWrapperDirs(
+  pathValue: string,
+  wrapperDirs: string[] = [getWrapperBinPath(), process.env.MATE_WRAPPER_BIN_PATH ?? ""],
+): string {
+  const excluded = new Set(wrapperDirs.filter(Boolean).map(canonicalDir));
+  return pathValue
+    .split(path.delimiter)
+    .filter((dir) => !dir || !excluded.has(canonicalDir(dir)))
+    .join(path.delimiter);
+}
+
 /**
  * Resolved bundled Claude plugin root: a distribution asset root that ships
  * `claude-plugin/` wins over core's bundled default. Loaded per managed

@@ -11,6 +11,10 @@ import {
   isContextModePackageReference,
   validateContextModePackage,
 } from "../../../lib/context-mode-package";
+import {
+  readMemberChoices as readStoredMemberChoices,
+  type MemberChoices,
+} from "../../../lib/member-choices";
 import { warmOpenCodePackageCache } from "../../../lib/opencode-plugin-package";
 import { installedVersionAt, isPreinstalledPluginPath } from "../../../lib/preinstalled-plugins";
 import { launchPassesClaudePluginFolders } from "../../../runtime/claude-delivery-plan";
@@ -29,6 +33,14 @@ interface ContextModePluginDeps {
   installPackage?: typeof installContextModePackage;
   validatePackage?: typeof validateContextModePackage;
   warmOpenCodePackage?: typeof warmOpenCodePackageCache;
+  readMemberChoices?: (companionPath: string) => Promise<MemberChoices>;
+}
+
+async function isPackagePresent(companionPath: string): Promise<boolean> {
+  return fs.access(getContextModePackageRoot(companionPath)).then(
+    () => true,
+    () => false,
+  );
 }
 
 export const CONTEXT_MODE_OPENCODE_GUIDANCE = `## Context Mode
@@ -130,6 +142,16 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
   const installPackage = deps.installPackage ?? installContextModePackage;
   const validatePackage = deps.validatePackage ?? validateContextModePackage;
   const warmOpenCodePackage = deps.warmOpenCodePackage ?? warmOpenCodePackageCache;
+  const readMemberChoices = deps.readMemberChoices ?? readStoredMemberChoices;
+  /**
+   * The companion recommends Context Mode; the member decides whether its
+   * package is installed for them (`mate install`). Without the package and
+   * without the member having asked for it, this machine's sessions run
+   * without the Claude plugin rather than failing the launch.
+   */
+  const isWiredForMember = async (companionPath: string): Promise<boolean> =>
+    (await isPackagePresent(companionPath)) ||
+    (await readMemberChoices(companionPath))["context-mode"] === "accepted";
   return {
     id: "context-mode",
     kind: "capability",
@@ -142,7 +164,8 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
      * Every context-mode reference is Mate-managed; the installed package also
      * supplies Claude's launch-only plugin.
      */
-    getRuntimeContributions(ctx): RuntimeContributionsByRuntime {
+    async getRuntimeContributions(ctx): Promise<RuntimeContributionsByRuntime> {
+      const wired = await isWiredForMember(ctx.companionPath);
       return {
         claude: {
           // The context-mode Claude plugin exposes its skill and MCP tools
@@ -152,7 +175,7 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
             "Skill(context-mode:context-mode)",
             "mcp__plugin_context-mode_context-mode__*",
           ],
-          pluginDirectories: [{ path: getContextModePackageRoot(ctx.companionPath) }],
+          pluginDirectories: wired ? [{ path: getContextModePackageRoot(ctx.companionPath) }] : [],
         },
         opencode: {
           pluginReferences: [
@@ -182,6 +205,7 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
           label: "Context Mode package",
           group: "companion",
           source: "Context Mode capability",
+          recommendedBy: ["context-mode"],
           command,
           fingerprint: `context-mode:${command}`,
           detect: () =>
@@ -197,9 +221,11 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
       const legacyInstallDir = getLegacyInstallDir(ctx.companionPath);
       await fs.rm(legacyInstallDir, { recursive: true, force: true });
       await pruneEmptyAncestors(path.dirname(legacyInstallDir), ctx.companionPath);
-      if (ctx.mode === "setup") {
+      // Setup installs unless the member declined; then it behaves like sync.
+      const declined = (await readMemberChoices(ctx.companionPath))["context-mode"] === "declined";
+      if (ctx.mode === "setup" && !declined) {
         await installPackage(ctx.companionPath);
-      } else {
+      } else if (await isWiredForMember(ctx.companionPath)) {
         await validatePackage(ctx.companionPath);
       }
       await ctx.instructions?.append(CONTEXT_MODE_OPENCODE_GUIDANCE, {
@@ -214,7 +240,10 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
     },
     forProvider: {
       claude: {
-        preflight: (ctx) => validateClaudePackage(ctx, validatePackage),
+        preflight: async (ctx) =>
+          (await isWiredForMember(ctx.companionPath))
+            ? validateClaudePackage(ctx, validatePackage)
+            : [],
         async apply(ctx) {
           await assertNoMcpConflict(ctx, "claude");
         },

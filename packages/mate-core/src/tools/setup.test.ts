@@ -903,7 +903,7 @@ describe("executeSetup", () => {
       { cwd: root, globalConfigStore },
     );
 
-    expect(config.packageManagers).toEqual(["bun", "uv"]);
+    expect(config.packageManagers).toEqual(["bun"]);
   });
 
   test("setup with the openspec capability activates mate-v1 in companion-local openspec config", async () => {
@@ -982,56 +982,28 @@ describe("executeSetup", () => {
     expect(persisted.git).toBeUndefined();
   });
 
-  test("setup writes uv ignore block into the project .gitignore when uv is enabled", async () => {
+  test("setup writes no uv ignore block for a legacy uv entry without graphify", async () => {
     const root = await makeTempDir("mate-setup-uv-gitignore-");
     const globalConfigStore = new GlobalConfigStore(
       path.join(root, "home", ".mate", "config.yaml"),
     );
     await installOpenSpecStub(root);
-    const binDir = path.join(root, "bin");
-    const uvPath = path.join(binDir, "uv");
-    const originalPath = process.env.PATH;
-    await fs.mkdir(binDir, { recursive: true });
-    await fs.writeFile(
-      uvPath,
-      [
-        "#!/bin/sh",
-        'if [ "$1" = "init" ]; then',
-        "  touch pyproject.toml",
-        "  touch uv.lock",
-        "fi",
-        "exit 0",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-    await fs.chmod(uvPath, 0o755);
     await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
 
-    process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
-    try {
-      await executeSetup(
-        {
-          allowedAgents: ["claude"],
-          packageManagers: ["bun", "uv"],
-          capabilities: [{ name: "openspec" }],
-        },
-        { cwd: root, globalConfigStore },
-      );
-    } finally {
-      process.env.PATH = originalPath;
-    }
+    await executeSetup(
+      {
+        allowedAgents: ["claude"],
+        packageManagers: ["bun", "uv"],
+        capabilities: [{ name: "openspec" }],
+      },
+      { cwd: root, globalConfigStore },
+    );
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
     expect(gitignore).toContain("node_modules/");
     expect(gitignore).toContain(`# ${FRAMEWORK_NAME} managed: start`);
-    expect(gitignore).toContain(".venv/");
-    expect(gitignore).toContain(".uv/");
-    expect(gitignore).toContain("__pycache__/");
-    expect(gitignore).toContain("*.py[cod]");
-    expect(gitignore).toContain("*.egg-info/");
-    expect(gitignore).toContain("build/");
-    expect(gitignore).toContain("dist/");
+    expect(gitignore).not.toContain(".venv/");
+    expect(gitignore).not.toContain("__pycache__/");
   });
 
   test("setup writes the rtk capability to config when the rtk binary is present", async () => {
@@ -1653,7 +1625,8 @@ describe("updateProjectGitignore", () => {
 
     await updateProjectGitignore(root, {
       allowedAgents: [],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
+      capabilities: [{ name: "graphify" }],
     });
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
@@ -1742,7 +1715,8 @@ describe("updateProjectGitignore", () => {
 
     await updateProjectGitignore(root, {
       allowedAgents: [],
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
+      capabilities: [{ name: "graphify" }],
     });
 
     const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
