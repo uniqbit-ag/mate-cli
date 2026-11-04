@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { isDeclinedByMember, readMemberChoices } from "../../../lib/member-choices";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { DEFAULT_SECRET_DENY_PATTERNS, type SecretPolicy } from "../../../runtime/secret-patterns";
 import type { InstallRequirement } from "../install-contract";
@@ -82,6 +83,7 @@ export const tokensaveDeps = {
   homeDir(): string {
     return os.homedir();
   },
+  readMemberChoices,
 };
 
 async function cleanupRepoLocalTokensaveArtifacts(repoPath: string): Promise<void> {
@@ -547,12 +549,18 @@ export function createTokensavePlugin(): CapabilityPlugin {
       if (ctx.activeProviders.filter((p) => TOKENSAVE_SUPPORTED_AGENTS.has(p)).length === 0) return;
 
       const targetPath = ctx.repoPath ?? ctx.companionPath;
-      // Installing is the member's choice (`mate install`); a launch sync
-      // never installs TokenSave behind their back.
-      const installed =
-        ctx.mode === "setup"
-          ? await ensureTokensaveInstalled(targetPath, { upgrade: true })
-          : await tokensaveInstalled(targetPath);
+      // Installing is the member's choice (`mate install`); neither a launch
+      // sync nor setup for a member who declined installs TokenSave.
+      const mayInstall =
+        ctx.mode === "setup" &&
+        !(await isDeclinedByMember(
+          ctx.companionPath,
+          ["tokensave"],
+          tokensaveDeps.readMemberChoices,
+        ));
+      const installed = mayInstall
+        ? await ensureTokensaveInstalled(targetPath, { upgrade: true })
+        : await tokensaveInstalled(targetPath);
       if (!installed) return;
       await ensureTokensaveBranchingPosture(targetPath, resolveSecretPolicy(ctx.companionPath));
       if (ctx.mode === "setup") {

@@ -197,6 +197,25 @@ describe("createUvPlugin apply()", () => {
     }
   });
 
+  test("setup does not offer uv when the member declined Graphify, its only reason", async () => {
+    const confirmMock = mock(async (_: string) => true);
+    const plugin = createUvPlugin({
+      confirm: confirmMock,
+      isCommandOnPath: () => false,
+      installDirs: [],
+      platform: "linux",
+      readMemberChoices: async () => ({ graphify: "declined" }),
+    });
+
+    await plugin.apply(
+      makeCtx({
+        config: { allowedAgents: [], capabilities: [{ name: "graphify" }] },
+      }),
+    );
+
+    expect(confirmMock).not.toHaveBeenCalled();
+  });
+
   test("teardown is a no-op", async () => {
     const plugin = createUvPlugin();
     await expect(plugin.teardown(makeCtx())).resolves.toBeUndefined();

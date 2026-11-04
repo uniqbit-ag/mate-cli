@@ -11,7 +11,10 @@ import {
   isContextModePackageReference,
   validateContextModePackage,
 } from "../../../lib/context-mode-package";
-import { MemberChoicesStore, type MemberChoices } from "../../../lib/member-choices";
+import {
+  readMemberChoices as readStoredMemberChoices,
+  type MemberChoices,
+} from "../../../lib/member-choices";
 import { warmOpenCodePackageCache } from "../../../lib/opencode-plugin-package";
 import { installedVersionAt, isPreinstalledPluginPath } from "../../../lib/preinstalled-plugins";
 import { launchPassesClaudePluginFolders } from "../../../runtime/claude-delivery-plan";
@@ -139,9 +142,7 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
   const installPackage = deps.installPackage ?? installContextModePackage;
   const validatePackage = deps.validatePackage ?? validateContextModePackage;
   const warmOpenCodePackage = deps.warmOpenCodePackage ?? warmOpenCodePackageCache;
-  const readMemberChoices =
-    deps.readMemberChoices ??
-    ((companionPath: string) => new MemberChoicesStore().read(companionPath));
+  const readMemberChoices = deps.readMemberChoices ?? readStoredMemberChoices;
   /**
    * The companion recommends Context Mode; the member decides whether its
    * package is installed for them (`mate install`). Without the package and
@@ -220,7 +221,9 @@ export function createContextModePlugin(deps: ContextModePluginDeps = {}): Capab
       const legacyInstallDir = getLegacyInstallDir(ctx.companionPath);
       await fs.rm(legacyInstallDir, { recursive: true, force: true });
       await pruneEmptyAncestors(path.dirname(legacyInstallDir), ctx.companionPath);
-      if (ctx.mode === "setup") {
+      // Setup installs unless the member declined; then it behaves like sync.
+      const declined = (await readMemberChoices(ctx.companionPath))["context-mode"] === "declined";
+      if (ctx.mode === "setup" && !declined) {
         await installPackage(ctx.companionPath);
       } else if (await isWiredForMember(ctx.companionPath)) {
         await validatePackage(ctx.companionPath);

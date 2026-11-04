@@ -22,6 +22,23 @@ function makeCtx(mode: "setup" | "sync" = "setup"): SetupContext {
 }
 
 describe("createRtkPlugin", () => {
+  test("setup does not offer the installer to a member who declined RTK", async () => {
+    const confirmMock = mock(async () => true);
+    const runInstall = mock(async (_cmd: string) => {});
+    const plugin = createRtkPlugin({
+      confirm: confirmMock,
+      isRtkOnPath: () => false,
+      isBrewAvailable: () => true,
+      runRtkInstallCmd: runInstall,
+      readMemberChoices: async () => ({ rtk: "declined" }),
+    });
+
+    await plugin.apply(makeCtx());
+
+    expect(confirmMock).not.toHaveBeenCalled();
+    expect(runInstall).not.toHaveBeenCalled();
+  });
+
   test("prompts the Homebrew installer when RTK is missing", async () => {
     const confirmMock = mock(async () => false);
     const stdoutSpy = spyOn(process.stdout, "write").mockImplementation(() => true);

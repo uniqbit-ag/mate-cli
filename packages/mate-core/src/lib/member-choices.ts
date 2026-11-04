@@ -46,3 +46,22 @@ export class MemberChoicesStore extends YamlFileStore<MemberChoicesFile> {
     return companions[key];
   }
 }
+
+export type ReadMemberChoices = (companionPath: string) => Promise<MemberChoices>;
+
+export const readMemberChoices: ReadMemberChoices = (companionPath) =>
+  new MemberChoicesStore().read(companionPath);
+
+/**
+ * True when the member declined every listed capability for this companion.
+ * `mate setup` then leaves the tool uninstalled instead of asking again.
+ */
+export async function isDeclinedByMember(
+  companionPath: string,
+  capabilities: string[],
+  read: ReadMemberChoices = readMemberChoices,
+): Promise<boolean> {
+  if (capabilities.length === 0) return false;
+  const choices = await read(companionPath);
+  return capabilities.every((id) => choices[id] === "declined");
+}

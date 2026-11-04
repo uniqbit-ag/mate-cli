@@ -108,6 +108,7 @@ describe("tokensavePlugin.apply", () => {
     tokensaveDeps.rustcVersion = originalDeps.rustcVersion;
     tokensaveDeps.platform = originalDeps.platform;
     tokensaveDeps.pathValue = originalDeps.pathValue;
+    tokensaveDeps.readMemberChoices = originalDeps.readMemberChoices;
   });
 
   test("no-ops when repoPath is undefined", async () => {
@@ -452,6 +453,19 @@ describe("tokensavePlugin.apply", () => {
     await tokensavePlugin.apply(ctx);
 
     expect(runMock.mock.calls.map((call) => call[0][0])).toEqual(["--version"]);
+  });
+
+  test("setup never installs TokenSave for a member who declined it", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    tempRoots.push(companionDir);
+    runMock.mockImplementation(() => ({ ok: false, stderr: "not found", stdout: "" }));
+    tokensaveDeps.isCommandOnPath = () => true;
+    tokensaveDeps.readMemberChoices = async () => ({ tokensave: "declined" });
+
+    await tokensavePlugin.apply(makeCtx(companionDir, { providers: ["claude"], mode: "setup" }));
+
+    expect(runCommandMock).not.toHaveBeenCalled();
+    expect(runShellCommandMock).not.toHaveBeenCalled();
   });
 
   test("a launch sync never installs a missing TokenSave", async () => {

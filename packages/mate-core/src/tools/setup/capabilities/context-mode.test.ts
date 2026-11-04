@@ -112,6 +112,22 @@ describe("createContextModePlugin", () => {
     expect(validatePackage).not.toHaveBeenCalled();
   });
 
+  test("setup does not install the package for a member who declined it", async () => {
+    const ctx = await makeContext();
+    const installPackage = mock(async () => {});
+    const validatePackage = mock(async () => {});
+    const plugin = createContextModePlugin({
+      installPackage,
+      validatePackage,
+      readMemberChoices: async () => ({ "context-mode": "declined" }),
+    });
+
+    await plugin.apply({ ...ctx, mode: "setup" });
+
+    expect(installPackage).not.toHaveBeenCalled();
+    expect(validatePackage).not.toHaveBeenCalled();
+  });
+
   test("declares a companion install requirement that provisions a missing package", async () => {
     const ctx = await makeContext();
     const installPackage = mock(async () => {});

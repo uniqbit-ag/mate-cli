@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
+import { isDeclinedByMember, type ReadMemberChoices } from "../../../lib/member-choices";
 import type { Plugin, SetupContext } from "../plugin";
 import type { InstallRequirement } from "../install-contract";
 import { confirm } from "../../../cli/confirm";
@@ -56,6 +57,7 @@ export interface PackageManagerSetupDeps {
   runShellCommand?: (command: string, options?: { cwd?: string }) => Promise<void>;
   /** Install locations probed when uv is not on PATH; defaults to {@link uvInstallDirs}. */
   installDirs?: string[];
+  readMemberChoices?: ReadMemberChoices;
 }
 
 const UV_GITIGNORE_ENTRIES = [
@@ -173,6 +175,10 @@ export function createUvPlugin(deps: PackageManagerSetupDeps = {}): Plugin & { l
       if (ctx.mode !== "setup") {
         return;
       }
+      const needing = UV_DEPENDENT_CAPABILITIES.filter((id) =>
+        (ctx.config.capabilities ?? []).some((capability) => capability.name === id),
+      );
+      if (await isDeclinedByMember(ctx.companionPath, needing, deps.readMemberChoices)) return;
 
       let installCmd: string;
       let runInstall: () => Promise<void>;
