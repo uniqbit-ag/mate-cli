@@ -66,6 +66,16 @@ a branch already checked out elsewhere, or a foreign directory at the target
 path stops the command without changes. Run it again and it reuses the
 worktree.
 
+`mate working worktree --change <change>` does the same for the Workset a
+change belongs to, resolved as `mate artifact link` resolves it: the Workset
+record that lists the change, else the change's own single-change Workset,
+whose repositories come from the change's scopes. It writes no Workset record.
+An unknown change, a change listed in several Worksets, or a change whose
+scopes name no repository stops the command without changes. `--change` cannot
+be combined with a Workset id. On a protected branch, `mate-apply-change`
+offers it as an option: it creates the worktree, records nothing, and asks you
+to continue `mate-apply-change` in a new session inside the worktree.
+
 Each new worktree gets the companion link `mate working link` writes, and the
 install step of its first lockfile: `bun install`, `pnpm install`,
 `yarn install`, or `npm ci`. `--no-install` skips the install. A failed install

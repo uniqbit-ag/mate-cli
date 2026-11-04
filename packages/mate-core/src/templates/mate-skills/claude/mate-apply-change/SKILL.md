@@ -57,8 +57,13 @@ protected branch unless it is recorded as a direct delivery.
      `git switch --track -c "<defaultBranch>" "origin/<defaultBranch>"` when remote-only,
      otherwise `git switch -c "<defaultBranch>"`. Uncommitted edits carry over. Record it.
      When `defaultBranch` is null, ask for a name instead; do not offer an inferred branch.
-  2. **Use an existing branch**: switch to the branch the user names and record it.
-  3. **Work directly here** — only when the user explicitly chooses it. Record it as a
+  2. **Create a worktree** (only when `defaultBranch` is set): say uncommitted edits stay
+     in this checkout, run `mate working worktree --change "<change-name>" --json`, record
+     nothing, write no code, and stop. `## Next steps`: name each `repositories[].path`,
+     open a new session in this repository's worktree, run `/mate-apply-change <change-name>`
+     there. On failure, report its diagnostics and offer the other options again.
+  3. **Use an existing branch**: switch to the branch the user names and record it.
+  4. **Work directly here** — only when the user explicitly chooses it. Record it as a
      direct delivery: `mate artifact link "<change-name>" --branch "<branch>" --direct --json`.
 
 Record the branch before writing any code. When `mate artifact link` refuses, report

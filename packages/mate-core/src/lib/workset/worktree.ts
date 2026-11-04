@@ -4,13 +4,21 @@ import path from "node:path";
 
 import { gitEnvironment } from "../../runtime/companion-git";
 import { errorMessage } from "../../runtime/error-message";
+import { locateChange } from "../change-layout";
 import { defaultDeliveryBranch } from "../delivery/record";
+import { scopedRepositories } from "../openspec-scopes";
 import {
   readCompanionRegistry,
   writeRepoLocalRegistryEntry,
 } from "../orchestrator/repository-link";
 import { identityOf } from "./repositories";
-import { readWorksets, resolveWorksetBranch, type WorksetRecord } from "./record";
+import {
+  findWorkset,
+  readWorksets,
+  resolveWorksetBranch,
+  resolveWorksetOf,
+  type WorksetRecord,
+} from "./record";
 
 /**
  * Workset worktrees outside the factory: one Git worktree per Working Repository at
@@ -193,26 +201,50 @@ interface Plan {
   reuse: boolean;
 }
 
+/** A resolved Workset: its id and the repositories that get a worktree. */
+interface Target {
+  id: string;
+  repositories: readonly string[];
+}
+
+/** The explicit record with this id, or the diagnostics naming it and every invalid record. */
+async function recordTarget(companionPath: string, worksetId: string): Promise<Target | string[]> {
+  const { worksets, problems } = await readWorksets(companionPath);
+  const record = worksets.find((entry) => entry.id === worksetId);
+  if (record) return record;
+  return [
+    `no valid Workset ${worksetId}`,
+    ...problems.map((problem) => `${problem.path}: ${problem.reason}`),
+  ];
+}
+
+/**
+ * The change's Workset as `mate artifact link` resolves it: the record listing it, else the
+ * implicit single-change Workset with the repositories of the change's scopes.
+ */
+async function changeTarget(companionPath: string, change: string): Promise<Target | string[]> {
+  const location = await locateChange(companionPath, change);
+  if (!location || location.archived) return [`no active change ${change}`];
+  const resolution = await resolveWorksetOf(companionPath, change);
+  if (resolution.id === null) return resolution.diagnostics;
+  if (!resolution.implicit) {
+    const record = await findWorkset(companionPath, resolution.id);
+    return record ?? [`no valid Workset ${resolution.id}`];
+  }
+  const repositories = await scopedRepositories(location.dir);
+  if (repositories.length === 0) return [`change ${change} names no repository in its scopes`];
+  return { id: resolution.id, repositories };
+}
+
 /** Phase 1: every check for every repository; any failure means nothing is created. */
 async function planWorktrees(
   companionPath: string,
-  worksetId: string,
+  target: Target,
   git: GitRunner,
 ): Promise<{ plans: Plan[]; diagnostics: string[] }> {
-  const { worksets, problems } = await readWorksets(companionPath);
-  const record = worksets.find((entry) => entry.id === worksetId);
-  if (!record) {
-    return {
-      plans: [],
-      diagnostics: [
-        `no valid Workset ${worksetId}`,
-        ...problems.map((problem) => `${problem.path}: ${problem.reason}`),
-      ],
-    };
-  }
   const checked = await Promise.all(
-    record.repositories.map((repository) =>
-      planRepository(companionPath, worksetId, repository, git),
+    target.repositories.map((repository) =>
+      planRepository(companionPath, target.id, repository, git),
     ),
   );
   return {
@@ -324,8 +356,38 @@ export async function createWorksetWorktrees(
   options: CreateWorktreesOptions,
   deps: WorktreeDeps = {},
 ): Promise<WorktreeResult> {
+  const target = await recordTarget(companionPath, worksetId);
+  return createTargetWorktrees(companionPath, worksetId, target, options, deps);
+}
+
+/**
+ * As `createWorksetWorktrees`, for the Workset the change resolves to, implicit ones
+ * included; writes no Workset record.
+ */
+export async function createChangeWorktrees(
+  companionPath: string,
+  change: string,
+  options: CreateWorktreesOptions,
+  deps: WorktreeDeps = {},
+): Promise<WorktreeResult> {
+  const target = await changeTarget(companionPath, change);
+  return createTargetWorktrees(companionPath, change, target, options, deps);
+}
+
+/** `fallbackId` names the result when the target did not resolve. */
+async function createTargetWorktrees(
+  companionPath: string,
+  fallbackId: string,
+  target: Target | string[],
+  options: CreateWorktreesOptions,
+  deps: WorktreeDeps,
+): Promise<WorktreeResult> {
+  if (Array.isArray(target)) {
+    return { workset: fallbackId, ok: false, repositories: [], diagnostics: target, warnings: [] };
+  }
+  const worksetId = target.id;
   const git = deps.git ?? runGit;
-  const { plans, diagnostics } = await planWorktrees(companionPath, worksetId, git);
+  const { plans, diagnostics } = await planWorktrees(companionPath, target, git);
   if (diagnostics.length > 0) {
     return { workset: worksetId, ok: false, repositories: [], diagnostics, warnings: [] };
   }
