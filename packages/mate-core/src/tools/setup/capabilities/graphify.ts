@@ -11,7 +11,8 @@ import {
 } from "../utils";
 import { confirm } from "../../../cli/confirm";
 import { FRAMEWORK_NAME } from "../../../framework";
-import { getWrapperBinPath } from "../../../lib/package-paths";
+import { isDeclinedByMember, type ReadMemberChoices } from "../../../lib/member-choices";
+import { getWrapperBinPath, withoutMateWrapperDirs } from "../../../lib/package-paths";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import { isInstalledViaUvTool } from "../package-managers/uv";
 import { stripSectionFromFile } from "../providers/agent-file-sections";
@@ -119,7 +120,19 @@ function isMateManagedClaudeHookCommand(command: string): boolean {
   return false;
 }
 
+// `graphify hook-guard read`, `"/abs/bin/graphify" hook-check`: the CLI hooks
+// current graphifyy writes, by bare name or absolute path.
+const GRAPHIFY_CLI_HOOK_COMMAND = /(?:^|[\s/\\"'])graphify(?:\.exe)?["']?\s+hook-/;
+
+function isGraphifyCliHookGroup(entry: ClaudeHookGroup): boolean {
+  return (entry.hooks ?? []).some((hook) =>
+    GRAPHIFY_CLI_HOOK_COMMAND.test(hook.command?.trim() ?? ""),
+  );
+}
+
+/** Graphify's CLI hooks plus the script hooks older graphifyy wrote to `.claude/hooks/`. */
 function isGraphifyClaudeHookGroup(entry: ClaudeHookGroup): boolean {
+  if (isGraphifyCliHookGroup(entry)) return true;
   return (entry.hooks ?? []).some((hook) => {
     const command = hook.command?.trim();
     return command
@@ -141,6 +154,7 @@ export interface GraphifyPluginDeps {
   isInstalledViaUvTool?: (pkgName: string) => boolean;
   runCommand?: GraphifyRunCommand;
   runProviderInstall?: GraphifyProviderInstall;
+  readMemberChoices?: ReadMemberChoices;
 }
 
 export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityPlugin {
@@ -149,6 +163,10 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
   const checkUvTool = deps.isInstalledViaUvTool ?? isInstalledViaUvTool;
   const runCommand = deps.runCommand ?? runShellCommand;
   const runProviderInstall = deps.runProviderInstall ?? runCommandSilently;
+  // The real CLI only: Mate's own `graphify` wrapper is on a launch's PATH
+  // and fails without it.
+  const graphifyOnPath = () =>
+    checkPath("graphify", withoutMateWrapperDirs(process.env.PATH ?? ""));
 
   return {
     id: "graphify",
@@ -185,17 +203,21 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
         recommendedBy: ["graphify"],
         command: GRAPHIFY_INSTALL_CMD,
         fingerprint: `graphify:${GRAPHIFY_INSTALL_CMD}`,
-        detect: () => checkPath("graphify", process.env.PATH ?? "") || checkUvTool("graphifyy"),
+        detect: () => graphifyOnPath() || checkUvTool("graphifyy"),
         install: () => runCommand(GRAPHIFY_INSTALL_CMD),
-        verify: () => checkPath("graphify", process.env.PATH ?? "") || checkUvTool("graphifyy"),
+        verify: () => graphifyOnPath() || checkUvTool("graphifyy"),
       },
     ],
 
     async apply(ctx: SetupContext) {
       // binary: graphify (single y); package: graphifyy (double y)
-      const isInstalled = checkPath("graphify", process.env.PATH ?? "") || checkUvTool("graphifyy");
+      const isInstalled = graphifyOnPath() || checkUvTool("graphifyy");
 
-      if (!isInstalled && ctx.mode === "setup") {
+      if (
+        !isInstalled &&
+        ctx.mode === "setup" &&
+        !(await isDeclinedByMember(ctx.companionPath, ["graphify"], deps.readMemberChoices))
+      ) {
         process.stdout.write(`graphify binary not found. To install:\n  ${GRAPHIFY_INSTALL_CMD}\n`);
         const ok = await askConfirm("Run this install command now?");
         if (ok) {
@@ -236,8 +258,7 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
         {
           async apply(ctx: SetupContext) {
             // Reconcile Graphify-managed provider assets from the companion root
-            const isInstalled =
-              checkPath("graphify", process.env.PATH ?? "") || checkUvTool("graphifyy");
+            const isInstalled = graphifyOnPath() || checkUvTool("graphifyy");
             if (isInstalled) {
               await runProviderInstall(
                 "graphify",
@@ -276,6 +297,11 @@ export function createGraphifyPlugin(deps: GraphifyPluginDeps = {}): CapabilityP
                   isGraphifyPluginReference,
                 );
               }
+            } else if (providerId === "claude") {
+              // Hooks live in machine-local settings; without the CLI (never
+              // installed, declined, or removed) they would fail every tool call.
+              // Only graphify's own CLI hooks: unrelated `.claude/hooks/` scripts stay.
+              await removeClaudeHookGroupsWhere(ctx.companionPath, isGraphifyCliHookGroup);
             }
 
             // Redirect the freshly-installed skill's cwd-relative graphify-out/

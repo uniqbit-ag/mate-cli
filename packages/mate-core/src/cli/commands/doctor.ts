@@ -15,7 +15,7 @@ import { pathIsDirectory } from "../../lib/fs-utils";
 import { resolveRootContext, type RootContext } from "../../lib/orchestrator/root-context";
 import type { CapabilityConfig, FrameworkConfig, HubMember } from "../../lib/orchestrator/types";
 import { locateOpenSpec, type OpenSpecLocation } from "../../lib/openspec-cli";
-import { MATE_CLAUDE_PLUGIN_NAME } from "../../lib/package-paths";
+import { MATE_CLAUDE_PLUGIN_NAME, withoutMateWrapperDirs } from "../../lib/package-paths";
 import {
   describeUnknownAudience,
   readAudienceSelection,
@@ -205,7 +205,8 @@ function collectToolInstallations(
         ...(location.version ? { version: location.version } : {}),
       };
     }
-    const resolved = resolveCommandOnPath(check.command, pathValue);
+    // A Mate wrapper on PATH only forwards to the real CLI; it is not the tool.
+    const resolved = resolveCommandOnPath(check.command, withoutMateWrapperDirs(pathValue));
     return {
       tool: check.name,
       source: check.source,

@@ -147,6 +147,37 @@ describe("runDoctorCommand", () => {
     expect(output).toContain("graphify");
   });
 
+  test("does not count Mate's graphify wrapper as an installed Graphify", async () => {
+    const root = await makeTempDir("doctor-wrapper-");
+    const repoPath = path.join(root, "working");
+    const wrapperBin = path.join(root, "wrappers", "bin");
+    await fs.mkdir(repoPath, { recursive: true });
+    await fs.mkdir(wrapperBin, { recursive: true });
+    await makeExecutable(wrapperBin, "graphify");
+    const restoreWrapperEnv = overrideEnv({ MATE_WRAPPER_BIN_PATH: wrapperBin });
+    try {
+      const companionPath = await setupCompanion(root, repoPath, {
+        allowedAgents: ["claude"],
+        capabilities: [{ name: "graphify" }],
+      });
+      const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+      await globalConfigStore.register(companionPath);
+
+      const output = await captureStdout(() =>
+        runDoctorCommand(["--json"], { cwd: repoPath, globalConfigStore, pathValue: wrapperBin }),
+      );
+
+      const report = JSON.parse(output) as {
+        toolInstallations?: Array<{ tool: string; status: string }>;
+      };
+      expect(report.toolInstallations?.find((entry) => entry.tool === "graphify")?.status).toBe(
+        "missing",
+      );
+    } finally {
+      restoreWrapperEnv();
+    }
+  });
+
   test("does not check uv for a legacy uv entry without graphify", async () => {
     const root = await makeTempDir("doctor-legacy-uv-");
     const repoPath = path.join(root, "working");
