@@ -1,3 +1,5 @@
+/** @jsxRuntime automatic */
+/** @jsxImportSource react */
 import { Box, render as inkRender } from "ink";
 import React, { useEffect } from "react";
 import { SelectMenu, type SelectMenuItem } from "../lib/components/select-menu";

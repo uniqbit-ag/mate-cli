@@ -1,3 +1,5 @@
+/** @jsxRuntime automatic */
+/** @jsxImportSource react */
 import { Box, Text, render as inkRender } from "ink";
 import { useEffect } from "react";
 

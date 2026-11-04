@@ -1,3 +1,5 @@
+/** @jsxRuntime automatic */
+/** @jsxImportSource react */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { createTtyInput, createTtyOutput } from "../../test/helpers";
