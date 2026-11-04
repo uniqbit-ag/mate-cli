@@ -122,14 +122,32 @@ describe("install context and planning", () => {
     const requirements = buildInstallPlan(context).requirements;
     const ids = requirements.map((requirement) => requirement.id);
     expect(ids).toContain("core:bun");
-    expect(ids).toContain("core:uv");
-    expect(requirements.find((requirement) => requirement.id === "core:uv")).toEqual(
-      expect.objectContaining({ group: "core", source: "Mate package manager" }),
-    );
+    // A legacy uv entry carries no choice: uv follows Graphify only.
+    expect(ids).not.toContain("core:uv");
     // OpenSpec ships with Mate, so the capability adds nothing to install.
     expect(ids).not.toContain("capability:openspec");
     expect(ids).not.toContain("capability:graphify");
     expect(ids).not.toContain("capability:rtk");
+  });
+
+  test("plans uv before Graphify only when Graphify is selected", async () => {
+    const root = await tempRoot();
+    const context = {
+      kind: "companion" as const,
+      companionPath: root,
+      config: {
+        allowedAgents: ["claude"],
+        packageManagers: ["bun"],
+        capabilities: [{ name: "graphify" }],
+      },
+      fingerprint: "graphify-context",
+    };
+
+    const ids = buildInstallPlan(context).requirements.map((requirement) => requirement.id);
+
+    expect(ids).toContain("core:uv");
+    expect(ids).toContain("capability:graphify");
+    expect(ids.indexOf("core:uv")).toBeLessThan(ids.indexOf("capability:graphify"));
   });
 
   test("plans RTK only when the RTK capability is selected", async () => {

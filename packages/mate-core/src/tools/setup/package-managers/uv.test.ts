@@ -1,7 +1,9 @@
+import path from "node:path";
+
 import { describe, expect, mock, spyOn, test } from "bun:test";
 
 import type { SetupContext } from "../plugin";
-import { createUvPlugin } from "./uv";
+import { createUvPlugin, uvInstallDirs } from "./uv";
 
 function makeCtx(overrides: Partial<SetupContext> = {}): SetupContext {
   return {
@@ -195,8 +197,73 @@ describe("createUvPlugin apply()", () => {
     }
   });
 
+  test("setup does not offer uv when the member declined Graphify, its only reason", async () => {
+    const confirmMock = mock(async (_: string) => true);
+    const plugin = createUvPlugin({
+      confirm: confirmMock,
+      isCommandOnPath: () => false,
+      installDirs: [],
+      platform: "linux",
+      readMemberChoices: async () => ({ graphify: "declined" }),
+    });
+
+    await plugin.apply(
+      makeCtx({
+        config: { allowedAgents: [], capabilities: [{ name: "graphify" }] },
+      }),
+    );
+
+    expect(confirmMock).not.toHaveBeenCalled();
+  });
+
   test("teardown is a no-op", async () => {
     const plugin = createUvPlugin();
     await expect(plugin.teardown(makeCtx())).resolves.toBeUndefined();
+  });
+});
+
+describe("createUvPlugin enablement", () => {
+  const plugin = createUvPlugin({ isCommandOnPath: () => true });
+
+  test("is enabled only when Graphify, which installs through uv, is selected", () => {
+    expect(plugin.isEnabled({ packageManagers: ["bun"], capabilities: [] })).toBe(false);
+    expect(
+      plugin.isEnabled({ packageManagers: ["bun"], capabilities: [{ name: "graphify" }] }),
+    ).toBe(true);
+  });
+
+  test("ignores a legacy uv entry in packageManagers", () => {
+    expect(plugin.isEnabled({ packageManagers: ["bun", "uv"], capabilities: [] })).toBe(false);
+  });
+});
+
+describe("createUvPlugin install requirement", () => {
+  test("finds a freshly installed uv in its install directory when PATH lacks it", async () => {
+    let installed = false;
+    const plugin = createUvPlugin({
+      pathValue: "/usr/bin",
+      platform: "linux",
+      installDirs: ["/home/user/.local/bin"],
+      isCommandOnPath: (command, pathValue) =>
+        command === "uv" && installed && pathValue === "/home/user/.local/bin",
+      runShellCommand: async () => {
+        installed = true;
+      },
+      runCommand: async () => {},
+    });
+    const [requirement] = plugin.getInstallRequirements!({ config: {} });
+
+    expect(await requirement.detect()).toBe(false);
+    await requirement.install();
+    expect(await requirement.verify!()).toBe(true);
+  });
+
+  test("probes the uv installer's directories in its precedence order", () => {
+    expect(uvInstallDirs({ UV_INSTALL_DIR: "/opt/uv", XDG_BIN_HOME: "/xdg/bin" }, "/h")).toEqual([
+      "/opt/uv",
+      "/xdg/bin",
+      path.join("/h", ".local", "bin"),
+      path.join("/h", ".cargo", "bin"),
+    ]);
   });
 });

@@ -9,7 +9,7 @@ import { resetActiveDistribution } from "../../distribution";
 import { GlobalConfigStore } from "../../lib/orchestrator/global-config-store";
 import { executeSetup } from "../setup";
 import type { Plugin } from "./plugin";
-import { getRequiredPluginIds, withRequiredSelections } from "./policy";
+import { getRequiredPluginDrift, getRequiredPluginIds, withRequiredSelections } from "./policy";
 
 const tempRoots: string[] = [];
 
@@ -53,7 +53,22 @@ describe("getRequiredPluginIds", () => {
       ],
     });
 
-    expect(getRequiredPluginIds()).toEqual(new Set(["bun", "uv", "acme-mcp"]));
+    expect(getRequiredPluginIds()).toEqual(new Set(["bun", "acme-mcp"]));
+  });
+});
+
+describe("getRequiredPluginDrift", () => {
+  test("reports no uv drift with or without a legacy uv entry", () => {
+    createMate({ config: acmeConfig, plugins: [] });
+
+    for (const packageManagers of [["bun"], ["bun", "uv"]]) {
+      const drift = getRequiredPluginDrift({
+        allowedAgents: ["claude"],
+        packageManagers,
+        capabilities: [],
+      });
+      expect(drift.map((entry) => entry.pluginId)).not.toContain("uv");
+    }
   });
 });
 

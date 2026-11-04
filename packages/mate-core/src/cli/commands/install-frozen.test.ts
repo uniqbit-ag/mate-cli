@@ -2,21 +2,19 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 
-import * as realInstall from "../../lib/install";
+import type { InstallPlan } from "../../lib/install";
+import { runInstallCommand } from "./install";
 
 /**
  * Core requirements would shell out to network installers, so only plan
  * inspection and execution are stubbed; context, reconcile and state are real.
  */
-mock.module("../../lib/install", () => ({
-  ...realInstall,
-  inspectInstallPlan: async (plan: realInstall.InstallPlan) => ({ ...plan, requirements: [] }),
-  runInstallPlan: async () => ({ ok: true, results: [] }),
-}));
-
-const { runInstallCommand } = await import("./install");
+const STUBBED_INSTALLERS = {
+  inspectPlan: async (plan: InstallPlan) => ({ ...plan, requirements: [], deferred: [] }),
+  runPlan: async () => ({ ok: true, results: [] }),
+};
 
 const originalHome = process.env.HOME;
 const originalArtifactPath = process.env.MATE_ARTIFACT_PATH;
@@ -49,7 +47,9 @@ test("frozen mode writes the checkout's plugin-generated files and leaves the lo
   process.env.MATE_ARTIFACT_PATH = companion;
   const before = await fs.readdir(companion);
 
-  expect(await runInstallCommand(["--yes", "--frozen-plugins"], companion)).toBe(true);
+  expect(
+    await runInstallCommand(["--yes", "--frozen-plugins"], companion, STUBBED_INSTALLERS),
+  ).toBe(true);
 
   expect((await fs.readdir(companion)).length).toBeGreaterThan(before.length);
   expect(await fs.readFile(lockFile, "utf8")).toBe(lock);

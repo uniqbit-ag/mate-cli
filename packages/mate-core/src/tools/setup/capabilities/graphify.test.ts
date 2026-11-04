@@ -98,6 +98,45 @@ describe("createGraphifyPlugin apply()", () => {
     }
   });
 
+  test("treats Mate's own graphify wrapper on PATH as not installed", async () => {
+    const root = await makeTempDir("mate-graphify-wrapper-only-");
+    const wrapperBin = path.join(root, "wrappers", "bin");
+    await fs.mkdir(wrapperBin, { recursive: true });
+    await fs.writeFile(path.join(wrapperBin, "graphify"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    const previousPath = process.env.PATH;
+    const previousWrapper = process.env.MATE_WRAPPER_BIN_PATH;
+    process.env.PATH = wrapperBin;
+    process.env.MATE_WRAPPER_BIN_PATH = wrapperBin;
+    try {
+      const plugin = createGraphifyPlugin({ isInstalledViaUvTool: () => false });
+      const [requirement] = plugin.getInstallRequirements!({ config: makeCtx(root).config });
+
+      expect(await requirement!.detect()).toBe(false);
+    } finally {
+      process.env.PATH = previousPath;
+      if (previousWrapper === undefined) delete process.env.MATE_WRAPPER_BIN_PATH;
+      else process.env.MATE_WRAPPER_BIN_PATH = previousWrapper;
+    }
+  });
+
+  test("setup does not offer the installer to a member who declined Graphify", async () => {
+    const confirmMock = mock(async (_: string) => true);
+    const runCommandMock = mock(async (_: string) => {});
+
+    const plugin = createGraphifyPlugin({
+      confirm: confirmMock,
+      isCommandOnPath: () => false,
+      isInstalledViaUvTool: () => false,
+      runCommand: runCommandMock,
+      readMemberChoices: async () => ({ graphify: "declined" }),
+    });
+
+    await plugin.apply(makeCtx("/tmp/companion"));
+
+    expect(confirmMock).not.toHaveBeenCalled();
+    expect(runCommandMock).not.toHaveBeenCalled();
+  });
+
   test("skips install prompt in sync mode even when binary is missing", async () => {
     const confirmMock = mock(async (_: string) => false);
     const checkPathMock = mock((_command: string, _path: string) => false);
@@ -853,6 +892,73 @@ describe("createGraphifyPlugin forProvider — provider asset install", () => {
     expect(remaining).not.toContain("## graphify");
     expect(remaining).toContain("# Project");
     expect(remaining).toContain("Some guidance here.");
+  });
+
+  test("claude apply without the graphify CLI removes its stale CLI hooks only", async () => {
+    const root = await makeTempDir("mate-graphify-claude-stale-hooks-");
+    const searchHook = {
+      matcher: "Bash|Grep",
+      hooks: [{ type: "command", command: "graphify hook-guard search", timeout: 10 }],
+    };
+    const readHook = {
+      matcher: "Read|Glob",
+      hooks: [{ type: "command", command: '"/opt/acme bin/graphify" hook-guard read' }],
+    };
+    const customScriptHook = {
+      matcher: "Write",
+      hooks: [{ type: "command", command: `sh "${root}/.claude/hooks/acme-guard.sh"` }],
+    };
+    const otherToolHook = {
+      matcher: "Bash",
+      hooks: [{ type: "command", command: "/usr/local/bin/acme-graphify-report hook-check" }],
+    };
+    await fs.mkdir(path.join(root, ".claude"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, ".claude", "settings.local.json"),
+      JSON.stringify({
+        hooks: { PreToolUse: [searchHook, readHook, customScriptHook, otherToolHook] },
+      }) + "\n",
+      "utf8",
+    );
+    const runProviderInstall = mock(async () => {});
+    const plugin = createGraphifyPlugin({
+      isCommandOnPath: () => false,
+      isInstalledViaUvTool: () => false,
+      runProviderInstall,
+    });
+
+    await plugin.forProvider!.claude.apply(makeCtx(root, { mode: "sync" }));
+
+    const settings = JSON.parse(
+      await fs.readFile(path.join(root, ".claude", "settings.local.json"), "utf8"),
+    ) as { hooks?: { PreToolUse?: unknown[] } };
+    expect(runProviderInstall).not.toHaveBeenCalled();
+    expect(settings.hooks?.PreToolUse).toEqual([customScriptHook, otherToolHook]);
+  });
+
+  test("claude teardown removes graphify CLI hooks", async () => {
+    const root = await makeTempDir("mate-graphify-claude-cli-hooks-teardown-");
+    const cliHook = {
+      matcher: "Bash|Grep",
+      hooks: [{ type: "command", command: "graphify hook-guard search" }],
+    };
+    await fs.mkdir(path.join(root, ".claude"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, ".claude", "settings.local.json"),
+      JSON.stringify({ hooks: { PreToolUse: [cliHook] } }) + "\n",
+      "utf8",
+    );
+    const plugin = createGraphifyPlugin({
+      isCommandOnPath: () => false,
+      isInstalledViaUvTool: () => false,
+    });
+
+    await plugin.forProvider!.claude.teardown(makeCtx(root));
+
+    const settings = JSON.parse(
+      await fs.readFile(path.join(root, ".claude", "settings.local.json"), "utf8"),
+    ) as { hooks?: unknown };
+    expect(settings.hooks).toBeUndefined();
   });
 
   test("claude teardown removes graphify hook entries from settings.local.json", async () => {

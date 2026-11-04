@@ -108,6 +108,7 @@ describe("tokensavePlugin.apply", () => {
     tokensaveDeps.rustcVersion = originalDeps.rustcVersion;
     tokensaveDeps.platform = originalDeps.platform;
     tokensaveDeps.pathValue = originalDeps.pathValue;
+    tokensaveDeps.readMemberChoices = originalDeps.readMemberChoices;
   });
 
   test("no-ops when repoPath is undefined", async () => {
@@ -454,10 +455,60 @@ describe("tokensavePlugin.apply", () => {
     expect(runMock.mock.calls.map((call) => call[0][0])).toEqual(["--version"]);
   });
 
-  test("declares MCP, hook, and permission contributions per runtime", () => {
-    const byRuntime = tokensavePlugin.getRuntimeContributions!(
-      makeCtx("/companion", { providers: ["claude", "opencode"] }),
-    );
+  test("setup never installs TokenSave for a member who declined it", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    tempRoots.push(companionDir);
+    runMock.mockImplementation(() => ({ ok: false, stderr: "not found", stdout: "" }));
+    tokensaveDeps.isCommandOnPath = () => true;
+    tokensaveDeps.readMemberChoices = async () => ({ tokensave: "declined" });
+
+    await tokensavePlugin.apply(makeCtx(companionDir, { providers: ["claude"], mode: "setup" }));
+
+    expect(runCommandMock).not.toHaveBeenCalled();
+    expect(runShellCommandMock).not.toHaveBeenCalled();
+  });
+
+  test("a launch sync never installs a missing TokenSave", async () => {
+    const companionDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-"));
+    tempRoots.push(companionDir);
+    runMock.mockImplementation(() => ({ ok: false, stderr: "not found", stdout: "" }));
+    tokensaveDeps.isCommandOnPath = () => true;
+
+    await tokensavePlugin.apply(makeCtx(companionDir, { providers: ["claude"], mode: "sync" }));
+
+    expect(runCommandMock).not.toHaveBeenCalled();
+    expect(runShellCommandMock).not.toHaveBeenCalled();
+  });
+
+  test("contributes no hooks on a machine without TokenSave, keeping the MCP entry", async () => {
+    const emptyBin = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-empty-bin-"));
+    tempRoots.push(emptyBin);
+    const previous = process.env.PATH;
+    process.env.PATH = emptyBin;
+    try {
+      const byRuntime = await tokensavePlugin.getRuntimeContributions!(
+        makeCtx("/companion", { providers: ["claude"] }),
+      );
+      expect(byRuntime.claude?.hookGroups).toEqual([]);
+      expect(byRuntime.claude?.mcpServers).toHaveLength(1);
+    } finally {
+      process.env.PATH = previous;
+    }
+  });
+
+  test("declares MCP, hook, and permission contributions per runtime", async () => {
+    const bin = await fs.mkdtemp(path.join(os.tmpdir(), "mate-ts-bin-"));
+    tempRoots.push(bin);
+    await fs.writeFile(path.join(bin, "tokensave"), "#!/bin/sh\n", { mode: 0o755 });
+    const previous = process.env.PATH;
+    process.env.PATH = bin;
+    const byRuntime = await Promise.resolve(
+      tokensavePlugin.getRuntimeContributions!(
+        makeCtx("/companion", { providers: ["claude", "opencode"] }),
+      ),
+    ).finally(() => {
+      process.env.PATH = previous;
+    });
 
     expect(byRuntime.claude?.mcpServers).toEqual([
       { name: "tokensave", command: "tokensave", args: ["serve"] },

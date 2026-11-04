@@ -227,7 +227,7 @@ describe("runSetupCommandWithDeps", () => {
     expect(executeMock).toHaveBeenCalledWith(
       {
         allowedAgents: ["claude"],
-        packageManagers: ["bun", "uv"],
+        packageManagers: ["bun"],
         capabilities: [{ name: "graphify" }],
         git: "default",
       },
@@ -295,7 +295,7 @@ describe("runSetupCommandWithDeps", () => {
     expect(executeMock).toHaveBeenCalledWith(
       {
         allowedAgents: ["claude"],
-        packageManagers: ["bun", "uv"],
+        packageManagers: ["bun"],
         capabilities: [{ name: "openspec" }],
         git: "default",
       },
@@ -330,7 +330,7 @@ describe("runSetupCommandWithDeps", () => {
     expect(executeMock).toHaveBeenCalledWith(
       {
         allowedAgents: ["claude"],
-        packageManagers: ["bun", "uv"],
+        packageManagers: ["bun"],
         capabilities: [{ name: "openspec" }],
         git: "auto",
       },

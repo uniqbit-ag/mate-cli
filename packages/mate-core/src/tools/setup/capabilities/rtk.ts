@@ -2,6 +2,7 @@ import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } fr
 import type { InstallRequirement } from "../install-contract";
 import { isCommandOnPath, runShellCommand, runShellCommandSilently } from "../utils";
 import { confirm } from "../../../cli/confirm";
+import { isDeclinedByMember, type ReadMemberChoices } from "../../../lib/member-choices";
 
 const RTK_INSTALL_CMD_BREW = "brew install rtk-ai/tap/rtk";
 const RTK_INSTALL_CMD_FALLBACK =
@@ -31,6 +32,7 @@ export type RtkDeps = {
   isBrewAvailable?: () => boolean;
   runRtkInstallCmd?: (cmd: string) => Promise<void>;
   runRtkCommandSilently?: (cmd: string) => Promise<void>;
+  readMemberChoices?: ReadMemberChoices;
 };
 
 export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
@@ -63,6 +65,7 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
           label: "RTK CLI",
           group: "companion",
           source: "RTK capability",
+          recommendedBy: ["rtk"],
           command,
           fingerprint: `rtk:${command}`,
           detect: checkRtkPath,
@@ -73,6 +76,7 @@ export function createRtkPlugin(deps: RtkDeps = {}): CapabilityPlugin {
     },
     async apply(ctx) {
       if (checkRtkPath() || ctx.mode !== "setup") return;
+      if (await isDeclinedByMember(ctx.companionPath, ["rtk"], deps.readMemberChoices)) return;
 
       const command = checkBrew() ? RTK_INSTALL_CMD_BREW : RTK_INSTALL_CMD_FALLBACK;
       process.stdout.write(`rtk binary not found. To install:\n  ${command}\n`);

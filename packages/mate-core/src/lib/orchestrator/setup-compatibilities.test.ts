@@ -20,24 +20,21 @@ describe("setup compatibilities", () => {
     const selections = getSetupSelectionsFromConfig(config);
 
     expect(selections.allowedAgents).toEqual(["claude"]);
-    expect(selections.packageManagers).toEqual(["bun", "uv"]);
+    expect(selections.packageManagers).toEqual(["bun"]);
     expect(selections.capabilities.map((entry) => entry.name)).toEqual([
       "openspec",
       "react-doctor",
     ]);
   });
 
-  test("package manager compatibilities include locked bun and locked uv, both always installed", () => {
-    expect(listSetupPackageManagerCompatibilities()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ packageManager: "bun", language: "node", locked: true }),
-        expect.objectContaining({ packageManager: "uv", language: "python", locked: true }),
-      ]),
-    );
+  test("package manager compatibilities offer locked bun only: uv follows Graphify", () => {
+    expect(listSetupPackageManagerCompatibilities()).toEqual([
+      expect.objectContaining({ packageManager: "bun", language: "node", locked: true }),
+    ]);
   });
 
-  test("default selections include bun and uv package managers", () => {
-    expect(getDefaultSetupSelections().packageManagers).toEqual(["bun", "uv"]);
+  test("default selections include only the bun package manager", () => {
+    expect(getDefaultSetupSelections().packageManagers).toEqual(["bun"]);
   });
 
   test("lists RTK as an optional capability that is not selected by default", () => {
@@ -135,7 +132,7 @@ describe("setup compatibilities", () => {
     }
   });
 
-  test("selections read packageManagers from config and always include both locked package managers", () => {
+  test("selections read packageManagers from config and always include the locked bun", () => {
     expect(
       getSetupSelectionsFromConfig({
         allowedAgents: ["claude"],
@@ -154,7 +151,7 @@ describe("setup compatibilities", () => {
         capabilities: [{ name: "openspec" }],
       }),
     ).toMatchObject({
-      packageManagers: ["bun", "uv"],
+      packageManagers: ["bun"],
       capabilities: [{ name: "openspec" }],
       selectedGitMode: "auto",
     });

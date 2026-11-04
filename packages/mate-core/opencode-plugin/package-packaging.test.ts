@@ -70,6 +70,16 @@ if (
 console.log("TUI_SMOKE_OK");
 `;
 
+/** The OpenTUI versions mate-core develops against, installed beside it as the host would. */
+async function hostOpenTuiDependencies(): Promise<Record<string, string>> {
+  const manifest = JSON.parse(await fs.readFile(path.join(CORE_ROOT, "package.json"), "utf8")) as {
+    devDependencies: Record<string, string>;
+  };
+  return Object.fromEntries(
+    Object.entries(manifest.devDependencies).filter(([name]) => name.startsWith("@opentui/")),
+  );
+}
+
 function runInProject(project: string, args: string[], env: NodeJS.ProcessEnv = process.env) {
   return spawnSync("bun", args, { cwd: project, env: { ...env, CI: "1" }, encoding: "utf8" });
 }
@@ -97,7 +107,7 @@ describe("bundled OpenCode plugin in packed @uniqbit/mate-core", () => {
     expect(entries.filter((entry) => entry.includes(".test."))).toEqual([]);
   });
 
-  test("loads the TUI entry with mate-core's OpenTUI and the server entry without OpenTUI, by path", async () => {
+  test("loads the TUI entry with the host's OpenTUI and the server entry without OpenTUI, by path", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-opencode-plugin-smoke-"));
     tempRoots.push(root);
 
@@ -113,7 +123,11 @@ describe("bundled OpenCode plugin in packed @uniqbit/mate-core", () => {
         {
           name: "mate-opencode-plugin-smoke",
           private: true,
-          dependencies: { "@uniqbit/mate-core": `file:${coreTarball}` },
+          // OpenTUI stands in for the OpenCode host, which provides it to plugins.
+          dependencies: {
+            "@uniqbit/mate-core": `file:${coreTarball}`,
+            ...(await hostOpenTuiDependencies()),
+          },
         },
         null,
         2,
@@ -133,7 +147,6 @@ describe("bundled OpenCode plugin in packed @uniqbit/mate-core", () => {
       Object.entries(process.env).filter(([key]) => !key.startsWith("MATE_")),
     );
 
-    /** OpenCode does not hand its host OpenTUI to a path-loaded plugin; the TUI entry resolves mate-core's copy. */
     const tuiSmoke = runInProject(project, ["tui-smoke.ts"], cleanEnv);
     expect(tuiSmoke.stderr).not.toContain("error");
     expect(tuiSmoke.stdout).toContain("TUI_SMOKE_OK");

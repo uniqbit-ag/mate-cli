@@ -5,13 +5,32 @@ const os = require("node:os");
 const path = require("node:path");
 const readline = require("node:readline");
 
-function hasBun() {
+function runsBun(command) {
   try {
-    execFileSync("bun", ["--version"], { stdio: "ignore" });
+    execFileSync(command, ["--version"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
   }
+}
+
+/** Where Bun's own installer puts the binary: $BUN_INSTALL/bin, else ~/.bun/bin. */
+function bunInstallBinDir() {
+  const root = process.env.BUN_INSTALL || path.join(os.homedir(), ".bun");
+  return path.join(root, "bin");
+}
+
+/**
+ * The Bun command to delegate to, or null when there is none. The installer
+ * only edits shell profiles, so a Bun installed this run (or by an earlier run
+ * whose PATH change the current shell never picked up) is found at its
+ * install location instead of on the inherited PATH.
+ */
+function resolveBun() {
+  if (runsBun("bun")) return "bun";
+  const local = path.join(bunInstallBinDir(), process.platform === "win32" ? "bun.exe" : "bun");
+  if (fs.existsSync(local) && runsBun(local)) return local;
+  return null;
 }
 
 function installBun() {
@@ -73,14 +92,33 @@ function runProcess(command, args, options) {
   });
 }
 
+function missingBunHint(preview) {
+  return [
+    "Mate runs on Bun, which is not installed yet.",
+    "Set Mate up in one step (installs Bun and the rest of Mate's requirements):",
+    "  mate install --yes",
+    "Or install Bun yourself:",
+    `  ${preview}`,
+    "",
+  ].join("\n");
+}
+
 async function main() {
-  if (!hasBun()) {
+  let bun = resolveBun();
+  if (!bun) {
     const plan = installBun();
     const yes = process.argv[2] === "install" && process.argv.slice(3).includes("--yes");
-    if (!yes && !(await confirm(plan.preview))) {
-      process.stderr.write("Bun installation declined. Re-run with `mate install --yes`.\n");
-      process.exitCode = 1;
-      return;
+    if (!yes) {
+      if (!process.stdin.isTTY) {
+        process.stderr.write(missingBunHint(plan.preview));
+        process.exitCode = 1;
+        return;
+      }
+      if (!(await confirm(plan.preview))) {
+        process.stderr.write("Bun installation declined. Re-run with `mate install --yes`.\n");
+        process.exitCode = 1;
+        return;
+      }
     }
     const result = await runProcess(plan.command, plan.args, { stdio: "inherit", shell: false });
     if (result.error || result.signal || result.status !== 0) {
@@ -88,7 +126,8 @@ async function main() {
       process.exitCode = result.status || 1;
       return;
     }
-    if (!hasBun()) {
+    bun = resolveBun();
+    if (!bun) {
       process.stderr.write(
         `Bun installation completed but Bun is still unavailable. Run manually:\n  ${plan.preview}\n`,
       );
@@ -97,7 +136,7 @@ async function main() {
     }
   }
 
-  const bunBin = path.join(os.homedir(), ".bun", "bin");
+  const bunBin = bunInstallBinDir();
   const env = { ...process.env, PATH: `${bunBin}${path.delimiter}${process.env.PATH || ""}` };
   // Callers like the Obsidian panel pass a control pipe on fd 3 (BA
   // pty-bridge resize channel) and announce it via MATE_PTY_CONTROL_FD;
@@ -116,7 +155,7 @@ async function main() {
     } catch {}
   }
   const result = await runProcess(
-    "bun",
+    bun,
     [path.join(__dirname, "..", "dist", "cli.mjs"), ...process.argv.slice(2)],
     { stdio, env },
   );

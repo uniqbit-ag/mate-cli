@@ -96,16 +96,6 @@ export const BUILTIN_SETUP_COMPATIBILITIES: SetupCompatibility[] = [
     locked: true,
   },
   {
-    id: "uv",
-    kind: "packageManager",
-    packageManager: "uv",
-    language: "python",
-    label: "uv",
-    description: "Python package manager and project bootstrap for companion capabilities.",
-    defaultSelected: true,
-    locked: true,
-  },
-  {
     id: "openspec",
     kind: "capability",
     capability: { name: "openspec" },
