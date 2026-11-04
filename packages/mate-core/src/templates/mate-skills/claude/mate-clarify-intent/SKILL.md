@@ -85,7 +85,15 @@ Assumptions: <points explore should verify, or "none">
 Next: /mate-explore-change
 ```
 
-Tell the user the next step is `/mate-explore-change`; do not invoke it.
+End the response with a final `## Next steps` section: numbered required actions in
+execution order, with exact commands and known change names, prerequisites first.
+Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
+follows it. Listing an action never invokes it. For **skip**, the block is followed by:
+
+```text
+## Next steps
+1. /mate-explore-change
+```
 
 ## Mate Boundary
 

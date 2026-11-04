@@ -45,9 +45,20 @@ merge. Archiving is local and uncommitted; it publishes nothing.
    with its merge result and source (`forge` or `user`) and PR link, or the
    not-applicable reason. An open or unknown merge is information, not a failure.
 
-4. **Hand off.** Name `/mate-publish-artifact` as the next step and say that
-   publication holds the archive back until its delivery branch is merged. Do not
-   invoke it.
+4. **Hand off.**
+   End the response with a final `## Next steps` section: numbered required actions in
+   execution order, with exact commands and known change names, prerequisites first.
+   Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
+   follows it. Listing an action never invokes it.
+   When the delivery branch is not merged yet, list merging it before
+   `/mate-publish-artifact`, and say above the section that publication, not archive,
+   waits for the merge. Never commit, push, open a PR, or merge for the user.
+
+   ```text
+   ## Next steps
+   1. Merge workset/acme-queue
+   2. /mate-publish-artifact
+   ```
 
 When `status` is `failed`, report the message (typically incomplete tasks or a
 validation error) and stop.

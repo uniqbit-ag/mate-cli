@@ -33,6 +33,7 @@ Explain the current topic visually in a browser-rendered Mate report. Skip the p
 - Code lives in the Working Repository; the Companion Repository holds only artifacts. Run `git diff` in the Working Repository.
 - Never put an absolute local path, home directory, username, machine name, temporary report path, Companion Repository path, or raw path-valued environment variable in the report. Use repository-relative paths or neutral labels such as `Working Repository` and `Companion Repository`.
 - Never commit, push, or create a pull request.
+- When reviewing an applied change and handing off: End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. Mention `/mate-simplify-code` above it as optional; list `/mate-archive-change <change-name>` in it.
 
 ## Browser Report Required
 

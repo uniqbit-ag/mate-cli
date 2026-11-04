@@ -35,6 +35,7 @@ export function usage(): string {
     "   [--not-applicable <reason>] [--pr <url>] [--refresh]",
     "   [--confirm-merged|--confirm-open|--confirm-dropped] [--json]",
     ` ${n} artifact archive <change> [--repository <org/repo>] [--branch <b> [--direct]|--not-applicable <reason>|--skip-branch] [--json]`,
+    ` ${n} artifact apply-context <change> --json [--since <digest>]`,
     ` ${n} doctor`,
     ` ${n} report [--days N] [--input FILE|-] [--json]`,
     ` ${n} studio [--writable] [--terminal] [--detach-timeout <minutes>]`,

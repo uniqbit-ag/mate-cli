@@ -66,15 +66,37 @@ its message and ask; never work around it.
 
 When its result lists `warnings`, a `dependsOn` change is not implemented yet, so this
 change would be built without the code it builds on. Report each warning and ask
-whether to apply the dependency first or continue here.
+whether to apply the dependency first or continue here. A dependency that is
+implemented but unarchived is no such warning; it only affects archive order.
 
 ## Step 3: Apply
 
 Read [references/openspec-apply-change.md](references/openspec-apply-change.md) and
 follow it for the implementation. The PR need not exist yet; the branch is the delivery.
-After implementation, the optional peers `/mate-show-me` and `/mate-simplify-code` may
-run in any order, then `/mate-archive-change`. Name them as next steps; do not invoke
-them.
+Retrieve its instructions the ordinary way. Only when the user explicitly asks for compact
+apply, also read [references/mate-compact-apply.md](references/mate-compact-apply.md) and
+use its transport.
+
+## Step 4: Hand off
+
+End the response with a final `## Next steps` section: numbered required actions in
+execution order, with exact commands and known change names, prerequisites first.
+Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
+follows it. Listing an action never invokes it.
+
+- Above the section, label `/mate-show-me` and `/mate-simplify-code` as optional, in
+  any order; they are not prerequisites for archive.
+- In the section, list `/mate-archive-change <change-name>`, after any required work
+  still open (a failing check, an unanswered question).
+- Several changes on one branch: list their archives in dependency order, and say above
+  the section that this order avoids an advisory archive warning; it is not a gate.
+
+```text
+Optional, any order: /mate-show-me acme-queue, /mate-simplify-code.
+
+## Next steps
+1. /mate-archive-change acme-queue
+```
 
 ## Guardrails
 
