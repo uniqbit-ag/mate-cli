@@ -1,0 +1,14 @@
+{
+  "name": "mate-companion-mentions",
+  "owner": { "name": "Uniqbit AG" },
+  "metadata": {
+    "description": "Mate plugin: find and attach Companion Repository files from Claude Code's @ menu as @mate:<path>."
+  },
+  "plugins": [
+    {
+      "name": "mate-companion-mentions",
+      "source": "./",
+      "description": "@mate:<path> mentions: find and attach files from the mate companion repo in the @ menu."
+    }
+  ]
+}

@@ -54,10 +54,14 @@ export function launchPassesClaudePluginFolders(kind: SessionKind): boolean {
   return kind !== "unmanaged";
 }
 
-export function planClaudeDelivery(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan {
+export function planClaudeDelivery(
+  kind: SessionKind,
+  wrap: WrapState,
+  worktreePluginOverrides: readonly string[] = [],
+): ClaudeDeliveryPlan {
   return {
     ...planChannels(kind, wrap),
-    plugins: planPlugins(kind, wrap),
+    plugins: planPlugins(kind, wrap, worktreePluginOverrides),
     instructions: planClaudeInstructions(kind, wrap.runtimes.has("claude")),
   };
 }
@@ -98,10 +102,23 @@ export function launchPluginFolders(
   return [bundledPluginRoot, ...gathered.filter((dir) => !carried.has(path.resolve(dir)))];
 }
 
-function planPlugins(kind: SessionKind, wrap: WrapState): ClaudeDeliveryPlan["plugins"] {
+function planPlugins(
+  kind: SessionKind,
+  wrap: WrapState,
+  worktreePluginOverrides: readonly string[],
+): ClaudeDeliveryPlan["plugins"] {
   switch (kind) {
-    case "managed-repo":
-      return { owner: "launch-flag", launchExclude: wrap.carriedClaudePluginDirectories };
+    case "managed-repo": {
+      const overrides = new Set(
+        worktreePluginOverrides.map((directory) => path.resolve(directory)),
+      );
+      return {
+        owner: "launch-flag",
+        launchExclude: wrap.carriedClaudePluginDirectories.filter(
+          (directory) => !overrides.has(path.resolve(directory)),
+        ),
+      };
+    }
     case "managed-companion":
       return { owner: "launch-flag", launchExclude: [] };
     case "unmanaged":

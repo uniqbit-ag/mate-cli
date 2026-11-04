@@ -17,6 +17,7 @@ import * as opencodeCmd from "./commands/launch/opencode";
 import * as pluginCmd from "./commands/plugin/plugin";
 import * as reportCmd from "./commands/report";
 import * as sessionCmd from "./commands/session/prepare";
+import * as sessionContextCmd from "./commands/session/context";
 import * as studioCmd from "./commands/studio";
 import * as updateCmd from "./commands/update";
 import * as workingCmd from "./commands/working/working";
@@ -193,6 +194,35 @@ describe("command gating", () => {
       process.exitCode = previousExitCode;
       errorSpy.mockRestore();
     }
+  });
+
+  test("session context runs before the runtime refresh, plugin loading and update checks", async () => {
+    const received: string[][] = [];
+    spies.push(
+      spyOn(sessionContextCmd, "runSessionContextCommand").mockImplementation(async (argv) => {
+        received.push(argv);
+        return null;
+      }),
+    );
+    const calls: string[] = [];
+    const { gateCalls, deps } = recordingDeps();
+    deps.refreshRuntimeDirectory = async () => {
+      calls.push("refresh");
+      return { changed: [] };
+    };
+    deps.hydrateDynamicPlugins = async () => {
+      calls.push("hydrate");
+    };
+
+    await main(["node", "mate", "session", "context", "--repo", "/work/acme-app", "--json"], deps);
+
+    expect(received).toEqual([["--repo", "/work/acme-app", "--json"]]);
+    expect(calls).toEqual([]);
+    expect(gateCalls).toEqual([]);
+    expect(dispatched).toEqual([]);
+    expect(updateChecker.scheduleBackgroundCheck).not.toHaveBeenCalled();
+    expect(updateChecker.showUpdateBannerIfAvailable).not.toHaveBeenCalled();
+    expect(updateChecker.enforceUpdateIfRequired).not.toHaveBeenCalled();
   });
 
   test("forwards studio subcommand arguments", async () => {

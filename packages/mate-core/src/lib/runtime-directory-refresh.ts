@@ -6,6 +6,7 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../framework";
 import {
   runtimeDirectoryPath,
+  runtimeClaudeCapabilityPluginsRoot,
   runtimeClaudePluginRoot,
   runtimeMateBin,
   runtimeOpenCodePluginRoot,
@@ -13,11 +14,17 @@ import {
 } from "../runtime/runtime-directory";
 import { writeAtomic } from "../runtime/write-atomic";
 import { realLinkTarget, realOrResolved } from "./fs-utils";
-import { getClaudePluginRoot, getOpenCodePluginRoot, getWrapperBinPath } from "./package-paths";
+import {
+  getClaudeCapabilityPluginsRoot,
+  getClaudePluginRoot,
+  getOpenCodePluginRoot,
+  getWrapperBinPath,
+} from "./package-paths";
 
 export interface RuntimeDirectoryTargets {
   pluginRoot: string;
   claudePluginRoot: string;
+  claudeCapabilityPluginsRoot: string;
   /** The resolved `wrappers/bin`; its parent is what the `wrappers` link names. */
   wrapperBinPath: string;
   /** The interpreter running this CLI, written into the launcher. */
@@ -63,6 +70,7 @@ function currentRuntimeDirectoryTargets(): RuntimeDirectoryTargets {
   return {
     pluginRoot: getOpenCodePluginRoot(),
     claudePluginRoot: getClaudePluginRoot(),
+    claudeCapabilityPluginsRoot: getClaudeCapabilityPluginsRoot(),
     wrapperBinPath: getWrapperBinPath(),
     execPath: stableInterpreterPath(process.execPath),
     cliEntry: path.resolve(process.argv[1] ?? ""),
@@ -144,6 +152,14 @@ export async function refreshRuntimeDirectory(
   }
   if (await pointLink(runtimeClaudePluginRoot(homeDir), targets.claudePluginRoot)) {
     changed.push("claude-plugin");
+  }
+  if (
+    await pointLink(
+      runtimeClaudeCapabilityPluginsRoot(homeDir),
+      targets.claudeCapabilityPluginsRoot,
+    )
+  ) {
+    changed.push("claude-capability-plugins");
   }
   const wrappersLink = path.dirname(runtimeWrapperBinPath(homeDir));
   if (await pointLink(wrappersLink, path.dirname(targets.wrapperBinPath))) {

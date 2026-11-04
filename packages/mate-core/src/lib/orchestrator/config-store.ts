@@ -3,6 +3,7 @@ import path from "node:path";
 import { normalizeBaseAudience } from "../../tools/setup/dynamic-plugins/audiences";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { declaredAllowedAgents } from "../../runtime/policy";
 import {
   getDefaultSetupSelections,
   listSetupCapabilityCompatibilities,
@@ -38,10 +39,10 @@ interface LegacyProfilesShape {
 function migrateProfilesToAllowedAgents(config: FrameworkConfig): FrameworkConfig {
   const legacy = config as FrameworkConfig & LegacyProfilesShape;
   if (!legacy.profiles) return config;
-  const { profiles, ...rest } = legacy;
+  const { profiles: _profiles, ...rest } = legacy;
   return {
     ...rest,
-    allowedAgents: rest.allowedAgents ?? profiles.default?.allowedAgents ?? [],
+    allowedAgents: (declaredAllowedAgents(legacy) as string[] | undefined) ?? [],
   };
 }
 

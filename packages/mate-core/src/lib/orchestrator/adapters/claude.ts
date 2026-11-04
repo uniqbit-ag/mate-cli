@@ -19,6 +19,7 @@ import {
   getCompanionClaudeSettingsPath,
 } from "../../../tools/setup/providers/claude";
 import { definesUserClaudeAttribution } from "../../../tools/setup/providers/claude-attribution";
+import { worktreePluginSourceConflicts } from "../../../tools/setup/providers/claude-worktree-plugins";
 import type { ClaudeSettings } from "../../../tools/setup/providers/claude-format";
 import { getClaudePluginRoot, validateClaudePluginAssets } from "../../package-paths";
 import type { PrepareResult } from "../session-prepare";
@@ -114,7 +115,11 @@ export class ClaudeAdapter extends LaunchAdapter<ClaudeLaunchContext> {
         `${FRAMEWORK_NAME}: ${repository.id} is not wrapped for Claude after its prepare; run \`${FRAMEWORK_NAME} wrap\` in ${repository.path}.`,
       );
     }
-    const plan = planClaudeDelivery(kind, wrap);
+    const pluginOverrides =
+      repository && prepared.claudePluginDirectories?.length
+        ? await worktreePluginSourceConflicts(repository.path, wrap.carriedClaudePlugins)
+        : [];
+    const plan = planClaudeDelivery(kind, wrap, pluginOverrides);
     const mcpConfigPath = getCompanionClaudeMcpConfigPath(companionPath);
     const settingsPath = await settingsPathFor(plan, companionPath, repository);
     const delivery: ClaudeDelivery = {

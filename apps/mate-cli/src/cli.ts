@@ -2,6 +2,7 @@
 import { createMate } from "@uniqbit/mate-core";
 import {
   createClaudePlugin,
+  createCompanionMentionsPlugin,
   createContextModePlugin,
   createGraphifyPlugin,
   createOpenCodePlugin,
@@ -24,6 +25,7 @@ const rtk = createRtkPlugin();
 const graphify = createGraphifyPlugin();
 const context7 = createContext7Plugin();
 const contextMode = createContextModePlugin();
+const companionMentions = createCompanionMentionsPlugin();
 
 const cli = createMate({
   config: {
@@ -45,6 +47,7 @@ const cli = createMate({
     { plugin: graphify, policy: "optional" },
     { plugin: context7, policy: "optional" },
     { plugin: contextMode, policy: "optional" },
+    { plugin: companionMentions, policy: "optional" },
   ],
 });
 

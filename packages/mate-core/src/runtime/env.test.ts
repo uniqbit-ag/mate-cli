@@ -5,7 +5,8 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { MATE_ENV, isManagedCompanionContext, readCompanionRuntimeContext } from "./env";
-import { companionFrameworkConfigPath } from "./policy";
+import { companionFrameworkConfigPath, policyDocument } from "./policy";
+import { defaultSecretPolicy, parseSecretsConfig } from "./secret-patterns";
 import { writeProjectionPair, type MateProjection } from "./projection";
 import { repoLocalRegistryPath } from "./repo-local";
 
@@ -136,12 +137,26 @@ describe("readCompanionRuntimeContext file-backed composition", () => {
       companionPath,
       repositoryPath: repoRoot,
       repositoryId: "acme",
-      policyJson: JSON.stringify({ allowedAgents: ["claude"] }),
+      policyJson: policyDocument({ allowedAgents: ["claude"], secrets: defaultSecretPolicy() }),
       graphifyEnabled: true,
       gitAutoModeEnabled: true,
       reactDoctorEnabled: false,
     });
     expect(isManagedCompanionContext(context)).toBe(true);
+  });
+
+  test("carries the companion's secret rules in the policy document", () => {
+    const { repoRoot } = makeProjectedRepo(
+      {},
+      'allowedAgents:\n  - claude\nsecrets:\n  guardrails: false\n  deny: ["*.tfstate"]\n',
+    );
+
+    expect(readCompanionRuntimeContext({}, repoRoot).policyJson).toBe(
+      policyDocument({
+        allowedAgents: ["claude"],
+        secrets: parseSecretsConfig({ guardrails: false, deny: ["*.tfstate"] }),
+      }),
+    );
   });
 
   test("resolves from a nested subdirectory of the Working Repository", () => {
@@ -165,7 +180,9 @@ describe("readCompanionRuntimeContext file-backed composition", () => {
     expect(context.graphifyEnabled).toBe(false);
     expect(context.reactDoctorEnabled).toBe(true);
     expect(context.gitAutoModeEnabled).toBe(false);
-    expect(context.policyJson).toBe(JSON.stringify({ allowedAgents: [] }));
+    expect(context.policyJson).toBe(
+      policyDocument({ allowedAgents: [], secrets: defaultSecretPolicy() }),
+    );
   });
 
   test("a managed session ignores a projection naming a different companion", () => {

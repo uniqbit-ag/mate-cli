@@ -30,10 +30,18 @@ export interface WrapState {
   readonly runtimes: ReadonlySet<WrapRuntime>;
   readonly carriedClaudeHookGroups: readonly ClaudeHookGroup[];
   carriesClaudeHookGroup(group: ClaudeHookGroup): boolean;
+  /** Capability plugin IDs and directory marketplaces the Wrap recorded. */
+  readonly carriedClaudePlugins: readonly WrappedClaudePlugin[];
   /** Capability plugin folders the wrap enables through a `directory` marketplace, as recorded. */
   readonly carriedClaudePluginDirectories: readonly string[];
   /** MCP server names the wrap declared in `.opencode/opencode.json`; user servers are not listed. */
   readonly openCodeMcpServers: readonly string[];
+}
+
+export interface WrappedClaudePlugin {
+  readonly id: string;
+  readonly marketplace: string;
+  readonly directory: string;
 }
 
 export const WRAP_RUNTIMES: readonly WrapRuntime[] = ["claude", "opencode"];
@@ -48,27 +56,23 @@ function wrappedFor(manifest: Manifest, runtime: WrapRuntime): boolean {
 }
 
 /**
- * The folders of the recorded `directory` marketplaces whose plugin the wrap
- * also enables: one without the other loads nothing.
+ * Each enabled plugin of a recorded `directory` marketplace: a marketplace
+ * without an enabled plugin loads nothing.
  */
-function carriedPluginDirectories(manifest: Manifest): string[] {
+function carriedPlugins(manifest: Manifest): WrappedClaudePlugin[] {
   const marketplaces = recordedMapEntries(manifest, CLAUDE_SETTINGS_DOCUMENT, [
     "extraKnownMarketplaces",
   ]);
   const enabled = recordedMapEntries(manifest, CLAUDE_SETTINGS_DOCUMENT, ["enabledPlugins"]);
-  const enabledMarketplaces = new Set(
-    Object.entries(enabled)
-      .filter(([, value]) => value === true)
-      .map(([id]) => id.slice(id.lastIndexOf("@") + 1)),
-  );
-  return Object.entries(marketplaces).flatMap(([name, entry]) => {
+  return Object.entries(marketplaces).flatMap(([marketplace, entry]) => {
     const source = isRecord(entry) ? entry.source : undefined;
-    return enabledMarketplaces.has(name) &&
-      isRecord(source) &&
-      source.source === "directory" &&
-      typeof source.path === "string"
-      ? [source.path]
-      : [];
+    if (!isRecord(source) || source.source !== "directory" || typeof source.path !== "string") {
+      return [];
+    }
+    const directory = source.path;
+    return Object.entries(enabled)
+      .filter(([id, value]) => value === true && id.slice(id.lastIndexOf("@") + 1) === marketplace)
+      .map(([id]) => ({ id, marketplace, directory }));
   });
 }
 
@@ -85,11 +89,15 @@ export function wrapStateOf(manifest: Manifest): WrapState {
     isHookGroup,
   );
   const carriedKeys = new Set(carried.map(hookGroupKey));
+  const plugins = carriedPlugins(manifest);
   return {
     runtimes: new Set(WRAP_RUNTIMES.filter((runtime) => wrappedFor(manifest, runtime))),
     carriedClaudeHookGroups: carried,
     carriesClaudeHookGroup: (group) => carriedKeys.has(hookGroupKey(group)),
-    carriedClaudePluginDirectories: carriedPluginDirectories(manifest),
+    carriedClaudePlugins: plugins,
+    carriedClaudePluginDirectories: [
+      ...new Map(plugins.map(({ marketplace, directory }) => [marketplace, directory])).values(),
+    ],
     openCodeMcpServers: recordedMapKeys(
       manifest,
       OPENCODE_CONFIG_DOCUMENT,

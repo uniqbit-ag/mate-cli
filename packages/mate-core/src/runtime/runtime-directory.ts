@@ -27,6 +27,11 @@ export function runtimeClaudePluginRoot(homeDir?: string): string {
   return path.join(runtimeDirectoryPath(homeDir), "claude-plugin");
 }
 
+/** The Claude plugins of Mate's built-in Capabilities, one folder each. */
+export function runtimeClaudeCapabilityPluginsRoot(homeDir?: string): string {
+  return path.join(runtimeDirectoryPath(homeDir), "claude-capability-plugins");
+}
+
 export function runtimeWrapperBinPath(homeDir?: string): string {
   return path.join(runtimeDirectoryPath(homeDir), "wrappers", "bin");
 }

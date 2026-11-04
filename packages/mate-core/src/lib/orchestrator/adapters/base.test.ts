@@ -13,6 +13,13 @@ import {
   resolveProjection,
 } from "../../../runtime/projection";
 import { readCompanionRuntimeContext } from "../../../runtime/env";
+import { resolveSessionContext } from "../../../runtime/session-context";
+import { companionFrameworkConfigPath, policyDocument } from "../../../runtime/policy";
+import {
+  defaultSecretPolicy,
+  parseSecretsConfig,
+  secretRules,
+} from "../../../runtime/secret-patterns";
 import { repoLocalRegistryPath } from "../../../runtime/repo-local";
 import {
   CLAUDE_SETTINGS_DOCUMENT,
@@ -338,7 +345,7 @@ describe("LaunchAdapter.prepareLaunch", () => {
       expect(launch.env.MATE_VERSION).toEqual(expect.any(String));
       expect(launch.env.MATE_WRAPPER_BIN_PATH).toContain("wrappers/bin");
       expect(launch.env.MATE_POLICY_JSON).toBe(
-        JSON.stringify({ allowedAgents: ["claude", "opencode"] }),
+        policyDocument({ allowedAgents: ["claude", "opencode"], secrets: defaultSecretPolicy() }),
       );
       expect(launch.env.MATE_GRAPHIFY_ENABLED).toBe("1");
       expect(launch.env.MATE_OPENSPEC_ENABLED).toBe("1");
@@ -408,6 +415,82 @@ describe("LaunchAdapter.prepareLaunch", () => {
     const allCapsGuidance = JSON.parse(allCapsEnv.MATE_GUIDANCE_JSON ?? "{}");
     expect(allCapsGuidance.companionGuidance).not.toContain("<codebase-exploration-rules");
     expect(allCapsGuidance.codebaseExplorationGuidance).toContain("<codebase-exploration-rules ");
+  });
+});
+
+describe("launch policy document", () => {
+  /** A companion whose `framework.yaml` holds `config`, or none when it is null. */
+  async function companionWith(config: string | null): Promise<string> {
+    const companionPath = await makeTempDir("mate-launch-policy-");
+    if (config !== null) {
+      const configPath = companionFrameworkConfigPath(companionPath);
+      await fs.mkdir(path.dirname(configPath), { recursive: true });
+      await fs.writeFile(configPath, config, "utf8");
+    }
+    return companionPath;
+  }
+
+  async function launchSecrets(companionPath: string) {
+    const launch = await prepareClaudeLaunch({ ...makeContext(), companionPath }, []);
+    return JSON.parse(launch.env.MATE_POLICY_JSON ?? "{}").secrets;
+  }
+
+  test("carries the default rules for a companion without a secrets block", async () => {
+    const companionPath = await companionWith("type: companion\n");
+    expect(await launchSecrets(companionPath)).toEqual(secretRules(defaultSecretPolicy()));
+  });
+
+  test("carries a companion's own deny pattern beside the defaults", async () => {
+    const companionPath = await companionWith('secrets:\n  deny: ["*.tfstate"]\n');
+    expect(await launchSecrets(companionPath)).toEqual(
+      secretRules(parseSecretsConfig({ deny: ["*.tfstate"] })),
+    );
+  });
+
+  test("carries an opt-out", async () => {
+    const companionPath = await companionWith("secrets:\n  guardrails: false\n");
+    expect((await launchSecrets(companionPath)).guardrails).toBe(false);
+  });
+
+  test("keeps protection when framework.yaml does not parse", async () => {
+    const companionPath = await companionWith("secrets: [unbalanced\n");
+    expect(await launchSecrets(companionPath)).toEqual(secretRules(defaultSecretPolicy()));
+  });
+
+  test("is the same for OpenCode, Claude and a companion-scoped launch", async () => {
+    const companionPath = await companionWith('secrets:\n  deny: ["*.tfstate"]\n');
+    const context = { ...makeContext(), companionPath };
+    const scoped = { ...context, repository: undefined, launchWorkingDirectory: companionPath };
+    const documents = [
+      (await new OpenCodeAdapter(OPENCODE_V2).prepareLaunch(context, [])).env.MATE_POLICY_JSON,
+      (await prepareClaudeLaunch(context, [])).env.MATE_POLICY_JSON,
+      (await prepareClaudeLaunch(scoped, [])).env.MATE_POLICY_JSON,
+    ];
+    expect(new Set(documents)).toEqual(
+      new Set([
+        policyDocument({
+          allowedAgents: ["claude", "opencode"],
+          secrets: parseSecretsConfig({ deny: ["*.tfstate"] }),
+        }),
+      ]),
+    );
+  });
+
+  test("equals what the session context query reports for the same companion", async () => {
+    const companionPath = await companionWith(
+      'allowedAgents:\n  - claude\n  - opencode\nsecrets:\n  deny: ["*.tfstate"]\n',
+    );
+    const context = { ...makeContext(), companionPath };
+    const repoRoot = await makeTempDir("mate-launch-policy-repo-");
+    await fs.mkdir(path.dirname(repoLocalRegistryPath(repoRoot)), { recursive: true });
+    await fs.writeFile(repoLocalRegistryPath(repoRoot), "companions: []\n", "utf8");
+    const repository = { id: "app", path: repoRoot };
+    await project("session", { repoPath: repoRoot, companionPath, repository });
+
+    const query = resolveSessionContext(repoRoot);
+    const launch = await prepareClaudeLaunch(context, []);
+
+    expect(query.ok && query.context.policyJson).toBe(launch.env.MATE_POLICY_JSON!);
   });
 });
 

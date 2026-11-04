@@ -11,6 +11,7 @@ import {
   type RuntimeDirectoryTargets,
 } from "./runtime-directory-refresh";
 import {
+  runtimeClaudeCapabilityPluginsRoot,
   runtimeClaudePluginRoot,
   runtimeDirectoryPath,
   runtimeMateBin,
@@ -35,13 +36,22 @@ async function makeTempDir(prefix: string): Promise<string> {
 async function install(root: string): Promise<RuntimeDirectoryTargets> {
   const pluginRoot = path.join(root, "opencode-plugin");
   const claudePluginRoot = path.join(root, "claude-plugin");
+  const claudeCapabilityPluginsRoot = path.join(root, "claude-capability-plugins");
   const wrapperBinPath = path.join(root, "wrappers", "bin");
   await fs.mkdir(pluginRoot, { recursive: true });
   await fs.mkdir(claudePluginRoot, { recursive: true });
+  await fs.mkdir(claudeCapabilityPluginsRoot, { recursive: true });
   await fs.mkdir(wrapperBinPath, { recursive: true });
   const cliEntry = path.join(root, "cli.mjs");
   await fs.writeFile(cliEntry, 'console.log("acme-version");\n');
-  return { pluginRoot, claudePluginRoot, wrapperBinPath, execPath: process.execPath, cliEntry };
+  return {
+    pluginRoot,
+    claudePluginRoot,
+    claudeCapabilityPluginsRoot,
+    wrapperBinPath,
+    execPath: process.execPath,
+    cliEntry,
+  };
 }
 
 describe("runtime directory paths", () => {
@@ -53,6 +63,9 @@ describe("runtime directory paths", () => {
     );
     expect(runtimeClaudePluginRoot(home)).toBe(
       path.join(home, ".mate", "runtime", "claude-plugin"),
+    );
+    expect(runtimeClaudeCapabilityPluginsRoot(home)).toBe(
+      path.join(home, ".mate", "runtime", "claude-capability-plugins"),
     );
     expect(runtimeWrapperBinPath(home)).toBe(
       path.join(home, ".mate", "runtime", "wrappers", "bin"),
@@ -107,12 +120,16 @@ describe("refreshRuntimeDirectory", () => {
 
     expect(result.changed.sort()).toEqual([
       "bin/mate",
+      "claude-capability-plugins",
       "claude-plugin",
       "opencode-plugin",
       "wrappers",
     ]);
     expect(await fs.realpath(runtimeOpenCodePluginRoot(home))).toBe(targets.pluginRoot);
     expect(await fs.realpath(runtimeClaudePluginRoot(home))).toBe(targets.claudePluginRoot);
+    expect(await fs.realpath(runtimeClaudeCapabilityPluginsRoot(home))).toBe(
+      targets.claudeCapabilityPluginsRoot,
+    );
     expect(await fs.realpath(runtimeWrapperBinPath(home))).toBe(targets.wrapperBinPath);
     /** A `.cmd` launcher runs only through a shell on Windows. */
     const run = spawnSync(runtimeMateBin(home), ["--version"], {
@@ -168,12 +185,16 @@ describe("refreshRuntimeDirectory", () => {
 
     expect(result.changed.sort()).toEqual([
       "bin/mate",
+      "claude-capability-plugins",
       "claude-plugin",
       "opencode-plugin",
       "wrappers",
     ]);
     expect(await fs.realpath(runtimeOpenCodePluginRoot(home))).toBe(next.pluginRoot);
     expect(await fs.realpath(runtimeClaudePluginRoot(home))).toBe(next.claudePluginRoot);
+    expect(await fs.realpath(runtimeClaudeCapabilityPluginsRoot(home))).toBe(
+      next.claudeCapabilityPluginsRoot,
+    );
     expect(await fs.realpath(runtimeWrapperBinPath(home))).toBe(next.wrapperBinPath);
     expect(await fs.readFile(runtimeMateBin(home), "utf8")).toContain(next.cliEntry);
   });

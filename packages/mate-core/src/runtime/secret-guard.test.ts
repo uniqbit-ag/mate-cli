@@ -69,6 +69,12 @@ describe("checkSecretAccess: file tools", () => {
     expect(refusal).not.toContain("KEY=1");
   });
 
+  test("blocks a differently-cased .Env", async () => {
+    expect(await checkSecretAccess({ kind: "read", paths: ["acme/.Env"] }, scope())).toContain(
+      "acme/.Env",
+    );
+  });
+
   test("lets the example file through", async () => {
     expect(await checkSecretAccess({ kind: "read", paths: ["acme/.env.example"] }, scope())).toBe(
       null,
@@ -123,6 +129,16 @@ describe("checkSecretAccess: searches", () => {
     expect(
       await checkSecretAccess({ kind: "search", paths: ["acme"], globs: [".env*"] }, scope()),
     ).toContain(".env*");
+  });
+
+  test("names the alternatives limit when a glob is past it", async () => {
+    const glob = "{a,b}".repeat(7);
+    const refusal = await checkSecretAccess(
+      { kind: "search", paths: ["acme"], globs: [glob] },
+      scope(),
+    );
+    expect(refusal).toContain(glob);
+    expect(refusal).toContain("more than 64");
   });
 
   test("lets an ordinary search through", async () => {
