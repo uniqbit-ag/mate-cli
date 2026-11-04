@@ -1,6 +1,7 @@
 import { usage } from "../../usage";
 import { runWorkingCleanupCommand } from "./cleanup";
 import { runWorkingLinkCommand } from "./link";
+import { runWorkingWorktreeCommand } from "./worktree";
 
 export async function runWorkingCommand(
   subcommand: string | undefined,
@@ -12,6 +13,10 @@ export async function runWorkingCommand(
   }
   if (subcommand === "cleanup") {
     await runWorkingCleanupCommand(argv);
+    return;
+  }
+  if (subcommand === "worktree") {
+    await runWorkingWorktreeCommand(argv);
     return;
   }
   console.error(`Unknown working command: ${subcommand ?? ""}`);

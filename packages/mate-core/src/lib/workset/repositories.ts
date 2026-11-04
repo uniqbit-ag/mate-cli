@@ -7,7 +7,8 @@ import { readCompanionRegistry } from "../orchestrator/repository-link";
 /** Factory mode's configured clone URLs, comma-separated, as the appliance hands them to Studio. */
 export const FACTORY_REPOSITORIES_ENV = "MATE_FACTORY_REPOSITORIES";
 
-function identityOf(url: string): string | null {
+/** `org/repository` of a remote URL, or null when it is not a forge URL. */
+export function identityOf(url: string): string | null {
   const parsed = parseRemote(url);
   return parsed ? `${parsed.owner}/${parsed.repo}` : null;
 }
