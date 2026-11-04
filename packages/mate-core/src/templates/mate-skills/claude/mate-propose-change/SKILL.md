@@ -62,6 +62,14 @@ propose steps below.
    execution order, with exact commands and known change names, prerequisites first.
    Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
    follows it. Listing an action never invokes it.
+
+   **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+   and Cursor and the fallback. When the current runtime uses another syntax, swap only
+   the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+   user's statement or the harness's own identity sets the runtime, never a skill's
+   folder or an older example. Arguments, commands, paths, and order stay, and naming
+   never invokes.
+
    List the artifacts to review in schema order (Review proposal, Review specs, Review
    design, Review tasks for `mate-v1`; Review specs and Review tasks for
    `mate-minimal`), then `/mate-apply-change <change-name>` after that review. Never

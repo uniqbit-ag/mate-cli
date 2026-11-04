@@ -90,6 +90,12 @@ describe("rewriteCommandReferences", () => {
     expect(findCommandReferences(text)).toEqual(["/opsx:sync", "/openspec-sync-specs"]);
   });
 
+  test("keeps arguments and surrounding CLI calls verbatim", () => {
+    expect(rewriteCommandReferences("Run `/opsx:apply add-auth` after `openspec status`.")).toBe(
+      "Run `/mate-apply-change add-auth` after `openspec status`.",
+    );
+  });
+
   test("ignores path segments that look like commands", () => {
     const text = "Read [references/openspec-explore.md](references/openspec-explore.md).";
     expect(findCommandReferences(text)).toEqual([]);
@@ -127,6 +133,14 @@ describe("renderOpenSpecReferences", () => {
     expect(files.get("agents/mate-apply-change/references/openspec-apply-change.md")).toContain(
       "Next: `/mate-propose-change`.",
     );
+    for (const file of files.values()) {
+      expect(file).toContain("use the fallback `/name` syntax");
+      expect(file).toContain(
+        "swap only the prefix per **Skill invocation** in this skill's `SKILL.md`",
+      );
+      /** The notice follows the license header and precedes the vendored body. */
+      expect(file.indexOf("do not edit. -->")).toBeLessThan(file.indexOf("Skill invocation"));
+    }
     for (const tool of ["claude", "agents"]) {
       for (const workflow of ["openspec-propose", "openspec-update-change"]) {
         expect(files.has(`${tool}/mate-propose-change/references/${workflow}.md`)).toBe(true);

@@ -48,6 +48,14 @@ large for one change is suggested as several.
    execution order, with exact commands and known change names, prerequisites first.
    Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
    follows it. Listing an action never invokes it.
+
+   **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+   and Cursor and the fallback. When the current runtime uses another syntax, swap only
+   the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+   user's statement or the harness's own identity sets the runtime, never a skill's
+   folder or an older example. Arguments, commands, paths, and order stay, and naming
+   never invokes.
+
    List `/mate-propose-change <change-name>`, or one `/mate-propose-change <slice>` per
    agreed slice in dependency order. A slice deferred for later is context above the
    section, not an action in it.

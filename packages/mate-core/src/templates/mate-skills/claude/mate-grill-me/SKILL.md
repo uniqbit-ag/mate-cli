@@ -16,7 +16,7 @@ repository investigation and option comparison belong to explore. When a
 question would need mapping large parts of the repository, record it under
 Unresolved or Assumptions in the handoff instead of investigating it.
 
-Start `/mate-grilling`.
+Load the `mate-grilling` skill and follow it.
 
 The session is conversational-only. It does not create or modify code, context
 files, ADRs, OpenSpec artifacts, or other planning files.
@@ -36,6 +36,13 @@ Next: /mate-explore-change
 Confirmed decisions are settled; explore should not ask them again. Then tell
 the user the next step is `/mate-explore-change`; do not invoke it. The user starts
 it in this conversation.
+
+**Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+and Cursor and the fallback. When the current runtime uses another syntax, swap only
+the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+user's statement or the harness's own identity sets the runtime, never a skill's
+folder or an older example. Arguments, commands, paths, and order stay, and naming
+never invokes.
 
 If grilling stopped on a blocker, still emit the block. List the blocker first
 under Unresolved, keep only explicitly accepted decisions under Confirmed, and

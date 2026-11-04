@@ -219,6 +219,13 @@ A drifted spec is published in its own right. It is never shipped by republishin
 
    When work remains (an unmerged branch, a conflict, a failed step, a deferral): End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. For example, merging `workset/acme-queue` before `/mate-publish-artifact`. When everything selected is published and nothing remains, report completion and stop: no `Next steps` section, no invented command.
 
+   **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+   and Cursor and the fallback. When the current runtime uses another syntax, swap only
+   the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+   user's statement or the harness's own identity sets the runtime, never a skill's
+   folder or an older example. Arguments, commands, paths, and order stay, and naming
+   never invokes.
+
 ## Example output
 
 Rendering of the step 1 payload above. Reproduce this shape; the values come from the JSON, never from memory.

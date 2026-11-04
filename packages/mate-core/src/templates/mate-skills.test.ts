@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
+import { VENDORED_WORKFLOWS } from "./mate-skills/openspec-references";
+
 const skillsRoot = path.join(import.meta.dir, "mate-skills", "agents");
 const claudeSkillsRoot = path.join(import.meta.dir, "mate-skills", "claude");
 const skillNames = [
@@ -87,6 +89,10 @@ const originalSkillNames = [
   "mate-apply-change",
   "mate-archive-change",
 ] as const;
+
+/** The compact invocation rule every handoff-emitting skill carries, whitespace-flattened. */
+const skillInvocationBlock =
+  "**Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code and Cursor and the fallback. When the current runtime uses another syntax, swap only the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the user's statement or the harness's own identity sets the runtime, never a skill's folder or an older example. Arguments, commands, paths, and order stay, and naming never invokes.";
 
 const frontmatterPattern = /^---\n([\s\S]*?)\n---\n/;
 
@@ -230,10 +236,10 @@ describe("bundled Mate pre-explore skills", () => {
   });
 
   test("keeps internal compositions in the Mate namespace", async () => {
-    expect(await readSkill("mate-grill-me")).toContain("/mate-grilling");
+    expect(await readSkill("mate-grill-me")).toContain("`mate-grilling`");
     const docs = await readSkill("mate-grill-with-docs");
-    expect(docs).toContain("/mate-grilling");
-    expect(docs).toContain("/mate-domain-modeling");
+    expect(docs).toContain("`mate-grilling`");
+    expect(docs).toContain("`mate-domain-modeling`");
 
     for (const name of skillNames) {
       const body = stripFrontmatter(await readSkill(name));
@@ -1061,6 +1067,7 @@ describe("bundled Delivery Path stage skills", () => {
       expect(revise).toContain("only after the user confirms");
       expect(revise).toContain("`/mate-apply-change <change-name>` to carry the revision");
       expect(revise).toContain("`/mate-archive-change <change-name>`");
+      expect(revise).toContain("per **Skill invocation** in `SKILL.md`");
       expect(revise).toContain("Listing an action never invokes it.");
       expect(revise).toContain("Never describe a revision or a passing validation as");
     }
@@ -1264,5 +1271,64 @@ describe("bundled Mate publish skill merge hold-back", () => {
     const source = await readSkill("mate-publish-artifact");
     expect(source).toContain("only while **no** shown archive is held back");
     expect(source).toContain("no shown archive is waiting for merge");
+  });
+});
+
+describe("bundled skill invocation policy", () => {
+  const bothRoots = [skillsRoot, claudeSkillsRoot];
+  const flat = (source: string) => source.replace(/\s+/g, " ");
+  /** A user-facing skill invocation; `references/mate-revise.md` and other paths do not count. */
+  const slashInvocation = /(?<![\w./])\/mate-[a-z]/;
+
+  /** Handoffs by bare name have no slash invocation, so the handoff markers catch them. */
+  test("a skill carries the block once exactly when it invokes or hands off to a skill", async () => {
+    for (const root of bothRoots) {
+      for (const name of await listSkillNames(root)) {
+        const source = flat(await readSkillFrom(root, name));
+        const handsOff =
+          slashInvocation.test(source) ||
+          /## Next steps|PRE-EXPLORE HANDOFF|Point the user to/.test(source);
+        const blocks = source.split(skillInvocationBlock).length - 1;
+        expect(blocks, `${root}/${name}`).toBe(handsOff ? 1 : 0);
+      }
+    }
+  });
+
+  test("maps each syntax group, the identity rule, and the slash fallback", () => {
+    for (const marker of [
+      "use `/name`, the syntax of Claude Code and Cursor and the fallback",
+      "swap only the prefix",
+      "`@name` in OpenCode",
+      "`$name` in Codex",
+      "`/skill:name` in Pi",
+      "Only the user's statement or the harness's own identity sets the runtime",
+      "never a skill's folder or an older example",
+      "naming never invokes",
+    ]) {
+      expect(skillInvocationBlock).toContain(marker);
+    }
+  });
+
+  test("hard-codes no other runtime's prefix in skills or their references", async () => {
+    for (const root of bothRoots) {
+      for (const name of await listSkillNames(root)) {
+        const dir = path.join(root, name);
+        const files = await fs.readdir(dir, { recursive: true });
+        for (const file of files.filter((entry) => entry.endsWith(".md"))) {
+          const source = await fs.readFile(path.join(dir, file), "utf8");
+          expect(source, `${name}/${file}`).not.toMatch(/[@$]mate-[a-z]|\/skill:mate-/);
+        }
+      }
+    }
+  });
+
+  test("vendored references defer prefix swaps to the wrapping skill's block", async () => {
+    for (const root of bothRoots) {
+      for (const { skill, workflow } of VENDORED_WORKFLOWS) {
+        const reference = await readReference(root, skill, `${workflow}.md`);
+        expect(reference).toContain("use the fallback `/name` syntax");
+        expect(reference).toContain("per **Skill invocation** in this skill's `SKILL.md`");
+      }
+    }
   });
 });

@@ -551,7 +551,7 @@ describe("createOpenspecPlugin", () => {
     await plugin.apply(ctx);
 
     const skillPath = path.join(root, ".claude", "skills", "mate-grill-me", "SKILL.md");
-    await expect(fs.readFile(skillPath, "utf8")).resolves.toContain("/mate-grilling");
+    await expect(fs.readFile(skillPath, "utf8")).resolves.toContain("`mate-grilling`");
     await expect(fs.readdir(path.dirname(skillPath))).resolves.toEqual(["SKILL.md"]);
   });
 

@@ -95,6 +95,13 @@ follows it. Listing an action never invokes it. For **skip**, the block is follo
 1. /mate-explore-change
 ```
 
+**Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
+and Cursor and the fallback. When the current runtime uses another syntax, swap only
+the prefix: `@name` in OpenCode, `$name` in Codex, `/skill:name` in Pi. Only the
+user's statement or the harness's own identity sets the runtime, never a skill's
+folder or an older example. Arguments, commands, paths, and order stay, and naming
+never invokes.
+
 ## Mate Boundary
 
 Conversational only. Do not create or modify code, context files, ADRs, OpenSpec

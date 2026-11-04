@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Skill handoffs follow the agent runtime
+
+- Mate skills that hand off to another skill write the invocation in the syntax of the runtime you use: `/name` in Claude Code and Cursor, `@name` in OpenCode, `$name` in Codex, and `/skill:name` in Pi. The runtime counts only when you name it or the runtime identifies itself; otherwise handoffs keep `/name`. Run `mate companion update` to deploy the updated skills.
+- This is invocation syntax only: it adds no Mate launch or setup support for Cursor, Codex, or Pi.
+
 ### Studio modes replace roles (breaking)
 
 - Studio's experiences are now the **Engineering** and **Analysis** modes, chosen with the sidebar's **Mode** switch; they replace the Product Engineer and Business Analyst labels. Agent definitions and audience names are unchanged.
