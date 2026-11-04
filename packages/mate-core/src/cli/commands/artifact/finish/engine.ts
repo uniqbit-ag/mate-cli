@@ -1,6 +1,6 @@
 import { describeSecretFindings, type SecretFinding } from "../../../../runtime/secret-scan";
 import type { ArtifactFinisher, Produced } from "./finisher";
-import type { GitOps } from "./git";
+import { RemoteFetchError, type GitOps } from "./git";
 import type { PublicationSecretScan } from "./secret-scan";
 
 /** Pipeline step a {@link FinishResult} refers to (generic across artifact kinds). */
@@ -15,7 +15,8 @@ export type FinishStep =
   | "push"
   | "done";
 
-export type FinishStatus = "ok" | "conflict" | "error" | "skipped";
+/** `deferred`: a remote step stayed unreachable after retries; local work is kept and a re-run completes it. */
+export type FinishStatus = "ok" | "conflict" | "error" | "skipped" | "deferred";
 
 /**
  * Machine-readable result emitted with `--json`. The publish skill parses this to
@@ -100,6 +101,14 @@ export async function runFinishEngine(
     } else {
       deps.stderr(result.message);
     }
+  };
+
+  /** Exits zero: the publication is kept locally and resumable, so it must not block the caller. */
+  const defer = (step: FinishStep, kept: string, detail: string): void => {
+    result.step = step;
+    result.status = "deferred";
+    result.message = `mate: ${step === "push" ? "push" : "fetch"} deferred (${kept}); the remote stayed unreachable after retries, which may be transient. Re-run \`mate artifact publish\` to complete the publication.\n${detail}`;
+    emit();
   };
 
   const fail = (step: FinishStep, message: string, status: FinishStatus = "error"): void => {
@@ -224,8 +233,12 @@ export async function runFinishEngine(
       try {
         await git.fetch();
       } catch (err) {
-        // Post-commit failure: retain the commit, do not roll back.
-        fail("sync-remote", `mate: fetch failed (commit retained locally): ${String(err)}`);
+        // Post-commit failure: retain the commit, do not roll back. No tag before a sync.
+        if (err instanceof RemoteFetchError && err.transient) {
+          defer("sync-remote", "commit retained locally, not tagged", err.message);
+        } else {
+          fail("sync-remote", `mate: fetch failed (commit retained locally): ${String(err)}`);
+        }
         return result;
       }
       const rebase = await git.rebaseOntoUpstream();
@@ -278,6 +291,10 @@ export async function runFinishEngine(
   const push = await git.push();
   if (!push.ok) {
     // Post-tag push failure: retain commit + tag for retry, do not roll back.
+    if (push.transient) {
+      defer("push", `commit and tag ${tagName} retained locally`, push.error);
+      return result;
+    }
     result.status = "error";
     result.message = `mate: push failed (commit and tag ${tagName} retained locally): ${push.error}`;
     emit();

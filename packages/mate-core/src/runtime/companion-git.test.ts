@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   companionGit,
   isAuthenticationFailure,
+  isTransientRemoteFailure,
   REMOTE_URLS_QUERY,
   shouldRetryWithoutSsh,
   sshRewriteArgs,
@@ -116,6 +117,45 @@ describe("shouldRetryWithoutSsh", () => {
         stderr: " ! [remote rejected] main -> main (protected branch)",
       }),
     ).toBe(false);
+  });
+});
+
+describe("isTransientRemoteFailure", () => {
+  const failed = (stderr: string, extra: Partial<GitResult> = {}): GitResult => ({
+    status: 128,
+    stdout: "",
+    stderr,
+    ...extra,
+  });
+
+  test("treats authentication and network failures as transient", () => {
+    expect(isTransientRemoteFailure(failed("git@acme.test: Permission denied (publickey)."))).toBe(
+      true,
+    );
+    expect(
+      isTransientRemoteFailure(
+        failed("ssh: Could not resolve host acme.test: nodename nor servname"),
+      ),
+    ).toBe(true);
+    expect(isTransientRemoteFailure(failed("", { status: -1, timedOut: true }))).toBe(true);
+  });
+
+  test("never treats a remote rejection or success as transient", () => {
+    expect(isTransientRemoteFailure({ status: 0, stdout: "", stderr: "" })).toBe(false);
+    expect(
+      isTransientRemoteFailure(
+        failed(" ! [rejected]        main -> main (non-fast-forward)", { status: 1 }),
+      ),
+    ).toBe(false);
+    expect(
+      isTransientRemoteFailure(
+        failed(" ! [remote rejected] main -> main (protected branch)", { status: 1 }),
+      ),
+    ).toBe(false);
+  });
+
+  test("leaves an unrecognized failure non-transient", () => {
+    expect(isTransientRemoteFailure(failed("fatal: bad object HEAD"))).toBe(false);
   });
 });
 

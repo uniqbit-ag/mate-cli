@@ -745,8 +745,18 @@ describe("bundled Mate artifact publish skill", () => {
       const reference = await readReference(root, "mate-publish-artifact", "openspec.md");
       expect(reference).toContain("## Unattended Publication");
       expect(reference).toContain("single array");
-      expect(reference).toContain("halts at the first `conflict` or `error`");
+      expect(reference).toContain("halts at the first `conflict`, `error`, or `deferred`");
       expect(reference).toContain("it never substitutes for the user's selection");
+    }
+  });
+
+  test("treats a deferred publication as push pending, without a credential handoff", async () => {
+    for (const root of bothRoots) {
+      const source = await readSkillFrom(root, "mate-publish-artifact");
+      expect(source).toContain("**`deferred`**");
+      expect(source).toContain("committed locally, push pending");
+      expect(source).toContain("never ask the user to load a key");
+      expect(source).not.toContain("ssh-add");
     }
   });
 

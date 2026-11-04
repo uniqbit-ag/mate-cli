@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { type EngineDeps, type FinishResult, runFinishEngine } from "./engine";
 import type { ArtifactFinisher, Produced } from "./finisher";
-import type { GitOps, RebaseResult } from "./git";
+import { type GitOps, type RebaseResult, RemoteFetchError } from "./git";
 
 const ANCHOR = "2026-07-14-my-change";
 const COMMIT_PATHS = [
@@ -27,6 +27,9 @@ interface FakeGitOptions {
   existingTags?: string[];
   pushOk?: boolean;
   pushError?: string;
+  pushTransient?: boolean;
+  /** Fetch throws a `RemoteFetchError` with this `transient` flag. */
+  fetchFails?: { transient: boolean };
   failOn?: Partial<Record<keyof GitOps, boolean>>;
 }
 
@@ -67,7 +70,13 @@ function makeGit(options: FakeGitOptions = {}): { git: GitOps; calls: GitCall[] 
       return record("hasUpstream", [], options.hasUpstream ?? true);
     },
     async fetch() {
-      return record("fetch", [], undefined);
+      record("fetch", [], undefined);
+      if (options.fetchFails) {
+        throw new RemoteFetchError(
+          "git fetch failed: git@acme.test: Permission denied (publickey).",
+          options.fetchFails.transient,
+        );
+      }
     },
     async rebaseOntoUpstream() {
       return record("rebaseOntoUpstream", [], options.rebase ?? { ok: true, conflictedPaths: [] });
@@ -83,7 +92,11 @@ function makeGit(options: FakeGitOptions = {}): { git: GitOps; calls: GitCall[] 
     },
     async push() {
       calls.push({ op: "push", args: [] });
-      return { ok: options.pushOk ?? true, error: options.pushError ?? "" };
+      return {
+        ok: options.pushOk ?? true,
+        error: options.pushError ?? "",
+        transient: options.pushTransient,
+      };
     },
   };
   return { git, calls };
@@ -327,9 +340,79 @@ describe("runFinishEngine — publication pipeline", () => {
     expect(result.local).toEqual({ committed: true, tagged: true, pushed: false });
     expect(process.exitCode).toBe(1);
   });
+
+  test("an unreachable fetch defers: commit kept, no rebase, no tag, exit zero", async () => {
+    const h = harness({ fetchFails: { transient: true } });
+
+    const result = await runEngine(h);
+
+    expectNoUndo(h);
+    expect(ops(h)).toContain("commit");
+    expect(ops(h)).not.toContain("rebaseOntoUpstream");
+    expect(ops(h)).not.toContain("tag");
+    expect(ops(h)).not.toContain("push");
+    expect(result.step).toBe("sync-remote");
+    expect(result.status).toBe("deferred");
+    expect(result.message).toContain("Re-run `mate artifact publish`");
+    expect(result.message).not.toContain("ssh-add");
+    expect(result.local).toEqual({ committed: true, tagged: false, pushed: false });
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("a non-transient fetch failure is still an error", async () => {
+    const h = harness({ fetchFails: { transient: false } });
+
+    const result = await runEngine(h);
+
+    expect(result.step).toBe("sync-remote");
+    expect(result.status).toBe("error");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("an unreachable push defers with commit and tag kept, exit zero", async () => {
+    const h = harness({ pushOk: false, pushError: "Connection timed out", pushTransient: true });
+
+    const result = await runEngine(h);
+
+    expectNoUndo(h);
+    expect(result.step).toBe("push");
+    expect(result.status).toBe("deferred");
+    expect(result.message).toContain("Connection timed out");
+    expect(result.local).toEqual({ committed: true, tagged: true, pushed: false });
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("a protected-branch push rejection stays an error", async () => {
+    const h = harness({
+      pushOk: false,
+      pushError: " ! [remote rejected] main -> main (protected branch)",
+      pushTransient: false,
+    });
+
+    const result = await runEngine(h);
+
+    expect(result.status).toBe("error");
+    expect(process.exitCode).toBe(1);
+  });
 });
 
 describe("runFinishEngine — resumed publication", () => {
+  test("a re-run after a deferred fetch tags, pushes, and reports resumed", async () => {
+    const deferred = harness({ fetchFails: { transient: true } });
+    expect((await runEngine(deferred)).status).toBe("deferred");
+
+    // The deferred commit holds the outputs, so the re-run has nothing new to stage.
+    const h = harness({ hasStaged: false });
+    const result = await runEngine(h);
+
+    expect(ops(h)).toContain("fetch");
+    expect(ops(h)).toContain("tag");
+    expect(ops(h)).toContain("push");
+    expect(result.status).toBe("ok");
+    expect(result.resumed).toBe(true);
+    expect(result.local).toEqual({ committed: true, tagged: true, pushed: true });
+  });
+
   test("an existing tag is not recreated and reports resumed", async () => {
     const h = harness({ tagExists: true });
 

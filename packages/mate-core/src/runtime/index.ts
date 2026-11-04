@@ -24,6 +24,7 @@ export {
   gitEnvironment,
   GIT_QUERY_TIMEOUT_MS,
   isAuthenticationFailure,
+  isTransientRemoteFailure,
   outputLines,
   stripGitProgress,
   type CompanionForkState,

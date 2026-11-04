@@ -8,7 +8,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { makeSshStub, stubSshUrl } from "../../../../../../../test/ssh-stub";
-import { defaultGitOps } from "./git";
+import { defaultGitOps, RemoteFetchError } from "./git";
 
 const tempRoots: string[] = [];
 
@@ -275,19 +275,30 @@ describe("publication credentials", () => {
     return { root, remote, local };
   }
 
-  test("an SSH passphrase failure names ssh-add and keeps the commit and tag", async () => {
+  const noWait = async () => {};
+
+  test("an SSH rejection is retried, then reported as transient with the commit and tag kept", async () => {
     const { root, remote, local } = await publishable();
     git(local, ["remote", "set-url", "origin", stubSshUrl(remote)]);
     const stub = makeSshStub(root);
     const head = gitOutput(local, ["rev-parse", "HEAD"]);
+    const waits: number[] = [];
 
     const started = Date.now();
-    const push = await defaultGitOps(local, undefined, { env: stub.env("passphrase") }).push();
+    const push = await defaultGitOps(local, undefined, {
+      env: stub.env("passphrase"),
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    }).push();
 
     expect(Date.now() - started).toBeLessThan(5_000);
     expect(push.ok).toBe(false);
-    expect(push.error).toContain("ssh-add");
-    expect(stub.calls()[0]).toContain("BatchMode=yes");
+    expect(push.transient).toBe(true);
+    expect(push.error).not.toContain("ssh-add");
+    expect(waits).toEqual([1_000, 3_000]);
+    expect(stub.calls()).toHaveLength(3);
+    expect(stub.calls().every((call) => call.includes("BatchMode=yes"))).toBe(true);
     expect(gitOutput(local, ["rev-parse", "HEAD"])).toBe(head);
     expect(gitOutput(local, ["tag", "--list", "acme-v1"])).toBe("acme-v1");
 
@@ -298,7 +309,45 @@ describe("publication credentials", () => {
     expect(gitOutput(remote, ["tag", "--list", "acme-v1"])).toBe("acme-v1");
   });
 
-  test("an HTTPS credential failure names a credential helper without prompting", async () => {
+  test("a rejection that clears on retry publishes", async () => {
+    const { root, remote, local } = await publishable();
+    git(local, ["remote", "set-url", "origin", stubSshUrl(remote)]);
+    const stub = makeSshStub(root);
+    const ops = defaultGitOps(local, undefined, { env: stub.env("flaky"), sleep: noWait });
+
+    await ops.fetch();
+    const push = await ops.push();
+
+    expect(push.ok).toBe(true);
+    expect(stub.calls().length).toBeGreaterThanOrEqual(3);
+    expect(gitOutput(remote, ["tag", "--list", "acme-v1"])).toBe("acme-v1");
+  });
+
+  test("a non-fast-forward push is not retried", async () => {
+    const { root, remote, local } = await publishable();
+    const other = path.join(root, "other");
+    git(root, ["clone", "-q", remote, other]);
+    configureGit(other);
+    await fs.writeFile(path.join(other, "spec.md"), "elsewhere\n", "utf8");
+    git(other, ["commit", "-qam", "elsewhere"]);
+    git(other, ["push", "-q", "origin", "main"]);
+    git(local, ["remote", "set-url", "origin", stubSshUrl(remote)]);
+    const stub = makeSshStub(root);
+    let waits = 0;
+
+    const push = await defaultGitOps(local, undefined, {
+      env: stub.env("ok"),
+      sleep: async () => {
+        waits += 1;
+      },
+    }).push();
+
+    expect(push.ok).toBe(false);
+    expect(push.transient).toBe(false);
+    expect(waits).toBe(0);
+  });
+
+  test("an HTTPS credential failure is transient and never prompts", async () => {
     const { root, local } = await publishable();
     const server = Bun.serve({
       port: 0,
@@ -320,13 +369,16 @@ describe("publication credentials", () => {
         GIT_CONFIG_NOSYSTEM: "1",
         GIT_CONFIG_GLOBAL: "/dev/null",
       });
-      const ops = defaultGitOps(local, undefined, { env });
+      const ops = defaultGitOps(local, undefined, { env, sleep: noWait });
 
       const push = await ops.push();
 
       expect(push.ok).toBe(false);
-      expect(push.error).toContain("credential helper");
-      await expect(ops.fetch()).rejects.toThrow("credential helper");
+      expect(push.transient).toBe(true);
+      expect(push.error).not.toContain("credential helper");
+      const fetchError = await ops.fetch().catch((err: unknown) => err);
+      expect(fetchError).toBeInstanceOf(RemoteFetchError);
+      expect((fetchError as RemoteFetchError).transient).toBe(true);
     } finally {
       server.stop(true);
     }

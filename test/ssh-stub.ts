@@ -3,8 +3,9 @@
  * `MATE_TEST_SSH_LOG` and acts per `MATE_TEST_SSH_MODE`. `ok` serves the
  * request from the local filesystem (the repository path is taken from `/`);
  * `passphrase` and `hostkey` fail as OpenSSH does under `BatchMode=yes` and
- * otherwise hang as a waiting prompt would; `slow` hangs; `delay` fails after
- * one second; anything else is a refused connection.
+ * otherwise hang as a waiting prompt would; `flaky` rejects the key on its
+ * first call and then acts as `ok`; `slow` hangs; `delay` fails after one
+ * second; anything else is a refused connection.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,6 +17,9 @@ for arg in "$@"; do [ "$arg" = "BatchMode=yes" ] && batch=yes; done
 for last; do :; done
 case "$MATE_TEST_SSH_MODE" in
   ok) cd / && exec sh -c "$last" ;;
+  flaky)
+    [ "$(wc -l < "$MATE_TEST_SSH_LOG")" -le 1 ] && { echo "git@example.test: Permission denied (publickey)." >&2; exit 255; }
+    cd / && exec sh -c "$last" ;;
   passphrase)
     [ "$batch" = yes ] && { echo "git@example.test: Permission denied (publickey)." >&2; exit 255; }
     sleep 30; exit 255 ;;
@@ -28,7 +32,7 @@ case "$MATE_TEST_SSH_MODE" in
 esac
 `;
 
-export type SshStubMode = "ok" | "passphrase" | "hostkey" | "slow" | "delay" | "refused";
+export type SshStubMode = "ok" | "flaky" | "passphrase" | "hostkey" | "slow" | "delay" | "refused";
 
 export function shellQuoted(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;

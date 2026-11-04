@@ -62,6 +62,34 @@ export function isAuthenticationFailure(result: GitResult): boolean {
   ].some((marker) => output.includes(marker));
 }
 
+const NETWORK_FAILURE_MARKERS = [
+  "could not resolve host",
+  "connection timed out",
+  "connection refused",
+  "connection reset",
+  "operation timed out",
+  "the remote end hung up unexpectedly",
+  "kex_exchange_identification",
+  "early eof",
+];
+
+const REMOTE_REJECTION = /\[(?:remote )?rejected\]|non-fast-forward|protected branch/;
+
+/**
+ * A remote failure a retry may cure: an authentication rejection or a network
+ * failure. A rejection by the remote's rules never is, whatever else it prints.
+ */
+export function isTransientRemoteFailure(result: GitResult): boolean {
+  if (result.status === 0) return false;
+  const output = `${result.stderr}\n${result.stdout}`.toLowerCase();
+  if (REMOTE_REJECTION.test(output)) return false;
+  return (
+    Boolean(result.timedOut) ||
+    isAuthenticationFailure(result) ||
+    NETWORK_FAILURE_MARKERS.some((marker) => output.includes(marker))
+  );
+}
+
 /** `git@host:path` (`ssh://` when a port is given) for an HTTP(S) Git URL; `null` otherwise. */
 export function toSshUrl(url: string): string | null {
   try {

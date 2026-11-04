@@ -260,8 +260,9 @@ export async function runArtifactPublishCommand(
     return runFinishEngine(specsFinisher, { name: "--specs", noPush }, engineDeps);
   };
 
+  /** A deferral halts too: the remote is likely still unreachable, and the re-run must tag its own commit. */
   const halted = (result: FinishResult): boolean =>
-    result.status === "conflict" || result.status === "error";
+    result.status === "conflict" || result.status === "error" || result.status === "deferred";
 
   if (allMode) {
     const results: FinishResult[] = [];
