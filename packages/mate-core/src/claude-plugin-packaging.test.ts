@@ -21,7 +21,8 @@ beforeAll(async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-claude-plugin-pack-"));
   tempRoots.push(root);
   const packageRoot = path.join(import.meta.dirname, "..");
-  const pack = spawnSync("bun", ["pm", "pack", "--destination", root], {
+  // `prepack` builds Studio, which outlasts the hook timeout and the plugin doesn't need.
+  const pack = spawnSync("bun", ["pm", "pack", "--ignore-scripts", "--destination", root], {
     cwd: packageRoot,
     env: { ...process.env, CI: "1" },
     encoding: "utf8",
