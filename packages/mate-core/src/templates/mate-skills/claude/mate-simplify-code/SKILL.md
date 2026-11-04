@@ -363,6 +363,12 @@ candidate in the other buckets gets its own entry.
 Close with anything that limited the pass: missing test coverage, or formatter drift you
 reverted.
 
+When the pass ran on an applied change and hands off: End the response with a final `## Next steps` section: numbered required actions in
+execution order, with exact commands and known change names, prerequisites first.
+Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
+follows it. Listing an action never invokes it. Mention
+`/mate-show-me` above it as optional; list `/mate-archive-change <change-name>` in it.
+
 ## Language-Specific Guidance
 
 ### TypeScript / JavaScript

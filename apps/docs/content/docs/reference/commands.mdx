@@ -395,14 +395,15 @@ keeps the rest of the graph. A secret never stops the run. See
 
 ## Artifacts And Updates
 
-| Command                                    | Purpose                                                               |
-| ------------------------------------------ | --------------------------------------------------------------------- |
-| `mate artifact pending [--json]`           | List archived changes and drifted specs that are not published yet.   |
-| `mate artifact publish <target> [options]` | Commit, tag, and push one archived change.                            |
-| `mate artifact link <change>... [options]` | Record a change's delivery branch and merge state in `delivery.yaml`. |
-| `mate artifact archive <change> [options]` | Archive a change, before or after its merge, and record its delivery. |
-| `mate update`                              | Upgrade an npm-managed Mate installation and reinstall requirements.  |
-| `mate update --check`                      | Check for an update without installing it.                            |
+| Command                                                          | Purpose                                                               |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `mate artifact pending [--json]`                                 | List archived changes and drifted specs that are not published yet.   |
+| `mate artifact publish <target> [options]`                       | Commit, tag, and push one archived change.                            |
+| `mate artifact link <change>... [options]`                       | Record a change's delivery branch and merge state in `delivery.yaml`. |
+| `mate artifact archive <change> [options]`                       | Archive a change, before or after its merge, and record its delivery. |
+| `mate artifact apply-context <change> --json [--since <digest>]` | Fetch fresh apply instructions as a full or compact envelope.         |
+| `mate update`                                                    | Upgrade an npm-managed Mate installation and reinstall requirements.  |
+| `mate update --check`                                            | Check for an update without installing it.                            |
 
 `mate artifact pending` is read-only. It lists each archived OpenSpec change
 whose files are still uncommitted in the companion, with the canonical specs it
@@ -479,6 +480,17 @@ delivery it archives nothing and reports `needs-branch`; answer with
 or `--skip-branch`; add `--repository <org/repo>` when the Working
 Repository has no `origin` remote Mate can read. See [Your First Change](/docs/scenarios/first-change)
 for how the commands fit together.
+
+`mate artifact apply-context` is read-only and opt-in; ordinary apply never
+uses it. Each call fetches fresh `openspec instructions apply --json` for the
+change, resolved the way the wrapped `openspec` resolves it. Without a matching
+`--since`, it returns `{"version": 1, "mode": "full", "digest", "payload"}` with
+the unchanged upstream payload. Given the digest of a full baseline, it returns
+`{"version": 1, "mode": "compact", "digest", "state", "progress", "taskStates"}`,
+where `taskStates` lists every task's `id` and `done` in order. Warnings, a
+blocked state, missing artifacts, or any change to the change's artifacts, edit
+context, or OpenSpec version return the full payload again; a `null` digest
+means compaction is unavailable. Upstream failures exit non-zero.
 
 `mate artifact finish` is the deprecated name of `publish`: it still works but
 prints a warning. Update accepts `--yes` to skip its confirmation prompt.

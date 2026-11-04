@@ -73,6 +73,22 @@ phase, and its prompt ready to copy.
 To see where a change's delivery stands, run
 `mate artifact pending`.
 
+Every stage skill ends its handoff with a numbered **Next steps** section and
+nothing after it. The list holds only the actions to take now, in order, with
+exact commands and change names; a prerequisite comes before what depends on it.
+Summaries, warnings, optional stages, and deferred slices stay above it. A
+skill never runs an action just because it listed it, and a completed
+publication ends without one. After propose, for example:
+
+```text
+Validation passed; validation is not approval.
+
+## Next steps
+1. Review specs: openspec/changes/acme-queue/specs/
+2. Review tasks: openspec/changes/acme-queue/tasks.md
+3. After your review: /mate-apply-change acme-queue
+```
+
 ## Steps
 
 ### 1. Clarify intent (optional)
@@ -101,12 +117,15 @@ names, flags, exit codes, JSON output fields, config keys, and exported package
 symbols. Otherwise it uses `mate-v1`.
 One prompt writes every artifact of the chosen schema.
 
-When you skipped explore, propose applies the same slicing test first. If the
-feature spans several Areas, several independent behaviours, or more work than
-one review can hold (roughly more than 10 tasks or 400 changed lines), it
-suggests slices and writes nothing until you agree or keep one change. When the
-slice boundaries are unclear, it points you back to explore.
-Several Areas that only work together stay one change with a scope per Area.
+When you skipped explore, propose applies the same slicing test first, unless
+you already decided to keep one change. The test passes only when the feature
+holds several behaviours that can each ship and be reviewed on their own, or more
+work than one review can hold (roughly more than 20 tasks or 800 changed lines).
+Several Areas alone are no reason to slice: they stay one change with a scope
+per Area. When the test clearly passes, propose suggests slices and writes
+nothing until you agree or keep one change; when the slice boundaries are
+unclear, it points you back to explore. A borderline case stays one change:
+propose says why in one line and goes on.
 
 ### 4. Review the artifacts yourself
 
@@ -149,6 +168,16 @@ switch to another branch, or, only when you explicitly choose it, to work there
 as a recorded direct delivery. It names local commits that are not pushed yet
 and never moves them. Then it implements the tasks. Open your PR whenever you
 like; Mate does not open, merge, or push anything.
+
+For a long task list you can ask for **compact apply**:
+`/mate-apply-change for acme-queue with compact apply`. Apply then fetches its
+instructions through `mate artifact apply-context`: a full baseline first, then,
+after each task, only the current state of every task. The OpenSpec workflow,
+its checks, and its default output stay unchanged, and every task still
+re-fetches fresh instructions. After a new session, a resume, or context
+compaction, apply omits `--since` and starts again from a full baseline, since a
+remembered digest is not the context it stands for. Savings are measured in
+bytes on fixed fixtures, not in tokens or billing.
 
 A change whose scopes name several repositories needs a delivery for each one.
 Apply records the Working Repository's; record each other repository with
