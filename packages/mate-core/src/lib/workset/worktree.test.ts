@@ -5,7 +5,12 @@ import path from "node:path";
 
 import { git, initRepo } from "../../../test/git-checkouts";
 import { readWorksets } from "./record";
-import { createWorksetWorktrees, type InstallRunner, pruneWorksetWorktrees } from "./worktree";
+import {
+  createChangeWorktrees,
+  createWorksetWorktrees,
+  type InstallRunner,
+  pruneWorksetWorktrees,
+} from "./worktree";
 
 let root: string;
 let companion: string;
@@ -57,10 +62,25 @@ function link(...checkouts: string[]): void {
 }
 
 function workset(id: string, ...repositories: string[]): void {
+  listing(id, repositories, []);
+}
+
+function listing(id: string, repositories: string[], changes: string[]): void {
   fs.mkdirSync(path.join(companion, "worksets"), { recursive: true });
   fs.writeFileSync(
     path.join(companion, "worksets", `${id}.yaml`),
-    `id: ${id}\ntitle: ${id}\nrepositories: [${repositories.join(", ")}]\nchanges: []\n`,
+    `id: ${id}\ntitle: ${id}\nrepositories: [${repositories.join(", ")}]\nchanges: [${changes.join(", ")}]\n`,
+  );
+}
+
+/** An active change whose proposal scopes name the repositories, each with area `.`. */
+function change(name: string, ...repositories: string[]): void {
+  const dir = path.join(companion, "openspec", "changes", name);
+  fs.mkdirSync(dir, { recursive: true });
+  const scopes = repositories.map((repository) => `  - repository: ${repository}\n    area: .\n`);
+  fs.writeFileSync(
+    path.join(dir, "proposal.md"),
+    `---\nchange: ${name}\nscopes:\n${scopes.join("")}---\n\n## Why\n`,
   );
 }
 
@@ -263,6 +283,66 @@ describe("createWorksetWorktrees", () => {
     expect(fs.existsSync(path.join(target, ".env"))).toBe(false);
     expect(fs.existsSync(path.join(target, "apps", "acme", ".env.local"))).toBe(false);
     expect(JSON.stringify(result)).not.toContain("fake-value");
+  });
+});
+
+describe("createChangeWorktrees", () => {
+  test("a change no record lists gets a worktree named after it and writes no record", async () => {
+    link(checkout("web"));
+    change("acme-fix", "acme/web");
+    const result = await createChangeWorktrees(companion, "acme-fix", options);
+    expect(result.ok).toBe(true);
+    expect(result.workset).toBe("acme-fix");
+    expect(result.repositories).toMatchObject([
+      {
+        repository: "acme/web",
+        path: path.join(root, "src", "web.worktrees", "acme-fix"),
+        branch: "workset/acme-fix",
+        action: "created",
+      },
+    ]);
+    expect(fs.existsSync(path.join(companion, "worksets"))).toBe(false);
+  });
+
+  test("a change listed in a record uses the record's id and every record repository", async () => {
+    link(checkout("web"), checkout("api"));
+    listing("acme-login", ["acme/web", "acme/api"], ["acme-form"]);
+    change("acme-form", "acme/web");
+    const result = await createChangeWorktrees(companion, "acme-form", options);
+    expect(result.ok).toBe(true);
+    expect(result.workset).toBe("acme-login");
+    expect(result.repositories.map((entry) => [entry.repository, entry.branch])).toEqual([
+      ["acme/web", "workset/acme-login"],
+      ["acme/api", "workset/acme-login"],
+    ]);
+  });
+
+  test("a change in two records names both and creates nothing", async () => {
+    link(checkout("web"));
+    listing("acme-one", ["acme/web"], ["acme-a"]);
+    listing("acme-two", ["acme/web"], ["acme-a"]);
+    change("acme-a", "acme/web");
+    const result = await createChangeWorktrees(companion, "acme-a", options);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.join("\n")).toContain("acme-one, acme-two");
+    expect(fs.existsSync(path.join(root, "src", "web.worktrees"))).toBe(false);
+  });
+
+  test("an unknown change names it and creates nothing", async () => {
+    link(checkout("web"));
+    const result = await createChangeWorktrees(companion, "acme-missing", options);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual(["no active change acme-missing"]);
+    expect(fs.existsSync(path.join(root, "src", "web.worktrees"))).toBe(false);
+  });
+
+  test("an implicit change without scoped repositories creates nothing", async () => {
+    link(checkout("web"));
+    change("acme-fix");
+    const result = await createChangeWorktrees(companion, "acme-fix", options);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual(["change acme-fix names no repository in its scopes"]);
+    expect(fs.existsSync(path.join(root, "src", "web.worktrees"))).toBe(false);
   });
 });
 

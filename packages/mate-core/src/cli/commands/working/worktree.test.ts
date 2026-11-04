@@ -87,9 +87,18 @@ describe("mate working worktree", () => {
     [["acme-login", "--force"]],
     [["acme-login", "--companion"]],
     [["prune", "--no-install"]],
+    [["acme-login", "--change", "acme-form"]],
+    [["--change"]],
+    [["prune", "--change", "acme-form"]],
   ])("refuses %j with the usage", async (argv) => {
     let called = false;
-    await runWorkingWorktreeCommand(argv, deps({ create: async () => ((called = true), created) }));
+    await runWorkingWorktreeCommand(
+      argv,
+      deps({
+        create: async () => ((called = true), created),
+        createForChange: async () => ((called = true), created),
+      }),
+    );
     expect(process.exitCode).toBe(1);
     expect(err.join("\n")).toContain("usage: mate working worktree <workset-id>");
     expect(called).toBe(false);
@@ -150,6 +159,25 @@ describe("mate working worktree", () => {
       install: { command: "bun install", outcome: "ok" },
       missingEnv: [".env"],
     });
+  });
+
+  test("--change resolves through the change entry point with the same JSON", async () => {
+    const seen: string[] = [];
+    await runWorkingWorktreeCommand(
+      ["--change", "acme-form", "--json"],
+      deps({
+        create: async () => {
+          throw new Error("positional path used");
+        },
+        createForChange: async (_companion, change, options) => {
+          seen.push(change, String(options.install), String(options.streamInstall));
+          return created;
+        },
+      }),
+    );
+    expect(process.exitCode).toBe(0);
+    expect(seen).toEqual(["acme-form", "true", "false"]);
+    expect(JSON.parse(out.join(""))).toEqual(created);
   });
 
   test("failed checks exit non-zero and go to stderr, also with --json", async () => {

@@ -9,6 +9,7 @@ import {
   type WorkspaceInventoryV1,
 } from "../../../lib/orchestrator/workspace-inventory";
 import {
+  createChangeWorktrees,
   createWorksetWorktrees,
   NOT_CREATED,
   pruneWorksetWorktrees,
@@ -24,6 +25,7 @@ const execFileAsync = promisify(execFile);
 const n = FRAMEWORK_NAME;
 const USAGE = [
   `${n} working worktree: usage: ${n} working worktree <workset-id> [--companion <path>] [--no-install] [--json]`,
+  `${n} working worktree: usage: ${n} working worktree --change <change> [--companion <path>] [--no-install] [--json]`,
   `${n} working worktree: usage: ${n} working worktree prune [--companion <path>] [--json]`,
 ].join("\n");
 
@@ -33,6 +35,7 @@ export interface WorkingWorktreeDeps {
   checkoutRoots?: (cwd: string) => Promise<string[] | null>;
   collectInventory?: () => Promise<WorkspaceInventoryV1>;
   create?: typeof createWorksetWorktrees;
+  createForChange?: typeof createChangeWorktrees;
   prune?: typeof pruneWorksetWorktrees;
   worksetStages?: typeof readCompanionWorksetStages;
 }
@@ -61,16 +64,16 @@ async function checkoutRoots(cwd: string): Promise<string[] | null> {
   }
 }
 
-interface Parsed {
-  target: string;
+type Parsed = {
   companion?: string;
   install: boolean;
   json: boolean;
-}
+} & ({ target: string } | { change: string });
 
 function parse(argv: string[]): Parsed | null {
   const positional: string[] = [];
   let companion: string | undefined;
+  let change: string | undefined;
   let install = true;
   let json = false;
   for (let index = 0; index < argv.length; index += 1) {
@@ -78,15 +81,20 @@ function parse(argv: string[]): Parsed | null {
     if (arg === "--companion") {
       companion = argv[++index];
       if (!companion) return null;
+    } else if (arg === "--change") {
+      change = argv[++index];
+      if (!change) return null;
     } else if (arg === "--no-install") install = false;
     else if (arg === "--json") json = true;
     else if (arg.startsWith("-")) return null;
     else positional.push(arg);
   }
+  const rest = { ...(companion ? { companion } : {}), install, json };
+  if (change) return positional.length === 0 ? { change, ...rest } : null;
   const [target] = positional;
   if (positional.length !== 1 || !target) return null;
   if (target === "prune" && !install) return null;
-  return { target, ...(companion ? { companion } : {}), install, json };
+  return { target, ...rest };
 }
 
 /** `--companion` when given, else the single companion the current checkout is paired with. */
@@ -167,7 +175,8 @@ function printPruned(result: PruneResult): void {
 
 /**
  * `mate working worktree <workset-id>` creates or reuses the Workset's worktree in each
- * Working Repository; `mate working worktree prune` removes those of Done Worksets.
+ * Working Repository; `--change <change>` does so for the Workset the change resolves to;
+ * `mate working worktree prune` removes those of Done Worksets.
  */
 export async function runWorkingWorktreeCommand(
   argv: string[],
@@ -187,7 +196,7 @@ export async function runWorkingWorktreeCommand(
   }
   const { companion } = resolved;
   try {
-    if (parsed.target === "prune") {
+    if ("target" in parsed && parsed.target === "prune") {
       const { worksets } = await (deps.worksetStages ?? readCompanionWorksetStages)(companion);
       const done = worksets
         .filter((entry) => entry.derived.stage === "done")
@@ -198,10 +207,11 @@ export async function runWorkingWorktreeCommand(
       else printPruned(result);
       return;
     }
-    const result = await (deps.create ?? createWorksetWorktrees)(companion, parsed.target, {
-      install: parsed.install,
-      streamInstall: !parsed.json,
-    });
+    const options = { install: parsed.install, streamInstall: !parsed.json };
+    const result =
+      "change" in parsed
+        ? await (deps.createForChange ?? createChangeWorktrees)(companion, parsed.change, options)
+        : await (deps.create ?? createWorksetWorktrees)(companion, parsed.target, options);
     reportProblems(result.diagnostics, result.warnings);
     if (parsed.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else printCreated(result);
