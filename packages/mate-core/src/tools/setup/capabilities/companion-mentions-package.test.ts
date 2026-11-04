@@ -10,10 +10,12 @@ const modRoot = path.join(packageRoot, MOD);
 
 /** The files `npm pack` would publish, relative to mate-core's root. */
 function packedFiles(): string[] {
-  const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--loglevel", "error"], {
-    cwd: packageRoot,
-    encoding: "utf8",
-  });
+  // `prepack` builds Studio and logs to stdout, which would corrupt the JSON.
+  const result = spawnSync(
+    "npm",
+    ["pack", "--dry-run", "--json", "--ignore-scripts", "--loglevel", "error"],
+    { cwd: packageRoot, encoding: "utf8" },
+  );
   if (result.status !== 0) throw new Error(`npm pack failed: ${result.stderr}`);
   const [packed] = JSON.parse(result.stdout) as [{ files: { path: string }[] }];
   return packed.files.map((file) => file.path).toSorted();

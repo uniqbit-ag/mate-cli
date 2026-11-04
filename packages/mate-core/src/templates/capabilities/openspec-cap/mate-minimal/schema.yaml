@@ -1,5 +1,5 @@
 name: mate-minimal
-version: 4
+version: 5
 description: Mate's short OpenSpec workflow for one-Area, low-risk changes - specs → tasks
 artifacts:
   - id: specs
@@ -12,7 +12,9 @@ artifacts:
       data migration, public API change, breaking behavior, or cross-cutting design decision.
       Use mate-v1 if any gate item is false or uncertain.
 
-      Read `openspec/mate-conventions.yaml` before writing the artifact. Create one delta spec
+      Read only the `rules` and `spec_rules` sections of `openspec/mate-conventions.yaml`: find the
+      top-level key lines first, never fixed line numbers; if you cannot select a section safely,
+      read the whole file. Create one delta spec
       per affected capability under `specs/<capability>/spec.md`, using a kebab-case capability
       name. Never place specs under an Area folder.
 
@@ -29,9 +31,8 @@ artifacts:
       Every user story carries an **Area:** marker naming the Areas it binds, using values from
       the `scopes` in the spec's `mate:delta` comment - always, even when there is only one Area.
 
-      Start each spec file with a `<!-- mate:delta` comment on its very first line, not YAML
-      frontmatter. The comment holds YAML with the actual change name as `change`, the
-      `capability`, and paired `scopes` metadata, and closes with `-->` on its own line. Between
+      Start each spec file with the template's `<!-- mate:delta` comment on its very first line, not
+      YAML frontmatter, with actual values and paired `scopes`. Between
       the comment and the first `## ` section, put nothing but blank lines and at most one `# `
       title line, or `openspec validate --strict` reports the text archive would drop.
     requires: []
@@ -45,9 +46,10 @@ artifacts:
       intentionally writes no explore, proposal, or design artifact.
 
       Number tasks `N.M` and group them under `## N. <group>` headers so apply tracking can address them individually.
-      Read `openspec/mate-conventions.yaml` before writing the artifact and preserve its scope rules.
+      Read only the `rules`, `skill_tagging`, and `verification` sections of `openspec/mate-conventions.yaml`
+      (same selection rule as above) and preserve its scope rules.
 
-      **Obsidian**: Emit YAML frontmatter with `type: change-tasks`, the actual change name, `schema: mate-minimal`, and the `openspec/change` and `openspec/tasks` tags. At the end of the file, add a `## References` section with `[[wiki-links]]` for each affected spec area.
+      **Obsidian**: Start with the template's frontmatter and `## References` section, replacing placeholders with real values.
     requires:
       - specs
 apply:
@@ -57,4 +59,4 @@ apply:
   instruction: |
     Read the delta specs and work through pending tasks only within the affected Areas. Mark complete as you go.
     Pause if you hit blockers or need clarification.
-    Before reporting the change complete, follow the verification rules in `openspec/mate-conventions.yaml`.
+    Before reporting the change complete, follow the verification rules in the `verification` section of `openspec/mate-conventions.yaml`.

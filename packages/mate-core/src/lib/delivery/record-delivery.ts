@@ -1,9 +1,11 @@
 import type { ProtectionReason } from "./branches";
-import { locateChange, type ChangeLocation } from "../change-layout";
+import { changeNameOf, locateChange, type ChangeLocation } from "../change-layout";
+import { resolveWorksetOf } from "../workset/record";
 import { companionRelative, type DeliveryEnvironment } from "./environment";
 import {
   defaultDeliveryBranch,
   findDelivery,
+  legacyDeliveryBranch,
   readOrUnlinkedRecord,
   settleChangeDir,
   upsertDelivery,
@@ -63,6 +65,8 @@ export type DeliveryRefusal =
     };
 
 export interface DeliveryResult {
+  defaultBranch: string | null;
+  diagnostics: string[];
   change: string;
   /** Companion-relative path of the change directory. */
   path: string;
@@ -74,9 +78,11 @@ export interface DeliveryResult {
 }
 
 export interface NeedsBranch {
+  defaultBranch: string | null;
+  diagnostics: string[];
   change: string;
   record: DeliveryRecord;
-  /** `change/<change-name>` when that branch exists in the Working Repository. */
+  /** First existing safe default or legacy branch in the Working Repository. */
   suggestedBranch: string | null;
 }
 
@@ -140,14 +146,32 @@ export async function recordDelivery(
 
   for (const { change, dir, archived } of located) {
     let record = await readOrUnlinkedRecord(dir, change);
+    const resolution = await resolveWorksetOf(
+      environment.companionPath,
+      change,
+      repository ?? undefined,
+    );
+    const defaultBranch = resolution.id === null ? null : defaultDeliveryBranch(resolution.id);
+    const diagnostics = [...resolution.diagnostics];
+    const recordedBranch = repository ? findDelivery(record, repository)?.branch : undefined;
+    if (recordedBranch && defaultBranch && recordedBranch !== defaultBranch) {
+      diagnostics.push(
+        `Recorded branch ${recordedBranch} differs from default ${defaultBranch}; preserving recorded delivery unless explicitly relinked.`,
+      );
+    }
     if (repository && edit.delivery) {
       record = upsertDelivery(record, repository, edit.delivery);
     }
 
     if (request.requireDelivery && record.deliveries.length === 0) {
-      const suggested = defaultDeliveryBranch(change);
-      const exists = (await environment.workingRepo?.git.branchExists(suggested)) ?? false;
-      return { needsBranch: { change, record, suggestedBranch: exists ? suggested : null } };
+      let suggestedBranch: string | null = null;
+      for (const candidate of [defaultBranch, legacyDeliveryBranch(changeNameOf(change))]) {
+        if (candidate && (await environment.workingRepo?.git.branchExists(candidate))) {
+          suggestedBranch = candidate;
+          break;
+        }
+      }
+      return { needsBranch: { change, record, defaultBranch, diagnostics, suggestedBranch } };
     }
 
     if (repository && edit.pr !== undefined) {
@@ -178,6 +202,8 @@ export async function recordDelivery(
     }
 
     resolved.push({
+      defaultBranch,
+      diagnostics,
       dir,
       change: record.change,
       path: companionRelative(environment, dir),

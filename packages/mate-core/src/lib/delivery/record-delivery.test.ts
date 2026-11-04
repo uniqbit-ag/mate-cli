@@ -105,6 +105,65 @@ function results(outcome: DeliveryOutcome): DeliveryResult[] {
 
 const written = (change: string) => readDeliveryRecord(changeDir(change));
 
+async function workset(id: string, changes: string[]): Promise<void> {
+  await fs.mkdir(path.join(companion, "worksets"), { recursive: true });
+  await fs.writeFile(
+    path.join(companion, "worksets", `${id}.yaml`),
+    `id: ${id}\nrepositories: [${APP}]\nchanges: ${JSON.stringify(changes)}\n`,
+  );
+}
+
+describe("Workset branch defaults", () => {
+  test("read-only resolution exposes a default without writing delivery", async () => {
+    await workset("acme-login", ["x"]);
+    expect(results(await run({ changes: ["x"] }))[0]).toMatchObject({
+      defaultBranch: "workset/acme-login",
+      diagnostics: [],
+    });
+    expect(await written("x")).toBeNull();
+  });
+
+  test("suggestion prefers Workset, then legacy, then nothing", async () => {
+    for (const branches of [["workset/x", "change/x"], ["change/x"], []]) {
+      const outcome = await run(
+        { changes: ["x"], requireDelivery: true },
+        {},
+        environment({ branches }),
+      );
+      expect(outcome).toMatchObject({
+        needsBranch: { defaultBranch: "workset/x", suggestedBranch: branches[0] ?? null },
+      });
+    }
+  });
+
+  test("invalid resolution never suggests an existing Workset branch", async () => {
+    await workset("acme-invalid", []);
+    await fs.writeFile(path.join(companion, "worksets/acme-invalid.yaml"), "id: wrong\n");
+    const outcome = await run(
+      { changes: ["x"], requireDelivery: true },
+      {},
+      environment({ branches: ["workset/x", "change/x"] }),
+    );
+    expect(outcome).toMatchObject({
+      needsBranch: { defaultBranch: null, suggestedBranch: "change/x" },
+    });
+    if (!("needsBranch" in outcome)) throw new Error("expected branch question");
+    expect(outcome.needsBranch.diagnostics.join()).toContain("acme-invalid.yaml");
+  });
+
+  test("regrouping preserves recorded branches through reads and refresh", async () => {
+    await link("x", "workset/x");
+    await workset("acme-login", ["x"]);
+    for (const refresh of [false, true]) {
+      const result = results(await run({ changes: ["x"], refresh }))[0];
+      expect(result.defaultBranch).toBe("workset/acme-login");
+      expect(result.record.deliveries[0].branch).toBe("workset/x");
+      expect(result.diagnostics.join()).toContain("preserving recorded delivery");
+    }
+    expect((await written("x"))?.deliveries[0].branch).toBe("workset/x");
+  });
+});
+
 async function link(change: string, branch: string, repository = APP): Promise<void> {
   await writeDeliveryRecord(
     changeDir(change),

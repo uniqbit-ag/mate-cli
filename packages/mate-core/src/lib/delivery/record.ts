@@ -107,7 +107,11 @@ export function legacyDeliveryWarning(anchorName: string): string {
   return `${anchorName} has no delivery.yaml, so its merge was not checked; publishing it as a legacy archive.`;
 }
 
-export function defaultDeliveryBranch(change: string): string {
+export function defaultDeliveryBranch(worksetId: string): string {
+  return `workset/${worksetId}`;
+}
+
+export function legacyDeliveryBranch(change: string): string {
   return `change/${change}`;
 }
 

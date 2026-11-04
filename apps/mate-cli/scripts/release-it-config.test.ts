@@ -133,6 +133,8 @@ async function createPublishFixture(
   for (const file of [
     "apps/mate-container/scripts/image-pins.ts",
     "apps/mate-container/src/image-pins.ts",
+    "apps/mate-factory/scripts/image-pins.ts",
+    "apps/mate-factory/src/image-pins.ts",
   ]) {
     await fs.mkdir(path.dirname(path.join(tempDir, file)), { recursive: true });
     await fs.copyFile(path.join(repoRoot, file), path.join(tempDir, file));
@@ -152,24 +154,27 @@ async function createPublishFixture(
     );
   }
 
-  const lockDir = path.join(tempDir, "apps/mate-container/locks");
-  await fs.mkdir(lockDir, { recursive: true });
   const lockEntries = (names: string[]) =>
     Object.fromEntries(
       names.map((name) => [`node_modules/${name}`, { version, integrity: FIXTURE_INTEGRITY }]),
     );
-  await fs.writeFile(
-    path.join(lockDir, "global-tools.package-lock.json"),
-    JSON.stringify({ packages: lockEntries(workspacePackages.map(([, , name]) => name)) }),
-    "utf8",
-  );
-  await fs.writeFile(
-    path.join(lockDir, "local-workspace.package-lock.json"),
-    JSON.stringify({
-      packages: lockEntries(["@uniqbit/mate-core"]),
-    }),
-    "utf8",
-  );
+  // The factory image keeps its own copy of the appliance image's pins.
+  for (const image of ["apps/mate-container", "apps/mate-factory"]) {
+    const lockDir = path.join(tempDir, image, "locks");
+    await fs.mkdir(lockDir, { recursive: true });
+    await fs.writeFile(
+      path.join(lockDir, "global-tools.package-lock.json"),
+      JSON.stringify({ packages: lockEntries(workspacePackages.map(([, , name]) => name)) }),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(lockDir, "local-workspace.package-lock.json"),
+      JSON.stringify({
+        packages: lockEntries(["@uniqbit/mate-core"]),
+      }),
+      "utf8",
+    );
+  }
 
   const fakeNpmPath = path.join(binDir, "npm");
   await fs.writeFile(
@@ -554,12 +559,13 @@ describe("publish.sh", () => {
         `uniqbit-mate-${version}.tgz`,
       ]);
 
-      // The verified tarball is what is published: one pack per package, all before any publish.
+      // The verified tarball is what is published: one pack per package and image (appliance,
+      // then factory), all before any publish.
       const lines = calls.split("\n");
       const packs = lines.flatMap((line, index) =>
         line.startsWith("pack --pack-destination") ? [index] : [],
       );
-      expect(packs).toHaveLength(2);
+      expect(packs).toHaveLength(4);
       const firstPublish = lines.findIndex((line) => line.startsWith("publish "));
       expect(Math.max(...packs)).toBeLessThan(firstPublish);
       expect(calls).not.toContain("publish --workspace");

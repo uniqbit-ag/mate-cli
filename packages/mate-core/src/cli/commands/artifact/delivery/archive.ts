@@ -61,7 +61,8 @@ function renderHuman(result: ArchiveResult): string[] {
  * - `--json` — emit an {@link ArchiveResult}.
  * @remarks Without a recorded delivery and none of the branch flags, nothing is archived:
  * the result is `needs-branch`, a question rather than a refusal (exit 0), with
- * `change/<change-name>` suggested when that branch exists, so the caller can ask the user.
+ * the safe `workset/<workset-id>` default suggested before legacy `change/<change-name>`
+ * when either exists, so the caller can ask the user.
  */
 export async function runArtifactArchiveCommand(
   argv: string[],
@@ -111,6 +112,7 @@ export async function runArtifactArchiveCommand(
   if ("refusal" in outcome) return refuse(refusalMessage(outcome.refusal));
 
   const { result } = outcome;
+  for (const diagnostic of result.diagnostics) emitErr(`warning: ${diagnostic}`);
   if (result.status === "failed") process.exitCode = 1;
   if (json) emitOut(JSON.stringify(result));
   else for (const line of renderHuman(result)) emitOut(line);

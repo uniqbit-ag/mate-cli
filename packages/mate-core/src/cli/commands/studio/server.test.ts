@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { createStudioAccess } from "./access";
-import { companionDigest, openFile, openFolder, parse, parseVaultSelection } from "./selection";
+import { companionDigest, parse } from "./selection";
 import {
   createStudioFetch,
   serveUntilInterrupted,
@@ -14,10 +14,8 @@ import {
   STUDIO_IDLE_TIMEOUT_SECONDS,
   type StudioServerDeps,
 } from "./server";
-import { renderStudioDocument, renderVaultView } from "./views/document";
-import { STUDIO_CLIENT_BUNDLE } from "./views/studio-client.generated";
 import type { StudioPage } from "./views/model";
-import { createVaultManager, type VaultManager, type VaultTreeResult } from "./vault";
+import { createVaultManager, type VaultManager } from "./vault";
 
 const ACME = "/companions/acme";
 const BROKEN = "/companions/broken";
@@ -37,16 +35,15 @@ function deps(overrides: Partial<StudioServerDeps> = {}): StudioServerDeps {
       topology: null,
       warnings: [],
     }),
-    renderDocument: () => "<!doctype html><title>Studio</title>",
     ...overrides,
   };
 }
 
-/** Captures the state the document was rendered from, so the URL is what is asserted. */
+/** Captures the state each address is collected into, so the URL is what is asserted. */
 function capturing(overrides: Partial<StudioServerDeps> = {}) {
   const pages: StudioPage[] = [];
   const assembled: string[] = [];
-  const handler = createStudioFetch(
+  const fetch = createStudioFetch(
     deps({
       assembleCompanionPayload: async (companionPath) => {
         assembled.push(companionPath);
@@ -59,14 +56,13 @@ function capturing(overrides: Partial<StudioServerDeps> = {}) {
           warnings: [],
         };
       },
-      renderDocument: (page) => {
-        pages.push(page);
-        return "<!doctype html><title>Studio</title>";
-      },
       ...overrides,
     }),
   );
-  return { handler, pages, assembled };
+  const open = async (address: string) => {
+    pages.push(await fetch.services.page(new URL(address)));
+  };
+  return { fetch, open, pages, assembled };
 }
 
 describe("createStudioFetch", () => {
@@ -77,23 +73,6 @@ describe("createStudioFetch", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.text()).toContain("<!doctype html>");
-  });
-
-  test("serves Studio's built client at one fixed path", async () => {
-    const handler = createStudioFetch(deps());
-    const response = await handler(new Request("http://localhost/studio/client.js"));
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/javascript");
-    expect(response.headers.get("cache-control")).toBe("no-cache");
-    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(await response.text()).toBe(STUDIO_CLIENT_BUNDLE);
-
-    const head = await handler(
-      new Request("http://localhost/studio/client.js", { method: "HEAD" }),
-    );
-    expect(head.status).toBe(200);
-    expect(await head.text()).toBe("");
   });
 
   test("serves no other name under the client's route", async () => {
@@ -110,19 +89,15 @@ describe("createStudioFetch", () => {
     }
   });
 
-  test("renders the state the URL names", async () => {
-    const { handler, pages, assembled } = capturing();
+  test("collects the state the URL names", async () => {
+    const { open, pages, assembled } = capturing();
     const digest = companionDigest(ACME);
 
-    const response = await handler(
-      new Request(`http://localhost/?companion=${digest}&change=add-auth&view=workflow`),
-    );
-
-    expect(response.status).toBe(200);
+    await open(`http://localhost/?companion=${digest}&change=add-auth&view=workflow`);
     expect(assembled).toEqual([ACME]);
     expect(pages[0]?.selection).toEqual({
       companionDigest: digest,
-      role: "product-engineer",
+      studioMode: "engineering",
       view: "workflow",
       refresh: false,
     });
@@ -130,12 +105,40 @@ describe("createStudioFetch", () => {
     expect(pages[0]?.payload?.companionPath).toBe(ACME);
   });
 
+  test("resolves every page through the startup profile, never the request", async () => {
+    const standard = capturing();
+    await standard.open("http://localhost/?studioMode=analysis&view=specs");
+    await standard.open("http://localhost/?role=business-analyst");
+    await standard.open("http://localhost/");
+    expect(standard.fetch.services.modePolicy.enabled).toEqual(["engineering", "analysis"]);
+    expect(standard.pages.map((page) => page.selection.studioMode)).toEqual([
+      "analysis",
+      "analysis",
+      "engineering",
+    ]);
+
+    const fetch = createStudioFetch(deps(), { profile: "appliance" });
+    expect(fetch.services.modePolicy).toMatchObject({
+      profile: "appliance",
+      enabled: ["analysis"],
+    });
+    for (const address of [
+      "http://localhost/",
+      "http://localhost/?studioMode=engineering&view=workflow",
+      "http://localhost/?role=product-engineer&view=factory",
+      "http://localhost/?studioMode=bogus&profile=standard",
+    ]) {
+      const page = await fetch.services.page(new URL(address));
+      expect(page.selection).toMatchObject({ studioMode: "analysis", view: "dashboard" });
+    }
+    await fetch.close();
+    await standard.fetch.close();
+  });
+
   test("assembles nothing when no companion is named", async () => {
-    const { handler, pages, assembled } = capturing();
+    const { open, pages, assembled } = capturing();
 
-    const response = await handler(new Request("http://localhost/"));
-
-    expect(response.status).toBe(200);
+    await open("http://localhost/");
     expect(assembled).toEqual([]);
     expect(pages[0]?.companion).toBeNull();
     expect(pages[0]?.payload).toBeNull();
@@ -143,28 +146,22 @@ describe("createStudioFetch", () => {
   });
 
   test("falls back to the selector for an unresolvable companion", async () => {
-    const { handler, pages, assembled } = capturing();
+    const { open, pages, assembled } = capturing();
 
-    const response = await handler(new Request("http://localhost/?companion=deadbeef00"));
-
-    expect(response.status).toBe(200);
+    await open("http://localhost/?companion=deadbeef00");
     expect(assembled).toEqual([]);
     expect(pages[0]?.companion).toBeNull();
     expect(pages[0]?.error).toBeNull();
   });
 
-  test("renders an error payload rather than failing the request", async () => {
-    const { handler, pages } = capturing({
+  test("collects an error payload rather than failing", async () => {
+    const { open, pages } = capturing({
       assembleCompanionPayload: async (companionPath) => ({
         error: { companionPath, reason: "openspec list --json: exit code 1" },
       }),
     });
 
-    const response = await handler(
-      new Request(`http://localhost/?companion=${companionDigest(ACME)}`),
-    );
-
-    expect(response.status).toBe(200);
+    await open(`http://localhost/?companion=${companionDigest(ACME)}`);
     expect(pages[0]?.error).toEqual({
       companionPath: ACME,
       reason: "openspec list --json: exit code 1",
@@ -173,27 +170,23 @@ describe("createStudioFetch", () => {
   });
 
   test("keeps serving after one companion throws, and every other stays reachable", async () => {
-    const { handler, pages } = capturing();
+    const { open, pages } = capturing();
 
-    const failed = await handler(
-      new Request(`http://localhost/?companion=${companionDigest(BROKEN)}`),
-    );
-    expect(failed.status).toBe(200);
+    await open(`http://localhost/?companion=${companionDigest(BROKEN)}`);
     expect(pages[0]?.error).toEqual({ companionPath: BROKEN, reason: "unreadable" });
     expect(pages[0]?.inventory.companions).toHaveLength(2);
 
-    const next = await handler(new Request(`http://localhost/?companion=${companionDigest(ACME)}`));
-    expect(next.status).toBe(200);
+    await open(`http://localhost/?companion=${companionDigest(ACME)}`);
     expect(pages[1]?.payload?.companionPath).toBe(ACME);
   });
 
   test("switching a view serves the collected snapshot rather than collecting again", async () => {
-    const { handler, pages, assembled } = capturing();
+    const { open, pages, assembled } = capturing();
     const digest = companionDigest(ACME);
 
-    await handler(new Request(`http://localhost/?companion=${digest}`));
-    await handler(new Request(`http://localhost/?companion=${digest}&view=workflow`));
-    await handler(new Request(`http://localhost/?companion=${digest}&view=dashboard`));
+    await open(`http://localhost/?companion=${digest}`);
+    await open(`http://localhost/?companion=${digest}&view=workflow`);
+    await open(`http://localhost/?companion=${digest}&view=dashboard`);
 
     expect(assembled).toEqual([ACME]);
     expect(pages).toHaveLength(3);
@@ -207,18 +200,18 @@ describe("createStudioFetch", () => {
   });
 
   test("a refresh collects again", async () => {
-    const { handler, assembled } = capturing();
+    const { open, assembled } = capturing();
     const digest = companionDigest(ACME);
 
-    await handler(new Request(`http://localhost/?companion=${digest}`));
-    await handler(new Request(`http://localhost/?companion=${digest}&refresh=1`));
+    await open(`http://localhost/?companion=${digest}`);
+    await open(`http://localhost/?companion=${digest}&refresh=1`);
 
     expect(assembled).toEqual([ACME, ACME]);
   });
 
   test("each companion holds its own snapshot", async () => {
     const collected: string[] = [];
-    const handler = createStudioFetch(
+    const { services } = createStudioFetch(
       deps({
         assembleCompanionPayload: async (companionPath) => {
           collected.push(companionPath);
@@ -226,35 +219,29 @@ describe("createStudioFetch", () => {
         },
       }),
     );
+    const open = (address: string) => services.page(new URL(address));
 
-    await handler(new Request(`http://localhost/?companion=${companionDigest(ACME)}`));
-    await handler(new Request(`http://localhost/?companion=${companionDigest(BROKEN)}`));
-    await handler(new Request(`http://localhost/?companion=${companionDigest(ACME)}`));
+    await open(`http://localhost/?companion=${companionDigest(ACME)}`);
+    await open(`http://localhost/?companion=${companionDigest(BROKEN)}`);
+    await open(`http://localhost/?companion=${companionDigest(ACME)}`);
 
     expect(collected).toEqual([ACME, BROKEN]);
   });
 
   test("a companion whose collection threw is collected again on the next request", async () => {
-    const { handler, assembled } = capturing();
+    const { open, assembled } = capturing();
     const digest = companionDigest(BROKEN);
 
-    await handler(new Request(`http://localhost/?companion=${digest}`));
-    await handler(new Request(`http://localhost/?companion=${digest}`));
+    await open(`http://localhost/?companion=${digest}`);
+    await open(`http://localhost/?companion=${digest}`);
 
     expect(assembled).toEqual([BROKEN, BROKEN]);
   });
 
-  test("renders the document from the real views for a named companion", async () => {
+  test("says the application build is missing when a checkout was never built", async () => {
     const handler = createStudioFetch({
       collectStudioInventory: async () => ({
         companions: [{ path: ACME, health: "ready", pairings: [] }],
-      }),
-      assembleCompanionPayload: async (companionPath) => ({
-        companionPath,
-        changes: [{ name: "add-auth", completedTasks: 1, totalTasks: 2, artifacts: [] }],
-        specs: [],
-        topology: null,
-        warnings: [],
       }),
     });
 
@@ -263,16 +250,15 @@ describe("createStudioFetch", () => {
     ).text();
 
     expect(body).toContain("<!doctype html>");
-    expect(body).toContain("add-auth");
-    expect(body).toContain('aria-label="Changes"');
+    expect(body).toContain("Studio's application build is missing.");
   });
 
   test.each(["/api/inventory", "/api/companion", "/api/companion?path=/companions/acme"])(
     "answers %s as unrouted rather than serving its old payload",
     async (route) => {
-      const { handler, assembled } = capturing();
+      const { fetch, assembled } = capturing();
 
-      const response = await handler(new Request(`http://localhost${route}`));
+      const response = await fetch(new Request(`http://localhost${route}`));
 
       expect(response.status).toBe(404);
       expect(response.headers.get("content-type") ?? "").not.toContain("application/json");
@@ -314,221 +300,6 @@ describe("createStudioFetch", () => {
     expect(await response.text()).toBe("");
   });
 
-  test("serves the vault page before a pending listing and inlines a listed tree", async () => {
-    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-defer-")));
-    try {
-      await fs.mkdir(path.join(root, "docs"));
-      await fs.writeFile(path.join(root, "docs", "note.md"), "one");
-      let release: () => void = () => {};
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const vault = createVaultManager({
-        watch: () => ({ close() {} }),
-        git: async (args) => {
-          await gate;
-          return args.includes("ls-files")
-            ? { code: 0, stdout: "docs/note.md\0", stderr: "" }
-            : { code: 1, stdout: "", stderr: "" };
-        },
-      });
-      const pages: StudioPage[] = [];
-      const handler = createStudioFetch({
-        collectStudioInventory: async () => ({
-          companions: [{ path: root, health: "ready", pairings: [] }],
-        }),
-        renderDocument: (page) => {
-          pages.push(page);
-          return "page";
-        },
-        vault,
-      });
-      const digest = companionDigest(root);
-      const pageUrl = `http://localhost/?companion=${digest}&view=vault&path=docs%2Fnote.md`;
-
-      expect((await handler(new Request(pageUrl)))!.status).toBe(200);
-      expect(pages[0]?.vault?.tree).toBeNull();
-      expect(pages[0]?.vault?.open?.content).toBe("one");
-
-      const view = handler(
-        new Request(`http://localhost/api/vault/view?companion=${digest}&dir=docs`),
-      );
-      release();
-      const answered = (await view)!;
-      expect(answered.headers.get("content-type")).toContain("text/html");
-      const markup = await answered.text();
-      expect(markup).toContain('data-vault-slot="tree"');
-      expect(markup).toContain('data-vault-slot="listing"');
-      expect(markup).toContain("note.md");
-      expect(markup).toContain(
-        `<a class="vault-file" href="/?companion=${digest}&amp;view=vault&amp;path=docs%2Fnote.md" data-vault-entry="docs/note.md"`,
-      );
-
-      await handler(new Request(pageUrl));
-      expect(JSON.stringify(pages[1]?.vault?.tree)).toContain("note.md");
-      vault.stop();
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test.each(["listed", "failed"] as const)(
-    "page and /view agree on vault state when listing is %s",
-    async (result) => {
-      const digest = companionDigest(ACME);
-      const tree: VaultTreeResult = {
-        tree: [{ name: "note.md", path: "note.md", kind: "file" }],
-        watching: true,
-        warning: null,
-      };
-      const listing = async (): Promise<VaultTreeResult> => {
-        if (result === "failed") throw new Error("listing failed");
-        return tree;
-      };
-      const opened: string[] = [];
-      const vault = {
-        prefetch: listing,
-        tree: listing,
-        open: async (_root: string, file: string) => {
-          opened.push(file);
-          return { path: file, content: "acme", token: "v1" };
-        },
-        deactivate: () => {},
-        stop: () => {},
-      } as VaultManager;
-      const pages: StudioPage[] = [];
-      const handler = createStudioFetch({
-        collectStudioInventory: async () => ({
-          companions: [{ path: ACME, health: "ready", pairings: [] }],
-        }),
-        renderDocument: (page) => {
-          pages.push(page);
-          return renderStudioDocument(page);
-        },
-        vault,
-      });
-      const query = `companion=${digest}&view=vault&path=note.md`;
-
-      const page = (await handler(new Request(`http://localhost/?${query}`)))!;
-      const view = (await handler(new Request(`http://localhost/api/vault/view?${query}`)))!;
-      expect(page.status).toBe(200);
-      expect(view.status).toBe(200);
-      expect(pages[0]?.error).toBeNull();
-      expect(pages[0]?.vault).toMatchObject({
-        tree: result === "listed" ? tree.tree : null,
-        failure: result === "failed" ? "listing failed" : null,
-        open: { path: "note.md", content: "acme", token: "v1" },
-      });
-      expect(await view.text()).toBe(renderVaultView(pages[0]!));
-      expect(opened).toEqual(["note.md", "note.md"]);
-      const markup = await page.text();
-      expect(markup).toContain("data-vault-layout");
-      if (result === "failed") {
-        expect(markup).toContain("The files could not be listed: listing failed");
-        expect(markup).toContain("Refresh tree");
-      }
-      await handler.close();
-    },
-  );
-
-  test("renders a full vault page with a listing failure in the tree", async () => {
-    const vault = {
-      prefetch: async () => {
-        throw new Error("listing failed");
-      },
-      deactivate: () => {},
-      stop: () => {},
-    } as unknown as VaultManager;
-    const pages: StudioPage[] = [];
-    const handler = createStudioFetch({
-      collectStudioInventory: async () => ({
-        companions: [{ path: ACME, health: "ready", pairings: [] }],
-      }),
-      renderDocument: (page) => {
-        pages.push(page);
-        return renderStudioDocument(page);
-      },
-      vault,
-    });
-
-    const response = (await handler(
-      new Request(`http://localhost/?companion=${companionDigest(ACME)}&view=vault`),
-    ))!;
-    const markup = await response.text();
-    expect(response.status).toBe(200);
-    expect(pages[0]?.error).toBeNull();
-    expect(pages[0]?.vault?.failure).toBe("listing failed");
-    expect(markup).toContain('data-vault-slot="tree"');
-    expect(markup).toContain("The files could not be listed: listing failed");
-    expect(markup).toContain("Refresh tree");
-    await handler.close();
-  });
-
-  test("answers deferred forms that stay in the vault with their file and folder", async () => {
-    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-defer-")));
-    try {
-      await fs.mkdir(path.join(root, "docs", "a"), { recursive: true });
-      for (const file of ["README.md", "docs/b.md", "docs/a/x.md"]) {
-        await fs.writeFile(path.join(root, file), "# acme\n");
-      }
-      const vault = createVaultManager({
-        watch: () => ({ close() {} }),
-        git: async (args) =>
-          args.includes("ls-files")
-            ? { code: 0, stdout: "README.md\0docs/b.md\0docs/a/x.md\0", stderr: "" }
-            : { code: 1, stdout: "", stderr: "" },
-      });
-      const handler = createStudioFetch({
-        collectStudioInventory: async () => ({
-          companions: [{ path: root, health: "ready", pairings: [] }],
-        }),
-        vault,
-      });
-      const digest = companionDigest(root);
-      const markup = await (await handler(
-        new Request(`http://localhost/api/vault/view?companion=${digest}&dir=docs%2Fa`),
-      ))!.text();
-      const submitted = [...markup.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g)].map(
-        ([, attrs, body]) => {
-          const url = new URL("http://localhost/");
-          for (const [, name, value] of body!.matchAll(
-            /<input type="hidden" name="([^"]*)" value="([^"]*)"\/>/g,
-          )) {
-            url.searchParams.append(name!, value!);
-          }
-          return { entry: /data-vault-entry="([^"]*)"/.exec(attrs!)?.[1], selection: parse(url) };
-        },
-      );
-      const links = [
-        ...markup.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*data-vault-entry="([^"]*)"/g),
-      ].map(([, href, entry]) => ({
-        entry,
-        selection: parse(new URL(href!.replaceAll("&amp;", "&"), "http://localhost/")),
-      }));
-      expect(links.length).toBeGreaterThan(2);
-      submitted.push(...links);
-      expect(submitted.length).toBeGreaterThan(4);
-      for (const { entry, selection } of submitted) {
-        expect(selection.view).toBe("vault");
-        expect(selection.companionDigest).toBe(digest);
-        if (entry) expect(selection).toMatchObject({ openPath: entry, openDir: null });
-      }
-      const targets = submitted.map(({ selection }) => selection);
-      expect(targets).toContainEqual(
-        openFile(
-          parseVaultSelection(new URL(`http://localhost/?companion=${digest}`)),
-          "docs/a/x.md",
-        ),
-      );
-      expect(targets).toContainEqual(
-        openFolder(parseVaultSelection(new URL(`http://localhost/?companion=${digest}`)), "docs"),
-      );
-      vault.stop();
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
-
   describe("lazy vault routes", () => {
     async function lazyFixture(
       run: (context: {
@@ -564,55 +335,10 @@ describe("createStudioFetch", () => {
       }
     }
 
-    test("answers a listed folder's entries, collapsed, with the listing generation", async () => {
-      await lazyFixture(async ({ handler, digest }) => {
-        const response = (await handler(
-          new Request(`http://localhost/api/vault/dir?companion=${digest}&dir=docs`),
-        ))!;
-        expect(response.status).toBe(200);
-        expect(response.headers.get("content-type")).toContain("text/html");
-        expect(response.headers.get("x-vault-generation")).toBe("0");
-        const markup = await response.text();
-        expect(markup).toContain('data-vault-entry="docs/b.md"');
-        expect(markup).toContain('data-vault-dir="docs/a"');
-        expect(markup).not.toContain("x.md");
-      });
-    });
-
-    test("refuses a folder the listed tree does not hold, never reading the disk", async () => {
-      await lazyFixture(async ({ handler, digest }) => {
-        for (const dir of ["nope", "../outside", "/etc"]) {
-          const response = (await handler(
-            new Request(
-              `http://localhost/api/vault/dir?companion=${digest}&dir=${encodeURIComponent(dir)}`,
-            ),
-          ))!;
-          expect(response.status).toBe(404);
-        }
-        const none = (await handler(new Request("http://localhost/api/vault/dir")))!;
-        expect(none.status).toBe(400);
-      });
-    });
-
-    test("answers bounded name-filter matches over unexpanded folders", async () => {
-      await lazyFixture(async ({ handler, digest }) => {
-        const response = (await handler(
-          new Request(`http://localhost/api/vault/filter?companion=${digest}&q=y.MD`),
-        ))!;
-        const markup = await response.text();
-        expect(markup).toContain('data-vault-entry="other/Y.md"');
-        expect(markup).not.toContain("README");
-        const empty = (await handler(
-          new Request(`http://localhost/api/vault/filter?companion=${digest}`),
-        ))!;
-        expect(await empty.text()).toBe("");
-      });
-    });
-
     test("streams listing generations, never paths or content", async () => {
       await lazyFixture(async ({ handler, digest }) => {
         const response = (await handler(
-          new Request(`http://localhost/api/vault/changes?companion=${digest}`),
+          new Request(`http://localhost/api/events?companion=${digest}`),
         ))!;
         expect(response.headers.get("content-type")).toContain("text/event-stream");
         const reader = response.body!.getReader();
@@ -626,14 +352,14 @@ describe("createStudioFetch", () => {
           .join("")
           .split("\n")
           .find((line) => line.startsWith("data:"))!;
-        expect(JSON.parse(data.slice(5))).toEqual({ type: "vault-tree-changed", generation: 0 });
+        expect(JSON.parse(data.slice(5))).toEqual({ type: "vault-tree", generation: 0 });
         await reader.cancel();
-        const unselected = (await handler(new Request("http://localhost/api/vault/changes")))!;
+        const unselected = (await handler(new Request("http://localhost/api/events")))!;
         expect(unselected.status).toBe(400);
       });
     });
 
-    test("holds the new read routes to the access token", async () => {
+    test("holds the vault's read routes to the access token", async () => {
       const access = createStudioAccess({
         invocation: "serve",
         terminal: false,
@@ -642,146 +368,39 @@ describe("createStudioFetch", () => {
         token: "secret",
       });
       const handler = createStudioFetch({}, { access });
-      for (const route of ["dir", "filter", "changes"]) {
-        const response = (await handler(new Request(`http://127.0.0.1/api/vault/${route}`)))!;
+      for (const route of ["/api/vault/events?path=a.md", "/api/events", "/vault"]) {
+        const response = (await handler(new Request(`http://127.0.0.1${route}`)))!;
         expect(response.status).toBe(401);
       }
       await handler.close();
     });
   });
 
-  test("answers a failed listing in place of the tree", async () => {
-    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-defer-")));
-    try {
-      const vault = createVaultManager({
-        watch: () => ({ close() {} }),
-        git: async () => ({ code: 128, stdout: "", stderr: "fatal: acme broke" }),
-      });
-      const handler = createStudioFetch({
-        collectStudioInventory: async () => ({
-          companions: [{ path: root, health: "ready", pairings: [] }],
-        }),
-        vault,
-      });
-      const response = (await handler(
-        new Request(`http://localhost/api/vault/view?companion=${companionDigest(root)}`),
-      ))!;
-      expect(response.status).toBe(200);
-      const markup = await response.text();
-      expect(markup).toContain('data-vault-slot="tree"');
-      expect(markup).toContain("could not be listed: git ls-files failed: fatal: acme broke");
-      vault.stop();
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test("serves a vault tree and file, while read-only saves are refused", async () => {
+  test("serves the vault through the services, while read-only saves are refused", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-server-"));
     try {
       await fs.writeFile(path.join(root, "note.md"), "one");
       const digest = companionDigest(root);
-      const manager = createVaultManager({ watch: () => ({ close() {} }) });
       const handler = createStudioFetch({
         collectStudioInventory: async () => ({
           companions: [{ path: root, health: "ready", pairings: [] }],
         }),
-        assembleCompanionPayload: async (companionPath) => ({
-          companionPath,
-          changes: [],
-          specs: [],
-          topology: null,
-          warnings: [],
-        }),
-        renderDocument: () => "vault",
-        vault: manager,
+        vault: createVaultManager({ watch: () => ({ close() {} }) }),
       });
-      const tree = await handler(
-        new Request(`http://localhost/api/vault/tree?companion=${digest}`),
-      );
-      expect((await tree.json()).tree).toHaveLength(1);
-      const opened = await handler(
-        new Request(`http://localhost/api/vault/file?companion=${digest}&path=note.md`),
-      );
-      expect(await opened.json()).toMatchObject({ path: "note.md", content: "one" });
-      const refused = await handler(
-        new Request("http://localhost/api/vault/save", {
-          method: "POST",
-          headers: { origin: "http://localhost" },
-          body: "{}",
-        }),
-      );
-      expect(refused.status).toBe(403);
-      expect(await refused.text()).toContain("--writable");
-      handler.close();
+      const view = await handler.services.vault(digest, { path: "note.md", wait: true });
+      expect(view.tree).toHaveLength(1);
+      expect(view.open).toMatchObject({ path: "note.md", content: "one" });
+      await expect(
+        handler.services.vaultSave(digest, "note.md", "two", view.open!.token),
+      ).rejects.toThrow("--writable");
+      expect(await fs.readFile(path.join(root, "note.md"), "utf8")).toBe("one");
+      await handler.close();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
 
-  test("serves the open file's pane as a fragment, in the mode the write path allows", async () => {
-    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-pane-")));
-    try {
-      await fs.writeFile(path.join(root, "note.md"), "# Heading\n\nbody");
-      const digest = companionDigest(root);
-      const vault = createVaultManager({ watch: () => ({ close() {} }) });
-      const handlerFor = (writable: boolean) =>
-        createStudioFetch(
-          {
-            collectStudioInventory: async () => ({
-              companions: [{ path: root, health: "ready", pairings: [] }],
-            }),
-            assembleCompanionPayload: async (companionPath) => ({
-              companionPath,
-              changes: [],
-              specs: [],
-              topology: null,
-              warnings: [],
-            }),
-            renderDocument: () => "unused",
-            vault,
-          },
-          { writable },
-        );
-      const pane = async (handler: ReturnType<typeof handlerFor>, query: string) => {
-        const response = (await handler(
-          new Request(`http://localhost/api/vault/pane?companion=${digest}&view=vault&${query}`),
-        ))!;
-        return { response, markup: await response.text() };
-      };
-
-      const read = await pane(handlerFor(true), "path=note.md");
-      expect(read.response.status).toBe(200);
-      expect(read.response.headers.get("content-type")).toContain("text/html");
-      expect(read.markup).toContain("<h1>Heading</h1>");
-      expect(read.markup).toContain("data-vault-crumb");
-      expect(read.markup).not.toContain("<textarea");
-
-      const edit = await pane(handlerFor(true), "path=note.md&mode=edit");
-      expect(edit.markup).toContain("<textarea");
-      expect(edit.markup).toContain("# Heading");
-
-      const locked = await pane(handlerFor(false), "path=note.md&mode=edit");
-      expect(locked.response.status).toBe(200);
-      expect(locked.markup).toContain("<h1>Heading</h1>");
-      expect(locked.markup).not.toContain("<textarea");
-      expect(locked.markup).not.toContain("vault-save");
-
-      const refused = await pane(handlerFor(true), "path=..%2Foutside.md");
-      expect(refused.response.status).toBe(200);
-      expect(refused.markup).toContain("File refused");
-
-      const unknown = (await handlerFor(true)(
-        new Request("http://localhost/api/vault/pane?companion=0000000000&view=vault&path=note.md"),
-      ))!;
-      expect(unknown.status).toBe(400);
-      vault.stop();
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test("writes only through the writable vault save endpoint", async () => {
+  test("a writable vault saves the current version and refuses a stale one", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-server-"));
     try {
       await fs.writeFile(path.join(root, "note.md"), "one");
@@ -791,38 +410,22 @@ describe("createStudioFetch", () => {
           collectStudioInventory: async () => ({
             companions: [{ path: root, health: "ready", pairings: [] }],
           }),
-          assembleCompanionPayload: async (companionPath) => ({
-            companionPath,
-            changes: [],
-            specs: [],
-            topology: null,
-            warnings: [],
-          }),
-          renderDocument: () => "vault",
           vault: createVaultManager({ watch: () => ({ close() {} }) }),
         },
         { writable: true },
       );
-      const opened = await (
-        await handler(
-          new Request(`http://localhost/api/vault/file?companion=${digest}&path=note.md`),
-        )
-      ).json();
-      const saved = await handler(
-        new Request("http://localhost/api/vault/save", {
-          method: "POST",
-          headers: { "content-type": "application/json", origin: "http://localhost" },
-          body: JSON.stringify({
-            companion: digest,
-            path: "note.md",
-            content: "two",
-            token: opened.token,
-          }),
-        }),
-      );
-      expect(saved.status).toBe(200);
+      const { open } = await handler.services.vault(digest, { path: "note.md", wait: true });
+      const saved = await handler.services.vaultSave(digest, "note.md", "two", open!.token);
+      expect(saved.kind).not.toBe("conflict");
       expect(await fs.readFile(path.join(root, "note.md"), "utf8")).toBe("two");
-      handler.close();
+      const stale = await handler.services.vaultSave(digest, "note.md", "three", open!.token);
+      expect(stale.kind).toBe("conflict");
+      expect(await fs.readFile(path.join(root, "note.md"), "utf8")).toBe("two");
+      await expect(handler.services.vaultSave(digest, "../escape.md", "x")).rejects.toThrow();
+      await expect(handler.services.vaultSave("0".repeat(16), "note.md", "x")).rejects.toThrow(
+        "no registered companion",
+      );
+      await handler.close();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

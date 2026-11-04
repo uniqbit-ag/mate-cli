@@ -12,8 +12,9 @@ import {
   type StudioAccessOptions,
 } from "./access";
 import { companionDigest } from "./selection";
-import { createStudioFetch, type StudioServerDeps } from "./server";
-import { createVaultManager } from "./vault";
+import { createStudioFetch, type StudioFetchOptions, type StudioServerDeps } from "./server";
+import type { StudioApp } from "./studio-app";
+import { createVaultManager, type VaultManager } from "./vault";
 
 const PORT = 4097;
 const TOKEN = "t".repeat(43);
@@ -33,18 +34,15 @@ interface Fixture {
   root: string;
   digest: string;
   rendered: number;
+  vault: VaultManager;
   deps: StudioServerDeps;
 }
 
 async function fixture(): Promise<Fixture> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-studio-access-"));
   await fs.writeFile(path.join(root, "note.md"), "one");
-  const state: Fixture = {
-    root,
-    digest: companionDigest(root),
-    rendered: 0,
-    deps: {},
-  };
+  const vault = createVaultManager({ watch: () => ({ close() {} }) });
+  const state: Fixture = { root, digest: companionDigest(root), rendered: 0, vault, deps: {} };
   state.deps = {
     collectStudioInventory: async () => ({
       companions: [{ path: root, health: "ready", pairings: [] }],
@@ -56,14 +54,33 @@ async function fixture(): Promise<Fixture> {
       topology: null,
       warnings: [],
     }),
-    renderDocument: () => {
-      state.rendered += 1;
-      return `<!doctype html><p>${root}</p>`;
-    },
-    vault: createVaultManager({ watch: () => ({ close() {} }) }),
+    vault,
     launchableAgents: async () => [],
   };
   return state;
+}
+
+/**
+ * Studio's application as the server sees it: a document names the selected companion,
+ * and the `save` server function saves through the services, as the real one does.
+ */
+function appFor(state: Fixture): StudioApp {
+  return {
+    clientDir: state.root,
+    fetch: async (request, { context }) => {
+      const url = new URL(request.url);
+      if (url.pathname === "/_serverFn/save") {
+        const { token } = (await request.json()) as { token: string };
+        const saved = await context.studio
+          .vaultSave(state.digest, "note.md", "two", token)
+          .catch((error: Error) => ({ refused: error.message }));
+        return Response.json(saved, { status: "refused" in saved ? 403 : 200 });
+      }
+      state.rendered += 1;
+      const page = await context.studio.page(url);
+      return new Response(`<!doctype html><p>${page.companion?.path ?? ""}</p>`);
+    },
+  };
 }
 
 async function withFixture(run: (state: Fixture) => Promise<void>): Promise<void> {
@@ -75,30 +92,28 @@ async function withFixture(run: (state: Fixture) => Promise<void>): Promise<void
   }
 }
 
+function serve(state: Fixture, options: Omit<StudioFetchOptions, "app">) {
+  return createStudioFetch(state.deps, { ...options, app: appFor(state) });
+}
+
 function get(pathname: string, headers: Record<string, string> = {}): Request {
   return new Request(`http://localhost:${PORT}${pathname}`, {
     headers: { host: `localhost:${PORT}`, ...headers },
   });
 }
 
+/** A save through the application's server function: a write. */
 async function save(
   handler: ReturnType<typeof createStudioFetch>,
   state: Fixture,
   headers: Record<string, string>,
 ): Promise<Response> {
-  const opened = (await (
-    await handler(get(`/api/vault/file?companion=${state.digest}&path=note.md`, headers))
-  )?.json()) as { token?: string } | undefined;
+  const { token } = await state.vault.open(state.root, "note.md");
   return (await handler(
-    new Request(`http://localhost:${PORT}/api/vault/save`, {
+    new Request(`http://localhost:${PORT}/_serverFn/save`, {
       method: "POST",
       headers: { host: `localhost:${PORT}`, "content-type": "application/json", ...headers },
-      body: JSON.stringify({
-        companion: state.digest,
-        path: "note.md",
-        content: "two",
-        token: opened?.token ?? "",
-      }),
+      body: JSON.stringify({ token }),
     }),
   ))!;
 }
@@ -156,16 +171,15 @@ describe("accepted hosts", () => {
 
   test("a rebinding hostname can neither read, exchange, nor save", async () => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, {
+      const handler = serve(state, {
         writable: true,
         access: access({ invocation: "serve", token: TOKEN }),
       });
       const host = { host: `rebind.acme.test:${PORT}`, cookie: COOKIE };
       for (const pathname of [
         "/",
-        `/api/vault/tree?companion=${state.digest}`,
-        `/api/vault/file?companion=${state.digest}&path=note.md`,
-        `/api/vault/view?companion=${state.digest}`,
+        `/factory?companion=${state.digest}`,
+        `/api/events?companion=${state.digest}`,
         `/?token=${TOKEN}`,
       ]) {
         const response = (await handler(get(pathname, host)))!;
@@ -192,7 +206,7 @@ describe("save origins", () => {
     { name: "a null origin", origin: "null" },
   ])("$name cannot save to the unguarded interactive command", async ({ origin }) => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, { writable: true, access: access() });
+      const handler = serve(state, { writable: true, access: access() });
       const response = await save(handler, state, origin ? { origin } : {});
       expect(response.status).toBe(403);
       expect(await fs.readFile(path.join(state.root, "note.md"), "utf8")).toBe("one");
@@ -202,7 +216,7 @@ describe("save origins", () => {
 
   test("a same-origin save without a token works on the unguarded interactive command", async () => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, { writable: true, access: access() });
+      const handler = serve(state, { writable: true, access: access() });
       const response = await save(handler, state, { origin: `http://localhost:${PORT}` });
       expect(response.status).toBe(200);
       expect(await fs.readFile(path.join(state.root, "note.md"), "utf8")).toBe("two");
@@ -212,7 +226,7 @@ describe("save origins", () => {
 
   test("a same-site sibling holding the cookie cannot save to a guarded Studio", async () => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, {
+      const handler = serve(state, {
         writable: true,
         access: access({ invocation: "serve", token: TOKEN, allowedHosts: ["studio.acme.test"] }),
       });
@@ -251,7 +265,7 @@ describe("token issuance", () => {
 describe("token exchange", () => {
   test("a pasted token URL sets a host-only strict cookie and redirects without the token", async () => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, {
+      const handler = serve(state, {
         access: access({ invocation: "serve", token: TOKEN }),
       });
       const response = (await handler(
@@ -271,7 +285,7 @@ describe("token exchange", () => {
 
   test("an invalid token is refused without touching the cookie", async () => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, {
+      const handler = serve(state, {
         access: access({ invocation: "serve", token: TOKEN }),
       });
       const response = (await handler(get(`/?token=${"x".repeat(43)}`, { cookie: COOKIE })))!;
@@ -284,7 +298,7 @@ describe("token exchange", () => {
 
   test("an HTTPS public origin on its own Host gets a Secure cookie; forwarded headers change nothing", async () => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, {
+      const handler = serve(state, {
         access: access({
           invocation: "serve",
           token: TOKEN,
@@ -326,7 +340,7 @@ describe("token exchange", () => {
 describe("per-invocation token requirements", () => {
   test("serve refuses tokenless reads and explains how to get in", async () => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, {
+      const handler = serve(state, {
         access: access({ invocation: "serve", token: TOKEN }),
       });
       const page = (await handler(get(`/?companion=${state.digest}`)))!;
@@ -337,10 +351,11 @@ describe("per-invocation token requirements", () => {
       expect(state.rendered).toBe(0);
 
       for (const pathname of [
-        `/api/vault/tree?companion=${state.digest}`,
-        `/api/vault/file?companion=${state.digest}&path=note.md`,
+        `/vault?companion=${state.digest}`,
+        `/_serverFn/getFactory?companion=${state.digest}`,
+        `/api/events?companion=${state.digest}`,
         `/api/vault/events?companion=${state.digest}&path=note.md`,
-        `/api/vault/view?companion=${state.digest}`,
+        `/api/reports?companion=${state.digest}`,
       ]) {
         const refused = (await handler(get(pathname)))!;
         expect(refused.status).toBe(401);
@@ -356,7 +371,7 @@ describe("per-invocation token requirements", () => {
 
   test("serve requires the token for a save, even same-origin", async () => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, {
+      const handler = serve(state, {
         writable: true,
         access: access({ invocation: "serve", token: TOKEN }),
       });
@@ -370,19 +385,171 @@ describe("per-invocation token requirements", () => {
 
   test("the interactive terminal keeps reads open but guards saves and sessions", async () => {
     await withFixture(async (state) => {
-      const handler = createStudioFetch(state.deps, {
+      const handler = serve(state, {
         writable: true,
         terminal: true,
         access: access({ terminal: true, token: TOKEN }),
       });
-      const tree = (await handler(get(`/api/vault/tree?companion=${state.digest}`)))!;
-      expect(tree.status).toBe(200);
+      const page = (await handler(get(`/vault?companion=${state.digest}`)))!;
+      expect(page.status).toBe(200);
       const origin = `http://localhost:${PORT}`;
       expect((await save(handler, state, { origin })).status).toBe(401);
       expect(await fs.readFile(path.join(state.root, "note.md"), "utf8")).toBe("one");
       expect((await handler(get("/api/terminal/sessions")))!.status).toBe(401);
       expect((await handler(get("/api/terminal/sessions", { cookie: COOKIE })))!.status).toBe(200);
       expect((await save(handler, state, { origin, cookie: COOKIE })).status).toBe(200);
+      await handler.close();
+    });
+  });
+});
+
+describe("Studio modes are not access control", () => {
+  test("no mode or profile changes the token, origin, or write checks", async () => {
+    await withFixture(async (state) => {
+      for (const profile of ["standard", "appliance"] as const) {
+        const handler = serve(state, {
+          writable: true,
+          profile,
+          access: access({ invocation: "serve", token: TOKEN }),
+        });
+        for (const query of [
+          "studioMode=engineering",
+          "studioMode=analysis",
+          "role=product-engineer",
+        ]) {
+          for (const pathname of [
+            `/?companion=${state.digest}&${query}`,
+            `/_serverFn/getShell?companion=${state.digest}&${query}`,
+            `/api/events?companion=${state.digest}&${query}`,
+          ]) {
+            expect((await handler(get(pathname)))!.status).toBe(401);
+          }
+        }
+        const origin = `http://localhost:${PORT}`;
+        expect((await save(handler, state, { origin })).status).toBe(401);
+        expect(
+          (await save(handler, state, { origin: "https://evil.test", cookie: COOKIE })).status,
+        ).toBe(403);
+        expect(await fs.readFile(path.join(state.root, "note.md"), "utf8")).toBe("one");
+        await handler.close();
+      }
+    });
+  });
+});
+
+describe("guards by request kind", () => {
+  const origin = `http://localhost:${PORT}`;
+  const credentialBroker = () => {
+    const sets: string[] = [];
+    const status = { kind: null, source: null } as unknown;
+    return {
+      sets,
+      client: {
+        credential: {
+          status: async () => status,
+          set: async (kind: string) => void sets.push(kind),
+          clear: async () => void sets.push("clear"),
+        },
+      } as unknown as NonNullable<StudioServerDeps["factoryClient"]>,
+    };
+  };
+
+  test("a write from a foreign origin is refused before it acts", async () => {
+    await withFixture(async (state) => {
+      const broker = credentialBroker();
+      const handler = createStudioFetch(
+        { ...state.deps, factoryClient: broker.client },
+        { writable: true, access: access(), app: appFor(state) },
+      );
+      const response = (await handler(
+        new Request(`http://localhost:${PORT}/api/factory/credential`, {
+          method: "PUT",
+          headers: { host: `localhost:${PORT}`, origin: "https://evil.test" },
+          body: JSON.stringify({ kind: "api-key", value: "x" }),
+        }),
+      ))!;
+      expect(response.status).toBe(403);
+      expect(((await response.json()) as { reason: string }).reason).toContain("Studio's own page");
+      expect(broker.sets).toEqual([]);
+      await handler.close();
+    });
+  });
+
+  test("a write without the write path is refused, naming it", async () => {
+    await withFixture(async (state) => {
+      const broker = credentialBroker();
+      const handler = createStudioFetch(
+        { ...state.deps, factoryClient: broker.client },
+        { access: access(), app: appFor(state) },
+      );
+      const credential = (await handler(
+        new Request(`http://localhost:${PORT}/api/factory/credential`, {
+          method: "DELETE",
+          headers: { host: `localhost:${PORT}`, origin },
+        }),
+      ))!;
+      expect(credential.status).toBe(403);
+      expect(await credential.text()).toContain("--writable");
+      expect(broker.sets).toEqual([]);
+
+      // A server function's write path is checked by the services it calls.
+      const saved = await save(handler, state, { origin });
+      expect(await saved.text()).toContain("--writable");
+      expect(await fs.readFile(path.join(state.root, "note.md"), "utf8")).toBe("one");
+      await handler.close();
+    });
+  });
+
+  test("a report publish ignores the operator token", async () => {
+    await withFixture(async (state) => {
+      const published: string[] = [];
+      const reports = {
+        cleanup: async () => {},
+        publish: async (_digest: string, report: { title: string }) => {
+          published.push(report.title);
+          return { id: "r", title: report.title, createdAt: 0 };
+        },
+      };
+      const handler = createStudioFetch(
+        { ...state.deps, reports: reports as unknown as StudioServerDeps["reports"] },
+        { terminal: true, access: access({ terminal: true, token: TOKEN }), app: appFor(state) },
+      );
+      const response = (await handler(
+        new Request(`http://localhost:${PORT}/api/reports`, {
+          method: "POST",
+          headers: {
+            host: `localhost:${PORT}`,
+            origin,
+            cookie: COOKIE,
+            authorization: `Bearer ${TOKEN}`,
+          },
+          body: JSON.stringify({ title: "t", html: "<p>x</p>" }),
+        }),
+      ))!;
+      expect(response.status).toBe(401);
+      expect(published).toEqual([]);
+      await handler.close();
+    });
+  });
+
+  test("a terminal call needs the terminal token; a privileged one also the origin", async () => {
+    await withFixture(async (state) => {
+      const handler = serve(state, {
+        writable: true,
+        terminal: true,
+        access: access({ terminal: true, token: TOKEN }),
+      });
+      const end = (headers: Record<string, string>) =>
+        handler(
+          new Request(`http://localhost:${PORT}/api/terminal/sessions/end`, {
+            method: "POST",
+            headers: { host: `localhost:${PORT}`, ...headers },
+            body: JSON.stringify({ id: "none" }),
+          }),
+        );
+      expect((await end({ cookie: COOKIE, origin: "https://evil.test" }))!.status).toBe(403);
+      expect((await end({ origin }))!.status).toBe(401);
+      expect((await end({ origin, cookie: COOKIE }))!.status).toBe(404);
       await handler.close();
     });
   });

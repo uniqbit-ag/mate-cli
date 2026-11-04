@@ -393,6 +393,10 @@ describe("executeSetup", () => {
       await fs.access(
         path.join(skills, "mate-propose-change", "references", "openspec-update-change.md"),
       );
+      await fs.access(path.join(skills, "mate-propose-change", "references", "mate-revise.md"));
+      await fs.access(
+        path.join(skills, "mate-apply-change", "references", "mate-compact-apply.md"),
+      );
       for (const skill of ["mate-grill-me", "mate-domain-modeling"]) {
         await fs.access(path.join(skills, skill, "SKILL.md"));
       }
