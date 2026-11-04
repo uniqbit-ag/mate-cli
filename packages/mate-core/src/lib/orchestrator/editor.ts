@@ -1,6 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import path from "node:path";
 
 import { workspaceDocumentPath } from "./projection-entries";
 import { project } from "./working-repo-projection";
@@ -72,29 +71,34 @@ function resolveEditorCli(cli: string): { cli: string; binary: string } | null {
 /** The Projection Root owns the path; this is the editor's name for it. */
 export const editorWorkspacePath = workspaceDocumentPath;
 
-interface WorkspaceDocument {
-  workspacePath: string;
-  folders: string[];
-}
-
 /**
- * Writes the generated `.mate/workspace.code-workspace` file (working
- * repository first, then each companion in the given order) and returns its
- * path and folder order. Called by editor-launching `injectEditorFolder`,
- * which backs `mate companion open`.
+ * Merges the working repository and each companion, in the given order, into
+ * `.mate/workspace.code-workspace` and returns its path, or the error that
+ * left the document unchanged. Backs `openEditorWorkspace`.
  */
 async function writeWorkspaceDocument(
   companionPaths: string[],
   repoPath: string,
-): Promise<WorkspaceDocument> {
-  await project("workspace", { repoPath, workspaceCompanionPaths: companionPaths });
+): Promise<{ workspacePath: string; error?: Error }> {
+  const { outcomes } = await project("workspace", {
+    repoPath,
+    workspaceCompanionPaths: companionPaths,
+  });
+  const failure = outcomes.find(
+    (outcome) => outcome.id === "workspace-document" && outcome.state === "failed",
+  );
   return {
     workspacePath: workspaceDocumentPath(repoPath),
-    folders: [repoPath, ...companionPaths].map((folder) => path.resolve(folder)),
+    error: failure ? (failure.error ?? new Error("workspace document write failed")) : undefined,
   };
 }
 
-export async function injectEditorFolder(
+/**
+ * Updates the workspace document, then opens it in the editor (`<cli> <file>`)
+ * so its settings apply. Returns `false` without spawning when the editor CLI
+ * is missing or the document could not be updated.
+ */
+export async function openEditorWorkspace(
   companionPaths: string[],
   repoPath: string,
   cli = "code",
@@ -102,25 +106,27 @@ export async function injectEditorFolder(
 ): Promise<boolean> {
   const resolved = resolveEditorCli(cli);
   if (!resolved) {
-    process.stderr.write(
-      `mate: warning: ${cli} CLI not found on PATH; skipping workspace injection.\n`,
-    );
+    process.stderr.write(`mate: warning: ${cli} CLI not found on PATH; skipping workspace open.\n`);
     process.stderr.write(
       `mate: run "Install '${cli}' command in PATH" from the Command Palette to enable this.\n`,
     );
     return false;
   }
 
-  const { binary } = resolved;
+  const { workspacePath, error } = await writeWorkspaceDocument(companionPaths, repoPath);
+  if (error) {
+    process.stderr.write(`mate: warning: ${workspacePath}: ${error.message}\n`);
+    return false;
+  }
 
-  const { folders: workspaceFolders } = await writeWorkspaceDocument(companionPaths, repoPath);
-
-  const child = spawnProcess(binary, ["--add", ...workspaceFolders], {
+  const child = spawnProcess(resolved.binary, [workspacePath], {
     stdio: "ignore",
     detached: true,
   });
-  child.on("error", (error) => {
-    process.stderr.write(`mate: warning: failed to open companion in ${cli}: ${error.message}\n`);
+  child.on("error", (spawnError) => {
+    process.stderr.write(
+      `mate: warning: failed to open the workspace in ${cli}: ${spawnError.message}\n`,
+    );
   });
   child.unref();
 

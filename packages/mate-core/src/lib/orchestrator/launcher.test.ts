@@ -516,7 +516,7 @@ describe("FrameworkLauncher", () => {
       { CURSOR_TRACE_ID: "trace-id" },
     ];
 
-    const injectEditorFolder = spyOn(editor, "injectEditorFolder");
+    const openEditorWorkspace = spyOn(editor, "openEditorWorkspace");
     const originalEnv = { ...process.env };
 
     try {
@@ -550,7 +550,7 @@ describe("FrameworkLauncher", () => {
         }
 
         expect(adapter.run).toHaveBeenCalledTimes(1);
-        expect(injectEditorFolder).not.toHaveBeenCalled();
+        expect(openEditorWorkspace).not.toHaveBeenCalled();
       }
     } finally {
       process.env = originalEnv;
