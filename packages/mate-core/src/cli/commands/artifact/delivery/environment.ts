@@ -21,10 +21,22 @@ export interface DeliveryEnvironmentDeps {
   loadCapabilities?: (context: LaunchContext) => Promise<CapabilityConfig[]>;
   workingRepoGit?: (repoPath: string) => WorkingRepoGit;
   loadLinkedRepositories?: (context: LaunchContext) => Promise<LinkedRepository[]>;
+  /** True when the companion's Git mode is `auto`. */
+  loadGitAutoMode?: (context: LaunchContext) => Promise<boolean>;
 }
 
 async function defaultLoadLinkedRepositories(context: LaunchContext): Promise<LinkedRepository[]> {
   return (await context.workingRepoStore.load()).repos;
+}
+
+/** A linked repository's checkout with its parsed `origin` remote. */
+interface LinkedCheckout {
+  remote: ForgeRepo;
+  path: string;
+}
+
+async function defaultLoadGitAutoMode(context: LaunchContext): Promise<boolean> {
+  return (await context.configStore.load()).git === "auto";
 }
 
 async function defaultLoadCapabilities(context: LaunchContext): Promise<CapabilityConfig[]> {
@@ -73,32 +85,41 @@ export async function resolveDeliveryEnvironment(
     };
   }
 
-  let linkedRemotes: Promise<ForgeRepo[]> | undefined;
-  // Read once, and only when a repository other than the Working Repository needs a host.
-  const linked = (): Promise<ForgeRepo[]> =>
+  let linkedRemotes: Promise<LinkedCheckout[]> | undefined;
+  // Read once, and only when a repository other than the Working Repository is looked up.
+  const linked = (): Promise<LinkedCheckout[]> =>
     (linkedRemotes ??= (async () => {
-      // An unreadable registry only loses host hints; the Working Repository's host remains.
+      // An unreadable registry only loses hints; the Working Repository remains.
       const repositories = await (deps.loadLinkedRepositories ?? defaultLoadLinkedRepositories)(
         context,
       ).catch(() => []);
+      const others = repositories.filter((repository) => repository.path !== repoPath);
       const remotes = await Promise.all(
-        repositories
-          .filter((repository) => repository.path !== repoPath)
-          .map((repository) => openGit(repository.path).remoteUrl()),
+        others.map((repository) => openGit(repository.path).remoteUrl()),
       );
-      return remotes.flatMap((remote) => (remote ? (parseRemote(remote) ?? []) : []));
+      return others.flatMap((repository, index) => {
+        const remote = remotes[index] ? parseRemote(remotes[index]) : null;
+        return remote ? [{ remote, path: repository.path }] : [];
+      });
     })());
-  const hostOf = async (repository: string): Promise<string | null> => {
-    const match = (await linked()).find((remote) =>
-      sameRepository(repositoryPath(remote), repository),
-    );
-    return match?.host ?? workingRepo?.forgeRepo?.host ?? null;
+  const linkedMatch = async (repository: string) =>
+    (await linked()).find(({ remote }) => sameRepository(repositoryPath(remote), repository));
+  const hostOf = async (repository: string): Promise<string | null> =>
+    (await linkedMatch(repository))?.remote.host ?? workingRepo?.forgeRepo?.host ?? null;
+  const checkoutOf = async (repository: string): Promise<string | null> => {
+    if (workingRepo?.slug && sameRepository(workingRepo.slug, repository)) return workingRepo.path;
+    return (await linkedMatch(repository))?.path ?? null;
   };
+  const gitAutoMode = await (deps.loadGitAutoMode ?? defaultLoadGitAutoMode)(context).catch(
+    () => false,
+  );
 
   return {
     companionPath: context.companionPath,
     workingRepo,
     protectedPatterns: configuredProtectedPatterns(capabilities),
     hostOf,
+    checkoutOf,
+    gitAutoMode,
   };
 }

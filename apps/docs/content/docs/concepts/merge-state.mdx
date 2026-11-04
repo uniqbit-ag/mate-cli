@@ -1,0 +1,66 @@
+---
+title: Merge State
+description: How Mate learns that a delivery branch is merged, from the forge, from your local Git checkout, or from you.
+---
+
+Mate publishes an archived change only after its delivery branch is merged. It
+learns the merge state in this order, during `mate artifact link --refresh`,
+`mate artifact archive`, and publication, and never while Studio renders:
+
+1. **The forge**, when `MATE_GIT_TOKEN` is set and the repository is on
+   github.com. It is exact and adds the PR link. See [Forge Token](/docs/concepts/forge-token).
+2. **Your local checkout** of the repository, the Working Repository or a
+   linked one. It needs no token and works on any host.
+3. **You**: Mate asks whether the branch is **merged**, **not yet merged**, or
+   **dropped**, and records your answer with source `user`.
+
+A direct delivery always skips to you, because Git cannot tell its commits from
+your other pushes.
+
+## What Git Settles
+
+| Merge style               | Result                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| Merge commit              | Recorded as merged, source `git`                                                                 |
+| Squash merge              | Suggested: the matching commit on the default branch is shown, and you confirm (`likely-merged`) |
+| Rebase merge              | Suggested, as for a squash                                                                       |
+| Fast-forward              | Suggested, as for a squash (style `fast-forward`)                                                |
+| Not on the default branch | Asked, with the time of your last fetch (`not-on-default`)                                       |
+
+Git cannot tell an open branch from a dropped one, so those are always your
+answer. Nor can it tell a fast-forward from a branch that has no commits of its
+own yet (its work still uncommitted): both point at a commit on the default
+branch, so only a merge commit is recorded without asking you. A squash or
+rebase is matched by patch identity, which is strong evidence but not proof, so
+Mate never records it on its own.
+
+`delivery.yaml` keeps the branch's last known head commit (`head`). When the
+branch is deleted after its merge, Mate still checks that commit.
+
+## Fetching
+
+Git can only see what your checkout already knows about `origin`.
+
+- With the companion's **Git mode `auto`**, Mate fetches the default branch
+  and the delivery branch before it checks.
+- With **Git mode `default`**, Mate never fetches on its own. It reports when
+  you last fetched; pass `--fetch` to `mate artifact link --refresh` or
+  `mate artifact archive` to fetch once. The publish skill offers this and runs
+  it only after you agree.
+
+A fetch requests only those two branches, without tags or submodules, never
+prompts, and gives up after 20 seconds. A failed fetch never fails the command:
+Mate checks your local refs and tells you the fetch failed.
+
+## Safety
+
+- Mate starts only `git`. It never runs the GitHub CLI or `security`, never
+  calls a credential helper itself, and never reads a key or credential file.
+- The local checks run with `GIT_NO_LAZY_FETCH=1`, so even a partial clone
+  cannot reach the network. In a partial clone, squash and rebase matching is
+  skipped and Mate asks instead.
+- A fetch uses your own remote, SSH, and credential configuration unchanged,
+  exactly like a `git pull` you run yourself. Over HTTPS, your configured
+  credential helper may run, as it does for any fetch; Mate never sees the
+  credential. If you want Mate to make no network call at all, keep Git mode
+  `default` and don't pass `--fetch`.

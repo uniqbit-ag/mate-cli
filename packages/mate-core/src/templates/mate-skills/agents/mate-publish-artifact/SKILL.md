@@ -103,7 +103,7 @@ A drifted spec is published in its own right. It is never shipped by republishin
 
    - **`unlinked`** (no branch recorded) → read `mate artifact link "<anchor>" --json`; report its `diagnostics`. Suggest the first existing branch of its non-null `defaultBranch` (normally `workset/<workset-id>`) then legacy `change/<name>`, checking local and `origin` refs with `git rev-parse --verify --quiet`. Never reconstruct a suppressed Workset candidate. Ask which branch delivered the change and record the confirmed answer: `mate artifact link "<anchor>" --branch "<branch>" --json`, or `--not-applicable "<reason>"` for a specification-only change. A protected branch is recorded only with `--direct` after explicit confirmation. A user who does not know leaves it waiting. Membership changes never relink recorded delivery; preserve its branch and report any mismatch.
    - **A scoped repository in `delivery.missing`** → ask the same question for that repository and record it with `--repository "<org/repo>"`: `mate artifact link "<anchor>" --repository "<org/repo>" --branch "<branch>" --json`, or `--not-applicable "<reason>"`.
-   - **A recorded branch** → ask the forge once for all archives on it:
+   - **A recorded branch** → ask the forge and local Git once for all archives on it. With `MATE_GIT_TOKEN` the forge answers first; otherwise Mate checks the repository's local checkout (`source: git` when the branch head is on the default branch). Mate starts only `git` and reads no credential; in the companion's Git mode `auto` it fetches first:
 
      ```bash
      mate artifact link "<anchor>" "<anchor>" --refresh --json
@@ -112,6 +112,8 @@ A drifted spec is published in its own right. It is never shipped by republishin
      Each element's `outcomes` says what is now known. An outcome with `needsAnswer: true` needs the user, by `answerReason`:
 
      - `no-token`, `unsupported-host`, `forge-failure`, `no-pr` → ask the **merge question** below. For `forge-failure` relay `failure.message`; it names the missing read permission when there is one.
+     - `likely-merged` → local Git found the branch's changes on the default branch only by patch identity (a `squash` or `rebase` merge), or found its head on the default branch's own line (`fast-forward`, which a branch whose work was never committed looks like too). That is evidence, not proof. Name `suggestion.style` and the short `suggestion.commit`, then ask the **merge question** with **merged** preselected; record it only after the user confirms.
+     - `not-on-default` → the branch head is not on the default branch as of the last fetch. When the outcome has no `fetch` field (Mate did not fetch), show `fetchedAt` (or "never fetched") and offer one fetch first; only after the user agrees, re-run `mate artifact link "<anchor>" "<anchor>" --refresh --fetch --json` and use its outcomes. Otherwise, or when the user declines, ask the **merge question**.
      - `ambiguous` → list every candidate PR (number, state, URL) and ask which one delivers the change, then re-run with `--pr "<url>" --refresh`. Never pick one.
      - `direct` → a direct delivery is never settled automatically: Git cannot tell this change's commits from the user's other pushes. Ask the **direct-delivery question** below.
 
@@ -129,7 +131,9 @@ A drifted spec is published in its own right. It is never shipped by republishin
 
    Every answer is recorded with source `user`. For **dropped**, offer to restore the change's archive and its canonical spec edits with Git (they are still uncommitted): name the exact paths from `uncommittedPaths` and `uncommittedSpecs`, and run the restore only after the user says yes.
 
-   **Token hint.** When at least one merge question was asked because no token was available (`answerReason: no-token`), show this once in the run, after the questions, and never when the forge answered everything:
+   An outcome whose `fetch.ok` is `false` used local refs only: relay `fetch.message` once per repository.
+
+   **Token hint.** When at least one merge question was asked because neither the forge nor a local checkout could check the branch (`answerReason` `no-token`, `unsupported-host`, or `forge-failure`), show this once in the run, after the questions, and never when the forge or local Git answered everything:
 
    > Set `MATE_GIT_TOKEN` (read-only: Pull requests and Metadata) to answer this automatically. See the Mate docs page "Forge token".
 

@@ -17,6 +17,7 @@ import { resolveDeliveryEnvironment, type DeliveryEnvironmentDeps } from "./envi
 import {
   commandOutput,
   renderDelivery,
+  renderOutcome,
   sharedRefusalMessage,
   unscopedDeliveryWarning,
 } from "./output";
@@ -27,7 +28,7 @@ export interface ArchiveCommandDeps
   stderr?: (line: string) => void;
 }
 
-const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["json", "direct", "skip-branch"]);
+const BOOLEAN_FLAGS: BooleanFlagSet = new Set(["json", "direct", "skip-branch", "fetch"]);
 
 function refusalMessage(refusal: DeliveryRefusal): string {
   if (refusal.reason === "unknown-change") {
@@ -41,6 +42,7 @@ function renderHuman(result: ArchiveResult): string[] {
   return [
     result.message,
     ...result.record.deliveries.map(renderDelivery),
+    ...result.outcomes.flatMap(renderOutcome),
     `  delivery: ${result.settlement.status}`,
   ];
 }
@@ -49,8 +51,8 @@ function renderHuman(result: ArchiveResult): string[] {
  * @command mate artifact archive <change>
  * @description Archives an active change whether or not its delivery is merged, so a
  * feature's later changes build on its canonical specs. Writes overlap, dependency, and
- * incomplete-planning warnings to stderr before archiving, refreshes merge state from the forge when a token
- * is available, always leaves a `delivery.yaml` (unlinked when none was recorded), then
+ * incomplete-planning warnings to stderr before archiving, refreshes merge state from the
+ * forge when a token is available and from a local checkout otherwise, always leaves a `delivery.yaml` (unlinked when none was recorded), then
  * runs `openspec archive` with the bundled CLI. Merge state is reported, never a refusal.
  * @flags
  * - `--repository <org/repo>` — the delivery `--branch` or `--not-applicable` records; defaults
@@ -58,6 +60,8 @@ function renderHuman(result: ArchiveResult): string[] {
  * - `--branch <branch>` / `--direct` — record the delivery branch first, as `artifact link`.
  * - `--not-applicable <reason>` — record that no branch delivers this change.
  * - `--skip-branch` — archive with an unlinked record when the user skips the question.
+ * - `--fetch` — fetch the default and delivery branches before the merge check even when the
+ *   companion's Git mode is not `auto`.
  * - `--json` — emit an {@link ArchiveResult}.
  * @remarks Without a recorded delivery and none of the branch flags, nothing is archived:
  * the result is `needs-branch`, a question rather than a refusal (exit 0), with
@@ -100,6 +104,7 @@ export async function runArtifactArchiveCommand(
       ...(repository ? { repository } : {}),
       ...(delivery ? { delivery } : {}),
       skipBranch: skip,
+      fetch: flags.fetch === true,
     },
     {
       ...deps,

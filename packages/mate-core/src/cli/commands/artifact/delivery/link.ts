@@ -19,6 +19,7 @@ import { resolveDeliveryEnvironment, type DeliveryEnvironmentDeps } from "./envi
 import {
   commandOutput,
   renderDelivery,
+  renderOutcome,
   sharedRefusalMessage,
   unscopedDeliveryWarning,
 } from "./output";
@@ -31,6 +32,7 @@ export interface LinkCommandDeps extends DeliveryEnvironmentDeps, RecordDelivery
 const BOOLEAN_FLAGS: BooleanFlagSet = new Set([
   "json",
   "refresh",
+  "fetch",
   "direct",
   "confirm-merged",
   "confirm-open",
@@ -59,13 +61,7 @@ function renderHuman(result: LinkResult): string[] {
   for (const repository of result.settlement.missing) {
     lines.push(`  ${repository}: no delivery recorded (named in the change's scopes)`);
   }
-  for (const outcome of result.outcomes.filter((entry) => entry.needsAnswer)) {
-    lines.push(`  ${outcome.branch}: needs an answer (${outcome.answerReason})`);
-    if (outcome.failure) lines.push(`    ${outcome.failure.message}`);
-    for (const candidate of outcome.candidates ?? []) {
-      lines.push(`    #${candidate.number} ${candidate.state}  ${candidate.url}`);
-    }
-  }
+  for (const outcome of result.outcomes) lines.push(...renderOutcome(outcome));
   return lines;
 }
 
@@ -74,22 +70,26 @@ function renderHuman(result: LinkResult): string[] {
  * @description Writes a change's Delivery Record (`delivery.yaml`), with `artifact archive`
  * the only writer of that file, for active and archived changes. Records the delivery branch or a
  * not-applicable reason per Working Repository, an informational PR URL, merge results
- * from the forge (`--refresh`), or the user's answer (`--confirm-*`, source `user`).
+ * from the forge or a local checkout (`--refresh`), or the user's answer (`--confirm-*`,
+ * source `user`).
  * @flags
  * - `--repository <org/repo>` — the delivery to edit; defaults to the Working Repository.
  * - `--branch <branch>` — record the delivery branch; a protected branch needs `--direct`.
  * - `--direct` — with `--branch`, record a direct delivery, settled only by the user's answer; required for a protected branch.
  * - `--not-applicable <reason>` — no branch delivers this change in the repository.
  * - `--pr <url>` — record the PR URL; with `--refresh`, picks that PR among several.
- * - `--refresh` — ask the forge for the merge state of each recorded branch; a direct delivery
- *   is reported as needing the user's answer.
+ * - `--refresh` — ask the forge (with `MATE_GIT_TOKEN`), then a local checkout, for the merge
+ *   state of each recorded branch; a direct delivery is reported as needing the user's answer.
+ * - `--fetch` — with `--refresh`, fetch the default and delivery branches first even when the
+ *   companion's Git mode is not `auto`.
  * - `--confirm-merged` / `--confirm-open` / `--confirm-dropped` — the user's answer.
  * - `--json` — emit an array of {@link LinkResult}, one per change.
  * @remarks Warns, without blocking, about each `dependsOn` change that is neither archived nor
  * fully implemented, since apply records the branch before writing code. Without an edit flag or `--refresh` it only reads the record and writes nothing.
- * Network requests go only to the forge API: with `--refresh`, and with `--branch` for
- * another repository's default branch. The forge token is never
- * printed, logged, or written.
+ * Network requests go only to the forge API, with `--refresh` and with `--branch` for
+ * another repository's default branch, and to `origin` through `git fetch` with `--refresh`
+ * in Git mode `auto` or with `--fetch`. Only `git` is started; no credential is read. The
+ * forge token is never printed, logged, or written.
  */
 export async function runArtifactLinkCommand(
   argv: string[],
@@ -106,6 +106,9 @@ export async function runArtifactLinkCommand(
   const confirmations = Object.keys(CONFIRMATIONS).filter((flag) => flags[flag] === true);
 
   if (changes.length === 0) return refuse("mate: artifact link requires a change name.");
+  if (flags.fetch === true && flags.refresh !== true) {
+    return refuse("mate: --fetch needs --refresh.");
+  }
   if (branch !== undefined && notApplicable !== undefined) {
     return refuse("mate: --branch and --not-applicable exclude each other.");
   }
@@ -135,6 +138,7 @@ export async function runArtifactLinkCommand(
         ...(confirm ? { confirm } : {}),
       },
       refresh: flags.refresh === true,
+      fetch: flags.fetch === true,
       includeArchived: true,
     },
     deps,

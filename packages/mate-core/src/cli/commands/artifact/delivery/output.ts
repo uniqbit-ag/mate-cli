@@ -1,4 +1,5 @@
 import type { Delivery, UnscopedDelivery } from "../../../../lib/delivery/record";
+import type { BranchOutcome } from "../../../../lib/delivery/refresh";
 import type { DeliveryRefusal } from "../../../../lib/delivery/record-delivery";
 
 export interface CommandOutput {
@@ -35,6 +36,33 @@ export function renderDelivery(delivery: Delivery): string {
     : "no merge recorded";
   const pr = delivery.pr ? `  ${delivery.pr}` : "";
   return `  ${delivery.repository}  ${branch}  ${merge}${pr}`;
+}
+
+/** Lines for a refresh outcome that needs an answer or carries a failed fetch. */
+export function renderOutcome(outcome: BranchOutcome): string[] {
+  const lines: string[] = [];
+  if (outcome.fetch && !outcome.fetch.ok) {
+    lines.push(
+      `  ${outcome.branch}: ${outcome.fetch.message ?? "git fetch failed"}; local refs used`,
+    );
+  }
+  if (!outcome.needsAnswer) return lines;
+  if (outcome.answerReason === "likely-merged" && outcome.suggestion) {
+    const { style, commit } = outcome.suggestion;
+    lines.push(
+      `  ${outcome.branch}: likely merged (${style}, ${commit.slice(0, 12)}); needs your confirmation`,
+    );
+  } else if (outcome.answerReason === "not-on-default") {
+    const fetched = outcome.fetchedAt ? `last fetch ${outcome.fetchedAt}` : "never fetched";
+    lines.push(`  ${outcome.branch}: not on the default branch (${fetched}); needs an answer`);
+  } else {
+    lines.push(`  ${outcome.branch}: needs an answer (${outcome.answerReason})`);
+  }
+  if (outcome.failure) lines.push(`    ${outcome.failure.message}`);
+  for (const candidate of outcome.candidates ?? []) {
+    lines.push(`    #${candidate.number} ${candidate.state}  ${candidate.url}`);
+  }
+  return lines;
 }
 
 /** Wording for the refusals `link` and `archive` share; `unknown-change` names each command. */

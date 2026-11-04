@@ -8,20 +8,21 @@ forge token lets it read that merge state from GitHub instead of asking you.
 
 ## It Is Optional
 
-Without a token, nothing breaks. When publishing (or linking or archiving) needs
-a merge state, Mate asks whether the branch is **merged**, **not yet merged**, or
-**dropped**, and records your answer with source `user`. The publish skill
-reminds you once per run that a token would answer this for you.
+Without a token, nothing breaks. Mate checks your local Git checkout instead,
+and asks you whatever Git cannot settle; see [Merge State](/docs/concepts/merge-state).
+The publish skill reminds you once per run that a token would help when neither
+the forge nor a local checkout could check a branch.
 
 ## Where Mate Looks
 
-1. `MATE_GIT_TOKEN`
-2. `gh auth token`, when the GitHub CLI is installed and signed in
+Only in `MATE_GIT_TOKEN`. Mate never runs the GitHub CLI and never reads a stored
+credential such as your keychain or a Git credential helper; endpoint security
+tools report that as a credential access attempt. Without `MATE_GIT_TOKEN`, Mate
+asks, even when the GitHub CLI is signed in.
 
 Other variables, such as `GITHUB_TOKEN` or `GH_TOKEN`, are ignored on purpose, so a
-broadly scoped CI token is never picked up by accident. Mate removes them before it
-runs `gh auth token`, so the GitHub CLI reports only its stored login. The token is separate
-from Git transport, so SSH remotes work.
+broadly scoped CI token is never picked up by accident. The token is separate from
+Git transport, so SSH remotes work.
 
 ## Permissions
 

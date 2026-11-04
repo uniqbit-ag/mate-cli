@@ -12,8 +12,11 @@ export const DELIVERY_FILE = "delivery.yaml";
 /** A merge result: `open` is "not yet merged", `closed-unmerged` is "dropped". */
 export type MergeState = "merged" | "open" | "closed-unmerged";
 
-/** Where a merge result came from; a user answer is recorded as such, never as forge truth. */
-export type MergeSource = "forge" | "user";
+/**
+ * Where a merge result came from; a user answer is recorded as such, never as forge truth.
+ * `git`: the delivery's head was found on the default branch in a local checkout.
+ */
+export type MergeSource = "forge" | "git" | "user";
 
 /** What the forge reports about a merge, when it reports anything. */
 export interface MergeProvenance {
@@ -48,6 +51,8 @@ export interface Delivery {
   direct?: boolean;
   /** Informational PR URL; the branch, not the PR, is what a change is delivered through. */
   pr?: string;
+  /** The branch's last known tip commit, kept so detection works after the branch is deleted. */
+  head?: string;
   merge?: MergeResult;
   notApplicable?: string;
 }
@@ -156,6 +161,7 @@ export function upsertDelivery(
       delete next.merge;
       next.pr = patch.pr;
     }
+    if (patch.head !== undefined) next.head = patch.head;
     if (patch.merge !== undefined) next.merge = patch.merge;
     if (next.direct === false) delete next.direct;
   }
@@ -218,7 +224,9 @@ function optionalString(value: unknown, file: string, field: string): string | u
 }
 
 const MERGE_STATES: readonly MergeState[] = ["merged", "open", "closed-unmerged"];
-const MERGE_SOURCES: readonly MergeSource[] = ["forge", "user"];
+const MERGE_SOURCES: readonly MergeSource[] = ["forge", "git", "user"];
+/** A full SHA-1 or SHA-256 object name. */
+const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 function parseMerge(value: unknown, file: string): MergeResult | undefined {
   if (value === undefined || value === null) return undefined;
@@ -254,6 +262,11 @@ function parseDelivery(value: unknown, file: string): Delivery {
   if (branch !== undefined) delivery.branch = branch;
   if (entry.direct === true) delivery.direct = true;
   if (pr !== undefined) delivery.pr = pr;
+  const head = optionalString(entry.head, file, "head");
+  if (head !== undefined) {
+    if (!COMMIT_ID.test(head)) throw malformed(file, "head must be a full commit id");
+    delivery.head = head;
+  }
   const merge = parseMerge(entry.merge, file);
   if (merge) delivery.merge = merge;
   if (notApplicable !== undefined) delivery.notApplicable = notApplicable;

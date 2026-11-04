@@ -62,7 +62,8 @@ describe("setup compatibilities", () => {
       {
         id: "auto",
         label: "On (auto mode)",
-        description: "Automatically synchronize the companion Git state before agent launches.",
+        description:
+          "Automatically synchronize the companion Git state before agent launches, and fetch delivery branches when checking merge state.",
         defaultSelected: false,
       },
     ]);

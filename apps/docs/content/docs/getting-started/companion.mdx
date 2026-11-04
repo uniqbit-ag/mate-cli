@@ -112,7 +112,7 @@ Setup asks for:
 - **Allowed agents**: Claude Code, OpenCode, or both.
 - **Package managers**: Bun is always included. uv is not a choice of its own: `mate install` installs it only when Graphify is selected, because Graphify installs through `uv tool install`.
 - **Capabilities**: OpenSpec is always included, with Mate's `mate-v1` schema as the companion default; the others are optional, see [Capabilities](/docs/capabilities).
-- **Git mode**: in auto mode, every launch fetches and merges the companion's upstream before syncing its files.
+- **Git mode**: in auto mode, every launch fetches and merges the companion's upstream before syncing its files, and merge checks fetch the delivery branch first (see [Merge State](/docs/concepts/merge-state)).
 
 The same choices are available as flags for scripted setups, see
 [Create Or Reconfigure A Companion](/docs/getting-started/install#create-or-reconfigure-a-companion).

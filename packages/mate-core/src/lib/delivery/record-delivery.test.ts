@@ -537,3 +537,65 @@ describe("recordDelivery requireDelivery", () => {
     expect(await written("x")).toMatchObject({ deliveries: [] });
   });
 });
+
+describe("recordDelivery with a local checkout", () => {
+  const HEAD = "c".repeat(40);
+
+  /** The fake access, plus a checkout whose head is never on main; counts fetches. */
+  function withCheckout() {
+    const { accessFor } = fakeAccess({ [APP]: { noToken: true } });
+    const fetches: string[] = [];
+    const repositoryAccess = (repository: string): RepositoryAccess => ({
+      ...accessFor(repository),
+      local: async () => ({
+        defaultBranch: "main",
+        fetch: async (branch) => {
+          fetches.push(branch);
+          return { ok: true };
+        },
+        git: {
+          isRepository: async () => true,
+          tip: async () => HEAD,
+          hasCommit: async () => true,
+          isAncestor: async () => false,
+          onFirstParent: async () => false,
+          patchMatch: async () => null,
+          lastFetchedAt: async () => null,
+          fetch: async () => ({ ok: true }),
+        },
+      }),
+    });
+    return { repositoryAccess, fetches };
+  }
+
+  test("recording a branch keeps its local head", async () => {
+    const { repositoryAccess } = withCheckout();
+    await recordDelivery(
+      environment(),
+      { changes: ["x"], edit: { delivery: { branch: "change/x", direct: false } } },
+      { now: () => new Date(NOW), repositoryAccess },
+    );
+    expect((await written("x"))?.deliveries[0]).toMatchObject({ branch: "change/x", head: HEAD });
+  });
+
+  test("a refresh fetches with Git mode auto or --fetch, and never otherwise", async () => {
+    const linkedRecord = upsertDelivery(unlinkedRecord("x"), APP, { branch: "change/x" });
+    const cases: Array<[boolean, boolean, string[]]> = [
+      [false, false, []],
+      [true, false, ["change/x"]],
+      [false, true, ["change/x"]],
+    ];
+    for (const [auto, fetch, expected] of cases) {
+      await writeDeliveryRecord(changeDir("x"), linkedRecord);
+      const { repositoryAccess, fetches } = withCheckout();
+      const env = { ...environment(), gitAutoMode: auto };
+      const outcome = await recordDelivery(
+        env,
+        { changes: ["x"], refresh: true, fetch },
+        { now: () => new Date(NOW), repositoryAccess },
+      );
+      expect(fetches).toEqual(expected);
+      expect(results(outcome)[0].outcomes[0]).toMatchObject({ answerReason: "not-on-default" });
+    }
+  });
+});

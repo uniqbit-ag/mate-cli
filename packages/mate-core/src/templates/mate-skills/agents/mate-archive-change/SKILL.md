@@ -42,8 +42,9 @@ merge. Archiving is local and uncommitted; it publishes nothing.
    modifies the same requirement, a declared dependency that is not archived yet, or
    planning artifacts its schema requires that are missing (`incomplete-planning`).
    Warnings never block. Then report the archive `path` and the delivery: each branch
-   with its merge result and source (`forge` or `user`) and PR link, or the
-   not-applicable reason. An open or unknown merge is information, not a failure.
+   with its merge result and source (`forge`, `git`, or `user`) and PR link, or the
+   not-applicable reason. An open or unknown merge is information, not a failure; a
+   `likely-merged` outcome is only a suggestion that publication confirms with the user.
 
 4. **Hand off.**
    End the response with a final `## Next steps` section: numbered required actions in

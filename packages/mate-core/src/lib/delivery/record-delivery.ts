@@ -43,8 +43,13 @@ export interface DeliveryRequest {
    */
   repository?: string;
   edit?: DeliveryEdit;
-  /** Ask the forge for each branch's merge state; a direct delivery needs the user's answer instead. */
+  /**
+   * Ask the forge, then a local checkout, for each branch's merge state; a direct delivery
+   * needs the user's answer instead.
+   */
   refresh?: boolean;
+  /** Fetch before a local check even when the companion's Git mode is not `auto`. */
+  fetch?: boolean;
   /** Refresh every delivery even when `repository` names the one to edit. */
   refreshAll?: boolean;
   /** Archived changes may be edited; otherwise only active ones are found. */
@@ -140,6 +145,8 @@ export async function recordDelivery(
   const refreshAccess: RefreshAccess = {
     now,
     forgeAccess: (repo) => access(repo).forge(),
+    localAccess: async (repo) => (await access(repo).local?.()) ?? null,
+    fetch: request.fetch === true || environment.gitAutoMode === true,
   };
   const cache: RefreshCache = new Map();
   const resolved: Array<DeliveryResult & { dir: string }> = [];
@@ -161,6 +168,12 @@ export async function recordDelivery(
     }
     if (repository && edit.delivery) {
       record = upsertDelivery(record, repository, edit.delivery);
+      // Recording a branch keeps its local tip, so a later deletion cannot hide the merge.
+      if ("branch" in edit.delivery) {
+        const local = await access(repository).local?.();
+        const head = await local?.git.tip(edit.delivery.branch);
+        if (head) record = upsertDelivery(record, repository, { head });
+      }
     }
 
     if (request.requireDelivery && record.deliveries.length === 0) {

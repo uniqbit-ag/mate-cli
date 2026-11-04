@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +14,7 @@ import {
 import type { WorkingRepoGit } from "./branches";
 import type { DeliveryEnvironment } from "./environment";
 import { parseRemote } from "./forge";
+import { mergeGit, spawnProcess, type SpawnProcess } from "./merge-git";
 import { DELIVERY_FILE, unlinkedRecord, upsertDelivery, writeDeliveryRecord } from "./record";
 
 const REPO = "acme/acme-app";
@@ -341,5 +343,113 @@ describe("archiveChange", () => {
         expect.objectContaining({ kind: "incomplete-planning", artifacts: ["design"] }),
       ]);
     });
+  });
+});
+
+describe("archiveChange with a local checkout", () => {
+  const ENV = {
+    ...process.env,
+    GIT_AUTHOR_NAME: "acme",
+    GIT_AUTHOR_EMAIL: "acme@example.com",
+    GIT_COMMITTER_NAME: "acme",
+    GIT_COMMITTER_EMAIL: "acme@example.com",
+  };
+  const git = (cwd: string, ...args: string[]): string =>
+    execFileSync("git", args, { cwd, encoding: "utf8", env: ENV, stdio: "pipe" }).trim();
+
+  test("Git mode auto fetches, settles a merge through git, and starts nothing but git", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "archive-git-"));
+    try {
+      const remote = path.join(root, "remote.git");
+      const clone = path.join(root, "clone");
+      const other = path.join(root, "other");
+      git(root, "init", "-q", "--bare", "-b", "main", remote);
+      git(root, "clone", "-q", remote, clone);
+      git(clone, "switch", "-q", "-c", "main");
+      git(clone, "commit", "-q", "--allow-empty", "-m", "base");
+      git(clone, "push", "-q", "origin", "main");
+      git(clone, "switch", "-q", "-c", "change/x");
+      git(clone, "commit", "-q", "--allow-empty", "-m", "work");
+      git(clone, "push", "-q", "origin", "change/x");
+      const head = git(clone, "rev-parse", "HEAD");
+      // The merge lands on origin only; the checkout learns about it through the fetch.
+      git(root, "clone", "-q", remote, other);
+      git(other, "merge", "-q", "--no-ff", "-m", "Merge change/x", "origin/change/x");
+      git(other, "push", "-q", "origin", "main");
+
+      await writeDeliveryRecord(
+        changeDir("x"),
+        upsertDelivery(unlinkedRecord("x"), REPO, { branch: "change/x" }),
+      );
+      const commands: string[] = [];
+      const recording: SpawnProcess = (command, args, options) => {
+        commands.push(`${command} ${args[0]}`);
+        return spawnProcess(command, args, options);
+      };
+      const env: DeliveryEnvironment = {
+        ...environment(),
+        gitAutoMode: true,
+        checkoutOf: async () => clone,
+      };
+      const result = await archive(
+        {},
+        {
+          openCheckout: (checkout) => ({
+            git: mergeGit(checkout, { env: ENV, spawn: recording }),
+            defaultBranch: async () => "main",
+          }),
+        },
+        env,
+      );
+
+      expect(result.record.deliveries[0]).toMatchObject({
+        head,
+        merge: { state: "merged", source: "git" },
+      });
+      expect(commands).toContain("git fetch");
+      expect(commands.every((command) => command.startsWith("git "))).toBe(true);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a branch without commits of its own is never recorded as merged", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "archive-git-empty-"));
+    try {
+      const remote = path.join(root, "remote.git");
+      const clone = path.join(root, "clone");
+      git(root, "init", "-q", "--bare", "-b", "main", remote);
+      git(root, "clone", "-q", remote, clone);
+      git(clone, "switch", "-q", "-c", "main");
+      git(clone, "commit", "-q", "--allow-empty", "-m", "base");
+      git(clone, "push", "-q", "origin", "main");
+      // The work is still uncommitted, so the branch points at main's tip.
+      git(clone, "switch", "-q", "-c", "change/x");
+
+      await writeDeliveryRecord(
+        changeDir("x"),
+        upsertDelivery(unlinkedRecord("x"), REPO, { branch: "change/x" }),
+      );
+      const env: DeliveryEnvironment = { ...environment(), checkoutOf: async () => clone };
+      const result = await archive(
+        {},
+        {
+          openCheckout: (checkout) => ({
+            git: mergeGit(checkout, { env: ENV }),
+            defaultBranch: async () => "main",
+          }),
+        },
+        env,
+      );
+
+      expect(result.record.deliveries[0].merge).toBeUndefined();
+      expect(result.settlement.status).toBe("waiting");
+      expect(result.outcomes[0]).toMatchObject({
+        answerReason: "likely-merged",
+        suggestion: { style: "fast-forward" },
+      });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });
