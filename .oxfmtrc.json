@@ -17,6 +17,7 @@
     "_artifacts",
     "apps/mate-cli/src/templates",
     "**/*.generated.*",
+    "packages/mate-studio/src/route-tree.gen.ts",
     "packages/mate-core/src/templates/mate-skills/*/*/references/openspec-*.md"
   ]
 }

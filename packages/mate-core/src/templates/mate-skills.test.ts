@@ -132,6 +132,39 @@ async function listSkillNames(root: string): Promise<string[]> {
 }
 
 describe("bundled Mate pre-explore skills", () => {
+  test("show-me reviews an active change's plan, in both trees", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      // oxlint-disable-next-line no-await-in-loop -- two small files
+      const body = await readSkillFrom(root, "mate-show-me");
+      expect(body).toContain("## Reviewing A Proposed Change");
+      expect(body).toContain("review the change");
+      expect(body).toContain("git diff --no-index");
+      expect(body).toContain("columns Area | Task | Done");
+    }
+  });
+
+  test("skills carry no factory text; the factory's harness owns its asking policy", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      for (const name of [
+        "mate-clarify-intent",
+        "mate-explore-change",
+        "mate-apply-change",
+        "mate-propose-change",
+        "mate-interview-me",
+        "mate-grill-me",
+      ]) {
+        // oxlint-disable-next-line no-await-in-loop -- a handful of small files
+        const body = await readSkillFrom(root, name);
+        expect(body).not.toContain("Mate factory");
+        expect(body).not.toContain("ask_human");
+      }
+      await expect(
+        // oxlint-disable-next-line no-await-in-loop -- two small checks
+        fs.access(path.join(root, "mate-propose-change", "references", "factory-run.md")),
+      ).rejects.toThrow();
+    }
+  });
+
   test("keeps shared Mate skills outside capability-specific templates", async () => {
     await expect(
       fs.access(path.join(import.meta.dir, "capabilities", "openspec-cap")),
@@ -1009,19 +1042,24 @@ describe("bundled Delivery Path stage skills", () => {
       );
       expect(source).toContain("**Revise mode**");
       expect(source).toContain("not a Delivery Path stage");
-      expect(source).toContain("never edit product code");
-      expect(source).toContain("only after the user confirms");
-      expect(source).toContain("`/mate-apply-change`");
-      expect(source).toContain("`/mate-archive-change`");
-      expect(source).toContain("Do not invoke them");
-      expect(source).toContain("Never describe a revision or a passing validation as");
+      expect(source).toContain("[references/mate-revise.md](references/mate-revise.md)");
+      expect(source).toContain("Read neither when proposing a new change.");
+      expect(source).not.toContain("**Upgrade a minimal change");
+      const revise = await readReference(root, "mate-propose-change", "mate-revise.md");
+      expect(revise).toContain("[openspec-update-change.md](openspec-update-change.md)");
+      expect(revise).toContain("never edit product code");
+      expect(revise).toContain("only after the user confirms");
+      expect(revise).toContain("`/mate-apply-change <change-name>` to carry the revision");
+      expect(revise).toContain("`/mate-archive-change <change-name>`");
+      expect(revise).toContain("Listing an action never invokes it.");
+      expect(revise).toContain("Never describe a revision or a passing validation as");
     }
   });
 
   test("propose revise mode upgrades a minimal change to mate-v1 and never downgrades", async () => {
     const flat = (source: string) => source.replace(/\s+/g, " ");
     const [claude, agents] = await Promise.all(
-      bothRoots.map((root) => readSkillFrom(root, "mate-propose-change")),
+      bothRoots.map((root) => readReference(root, "mate-propose-change", "mate-revise.md")),
     );
     expect(agents).toBe(claude);
     const source = flat(claude ?? "");
@@ -1035,30 +1073,108 @@ describe("bundled Delivery Path stage skills", () => {
     expect(source).toContain("Never downgrade a `mate-v1` change");
   });
 
+  test("apply keeps the full transport by default and compact apply is opt-in", async () => {
+    const flat = (source: string) => source.replace(/\s+/g, " ");
+    for (const root of bothRoots) {
+      const skill = flat(await readSkillFrom(root, "mate-apply-change"));
+      expect(skill).toContain("Retrieve its instructions the ordinary way.");
+      expect(skill).toContain("Only when the user explicitly asks for compact apply");
+      const reference = flat(
+        await readReference(root, "mate-apply-change", "mate-compact-apply.md"),
+      );
+      for (const phrase of [
+        'mate artifact apply-context "<name>" --json [--since <digest>]',
+        "Every other step, check, and stop of [openspec-apply-change.md](openspec-apply-change.md) still applies.",
+        "not native OpenSpec delta support",
+        "Pass `--since <digest>` only when the complete full envelope with that digest is in this conversation.",
+        "after resume or context compaction",
+        "A digest in a summary is not a baseline.",
+        "read every `contextFiles` path again",
+        '`state: "blocked"` in either envelope stops implementation',
+        "A failing command is a failure, never a cached success",
+        "switch back to the ordinary command",
+      ]) {
+        expect(reference).toContain(phrase);
+      }
+    }
+  });
+
+  test("Delivery Path handoffs end with an ordered Next steps section", async () => {
+    const flat = (source: string) => source.replace(/\s+/g, " ");
+    const closingRule =
+      "End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it.";
+    const stages = {
+      "mate-clarify-intent": ["1. /mate-explore-change"],
+      "mate-explore-change": [
+        "one `/mate-propose-change <slice>` per agreed slice in dependency order",
+        "A slice deferred for later is context above the section, not an action in it.",
+      ],
+      "mate-propose-change": [
+        "then `/mate-apply-change <change-name>` after that review",
+        "Never describe validation as approval.",
+        "list `/mate-propose-change <slice>` per slice in dependency order",
+        "A dependency that is implemented but unarchived does not block apply",
+        "3. After your review: /mate-apply-change acme-queue",
+      ],
+      "mate-apply-change": [
+        "label `/mate-show-me` and `/mate-simplify-code` as optional",
+        "they are not prerequisites for archive",
+        "list `/mate-archive-change <change-name>`",
+        "this order avoids an advisory archive warning; it is not a gate",
+        "implemented but unarchived is no such warning; it only affects archive order",
+      ],
+      "mate-show-me": ["`/mate-simplify-code` above it as optional"],
+      "mate-simplify-code": ["`/mate-show-me` above it as optional"],
+      "mate-archive-change": [
+        "list merging it before `/mate-publish-artifact`",
+        "publication, not archive, waits for the merge",
+        "Never commit, push, open a PR, or merge for the user.",
+      ],
+      "mate-publish-artifact": [
+        "no `Next steps` section, no invented command",
+        "merging `workset/acme-queue` before `/mate-publish-artifact`",
+      ],
+    };
+    for (const [skill, phrases] of Object.entries(stages)) {
+      const [claude, agents] = await Promise.all(
+        bothRoots.map((root) => readSkillFrom(root, skill)),
+      );
+      expect(agents).toBe(claude);
+      const source = flat(claude);
+      expect(source).toContain(closingRule);
+      for (const phrase of phrases) expect(source).toContain(phrase);
+    }
+  });
+
   test("explore and propose share one slicing test, and propose checks it without explore", async () => {
     const slicingTest =
-      "Slicing test: a feature needs slicing when it spans several Areas, several independent behaviours, or more work than one review can hold (roughly more than 10 tasks or 400 changed lines).";
-    const togetherRule =
-      "Several Areas that only work together stay one change with a scope per Area.";
+      "Slicing test: a feature needs slicing when it holds several behaviours that can each ship and be reviewed on their own, or more work than one review can hold (roughly more than 20 tasks or 800 changed lines). Several Areas alone are no reason to slice: they stay one change with a scope per Area.";
     const flat = (source: string) => source.replace(/\s+/g, " ");
     for (const root of bothRoots) {
       const explore = flat(await readSkillFrom(root, "mate-explore-change"));
       const propose = flat(await readSkillFrom(root, "mate-propose-change"));
       expect(explore).toContain(slicingTest);
       expect(propose).toContain(slicingTest);
-      expect(explore).toContain(togetherRule);
-      expect(propose).toContain(togetherRule);
+      expect(explore).not.toContain("only work together");
+      expect(propose).not.toContain("only work together");
+      expect(explore).toContain(
+        "Suggest slices only when the test clearly passes; a borderline case stays one change.",
+      );
       expect(propose).toContain(
         "Public API includes command names, flags, exit codes, JSON output fields, config keys, and exported package symbols.",
       );
       expect(propose).toContain(
-        "When no slices were agreed, apply the slicing test before writing anything.",
+        "When no slices were agreed and no decision to keep one change was made (in exploration or a PRE-EXPLORE HANDOFF), apply the slicing test before writing anything.",
       );
+      expect(propose).toContain("Only when it clearly passes, suggest slices");
       expect(propose).toContain(
         "write no artifact until the user agrees to the slices or keeps one change",
       );
       expect(propose).toContain(
-        "If the slice boundaries are unclear, suggest `/mate-explore-change` instead of guessing slices.",
+        "A borderline case counts as one change: state in one line why, and continue.",
+      );
+      expect(propose).toContain(
+        "If the test clearly passes but the slice boundaries are unclear, suggest `/mate-explore-change` instead of guessing slices.",
       );
     }
   });
@@ -1066,9 +1182,11 @@ describe("bundled Delivery Path stage skills", () => {
   test("apply records the branch and avoids protected branches by default", async () => {
     const source = await readSkill("mate-apply-change");
     expect(source).toContain(
-      'mate artifact link "<change-name>" --branch "change/<change-name>" --json',
+      'mate artifact link "<change-name>" --branch "<defaultBranch>" --json',
     );
-    expect(source).toContain("**Create `change/<change-name>`** (default)");
+    expect(source).toContain("**Create or switch to `defaultBranch`**");
+    expect(source).toContain("`defaultBranch: null` means ask");
+    expect(source).toContain("relinking requires explicit user confirmation");
     expect(source).toContain("only when the user explicitly chooses it");
     expect(source).toContain("--direct");
     expect(source).toContain("git log --oneline HEAD --not --remotes");
@@ -1108,6 +1226,15 @@ describe("bundled Mate publish skill merge hold-back", () => {
     expect(source).toContain("with `—` instead of a number and `waiting for merge`");
     expect(source).toContain("A held-back archive is not selectable, by number or by name");
     expect(source).toContain("publishes it with a warning that its merge was not checked");
+  });
+
+  test("both publish variants preserve delivery and use only safe defaults", async () => {
+    for (const root of [skillsRoot, claudeSkillsRoot]) {
+      const source = await readSkillFrom(root, "mate-publish-artifact");
+      expect(source).toContain("non-null `defaultBranch`");
+      expect(source).toContain("Never reconstruct a suppressed Workset candidate");
+      expect(source).toContain("Membership changes never relink recorded delivery");
+    }
   });
 
   test("never uses --all while an archive is held back", async () => {

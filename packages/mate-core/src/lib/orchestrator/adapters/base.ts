@@ -64,6 +64,47 @@ export function prepareFailure(result: PrepareResult): string {
 }
 
 /**
+ * The Mate variables a session runs with, without the host environment or PATH: the
+ * launcher layers them over its own environment, and a factory AFK turn hands them to
+ * the agent inside a Workset container.
+ */
+export function mateSessionEnvironment(
+  context: Pick<
+    AdapterContext,
+    "repository" | "companionPath" | "capabilities" | "git" | "skipGit" | "allowedAgents"
+  >,
+  wrapperBinPath: string = getWrapperBinPath(),
+): Record<string, string> {
+  const reactDoctorEnabled = context.capabilities.some((c) => c.name === "react-doctor");
+  const projection = context.repository
+    ? projectionEnvironment(
+        buildProjection(context.companionPath, context.repository, wrapperBinPath),
+      )
+    : companionEnvironment(context.companionPath);
+  const env: Record<string, string> = {};
+  for (const [name, value] of Object.entries(projection))
+    if (value !== undefined) env[name] = value;
+  Object.assign(env, {
+    MATE_NAME: FRAMEWORK_NAME,
+    MATE_GRAPHIFY_ENABLED: context.capabilities.some((c) => c.name === "graphify") ? "1" : "0",
+    MATE_OPENSPEC_ENABLED: context.capabilities.some((c) => c.name === "openspec") ? "1" : "0",
+    MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
+    MATE_GIT_AUTO_MODE: context.git === "auto" && !context.skipGit ? "1" : "0",
+    MATE_POLICY_JSON: JSON.stringify({ allowedAgents: context.allowedAgents }),
+  });
+
+  if (!context.repository) {
+    delete env[MATE_ENV.repositoryPath];
+    delete env[MATE_ENV.repositoryId];
+  }
+
+  /** The one field where a launch still narrows the projection rather than materializing it. */
+  if (!reactDoctorEnabled) delete env[MATE_ENV.reactDoctorBinPath];
+
+  return env;
+}
+
+/**
  * `C` is the context one launch carries from `planLaunch` to `run`: returned,
  * never stored, since one adapter instance serves every launch.
  */
@@ -99,32 +140,20 @@ export abstract class LaunchAdapter<C extends AdapterContext = AdapterContext> {
    * Unmanaged Session read the same record, so they cannot disagree.
    */
   environment(context: AdapterContext): NodeJS.ProcessEnv {
-    const reactDoctorEnabled = context.capabilities.some((c) => c.name === "react-doctor");
-    const projection = context.repository
-      ? projectionEnvironment(
-          buildProjection(context.companionPath, context.repository, getWrapperBinPath()),
-        )
-      : companionEnvironment(context.companionPath);
+    const session = mateSessionEnvironment(context);
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      ...projection,
-      MATE_NAME: FRAMEWORK_NAME,
-      PATH: prependPathEntry(process.env.PATH, projection[MATE_ENV.wrapperBinPath] ?? ""),
-      MATE_GRAPHIFY_ENABLED: context.capabilities.some((c) => c.name === "graphify") ? "1" : "0",
-      MATE_OPENSPEC_ENABLED: context.capabilities.some((c) => c.name === "openspec") ? "1" : "0",
-      MATE_REACT_DOCTOR_ENABLED: reactDoctorEnabled ? "1" : "0",
-      MATE_GIT_AUTO_MODE: context.git === "auto" && !context.skipGit ? "1" : "0",
-      MATE_POLICY_JSON: JSON.stringify({ allowedAgents: context.allowedAgents }),
+      ...session,
+      PATH: prependPathEntry(process.env.PATH, session[MATE_ENV.wrapperBinPath] ?? ""),
     };
-
-    if (!context.repository) {
-      delete env[MATE_ENV.repositoryPath];
-      delete env[MATE_ENV.repositoryId];
+    // What the session withholds must not come back from the host environment.
+    for (const name of [
+      MATE_ENV.repositoryPath,
+      MATE_ENV.repositoryId,
+      MATE_ENV.reactDoctorBinPath,
+    ]) {
+      if (!(name in session)) delete env[name];
     }
-
-    /** The one field where a launch still narrows the projection rather than materializing it. */
-    if (!reactDoctorEnabled) delete env[MATE_ENV.reactDoctorBinPath];
-
     return env;
   }
 

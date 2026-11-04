@@ -23,6 +23,7 @@ Explain the current topic visually in a browser-rendered Mate report. Skip the p
 
 - With no argument, review the applied change when the user asks what a change did, or when the conversation is about work in the Working Repository and `git diff` there is not empty; otherwise explain the current topic. When both readings fit, review the change.
 - With an argument naming a spec capability (`$ARGUMENTS`, for example `acme-capability`), explain that capability instead: read its canonical spec under `openspec/specs/` in the Companion Repository and report its purpose, its requirements, and the flow or structure they establish. Name the capability in the report `metadata`, include a `diagram` section, and omit the `diff` section.
+- With an argument naming an active change (a directory under `openspec/changes/` in the Companion Repository, not under `archive/`), review that change's plan instead; see Reviewing A Proposed Change. When the name is both an active change and a capability, review the change.
 - When the named capability has no canonical spec, say so, suggest close capability names from `openspec/specs/`, and write nothing: no report, no file.
 
 ## Mate Workflow
@@ -32,6 +33,7 @@ Explain the current topic visually in a browser-rendered Mate report. Skip the p
 - Code lives in the Working Repository; the Companion Repository holds only artifacts. Run `git diff` in the Working Repository.
 - Never put an absolute local path, home directory, username, machine name, temporary report path, Companion Repository path, or raw path-valued environment variable in the report. Use repository-relative paths or neutral labels such as `Working Repository` and `Companion Repository`.
 - Never commit, push, or create a pull request.
+- When reviewing an applied change and handing off: End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. Mention `/mate-simplify-code` above it as optional; list `/mate-archive-change <change-name>` in it.
 
 ## Browser Report Required
 
@@ -88,6 +90,18 @@ src/
 ```
 
 - Show a whole block in the report when most of it is new, when omitted context would hide ownership or order, or when the user needs a copyable target shape.
+
+## Reviewing A Proposed Change
+
+A proposed change has no code yet; the report shows its plan so a person can review it before apply.
+
+- Read the change's artifacts in the Companion Repository: `proposal.md`, every `specs/<capability>/spec.md` delta, `design.md` when present, and `tasks.md`.
+- Name the change in the report `metadata`.
+- Open with a `text` section stating the change's intent in two or three sentences from the proposal's Why and What Changes.
+- Add one or two `diagram` sections for the flow or structure the design and specs establish, following the rules of Reviewing An Applied Change for what to draw and how to mark it.
+- Add one `diff` section per spec delta: run `git diff --no-index -- openspec/specs/<capability>/spec.md openspec/changes/<change>/specs/<capability>/spec.md` in the Companion Repository and keep its hunks unchanged. When the capability has no canonical spec, diff against `/dev/null`, so every line shows as added. Curate the deltas by size as Curating A Large Diff describes.
+- Add one `table` section with id `tasks` and the columns Area | Task | Done, one row per task in `tasks.md`.
+- Write nothing besides the report document.
 
 ## Reviewing An Applied Change
 

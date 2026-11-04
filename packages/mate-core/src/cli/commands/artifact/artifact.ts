@@ -1,4 +1,5 @@
 import { usage } from "../../usage";
+import { runArtifactApplyContextCommand } from "./apply-context";
 import { runArtifactArchiveCommand } from "./delivery/archive";
 import { runArtifactLinkCommand } from "./delivery/link";
 import { runArtifactPublishCommand } from "./finish";
@@ -37,6 +38,9 @@ export async function runArtifactCommand(
       return;
     case "archive":
       await runArtifactArchiveCommand(argv);
+      return;
+    case "apply-context":
+      await runArtifactApplyContextCommand(argv);
       return;
     default:
       console.error(`Unknown artifact command: ${subcommand ?? ""}`);

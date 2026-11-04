@@ -32,17 +32,25 @@ large for one change is suggested as several.
    another Area's context.
 
 3. **Suggest slicing when the feature is large.** Slicing test: a feature needs
-   slicing when it spans several Areas, several independent behaviours, or more work
-   than one review can hold (roughly more than 10 tasks or 400 changed lines).
-   Several Areas that only work together stay one change with a scope per Area. When
-   the explored direction passes the test, propose slices: one change per slice,
+   slicing when it holds several behaviours that can each ship and be reviewed on
+   their own, or more work than one review can hold (roughly more than 20 tasks or
+   800 changed lines). Several Areas alone are no reason to slice: they stay one
+   change with a scope per Area. Suggest slices only when the test clearly passes; a
+   borderline case stays one change. When the explored direction clearly passes the
+   test, propose slices: one change per slice,
    each reviewable and archivable on its own, in dependency order. Name the
    dependencies between slices; they become `dependsOn` entries when the changes are
    proposed. Several slices may share one delivery branch. Slicing is a suggestion;
    the user decides.
 
-4. **Hand off.** End by naming `/mate-propose-change` as the next step, once per agreed
-   slice. Do not invoke it.
+4. **Hand off.**
+   End the response with a final `## Next steps` section: numbered required actions in
+   execution order, with exact commands and known change names, prerequisites first.
+   Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
+   follows it. Listing an action never invokes it.
+   List `/mate-propose-change <change-name>`, or one `/mate-propose-change <slice>` per
+   agreed slice in dependency order. A slice deferred for later is context above the
+   section, not an action in it.
 
 ## Boundary
 

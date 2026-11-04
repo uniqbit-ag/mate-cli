@@ -401,7 +401,7 @@ withContainer("what the supervisor starts Studio with", () => {
       const recorded = fs.readFileSync(path.join(root, "argv.log"), "utf8");
 
       expect(recorded).toContain(
-        `studio argv: studio serve --port 4097 --host 0.0.0.0 --writable --terminal --detach-timeout 30 --companion ${COMPANION} --no-git\n`,
+        `studio argv: studio serve --port 4097 --host 0.0.0.0 --profile appliance --writable --terminal --detach-timeout 30 --companion ${COMPANION} --no-git\n`,
       );
       expect(recorded).toContain(`studio companion: ${COMPANION}`);
       expect(recorded).toContain(`studio cwd: ${COMPANION}`);
@@ -421,9 +421,10 @@ withContainer("what the supervisor starts Studio with", () => {
 
       await runSupervisor();
 
-      expect(fs.readFileSync(path.join(root, "argv.log"), "utf8")).toContain(
-        "studio audience: ba\n",
-      );
+      const recorded = fs.readFileSync(path.join(root, "argv.log"), "utf8");
+      expect(recorded).toContain("studio audience: ba\n");
+      // An audience never unlocks Engineering.
+      expect(recorded).toMatch(/^studio argv: studio serve .*--profile appliance(?: |$)/m);
     },
     CASE_TIMEOUT,
   );
@@ -452,7 +453,7 @@ withContainer("what the supervisor starts Studio with", () => {
       await runSupervisor();
 
       expect(fs.readFileSync(path.join(root, "argv.log"), "utf8")).toContain(
-        "studio argv: studio serve --port 4097 --host 0.0.0.0\n",
+        "studio argv: studio serve --port 4097 --host 0.0.0.0 --profile appliance\n",
       );
     },
     CASE_TIMEOUT,
@@ -582,6 +583,16 @@ withContainer("the persistent home is reconciled at every start", () => {
 });
 
 describe("the supervisor script itself", () => {
+  test("starts Studio in the appliance's Analysis-only profile, whatever else is configured", () => {
+    const source = fs.readFileSync(ENTRYPOINT, "utf8");
+    const declared = [...source.matchAll(/^STUDIO_ARGS=\((.*)\)$/gm)].map((match) => match[1]);
+    expect(declared).toEqual([
+      'studio serve --port "$MATE_PLAN_STUDIO_PORT" --host "$MATE_PLAN_STUDIO_HOST" --profile appliance',
+    ]);
+    // Later additions never name another profile.
+    expect(source.match(/--profile/g)).toHaveLength(1);
+  });
+
   test("reconciles the home before credentials and the startup plan", () => {
     const source = fs.readFileSync(ENTRYPOINT, "utf8");
     const cleanupAt = source.indexOf(".mate-setup-npmrc.*");

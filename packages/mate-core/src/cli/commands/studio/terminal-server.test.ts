@@ -4,10 +4,18 @@ import { describe, expect, test } from "bun:test";
 
 import { companionDigest } from "./selection";
 import { startStudioServer, type StudioServerDeps } from "./server";
+import type { StudioApp } from "./studio-app";
 import type { TerminalProcess, TerminalSpawnRequest } from "./terminal";
 
 const ACME = "/companions/acme";
 const TOKEN = "k".repeat(43);
+
+/** Studio's application, reduced to answering a document with its page's terminal state. */
+const pageApp: StudioApp = {
+  clientDir: "/nonexistent",
+  fetch: async (request, { context }) =>
+    new Response(JSON.stringify((await context.studio.page(new URL(request.url))).terminal)),
+};
 
 function harness() {
   const spawned: TerminalSpawnRequest[] = [];
@@ -16,7 +24,6 @@ function harness() {
     collectStudioInventory: async () => ({
       companions: [{ path: ACME, health: "ready", pairings: [] }],
     }),
-    renderDocument: (page) => JSON.stringify(page.terminal),
     launchableAgents: async () => ["claude", "opencode"],
     terminal: {
       spawn: (request): TerminalProcess => {
@@ -37,6 +44,7 @@ function harness() {
     writable: true,
     terminal: true,
     token: TOKEN,
+    app: pageApp,
   });
   const origin = `http://localhost:${server.port}`;
   const cookie = `mate_studio_${server.port}=${TOKEN}`;
@@ -165,28 +173,37 @@ describe("terminal endpoint", () => {
         target: { path: ACME, digest: companionDigest(ACME) },
         agents: ["claude", "opencode"],
       });
-      const asset = await fetch(`${h.origin}/studio/terminal/xterm.js`, {
-        headers: { cookie: h.cookie },
-      });
-      expect(asset.status).toBe(200);
+      // The terminal itself is bundled into Studio's application; only its WASM core is served here.
+      for (const [name, type] of [["wterm.wasm", "application/wasm"]]) {
+        // oxlint-disable-next-line no-await-in-loop -- one small local asset
+        const asset = await fetch(`${h.origin}/studio/terminal/${name}`, {
+          headers: { cookie: h.cookie },
+        });
+        expect(asset.status).toBe(200);
+        expect(asset.headers.get("content-type")).toBe(type!);
+        expect(asset.headers.get("x-content-type-options")).toBe("nosniff");
+      }
+      expect(
+        await fetch(`${h.origin}/studio/terminal/wterm.js`, { headers: { cookie: h.cookie } }).then(
+          (r) => r.status,
+        ),
+      ).toBe(404);
+      // The address normalizes to `/package.json`, which only the application answers.
       expect(
         await fetch(`${h.origin}/studio/terminal/../../package.json`, {
           headers: { cookie: h.cookie },
-        }).then((r) => r.status),
-      ).toBe(404);
+        }).then((r) => r.text()),
+      ).not.toContain('"version"');
     } finally {
       await h.server.stop();
     }
     const plain = startStudioServer(
-      {
-        renderDocument: (page) => JSON.stringify(page.terminal),
-        collectStudioInventory: async () => ({ companions: [] }),
-      },
-      {},
+      { collectStudioInventory: async () => ({ companions: [] }) },
+      { app: pageApp },
     );
     try {
       expect(await (await fetch(plain.url)).text()).toBe("null");
-      expect((await fetch(`${plain.url}/studio/terminal/xterm.js`)).status).toBe(404);
+      expect((await fetch(`${plain.url}/studio/terminal/wterm.wasm`)).status).toBe(404);
       expect((await fetch(`${plain.url}/api/terminal/sessions`)).status).toBe(404);
     } finally {
       await plain.stop();

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Studio modes replace roles (breaking)
+
+- Studio's experiences are now the **Engineering** and **Analysis** modes, chosen with the sidebar's **Mode** switch; they replace the Product Engineer and Business Analyst labels. Agent definitions and audience names are unchanged.
+- `mate studio serve --profile standard|appliance` fixes the enabled modes at startup. `standard`, the default and what `mate studio` uses, enables both and lands on Engineering; `appliance` enables only Analysis. The appliance image starts Studio with `--profile appliance`, so its Studio shows Engineering disabled.
+- Addresses carry `studioMode=engineering|analysis`. Bookmarks with the old `role` parameter still open, resolved through the startup profile.
+- **Renamed exports** of `@uniqbit/mate-core/studio`: `StudioRole` → `StudioMode`, `STUDIO_ROLES` → `STUDIO_MODES`, `ROLE_VIEWS` → `MODE_VIEWS`, `switchRole` → `switchMode`, `ROLE_PARAM` → `STUDIO_MODE_PARAM` (with `LEGACY_ROLE_PARAM` for the input-only alias), and the selection's `role` field → `studioMode`. `StudioServices` gains `modePolicy`. No deprecated aliases are kept.
+
 ### Changes are delivered through recorded branches (breaking)
 
 - **Renamed skills:** `mate-artifact-publish` is now `mate-publish-artifact`, and `mate-openspec-backfill` is now `mate-backfill-spec`. The old names are not kept as aliases; run `mate companion update` to deploy the new ones.

@@ -2,10 +2,18 @@ import { createHash } from "node:crypto";
 
 import type { StudioInventory, StudioInventoryCompanion } from "./inventory";
 
-export type StudioView = "dashboard" | "workflow" | "specs" | "skills" | "vault" | "reports";
+export type StudioView =
+  | "dashboard"
+  | "factory"
+  | "workflow"
+  | "specs"
+  | "skills"
+  | "vault"
+  | "reports";
 
 export const STUDIO_VIEWS: readonly StudioView[] = [
   "dashboard",
+  "factory",
   "workflow",
   "specs",
   "skills",
@@ -14,34 +22,71 @@ export const STUDIO_VIEWS: readonly StudioView[] = [
 ];
 
 /** A lens on the views offered, never access control. */
-export type StudioRole = "product-engineer" | "business-analyst";
+export type StudioMode = "engineering" | "analysis";
 
-export const STUDIO_ROLES: readonly StudioRole[] = ["product-engineer", "business-analyst"];
+export const STUDIO_MODES: readonly StudioMode[] = ["engineering", "analysis"];
 
-export const DEFAULT_ROLE: StudioRole = "product-engineer";
-
-/** Views only the role is offered, in navigation order. */
-export const ROLE_VIEWS: Readonly<Record<StudioRole, readonly StudioView[]>> = {
-  "product-engineer": ["dashboard", "workflow", "skills"],
-  // The same `dashboard` id; `Content` renders each role's own Overview.
-  "business-analyst": ["dashboard"],
+/** Views only the mode is offered, in navigation order. */
+export const MODE_VIEWS: Readonly<Record<StudioMode, readonly StudioView[]>> = {
+  engineering: ["dashboard", "factory", "workflow", "skills"],
+  // The same `dashboard` id; `Content` renders each mode's own Overview.
+  analysis: ["dashboard"],
 };
 
-/** Views every role is offered, in navigation order. */
+/** Views every mode is offered, in navigation order. */
 export const SHARED_VIEWS: readonly StudioView[] = ["vault", "specs", "reports"];
 
-/** Where a role lands when its URL names no view, or one it is not offered. */
-export const LANDING_VIEW: Readonly<Record<StudioRole, StudioView>> = {
-  "product-engineer": "dashboard",
-  "business-analyst": "dashboard",
+/** Where a mode lands when its URL names no view, or one it is not offered. */
+export const LANDING_VIEW: Readonly<Record<StudioMode, StudioView>> = {
+  engineering: "dashboard",
+  analysis: "dashboard",
 };
 
-export function viewsFor(role: StudioRole): readonly StudioView[] {
-  return [...ROLE_VIEWS[role], ...SHARED_VIEWS];
+export function viewsFor(mode: StudioMode): readonly StudioView[] {
+  return [...MODE_VIEWS[mode], ...SHARED_VIEWS];
 }
 
+/** How Studio was started; fixed for the server's life, never read from a request. */
+export type StudioProfile = "standard" | "appliance";
+
+export const STUDIO_PROFILES: readonly StudioProfile[] = ["standard", "appliance"];
+
+/** Which modes a profile enables and where it lands. Presentation only, not a security boundary. */
+export interface StudioModePolicy {
+  readonly profile: StudioProfile;
+  readonly enabled: readonly StudioMode[];
+  readonly defaultMode: StudioMode;
+}
+
+const POLICIES: Readonly<Record<StudioProfile, StudioModePolicy>> = {
+  standard: Object.freeze({
+    profile: "standard",
+    enabled: Object.freeze(["engineering", "analysis"] as const),
+    defaultMode: "engineering",
+  }),
+  appliance: Object.freeze({
+    profile: "appliance",
+    enabled: Object.freeze(["analysis"] as const),
+    defaultMode: "analysis",
+  }),
+};
+
+export function modePolicy(profile: StudioProfile = "standard"): StudioModePolicy {
+  return POLICIES[profile];
+}
+
+const STANDARD_POLICY = modePolicy("standard");
+
+/** Old bookmarks' `role` values; read as input only, never written. */
+export const LEGACY_ROLE_MODES: Readonly<Record<string, StudioMode>> = {
+  "product-engineer": "engineering",
+  "business-analyst": "analysis",
+};
+
 export const COMPANION_PARAM = "companion";
-export const ROLE_PARAM = "role";
+export const STUDIO_MODE_PARAM = "studioMode";
+/** Input-only alias of `studioMode`. */
+export const LEGACY_ROLE_PARAM = "role";
 export const VIEW_PARAM = "view";
 export const REFRESH_PARAM = "refresh";
 export const FILE_PARAM = "path";
@@ -51,7 +96,8 @@ export const MODE_PARAM = "mode";
 /** Every URL parameter Studio names; no other module writes one out. */
 export const STUDIO_PARAMS: readonly string[] = [
   COMPANION_PARAM,
-  ROLE_PARAM,
+  STUDIO_MODE_PARAM,
+  LEGACY_ROLE_PARAM,
   VIEW_PARAM,
   REFRESH_PARAM,
   FILE_PARAM,
@@ -69,7 +115,7 @@ const DIGEST_LENGTH = 10;
 
 interface SelectionBase {
   companionDigest: string | null;
-  role: StudioRole;
+  studioMode: StudioMode;
   /** One-shot: only the `refresh` move sets it, and every other move clears it. */
   refresh: boolean;
 }
@@ -120,13 +166,27 @@ export function resolveCompanion(
   );
 }
 
-function readRole(value: string | null): StudioRole {
-  return STUDIO_ROLES.includes(value as StudioRole) ? (value as StudioRole) : DEFAULT_ROLE;
+/**
+ * The mode a request asks for, before the policy: a present `studioMode` wins, even an
+ * unknown one (which asks for none); a known legacy `role` is read only without it.
+ */
+export function requestedMode(params: URLSearchParams): StudioMode | null {
+  const canonical = params.get(STUDIO_MODE_PARAM);
+  if (canonical !== null) {
+    return STUDIO_MODES.includes(canonical as StudioMode) ? (canonical as StudioMode) : null;
+  }
+  const legacy = params.get(LEGACY_ROLE_PARAM) ?? "";
+  return Object.hasOwn(LEGACY_ROLE_MODES, legacy) ? LEGACY_ROLE_MODES[legacy]! : null;
 }
 
-/** A view the role is not offered reads as the role's landing view. */
-function readView(value: string | null, role: StudioRole): StudioView {
-  return viewsFor(role).includes(value as StudioView) ? (value as StudioView) : LANDING_VIEW[role];
+/** A mode asked for that the policy does not enable, or none, is the policy's default. */
+export function effectiveMode(requested: StudioMode | null, policy: StudioModePolicy): StudioMode {
+  return requested && policy.enabled.includes(requested) ? requested : policy.defaultMode;
+}
+
+/** A view the mode is not offered reads as the mode's landing view. */
+function readView(value: string | null, mode: StudioMode): StudioView {
+  return viewsFor(mode).includes(value as StudioView) ? (value as StudioView) : LANDING_VIEW[mode];
 }
 
 function readText(value: string | null): string | null {
@@ -139,17 +199,17 @@ function readDigest(value: string | null): string | null {
   return digest && COMPANION_DIGEST_PATTERN.test(digest) ? digest : null;
 }
 
-function readBase(params: URLSearchParams): SelectionBase {
+function readBase(params: URLSearchParams, policy: StudioModePolicy): SelectionBase {
   return {
     companionDigest: readDigest(params.get(COMPANION_PARAM)),
-    role: readRole(params.get(ROLE_PARAM)),
+    studioMode: effectiveMode(requestedMode(params), policy),
     refresh: params.get(REFRESH_PARAM) === "1",
   };
 }
 
-function readVault(params: URLSearchParams): StudioVaultSelection {
+function readVault(params: URLSearchParams, policy: StudioModePolicy): StudioVaultSelection {
   return {
-    ...readBase(params),
+    ...readBase(params, policy),
     view: "vault",
     openPath: readText(params.get(FILE_PARAM)),
     mode: params.get(MODE_PARAM) === "edit" ? "edit" : "read",
@@ -157,33 +217,45 @@ function readVault(params: URLSearchParams): StudioVaultSelection {
   };
 }
 
-/** Forgiving: parameters the named view does not have are ignored. */
-export function parse(url: URL): StudioSelection {
-  const base = readBase(url.searchParams);
-  const view = readView(url.searchParams.get(VIEW_PARAM), base.role);
-  if (view === "vault") return readVault(url.searchParams);
+/**
+ * Forgiving: parameters the named view does not have are ignored. The policy is the
+ * server's startup profile; no parameter can enable a mode it disables.
+ */
+export function parse(url: URL, policy: StudioModePolicy = STANDARD_POLICY): StudioSelection {
+  const base = readBase(url.searchParams, policy);
+  const view = readView(url.searchParams.get(VIEW_PARAM), base.studioMode);
+  if (view === "vault") return readVault(url.searchParams, policy);
   return { ...base, view };
 }
 
 /** For the `/api/vault/*` routes, which imply the vault view whatever `view` says. */
-export function parseVaultSelection(url: URL): StudioVaultSelection {
-  return readVault(url.searchParams);
+export function parseVaultSelection(
+  url: URL,
+  policy: StudioModePolicy = STANDARD_POLICY,
+): StudioVaultSelection {
+  return readVault(url.searchParams, policy);
 }
 
 /** Drops the vault's target. */
 export function switchView(selection: StudioSelection, view: StudioView): StudioSelection {
-  const base = { companionDigest: selection.companionDigest, role: selection.role, refresh: false };
+  const base = {
+    companionDigest: selection.companionDigest,
+    studioMode: selection.studioMode,
+    refresh: false,
+  };
   if (view === "vault") return { ...base, view, openPath: null, mode: "read", openDir: null };
   return { ...base, view };
 }
 
 /**
- * Keeps the view, and the vault's target with it, when the role is offered the
- * view; otherwise lands on the role's landing view.
+ * Keeps the view, and the vault's target with it, when the mode is offered the
+ * view; otherwise lands on the mode's landing view.
  */
-export function switchRole(selection: StudioSelection, role: StudioRole): StudioSelection {
-  if (viewsFor(role).includes(selection.view)) return { ...selection, role, refresh: false };
-  return switchView({ ...selection, role }, LANDING_VIEW[role]);
+export function switchMode(selection: StudioSelection, studioMode: StudioMode): StudioSelection {
+  if (viewsFor(studioMode).includes(selection.view)) {
+    return { ...selection, studioMode, refresh: false };
+  }
+  return switchView({ ...selection, studioMode }, LANDING_VIEW[studioMode]);
 }
 
 /** Keeps the view and drops the vault's target: it belongs to the companion being left. */
@@ -197,7 +269,7 @@ export function switchCompanion(
 export function openFile(selection: StudioSelection, path: string): StudioVaultSelection {
   return {
     companionDigest: selection.companionDigest,
-    role: selection.role,
+    studioMode: selection.studioMode,
     refresh: false,
     view: "vault",
     openPath: path,
@@ -210,7 +282,7 @@ export function openFile(selection: StudioSelection, path: string): StudioVaultS
 export function openFolder(selection: StudioSelection, dir: string | null): StudioVaultSelection {
   return {
     companionDigest: selection.companionDigest,
-    role: selection.role,
+    studioMode: selection.studioMode,
     refresh: false,
     view: "vault",
     openPath: null,
@@ -228,14 +300,17 @@ export function refresh(selection: StudioSelection): StudioSelection {
   return { ...selection, refresh: true };
 }
 
-/** Omits defaults (the default role, its landing view, an unset target), so URLs stay short. */
+/**
+ * Always carries the effective mode, never a legacy `role`; omits the mode's landing view
+ * and an unset target, so URLs stay short.
+ */
 export function toFields(selection: StudioSelection): SelectionField[] {
   const fields: SelectionField[] = [];
   if (selection.companionDigest) {
     fields.push({ name: COMPANION_PARAM, value: selection.companionDigest });
   }
-  if (selection.role !== DEFAULT_ROLE) fields.push({ name: ROLE_PARAM, value: selection.role });
-  if (selection.view !== LANDING_VIEW[selection.role]) {
+  fields.push({ name: STUDIO_MODE_PARAM, value: selection.studioMode });
+  if (selection.view !== LANDING_VIEW[selection.studioMode]) {
     fields.push({ name: VIEW_PARAM, value: selection.view });
   }
   if (selection.view === "vault") {

@@ -32,7 +32,6 @@ function harness(options: Partial<StudioServerOptions> = {}) {
           { path: BETA, health: "ready", pairings: [] },
         ],
       }),
-      renderDocument: () => "<!doctype html>",
       launchableAgents: async () => ["claude"],
       reports: createReportStore({ root }),
       terminal: {
@@ -269,34 +268,27 @@ describe("report-published events", () => {
       const s = await h.session(ACME);
       const open = async (companion: string) =>
         (
-          await fetch(
-            `${h.origin}/api/vault/changes?companion=${companionDigest(companion)}&scope=reports`,
-            { headers: { cookie: h.cookie } },
-          )
+          await fetch(`${h.origin}/api/events?companion=${companionDigest(companion)}`, {
+            headers: { cookie: h.cookie },
+          })
         ).body!.getReader();
       const acme = await open(ACME);
       const beta = await open(BETA);
       await sleep(50);
       await h.post(s, { title: "Quarterly", html: "x" });
 
-      const received = await read(acme, "report-published");
+      const received = await read(acme, '"type":"reports"');
       const event = JSON.parse(
         received
           .split("\n")
-          .find((l) => l.startsWith("data:"))!
+          .find((l) => l.includes('"type":"reports"'))!
           .slice(5),
       );
-      expect(event).toMatchObject({ type: "report-published", title: "Quarterly" });
-      expect(Object.keys(event).toSorted()).toEqual([
-        "companion",
-        "createdAt",
-        "id",
-        "title",
-        "type",
-      ]);
-      expect(received).not.toContain("vault-tree-changed");
+      expect(event).toMatchObject({ type: "reports", title: "Quarterly" });
+      expect(Object.keys(event).toSorted()).toEqual(["id", "title", "type"]);
+      expect(received).not.toContain(ACME);
 
-      expect(await read(beta, "report-published")).not.toContain("report-published");
+      expect(await read(beta, '"type":"reports"')).not.toContain('"type":"reports"');
       await acme.cancel();
       await beta.cancel();
     } finally {

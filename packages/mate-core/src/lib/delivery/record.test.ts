@@ -7,6 +7,7 @@ import {
   DELIVERY_FILE,
   defaultDeliveryBranch,
   isPublishable,
+  legacyDeliveryBranch,
   readDeliveryRecord,
   readDeliveryState,
   readOrUnlinkedRecord,
@@ -60,8 +61,9 @@ describe("delivery record", () => {
     expect(settleDelivery(unlinkedRecord("x"))).toMatchObject({ status: "unlinked" });
   });
 
-  test("the default branch is change/<change-name>", () => {
-    expect(defaultDeliveryBranch("add-graph")).toBe("change/add-graph");
+  test("the default branch names the Workset; legacy names remain available", () => {
+    expect(defaultDeliveryBranch("acme-fix")).toBe("workset/acme-fix");
+    expect(legacyDeliveryBranch("acme-fix")).toBe("change/acme-fix");
   });
 
   test("several changes sharing a branch each settle from the same merge", () => {

@@ -1,0 +1,109 @@
+# The Mate factory, as one container: Studio plus Sysbox Workset containers,
+# each with its own worktree, Delivery Branch and Docker daemon.
+#
+# For people who work through Studio alone, run the appliance image instead
+# (apps/mate-container/compose.example.yaml); it needs no privileges.
+#
+# The container starts as root and privileged. Its supervisor runs only Sysbox,
+# the inner Docker daemon and the factory broker as root; Studio and every agent
+# session run as uid 10001. The boundary to your machine is the Docker Desktop
+# VM or the host kernel, so run it only where that is acceptable.
+#
+# Studio is guarded by an access token: open the address it prints in the log
+# (`docker compose logs mate`), or pin one in factory.yaml. It still has no user
+# accounts, so publish it on a loopback address as below, or put a reverse
+# proxy with TLS in front of it.
+#
+# Contributors: to run the factory with the Mate on your working tree, use
+# `bun run factory:local` from the repository root. README.md in this
+# directory walks through it.
+
+services:
+  mate:
+    # Follow a channel, or pin the exact version you want to stay on:
+    #   ghcr.io/uniqbit-ag/mate-cli/mate-factory:0.17.0
+    image: ghcr.io/uniqbit-ag/mate-cli/mate-factory:latest
+
+    # Root only to start the factory; the image already starts as root.
+    privileged: true
+
+    volumes:
+      # The Companion Repositories this container serves, writable by uid 10001.
+      - ./companions:/companions
+
+      # Everything an operator supplies arrives at run time; nothing is baked
+      # into the image. Credentials belong here, in a file readable by root
+      # only: Studio reads a copy without the Workset agent credential.
+      - ./factory.yaml:/etc/mate/appliance.yaml:ro
+
+      # The container user's home, so agent logins and session data survive an
+      # image update.
+      - mate-home:/home/mate
+
+      # The inner daemon and Sysbox do not work on the container's overlay
+      # filesystem, and Worksets must survive restarts: all three are volumes.
+      - factory-docker:/var/lib/docker
+      - factory-sysbox:/var/lib/sysbox
+      - factory-state:/var/lib/mate-factory
+
+    ports:
+      # Studio, the only port, on loopback until you have put something in front.
+      - "127.0.0.1:4097:4097"
+
+    environment:
+      MATE_COMPANION: acme
+
+      # The Workset agents' credential is set in Studio's Factory view, under
+      # Agents. For a headless start, supply one of the two here or, better, in
+      # factory.yaml as `claudeCodeOauthToken:` or `anthropicApiKey:`; one set
+      # in Studio takes precedence. It reaches the factory broker only, never
+      # Studio or its own sessions.
+      # CLAUDE_CODE_OAUTH_TOKEN: ...   # from `claude setup-token`
+      # ANTHROPIC_API_KEY: ...
+
+      # The repositories Worksets are cloned from. The companion's linked
+      # paths come from your machine and rarely exist in here.
+      # MATE_FACTORY_REPOSITORIES: https://github.com/acme/web.git
+
+      # Who the factory's commits are by: `Mate factory <factory@mate.invalid>`
+      # unless you name a bot account, which a forge then shows.
+      # MATE_FACTORY_GIT_NAME: acme-mate-bot
+      # MATE_FACTORY_GIT_EMAIL: mate-bot@acme.test
+
+      # How many AFK runs work at once, and each stage's time budget. Workset
+      # containers follow: the parallel runs plus one, kept free for a session.
+      # MATE_FACTORY_PARALLEL_RUNS: "2"
+      # MATE_FACTORY_STAGE_MINUTES: "60"
+
+      # How many of those runs may build (apply) at once; agent stages go ahead
+      # while a build waits for a build slot.
+      # MATE_FACTORY_PARALLEL_BUILDS: "2"
+
+      # Workset containers: minutes idle before one is stopped (0 never), and
+      # each one's limits.
+      # MATE_FACTORY_IDLE_MINUTES: "15"
+      # MATE_FACTORY_WORKSET_MEMORY: 4g   # builds and sessions; swap included
+      # MATE_FACTORY_AGENT_MEMORY: 1536m  # agent stages; at most the above
+      # MATE_FACTORY_WORKSET_PIDS: "1024"
+      # MATE_FACTORY_WORKSET_CPUS: "2"    # unset: no CPU limit
+
+      # Advanced: overrides the container count; at least the parallel runs.
+      # MATE_FACTORY_MAX_WORKSETS: "3"
+
+    # A ceiling for the whole factory: about 1 GB for Studio, the broker and the
+    # inner daemon, plus (builds + 1) times MATE_FACTORY_WORKSET_MEMORY, plus
+    # (parallel runs - builds) times MATE_FACTORY_AGENT_MEMORY. 13g at the
+    # defaults; 8 parallel runs with 2 builds is about 22g.
+    # mem_limit: 13g
+
+    restart: unless-stopped
+
+    # Studio and its sessions stop first, then each Workset container gets 10
+    # seconds, then the broker, the inner daemon and Sysbox.
+    stop_grace_period: 60s
+
+volumes:
+  mate-home:
+  factory-docker:
+  factory-sysbox:
+  factory-state:

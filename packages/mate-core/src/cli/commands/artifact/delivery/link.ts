@@ -142,6 +142,7 @@ export async function runArtifactLinkCommand(
   if ("refusal" in outcome) return refuse(refusalMessage(outcome.refusal));
   const results: LinkResult[] = [];
   for (const result of "results" in outcome ? outcome.results : []) {
+    for (const diagnostic of result.diagnostics) emitErr(`warning: ${diagnostic}`);
     const warnings = await applyWarnings(environment.companionPath, result.change);
     for (const warning of warnings) emitErr(`warning: ${warning.message}`);
     for (const entry of result.settlement.unscoped) {

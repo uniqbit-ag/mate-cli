@@ -8,12 +8,8 @@ name: Verify appliance image
 # It builds the Mate version image-inputs.yaml pins, which a release has
 # already published to npm, so the image under test installs exactly what the
 # next dispatch would.
+# Manual only, to save runner minutes: dispatch it before merging an image change.
 on:
-  pull_request:
-    paths:
-      - "apps/mate-container/**"
-      - ".github/workflows/verify-image.yml"
-      - ".github/workflows/publish-image.yml"
   workflow_dispatch:
 
 permissions:
@@ -46,7 +42,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.4
 
       - name: Install the container app's own dependencies
         working-directory: apps/mate-container

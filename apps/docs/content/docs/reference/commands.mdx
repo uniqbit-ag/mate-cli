@@ -5,16 +5,17 @@ description: Current Mate CLI commands and their execution contexts.
 
 ## Setup And Linking
 
-| Command                         | Context                 | Purpose                                                                    |
-| ------------------------------- | ----------------------- | -------------------------------------------------------------------------- |
-| `mate companion setup`          | Companion root          | Create or reconfigure a companion explicitly.                              |
-| `mate companion link`           | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
-| `mate companion list [--json]`  | Linked context          | List linked repositories.                                                  |
-| `mate companion open`           | Linked context          | Add the working repository and companion to the preferred editor.          |
-| `mate companion tui`            | Linked context, TTY     | Open a shell in the resolved companion.                                    |
-| `mate companion sync`           | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
-| `mate companion update [--yes]` | Linked context          | Regenerate the companion's Mate-managed files with the newest stable Mate. |
-| `mate working cleanup`          | Working repository      | Remove Mate's local integration from a linked working repository.          |
+| Command                              | Context                 | Purpose                                                                    |
+| ------------------------------------ | ----------------------- | -------------------------------------------------------------------------- |
+| `mate companion setup`               | Companion root          | Create or reconfigure a companion explicitly.                              |
+| `mate companion link`                | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
+| `mate companion list [--json]`       | Linked context          | List linked repositories.                                                  |
+| `mate companion open`                | Linked context          | Add the working repository and companion to the preferred editor.          |
+| `mate companion tui`                 | Linked context, TTY     | Open a shell in the resolved companion.                                    |
+| `mate companion sync`                | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
+| `mate companion update [--yes]`      | Linked context          | Regenerate the companion's Mate-managed files with the newest stable Mate. |
+| `mate working cleanup`               | Working repository      | Remove Mate's local integration from a linked working repository.          |
+| `mate working worktree <workset-id>` | Working repository      | Give a Workset its own Git worktree in each of its Working Repositories.   |
 
 `mate companion link` does not accept flags. Its selection and any required
 installation confirmation are interactive. The default workflow is:
@@ -45,6 +46,43 @@ All worktrees of a clone share one Git exclude file. Cleanup in one worktree kee
 any exclude line that another worktree still needs, because that worktree still
 holds a file the line hides, and names it:
 `kept: git-excludes (still needed by <path>)`.
+
+`mate working link --companion <path> --yes` links the working repository it
+runs in to that companion without asking. It is for machine callers, such as a
+container linking its worktree. It writes only the working repository's
+own, locally excluded link and never the companion's registry. The interactive
+`mate companion link` stays the way to link a repository by hand.
+
+`mate working worktree <workset-id>` lets you work on several Worksets in
+parallel. For each Working Repository of the Workset, it creates a Git worktree
+next to the main checkout linked to the companion, at
+`<checkout>.worktrees/<workset-id>`; for a checkout at `~/src/web` that is
+`~/src/web.worktrees/acme-login`. The worktree is on the Workset's Delivery
+Branch `workset/<workset-id>`: the local branch, else a new branch tracking
+`origin/workset/<workset-id>`, else a new branch from `origin/HEAD`. It fetches
+`origin` first and warns when that fails. It checks every repository before it
+creates anything: an unknown Workset, a repository not linked on this machine,
+a branch already checked out elsewhere, or a foreign directory at the target
+path stops the command without changes. Run it again and it reuses the
+worktree.
+
+Each new worktree gets the companion link `mate working link` writes, and the
+install step of its first lockfile: `bun install`, `pnpm install`,
+`yarn install`, or `npm ci`. `--no-install` skips the install. A failed install
+keeps the worktree and exits non-zero. Env files are never read, copied, or
+linked: the command names the ignored `.env` and `.env.*` files of the main
+checkout that the worktree lacks, by path only, so you can provide them
+yourself. Example files such as `.env.example` are not named.
+
+The companion is the one the current checkout is paired with. When it is paired
+with several, pass `--companion <path>`. `--json` prints one object with each
+repository's path, branch, `created` or `reused`, the install command and its
+outcome (`ok`, `failed`, or `skipped`), and the missing env paths.
+
+`mate working worktree prune` removes the worktrees of Done Worksets. It keeps
+and names any worktree with uncommitted changes, untracked files, or commits on
+no remote, and exits 0 either way. It never deletes the branch. It takes
+`--companion <path>` and `--json` as well.
 
 ## Installation And Health
 
@@ -392,14 +430,15 @@ keeps the rest of the graph. A secret never stops the run. See
 
 ## Artifacts And Updates
 
-| Command                                    | Purpose                                                               |
-| ------------------------------------------ | --------------------------------------------------------------------- |
-| `mate artifact pending [--json]`           | List archived changes and drifted specs that are not published yet.   |
-| `mate artifact publish <target> [options]` | Commit, tag, and push one archived change.                            |
-| `mate artifact link <change>... [options]` | Record a change's delivery branch and merge state in `delivery.yaml`. |
-| `mate artifact archive <change> [options]` | Archive a change, before or after its merge, and record its delivery. |
-| `mate update`                              | Upgrade an npm-managed Mate installation and reinstall requirements.  |
-| `mate update --check`                      | Check for an update without installing it.                            |
+| Command                                                          | Purpose                                                               |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `mate artifact pending [--json]`                                 | List archived changes and drifted specs that are not published yet.   |
+| `mate artifact publish <target> [options]`                       | Commit, tag, and push one archived change.                            |
+| `mate artifact link <change>... [options]`                       | Record a change's delivery branch and merge state in `delivery.yaml`. |
+| `mate artifact archive <change> [options]`                       | Archive a change, before or after its merge, and record its delivery. |
+| `mate artifact apply-context <change> --json [--since <digest>]` | Fetch fresh apply instructions as a full or compact envelope.         |
+| `mate update`                                                    | Upgrade an npm-managed Mate installation and reinstall requirements.  |
+| `mate update --check`                                            | Check for an update without installing it.                            |
 
 `mate artifact pending` is read-only. It lists each archived OpenSpec change
 whose files are still uncommitted in the companion, with the canonical specs it
@@ -449,7 +488,11 @@ that file, for active and archived changes. Options:
 - `--confirm-merged`, `--confirm-open`, and `--confirm-dropped` record your own
   answer, with source `user`.
 - `--json` prints one result per named change; several changes on one branch
-  can be linked in one call.
+  can be linked in one call. Each result includes `defaultBranch` (the resolved
+  `workset/<workset-id>` or `null`) and `diagnostics`. A standalone change uses
+  its change name as the implicit Workset id. Diagnostics also go to stderr;
+  ambiguous membership, identity collisions, or invalid records suppress unsafe
+  defaults. Recorded branches remain unchanged when membership changes.
 
 Without an edit option or `--refresh`, `mate artifact link` only reads the
 record and writes nothing. When the change's scopes name repositories, a
@@ -472,6 +515,17 @@ delivery it archives nothing and reports `needs-branch`; answer with
 or `--skip-branch`; add `--repository <org/repo>` when the Working
 Repository has no `origin` remote Mate can read. See [Your First Change](/docs/scenarios/first-change)
 for how the commands fit together.
+
+`mate artifact apply-context` is read-only and opt-in; ordinary apply never
+uses it. Each call fetches fresh `openspec instructions apply --json` for the
+change, resolved the way the wrapped `openspec` resolves it. Without a matching
+`--since`, it returns `{"version": 1, "mode": "full", "digest", "payload"}` with
+the unchanged upstream payload. Given the digest of a full baseline, it returns
+`{"version": 1, "mode": "compact", "digest", "state", "progress", "taskStates"}`,
+where `taskStates` lists every task's `id` and `done` in order. Warnings, a
+blocked state, missing artifacts, or any change to the change's artifacts, edit
+context, or OpenSpec version return the full payload again; a `null` digest
+means compaction is unavailable. Upstream failures exit non-zero.
 
 `mate artifact finish` is the deprecated name of `publish`: it still works but
 prints a warning. Update accepts `--yes` to skip its confirmation prompt.

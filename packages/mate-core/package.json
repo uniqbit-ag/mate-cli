@@ -10,6 +10,7 @@
   },
   "files": [
     "src/",
+    "studio-dist/",
     "wrappers/",
     "claude-plugin/",
     "opencode-plugin/",
@@ -25,13 +26,15 @@
     "./opencode": "./src/opencode/index.ts",
     "./opencode/tui": "./src/opencode/tui.tsx",
     "./tui": "./src/tui.ts",
-    "./brand": "./src/brand/index.ts"
+    "./brand": "./src/brand/index.ts",
+    "./studio": "./src/studio.ts"
   },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
+    "prepack": "bun ../../scripts/studio-app/pack.ts",
     "test": "CI=1 bun ../../test/run-isolated.ts",
     "test:unit": "CI=1 bun ../../test/run-isolated.ts --suite=unit",
     "test:integration": "CI=1 bun ../../test/run-isolated.ts --suite=integration",
@@ -42,24 +45,28 @@
     "format:check": "oxfmt src/ opencode-plugin/ \"!**/*.generated.*\" --check"
   },
   "dependencies": {
+    "@ai-sdk/harness": "1.0.167",
+    "@ai-sdk/harness-claude-code": "1.0.171",
     "@fission-ai/openspec": "1.15.0",
     "@opencode/plugin": "^2.0.23",
     "@secretlint/core": "13.0.7",
     "@secretlint/secretlint-rule-preset-recommend": "13.0.7",
     "@secretlint/types": "13.0.7",
     "@tanstack/highlight": "0.0.10",
+    "@wterm/core": "0.5.7",
     "@xterm/addon-clipboard": "^0.2.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-unicode11": "^0.9.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
-    "hono": "^4.13.5",
+    "ai": "7.0.156",
     "ink": "^7.1.0",
     "marked": "^18.1.1",
     "react": "^19.2.7",
     "react-doctor": "0.9.13",
     "semver": "^7.8.5",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@opentui/core": "^0.5.14",
@@ -89,5 +96,5 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "packageManager": "bun@1.3.14"
+  "packageManager": "bun@1.4.4"
 }

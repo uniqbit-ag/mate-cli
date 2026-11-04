@@ -1,7 +1,20 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { archiveDirOf, parseAnchor, SPECS_RELATIVE_DIR } from "../../../lib/change-layout";
+import {
+  type archiveAnchors,
+  archiveDirOf,
+  parseAnchor,
+  SPECS_RELATIVE_DIR,
+} from "../../../lib/change-layout";
+import { linkedRepositoryIdentities } from "../../../lib/workset/repositories";
+import type { readWorksets, WorksetProblem } from "../../../lib/workset/record";
+import type { WorksetStageId, WorksetTurn } from "../../../lib/workset/stage";
+import {
+  readWorksetStages,
+  type WorksetStageSources,
+  type WorksetWithStage,
+} from "../../../lib/workset/stages";
 import { errorMessage } from "../../../runtime/error-message";
 import { canonicalSpecsFor, discoverArchives } from "../artifact/pending/discovery";
 import { defaultGitOps } from "../artifact/finish/git";
@@ -56,6 +69,21 @@ export interface StudioShippedChange {
   hasProposal: boolean;
 }
 
+/** One Workset card: the record plus its derived stage. */
+export interface StudioWorkset {
+  id: string;
+  title: string;
+  intent: string;
+  repositories: string[];
+  changes: string[];
+  stage: WorksetStageId;
+  stageLabel: string;
+  turn: WorksetTurn;
+  problems: string[];
+  /** When it was started; absent while Later. */
+  queuedAt?: string;
+}
+
 export interface StudioCompanionPayload {
   companionPath: string;
   changes: StudioChange[];
@@ -66,6 +94,11 @@ export interface StudioCompanionPayload {
   skills?: string[];
   skillInventory?: StudioSkillInventory;
   topology: WorkflowTopology | null;
+  worksets: StudioWorkset[];
+  /** `org/repository` identities linked to the companion: what a new Workset may name. */
+  linkedRepositories: string[];
+  /** Records that could not be read, by path and reason. */
+  worksetProblems: WorksetProblem[];
   warnings: string[];
 }
 
@@ -88,6 +121,11 @@ export interface CompanionPayloadDeps {
   /** Porcelain paths with uncommitted changes; throws when status cannot be read. */
   readUncommittedPaths?: (companionPath: string) => Promise<string[]>;
   hasArchivedProposal?: (companionPath: string, anchor: string) => Promise<boolean>;
+  readWorksets?: typeof readWorksets;
+  linkedRepositoryIdentities?: typeof linkedRepositoryIdentities;
+  archiveAnchors?: typeof archiveAnchors;
+  /** Whether an archive's Publication Merge Gate is open: merged, not applicable, or legacy. */
+  archiveMergeSettled?: (companionPath: string, anchor: string) => Promise<boolean>;
 }
 
 function describe(failure: OpenSpecFailure): string {
@@ -132,34 +170,122 @@ function byAnchorDescending(a: StudioShippedChange, b: StudioShippedChange): num
   return a.anchor < b.anchor ? 1 : -1;
 }
 
+/** Committed (published) archives with their parsed anchors, in discovery order. */
+async function committedArchives(
+  companionPath: string,
+  deps: CompanionPayloadDeps,
+): Promise<{ anchor: string; name: string; date: string }[]> {
+  const uncommitted = await (deps.readUncommittedPaths ?? readUncommittedPaths)(companionPath);
+  const archives = await (deps.discoverArchives ?? discoverArchives)(companionPath, uncommitted);
+  return archives.flatMap((archive) => {
+    const anchor = parseAnchor(archive.anchor);
+    if (archive.state !== "committed" || !anchor) return [];
+    return [{ anchor: archive.anchor, name: anchor.name, date: anchor.date }];
+  });
+}
+
 /** Committed archives, newest first. Shares pending's discovery so the two never disagree. */
 async function collectShipped(
   companionPath: string,
   deps: CompanionPayloadDeps,
 ): Promise<StudioShippedChange[]> {
-  const uncommitted = await (deps.readUncommittedPaths ?? readUncommittedPaths)(companionPath);
-  const archives = await (deps.discoverArchives ?? discoverArchives)(companionPath, uncommitted);
   const specsFor = deps.canonicalSpecsFor ?? canonicalSpecsFor;
   const proposalOf = deps.hasArchivedProposal ?? hasArchivedProposal;
   const shipped = await Promise.all(
-    archives.flatMap((archive) => {
-      const anchor = parseAnchor(archive.anchor);
-      if (archive.state !== "committed" || !anchor) return [];
-      return [
-        Promise.all([
-          specsFor(companionPath, archive.anchor),
-          proposalOf(companionPath, archive.anchor),
-        ]).then(([specPaths, hasProposal]) => ({
-          name: anchor.name,
-          anchor: archive.anchor,
-          archivedOn: anchor.date,
-          specs: capabilityIdsOf(specPaths),
-          hasProposal,
-        })),
-      ];
-    }),
+    (await committedArchives(companionPath, deps)).map((archive) =>
+      Promise.all([
+        specsFor(companionPath, archive.anchor),
+        proposalOf(companionPath, archive.anchor),
+      ]).then(([specPaths, hasProposal]) => ({
+        name: archive.name,
+        anchor: archive.anchor,
+        archivedOn: archive.date,
+        specs: capabilityIdsOf(specPaths),
+        hasProposal,
+      })),
+    ),
   );
   return shipped.toSorted(byAnchorDescending);
+}
+
+/** The stage readers a caller overrode; absent ones fall back to lib's defaults. */
+function stageSourceOverrides(
+  deps: CompanionPayloadDeps,
+): Pick<WorksetStageSources, "readWorksets" | "archiveAnchors" | "archiveMergeSettled"> {
+  return {
+    readWorksets: deps.readWorksets,
+    archiveAnchors: deps.archiveAnchors,
+    archiveMergeSettled: deps.archiveMergeSettled,
+  };
+}
+
+/**
+ * A companion's Worksets with their derived stages, read on their own: for callers such as
+ * the factory runner that need stages without assembling the whole payload.
+ */
+export async function readCompanionWorksetStages(
+  companionPath: string,
+  deps: CompanionPayloadDeps = {},
+): Promise<{ worksets: WorksetWithStage[]; problems: WorksetProblem[] }> {
+  return readWorksetStages(companionPath, {
+    activeChanges: async () => {
+      const [list, status] = await Promise.all([
+        (deps.listChanges ?? listChanges)(companionPath),
+        (deps.readAllChangeStatus ?? readAllChangeStatus)(companionPath),
+      ]);
+      if (!list.ok) throw new Error(describe(list.failure));
+      if (!status.ok) throw new Error(describe(status.failure));
+      const artifactsOf = new Map(
+        (status.value.changes ?? []).map((entry) => [entry.changeName, entry.artifacts ?? []]),
+      );
+      return (list.value.changes ?? []).map((change) => ({
+        name: change.name,
+        artifacts: (artifactsOf.get(change.name) ?? []).map((artifact) => ({
+          id: artifact.id,
+          ...(artifact.status === undefined ? {} : { status: artifact.status }),
+        })),
+        ...(change.completedTasks === undefined ? {} : { completedTasks: change.completedTasks }),
+      }));
+    },
+    // As in the payload: unreadable archives count as none published, never as an error.
+    publishedAnchors: async () =>
+      (await committedArchives(companionPath, deps).catch(() => [])).map(
+        (archive) => archive.anchor,
+      ),
+    ...stageSourceOverrides(deps),
+  });
+}
+
+/**
+ * Worksets with their derived stages, from the changes and archives this payload already
+ * collected.
+ */
+async function collectWorksets(
+  companionPath: string,
+  changes: StudioChange[],
+  shipped: StudioShippedChange[],
+  deps: CompanionPayloadDeps,
+): Promise<{ worksets: StudioWorkset[]; problems: WorksetProblem[] }> {
+  const { worksets, problems } = await readWorksetStages(companionPath, {
+    activeChanges: async () => changes,
+    publishedAnchors: async () => shipped.map((change) => change.anchor),
+    ...stageSourceOverrides(deps),
+  });
+  return {
+    worksets: worksets.map(({ record, derived }) => ({
+      id: record.id,
+      title: record.title,
+      intent: record.intent,
+      repositories: record.repositories,
+      changes: record.changes,
+      stage: derived.stage,
+      stageLabel: derived.label,
+      turn: derived.turn,
+      problems: derived.problems,
+      ...(record.queuedAt ? { queuedAt: record.queuedAt } : {}),
+    })),
+    problems,
+  };
 }
 
 /**
@@ -252,11 +378,25 @@ export async function assembleCompanionPayload(
     })),
   );
 
+  const shippedChanges = "changes" in shipped ? shipped.changes : [];
+  const [worksets, linkedRepositories] = await Promise.all([
+    collectWorksets(companionPath, changes, shippedChanges, deps).catch((error: unknown) => {
+      warnings.push(`worksets: ${errorMessage(error)}`);
+      return { worksets: [], problems: [] };
+    }),
+    (deps.linkedRepositoryIdentities ?? linkedRepositoryIdentities)(companionPath).catch(
+      (error: unknown) => {
+        warnings.push(`linked repositories: ${errorMessage(error)}`);
+        return [];
+      },
+    ),
+  ]);
+
   return {
     companionPath,
     changes,
     specs,
-    shipped: "changes" in shipped ? shipped.changes : [],
+    shipped: shippedChanges,
     skills:
       "skills" in skillInventory
         ? [
@@ -270,6 +410,9 @@ export async function assembleCompanionPayload(
     skillInventory:
       "skills" in skillInventory ? skillInventory.skills : { claude: [], opencode: [], agents: [] },
     topology: topology.ok ? topology.value : null,
+    worksets: worksets.worksets,
+    linkedRepositories,
+    worksetProblems: worksets.problems,
     warnings,
   };
 }

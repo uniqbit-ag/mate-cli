@@ -61,7 +61,7 @@ A drifted spec is published in its own right. It is never shipped by republishin
              "deliveries": [
                {
                  "repository": "org/repo",
-                 "branch": "change/acme",
+                 "branch": "workset/acme",
                  "pr": "https://github.com/org/repo/pull/12",
                  "merge": {
                    "state": "merged",
@@ -101,7 +101,7 @@ A drifted spec is published in its own right. It is never shipped by republishin
 
 2. **Settle each held-back archive's delivery, once per branch.** Before presenting anything, work through the pending entries whose `delivery.status` is `waiting`, `unlinked`, or `dropped`. Settle by **branch**, not by archive: group entries by repository and branch so three archives on one feature branch cost one lookup or one question.
 
-   - **`unlinked`** (no branch recorded) → ask which branch delivered the change, suggesting `change/<name>` only when the Working Repository has it locally or as `origin/change/<name>` (`git rev-parse --verify --quiet` on `refs/heads/change/<name>`, then `refs/remotes/origin/change/<name>`), and record the answer for that archive: `mate artifact link "<anchor>" --branch "<branch>" --json`, or `--not-applicable "<reason>"` for a specification-only change. A protected branch is recorded only with `--direct` after the user explicitly confirms a direct delivery. A user who does not know leaves it waiting.
+   - **`unlinked`** (no branch recorded) → read `mate artifact link "<anchor>" --json`; report its `diagnostics`. Suggest the first existing branch of its non-null `defaultBranch` (normally `workset/<workset-id>`) then legacy `change/<name>`, checking local and `origin` refs with `git rev-parse --verify --quiet`. Never reconstruct a suppressed Workset candidate. Ask which branch delivered the change and record the confirmed answer: `mate artifact link "<anchor>" --branch "<branch>" --json`, or `--not-applicable "<reason>"` for a specification-only change. A protected branch is recorded only with `--direct` after explicit confirmation. A user who does not know leaves it waiting. Membership changes never relink recorded delivery; preserve its branch and report any mismatch.
    - **A scoped repository in `delivery.missing`** → ask the same question for that repository and record it with `--repository "<org/repo>"`: `mate artifact link "<anchor>" --repository "<org/repo>" --branch "<branch>" --json`, or `--not-applicable "<reason>"`.
    - **A recorded branch** → ask the forge once for all archives on it:
 
@@ -210,6 +210,8 @@ A drifted spec is published in its own right. It is never shipped by republishin
 
 8. **Report completed, failed, and remaining.** Name every selection in exactly one bucket. If any is unfinished, say so explicitly — never report the selected set as published while one remains. After an `--all` run that halted, report which array elements completed, which failed, and that later ones were never attempted.
 
+   When work remains (an unmerged branch, a conflict, a failed step): End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. For example, merging `workset/acme-queue` before `/mate-publish-artifact`. When everything selected is published and nothing remains, report completion and stop: no `Next steps` section, no invented command.
+
 ## Example output
 
 Rendering of the step 1 payload above. Reproduce this shape; the values come from the JSON, never from memory.
@@ -231,7 +233,7 @@ Rendering of the step 1 payload above. Reproduce this shape; the values come fro
 
 Selecting **1** publishes the archive and `widget-api/spec.md` together — one change, but two paths. Selecting **2**, **3**, or both publishes exactly those specs under one new tag that names them — both together publish as `openspec/specs/<date>-other-api+third-api`. **3** has no provenance and is selectable anyway.
 
-Had a second archive's branch still been open, it would sit in the same table as `| — | \`2026-09-08-acme-two\` | … | \`openspec/2026-09-08-acme-two\` | waiting for merge: \`change/acme-two\` \`https://github.com/org/repo/pull/13\` |`, unnumbered, so the numbers above would not change.
+Had a second archive's branch still been open, it would sit in the same table as `| — | \`2026-09-08-acme-two\` | … | \`openspec/2026-09-08-acme-two\` | waiting for merge: \`workset/acme-two\` \`https://github.com/acme/app/pull/13\` |`, unnumbered, so the numbers above would not change.
 
 When `count` is `0` the **Pending changes** headline stands over a line saying no change is pending, instead of a table; **Drifted specs** is still reported, and a spec selection is still a complete publication.
 

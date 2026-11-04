@@ -11,6 +11,8 @@ import {
   type StudioServerHandle,
   type StudioServerOptions,
 } from "./server";
+import { STUDIO_PROFILES, type StudioProfile } from "./selection";
+import { loadStudioApp, type StudioApp } from "./studio-app";
 import { terminalUnsupportedReason } from "./terminal";
 
 export interface StudioCommandDeps {
@@ -19,10 +21,14 @@ export interface StudioCommandDeps {
   openInBrowser?: (url: string) => Promise<void>;
   collectStudioInventory?: () => Promise<StudioInventory>;
   terminalUnsupportedReason?: () => string | null;
+  /** Studio's built application; `null` keeps the server's own views. */
+  loadStudioApp?: () => Promise<StudioApp | null>;
   env?: NodeJS.ProcessEnv;
   log?: (message: string) => void;
   warn?: (message: string) => void;
 }
+
+const PROFILE_VALUES = STUDIO_PROFILES.join(" or ");
 
 export type StudioServeArgs = StudioServerOptions & { port: number; hostname: string };
 
@@ -111,6 +117,7 @@ export function parseStudioServeArgs(
   let token: string | undefined;
   let publicOrigin: string | undefined;
   let companion: string | undefined;
+  let profile: StudioProfile = "standard";
   let noGit = false;
   const allowedHosts: string[] = [];
   const state: ParseState = { writable: false, terminal: false };
@@ -137,6 +144,16 @@ export function parseStudioServeArgs(
       }
       port = parsed;
       index += portFlag.consumed;
+      continue;
+    }
+    const profileFlag = flagValue(argv, index, "--profile");
+    if (profileFlag) {
+      if ("error" in profileFlag) return { error: `--profile requires a value: ${PROFILE_VALUES}` };
+      if (!STUDIO_PROFILES.includes(profileFlag.value as StudioProfile)) {
+        return { error: `invalid --profile value: ${profileFlag.value} (${PROFILE_VALUES})` };
+      }
+      profile = profileFlag.value as StudioProfile;
+      index += profileFlag.consumed;
       continue;
     }
     const valued = (
@@ -186,6 +203,7 @@ export function parseStudioServeArgs(
     hostname,
     writable: state.writable,
     invocation: "serve",
+    profile,
     ...(state.terminal ? { terminal: true } : {}),
     ...(state.detachMinutes !== undefined ? { detachMinutes: state.detachMinutes } : {}),
     ...(token !== undefined ? { token } : {}),
@@ -242,7 +260,7 @@ export async function runStudioCommand(
 
   let server;
   try {
-    server = start({}, parsed);
+    server = start({}, await withStudioApp(parsed, deps));
   } catch (error) {
     warn(
       `${FRAMEWORK_NAME}: studio could not bind a port: ${
@@ -312,7 +330,7 @@ async function runStudioServeCommand(
   const serve = deps.serveUntilInterrupted ?? serveUntilInterrupted;
   let server: StudioServerHandle;
   try {
-    server = start({}, parsed);
+    server = start({}, await withStudioApp(parsed, deps));
   } catch (error) {
     warn(
       `${FRAMEWORK_NAME}: studio serve could not bind ${parsed.hostname}:${parsed.port}: ${
@@ -326,4 +344,13 @@ async function runStudioServeCommand(
   log(server.address);
   if (parsed.token) log("Access token: the value pinned by --token / MATE_STUDIO_TOKEN.");
   await serve(server);
+}
+
+/** Adds Studio's built application when one is installed; without it the server keeps its own views. */
+async function withStudioApp<T extends StudioServerOptions>(
+  options: T,
+  deps: StudioCommandDeps,
+): Promise<T> {
+  const app = await (deps.loadStudioApp ?? loadStudioApp)();
+  return app ? { ...options, app } : options;
 }

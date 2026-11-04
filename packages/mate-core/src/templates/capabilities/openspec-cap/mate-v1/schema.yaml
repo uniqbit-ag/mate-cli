@@ -1,5 +1,5 @@
 name: mate-v1
-version: 10
+version: 11
 description: Mate's complete OpenSpec workflow - proposal → specs → design → tasks
 artifacts:
   - id: proposal
@@ -22,22 +22,9 @@ artifacts:
       Keep it concise (1-2 pages). Focus on the "why" not the "how" - implementation details belong in design.md.
 
       This is the foundation - specs, design, and tasks all build on this.
-      Read `openspec/mate-conventions.yaml` before writing the artifact and follow its shared scope/frontmatter rules.
+      Read only the `rules` section of `openspec/mate-conventions.yaml`: find the top-level key lines first, never fixed line numbers; if you cannot select a section safely, read the whole file.
 
-      **Obsidian**: Emit this YAML frontmatter at the very top of the file. Replace `<change-name>` with the actual change folder name (e.g. `my-change`):
-
-      ```
-      ---
-      type: change-proposal
-      change: <change-name>
-      schema: mate-v1
-      status: active
-      tags: [openspec/change, openspec/proposal]
-      scopes:
-        - repository: org/repository
-          area: .
-      ---
-      ```
+      **Obsidian**: Start with the template's frontmatter, replacing `<change-name>` with the change folder name and the scope with the real repository/Area pairs.
 
       At the end of the file, add a `## References` section with `[[wiki-links]]` to each spec listed in the Capabilities section:
 
@@ -56,8 +43,7 @@ artifacts:
 
       Create one spec file per capability listed in the proposal's Capabilities section.
 
-      Read `openspec/mate-conventions.yaml` before writing the files. It defines the shared
-      path, scope, frontmatter, delta, canonical-spec, and archive rules for both Mate schemas.
+      Read only the `rules` and `spec_rules` sections of `openspec/mate-conventions.yaml`: find the top-level key lines first, never fixed line numbers; if you cannot select a section safely, read the whole file.
       Specs are always flat at `specs/<capability>/spec.md`; never add an Area folder.
 
       Delta operations use the exact OpenSpec parser headers:
@@ -84,46 +70,15 @@ artifacts:
 
       Common pitfall: Using MODIFIED with partial content loses detail at archive time. If adding new concerns without changing existing behavior, use ADDED instead.
 
-      Example (scope metadata covers `acme` and `packages/api`; every requirement carries an `**Area:**` marker, as always — the first binds both, the second one):
-
-      ```
-      ## ADDED Requirements
-
-      ### Requirement: User can export data
-      The system SHALL allow users to export their data in CSV format.
-      **Area:** `acme`, `packages/api`
-
-      #### Scenario: Successful export
-      - **WHEN** user clicks "Export" button
-      - **THEN** system downloads a CSV file with all user data
-
-      ## REMOVED Requirements
-
-       ### Requirement: Legacy export
-       **Reason**: Replaced by new export system
-       **Migration**: Use new export endpoint at /api/v2/export
-       **Area:** `packages/api`
-      ```
-
       Specs should be testable - each scenario is a potential test case.
 
-      **Obsidian**: Start each spec file with this `mate:delta` comment as its very first line, not YAML frontmatter. Replace `<change-name>`, `<repository>`, `<area>`, and `<capability>` with actual values. Each `scopes` entry MUST preserve its repository/Area pairing:
-
-      ```
-      <!-- mate:delta
-      change: <change-name>
-      capability: <capability>
-      scopes:
-        - repository: org/repository
-          area: .
-      -->
-      ```
+      **Obsidian**: Start each spec file with the template's `<!-- mate:delta` comment as its very first line, not YAML frontmatter, with actual values. Each `scopes` entry MUST preserve its repository/Area pairing.
 
       Between the comment and the first `## ` section, put nothing but blank lines and at most one `# ` title line. OpenSpec skips the comment and the title, but `openspec validate --strict` reports any other text there, because archive drops it, so add no backlink or cross-reference lines.
 
-      Canonical-spec shape, delta-to-canonical projection, and migration rules live in
-      `openspec/mate-conventions.yaml`. Follow that reference when creating or repairing
-      canonical specs; never add a canonical spec to the change's delta directory.
+      Canonical-spec shape, delta-to-canonical projection, and migration rules live in the
+      `canonical_rules` section of `openspec/mate-conventions.yaml`. Read it only when creating or
+      repairing canonical specs; never add a canonical spec to the change's delta directory.
     requires:
       - proposal
   - id: design
@@ -146,23 +101,11 @@ artifacts:
       - **Open Questions**: Outstanding decisions or unknowns to resolve
 
       Focus on architecture and approach, not line-by-line implementation. Reference the proposal for motivation and specs for requirements.
-      Read `openspec/mate-conventions.yaml` before writing the artifact and follow its shared scope/frontmatter rules.
+      Read only the `rules` section of `openspec/mate-conventions.yaml`: find the top-level key lines first, never fixed line numbers; if you cannot select a section safely, read the whole file.
 
       Good design docs explain the "why" behind technical decisions.
 
-      **Obsidian**: Emit this YAML frontmatter at the very top of the file. Replace `<change-name>` with the actual change folder name:
-
-      ```
-      ---
-      type: change-design
-      change: <change-name>
-      schema: mate-v1
-      tags: [openspec/change, openspec/design]
-      scopes:
-        - repository: org/repository
-          area: .
-      ---
-      ```
+      **Obsidian**: Start with the template's frontmatter, replacing `<change-name>` and the scope with real values.
 
       After the file's `#` title, add on the next line: `← [[proposal]]`. Reference relevant spec files inline using `[[specs/<capability>/spec]]` where appropriate.
     requires:
@@ -174,27 +117,14 @@ artifacts:
     instruction: |
       Create the task list that breaks down the implementation work.
 
-      **IMPORTANT: Follow the template below exactly.** The apply phase parses checkbox format to track progress. Tasks not using `- [ ]` won't be tracked.
+      **IMPORTANT: Follow the template's checkbox format exactly.** The apply phase parses it to track progress. Tasks not using `- [ ]` won't be tracked.
 
       Guidelines:
-       - Read `openspec/mate-conventions.yaml` and group tasks by the exact Areas listed in the proposal's `scopes` frontmatter, then by concern within each Area. Use `## <area>` as the top-level heading (for example, `## acme` or `## .`) with numbered sub-sections beneath it.
+      - Read only the `rules`, `skill_tagging`, and `verification` sections of `openspec/mate-conventions.yaml`: find the top-level key lines first, never fixed line numbers; if you cannot select a section safely, read the whole file.
+      - Group tasks by the exact Areas listed in the proposal's `scopes` frontmatter, then by concern within each Area. Use `## <area>` as the top-level heading (for example, `## acme` or `## .`) with numbered sub-sections beneath it.
       - Each task MUST be a checkbox: `- [ ] X.Y Task description`
       - Tasks should be small enough to complete in one session
       - Order tasks by dependency (what must be done first?)
-
-      Example:
-
-      ```
-      ## 1. Setup
-
-      - [ ] 1.1 Create new module structure
-      - [ ] 1.2 Add dependencies to package.json
-
-      ## 2. Core Implementation
-
-      - [ ] 2.1 Implement data export function
-      - [ ] 2.2 Add CSV formatting utilities
-      ```
 
       Reference specs for what needs to be built, design for how to build it. Each task should be verifiable - you know when it's done.
 
@@ -209,19 +139,7 @@ artifacts:
       - Running checks / type checks / lint
       - Trivial utility functions co-located in a component or hook
 
-      **Obsidian**: Emit this YAML frontmatter at the very top of the file. Replace `<change-name>` with the actual change folder name:
-
-      ```
-      ---
-      type: change-tasks
-      change: <change-name>
-      schema: mate-v1
-      tags: [openspec/change, openspec/tasks]
-      scopes:
-        - repository: org/repository
-          area: .
-      ---
-      ```
+      **Obsidian**: Start with the template's frontmatter, replacing `<change-name>` and the scope with real values.
 
       After the file's `#` title, add on the next line: `← [[proposal]] | [[design]]`. At the end of the file, add a `## References` section with `[[wiki-links]]` for each affected spec area:
 
@@ -240,4 +158,4 @@ apply:
   instruction: |
     Read context files and work through pending tasks only within the proposal's affected Areas. Mark complete as you go.
     Pause if you hit blockers or need clarification.
-    Before reporting the change complete, follow the verification rules in `openspec/mate-conventions.yaml`.
+    Before reporting the change complete, follow the verification rules in the `verification` section of `openspec/mate-conventions.yaml`.

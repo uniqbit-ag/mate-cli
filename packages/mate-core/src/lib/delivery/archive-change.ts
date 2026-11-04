@@ -20,6 +20,8 @@ import type { BranchOutcome } from "./refresh";
 export type ArchiveStatus = "archived" | "needs-branch" | "failed";
 
 export interface ArchiveResult {
+  defaultBranch: string | null;
+  diagnostics: string[];
   status: ArchiveStatus;
   change: string;
   /** Companion-relative archive directory, once archived. */
@@ -91,10 +93,12 @@ export async function archiveChange(
   const warnings = [...overlap, ...(planning ? [planning] : [])];
 
   if ("needsBranch" in outcome) {
-    const { record, suggestedBranch } = outcome.needsBranch;
+    const { record, suggestedBranch, defaultBranch, diagnostics } = outcome.needsBranch;
     return {
       result: {
         status: "needs-branch",
+        defaultBranch,
+        diagnostics,
         change,
         path: null,
         record,
@@ -107,7 +111,7 @@ export async function archiveChange(
     };
   }
 
-  const [{ record, settlement, outcomes }] = outcome.results;
+  const [{ record, settlement, outcomes, defaultBranch, diagnostics }] = outcome.results;
   deps.onWarnings?.(warnings, settlement.unscoped);
 
   const run = await runner(["archive", change, "--yes"], { cwd });
@@ -116,6 +120,8 @@ export async function archiveChange(
     return {
       result: {
         status: "failed",
+        defaultBranch,
+        diagnostics,
         change,
         path: null,
         record,
@@ -131,6 +137,8 @@ export async function archiveChange(
   return {
     result: {
       status: "archived",
+      defaultBranch,
+      diagnostics,
       change,
       path: archived?.archived ? companionRelative(environment, archived.dir) : null,
       record,
