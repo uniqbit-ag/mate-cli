@@ -15,7 +15,7 @@ A Mate sidebar for the Git repository open in the window:
 mate vscode setup
 ```
 
-Installs the extension matching your Mate version into VS Code and Cursor. Run it again after `mate update`.
+Installs the extension matching your Mate version into VS Code and Cursor. `mate update` updates an installed extension along with the CLI.
 
 The npm package `@uniqbit/mate-vscode` only carries the VSIX for `mate vscode setup`; it is not meant to be installed directly.
 

@@ -55,7 +55,7 @@ export function usage(): string {
     "   --user <name> --companions-dir <dir> (the appliance's factory broker, run as root)",
     ` ${n} factory attach <workset> --session <id> --companion <path> [--start clarify|explore|continue]`,
     ` ${n} config`,
-    ` ${n} vscode setup [--editor code|cursor] [--vsix <path>]`,
+    ` ${n} vscode setup [--editor code|cursor] [--vsix <path>] [--if-installed]`,
     ` ${n} claude [args...] (after --: --no-git, --companion, --yes no-op)`,
     ` ${n} opencode [args...] (after --: --no-git, --companion, --yes no-op)`,
     ` ${n} cap openspec <subcommand> [args...]`,

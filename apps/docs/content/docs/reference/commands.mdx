@@ -203,15 +203,17 @@ output too and does not change the exit status.
 
 ## Editor Extension
 
-| Command                                                     | Purpose                                             |
-| ----------------------------------------------------------- | --------------------------------------------------- |
-| `mate vscode setup [--editor code\|cursor] [--vsix <path>]` | Install the Mate extension into VS Code and Cursor. |
+| Command                                                                      | Purpose                                             |
+| ---------------------------------------------------------------------------- | --------------------------------------------------- |
+| `mate vscode setup [--editor code\|cursor] [--vsix <path>] [--if-installed]` | Install the Mate extension into VS Code and Cursor. |
 
 `mate vscode setup` downloads `@uniqbit/mate-vscode` at the version of your
 Mate CLI and installs it into every editor whose CLI (`code`, `cursor`) it
 finds. `--editor` installs into one editor only; `--vsix` installs a local
-VSIX file instead of downloading. It needs no linked repository. Run it again
-after `mate update` so the extension matches the CLI.
+VSIX file instead of downloading. `--if-installed` installs only into editors
+that already have the extension, and does nothing when none has it. It needs no
+linked repository. `mate update` runs it with `--if-installed`, so an installed
+extension follows the CLI to the new version.
 
 The extension adds a Mate sidebar for the Git repository open in the window:
 

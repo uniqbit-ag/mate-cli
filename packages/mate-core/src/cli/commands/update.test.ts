@@ -9,6 +9,7 @@ import { runUpdateCommand, updateCommandDeps } from "./update";
 const realCreateProgress = updateCommandDeps.createProgress;
 const realIsNpmManagedInstall = updateCommandDeps.isNpmManagedInstall;
 const realRunPostInstall = updateCommandDeps.runPostInstall;
+const realUpdateEditorExtension = updateCommandDeps.updateEditorExtension;
 
 function captureStderr(): { chunks: string[]; restore: () => void } {
   const chunks: string[] = [];
@@ -63,6 +64,7 @@ beforeEach(() => {
   updateCommandDeps.installLatest = mock(() => ({ status: 0, error: undefined }) as never);
   updateCommandDeps.saveUpdateState = mock(async () => {});
   updateCommandDeps.runPostInstall = mock(() => ({ status: 0, error: undefined }) as never);
+  updateCommandDeps.updateEditorExtension = mock(() => ({ status: 0, error: undefined }) as never);
 });
 
 afterEach(() => {
@@ -206,6 +208,7 @@ describe("runUpdateCommand", () => {
     expect(updateCommandDeps.installLatest).toHaveBeenCalledWith("9.9.9");
     expect(updateCommandDeps.saveUpdateState).toHaveBeenCalledWith("9.9.9");
     expect(updateCommandDeps.runPostInstall).toHaveBeenCalledWith(true);
+    expect(updateCommandDeps.updateEditorExtension).toHaveBeenCalledTimes(1);
     expect(output).toContain("Current version: 1.0.0");
     expect(output).toContain("Latest version: 9.9.9");
     expect(output).toContain("Upgraded to 9.9.9.");
@@ -276,6 +279,49 @@ describe("runUpdateCommand", () => {
     }
 
     expect(spawn).toHaveBeenCalledWith(process.execPath, [entrypoint, "install", "--yes"]);
+  });
+
+  test("updates an installed editor extension through the new entrypoint", () => {
+    const originalEntrypoint = process.argv[1];
+    const originalSpawn = updateCommandDeps.spawnPostInstall;
+    const spawn = mock(() => ({ status: 0, error: undefined }) as never);
+    const entrypoint = "/opt/mate/dist/cli.mjs";
+    process.argv[1] = entrypoint;
+    updateCommandDeps.updateEditorExtension = realUpdateEditorExtension;
+    updateCommandDeps.spawnPostInstall = spawn;
+
+    try {
+      expect(updateCommandDeps.updateEditorExtension()).toMatchObject({ status: 0 });
+    } finally {
+      process.argv[1] = originalEntrypoint;
+      updateCommandDeps.spawnPostInstall = originalSpawn;
+    }
+
+    expect(spawn).toHaveBeenCalledWith(process.execPath, [
+      entrypoint,
+      "vscode",
+      "setup",
+      "--if-installed",
+    ]);
+  });
+
+  test("a failed editor extension update warns but keeps the upgrade a success", async () => {
+    updateCommandDeps.updateEditorExtension = mock(
+      () => ({ status: 1, error: undefined }) as never,
+    );
+    const stderr = captureStderr();
+    const logs = captureLogs();
+
+    try {
+      await runUpdateCommand(["--yes"]);
+    } finally {
+      stderr.restore();
+      logs.restore();
+    }
+
+    expect(logs.chunks.join("\n")).toContain("Upgraded to 9.9.9.");
+    expect(stderr.chunks.join("")).toContain("run `mate vscode setup`");
+    expect(process.exitCode).toBe(0);
   });
 
   test("rejects self-update when the running Mate is not npm-managed", async () => {

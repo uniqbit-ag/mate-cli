@@ -10,11 +10,16 @@ type Editor = (typeof EDITORS)[number];
 
 const EDITOR_NAMES: Record<Editor, string> = { code: "VS Code", cursor: "Cursor" };
 
-const USAGE = `Usage: ${FRAMEWORK_NAME} vscode setup [--editor code|cursor] [--vsix <path>]`;
+/** The id the editors list the installed extension under (`publisher.name` of the VSIX manifest). */
+const EXTENSION_ID = "uniqbit.mate";
+
+const USAGE = `Usage: ${FRAMEWORK_NAME} vscode setup [--editor code|cursor] [--vsix <path>] [--if-installed]`;
 
 interface VscodeSetupArgs {
   editor?: Editor;
   vsix?: string;
+  /** Only editors that already have the extension; none is no error. */
+  ifInstalled?: boolean;
 }
 
 function parseVscodeSetupArgs(argv: string[]): VscodeSetupArgs | { error: string } {
@@ -22,7 +27,9 @@ function parseVscodeSetupArgs(argv: string[]): VscodeSetupArgs | { error: string
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     const [flag, inline] = arg.startsWith("--") && arg.includes("=") ? arg.split(/=(.*)/s) : [arg];
-    if (flag === "--editor" || flag === "--vsix") {
+    if (arg === "--if-installed") {
+      args.ifInstalled = true;
+    } else if (flag === "--editor" || flag === "--vsix") {
       const value = inline ?? argv[++index];
       if (!value) return { error: `${flag} requires a value` };
       if (flag === "--vsix") {
@@ -43,6 +50,8 @@ export interface VscodeSetupDeps {
   resolveEditor: (cli: Editor) => string | null;
   /** Runs `<binary> --install-extension <vsix> --force`; returns the exit status and output. */
   install: (binary: string, vsix: string) => { ok: boolean; output: string };
+  /** `<binary> --list-extensions`; null when it cannot be listed. */
+  installedExtensions: (binary: string) => string[] | null;
   vsix: VsixResolverDeps;
   version: string;
 }
@@ -56,6 +65,10 @@ export const vscodeSetupDeps: VscodeSetupDeps = {
     const output = `${result.stdout ?? ""}${result.stderr ?? ""}${result.error?.message ?? ""}`;
     return { ok: result.status === 0, output: output.trim() };
   },
+  installedExtensions: (binary) => {
+    const result = spawnSync(binary, ["--list-extensions"], { encoding: "utf8", timeout: 30_000 });
+    return result.status === 0 ? result.stdout.split("\n").map((line) => line.trim()) : null;
+  },
   vsix: vsixResolverDeps,
   version: coreVersion,
 };
@@ -66,7 +79,11 @@ function fail(message: string, usage = false): void {
   process.exitCode = 1;
 }
 
-/** `mate vscode setup`: installs the Mate extension into every resolved VS Code and Cursor CLI. */
+/**
+ * `mate vscode setup`: installs the Mate extension into every resolved VS Code
+ * and Cursor CLI; with `--if-installed`, only into those that already have it
+ * (how `mate update` brings the extension to the new version).
+ */
 export async function runVscodeSetupCommand(
   argv: string[],
   deps: VscodeSetupDeps = vscodeSetupDeps,
@@ -78,28 +95,43 @@ export async function runVscodeSetupCommand(
     editor,
     binary: deps.resolveEditor(editor),
   }));
-  const editors = resolved.filter(
+  const found = resolved.filter(
     (entry): entry is { editor: Editor; binary: string } => entry.binary !== null,
   );
-  if (editors.length === 0) {
+  if (parsed.ifInstalled) {
+    const editors = found.filter(({ binary }) =>
+      deps.installedExtensions(binary)?.some((id) => id.toLowerCase() === EXTENSION_ID),
+    );
+    if (editors.length === 0) return;
+    return installInto(editors, parsed.vsix, deps);
+  }
+  if (found.length === 0) {
     const wanted = parsed.editor ? `\`${parsed.editor}\`` : "`code` or `cursor`";
     return fail(
       `no editor CLI found: ${wanted} is not on PATH. In the editor, run "Shell Command: Install '${parsed.editor ?? "code"}' command in PATH", then retry.`,
     );
   }
 
+  for (const { editor, binary } of resolved) {
+    if (binary === null)
+      console.log(`  ${EDITOR_NAMES[editor]}: not found (\`${editor}\` is not on PATH)`);
+  }
+  return installInto(found, parsed.vsix, deps);
+}
+
+async function installInto(
+  editors: Array<{ editor: Editor; binary: string }>,
+  vsixArg: string | undefined,
+  deps: VscodeSetupDeps,
+): Promise<void> {
   let vsix: string;
   try {
-    vsix = await resolveVsix({ vsix: parsed.vsix, version: deps.version }, deps.vsix);
+    vsix = await resolveVsix({ vsix: vsixArg, version: deps.version }, deps.vsix);
   } catch (error) {
     if (error instanceof VsixError) return fail(error.message);
     throw error;
   }
 
-  for (const { editor, binary } of resolved) {
-    if (binary === null)
-      console.log(`  ${EDITOR_NAMES[editor]}: not found (\`${editor}\` is not on PATH)`);
-  }
   let installed = 0;
   for (const { editor, binary } of editors) {
     const result = deps.install(binary, vsix);

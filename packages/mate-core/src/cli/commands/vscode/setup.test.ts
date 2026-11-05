@@ -36,7 +36,11 @@ function vsixDeps(overrides: Partial<VsixResolverDeps> = {}) {
   return { deps, calls };
 }
 
-function setupDeps(binaries: Partial<Record<"code" | "cursor", string>>, ok = true) {
+function setupDeps(
+  binaries: Partial<Record<"code" | "cursor", string>>,
+  ok = true,
+  extensions: Record<string, string[] | null> = {},
+) {
   const installs: string[] = [];
   const { deps: vsix } = vsixDeps({ exists: async () => true });
   const deps: VscodeSetupDeps = {
@@ -45,6 +49,7 @@ function setupDeps(binaries: Partial<Record<"code" | "cursor", string>>, ok = tr
       installs.push(`${binary} ${file}`);
       return { ok, output: ok ? "" : "boom" };
     },
+    installedExtensions: (binary) => extensions[binary] ?? [],
     vsix,
     version: "1.2.3",
   };
@@ -167,5 +172,24 @@ describe("mate vscode setup", () => {
     const result = await run([], { ...deps, version: "0.0.0-acme" });
     expect(result.code).toBe(1);
     expect(result.err).toContain("--vsix");
+  });
+
+  test("--if-installed updates only editors that have the extension", async () => {
+    const { deps, installs } = setupDeps({ code: "/bin/code", cursor: "/bin/cursor" }, true, {
+      "/bin/code": ["acme.other", "Uniqbit.Mate"],
+      "/bin/cursor": ["acme.other"],
+    });
+    const result = await run(["--if-installed"], deps);
+    expect(result.code).toBe(0);
+    expect(installs.map((entry) => entry.split(" ")[0])).toEqual(["/bin/code"]);
+  });
+
+  test("--if-installed without the extension or any editor does nothing", async () => {
+    const none = setupDeps({ code: "/bin/code" }, true, { "/bin/code": null });
+    expect(await run(["--if-installed"], none.deps)).toEqual({ out: "", err: "", code: 0 });
+    expect(none.installs).toEqual([]);
+
+    const noEditor = setupDeps({});
+    expect((await run(["--if-installed"], noEditor.deps)).code).toBe(0);
   });
 });
