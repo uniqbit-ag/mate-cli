@@ -367,6 +367,49 @@ describe("createWorksetWorktrees", () => {
 });
 
 describe("createChangeWorktrees", () => {
+  describe("a companion registry entry naming a removed folder", () => {
+    const stale = () => path.join(root, "src", "web.worktrees", "old");
+
+    function linkStale(): void {
+      fs.writeFileSync(
+        path.join(companion, ".mate", "config", "registry.yaml"),
+        `repos:\n  - id: web\n    path: ${stale()}\n`,
+      );
+    }
+
+    test("uses the current checkout when its repo-local link names the companion", async () => {
+      const web = checkout("web");
+      linkStale();
+      await writeRepoLocalRegistryEntry(web, companion, { id: "web", path: web }, "git");
+      change("acme-fix", "acme/web");
+      const result = await createChangeWorktrees(companion, "acme-fix", options, {
+        cwd: () => web,
+      });
+      const target = path.join(root, "src", "web.worktrees", "acme-fix");
+      expect(result.diagnostics).toEqual([]);
+      expect(result.repositories).toMatchObject([{ repository: "acme/web", path: target }]);
+      const local = fs.readFileSync(path.join(target, ".mate", "config", "registry.yaml"), "utf8");
+      expect(local).toContain("id: web");
+    });
+
+    test("names the missing folder when the current checkout links another companion", async () => {
+      const web = checkout("web");
+      linkStale();
+      const other = path.join(root, "acme-other");
+      fs.mkdirSync(other);
+      await writeRepoLocalRegistryEntry(web, other, { id: "web", path: web }, "git");
+      change("acme-fix", "acme/web");
+      const result = await createChangeWorktrees(companion, "acme-fix", options, {
+        cwd: () => web,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics).toEqual([
+        `acme/web: not linked to ${companion} on this machine (registered path ${stale()} does not exist)`,
+      ]);
+      expect(fs.existsSync(path.join(root, "src", "web.worktrees", "acme-fix"))).toBe(false);
+    });
+  });
+
   test("a change no record lists gets a worktree named after it and writes no record", async () => {
     link(checkout("web"));
     change("acme-fix", "acme/web");

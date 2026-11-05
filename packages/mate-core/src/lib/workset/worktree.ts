@@ -24,6 +24,7 @@ import {
 import { scopedRepositories } from "../openspec-scopes";
 import { attendedLockOptions } from "../orchestrator/companion-git-sync";
 import {
+  findRepoLocalLinkTo,
   readCompanionRegistry,
   writeRepoLocalRegistryEntry,
 } from "../orchestrator/repository-link";
@@ -270,21 +271,34 @@ async function listWorktrees(git: GitRunner, repo: string): Promise<WorktreeEntr
   );
 }
 
-/** The first existing checkout linked to the companion whose `origin` is the repository. */
+interface LinkedLookup {
+  linked: LinkedRepository | null;
+  /** Registered paths that no longer exist. */
+  missing: string[];
+}
+
+/**
+ * The first checkout linked to the companion whose `origin` is the repository: an
+ * existing registered one, else the checkout holding `cwd` when its repo-local link
+ * names the companion, so an entry left naming a removed folder does not hide it.
+ */
 async function linkedCheckout(
   companionPath: string,
   repository: string,
   git: GitRunner,
-): Promise<LinkedRepository | null> {
+  cwd: string,
+): Promise<LinkedLookup> {
   let repos: LinkedRepository[] = [];
   try {
     repos = (await readCompanionRegistry(companionPath)).repos;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+  const present = await Promise.all(repos.map((repo) => exists(repo.path)));
+  const current = await findRepoLocalLinkTo(cwd, companionPath);
+  const candidates = [...repos.filter((_, index) => present[index]), ...(current ? [current] : [])];
   const identities = await Promise.all(
-    repos.map(async (repo) => {
-      if (!(await exists(repo.path))) return null;
+    candidates.map(async (repo) => {
       // Raw config, not `remote get-url`, so `insteadOf` rewrites do not change the identity.
       const remote = await git(repo.path, ["config", "--get", "remote.origin.url"]);
       return remote.code === 0 ? identityOf(remote.stdout.trim()) : null;
@@ -294,7 +308,10 @@ async function linkedCheckout(
   const index = identities.findIndex(
     (identity) => identity?.toLowerCase() === repository.toLowerCase(),
   );
-  return index === -1 ? null : repos[index]!;
+  return {
+    linked: index === -1 ? null : candidates[index]!,
+    missing: repos.filter((_, at) => !present[at]).map((repo) => repo.path),
+  };
 }
 
 interface Plan {
@@ -350,12 +367,13 @@ async function planWorktrees(
   companionPath: string,
   target: Target,
   git: GitRunner,
+  cwd: string,
   ticket?: string,
 ): Promise<{ plans: Plan[]; diagnostics: string[]; warnings: string[] }> {
   const warnings: string[] = [];
   const checked = await Promise.all(
     target.repositories.map((repository) =>
-      planRepository(companionPath, target.id, repository, git, warnings, ticket),
+      planRepository(companionPath, target.id, repository, git, cwd, warnings, ticket),
     ),
   );
   return {
@@ -371,15 +389,19 @@ async function planRepository(
   worksetId: string,
   repository: string,
   git: GitRunner,
+  cwd: string,
   warnings: string[],
   ticket?: string,
 ): Promise<Plan | string[]> {
-  const linked = await linkedCheckout(companionPath, repository, git);
+  const { linked, missing } = await linkedCheckout(companionPath, repository, git, cwd);
   if (!linked) {
     // An identity problem outranks the missing link.
     const identity = await resolveWorksetBranch(companionPath, worksetId, repository);
     if (identity.id === null) return identity.diagnostics.map((line) => `${repository}: ${line}`);
-    return [`${repository}: not linked to ${companionPath} on this machine`];
+    const why = missing.map((entry) => `registered path ${entry} does not exist`).join("; ");
+    return [
+      `${repository}: not linked to ${companionPath} on this machine${why ? ` (${why})` : ""}`,
+    ];
   }
   // Resolved after the fetch, so a branch pushed elsewhere counts as existing.
   const fetched = await fetchOrigin(git, linked.path);
@@ -582,10 +604,12 @@ async function createTargetWorktrees(
   }
   const worksetId = target.id;
   const git = deps.git ?? runGit;
+  const cwd = (deps.cwd ?? process.cwd)();
   const { plans, diagnostics, warnings } = await planWorktrees(
     companionPath,
     target,
     git,
+    cwd,
     options.ticket,
   );
   if (diagnostics.length > 0) {
@@ -770,7 +794,12 @@ async function pruneRepository(
   deps: WorktreeDeps,
   result: PruneResult,
 ): Promise<void> {
-  const linked = await linkedCheckout(companionPath, repository, git);
+  const { linked } = await linkedCheckout(
+    companionPath,
+    repository,
+    git,
+    (deps.cwd ?? process.cwd)(),
+  );
   if (!linked) return;
   const entries = await listWorktrees(git, linked.path);
   const main = entries?.[0];
