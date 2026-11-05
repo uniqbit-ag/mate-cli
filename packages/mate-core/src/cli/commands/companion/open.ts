@@ -6,7 +6,11 @@ import {
   findRepoLocalRegistryFile,
 } from "../../../lib/orchestrator/repository-link";
 import { GlobalConfigStore } from "../../../lib/orchestrator/global-config-store";
-import { openEditorWorkspace, getPreferredEditorCli } from "../../../lib/orchestrator/editor";
+import {
+  editorWorkspacePath,
+  getPreferredEditorCli,
+  openEditorWorkspace,
+} from "../../../lib/orchestrator/editor";
 import { WorkingRepoRequiredError } from "../../../lib/orchestrator/types";
 import { resolveProjection } from "../../../runtime/projection";
 
@@ -50,8 +54,9 @@ function orderCompanionPaths(cwd: string, matches: CompanionMatch[]): string[] {
 /**
  * @command mate companion open
  * @description Merges the active working repository, every Linked Companion,
- * and the worktree-detection settings into `.mate/workspace.code-workspace`,
- * keeping developer edits, then opens that file in the editor.
+ * and the worktree-detection settings into `.mate/<repo>.mate.code-workspace`,
+ * keeping developer edits, then opens that file in the editor. A legacy
+ * `.mate/workspace.code-workspace` is renamed to it once.
  * @remarks Never selects a companion: no picker, no `MATE_ARTIFACT_PATH`
  * narrowing, and the companion recorded at the Projection Root is left as it
  * was. Stale companion pointers are skipped with a stderr warning. Throws
@@ -76,5 +81,6 @@ export async function runWorkspaceOpenCommand(): Promise<void> {
     return;
   }
 
-  console.log("Workspace: opened .mate/workspace.code-workspace in the editor");
+  const documentPath = path.relative(repoPath, editorWorkspacePath(repoPath));
+  console.log(`Workspace: opened ${documentPath} in the editor`);
 }

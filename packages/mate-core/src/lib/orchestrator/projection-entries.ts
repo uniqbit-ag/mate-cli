@@ -85,11 +85,30 @@ import {
 } from "./projection-types";
 import { mergeWorkspaceDocument } from "./workspace-document";
 
-const WORKSPACE_DOCUMENT_FILE = "workspace.code-workspace";
+const WORKSPACE_DOCUMENT_SUFFIX = ".mate.code-workspace";
+/** Pre-rename document name; migrated by the `workspace-document` entry. */
+const LEGACY_WORKSPACE_DOCUMENT_FILE = "workspace.code-workspace";
 
-/** The shared editor workspace document, inside the Projection Root. */
+/**
+ * The shared editor workspace document, inside the Projection Root. Named after
+ * the repo root so the editor's window title (`<repo>.mate (Workspace)`) tells
+ * repositories and worktrees apart.
+ */
 export function workspaceDocumentPath(repoPath: string): string {
-  return path.join(repoLocalDirPath(repoPath), WORKSPACE_DOCUMENT_FILE);
+  const name = path.basename(path.resolve(repoPath)) + WORKSPACE_DOCUMENT_SUFFIX;
+  return path.join(repoLocalDirPath(repoPath), name);
+}
+
+/** Renames the legacy document to the named one when only the legacy file exists. */
+async function migrateLegacyWorkspaceDocument(repoPath: string, target: string): Promise<void> {
+  const legacy = path.join(repoLocalDirPath(repoPath), LEGACY_WORKSPACE_DOCUMENT_FILE);
+  if ((await pathExists(target)) || !(await pathExists(legacy))) return;
+  try {
+    await fs.rename(legacy, target);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`could not rename ${legacy} to ${target}: ${reason}`, { cause: error });
+  }
 }
 
 async function pathExists(candidatePath: string): Promise<boolean> {
@@ -415,13 +434,15 @@ function buildEntries(): readonly ProjectionEntry[] {
     {
       id: "workspace-document",
       kind: "owned",
-      path: path.join(localDir, WORKSPACE_DOCUMENT_FILE),
+      // Report label only: the real name depends on the repo root, see `present`.
+      path: path.join(localDir, `<repo>${WORKSPACE_DOCUMENT_SUFFIX}`),
       scopes: ["workspace"],
       write: async (input) => {
         const companionPaths =
           input.workspaceCompanionPaths ?? (input.companionPath ? [input.companionPath] : []);
         if (companionPaths.length === 0) return "skipped";
         const target = workspaceDocumentPath(input.repoPath);
+        await migrateLegacyWorkspaceDocument(input.repoPath, target);
         const existing = await fs.readFile(target, "utf8").catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT") return null;
           throw error;
@@ -438,6 +459,7 @@ function buildEntries(): readonly ProjectionEntry[] {
         return "written";
       },
       removal: { by: "entry", entry: "projection-root" },
+      present: (repoPath) => pathExists(workspaceDocumentPath(repoPath)),
     },
     /**
      * Last: the documents an Agent Runtime discovers on its own. One declaration

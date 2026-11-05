@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { FRAMEWORK_NAME } from "../../framework";
 import * as editor from "./editor";
 
 afterEach(() => {
@@ -119,14 +120,16 @@ describe("editor helpers", () => {
         await editor.openEditorWorkspace([companionPath], repoPath, "code", spawnProcess),
       ).toBe(true);
 
-      expect(JSON.parse(await fs.readFile(editor.editorWorkspacePath(repoPath), "utf8"))).toEqual({
+      const workspacePath = path.join(repoPath, `.${FRAMEWORK_NAME}`, "repo.mate.code-workspace");
+      expect(editor.editorWorkspacePath(repoPath)).toBe(workspacePath);
+      expect(JSON.parse(await fs.readFile(workspacePath, "utf8"))).toEqual({
         folders: [{ path: repoPath }, { path: companionPath }],
         settings: managedSettings,
       });
       expect(spawnCalls).toEqual([
         {
           command: "/usr/bin/code",
-          args: [editor.editorWorkspacePath(repoPath)],
+          args: [workspacePath],
           options: { stdio: "ignore", detached: true },
         },
       ]);

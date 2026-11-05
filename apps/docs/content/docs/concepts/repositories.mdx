@@ -114,13 +114,22 @@ window, run:
 mate companion open
 ```
 
-The command opens `.mate/workspace.code-workspace`, a multi-root workspace
-holding the working repository and every linked companion. Mate only adds
+The command opens `.mate/<repo>.mate.code-workspace`, a multi-root workspace
+holding the working repository and every linked companion. `<repo>` is the
+name of the working repository's folder, so the editor titles the window
+`<repo>.mate (Workspace)` and each repository or worktree is easy to tell
+apart. Mate only adds
 what is missing: folders you add in the editor, your settings, and comments
 are kept. It also sets `git.detectWorktrees` and
 `scm.alwaysShowRepositories` to `true` unless you set them yourself, so Git
 worktrees of the working repository show in Source Control. If the file
 cannot be parsed, Mate leaves it unchanged, warns, and exits non-zero.
+
+Older Mate versions wrote `.mate/workspace.code-workspace`. The next
+`mate companion open` renames that file to the new name and keeps its
+contents; if both files exist, Mate uses the new one and leaves the old one
+alone. An editor window that still has the old file open reports it as
+missing after the rename: close it and run `mate companion open` again.
 
 `mate companion tui` opens a shell rooted in the companion and exports
 `MATE_ARTIFACT_PATH` for the shell session.
