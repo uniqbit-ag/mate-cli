@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Worktrees share their clone's Repository Link (breaking)
+
+- A companion lists a clone once. The first time Mate runs in another checkout of a linked clone (a new `git worktree`, `claude --worktree`, a T3 Code thread), it adopts it: the checkout gets its own `.mate/` link with the clone's repository ID, its own projection, and the wraps of the clone's Registered Checkout. Managed launches, `mate wrap`, `mate session prepare` and the session-prepare hook of plain `claude` all adopt. A `.mate/` folder copied from another checkout is ignored.
+- **Merged entries:** the first registry write after upgrading merges the entries of worktrees you linked by hand into their clone's entry (the main worktree's, or for a bare clone the first listed). Those worktrees then see the kept ID in `MATE_REPO_ID`, and the Graphify graph stored under their old ID is no longer used; a notice names both.
+- Plain `claude` in a new linked worktree borrows the main worktree's projection until the worktree is adopted, so its first session already has the artifact guard and the companion guidance. Plain `opencode` there does not; run `mate opencode` or `mate wrap` once.
+- The main worktree's Claude wrap serves its linked worktrees, since Claude Code reads its `.claude/settings.local.json` there too. `mate claude` and `mate wrap` in a worktree wrap the main worktree for Claude first, and the worktree's own settings leave out the hook groups the main worktree's carry, so each hook runs once. Worktrees of a bare clone and worktrees on Windows keep their own wrap only.
+- The upward search for a link stops at a linked worktree's root, so a nested worktree such as `.claude/worktrees/<name>` no longer resolves the main worktree's `.mate/`.
+- Hooks take the session's folder from the hook input's `cwd`, then `CLAUDE_PROJECT_DIR`. Inside `mate claude`, a session that moves into another checkout of the clone (`EnterWorktree`, a subagent with worktree isolation) has the guard and the instructions follow that checkout.
+- `mate companion link` in a worktree attaches it to its clone's entry and names the kept ID. `mate working cleanup` matches a worktree by its clone, cleans up only that worktree, and says Mate adopts it again; `mate unwrap` there says the next `mate session prepare` wraps it again.
+- `mate doctor` shows a Checkout section (`checkout` in `--json`): the checkout's role, the Registered Checkout, the checkout whose Claude wrap serves it, a worktree its clone no longer recognizes (with `git worktree repair`), and a warning when plain `claude` there would reach no session-prepare hook.
+
 ### Mate skills stay out of the companion's Git
 
 - Mate's own skill copies in `.claude/skills/` and `.agents/skills/` are now local files, regenerated on every sync. The companion's managed `.gitignore` block lists each one by exact name, so a skill of your own, even one named `mate-acme`, stays tracked.

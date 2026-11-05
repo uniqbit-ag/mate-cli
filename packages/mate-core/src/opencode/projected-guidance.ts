@@ -41,7 +41,8 @@ export function resolveOpenCodeGuidance(
   }
 
   const projection = resolveProjection(cwd);
-  if (!projection) return { guidance: null, errors: [] };
+  // Plain `opencode` in a worktree Mate never ran in stays out of scope.
+  if (!projection || projection.borrowedFrom) return { guidance: null, errors: [] };
 
   const policy = readCompanionPolicy(projection.companionPath);
   const guidance = buildOpenCodeGuidance(

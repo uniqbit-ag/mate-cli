@@ -5,6 +5,8 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../../framework";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import { getClaudePluginRoot } from "../../../lib/package-paths";
+import { otherServingClaudeWrapRoot } from "../../../runtime/serving-claude-wrap";
+import { NOT_WRAPPED, readWrapStateSync, type WrapState } from "../../../runtime/wrap-state";
 import { writeAtomicThroughLink } from "../../../runtime/write-atomic";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 import {
@@ -381,11 +383,14 @@ function claudeSettingsRegions(
     Notification: mateAttentionHookGroups(),
   };
   const events = [...new Set([...Object.keys(mateHooks), ...Object.keys(capabilityHooks)])];
+  const served = servingWrapState(repoRoot);
   return [
     ...events.map((event): ManagedRegion => ({
       at: ["hooks", event],
       kind: "list",
-      values: [...(mateHooks[event] ?? []), ...(capabilityHooks[event] ?? [])],
+      values: [...(mateHooks[event] ?? []), ...(capabilityHooks[event] ?? [])].filter(
+        (group) => !served.carriesClaudeHookGroup(group as ClaudeHookGroup),
+      ),
     })),
     /**
      * `stripPrefix` heals a repository an older Mate wrapped. That version wrote
@@ -441,6 +446,17 @@ function claudeSettingsRegions(
           } satisfies ManagedRegion,
         ]),
   ];
+}
+
+/**
+ * The wrap state of the Checkout serving `repoRoot`, when that is another
+ * Checkout (design Decisions 1 and 12): Claude Code loads both settings files
+ * there, so a group either one carries runs once only when the Checkout's own
+ * leaves it out.
+ */
+function servingWrapState(repoRoot: string): WrapState {
+  const serving = otherServingClaudeWrapRoot(repoRoot);
+  return serving ? readWrapStateSync(serving) : NOT_WRAPPED;
 }
 
 /**

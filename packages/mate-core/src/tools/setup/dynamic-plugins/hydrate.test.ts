@@ -2,7 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+
+import { CompanionResolver } from "../../../lib/orchestrator/repository-link";
 
 import { PluginRegistry } from "../registry";
 import type { Plugin } from "../plugin";
@@ -357,5 +359,21 @@ describe("hydrateDynamicPlugins audiences", () => {
 
     expect(warnings).toEqual([]);
     expect(registry.getAll()).toEqual([]);
+  });
+});
+
+describe("hydrateDynamicPlugins' companion look-up", () => {
+  test("resolves without writing, so a refusing command leaves a new worktree untouched", async () => {
+    const resolve = spyOn(CompanionResolver.prototype, "resolveWithDiagnostics").mockResolvedValue({
+      match: null,
+      ambiguousMatches: [],
+      failures: [],
+    });
+    try {
+      await hydrateDynamicPlugins({ cwd: os.tmpdir(), env: {}, warn: () => {} });
+      expect(resolve).toHaveBeenCalledWith(path.resolve(os.tmpdir()), { write: false });
+    } finally {
+      resolve.mockRestore();
+    }
   });
 });

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { FRAMEWORK_NAME } from "./framework";
 import { physicalPath } from "./physical-path";
 import { policyDocument, readCompanionPolicy } from "./policy";
-import { resolveProjection } from "./projection";
+import { projectionCheckout, resolveProjection } from "./projection";
 
 /** Readers reject any other version, so a changed reply fails closed instead of being misread. */
 export const SESSION_CONTEXT_PROTOCOL = 1;
@@ -78,12 +78,13 @@ export function resolveSessionContext(dir: string): SessionContextResult {
   }
 
   const policy = readCompanionPolicy(companionPath);
+  const checkoutRoot = projectionCheckout(projection);
   return {
     ok: true,
-    checkoutRoot: projection.repoRoot,
+    checkoutRoot,
     context: {
       companionPath,
-      repositoryPath: realDirectory(projection.repoRoot) ?? projection.repoRoot,
+      repositoryPath: realDirectory(checkoutRoot) ?? checkoutRoot,
       repositoryId: projection.repositoryId,
       policyJson: policyDocument(policy),
     },

@@ -866,11 +866,12 @@ describe("wrapping worktrees", () => {
   }, 30000);
 
   test("the guard of a wrapped worktree blocks an artifact write in an unmanaged session", async () => {
-    await wrappedMain();
+    const web = await wrappedMain();
     workset("acme-login", "acme/web");
     await createWorksetWorktrees(companion, "acme-login", options);
+    // Claude Code runs the main worktree's local settings hooks in its linked worktrees.
     const settings = JSON.parse(
-      fs.readFileSync(path.join(target(), ".claude", "settings.local.json"), "utf8"),
+      fs.readFileSync(path.join(web, ".claude", "settings.local.json"), "utf8"),
     ) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
     const guard = settings.hooks.PreToolUse![0]!.hooks[0]!.command;
     const env: Record<string, string | undefined> = { ...process.env };

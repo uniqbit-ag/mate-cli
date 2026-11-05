@@ -130,7 +130,11 @@ export async function collectWorkspaceInventory(
         : "missing-repository";
       return {
         companionPath: scan.companionPath,
-        repository: { id: repo.id, path: repoPath },
+        repository: {
+          id: repo.id,
+          path: repoPath,
+          ...(repo.gitCommonDir ? { gitCommonDir: repo.gitCommonDir } : {}),
+        },
         health,
         ambiguous,
       };

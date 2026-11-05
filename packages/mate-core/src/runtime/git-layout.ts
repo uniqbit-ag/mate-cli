@@ -26,7 +26,7 @@ export interface GitLayout {
   commonDir: string;
 }
 
-function realPath(candidate: string): string {
+export function realPath(candidate: string): string {
   try {
     return fs.realpathSync(candidate);
   } catch {
@@ -42,8 +42,17 @@ function readText(filePath: string): string | null {
   }
 }
 
-function isDirectory(candidate: string): boolean {
-  return fs.statSync(candidate, { throwIfNoEntry: false })?.isDirectory() ?? false;
+/** `stat`, or null for a path that is missing or runs through a file (`ENOTDIR`). */
+function statOf(candidate: string): fs.Stats | null {
+  try {
+    return fs.statSync(candidate);
+  } catch {
+    return null;
+  }
+}
+
+export function isDirectory(candidate: string): boolean {
+  return statOf(candidate)?.isDirectory() ?? false;
 }
 
 /** The folder a `.git` file names, resolved against the file's own folder. */
@@ -61,7 +70,7 @@ function readPathFile(filePath: string, base: string): string | null {
 export function readGitLayout(checkoutPath: string): GitLayout | null {
   /** Real first: a relative `gitdir:` is relative to where `.git` really is. */
   const dotGit = path.join(realPath(checkoutPath), ".git");
-  const stat = fs.statSync(dotGit, { throwIfNoEntry: false });
+  const stat = statOf(dotGit);
   if (stat?.isDirectory()) {
     const gitDir = realPath(dotGit);
     return { kind: "main", gitDir, commonDir: gitDir };
@@ -156,8 +165,10 @@ function configTrue(value: string | undefined): boolean {
  * The worktree whose `.git` is the shared folder itself, else `core.worktree`;
  * none for a bare repository.
  */
-function mainWorktree(commonDir: string): string | null {
-  const core = coreConfig(commonDir);
+function mainWorktree(
+  commonDir: string,
+  core: Map<string, string> = coreConfig(commonDir),
+): string | null {
   if (configTrue(core.get("bare"))) return null;
   const configured = core.get("worktree");
   if (configured) {
@@ -179,11 +190,11 @@ export function gitExcludePath(checkoutPath: string): string | null {
 }
 
 /**
- * Each worktree the shared folder lists whose `.git` file still points back to
- * it, and each locked one: Git keeps a locked worktree registered while its
- * drive is away, and so does this list.
+ * Each record under the shared folder's `worktrees/` whose worktree still
+ * points back to it, or that is locked: Git keeps a locked worktree registered
+ * while its drive is away. Sorted by record name.
  */
-function linkedWorktrees(commonDir: string): string[] {
+function worktreeRecords(commonDir: string): LinkedWorktree[] {
   const adminRoot = path.join(commonDir, "worktrees");
   let names: string[];
   try {
@@ -191,16 +202,19 @@ function linkedWorktrees(commonDir: string): string[] {
   } catch {
     return [];
   }
-  const worktrees: string[] = [];
-  for (const name of names) {
-    const adminDir = path.join(adminRoot, name);
+  return names.flatMap((recordName) => {
+    const adminDir = path.join(adminRoot, recordName);
     const dotGit = readPathFile(path.join(adminDir, "gitdir"), adminDir);
-    if (!dotGit || path.basename(dotGit) !== ".git") continue;
+    if (!dotGit || path.basename(dotGit) !== ".git") return [];
     const checkout = path.dirname(dotGit);
     const live = readGitLayout(checkout)?.gitDir === realPath(adminDir);
-    if (live || fs.existsSync(path.join(adminDir, "locked"))) worktrees.push(realPath(checkout));
-  }
-  return worktrees;
+    if (!live && !fs.existsSync(path.join(adminDir, "locked"))) return [];
+    return [{ recordName, path: realPath(checkout), live }];
+  });
+}
+
+function linkedWorktrees(commonDir: string): string[] {
+  return worktreeRecords(commonDir).map((record) => record.path);
 }
 
 /** The main worktree of a linked worktree's clone; any other Checkout is its own. */
@@ -223,4 +237,130 @@ export function otherCheckouts(checkoutPath: string): string[] {
   return [...(main ? [main] : []), ...linkedWorktrees(layout.commonDir)].filter(
     (checkout) => checkout !== self,
   );
+}
+
+/** A Checkout root and its layout. */
+export interface CheckoutRoot {
+  root: string;
+  layout: GitLayout;
+}
+
+/**
+ * The nearest folder at or above `folder` whose Git layout reads, as Git finds
+ * its repository: a nested worktree or a submodule is its own root. `null`
+ * outside Git.
+ */
+export function checkoutAt(folder: string): CheckoutRoot | null {
+  let dir = realPath(folder);
+  for (;;) {
+    const layout = readGitLayout(dir);
+    if (layout) return { root: dir, layout };
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** A linked worktree as its clone lists it. */
+export interface LinkedWorktree {
+  recordName: string;
+  path: string;
+  /** Its `.git` file points back; a locked worktree whose folder is away is listed but not live. */
+  live: boolean;
+}
+
+/** The Checkouts that share one Git folder. */
+export interface Clone {
+  commonDir: string;
+  bare: boolean;
+  /** `null` for a bare repository. */
+  mainWorktree: string | null;
+  /** By record name: each live worktree, and each locked one whose folder is away. */
+  linkedWorktrees: LinkedWorktree[];
+}
+
+function isGitFolder(dir: string): boolean {
+  return isDirectory(dir) && fs.existsSync(path.join(dir, "HEAD"));
+}
+
+/** The clone whose shared Git folder is `commonDir`; `null` when that is no Git folder. */
+export function cloneAt(commonDir: string): Clone | null {
+  const dir = realPath(commonDir);
+  if (!isGitFolder(dir)) return null;
+  const core = coreConfig(dir);
+  const bare = configTrue(core.get("bare"));
+  return {
+    commonDir: dir,
+    bare,
+    mainWorktree: bare ? null : mainWorktree(dir, core),
+    linkedWorktrees: worktreeRecords(dir),
+  };
+}
+
+/** The main worktree of the clone at `commonDir`, without listing its worktrees. */
+export function mainWorktreeOf(commonDir: string): string | null {
+  const dir = realPath(commonDir);
+  return isGitFolder(dir) ? mainWorktree(dir) : null;
+}
+
+/**
+ * The clone's live Checkouts in the order a handover or a borrow tries them:
+ * the main worktree, then each linked worktree that points back, by record
+ * name. Lazy, so a caller that takes the main worktree lists no records.
+ */
+export function* liveCheckouts(commonDir: string): Generator<string> {
+  const dir = realPath(commonDir);
+  if (!isGitFolder(dir)) return;
+  const main = mainWorktree(dir);
+  if (main && isDirectory(main)) yield main;
+  for (const record of worktreeRecords(dir)) if (record.live) yield record.path;
+}
+
+/**
+ * The clone of the Checkout at `root`. `null` for an `own` layout (a submodule,
+ * a separate Git folder), which is the Checkout of no shared clone, and outside Git.
+ */
+export function cloneOf(root: string): Clone | null {
+  const layout = readGitLayout(root);
+  if (!layout || layout.kind === "own") return null;
+  return cloneAt(layout.commonDir);
+}
+
+/**
+ * The shared Git folder of the Checkout at `root` when it counts as one of its
+ * clone: a main worktree, or a linked worktree whose record points back to it.
+ */
+export function checkoutCommonDir(root: string): string | null {
+  const layout = readGitLayout(root);
+  if (!layout || layout.kind === "own") return null;
+  if (layout.kind === "main") return layout.commonDir;
+  const dotGit = readPathFile(path.join(layout.gitDir, "gitdir"), layout.gitDir);
+  if (!dotGit || path.basename(dotGit) !== ".git") return null;
+  return realPath(path.dirname(dotGit)) === realPath(root) ? layout.commonDir : null;
+}
+
+/** Two Checkout roots of one clone, compared by the real path of their shared Git folder. */
+export function sameClone(a: string, b: string): boolean {
+  const first = checkoutCommonDir(a);
+  return first !== null && first === checkoutCommonDir(b);
+}
+
+/**
+ * The Checkout a session for `repositoryPath` serves from `folder` (design
+ * Decision 11): the root of the Checkout holding `folder` when that is another
+ * live Checkout of the same clone, else `repositoryPath`.
+ */
+export function checkoutServedFrom(repositoryPath: string, folder: string): string {
+  const root = checkoutAt(folder)?.root;
+  return root && namesOtherCheckout(root, repositoryPath) ? root : repositoryPath;
+}
+
+/**
+ * `named` is another live Checkout of `root`'s clone, as when a `.mate/` folder
+ * was copied from it: such a link or projection belongs to `named`, not `root`.
+ */
+export function namesOtherCheckout(root: string, named: string): boolean {
+  const self = realPath(root);
+  const other = realPath(named);
+  return self !== other && isDirectory(other) && sameClone(self, other);
 }

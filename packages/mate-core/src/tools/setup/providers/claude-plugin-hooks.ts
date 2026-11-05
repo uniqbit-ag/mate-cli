@@ -205,3 +205,8 @@ export function isMateGuardHookGroup(group: ClaudeHookGroup): boolean {
     hookGroupKey(group),
   );
 }
+
+/** Whether a hook group runs Mate's session-prepare shim, in any release's form. */
+export function isMateSessionPrepareHookGroup(group: ClaudeHookGroup): boolean {
+  return runsShim(group, PREPARE_HOOK_SHIM);
+}

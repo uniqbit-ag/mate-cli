@@ -5,4 +5,4 @@
 import "./ts-loader.mjs";
 
 const { run } = await import("../../src/hooks/session-guidance.ts");
-process.exitCode = run();
+process.exitCode = await run();
