@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { countTasks, readOpenChanges } from "./changes";
-import { MateNotFoundError, runMateJson, shellQuote } from "./mate";
+import { MateNotFoundError, prepareWorkspace, runMateJson, shellQuote } from "./mate";
 import { toPendingItems } from "./pending";
 import { parseWorktrees } from "./worktrees";
 
@@ -134,5 +134,44 @@ describe("runMateJson", () => {
       stderr: "warning\nmate: no companion is linked\n",
     })).catch((caught: Error) => caught);
     expect((error as Error).message).toBe("mate: no companion is linked");
+  });
+});
+
+describe("prepareWorkspace", () => {
+  test("checks CLI support before preparing, without a launch marker", async () => {
+    const calls: unknown[][] = [];
+    const result = await prepareWorkspace("/work/acme", async (...args) => {
+      calls.push(args);
+      return {
+        code: 0,
+        stdout:
+          calls.length === 1
+            ? "mate companion open [--no-open] [--json]\n"
+            : '{"workspacePath":"/work/acme/.mate/acme.mate.code-workspace"}',
+        stderr: "",
+      };
+    });
+    expect(result.workspacePath).toBe("/work/acme/.mate/acme.mate.code-workspace");
+    expect(calls).toEqual([
+      ["mate '--help'", "/work/acme"],
+      ["mate 'companion' 'open' '--no-open' '--json'", "/work/acme"],
+    ]);
+  });
+
+  test("never runs an old CLI's open command when it silently ignores unknown flags", async () => {
+    const calls: string[] = [];
+    await expect(
+      prepareWorkspace("/work/acme", async (command) => {
+        calls.push(command);
+        return { code: 0, stdout: "mate companion open\n", stderr: "" };
+      }),
+    ).rejects.toThrow("Update Mate");
+    expect(calls).toEqual(["mate '--help'"]);
+  });
+
+  test("reports an absent CLI without a preparation attempt", async () => {
+    await expect(
+      prepareWorkspace("/work/acme", async () => ({ code: 127, stdout: "", stderr: "not found" })),
+    ).rejects.toBeInstanceOf(MateNotFoundError);
   });
 });

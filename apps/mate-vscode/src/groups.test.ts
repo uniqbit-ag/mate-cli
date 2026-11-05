@@ -68,6 +68,26 @@ describe("session groups", () => {
       ["default", "main", ["old-running", "main-new"]],
       ["older", "Older", ["main-old"]],
     ]);
+    expect(groups.map((g) => g.description)).toEqual([
+      "workset/acme",
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  test("uses a non-prefixed Delivery Branch without inventing a workset prefix", () => {
+    const groups = groupSessions(
+      [session("acme", { branch: "feature/acme" }), session("acme-none")],
+      worksetsOf([change("acme-queue", "feature/acme")]),
+      "main",
+      isRunning,
+      NOW,
+    );
+    expect(groups.map((g) => [g.label, g.description])).toEqual([
+      ["feature/acme", "feature/acme"],
+      ["No branch", undefined],
+    ]);
   });
 });
 

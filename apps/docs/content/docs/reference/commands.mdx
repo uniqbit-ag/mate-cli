@@ -5,17 +5,17 @@ description: Current Mate CLI commands and their execution contexts.
 
 ## Setup And Linking
 
-| Command                              | Context                 | Purpose                                                                    |
-| ------------------------------------ | ----------------------- | -------------------------------------------------------------------------- |
-| `mate companion setup`               | Companion root          | Create or reconfigure a companion explicitly.                              |
-| `mate companion link`                | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
-| `mate companion list [--json]`       | Linked context          | List linked repositories.                                                  |
-| `mate companion open`                | Linked context          | Open the editor workspace file for the repository and its companions.      |
-| `mate companion tui`                 | Linked context, TTY     | Open a shell in the resolved companion.                                    |
-| `mate companion sync`                | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
-| `mate companion update [--yes]`      | Linked context          | Regenerate the companion's Mate-managed files with the newest stable Mate. |
-| `mate working cleanup`               | Working repository      | Remove Mate's local integration from a linked working repository.          |
-| `mate working worktree <workset-id>` | Working repository      | Give a Workset its own Git worktree in each of its Working Repositories.   |
+| Command                                    | Context                 | Purpose                                                                    |
+| ------------------------------------------ | ----------------------- | -------------------------------------------------------------------------- |
+| `mate companion setup`                     | Companion root          | Create or reconfigure a companion explicitly.                              |
+| `mate companion link`                      | Working repository, TTY | Select or clone a companion, write the link, and install its requirements. |
+| `mate companion list [--json]`             | Linked context          | List linked repositories.                                                  |
+| `mate companion open [--no-open] [--json]` | Linked context          | Prepare the repository's editor workspace; open it unless `--no-open`.     |
+| `mate companion tui`                       | Linked context, TTY     | Open a shell in the resolved companion.                                    |
+| `mate companion sync`                      | Linked context          | Sync the companion with its Git upstream, interactively at a terminal.     |
+| `mate companion update [--yes]`            | Linked context          | Regenerate the companion's Mate-managed files with the newest stable Mate. |
+| `mate working cleanup`                     | Working repository      | Remove Mate's local integration from a linked working repository.          |
+| `mate working worktree <workset-id>`       | Working repository      | Give a Workset its own Git worktree in each of its Working Repositories.   |
 
 `mate companion link` does not accept flags. Its selection and any required
 installation confirmation are interactive. The default workflow is:
@@ -25,6 +25,21 @@ mate install
 mate companion link
 mate opencode
 ```
+
+`mate companion open --no-open --json` creates or updates the managed workspace
+without requiring or starting an editor CLI. It prints one JSON object with an
+absolute `workspacePath`, for example:
+
+```json
+{ "workspacePath": "/work/acme/.mate/acme.mate.code-workspace" }
+```
+
+Preparation uses every existing Linked Companion and preserves workspace comments,
+custom folders, and settings. It does not link a repository or choose a companion.
+Missing links or an unreadable or invalid workspace fail with non-zero status and
+a diagnostic on stderr, without success JSON. `--no-open` alone prints a human
+prepared-workspace path; `--json` alone keeps opening the editor and changes only
+the success output.
 
 In a Git worktree, `mate companion link` attaches the worktree to its clone's
 entry when the chosen companion already lists the clone: the worktree's link
@@ -242,7 +257,14 @@ that already have the extension, and does nothing when none has it. It needs no
 linked repository. `mate update` runs it with `--if-installed`, so an installed
 extension follows the CLI to the new version.
 
-The extension adds a Mate sidebar for the Git repository open in the window:
+If the repository's managed workspace is not open, the extension shows a single
+**Open workspace** button. Clicking it prepares the document, creating it if
+missing, and opens it in the same window. The editor restarts the extension as
+needed; there is no separate reload. Detection alone writes nothing. If opening
+fails, fix the reported problem and retry. Keep the Mate CLI and extension versions
+matched; an older CLI may not support the preparation flags.
+
+Once that workspace is open, the Mate sidebar shows:
 
 - **Sessions**: the Claude and OpenCode sessions started from the sidebar, for
   the repository and its worktrees, grouped by Workset and branch. Sessions

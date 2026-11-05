@@ -402,6 +402,13 @@ describe("command gating", () => {
     expect(dispatched).toEqual(["companion"]);
   });
 
+  test("workspace preparation dispatches without companion selection or install preflight", async () => {
+    const { gateCalls, deps } = recordingDeps({ companion: false, installOk: false });
+    await main(["node", "mate", "companion", "open", "--no-open", "--json"], deps);
+    expect(gateCalls).toEqual(["root"]);
+    expect(dispatched).toEqual(["companion"]);
+  });
+
   test("companion tui and sync require an unambiguous companion but no install", async () => {
     const originalExitCode = process.exitCode;
     try {

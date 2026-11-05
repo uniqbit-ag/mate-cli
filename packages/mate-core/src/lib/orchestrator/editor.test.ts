@@ -27,6 +27,79 @@ afterEach(async () => {
 });
 
 describe("editor helpers", () => {
+  describe("prepareEditorWorkspace", () => {
+    test("returns an error rather than replacing an unreadable workspace path", async () => {
+      const root = await makeTempDir("acme-workspace-");
+      const repo = path.join(root, "acme");
+      const notes = path.join(root, "acme-notes");
+      await fs.mkdir(notes);
+      const file = editor.editorWorkspacePath(repo);
+      await fs.mkdir(file, { recursive: true });
+      const result = await editor.prepareEditorWorkspace([notes], repo);
+      expect(result.error).toBeInstanceOf(Error);
+      expect((await fs.stat(file)).isDirectory()).toBe(true);
+    });
+
+    test("creates a workspace without discovering an editor and leaves current bytes intact", async () => {
+      const resolve = spyOn(editor, "resolveEditorBinary").mockReturnValue(null);
+      const root = await makeTempDir("acme-workspace-");
+      const repo = path.join(root, "acme");
+      const notes = path.join(root, "acme-notes");
+      await fs.mkdir(notes, { recursive: true });
+      await fs.mkdir(repo, { recursive: true });
+
+      const result = await editor.prepareEditorWorkspace([notes], repo);
+      expect(result.error).toBeUndefined();
+      expect(JSON.parse(await fs.readFile(result.workspacePath, "utf8"))).toEqual({
+        folders: [{ path: repo }, { path: notes }],
+        settings: managedSettings,
+      });
+      const bytes = await fs.readFile(result.workspacePath, "utf8");
+      await editor.prepareEditorWorkspace([notes], repo);
+      expect(await fs.readFile(result.workspacePath, "utf8")).toBe(bytes);
+      expect(resolve).not.toHaveBeenCalled();
+    });
+
+    test("migrates JSONC and preserves user folders, comments, and overridden settings", async () => {
+      const root = await makeTempDir("acme-workspace-");
+      const repo = path.join(root, "acme");
+      const notes = path.join(root, "acme-notes");
+      await fs.mkdir(path.join(repo, ".mate"), { recursive: true });
+      await fs.mkdir(notes, { recursive: true });
+      const legacy = path.join(repo, ".mate/workspace.code-workspace");
+      await fs.writeFile(
+        legacy,
+        '{\n// acme note\n"folders": [{"path":"/work/acme-extra"},],\n"settings":{"git.detectWorktrees":false,},\n}\n',
+      );
+
+      const result = await editor.prepareEditorWorkspace([notes], repo);
+      const bytes = await fs.readFile(result.workspacePath, "utf8");
+      expect(result.error).toBeUndefined();
+      expect(await fs.stat(legacy).catch(() => null)).toBeNull();
+      expect(bytes).toContain("// acme note");
+      expect(bytes).toContain("/work/acme-extra");
+      expect(bytes).toMatch(/"git.detectWorktrees":\s*false/);
+      expect(bytes).toContain('"scm.alwaysShowRepositories": true');
+      expect(bytes).toContain(notes);
+    });
+
+    test.each(['{"folders":[', '{"folders":false}', '{"settings":[]}'])(
+      "returns a failure and preserves invalid document %s",
+      async (bytes) => {
+        const root = await makeTempDir("acme-workspace-");
+        const repo = path.join(root, "acme");
+        const notes = path.join(root, "acme-notes");
+        await fs.mkdir(notes, { recursive: true });
+        const file = editor.editorWorkspacePath(repo);
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, bytes);
+        const result = await editor.prepareEditorWorkspace([notes], repo);
+        expect(result.error).toBeInstanceOf(Error);
+        expect(await fs.readFile(file, "utf8")).toBe(bytes);
+      },
+    );
+  });
+
   test("prefers cursor when TERM_PROGRAM is cursor", () => {
     expect(editor.getPreferredEditorCli({ TERM_PROGRAM: "cursor" })).toBe("cursor");
   });

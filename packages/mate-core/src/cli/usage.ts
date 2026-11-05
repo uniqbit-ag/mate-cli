@@ -18,7 +18,7 @@ export function usage(): string {
     ` ${n} companion list`,
     ` ${n} companion sync`,
     ` ${n} companion update [--yes]`,
-    ` ${n} companion open`,
+    ` ${n} companion open [--no-open] [--json]`,
     ` ${n} companion tui`,
     ` ${n} working cleanup`,
     ` ${n} working link --companion <path> --yes`,

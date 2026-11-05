@@ -10,9 +10,11 @@ import {
   editorWorkspacePath,
   getPreferredEditorCli,
   openEditorWorkspace,
+  prepareEditorWorkspace,
 } from "../../../lib/orchestrator/editor";
 import { WorkingRepoRequiredError } from "../../../lib/orchestrator/types";
 import { resolveProjection } from "../../../runtime/projection";
+import { writeJsonStdout } from "../../write-json-stdout";
 
 export const workspaceOpenCommandDeps = {
   cwd: () => process.cwd(),
@@ -37,6 +39,7 @@ export const workspaceOpenCommandDeps = {
   resolveProjection,
   getPreferredEditorCli: () => getPreferredEditorCli(),
   openEditorWorkspace,
+  prepareEditorWorkspace,
 };
 
 /**
@@ -57,6 +60,9 @@ function orderCompanionPaths(cwd: string, matches: CompanionMatch[]): string[] {
  * and the worktree-detection settings into `.mate/<repo>.mate.code-workspace`,
  * keeping developer edits, then opens that file in the editor. A legacy
  * `.mate/workspace.code-workspace` is renamed to it once.
+ * @flags
+ * - `--no-open` — prepare the workspace without requiring or starting an editor.
+ * - `--json` — print the absolute workspacePath as JSON instead of human output.
  * @remarks Never selects a companion: no picker, no `MATE_ARTIFACT_PATH`
  * narrowing, and the companion recorded at the Projection Root is left as it
  * was. Stale companion pointers are skipped with a stderr warning. Throws
@@ -64,23 +70,45 @@ function orderCompanionPaths(cwd: string, matches: CompanionMatch[]): string[] {
  * sets a non-zero exit code if the editor CLI is unavailable or the workspace
  * file cannot be read, leaving that file unchanged.
  */
-export async function runWorkspaceOpenCommand(): Promise<void> {
+export async function runWorkspaceOpenCommand(argv: string[] = []): Promise<void> {
   const cwd = workspaceOpenCommandDeps.cwd();
   const matches = await workspaceOpenCommandDeps.resolveCompanions(cwd);
   if (matches.length === 0) throw new WorkingRepoRequiredError("companion open");
 
   const repoPath = await workspaceOpenCommandDeps.findRepoRoot(cwd);
-  const opened = await workspaceOpenCommandDeps.openEditorWorkspace(
-    orderCompanionPaths(cwd, matches),
-    repoPath,
-    workspaceOpenCommandDeps.getPreferredEditorCli(),
-  );
-
-  if (!opened) {
-    process.exitCode = 1;
-    return;
+  const companionPaths = orderCompanionPaths(cwd, matches);
+  const noOpen = argv.includes("--no-open");
+  if (noOpen) {
+    const { workspacePath, error } = await workspaceOpenCommandDeps.prepareEditorWorkspace(
+      companionPaths,
+      repoPath,
+    );
+    if (error) {
+      console.error(`mate: warning: ${workspacePath}: ${error.message}`);
+      process.exitCode = 1;
+      return;
+    }
+  } else {
+    const opened = await workspaceOpenCommandDeps.openEditorWorkspace(
+      companionPaths,
+      repoPath,
+      workspaceOpenCommandDeps.getPreferredEditorCli(),
+    );
+    if (!opened) {
+      process.exitCode = 1;
+      return;
+    }
   }
 
-  const documentPath = path.relative(repoPath, editorWorkspacePath(repoPath));
-  console.log(`Workspace: opened ${documentPath} in the editor`);
+  const workspacePath = editorWorkspacePath(repoPath);
+  if (argv.includes("--json")) {
+    await writeJsonStdout({ workspacePath });
+  } else {
+    const documentPath = path.relative(repoPath, workspacePath);
+    console.log(
+      noOpen
+        ? `Workspace: prepared ${documentPath}`
+        : `Workspace: opened ${documentPath} in the editor`,
+    );
+  }
 }
