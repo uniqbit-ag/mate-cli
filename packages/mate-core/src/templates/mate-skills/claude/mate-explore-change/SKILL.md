@@ -47,7 +47,7 @@ large for one change is suggested as several.
    End the response with a final `## Next steps` section: numbered required actions in
    execution order, with exact commands and known change names, prerequisites first.
    Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-   follows it. Listing an action never invokes it.
+   follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.
 
    **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
    and Cursor and the fallback. When the current runtime uses another syntax, swap only

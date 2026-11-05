@@ -48,14 +48,16 @@ merge. Archiving is local and uncommitted; it publishes nothing.
    planning artifacts its schema requires that are missing (`incomplete-planning`).
    Warnings never block. Then report the archive `path` and the delivery: each branch
    with its merge result and source (`forge`, `git`, or `user`) and PR link, or the
-   not-applicable reason. An open or unknown merge is information, not a failure; a
-   `likely-merged` outcome is only a suggestion that publication confirms with the user.
+   not-applicable reason. An open or unknown merge is information, not a failure and not an
+   action: never offer to record it (`mate artifact link … --confirm-*`); publication asks
+   the merge question; a `likely-merged` outcome is only a suggestion that publication
+   confirms with the user.
 
 4. **Hand off.**
    End the response with a final `## Next steps` section: numbered required actions in
    execution order, with exact commands and known change names, prerequisites first.
    Summaries, evidence, warnings, optional work, and deferred context go above it; nothing
-   follows it. Listing an action never invokes it.
+   follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.
 
    **Skill invocation.** Skill invocations here use `/name`, the syntax of Claude Code
    and Cursor and the fallback. When the current runtime uses another syntax, swap only
