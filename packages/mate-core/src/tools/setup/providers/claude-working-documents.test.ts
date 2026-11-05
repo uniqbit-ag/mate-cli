@@ -65,7 +65,7 @@ describe("the Claude working target", () => {
     expect(regionAt(documents, ["permissions", "deny"], CLAUDE_SETTINGS_DOCUMENT)).toEqual({
       at: ["permissions", "deny"],
       kind: "list",
-      values: ["EnterPlanMode", "DesignSync", ...renderSecretDenyEntries()],
+      values: ["EnterPlanMode", "DesignSync", "SendFeedback", ...renderSecretDenyEntries()],
     });
     expect(regionAt(documents, ["enableArtifact"], CLAUDE_SETTINGS_DOCUMENT)).toEqual({
       at: ["enableArtifact"],
@@ -123,7 +123,7 @@ describe("the Claude working target", () => {
     const documents = await renderClaudeDocuments(companionPath, repoPath);
 
     expect(regionAt(documents, ["permissions", "deny"], CLAUDE_SETTINGS_DOCUMENT)).toMatchObject({
-      values: ["EnterPlanMode", "DesignSync"],
+      values: ["EnterPlanMode", "DesignSync", "SendFeedback"],
     });
   });
 
@@ -147,6 +147,7 @@ describe("the Claude working target", () => {
       "Bash(rm:*)",
       "EnterPlanMode",
       "DesignSync",
+      "SendFeedback",
       ...renderSecretDenyEntries(),
     ]);
     expect(await removeRuntimeDocument(repoPath, CLAUDE_SETTINGS_DOCUMENT)).toBe("removed");

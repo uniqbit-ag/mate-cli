@@ -327,8 +327,8 @@ preparation loads from the session after it. `mate doctor` lists the folders and
 whether plain sessions load each one.
 
 Mate's managed Claude settings turn off Claude Code features that compete with
-Mate's own workflow: they deny the `EnterPlanMode` and `DesignSync` tools and set
-`enableArtifact: false`, beside `autoMemoryEnabled: false`. Those tool denies are
+Mate's own workflow: they deny the `EnterPlanMode`, `DesignSync`, and
+`SendFeedback` tools and set `enableArtifact: false`, beside `autoMemoryEnabled: false`. Those tool denies are
 fixed. While secret guardrails are on, the managed deny list also carries `Read`
 and `Edit` deny rules for the default secret files (the `Edit` rule also covers
 `Write`); see
@@ -378,8 +378,8 @@ reinstalling).
 For Claude it writes `.claude/settings.local.json` regions (the artifact-path
 guard, banner, guidance and session-prepare hooks, the
 subagent companion-instructions hook, every enabled Capability's hooks, permissions, the secret-file deny rules while secret guardrails are on, and
-the same disabled features as a managed launch: the `EnterPlanMode` and
-`DesignSync` deny entries and `enableArtifact: false`) and the repository's MCP
+the same disabled features as a managed launch: the `EnterPlanMode`,
+`DesignSync`, and `SendFeedback` deny entries and `enableArtifact: false`) and the repository's MCP
 servers into `~/.claude.json`. That file is rewritten only when the servers
 change. An `enableArtifact` value you already set in
 `.claude/settings.local.json` is left as it is. The wrap also places the managed
