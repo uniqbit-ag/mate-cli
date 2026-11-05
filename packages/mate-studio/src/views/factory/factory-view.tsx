@@ -103,6 +103,23 @@ interface HomeContext {
   now: number | undefined;
   /** The companion's Delivery Path, drawn in each dialog with the Outcome's place on it. */
   path: WorkflowPath;
+  /** `jira` adds an optional Ticket field to the forms that create an Outcome. */
+  ticketFormat: "none" | "jira";
+}
+
+/** Optional Jira key for a new Outcome; it names the Outcome's Delivery Branch. */
+function TicketField({ context }: { context: HomeContext }) {
+  if (context.ticketFormat !== "jira") return null;
+  return (
+    <input
+      name="ticket"
+      className="outcome-ticket"
+      placeholder="ABC-123"
+      aria-label="Ticket (optional)"
+      autoComplete="off"
+      spellCheck={false}
+    />
+  );
 }
 
 /** The actions that move an Outcome forward; the rest stay quiet. */
@@ -182,6 +199,7 @@ function OutcomeInput({ repositories, context }: { repositories: string[]; conte
         <button type="submit" name="start" value="later">
           Save for later
         </button>
+        <TicketField context={context} />
         {repositories.length > 1 ? (
           <select name="repository" required aria-label="Working Repository">
             {repositories.map((repository) => (
@@ -291,6 +309,7 @@ function FeedbackField({ item, context }: { item: OutcomeItem; context: HomeCont
     return (
       <FactoryForm action="create" className="outcome-feedback">
         <textarea name="text" rows={2} required aria-label="A new outcome" />
+        <TicketField context={context} />
         <button type="submit" name="start" value="start">
           Start as a new outcome
         </button>
@@ -1220,6 +1239,7 @@ function contextOf({
       runner: runs !== null,
       now,
       path: workflowPlan({ topology: payload.topology }).paths[0]!,
+      ticketFormat: payload.ticketFormat,
     },
   };
 }

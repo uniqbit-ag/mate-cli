@@ -81,7 +81,6 @@ export async function archiveChange(
       // The settlement covers every repository, so each delivery's merge state is refreshed.
       refreshAll: true,
       requireDelivery: !request.skipBranch,
-      markSkipped: request.skipBranch === true,
     },
     deps,
   );

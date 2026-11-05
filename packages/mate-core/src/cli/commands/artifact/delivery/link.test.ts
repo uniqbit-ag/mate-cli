@@ -96,6 +96,21 @@ describe("mate artifact link", () => {
     await expect(readRaw("x")).rejects.toThrow();
   });
 
+  test("one linked change is recorded on the agent session it runs in; a batch is not", async () => {
+    const attributed: unknown[] = [];
+    const attribute = async (
+      attribution: { change: string },
+      env?: Record<string, string | undefined>,
+    ) => {
+      attributed.push([attribution.change, env?.CLAUDE_CODE_SESSION_ID]);
+      return null;
+    };
+    const sessionEnv = { CLAUDE_CODE_SESSION_ID: "0b7c-acme" };
+    await run(["x"], { attribute, sessionEnv });
+    await run(["a", "b"], { attribute, sessionEnv });
+    expect(attributed).toEqual([["x", "0b7c-acme"]]);
+  });
+
   test("regrouping preserves recorded delivery until an explicit branch edit", async () => {
     await run(["x", "--branch", "workset/x"]);
     await fs.mkdir(path.join(companion, "worksets"));
@@ -115,21 +130,21 @@ describe("mate artifact link", () => {
   describe("--ticket", () => {
     const jira = { loadCapabilities: async () => [{ name: "openspec", ticket: "jira" }] };
 
-    test("records a ticket alone on a change without a record", async () => {
-      const [result] = await run(["x", "--ticket", "ABC-123"], jira);
-      expect(result).toMatchObject({ ticketFormat: "jira", settlement: { status: "legacy" } });
-      expect(await readRaw("x")).toBe("version: 1\nchange: x\nticket: ABC-123\ndeliveries: []\n");
+    test("records the branch the ticket names, not the ticket", async () => {
+      const [result] = await run(["x", "--ticket", "abc-123"], jira);
+      expect(result).toMatchObject({
+        ticketFormat: "jira",
+        defaultBranch: "workset/ABC-123-x",
+        record: { deliveries: [{ repository: REPO, branch: "workset/ABC-123-x" }] },
+      });
+      expect(await readRaw("x")).not.toContain("ticket");
     });
 
-    test("records a ticket with a branch", async () => {
-      const [result] = await run(
-        ["x", "--branch", "workset/ABC-123-x", "--ticket", "ABC-123"],
-        jira,
-      );
-      expect(result.record).toMatchObject({
-        ticket: "ABC-123",
-        deliveries: [{ repository: REPO, branch: "workset/ABC-123-x" }],
-      });
+    test("is refused together with --branch or --not-applicable", async () => {
+      await run(["x", "--branch", "workset/ABC-123-x", "--ticket", "ABC-123"], jira);
+      expect(err.join()).toContain("excludes --branch and --not-applicable");
+      expect(process.exitCode).toBe(1);
+      await expect(readRaw("x")).rejects.toThrow();
     });
 
     test("an invalid key names the format and writes nothing", async () => {
@@ -159,7 +174,7 @@ describe("mate artifact link", () => {
       const [ticketed] = await run(["x"], jira);
       expect(ticketed).toMatchObject({
         defaultBranch: "workset/ABC-123-x",
-        ticketCandidate: null,
+        ticketCandidate: "ABC-123",
       });
       const [candidate] = await run(["a"], {
         ...jira,

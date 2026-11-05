@@ -138,10 +138,6 @@ names, flags, exit codes, JSON output fields, config keys, and exported package
 symbols. Otherwise it uses `mate-v1`.
 One prompt writes every artifact of the chosen schema.
 
-When the companion's openspec capability sets `ticket: jira`, propose asks once
-for an optional Jira ticket and records it on every change it creates, before
-any branch exists. Leave the answer empty to skip it.
-
 When you skipped explore, propose applies the same slicing test first, unless
 you already decided to keep one change. The test passes only when the feature
 holds several behaviours that can each ship and be reviewed on their own, or more
@@ -166,11 +162,13 @@ passing validation is not a review.
 
 `/mate-apply-change for <change-name>` first records the **delivery branch**:
 the Working Repository branch your change is merged through. Its default is
-`workset/<workset-id>`, or `workset/<TICKET>-<workset-id>` when the change
-records a ticket. A Workset groups changes delivered in one merge per
+`workset/<workset-id>`, or `workset/<TICKET>-<workset-id>` when you give a ticket
+as the branch is created. A Workset groups changes delivered in one merge per
 repository. A standalone change has an implicit single-change Workset whose id
-is its change name; no Workset record is written. On the recorded branch or the
-resolved default branch, apply continues without asking. On any other branch,
+is its change name; no Workset record is written. A slice whose `dependsOn`
+change records a branch that is not merged yet continues on that branch, so the
+slices of one feature share one merge. On the recorded branch or the resolved
+default branch, apply continues without asking. On any other branch,
 protected or not, it shows one menu: create or switch to the default branch
 (recommended), create a worktree, use the current branch (only when it is not
 protected), use another existing branch, or work directly (only on a protected
@@ -207,10 +205,14 @@ capabilities:
     ticket: jira
 ```
 
-With Jira on and no ticket recorded, you can give one with the create or worktree
-answer (`1 ABC-123`), and the branch is named after it. On a branch such as
-`feature/ABC-123-retry`, apply offers to record `ABC-123` with it; archive does the
-same for the branch you name. A detected key is never recorded without your answer. Then it implements the tasks. Open your PR whenever you
+With Jira on, a ticket only names a new branch: when the default branch does
+not exist yet, you can add an optional key to your menu answer (`1 ABC-123`), and
+the new branch or worktree is named after it; `1` alone creates it without one.
+There is no separate ticket question. Mate stores the ticket
+nowhere else; the branch name carries it. Started on a fresh, unprotected branch
+whose name holds one key, such as `feature/ABC-123-retry` or `feature/abc-123-retry`
+with no commits beyond `origin/HEAD`, apply records that branch without asking and
+says so. Propose and archive never ask for a ticket. Then it implements the tasks. Open your PR whenever you
 like; Mate does not open, merge, or push anything.
 
 For a long task list you can ask for **compact apply**:

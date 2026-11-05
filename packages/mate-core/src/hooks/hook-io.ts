@@ -1,4 +1,5 @@
 /** Stdin and stdout of a Claude hook shim. */
+import { guardLaunchEnvironment } from "../runtime/launch-env-guard";
 
 export type HookEnv = Record<string, string | undefined>;
 
@@ -8,6 +9,18 @@ export interface HookCall {
   cwd: string;
   argv: readonly string[];
   input: unknown;
+}
+
+/**
+ * The folder a hook resolves its session for (design Decision 10): the
+ * input's `cwd`, which follows the session into a worktree after EnterWorktree,
+ * then `CLAUDE_PROJECT_DIR`, which still names the folder the session started
+ * in, then the process's own folder.
+ */
+export function hookFolder(input: unknown, env: HookEnv, cwd: string): string {
+  const fromInput =
+    input && typeof input === "object" ? (input as { cwd?: unknown }).cwd : undefined;
+  return (typeof fromInput === "string" && fromInput) || env.CLAUDE_PROJECT_DIR || cwd;
 }
 
 export interface HookOutcome {
@@ -47,6 +60,8 @@ export async function runHook(
 ): Promise<number> {
   let outcome: HookOutcome;
   try {
+    // A background session can inherit another launch's environment from Claude's daemon.
+    guardLaunchEnvironment(process.env, process.cwd());
     outcome = await build(await readHookInput());
   } catch (error) {
     outcome = onError(error);

@@ -360,8 +360,9 @@ describe("OpenCode tokensave routing", () => {
   }
 
   test("routes a nested tokensave call and leaves execute and other tools alone", async () => {
-    const { worktree } = await routedFixture();
-    const { api, hooks } = sessionApi(worktree);
+    const { repo, worktree } = await routedFixture();
+    const { api, hooks, move } = sessionApi(repo);
+    move(worktree);
     await registerTokensaveRouting(api);
     const before = hooks.get("tool.execute.before")!;
 
@@ -391,6 +392,16 @@ describe("OpenCode tokensave routing", () => {
     const moved = search({ task: "alpha" }, "tokensave_tokensave_context");
     await before(moved);
     expect(moved.input).toEqual({ task: "alpha", graph_root: worktree });
+  });
+
+  test("a plugin started in the indexed worktree leaves its calls unchanged", async () => {
+    const { worktree } = await routedFixture();
+    const { api, hooks } = sessionApi(worktree);
+    await registerTokensaveRouting(api);
+
+    const call = search({ query: "alpha" });
+    await hooks.get("tool.execute.before")!(call);
+    expect(call.input).toEqual({ query: "alpha" });
   });
 
   test("an explicit graph_root and a failing session lookup pass unchanged", async () => {

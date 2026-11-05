@@ -4,13 +4,22 @@ import path from "node:path";
 import { parse } from "yaml";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import { errorMessage } from "../../runtime/error-message";
+import { withPathLock } from "../../runtime/companion-lock";
+import {
+  checkoutCommonDir,
+  checkoutAt,
+  mainWorktreeOf,
+  namesOtherCheckout,
+} from "../../runtime/git-layout";
+import { physicalPath } from "../../runtime/physical-path";
 import {
   ancestorDirectories,
   repoLocalDirName,
   repoLocalRegistryPath,
   type RepoLocalRegistryFile,
 } from "../../runtime/repo-local";
-import { pathIsDirectory } from "../fs-utils";
+import { pathIsDirectory, realOrResolved } from "../fs-utils";
 import { CompanionRegistryStore } from "./companion-registry-store";
 import type { GlobalConfigStore } from "./global-config-store";
 import { firstFailure } from "./projection-types";
@@ -20,7 +29,15 @@ import {
   type RepoLocalRegistry,
   RepoLocalRegistryStore,
 } from "./repo-local-store";
-import { project } from "./working-repo-projection";
+import {
+  entryOfClone,
+  type MergedEntry,
+  reconcileRegistry,
+  registryListsRepository,
+} from "./registry-checkouts";
+import { project, projectWorkingRepository } from "./working-repo-projection";
+import { readProjectionFile } from "../../runtime/projection";
+import { GRAPHIFY_STORE_SEGMENT } from "../../tools/setup/capabilities/graphify";
 import { type CompanionSource, ConfigError, type LinkedRepository } from "./types";
 
 /**
@@ -49,6 +66,14 @@ export class CompanionStore {
     private readonly companionRegistryStore = new CompanionRegistryStore(),
   ) {}
 
+  /**
+   * One load and save under the registry's own lock: hand over or drop dead
+   * entries, merge hand-linked Checkouts of one clone, reuse the clone's entry
+   * or upsert by ID, and record each clone's shared Git folder. Returns the
+   * entry it kept. After the save, outside the lock, the asking folder's
+   * repo-local link takes the kept ID, as do the Checkouts of merged-away
+   * entries; those writes only warn.
+   */
   async registerRepository(
     repository: LinkedRepository,
     options: { companionSource?: CompanionSource } = {},
@@ -60,40 +85,44 @@ export class CompanionStore {
       );
     }
 
-    // A companion's registry.yaml may not exist yet (its first-ever link):
-    // that is not a real error here, unlike a working repo reading its own
-    // missing config, so fall back to an empty registry instead of throwing.
-    const working = await this.companionRegistryStore.load().catch((error) => {
-      if (error instanceof ConfigError) return CompanionRegistryStore.defaultConfig();
-      throw error;
-    });
-
-    // Prune dead entries (path no longer a directory) as part of this same
-    // write, piggybacking on the load/save that registration already does
-    // rather than adding a separate scan; never runs on a read-only list.
-    const checked = await Promise.all(
-      working.repos.map(async (repo) => ({ repo, exists: await pathIsDirectory(repo.path) })),
+    const registryPath = this.companionRegistryStore.configPath;
+    const locked = await withPathLock(
+      REGISTRY_LOCK_NAMESPACE,
+      /** Its real path, missing segments as written: a first link has no file yet. */
+      physicalPath(registryPath),
+      {},
+      async () => {
+        // A companion's registry.yaml may not exist yet (its first-ever link):
+        // that is not a real error here, unlike a working repo reading its own
+        // missing config, so fall back to an empty registry instead of throwing.
+        const working = await this.companionRegistryStore.load().catch((error) => {
+          if (error instanceof ConfigError) return CompanionRegistryStore.defaultConfig();
+          throw error;
+        });
+        const reconciled = reconcileRegistry(working.repos, repository);
+        working.repos = reconciled.repos;
+        await this.companionRegistryStore.save(working);
+        return reconciled;
+      },
     );
-    const survivors = checked.filter((entry) => entry.exists).map((entry) => entry.repo);
-
-    const existing = survivors.findIndex((r) => r.id === repository.id);
-    if (existing >= 0) {
-      survivors[existing] = repository;
-    } else {
-      survivors.push(repository);
+    if (!locked.acquired) {
+      throw new ConfigError(
+        `another ${FRAMEWORK_NAME} process is still writing ${registryPath}; try again.`,
+      );
     }
-    working.repos = survivors;
-    await this.companionRegistryStore.save(working);
 
+    const { kept, merged } = locked.value;
+    const companionPath = path.resolve(this.companionPath);
+    const source = options.companionSource ?? "git";
     // Repo-local registry write is a cache, not the source of truth: the
     // companion-side write above already succeeded, so a failure here (e.g. a
     // read-only working tree) must not fail the overall link operation.
     try {
       await writeRepoLocalRegistryEntry(
         repository.path,
-        path.resolve(this.companionPath),
-        repository,
-        options.companionSource ?? "git",
+        companionPath,
+        { id: kept.id, path: repository.path },
+        source,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -101,8 +130,12 @@ export class CompanionStore {
         `mate: warning: failed to write repo-local registry for ${repository.path}: ${message}`,
       );
     }
+    for (const entry of merged) {
+      // oxlint-disable-next-line no-await-in-loop -- one notice per merged Checkout, in order
+      await relinkMergedCheckout(companionPath, entry, source);
+    }
 
-    return repository;
+    return kept;
   }
 
   async getRepository(repositoryId: string): Promise<LinkedRepository | undefined> {
@@ -113,6 +146,36 @@ export class CompanionStore {
   async listRepositories(): Promise<LinkedRepository[]> {
     const working = await this.companionRegistryStore.load();
     return working.repos;
+  }
+}
+
+/** The companion registry's own lock, apart from the companion's sync lock. */
+const REGISTRY_LOCK_NAMESPACE = "companion-registry";
+
+/**
+ * Points a merged-away Checkout's link, and its projection when it has one, at
+ * the kept ID, and says that the Graphify graph under the old ID is unused.
+ */
+async function relinkMergedCheckout(
+  companionPath: string,
+  { removed, kept }: MergedEntry,
+  source: CompanionSource,
+): Promise<void> {
+  const graph = path.join(companionPath, GRAPHIFY_STORE_SEGMENT, removed.id);
+  console.error(
+    `${FRAMEWORK_NAME}: merged ${removed.id} (${removed.path}) into ${kept.id}, the entry of its clone in ${companionPath}; ${removed.path} now uses ${kept.id}, and the Graphify graph stored under ${removed.id} (${graph}) is no longer used.`,
+  );
+  const repository = { id: kept.id, path: removed.path };
+  try {
+    await writeRepoLocalRegistryEntry(removed.path, companionPath, repository, source);
+    if (readProjectionFile(removed.path)) {
+      const projected = await projectWorkingRepository(companionPath, repository);
+      if (projected.kind === "failed") throw projected.error;
+    }
+  } catch (error) {
+    console.error(
+      `${FRAMEWORK_NAME}: warning: failed to point ${removed.path} at ${kept.id}: ${errorMessage(error)}`,
+    );
   }
 }
 
@@ -146,7 +209,11 @@ export async function readCompanionRegistry(
       (entry): entry is LinkedRepository =>
         Boolean(entry) && typeof entry.id === "string" && typeof entry.path === "string",
     )
-    .map(({ id, path: repoPath }) => ({ id, path: repoPath }));
+    .map(({ id, path: repoPath, gitCommonDir }) => ({
+      id,
+      path: repoPath,
+      ...(typeof gitCommonDir === "string" ? { gitCommonDir } : {}),
+    }));
   return { repos };
 }
 
@@ -163,20 +230,29 @@ export async function readCompanionRegistry(
 export async function backfillCompanionRegistration(
   companionPath: string,
   repository: LinkedRepository,
-): Promise<void> {
+): Promise<string> {
   try {
     const { repos } = await readCompanionRegistry(companionPath).catch(() => ({ repos: [] }));
-    const existing = repos.find((repo) => repo.id === repository.id);
-    if (existing?.path === repository.path) return;
+    /** A launch from another Checkout of the clone never moves the entry to it. */
+    if (registryListsRepository(repos, repository)) return repository.id;
 
-    await companionRootedStore(companionPath).registerRepository(repository);
+    const registered = { ...repository, path: await mainCheckoutOf(repository.path) };
+    return (await companionRootedStore(companionPath).registerRepository(registered)).id;
   } catch (error) {
     console.error(
       `${FRAMEWORK_NAME}: warning: failed to backfill companion registry for ${repository.id}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
+    return repository.id;
   }
+}
+
+/** The clone's live main worktree, else `checkout`: an entry outlives the worktree it was written from. */
+async function mainCheckoutOf(checkout: string): Promise<string> {
+  const commonDir = checkoutCommonDir(checkout);
+  const main = commonDir ? mainWorktreeOf(commonDir) : null;
+  return main && (await pathIsDirectory(main)) ? main : checkout;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +283,31 @@ export interface CompanionResolutionResult {
   failures: CompanionResolutionFailure[];
 }
 
+interface ResolveOptions {
+  logFailures?: boolean;
+  /** `false` looks up without the self-heal or the stale-pointer prune, so a caller can refuse first. */
+  write?: boolean;
+}
+
+/**
+ * The repo-local cache a single companion-scan match restores: `repository`
+ * names `folder`, and `companions` is replaced by the one pointer, without a
+ * `source`. Direct save, not `project("link")`: that scope also writes git
+ * excludes, the Projection Root, the companion link and the repo-local
+ * framework.yaml, and it upserts the pointer instead of replacing `companions`.
+ * For a new Checkout of a linked clone this is its Adoption, and its contents
+ * depend only on the match, so concurrent Adoptions end in the same file.
+ */
+async function writeRepoLocalCache(folder: string, match: CompanionMatch): Promise<void> {
+  const store = new RepoLocalRegistryStore(repoLocalRegistryPath(folder));
+  /** `repository` too: wrap and unwrap resolve the Repository Link from it. */
+  await store.save({
+    ...(await store.load().catch(() => ({}))),
+    repository: { id: match.repositoryId, path: folder },
+    companions: [{ path: match.companionPath, repositoryId: match.repositoryId }],
+  });
+}
+
 export class CompanionResolver {
   constructor(private readonly globalConfigStore: GlobalConfigStore) {}
 
@@ -216,55 +317,72 @@ export class CompanionResolver {
 
   async resolveWithDiagnostics(
     cwd: string,
-    options: { logFailures?: boolean } = {},
+    options: ResolveOptions = {},
   ): Promise<CompanionResolutionResult> {
     const resolvedCwd = path.resolve(cwd);
 
     const repoLocalResult = await this.resolveFromRepoLocalRegistry(resolvedCwd, options);
     if (repoLocalResult) return repoLocalResult;
 
-    return this.resolveFromGlobalRegistry(resolvedCwd);
+    return this.resolveFromGlobalRegistry(resolvedCwd, options);
   }
 
   /**
    * Fallback for when the repo-local cache is missing or unusable: scans
    * every companion the global registry knows about and matches by
-   * repository path. A single match self-heals the repo-local cache so the
-   * fast path succeeds on the next resolution without repeating this scan.
+   * repository path, or by clone when the folder is inside a Git Checkout of
+   * an entry's clone. A single match self-heals the repo-local cache at the
+   * matched folder (the Checkout's root for a clone match) so the fast path
+   * succeeds on the next resolution without repeating this scan; for a new
+   * Checkout of a linked clone, that is its Adoption.
    */
-  private async resolveFromGlobalRegistry(resolvedCwd: string): Promise<CompanionResolutionResult> {
+  private async resolveFromGlobalRegistry(
+    resolvedCwd: string,
+    options: ResolveOptions,
+  ): Promise<CompanionResolutionResult> {
     const candidates = await this.globalConfigStore.list();
+    const checkoutRoot = checkoutAt(resolvedCwd)?.root;
+    const clone = checkoutRoot ? checkoutCommonDir(checkoutRoot) : null;
     const found = await Promise.all(
       candidates.map(async (candidate) => {
         const companionPath = path.resolve(candidate);
         try {
           const { repos } = await readCompanionRegistry(companionPath);
-          const repo = repos.find((r) => path.resolve(r.path) === resolvedCwd);
-          return repo ? { companionPath, repositoryId: repo.id } : null;
+          const byPath = repos.find((r) => path.resolve(r.path) === resolvedCwd);
+          if (byPath) {
+            return { companionPath, repositoryId: byPath.id, folder: resolvedCwd };
+          }
+          /**
+           * Another Checkout of the clone only: a subfolder of the entry's own
+           * folder matches nothing, as before, so `mate working cleanup` there sticks.
+           */
+          const byClone = clone
+            ? repos.find((r) => entryOfClone(r, clone) && physicalPath(r.path) !== checkoutRoot)
+            : undefined;
+          return byClone && checkoutRoot
+            ? { companionPath, repositoryId: byClone.id, folder: checkoutRoot }
+            : null;
         } catch {
           return null;
         }
       }),
     );
 
+    const matched = found.filter((match) => match !== null);
     const matches = uniqueByCompanion(
-      found.filter((match): match is CompanionMatch => match !== null),
+      matched.map(({ companionPath, repositoryId }) => ({ companionPath, repositoryId })),
     );
 
     if (matches.length === 0) return { match: null, ambiguousMatches: [], failures: [] };
 
-    if (matches.length === 1) {
-      // Direct save, not `project("link")`: that scope also writes git
-      // excludes, the Projection Root, the companion link and the repo-local
-      // framework.yaml, and it upserts the pointer instead of replacing
-      // `companions`. A read-side self-heal must only restore the cache.
-      const store = new RepoLocalRegistryStore(repoLocalRegistryPath(resolvedCwd));
-      /** `repository` too: wrap and unwrap resolve the Repository Link from it. */
-      await store.save({
-        ...(await store.load().catch(() => ({}))),
-        repository: { id: matches[0]!.repositoryId, path: resolvedCwd },
-        companions: [{ path: matches[0]!.companionPath, repositoryId: matches[0]!.repositoryId }],
-      });
+    if (matches.length === 1 && options.write !== false) {
+      const { folder } = matched[0]!;
+      /** Best-effort like the backfill: a Checkout that can't be written still resolves. */
+      await writeRepoLocalCache(folder, matches[0]!).catch((error: unknown) =>
+        console.error(
+          `${FRAMEWORK_NAME}: warning: failed to write the repository link in ${folder}: ${errorMessage(error)}`,
+        ),
+      );
     }
 
     return resolvedTo(matches);
@@ -279,7 +397,7 @@ export class CompanionResolver {
    */
   private async resolveFromRepoLocalRegistry(
     resolvedCwd: string,
-    options: { logFailures?: boolean },
+    options: ResolveOptions,
   ): Promise<CompanionResolutionResult | null> {
     const found = await findRepoLocalRegistryFile(resolvedCwd);
     if (!found) return null;
@@ -287,8 +405,11 @@ export class CompanionResolver {
     let pointers: RepoLocalCompanionPointer[];
     try {
       const raw = await fs.readFile(found.registryPath, "utf8");
-      const parsed = parse(raw) as { companions?: unknown } | null;
+      const parsed = parse(raw) as { companions?: unknown; repository?: { path?: unknown } } | null;
       if (!parsed || !Array.isArray(parsed.companions)) return null;
+      /** A cache copied from another Checkout of the clone is that Checkout's, not this one's. */
+      const named = parsed.repository?.path;
+      if (typeof named === "string" && namesOtherCheckout(found.repoRoot, named)) return null;
       pointers = parsed.companions as RepoLocalCompanionPointer[];
     } catch {
       return null;
@@ -313,7 +434,7 @@ export class CompanionResolver {
       }
     }
 
-    if (stale.length > 0) {
+    if (stale.length > 0 && options.write !== false) {
       const survivors: RepoLocalCompanionPointer[] = live.map(({ pointer, companionPath }) => ({
         path: companionPath,
         repositoryId: pointer.repositoryId,
@@ -394,6 +515,12 @@ export async function writeRepoLocalRegistryEntry(
   if (failure) throw failure.error ?? new Error(`failed to project ${failure.path}`);
 }
 
+/**
+ * The Repository Link the nearest repo-local registry records. A link naming
+ * another live Checkout of the clone, as in a `.mate/` folder copied from it,
+ * counts as absent, so the Checkout is adopted instead of acting as that one.
+ * A link naming a missing folder is returned as before.
+ */
 export async function findRepoLocalLinkedRepository(cwd: string): Promise<LinkedRepository | null> {
   const found = await findRepoLocalRegistryFile(cwd);
   if (!found) return null;
@@ -402,10 +529,42 @@ export async function findRepoLocalLinkedRepository(cwd: string): Promise<Linked
     const raw = await fs.readFile(found.registryPath, "utf8");
     const parsed = parse(raw) as Partial<RepoLocalRegistry> | null;
     if (!parsed?.repository) return null;
-    return normalizeLinkedRepository(parsed.repository);
+    const repository = normalizeLinkedRepository(parsed.repository);
+    return namesOtherCheckout(found.repoRoot, repository.path) ? null : repository;
   } catch {
     return null;
   }
+}
+
+/**
+ * The checkout holding `cwd`, with the repository id of its repo-local link, when
+ * that link points at `companionPath`; null otherwise. Never writes.
+ */
+export async function findRepoLocalLinkTo(
+  cwd: string,
+  companionPath: string,
+): Promise<LinkedRepository | null> {
+  const found = await findRepoLocalRegistryFile(cwd);
+  if (!found) return null;
+  try {
+    const parsed = parse(await fs.readFile(found.registryPath, "utf8")) as {
+      companions?: unknown;
+    } | null;
+    const pointers = Array.isArray(parsed?.companions)
+      ? (parsed.companions as Partial<RepoLocalCompanionPointer>[])
+      : [];
+    const companion = await realOrResolved(companionPath);
+    for (const pointer of pointers) {
+      if (typeof pointer?.path !== "string" || typeof pointer.repositoryId !== "string") continue;
+      // oxlint-disable-next-line no-await-in-loop -- the first pointer to the companion wins
+      if ((await realOrResolved(pointer.path)) === companion) {
+        return { id: pointer.repositoryId, path: found.repoRoot };
+      }
+    }
+  } catch {
+    // An unreadable registry links nothing.
+  }
+  return null;
 }
 
 /** Walks up from `cwd` looking for the nearest ancestor holding a repo-local registry file. */

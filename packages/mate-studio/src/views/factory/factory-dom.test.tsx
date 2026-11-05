@@ -27,6 +27,7 @@ const outcome = (overrides: Partial<StudioWorkset> = {}): StudioWorkset => ({
 const payload = (worksets: StudioWorkset[]): FactoryPayload => ({
   worksets,
   linkedRepositories: ["acme/web"],
+  ticketFormat: "none",
   topology: null,
   worksetProblems: [],
   warnings: [],

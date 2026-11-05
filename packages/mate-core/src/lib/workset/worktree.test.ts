@@ -367,6 +367,49 @@ describe("createWorksetWorktrees", () => {
 });
 
 describe("createChangeWorktrees", () => {
+  describe("a companion registry entry naming a removed folder", () => {
+    const stale = () => path.join(root, "src", "web.worktrees", "old");
+
+    function linkStale(): void {
+      fs.writeFileSync(
+        path.join(companion, ".mate", "config", "registry.yaml"),
+        `repos:\n  - id: web\n    path: ${stale()}\n`,
+      );
+    }
+
+    test("uses the current checkout when its repo-local link names the companion", async () => {
+      const web = checkout("web");
+      linkStale();
+      await writeRepoLocalRegistryEntry(web, companion, { id: "web", path: web }, "git");
+      change("acme-fix", "acme/web");
+      const result = await createChangeWorktrees(companion, "acme-fix", options, {
+        cwd: () => web,
+      });
+      const target = path.join(root, "src", "web.worktrees", "acme-fix");
+      expect(result.diagnostics).toEqual([]);
+      expect(result.repositories).toMatchObject([{ repository: "acme/web", path: target }]);
+      const local = fs.readFileSync(path.join(target, ".mate", "config", "registry.yaml"), "utf8");
+      expect(local).toContain("id: web");
+    });
+
+    test("names the missing folder when the current checkout links another companion", async () => {
+      const web = checkout("web");
+      linkStale();
+      const other = path.join(root, "acme-other");
+      fs.mkdirSync(other);
+      await writeRepoLocalRegistryEntry(web, other, { id: "web", path: web }, "git");
+      change("acme-fix", "acme/web");
+      const result = await createChangeWorktrees(companion, "acme-fix", options, {
+        cwd: () => web,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.diagnostics).toEqual([
+        `acme/web: not linked to ${companion} on this machine (registered path ${stale()} does not exist)`,
+      ]);
+      expect(fs.existsSync(path.join(root, "src", "web.worktrees", "acme-fix"))).toBe(false);
+    });
+  });
+
   test("a change no record lists gets a worktree named after it and writes no record", async () => {
     link(checkout("web"));
     change("acme-fix", "acme/web");
@@ -416,36 +459,101 @@ describe("createChangeWorktrees", () => {
     expect(fs.existsSync(path.join(root, "src", "web.worktrees"))).toBe(false);
   });
 
-  test("a recorded ticket names the new branch", async () => {
+  test("a given ticket names the new branch", async () => {
     link(checkout("web"));
     change("acme-fix", "acme/web");
-    record("acme-fix", "ticket: ABC-123\ndeliveries: []\n");
-    const result = await createChangeWorktrees(companion, "acme-fix", options);
+    const result = await createChangeWorktrees(companion, "acme-fix", {
+      ...options,
+      ticket: "ABC-123",
+    });
     expect(result.repositories).toMatchObject([{ branch: "workset/ABC-123-acme-fix" }]);
   });
 
-  test("an existing workset/<id> stays after a later ticket", async () => {
+  test("a later slice gets its dependency's open branch", async () => {
     const web = checkout("web");
     link(web);
-    git(web, "branch", "workset/acme-fix");
+    git(web, "branch", "workset/acme-api");
+    change("acme-api", "acme/web");
+    record("acme-api", "deliveries:\n  - repository: acme/web\n    branch: workset/acme-api\n");
+    change("acme-worker", "acme/web");
+    fs.writeFileSync(
+      path.join(companion, "openspec", "changes", "acme-worker", "design.md"),
+      "---\nchange: acme-worker\ndependsOn: [acme-api]\n---\n",
+    );
+    const result = await createChangeWorktrees(companion, "acme-worker", options);
+    expect(result.repositories).toMatchObject([{ branch: "workset/acme-api" }]);
+  });
+
+  test("a canary ticket in a record names nothing", async () => {
+    link(checkout("web"));
     change("acme-fix", "acme/web");
     record("acme-fix", "ticket: ABC-123\ndeliveries: []\n");
     const result = await createChangeWorktrees(companion, "acme-fix", options);
     expect(result.repositories).toMatchObject([{ branch: "workset/acme-fix" }]);
   });
 
-  test("a branch pushed elsewhere wins over a later ticket", async () => {
+  test("an unrecorded workset/<id> does not take a given ticket's place", async () => {
     const web = checkout("web");
     link(web);
-    git(web, "push", "-q", "origin", "HEAD:refs/heads/workset/acme-fix");
-    // Only the origin has it: drop the tracking ref the push left behind.
-    git(web, "update-ref", "-d", "refs/remotes/origin/workset/acme-fix");
+    git(web, "branch", "workset/acme-fix");
     change("acme-fix", "acme/web");
-    record("acme-fix", "ticket: ABC-123\ndeliveries: []\n");
+    const result = await createChangeWorktrees(companion, "acme-fix", {
+      ...options,
+      ticket: "ABC-123",
+    });
+    expect(result.repositories).toMatchObject([{ branch: "workset/ABC-123-acme-fix" }]);
+    expect(result.warnings.join()).toContain("Existing workset/acme-fix is not used");
+  });
+
+  test("a ticket branch pushed elsewhere is found again without the ticket", async () => {
+    const web = checkout("web");
+    link(web);
+    git(web, "push", "-q", "origin", "HEAD:refs/heads/workset/ABC-123-acme-fix");
+    // Only the origin has it: drop the tracking ref the push left behind.
+    git(web, "update-ref", "-d", "refs/remotes/origin/workset/ABC-123-acme-fix");
+    change("acme-fix", "acme/web");
     const result = await createChangeWorktrees(companion, "acme-fix", options);
-    expect(result.repositories).toMatchObject([{ branch: "workset/acme-fix", action: "created" }]);
-    expect(branches(web)).toContain("workset/acme-fix origin/workset/acme-fix");
-    expect(branches(web)).not.toContain("ABC-123");
+    expect(result.repositories).toMatchObject([
+      { branch: "workset/ABC-123-acme-fix", action: "created" },
+    ]);
+    expect(branches(web)).toContain("workset/ABC-123-acme-fix origin/workset/ABC-123-acme-fix");
+  });
+
+  test("an inherited branch reuses its dependency's worktree", async () => {
+    const web = checkout("web");
+    link(web);
+    change("acme-api", "acme/web");
+    const api = await createChangeWorktrees(companion, "acme-api", options);
+    record("acme-api", "deliveries:\n  - repository: acme/web\n    branch: workset/acme-api\n");
+    change("acme-worker", "acme/web");
+    fs.writeFileSync(
+      path.join(companion, "openspec", "changes", "acme-worker", "design.md"),
+      "---\nchange: acme-worker\ndependsOn: [acme-api]\n---\n",
+    );
+    const result = await createChangeWorktrees(companion, "acme-worker", options);
+    expect(result.ok).toBe(true);
+    expect(result.repositories).toMatchObject([
+      { branch: "workset/acme-api", path: api.repositories[0]!.path, action: "reused" },
+    ]);
+    expect(result.warnings.join()).toContain("inherited from acme-api; reusing its worktree");
+  });
+
+  test("an inherited branch checked out in the main checkout is refused", async () => {
+    const web = checkout("web");
+    link(web);
+    git(web, "switch", "-q", "-c", "workset/acme-api");
+    change("acme-api", "acme/web");
+    record("acme-api", "deliveries:\n  - repository: acme/web\n    branch: workset/acme-api\n");
+    change("acme-worker", "acme/web");
+    fs.writeFileSync(
+      path.join(companion, "openspec", "changes", "acme-worker", "design.md"),
+      "---\nchange: acme-worker\ndependsOn: [acme-api]\n---\n",
+    );
+    const result = await createChangeWorktrees(companion, "acme-worker", options);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.join()).toContain(
+      "workset/acme-api, inherited from acme-api, is checked out in",
+    );
   });
 
   test("a recorded branch is the worktree's branch", async () => {
@@ -758,11 +866,12 @@ describe("wrapping worktrees", () => {
   }, 30000);
 
   test("the guard of a wrapped worktree blocks an artifact write in an unmanaged session", async () => {
-    await wrappedMain();
+    const web = await wrappedMain();
     workset("acme-login", "acme/web");
     await createWorksetWorktrees(companion, "acme-login", options);
+    // Claude Code runs the main worktree's local settings hooks in its linked worktrees.
     const settings = JSON.parse(
-      fs.readFileSync(path.join(target(), ".claude", "settings.local.json"), "utf8"),
+      fs.readFileSync(path.join(web, ".claude", "settings.local.json"), "utf8"),
     ) as { hooks: Record<string, { hooks: { command: string }[] }[]> };
     const guard = settings.hooks.PreToolUse![0]!.hooks[0]!.command;
     const env: Record<string, string | undefined> = { ...process.env };

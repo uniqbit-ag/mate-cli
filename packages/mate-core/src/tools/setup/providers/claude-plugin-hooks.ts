@@ -29,6 +29,8 @@ const GUIDANCE_HOOK_SHIM = "session-guidance.mjs";
 const BANNER_HOOK_SHIM = "session-banner.mjs";
 const PREPARE_HOOK_SHIM = "session-prepare.mjs";
 const INSTRUCTIONS_HOOK_SHIM = "companion-instructions.mjs";
+const SESSION_END_HOOK_SHIM = "session-end.mjs";
+const ATTENTION_HOOK_SHIM = "session-attention.mjs";
 const PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}";
 
 interface PluginHookWiring {
@@ -147,6 +149,23 @@ export function mateSessionPrepareHookGroups(
   return withProjectedFlag(groupsFor("SessionStart", PREPARE_HOOK_SHIM, commandRoot));
 }
 
+/**
+ * The session registry's `SessionEnd` and `Notification` groups, resolved the
+ * same way and carrying `PROJECTED_FLAG`: this copy records, and the plugin's
+ * copy records only where no wrap copy runs.
+ */
+export function mateSessionEndHookGroups(
+  commandRoot: string = runtimeClaudePluginRoot(),
+): ClaudeHookGroup[] {
+  return withProjectedFlag(groupsFor("SessionEnd", SESSION_END_HOOK_SHIM, commandRoot));
+}
+
+export function mateAttentionHookGroups(
+  commandRoot: string = runtimeClaudePluginRoot(),
+): ClaudeHookGroup[] {
+  return withProjectedFlag(groupsFor("Notification", ATTENTION_HOOK_SHIM, commandRoot));
+}
+
 function mateOwnHookGroups(commandRoot: string): ClaudeHookGroup[] {
   return [
     ...mateGuardHookGroups(commandRoot),
@@ -155,6 +174,8 @@ function mateOwnHookGroups(commandRoot: string): ClaudeHookGroup[] {
     ...mateBannerHookGroups(commandRoot),
     ...mateSessionPrepareHookGroups(commandRoot),
     ...mateInstructionHookGroups(commandRoot),
+    ...mateSessionEndHookGroups(commandRoot),
+    ...mateAttentionHookGroups(commandRoot),
   ];
 }
 
@@ -183,4 +204,9 @@ export function isMateGuardHookGroup(group: ClaudeHookGroup): boolean {
   return mateOwnHookGroupKeys(runtimeClaudePluginRoot(), getClaudePluginRoot()).has(
     hookGroupKey(group),
   );
+}
+
+/** Whether a hook group runs Mate's session-prepare shim, in any release's form. */
+export function isMateSessionPrepareHookGroup(group: ClaudeHookGroup): boolean {
+  return runsShim(group, PREPARE_HOOK_SHIM);
 }

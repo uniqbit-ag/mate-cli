@@ -1,3 +1,4 @@
+import { TICKETS_OFF } from "../../../../lib/delivery/branches";
 import type { Delivery, UnscopedDelivery } from "../../../../lib/delivery/record";
 import type { BranchOutcome } from "../../../../lib/delivery/refresh";
 import type { DeliveryRefusal } from "../../../../lib/delivery/record-delivery";
@@ -73,7 +74,14 @@ export function sharedRefusalMessage(
     return "mate: the Working Repository has no origin remote to identify it; pass --repository <org/repo>.";
   }
   if (refusal.reason === "tickets-off") {
-    return "mate: tickets are off for this companion; set `ticket: jira` on the openspec capability (mate setup --ticket jira) to record one.";
+    return `mate: ${TICKETS_OFF}`;
+  }
+  if (refusal.reason === "no-resolved-branch") {
+    const reasons = refusal.diagnostics.length > 0 ? ` (${refusal.diagnostics.join(" ")})` : "";
+    return `mate: ${refusal.change} has no Delivery Branch to name with a ticket${reasons}; pass --branch instead.`;
+  }
+  if (refusal.reason === "settled-delivery") {
+    return `mate: ${refusal.change} records ${refusal.delivery} for ${refusal.repository}; a ticket does not replace it, pass --branch to relink.`;
   }
   if (refusal.reason === "protected-branch") {
     return `mate: ${refusal.branch} is a protected branch (${refusal.protection}); record it only as an explicit direct delivery with --direct.`;

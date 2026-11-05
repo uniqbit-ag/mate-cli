@@ -5,7 +5,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { addWorktree, git, initBareRepo, initRepo } from "../../test/git-checkouts";
 import { createTempDir } from "../../../../test/fixtures";
-import { gitExcludePath, otherCheckouts, readGitLayout } from "./git-layout";
+import {
+  checkoutAt,
+  cloneAt,
+  cloneOf,
+  gitExcludePath,
+  isDirectory,
+  otherCheckouts,
+  readGitLayout,
+  sameClone,
+} from "./git-layout";
 
 const roots: string[] = [];
 
@@ -189,5 +198,186 @@ describe("gitExcludePath", () => {
 
   test("a folder outside Git has no exclude file", async () => {
     expect(gitExcludePath(await tempRoot())).toBeNull();
+  });
+});
+
+describe("checkoutAt", () => {
+  test("a subfolder of a main worktree names the main worktree", async () => {
+    const main = initRepo(path.join(await tempRoot(), "acme"));
+    const deep = path.join(main, "src", "deep");
+    await fs.mkdir(deep, { recursive: true });
+
+    expect(checkoutAt(deep)).toEqual({ root: main, layout: readGitLayout(main)! });
+  });
+
+  test("a sibling worktree is its own root", async () => {
+    const main = initRepo(path.join(await tempRoot(), "acme"));
+    const sibling = addWorktree(main, path.join(path.dirname(main), "acme-feature"));
+    await fs.mkdir(path.join(sibling, "src"));
+
+    expect(checkoutAt(path.join(sibling, "src"))?.root).toBe(sibling);
+    expect(checkoutAt(sibling)?.layout.kind).toBe("linked");
+  });
+
+  test("a nested worktree is its own root, not the main worktree", async () => {
+    const main = initRepo(path.join(await tempRoot(), "acme"));
+    const nested = addWorktree(main, path.join(main, ".claude", "worktrees", "fix"));
+    await fs.mkdir(path.join(nested, "lib"));
+
+    expect(checkoutAt(path.join(nested, "lib"))?.root).toBe(nested);
+  });
+
+  test("a bare repository's worktree is its own root", async () => {
+    const root = await tempRoot();
+    const bare = initBareRepo(root);
+    const worktree = addWorktree(bare, path.join(root, "acme-a"));
+
+    expect(checkoutAt(worktree)?.root).toBe(worktree);
+    expect(checkoutAt(worktree)?.layout.commonDir).toBe(bare);
+  });
+
+  test("a submodule is its own root with its own layout", async () => {
+    const root = await tempRoot();
+    const library = initRepo(path.join(root, "acme-lib"));
+    const superproject = initRepo(path.join(root, "acme"));
+    git(superproject, "submodule", "add", "-q", library, "lib");
+
+    expect(checkoutAt(path.join(superproject, "lib"))?.layout.kind).toBe("own");
+    expect(checkoutAt(path.join(superproject, "lib"))?.root).toBe(path.join(superproject, "lib"));
+  });
+
+  test("a folder outside Git has no root", async () => {
+    expect(checkoutAt(await tempRoot())).toBeNull();
+  });
+});
+
+describe("cloneOf", () => {
+  test("lists the main worktree and each live linked worktree by record name", async () => {
+    const main = initRepo(path.join(await tempRoot(), "acme"));
+    const second = addWorktree(main, path.join(path.dirname(main), "acme-b"));
+    const first = addWorktree(main, path.join(path.dirname(main), "acme-a"));
+
+    const clone = cloneOf(second);
+    expect(clone).toEqual({
+      commonDir: path.join(main, ".git"),
+      bare: false,
+      mainWorktree: main,
+      linkedWorktrees: [
+        { recordName: "acme-a", path: first, live: true },
+        { recordName: "acme-b", path: second, live: true },
+      ],
+    });
+    expect(cloneOf(main)).toEqual(clone);
+  });
+
+  test("a bare repository has no main worktree", async () => {
+    const root = await tempRoot();
+    const bare = initBareRepo(root);
+    const worktree = addWorktree(bare, path.join(root, "acme-a"));
+
+    expect(cloneOf(worktree)).toEqual({
+      commonDir: bare,
+      bare: true,
+      mainWorktree: null,
+      linkedWorktrees: [{ recordName: "acme-a", path: worktree, live: true }],
+    });
+  });
+
+  test("a locked worktree whose folder is away is listed as not live", async () => {
+    const main = initRepo(path.join(await tempRoot(), "acme"));
+    const away = addWorktree(main, path.join(path.dirname(main), "acme-away"));
+    git(main, "worktree", "lock", away);
+    await fs.rm(away, { recursive: true, force: true });
+
+    expect(cloneOf(main)?.linkedWorktrees).toEqual([
+      { recordName: "acme-away", path: away, live: false },
+    ]);
+  });
+
+  test("a removed or redirected worktree is not listed", async () => {
+    const main = initRepo(path.join(await tempRoot(), "acme"));
+    const gone = addWorktree(main, path.join(path.dirname(main), "acme-gone"));
+    const moved = addWorktree(main, path.join(path.dirname(main), "acme-moved"));
+    await fs.rm(gone, { recursive: true, force: true });
+    await fs.writeFile(
+      path.join(main, ".git", "worktrees", "acme-moved", "gitdir"),
+      `${path.join(path.dirname(main), "elsewhere", ".git")}\n`,
+    );
+
+    expect(cloneOf(main)?.linkedWorktrees).toEqual([]);
+    expect(moved).toBeTruthy();
+  });
+
+  test("the shared Git folder alone names the clone", async () => {
+    const main = initRepo(path.join(await tempRoot(), "acme"));
+    const sibling = addWorktree(main, path.join(path.dirname(main), "acme-feature"));
+
+    expect(cloneAt(path.join(main, ".git"))?.linkedWorktrees.map((entry) => entry.path)).toEqual([
+      sibling,
+    ]);
+  });
+
+  test("a submodule or a folder outside Git has no clone", async () => {
+    const root = await tempRoot();
+    const library = initRepo(path.join(root, "acme-lib"));
+    const superproject = initRepo(path.join(root, "acme"));
+    git(superproject, "submodule", "add", "-q", library, "lib");
+
+    expect(cloneOf(path.join(superproject, "lib"))).toBeNull();
+    expect(cloneOf(path.join(root, "nothing"))).toBeNull();
+  });
+});
+
+describe("sameClone", () => {
+  test("a main worktree and its live worktrees, in any order", async () => {
+    const main = initRepo(path.join(await tempRoot(), "acme"));
+    const sibling = addWorktree(main, path.join(path.dirname(main), "acme-feature"));
+    const nested = addWorktree(main, path.join(main, ".claude", "worktrees", "fix"));
+
+    expect(sameClone(main, sibling)).toBe(true);
+    expect(sameClone(sibling, nested)).toBe(true);
+    expect(sameClone(nested, main)).toBe(true);
+  });
+
+  test("separate clones of one remote are not the same clone", async () => {
+    const root = await tempRoot();
+    const origin = initRepo(path.join(root, "origin"));
+    git(root, "clone", "-q", origin, path.join(root, "acme-1"));
+    git(root, "clone", "-q", origin, path.join(root, "acme-2"));
+
+    expect(sameClone(path.join(root, "acme-1"), path.join(root, "acme-2"))).toBe(false);
+  });
+
+  test("a submodule is not the outer Checkout's clone", async () => {
+    const root = await tempRoot();
+    const library = initRepo(path.join(root, "acme-lib"));
+    const superproject = initRepo(path.join(root, "acme"));
+    git(superproject, "submodule", "add", "-q", library, "lib");
+
+    expect(sameClone(superproject, path.join(superproject, "lib"))).toBe(false);
+  });
+
+  test("a worktree whose record points elsewhere is not a Checkout of the clone", async () => {
+    const main = initRepo(path.join(await tempRoot(), "acme"));
+    const moved = addWorktree(main, path.join(path.dirname(main), "acme-moved"));
+    await fs.writeFile(
+      path.join(main, ".git", "worktrees", "acme-moved", "gitdir"),
+      `${path.join(path.dirname(main), "elsewhere", ".git")}\n`,
+    );
+
+    expect(sameClone(main, moved)).toBe(false);
+  });
+});
+
+describe("a path that runs through a file", () => {
+  test("reads as no Git layout and no Checkout", async () => {
+    const root = await tempRoot();
+    const blocker = path.join(root, "not-a-directory");
+    await fs.writeFile(blocker, "");
+    const inside = path.join(blocker, "repo");
+
+    expect(readGitLayout(inside)).toBeNull();
+    expect(checkoutAt(inside)).toBeNull();
+    expect(isDirectory(inside)).toBe(false);
   });
 });

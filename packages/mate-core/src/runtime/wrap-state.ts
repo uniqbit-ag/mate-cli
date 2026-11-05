@@ -106,6 +106,37 @@ export function wrapStateOf(manifest: Manifest): WrapState {
   };
 }
 
+/**
+ * A Checkout's own wrap state joined with the Claude wrap that serves it
+ * (design Decision 12): Claude Code loads both settings files, so a launch
+ * leaves to them every hook group and plugin either carries. Everything else
+ * stays the Checkout's own.
+ */
+export function joinedClaudeWrapState(own: WrapState, serving: WrapState): WrapState {
+  const groups = [
+    ...own.carriedClaudeHookGroups,
+    ...serving.carriedClaudeHookGroups.filter((group) => !own.carriesClaudeHookGroup(group)),
+  ];
+  const keys = new Set(groups.map(hookGroupKey));
+  const ownPlugins = new Set(own.carriedClaudePlugins.map((plugin) => plugin.id));
+  return {
+    ...own,
+    runtimes: serving.runtimes.has("claude") ? new Set([...own.runtimes, "claude"]) : own.runtimes,
+    carriedClaudeHookGroups: groups,
+    carriesClaudeHookGroup: (group) => keys.has(hookGroupKey(group)),
+    carriedClaudePlugins: [
+      ...own.carriedClaudePlugins,
+      ...serving.carriedClaudePlugins.filter((plugin) => !ownPlugins.has(plugin.id)),
+    ],
+    carriedClaudePluginDirectories: [
+      ...new Set([
+        ...own.carriedClaudePluginDirectories,
+        ...serving.carriedClaudePluginDirectories,
+      ]),
+    ],
+  };
+}
+
 /** Where no Projection Root resolves: nothing is wrapped. */
 export const NOT_WRAPPED: WrapState = wrapStateOf(EMPTY_MANIFEST);
 

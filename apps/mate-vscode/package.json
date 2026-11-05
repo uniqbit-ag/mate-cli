@@ -1,0 +1,205 @@
+{
+  "name": "@uniqbit/mate-vscode",
+  "displayName": "Mate",
+  "version": "1.0.0-canary.0",
+  "description": "Mate sidebar for VS Code and Cursor: park and resume sessions, worktrees, open changes, and changes ready to publish. Install with `mate vscode setup`.",
+  "categories": [
+    "Other"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uniqbit-ag/mate-cli.git",
+    "directory": "apps/mate-vscode"
+  },
+  "publisher": "uniqbit",
+  "files": [
+    "mate-vscode.vsix"
+  ],
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsdown --config tsdown.config.ts",
+    "prepack": "bun scripts/package-vsix.ts",
+    "test": "CI=1 bun ../../test/run-isolated.ts",
+    "test:unit": "CI=1 bun ../../test/run-isolated.ts --suite=unit",
+    "test:integration": "CI=1 bun ../../test/run-isolated.ts --suite=integration",
+    "typecheck": "bunx tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint src/ scripts/",
+    "lint:fix": "oxlint src/ scripts/ --fix",
+    "format": "oxfmt src/ scripts/",
+    "format:check": "oxfmt src/ scripts/ --check"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/node": "^26.0.1",
+    "@types/vscode": "1.85.0",
+    "@vscode/vsce": "^4.1.0",
+    "tsdown": "0.23.0",
+    "typescript": "latest"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mate",
+          "title": "Mate",
+          "icon": "media/mate.svg"
+        }
+      ]
+    },
+    "views": {
+      "mate": [
+        {
+          "id": "mate.sessions",
+          "name": "Sessions"
+        },
+        {
+          "id": "mate.worktrees",
+          "name": "Worktrees"
+        },
+        {
+          "id": "mate.openChanges",
+          "name": "Open changes"
+        },
+        {
+          "id": "mate.readyToPublish",
+          "name": "Ready to publish"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "mate.sessions",
+        "contents": "Sessions you start here are listed, so you can resume, attach, and stop them. Sessions started in a terminal are not.\n[New session](command:mate.newSession)\n[About sessions](command:mate.sessionsInfo)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "mate.newSession",
+        "title": "New session",
+        "category": "Mate",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mate.refresh",
+        "title": "Refresh",
+        "category": "Mate",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mate.sessionsInfo",
+        "title": "About sessions",
+        "category": "Mate",
+        "icon": "$(info)"
+      },
+      {
+        "command": "mate.resumeSession",
+        "title": "Resume",
+        "category": "Mate",
+        "icon": "$(play)"
+      },
+      {
+        "command": "mate.removeSession",
+        "title": "Remove",
+        "category": "Mate",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mate.resumeWorksetSession",
+        "title": "Resume latest session",
+        "category": "Mate",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "mate.attachSession",
+        "title": "Attach",
+        "category": "Mate",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "mate.stopSession",
+        "title": "Stop",
+        "category": "Mate",
+        "icon": "$(debug-stop)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "mate.newSession",
+          "when": "view == mate.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "mate.sessionsInfo",
+          "when": "view == mate.sessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "mate.refresh",
+          "when": "view =~ /^mate\\./",
+          "group": "navigation@9"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "mate.resumeSession",
+          "when": "view == mate.sessions && viewItem =~ /^session\\.parked\\./",
+          "group": "inline@1"
+        },
+        {
+          "command": "mate.attachSession",
+          "when": "view == mate.sessions && viewItem =~ /^session\\.(here|elsewhere)\\..*\\.attachable$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "mate.stopSession",
+          "when": "view == mate.sessions && viewItem =~ /^session\\.(here|elsewhere)\\..*\\.attachable$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "mate.removeSession",
+          "when": "view == mate.sessions && viewItem =~ /^session\\./",
+          "group": "inline@3"
+        },
+        {
+          "command": "mate.resumeWorksetSession",
+          "when": "view == mate.openChanges && viewItem == workset.sessions",
+          "group": "inline@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "mate.resumeSession",
+          "when": "false"
+        },
+        {
+          "command": "mate.removeSession",
+          "when": "false"
+        },
+        {
+          "command": "mate.resumeWorksetSession",
+          "when": "false"
+        },
+        {
+          "command": "mate.attachSession",
+          "when": "false"
+        },
+        {
+          "command": "mate.stopSession",
+          "when": "false"
+        }
+      ]
+    }
+  },
+  "activationEvents": [],
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  }
+}

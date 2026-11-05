@@ -195,7 +195,7 @@ describe("reclaim at Done", () => {
   const info = (id: string, state: WorksetInfo["state"] = "paused"): WorksetInfo => ({
     id,
     repository: "acme/web",
-    branch: `change/${id}`,
+    branch: `workset/${id}`,
     state,
   });
 
@@ -228,7 +228,7 @@ describe("reclaim at Done", () => {
 
   test("removes a Done Workset's container, worktree and run files without force", async () => {
     await runs.settle("acme-done");
-    await runs.rememberPush("acme-done", "change/acme-done");
+    await runs.rememberPush("acme-done", "workset/acme-done");
     await runs.log("acme-done", "published\n");
     const { deps: d, deleted } = deps();
 

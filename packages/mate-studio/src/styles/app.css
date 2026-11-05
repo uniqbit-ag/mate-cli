@@ -451,6 +451,7 @@
   .factory-home select,
   .factory-home input[type="search"],
   .outcome-dialog textarea,
+  .outcome-ticket,
   .agents-dialog input {
     width: 100%;
     min-width: 0;
@@ -466,6 +467,7 @@
   .factory-home textarea:focus,
   .factory-home input:focus,
   .outcome-dialog textarea:focus,
+  .outcome-ticket:focus,
   .agents-dialog input:focus {
     border-color: var(--accent);
   }
@@ -535,6 +537,10 @@
   .outcome-input-actions select {
     width: auto;
     margin-left: auto;
+  }
+  .outcome-ticket {
+    width: 9rem;
+    font-family: var(--font-mono);
   }
 
   /* One row per Outcome inside a list card. */

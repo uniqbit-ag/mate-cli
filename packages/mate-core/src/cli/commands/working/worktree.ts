@@ -4,8 +4,13 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { FRAMEWORK_NAME } from "../../../framework";
+import {
+  companionTicketFormat,
+  TICKETS_OFF,
+  type TicketFormat,
+} from "../../../lib/delivery/branches";
 import { recordDelivery } from "../../../lib/delivery/record-delivery";
-import { sameRepository } from "../../../lib/delivery/record";
+import { isJiraKey, normalizeJiraKey, sameRepository } from "../../../lib/delivery/record";
 import { resolveForCapability } from "../../../lib/orchestrator/framework-context";
 import {
   collectWorkspaceInventory,
@@ -19,19 +24,20 @@ import {
   type PruneResult,
   type WorktreeResult,
 } from "../../../lib/workset/worktree";
+import { attributeCurrentSession } from "../../../lib/session-attribution";
 import { errorMessage } from "../../../runtime/error-message";
 import { gitEnvironment } from "../../../runtime/companion-git";
 import { resolveDeliveryEnvironment } from "../artifact/delivery/environment";
 import { sharedRefusalMessage } from "../artifact/delivery/output";
-import { ensureUnambiguousCompanion } from "../shared/companion-selection";
+import { ensureUnambiguousCompanion, launchAmbiguityDeps } from "../shared/companion-selection";
 import { readCompanionWorksetStages } from "../studio/payload";
 
 const execFileAsync = promisify(execFile);
 
 const n = FRAMEWORK_NAME;
 const USAGE = [
-  `${n} working worktree: usage: ${n} working worktree <workset-id> [--companion <path>] [--no-install] [--json]`,
-  `${n} working worktree: usage: ${n} working worktree --change <change> [--enter] [--companion <path>] [--no-install] [--json]`,
+  `${n} working worktree: usage: ${n} working worktree <workset-id> [--ticket <KEY>] [--companion <path>] [--no-install] [--json]`,
+  `${n} working worktree: usage: ${n} working worktree --change <change> [--enter] [--ticket <KEY>] [--companion <path>] [--no-install] [--json]`,
   `${n} working worktree: usage: ${n} working worktree prune [--companion <path>] [--json]`,
 ].join("\n");
 
@@ -68,6 +74,10 @@ export interface WorkingWorktreeDeps {
   createForChange?: typeof createChangeWorktrees;
   prune?: typeof pruneWorksetWorktrees;
   worksetStages?: typeof readCompanionWorksetStages;
+  /** The companion's ticket setting; `--ticket` is refused unless it is `jira`. */
+  ticketFormat?: (companion: string) => Promise<TicketFormat>;
+  /** Records the change, and the worktree it moves to, on the agent session this runs in. */
+  attribute?: typeof attributeCurrentSession;
 }
 
 async function canonicalPath(candidate: string): Promise<string> {
@@ -98,12 +108,14 @@ type Parsed = {
   companion?: string;
   install: boolean;
   json: boolean;
+  ticket?: string;
 } & ({ target: string } | { change: string; enter: boolean });
 
 function parse(argv: string[]): Parsed | null {
   const positional: string[] = [];
   let companion: string | undefined;
   let change: string | undefined;
+  let ticket: string | undefined;
   let install = true;
   let json = false;
   let enter = false;
@@ -115,17 +127,25 @@ function parse(argv: string[]): Parsed | null {
     } else if (arg === "--change") {
       change = argv[++index];
       if (!change) return null;
+    } else if (arg === "--ticket") {
+      ticket = argv[++index];
+      if (!ticket) return null;
     } else if (arg === "--no-install") install = false;
     else if (arg === "--enter") enter = true;
     else if (arg === "--json") json = true;
     else if (arg.startsWith("-")) return null;
     else positional.push(arg);
   }
-  const rest = { ...(companion ? { companion } : {}), install, json };
+  const rest = {
+    ...(companion ? { companion } : {}),
+    ...(ticket ? { ticket } : {}),
+    install,
+    json,
+  };
   if (change) return positional.length === 0 ? { change, enter, ...rest } : null;
   const [target] = positional;
   if (positional.length !== 1 || !target || enter) return null;
-  if (target === "prune" && !install) return null;
+  if (target === "prune" && (!install || ticket)) return null;
   return { target, ...rest };
 }
 
@@ -152,7 +172,12 @@ async function resolveCompanion(
       roots.includes(await canonicalPath(pairing.repository.path)) ? pairing.companionPath : null,
     ),
   );
-  const companions = [...new Set(paired.filter((entry): entry is string => entry !== null))];
+  const pairedCompanions = [...new Set(paired.filter((entry): entry is string => entry !== null))];
+  // A registry entry naming a removed folder pairs with nothing; the repo-local link still holds.
+  const companions =
+    pairedCompanions.length > 0
+      ? pairedCompanions
+      : (await launchAmbiguityDeps.resolveLinkedCompanions(cwd)).map((m) => m.companionPath);
   if (companions.length === 1) return { companion: companions[0]! };
   if (companions.length === 0) {
     return { error: `${roots[0]} is not linked to a companion; pass --companion <path>` };
@@ -327,7 +352,25 @@ export async function runWorkingWorktreeCommand(
       else printPruned(result);
       return;
     }
-    const options = { install: parsed.install, streamInstall: !parsed.json };
+    let ticket: string | undefined;
+    if (parsed.ticket !== undefined) {
+      if (!isJiraKey(parsed.ticket)) {
+        console.error(`${n} working worktree: --ticket expects a Jira key such as ABC-123.`);
+        process.exitCode = 1;
+        return;
+      }
+      if ((await (deps.ticketFormat ?? companionTicketFormat)(companion)) !== "jira") {
+        console.error(`${n} working worktree: ${TICKETS_OFF}`);
+        process.exitCode = 1;
+        return;
+      }
+      ticket = normalizeJiraKey(parsed.ticket);
+    }
+    const options = {
+      install: parsed.install,
+      streamInstall: !parsed.json,
+      ...(ticket ? { ticket } : {}),
+    };
     const result =
       "change" in parsed
         ? await (deps.createForChange ?? createChangeWorktrees)(companion, parsed.change, options)
@@ -340,6 +383,13 @@ export async function runWorkingWorktreeCommand(
       const recorded = await record(companion, parsed.change, result, deps.cwd ?? process.cwd());
       if ("failed" in recorded) result.warnings.push(...recorded.failed);
       enter = enterInstruction(deps.env ?? process.env, recorded);
+      await (deps.attribute ?? attributeCurrentSession)(
+        {
+          change: parsed.change,
+          ...("path" in recorded ? { move: { cwd: recorded.path, branch: recorded.branch } } : {}),
+        },
+        deps.env ?? process.env,
+      );
     }
     reportProblems(result.diagnostics, result.warnings);
     if (parsed.json) {

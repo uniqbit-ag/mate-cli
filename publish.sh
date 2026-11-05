@@ -15,6 +15,12 @@ PACKAGE_DIRS=(
   "$ROOT_DIR/apps/mate-cli"
 )
 
+# The editor extension is released in lockstep but no image installs it, so it
+# is packed here rather than by image-pins verify. It publishes first: a
+# released CLI must never name an extension version `mate vscode setup` cannot download.
+EXTENSION_NAME="@uniqbit/mate-vscode"
+EXTENSION_DIR="$ROOT_DIR/apps/mate-vscode"
+
 REGISTRY="https://registry.npmjs.org/"
 
 if [[ $# -lt 1 || $# -gt 2 || -z "${1:-}" ]]; then
@@ -61,7 +67,7 @@ read_version() {
 
 VERSION="$(read_version "$ROOT_DIR/apps/mate-cli")"
 
-for DIR in "${PACKAGE_DIRS[@]}"; do
+for DIR in "${PACKAGE_DIRS[@]}" "$EXTENSION_DIR"; do
   PACKAGE_VERSION="$(read_version "$DIR")"
   if [[ "$PACKAGE_VERSION" != "$VERSION" ]]; then
     echo "Error: $DIR/package.json is at version '$PACKAGE_VERSION' but @uniqbit/mate is at '$VERSION'." >&2
@@ -98,7 +104,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for NAME in "${PACKAGE_NAMES[@]}"; do
+for NAME in "$EXTENSION_NAME" "${PACKAGE_NAMES[@]}"; do
   echo "Previewing $NAME@$VERSION publish contents..."
   npm pack --dry-run --workspace "$NAME"
 done
@@ -135,6 +141,18 @@ if [[ "$(cut -f1,2 <<< "$FACTORY_VERIFIED")" != "$(cut -f1,2 <<< "$VERIFIED")" ]
   echo "Error: the factory image's pins differ from the appliance image's; nothing was published." >&2
   exit 1
 fi
+
+# Packed once, like the image packages; that tarball is the file published.
+(cd "$EXTENSION_DIR" && CI=1 npm pack --pack-destination "$PACK_DIR" --loglevel error >&2)
+EXTENSION_TARBALL="$PACK_DIR/uniqbit-mate-vscode-$VERSION.tgz"
+if [[ ! -f "$EXTENSION_TARBALL" ]]; then
+  echo "Error: npm pack did not create $(basename "$EXTENSION_TARBALL") for $EXTENSION_NAME; nothing was published." >&2
+  exit 1
+fi
+EXTENSION_INTEGRITY="sha512-$(node -e 'process.stdout.write(require("crypto").createHash("sha512").update(require("fs").readFileSync(process.argv[1])).digest("base64"))' "$EXTENSION_TARBALL")"
+PACKAGE_NAMES=("$EXTENSION_NAME" "${PACKAGE_NAMES[@]}")
+PACKED_INTEGRITIES=("$EXTENSION_INTEGRITY" "${PACKED_INTEGRITIES[@]}")
+PACKED_TARBALLS=("$EXTENSION_TARBALL" "${PACKED_TARBALLS[@]}")
 
 # Prints the registry integrity of an exact version, or nothing when that
 # version does not exist. Any other registry failure stops the release.

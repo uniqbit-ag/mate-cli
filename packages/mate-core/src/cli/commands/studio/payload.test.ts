@@ -86,6 +86,7 @@ function deps(overrides: Partial<CompanionPayloadDeps> = {}): CompanionPayloadDe
     hasArchivedProposal: async () => true,
     readWorksets: async () => ({ worksets: [], problems: [] }),
     linkedRepositoryIdentities: async () => [],
+    ticketFormat: async () => "none",
     ...overrides,
   };
 }
@@ -108,6 +109,20 @@ function workset(
 }
 
 describe("assembleCompanionPayload", () => {
+  test("an unreadable ticket setting hides tickets and says why", async () => {
+    const payload = await assembleCompanionPayload(
+      "/companions/acme",
+      deps({
+        ticketFormat: async () => {
+          throw new Error("framework.yaml is not valid YAML");
+        },
+      }),
+    );
+    if ("error" in payload) throw new Error(payload.error.reason);
+    expect(payload.ticketFormat).toBe("none");
+    expect(payload.warnings).toContain("ticket setting: framework.yaml is not valid YAML");
+  });
+
   test("composes changes, specs, and topology into one response", async () => {
     const payload = await assembleCompanionPayload("/companions/acme", deps());
 
@@ -431,9 +446,11 @@ describe("Worksets in the payload", () => {
         discoverArchives: async () => [archive("2026-10-01-acme-shipped")],
         archiveMergeSettled: async (_companion, anchor) => anchor === "2026-10-01-acme-shipped",
         linkedRepositoryIdentities: async () => ["acme/web"],
+        ticketFormat: async () => "jira",
       }),
     );
     if ("error" in payload) throw new Error(payload.error.reason);
+    expect(payload.ticketFormat).toBe("jira");
     expect(
       payload.worksets.map(({ id, stage, stageLabel, turn }) => [id, stage, stageLabel, turn]),
     ).toEqual([

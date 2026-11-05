@@ -11,9 +11,10 @@ import {
 import { MATE_ENV, hasLaunchEnvironment } from "../runtime/env";
 import { FRAMEWORK_NAME } from "../runtime/framework";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
-import { resolveProjection } from "../runtime/projection";
+import { checkoutServedFrom } from "../runtime/git-layout";
+import { projectionCheckout, resolveProjection } from "../runtime/projection";
 import { managedSessionKind, type SessionKind } from "../runtime/session-kind";
-import { hookOutcome, runHook, type HookCall, type HookEnv } from "./hook-io";
+import { hookFolder, hookOutcome, runHook, type HookCall, type HookEnv } from "./hook-io";
 
 export interface InstructionHookPayload {
   hookSpecificOutput?: { hookEventName: InstructionEvent; additionalContext: string };
@@ -79,30 +80,37 @@ function ownsEvent(event: InstructionEvent, kind: SessionKind, projected: boolea
   return false;
 }
 
-/** A launch sets every path; a partial one is not completed from a projection, which may name another repository. */
-function launchReaderInput(env: HookEnv): CompanionInstructionsInput | null {
+/**
+ * A launch sets every path; a partial one is not completed from a projection, which may
+ * name another repository. A session moved into another Checkout of the clone names it.
+ */
+function launchReaderInput(env: HookEnv, folder: string): CompanionInstructionsInput | null {
   const companionPath = env[MATE_ENV.companionPath];
   const id = env[MATE_ENV.repositoryId];
   const repoPath = env[MATE_ENV.repositoryPath];
   const wrapperBinPath = env[MATE_ENV.wrapperBinPath];
   if (!companionPath || !id || !repoPath || !wrapperBinPath) return null;
-  return { companionPath, repository: { id, path: repoPath }, wrapperBinPath };
+  return {
+    companionPath,
+    repository: { id, path: checkoutServedFrom(repoPath, folder) },
+    wrapperBinPath,
+  };
 }
 
 /** The environment always wins: a managed session never reads the projection. */
 function readerInput(
   env: HookEnv,
   kind: SessionKind,
-  cwd: string,
+  folder: string,
   resolve: typeof resolveProjection,
 ): CompanionInstructionsInput | null {
-  if (kind !== "unmanaged") return launchReaderInput(env);
-  const projection = resolve(cwd);
+  if (kind !== "unmanaged") return launchReaderInput(env, folder);
+  const projection = resolve(folder);
   if (!projection) return null;
   return {
     companionPath: projection.companionPath,
-    /** A linked worktree on a projection copied from the main checkout names itself, not that checkout. */
-    repository: { id: projection.repositoryId, path: projection.repoRoot },
+    /** A linked worktree on a borrowed or copied projection names itself, not the lender. */
+    repository: { id: projection.repositoryId, path: projectionCheckout(projection) },
     wrapperBinPath: projection.wrapperBinPath,
   };
 }
@@ -127,7 +135,7 @@ function evaluate(
   const kind = sessionKind(env);
   if (!ownsEvent(event, kind, projected)) return null;
 
-  const reader = readerInput(env, kind, directory || input.cwd || cwd, resolve);
+  const reader = readerInput(env, kind, directory || hookFolder(input, env, cwd), resolve);
   if (!reader) return null;
 
   const result = read(reader);

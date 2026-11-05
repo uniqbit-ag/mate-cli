@@ -37,7 +37,18 @@ export async function linkCompanion(
 
   await fs.mkdir(path.dirname(link), { recursive: true });
   if (existing !== null) await fs.unlink(link);
-  await createLink(target, link);
+  try {
+    await createLink(target, link);
+  } catch (error) {
+    /** A concurrent Adoption of the same Checkout wrote the same link first. */
+    if (
+      (error as NodeJS.ErrnoException).code === "EEXIST" &&
+      (await currentTarget(link)) === target
+    ) {
+      return "current";
+    }
+    throw error;
+  }
   return "written";
 }
 

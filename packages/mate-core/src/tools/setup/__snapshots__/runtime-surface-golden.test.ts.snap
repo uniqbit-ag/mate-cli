@@ -259,6 +259,40 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
       },
       {
         "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -1063,6 +1097,40 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
       },
       {
         "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -1666,6 +1734,40 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -2556,6 +2658,40 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
       {
         "at": [
           "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
           "UserPromptSubmit",
         ],
         "kind": "list",
@@ -3167,6 +3303,40 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -3896,6 +4066,40 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
       },
       {
         "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -4433,6 +4637,40 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -5146,6 +5384,40 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
       },
       {
         "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
           "env",
         ],
         "entries": {},
@@ -5563,10 +5835,10 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "e89565aecee4",
+    "mate-apply-change/SKILL.md": "5348e29b96d8",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
-    "mate-archive-change/SKILL.md": "f47b9d44f5ed",
+    "mate-archive-change/SKILL.md": "a231ddabb438",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
     "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
     "mate-create-report/SKILL.md": "7db1adecbc1a",
@@ -5579,11 +5851,11 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "bb95713a4b42",
-    "mate-propose-change/references/mate-revise.md": "a490a63b310a",
+    "mate-propose-change/SKILL.md": "b5e1eb6e0b0c",
+    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "678af6ec1889",
-    "mate-publish-artifact/SKILL.md": "5c3bd8ed9b4e",
+    "mate-publish-artifact/SKILL.md": "532edb58212d",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-show-me/SKILL.md": "908f009299ac",
     "mate-simplify-code/SKILL.md": "a728118654f8",
@@ -5721,6 +5993,40 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -5873,10 +6179,10 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "e89565aecee4",
+    "mate-apply-change/SKILL.md": "5348e29b96d8",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
-    "mate-archive-change/SKILL.md": "f47b9d44f5ed",
+    "mate-archive-change/SKILL.md": "a231ddabb438",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
     "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
     "mate-create-report/SKILL.md": "7db1adecbc1a",
@@ -5889,11 +6195,11 @@ exports[`runtime surface golden fixtures setup openspec × opencode 1`] = `
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "bb95713a4b42",
-    "mate-propose-change/references/mate-revise.md": "a490a63b310a",
+    "mate-propose-change/SKILL.md": "b5e1eb6e0b0c",
+    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "cdb8d6c17526",
-    "mate-publish-artifact/SKILL.md": "5c3bd8ed9b4e",
+    "mate-publish-artifact/SKILL.md": "532edb58212d",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-show-me/SKILL.md": "908f009299ac",
     "mate-simplify-code/SKILL.md": "a728118654f8",
@@ -6284,10 +6590,10 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     },
   },
   "claudeSkills": {
-    "mate-apply-change/SKILL.md": "e89565aecee4",
+    "mate-apply-change/SKILL.md": "5348e29b96d8",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
-    "mate-archive-change/SKILL.md": "f47b9d44f5ed",
+    "mate-archive-change/SKILL.md": "a231ddabb438",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
     "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
     "mate-create-report/SKILL.md": "7db1adecbc1a",
@@ -6300,11 +6606,11 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "bb95713a4b42",
-    "mate-propose-change/references/mate-revise.md": "a490a63b310a",
+    "mate-propose-change/SKILL.md": "b5e1eb6e0b0c",
+    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "678af6ec1889",
-    "mate-publish-artifact/SKILL.md": "5c3bd8ed9b4e",
+    "mate-publish-artifact/SKILL.md": "532edb58212d",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-show-me/SKILL.md": "908f009299ac",
     "mate-simplify-code/SKILL.md": "a728118654f8",
@@ -6330,10 +6636,10 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
   "opencodeSkills": {},
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "e89565aecee4",
+    "mate-apply-change/SKILL.md": "5348e29b96d8",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
-    "mate-archive-change/SKILL.md": "f47b9d44f5ed",
+    "mate-archive-change/SKILL.md": "a231ddabb438",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
     "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
     "mate-create-report/SKILL.md": "7db1adecbc1a",
@@ -6346,11 +6652,11 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "bb95713a4b42",
-    "mate-propose-change/references/mate-revise.md": "a490a63b310a",
+    "mate-propose-change/SKILL.md": "b5e1eb6e0b0c",
+    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "cdb8d6c17526",
-    "mate-publish-artifact/SKILL.md": "5c3bd8ed9b4e",
+    "mate-publish-artifact/SKILL.md": "532edb58212d",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-show-me/SKILL.md": "908f009299ac",
     "mate-simplify-code/SKILL.md": "a728118654f8",
@@ -6528,6 +6834,40 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],
@@ -7058,10 +7398,10 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
 "Outputs land in $GRAPHIFY_OUT by default.
 "
 ,
-    "mate-apply-change/SKILL.md": "e89565aecee4",
+    "mate-apply-change/SKILL.md": "5348e29b96d8",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "d11b6fc25bf4",
-    "mate-archive-change/SKILL.md": "f47b9d44f5ed",
+    "mate-archive-change/SKILL.md": "a231ddabb438",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
     "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
     "mate-create-report/SKILL.md": "7db1adecbc1a",
@@ -7074,11 +7414,11 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "bb95713a4b42",
-    "mate-propose-change/references/mate-revise.md": "a490a63b310a",
+    "mate-propose-change/SKILL.md": "b5e1eb6e0b0c",
+    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "dbd00207ffa4",
     "mate-propose-change/references/openspec-update-change.md": "678af6ec1889",
-    "mate-publish-artifact/SKILL.md": "5c3bd8ed9b4e",
+    "mate-publish-artifact/SKILL.md": "532edb58212d",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
@@ -7142,10 +7482,10 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
   },
   "opencodeTui": null,
   "sharedSkills": {
-    "mate-apply-change/SKILL.md": "e89565aecee4",
+    "mate-apply-change/SKILL.md": "5348e29b96d8",
     "mate-apply-change/references/mate-compact-apply.md": "3f20c80a4d78",
     "mate-apply-change/references/openspec-apply-change.md": "de22021f4daa",
-    "mate-archive-change/SKILL.md": "f47b9d44f5ed",
+    "mate-archive-change/SKILL.md": "a231ddabb438",
     "mate-backfill-spec/SKILL.md": "d07cd4a60169",
     "mate-clarify-intent/SKILL.md": "a2e38ae50f05",
     "mate-create-report/SKILL.md": "7db1adecbc1a",
@@ -7158,11 +7498,11 @@ Write chunks to $GRAPHIFY_OUT and read $GRAPHIFY_OUT later.
     "mate-grill-with-docs/SKILL.md": "b542b610c484",
     "mate-grilling/SKILL.md": "f37ff4dd9b6d",
     "mate-interview-me/SKILL.md": "b48d9804c423",
-    "mate-propose-change/SKILL.md": "bb95713a4b42",
-    "mate-propose-change/references/mate-revise.md": "a490a63b310a",
+    "mate-propose-change/SKILL.md": "b5e1eb6e0b0c",
+    "mate-propose-change/references/mate-revise.md": "fab04cde133f",
     "mate-propose-change/references/openspec-propose.md": "c1f1d1291283",
     "mate-propose-change/references/openspec-update-change.md": "cdb8d6c17526",
-    "mate-publish-artifact/SKILL.md": "5c3bd8ed9b4e",
+    "mate-publish-artifact/SKILL.md": "532edb58212d",
     "mate-publish-artifact/references/openspec.md": "d004aed5cf3f",
     "mate-react-doctor/SKILL.md": "2ecf137679df",
     "mate-react-doctor/references/explain.md": "86754a7e5436",
@@ -7378,6 +7718,40 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
             "hooks": [
               {
                 "command": "node "<runtime-claude-plugin>/hooks/companion-instructions.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "SessionEnd",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-end.mjs" --projected",
+                "type": "command",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        "at": [
+          "hooks",
+          "Notification",
+        ],
+        "kind": "list",
+        "values": [
+          {
+            "hooks": [
+              {
+                "command": "node "<runtime-claude-plugin>/hooks/session-attention.mjs" --projected",
                 "type": "command",
               },
             ],

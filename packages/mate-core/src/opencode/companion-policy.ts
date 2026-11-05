@@ -195,7 +195,7 @@ export function readContext(
   env: Record<string, string | undefined> = process.env,
   cwd: string = process.cwd(),
 ): CompanionContext {
-  const { context, projection } = resolveCompanionRuntime(env, cwd);
+  const { context, projection } = resolveCompanionRuntime(env, cwd, { borrow: false });
 
   let agentsMd = "";
   if (context.companionPath) {
@@ -232,6 +232,6 @@ export function readStalenessLines(
   env: Record<string, string | undefined> = process.env,
   cwd: string = process.cwd(),
 ): string[] {
-  const { context, projection } = resolveCompanionRuntime(env, cwd);
+  const { context, projection } = resolveCompanionRuntime(env, cwd, { borrow: false });
   return stalenessLinesFor(context, projection);
 }

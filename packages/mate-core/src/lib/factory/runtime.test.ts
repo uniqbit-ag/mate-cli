@@ -285,7 +285,20 @@ describe("spawn", () => {
     );
   });
 
-  test("a recorded ticket names the new Delivery Branch", async () => {
+  test("the Workset record's ticket names the new Delivery Branch", async () => {
+    fs.mkdirSync(path.join(companion, "worksets"));
+    fs.writeFileSync(
+      path.join(companion, "worksets/acme-login.yaml"),
+      "id: acme-login\nticket: ABC-123\nrepositories: [acme/app]\nchanges: []\n",
+    );
+    const info = await spawnAcme();
+    expect(info.branch).toBe("workset/ABC-123-acme-login");
+    expect(gitCalls().find((args) => args[2] === "worktree")).toContain(
+      "workset/ABC-123-acme-login",
+    );
+  });
+
+  test("a member's recorded branch is the new Delivery Branch", async () => {
     fs.mkdirSync(path.join(companion, "worksets"));
     fs.writeFileSync(
       path.join(companion, "worksets/acme-login.yaml"),
@@ -295,7 +308,7 @@ describe("spawn", () => {
     fs.mkdirSync(form, { recursive: true });
     fs.writeFileSync(
       path.join(form, "delivery.yaml"),
-      "version: 1\nchange: acme-form\nticket: ABC-123\ndeliveries: []\n",
+      "version: 1\nchange: acme-form\ndeliveries:\n  - repository: acme/app\n    branch: workset/ABC-123-acme-login\n",
     );
     const info = await spawnAcme();
     expect(info.branch).toBe("workset/ABC-123-acme-login");

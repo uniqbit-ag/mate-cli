@@ -5,8 +5,7 @@ import { errorMessage } from "../runtime/error-message";
 import { unmanagedClaudeDelivery } from "../runtime/claude-delivery-plan";
 import { hasLaunchEnvironment } from "../runtime/env";
 import { FRAMEWORK_NAME } from "../runtime/framework";
-import { PROJECTED_FLAG } from "../runtime/projected-flag";
-import { resolveProjection } from "../runtime/projection";
+import { projectionCheckout, resolveProjection } from "../runtime/projection";
 import { runtimeDirectoryPath, runtimeMateBin } from "../runtime/runtime-directory";
 import {
   PREPARE_TIMEOUT_MS,
@@ -16,7 +15,21 @@ import {
   type PrepareRunner,
 } from "../runtime/session-prepare-runner";
 import { instructionHookPayload, type InstructionHookDeps } from "./companion-instructions";
-import { hookOutcome, runHook, type HookCall, type HookEnv, type HookOutcome } from "./hook-io";
+import {
+  hookFolder,
+  hookOutcome,
+  runHook,
+  type HookCall,
+  type HookEnv,
+  type HookOutcome,
+} from "./hook-io";
+import {
+  isWrapCopy,
+  registerClaudeSession,
+  registersHere,
+  sessionRegisterDeps,
+  type SessionRegisterDeps,
+} from "./session-register";
 
 export interface SessionPrepareHookDeps {
   /** The runtime-directory launcher; `null` until a `mate` run wrote it. */
@@ -26,6 +39,8 @@ export interface SessionPrepareHookDeps {
   timeoutMs: number;
   /** The main thread's instruction read, after the prepare. */
   instructions?: InstructionHookDeps;
+  /** Session registry writes; defaults to the real registry. */
+  registry?: SessionRegisterDeps;
 }
 
 export const sessionPrepareHookDeps: SessionPrepareHookDeps = {
@@ -46,9 +61,9 @@ function operatorMessage(lines: string[]): HookOutcome {
 async function runLocalPhase(
   deps: SessionPrepareHookDeps,
   mateBin: string,
-  projectDir: string,
+  checkoutRoot: string,
 ): Promise<PrepareRun> {
-  const pending = deps.runner(mateBin, projectDir)({ sync: false, timeoutMs: deps.timeoutMs });
+  const pending = deps.runner(mateBin, checkoutRoot)({ sync: false, timeoutMs: deps.timeoutMs });
   try {
     return await pending;
   } catch (error) {
@@ -74,13 +89,8 @@ export async function runSessionPrepareHook(
   cwd: string = process.cwd(),
   deps: SessionPrepareHookDeps = sessionPrepareHookDeps,
 ): Promise<HookOutcome> {
-  const prepared = await guardedPrepare(env, cwd, deps);
+  const prepared = await guardedPrepare(env, hookFolder(null, env, cwd), deps);
   return operatorMessage([...prepared.notes, ...startSync(prepared)]);
-}
-
-/** The folder the prepare runs in, and the main thread's instructions are read from. */
-function prepareDirectory(env: HookEnv, cwd: string): string {
-  return env.CLAUDE_PROJECT_DIR || cwd;
 }
 
 function prepareFailure(error: unknown): string {
@@ -90,11 +100,11 @@ function prepareFailure(error: unknown): string {
 /** A prepare that throws becomes a note, so the instructions after it still go out. */
 async function guardedPrepare(
   env: HookEnv,
-  cwd: string,
+  folder: string,
   deps: SessionPrepareHookDeps,
 ): Promise<Prepared> {
   try {
-    return await prepare(env, cwd, deps);
+    return await prepare(env, folder, deps);
   } catch (error) {
     return { notes: [prepareFailure(error)], startSync: NO_SYNC };
   }
@@ -110,13 +120,18 @@ function startSync(prepared: Prepared): string[] {
   }
 }
 
-async function prepare(env: HookEnv, cwd: string, deps: SessionPrepareHookDeps): Promise<Prepared> {
+/** Prepares the Checkout the session serves, a borrowing worktree's own root included. */
+async function prepare(
+  env: HookEnv,
+  folder: string,
+  deps: SessionPrepareHookDeps,
+): Promise<Prepared> {
   const nothing = { notes: [], startSync: NO_SYNC };
   if (hasLaunchEnvironment(env)) return nothing;
-  const projectDir = prepareDirectory(env, cwd);
-  const projection = resolveProjection(projectDir);
+  const projection = resolveProjection(folder);
   if (!projection) return nothing;
-  const plan = unmanagedClaudeDelivery(projection.repoRoot);
+  const checkoutRoot = projectionCheckout(projection);
+  const plan = unmanagedClaudeDelivery(checkoutRoot);
   const reconciles = plan.reconcile === "prepare-hook";
   const syncs = plan.gitSync === "prepare-hook";
   if (!reconciles && !syncs) return nothing;
@@ -132,22 +147,13 @@ async function prepare(env: HookEnv, cwd: string, deps: SessionPrepareHookDeps):
   }
 
   const local = reconciles
-    ? await runLocalPhase(deps, mateBin, projectDir)
+    ? await runLocalPhase(deps, mateBin, checkoutRoot)
     : { ok: true, notes: [] };
   const verdict = local.ok ? "warning" : "failed";
   return {
     notes: local.notes.map((note) => `${FRAMEWORK_NAME}: session prepare ${verdict}: ${note}`),
-    startSync: syncs ? () => deps.startSync(mateBin, projectDir) : NO_SYNC,
+    startSync: syncs ? () => deps.startSync(mateBin, checkoutRoot) : NO_SYNC,
   };
-}
-
-/**
- * Legacy rule: wraps before `--projected` registered this copy bare, and only
- * this hook re-wraps them. So a bare copy counts as the wrap's unless
- * `CLAUDE_PLUGIN_ROOT`, set for plugin hooks only, marks it as the plugin's.
- */
-function isWrapCopy({ argv, env }: HookCall): boolean {
-  return argv.includes(PROJECTED_FLAG) || !env.CLAUDE_PLUGIN_ROOT;
 }
 
 /**
@@ -162,11 +168,21 @@ export async function runSessionStartHook(
 ): Promise<HookOutcome> {
   const { env, cwd, input } = call;
   if (!input || typeof input !== "object" || Array.isArray(input)) return hookOutcome(null);
-  if (!isWrapCopy(call)) return hookOutcome(null);
-  const prepared = await guardedPrepare(env, cwd, deps);
+  const registry = deps.registry ?? sessionRegisterDeps;
+  const wrapCopy = isWrapCopy(call);
+  const folder = hookFolder(input, env, cwd);
+  // Registration never throws; it runs beside the prepare, off its critical path.
+  const registering = registersHere(wrapCopy, folder, registry)
+    ? registerClaudeSession(env, cwd, input, registry)
+    : Promise.resolve();
+  if (!wrapCopy) {
+    await registering;
+    return hookOutcome(null);
+  }
+  const [prepared] = await Promise.all([guardedPrepare(env, folder, deps), registering]);
   const { hookSpecificOutput, systemMessage } =
     instructionHookPayload(
-      { env, cwd, input, projected: true, directory: prepareDirectory(env, cwd) },
+      { env, cwd, input, projected: true, directory: folder },
       deps.instructions,
     ) ?? {};
   const notes = [...prepared.notes, ...startSync(prepared)];

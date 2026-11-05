@@ -9,13 +9,14 @@ import {
   type UnattendedSyncOutcome,
 } from "../../runtime/companion-sync";
 import { managedSessionKind, type SessionKind } from "../../runtime/session-kind";
-import type { WrapState } from "../../runtime/wrap-state";
+import { joinedClaudeWrapState, type WrapState } from "../../runtime/wrap-state";
 import { syncCompanionFiles } from "../../tools/setup";
 import type { CapabilityPlugin, LaunchPreflightContext } from "../../tools/setup/plugin";
 import type { ClaudePluginFolders } from "../../tools/setup/providers/claude-plugin-folders";
 import { attendedLockOptions, syncCompanionGit } from "./companion-git-sync";
 import { readCompanionConfig } from "./config-store";
 import { entryFailureMessage, firstFailure, type ProjectionChangedPaths } from "./projection-types";
+import { reconcileServingClaudeWrap } from "./serving-claude-wrap";
 import { LaunchPreflightError, type FrameworkConfig, type LinkedRepository } from "./types";
 import { project, projectWorkingRepositoryBestEffort } from "./working-repo-projection";
 import { runWrapPass } from "./wrap-pass";
@@ -75,6 +76,11 @@ export interface PrepareSessionInput {
    * one wrap pass and preflighted each; `[runtime]` when absent.
    */
   runtimes?: readonly PrepareRuntime[];
+  /**
+   * Runtimes a Checkout whose manifest records none takes from its Registered
+   * Checkout (design Decision 8): wrapped in the same pass, never preflighted.
+   */
+  adoptedRuntimes?: readonly PrepareRuntime[];
   companionPath: string;
   /** Absent for a companion-scope launch: nothing is projected. */
   repository?: LinkedRepository;
@@ -139,6 +145,7 @@ export const sessionPrepareDeps = {
    */
   refreshProjectionRoot: projectWorkingRepositoryBestEffort,
   runWrapPass,
+  reconcileServingClaudeWrap,
   runCapabilityPreflight,
   withCompanionLock,
   /** As the launch decides it: Git may prompt only with a terminal on both ends. */
@@ -238,6 +245,13 @@ function runtimesOf(input: PrepareSessionInput): PrepareRuntime[] {
     : [input.runtime];
 }
 
+/** The wrap pass's runtimes: the prepared ones, then those the Checkout adopts. */
+function wrapRuntimesOf(input: PrepareSessionInput): PrepareRuntime[] {
+  const prepared = runtimesOf(input);
+  const adopted = (input.adoptedRuntimes ?? []).filter((runtime) => !prepared.includes(runtime));
+  return [...prepared, ...adopted];
+}
+
 /**
  * One wrap pass for `runtimes`, OpenCode's copies included. Every managed
  * launch is this pass followed by the agent, for either runtime.
@@ -249,6 +263,20 @@ async function reconcileWrap(
   config: FrameworkConfig,
   run: StepLog,
 ): Promise<void> {
+  /** First, so the Checkout's own Claude wrap leaves out what the serving one carries. */
+  const served = runtimes.includes("claude")
+    ? await sessionPrepareDeps.reconcileServingClaudeWrap(input.companionPath, repository, {
+        create: input.mode === "attended",
+        config,
+      })
+    : null;
+  if (served?.result.kind === "failed") {
+    const failure = `the Claude wrap of ${served.repository.path}, which serves ${repository.id} there, failed: ${served.result.message}`;
+    run.fail("working-target", new LaunchPreflightError(failure), { runtimes: ["claude"] });
+    if (run.stopped) return;
+  } else if (served) {
+    run.warnings.push(...served.result.warnings);
+  }
   const wrapped = await sessionPrepareDeps.runWrapPass(input.companionPath, repository, {
     runtimes,
     config,
@@ -261,7 +289,10 @@ async function reconcileWrap(
   if (reportsClaudePluginFolders(input)) {
     run.warnings.push(...publicationWarnings(wrapped.claudePluginFolders));
   }
-  run.wrapState = wrapped.wrapState;
+  run.wrapState =
+    served && served.result.kind !== "failed"
+      ? joinedClaudeWrapState(wrapped.wrapState, served.result.wrapState)
+      : wrapped.wrapState;
   run.push({
     step: "working-target",
     outcome: "ok",
@@ -303,14 +334,13 @@ async function projectClaude(
   run.push({ step: "launch-projection", outcome: "ok" });
   await deps.refreshProjectionRoot(input.companionPath, repository);
   /** A launch is a wrap: created when missing, reconciled when stale, so the launch can defer to it. */
-  await reconcileWrap(input, repository, ["claude"], config, run);
+  await reconcileWrap(input, repository, wrapRuntimesOf(input), config, run);
 }
 
 /** Attended: the launch's own runtime. Otherwise one wrap pass for every wrapped runtime. */
 async function projectRepository(
   input: PrepareSessionInput,
   repository: LinkedRepository,
-  runtimes: PrepareRuntime[],
   config: FrameworkConfig,
   run: StepLog,
 ): Promise<void> {
@@ -318,7 +348,7 @@ async function projectRepository(
     await projectClaude(input, repository, config, run);
     return;
   }
-  await reconcileWrap(input, repository, runtimes, config, run);
+  await reconcileWrap(input, repository, wrapRuntimesOf(input), config, run);
 }
 
 /** File sync, one projection pass, and the capability preflight per runtime. */
@@ -332,7 +362,7 @@ async function runLocal(
 
   const runtimes = runtimesOf(input);
   if (input.repository) {
-    await projectRepository(input, input.repository, runtimes, config, run);
+    await projectRepository(input, input.repository, config, run);
     if (run.stopped) return;
   }
 

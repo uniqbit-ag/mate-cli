@@ -33,6 +33,7 @@ function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompani
     topology: null,
     worksets: [],
     linkedRepositories: ["acme/web"],
+    ticketFormat: "none",
     worksetProblems: [],
     warnings: [],
     ...overrides,
@@ -135,6 +136,29 @@ describe("the Factory home", () => {
     expect(await render(payload({ linkedRepositories: ["acme/web", "acme/api"] }))).toContain(
       'name="repository"',
     );
+  });
+
+  it("offers a Ticket field only when tickets are on", async () => {
+    expect(await render(payload())).not.toContain('name="ticket"');
+    const markup = await render(payload({ ticketFormat: "jira" }));
+    const input = markup.slice(markup.indexOf("data-outcome-input"));
+    const field = input.slice(0, input.indexOf("</form>")).match(/<input[^>]*>/)?.[0] ?? "";
+    expect(field).toContain('name="ticket"');
+    expect(field).toContain('placeholder="ABC-123"');
+    expect(field).not.toContain("required");
+    expect(markup).toMatch(/data-factory-action="\/create"[^]*name="ticket"/);
+  });
+
+  it("offers the Ticket field when starting a new outcome after publish", async () => {
+    const done = outcome({ stage: "done", stageLabel: "Done", turn: "none", ...started() });
+    const off = dialogMarkup(await render(payload({ worksets: [done] })), "acme-onboarding");
+    expect(off).toContain("Start as a new outcome");
+    expect(off).not.toContain('name="ticket"');
+    const on = dialogMarkup(
+      await render(payload({ worksets: [done], ticketFormat: "jira" })),
+      "acme-onboarding",
+    );
+    expect(on).toMatch(/class="outcome-feedback"[^]*name="ticket"[^]*Start as a new outcome/);
   });
 
   it("lists a running Outcome as one row with where it is, opening its dialog", async () => {
