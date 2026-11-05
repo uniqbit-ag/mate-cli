@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import type { StudioView } from "@uniqbit/mate-core/studio";
 
 import type { CompanionView, CompanionViewData } from "../server/views";
 
@@ -8,7 +7,8 @@ const { act, render } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const router = await import("@tanstack/react-router");
 const { prefetchViews, usePrefetchViews } = await import("./prefetch-views");
-const { companionViewQuery } = await import("./studio-queries");
+const { companionViewQuery, factoryQuery, reportsQuery, vaultQuery } =
+  await import("./studio-queries");
 
 const search = { companion: "0123456789" };
 const data = { error: null, studioMode: "engineering", warnings: [] } as CompanionViewData;
@@ -80,11 +80,11 @@ describe("prefetchViews", () => {
 });
 
 describe("usePrefetchViews", () => {
-  async function mountOn(view: StudioView) {
+  async function mountOn() {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const root = router.createRootRoute({
       component: function Page() {
-        usePrefetchViews(search, "engineering", view);
+        usePrefetchViews(search, "engineering");
         return null;
       },
     });
@@ -110,12 +110,13 @@ describe("usePrefetchViews", () => {
   }
 
   it("loads ahead once the page is idle", async () => {
-    expect(await mountOn("dashboard")).toContainEqual(
-      companionViewQuery("dashboard", search).queryKey,
-    );
+    expect(await mountOn()).toContainEqual(companionViewQuery("dashboard", search).queryKey);
   });
 
-  it("never loads ahead while the Vault is shown", async () => {
-    expect(await mountOn("vault")).toEqual([]);
+  it("loads the Vault's root listing and the Reports list, never Factory data", async () => {
+    const keys = await mountOn();
+    expect(keys).toContainEqual(vaultQuery(search.companion, {}).queryKey);
+    expect(keys).toContainEqual(reportsQuery(search.companion).queryKey);
+    expect(keys).not.toContainEqual(factoryQuery(search.companion).queryKey);
   });
 });

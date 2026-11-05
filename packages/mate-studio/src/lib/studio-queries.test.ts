@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { QueryClient, type QueryKey } from "@tanstack/react-query";
 
+import type { ShellData } from "../server/shell";
 import { agentCredentialKey } from "./agent-credential";
 import {
   afterEvent,
@@ -9,6 +10,7 @@ import {
   afterVaultFileChange,
   companionViewQuery,
   factoryQuery,
+  holdShellForMode,
   reportsQuery,
   shellQuery,
   vaultChildrenQuery,
@@ -102,5 +104,25 @@ describe("afterVaultFileChange", () => {
     const { queryClient, staleNames } = seeded();
     await afterVaultFileChange(queryClient, acme);
     expect(staleNames("acme")).toEqual(["vault"]);
+  });
+});
+
+describe("holdShellForMode", () => {
+  const shell = { studioMode: "engineering", metrics: null } as unknown as ShellData;
+  const analysisKey = shellQuery({ companion: acme, studioMode: "analysis" }).queryKey;
+
+  it("holds the other mode's shell, stale, so switching waits for nothing", () => {
+    const queryClient = new QueryClient();
+    holdShellForMode(queryClient, { companion: acme }, shell, "analysis");
+    expect(queryClient.getQueryData<ShellData>(analysisKey)?.studioMode).toBe("analysis");
+    expect(queryClient.getQueryState(analysisKey)?.dataUpdatedAt).toBe(0);
+  });
+
+  it("keeps a shell the server already sent", () => {
+    const queryClient = new QueryClient();
+    const served = { ...shell, studioMode: "analysis" } as ShellData;
+    queryClient.setQueryData(analysisKey, served);
+    holdShellForMode(queryClient, { companion: acme }, shell, "analysis");
+    expect(queryClient.getQueryData(analysisKey)).toBe(served);
   });
 });

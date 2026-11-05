@@ -84,7 +84,7 @@ async function mount(initial: { worksets: StudioWorkset[]; runs: Record<string, 
 }
 
 describe("the Factory board in a browser", () => {
-  it("keeps typed text and focus when the board updates under an open dialog", async () => {
+  it("keeps typed text and focus when the board updates under an open panel", async () => {
     const {
       view,
       update,
@@ -95,7 +95,7 @@ describe("the Factory board in a browser", () => {
     });
     await act(() => app.navigate({ to: "/factory", search: { outcome: "acme-onboarding" } }));
     const answer = view.container.ownerDocument.querySelector<HTMLTextAreaElement>(
-      'dialog textarea[name="answer"]',
+      '[data-outcome-panel] textarea[name="answer"]',
     )!;
     answer.focus();
     answer.value = "English and German";
@@ -104,9 +104,9 @@ describe("the Factory board in a browser", () => {
       runs: { "acme-onboarding": waiting },
     });
     const after = view.container.ownerDocument.querySelector<HTMLTextAreaElement>(
-      'dialog textarea[name="answer"]',
+      '[data-outcome-panel] textarea[name="answer"]',
     )!;
-    expect(view.container.ownerDocument.querySelector("dialog h2")?.textContent).toBe(
+    expect(view.container.ownerDocument.querySelector("[data-outcome-panel] h2")?.textContent).toBe(
       "Make onboarding much easier",
     );
     expect(after).toBe(answer);
@@ -118,13 +118,15 @@ describe("the Factory board in a browser", () => {
   it("opens an Outcome from its row and closes it again on Back", async () => {
     const { view, router: app } = await mount({ worksets: [outcome()], runs: {} });
     const doc = view.container.ownerDocument;
-    expect(doc.querySelector("dialog")).toBeNull();
+    expect(doc.querySelector("[data-outcome-panel]")).toBeNull();
     await act(async () => doc.querySelector<HTMLButtonElement>("[data-outcome-row]")!.click());
     expect(app.state.location.search).toEqual({ outcome: "acme-onboarding" });
-    expect(doc.querySelector("dialog")?.getAttribute("data-workset")).toBe("acme-onboarding");
+    expect(doc.querySelector("[data-outcome-panel]")?.getAttribute("data-workset")).toBe(
+      "acme-onboarding",
+    );
     await act(async () => app.history.back());
     await act(async () => {});
-    expect(doc.querySelector("dialog")).toBeNull();
+    expect(doc.querySelector("[data-outcome-panel]")).toBeNull();
     view.unmount();
   });
 });

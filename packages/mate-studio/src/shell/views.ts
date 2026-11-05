@@ -32,3 +32,25 @@ export function viewAt(pathname: string): StudioView | undefined {
   const entry = Object.entries(VIEW_PATHS).find(([, path]) => path === pathname);
   return entry?.[0] as StudioView | undefined;
 }
+
+/** One plain line under each view's title. */
+export const VIEW_DESCRIPTIONS: Record<StudioMode, Record<StudioView, string>> = {
+  engineering: {
+    dashboard: "Changes in flight, grouped by what they need next.",
+    factory: "Outcomes the factory works on, and the decisions they wait for.",
+    workflow: "The Delivery Path: every stage, its skill and where your changes are.",
+    skills: "The skills each agent can run in this companion.",
+    vault: "Every file in the Companion Repository.",
+    specs: "Capabilities by Area, with their requirements.",
+    reports: "Reports agents published for this companion.",
+  },
+  analysis: {
+    dashboard: "What shipped lately, and the specs it changed.",
+    factory: "Outcomes the factory works on.",
+    workflow: "The Delivery Path.",
+    skills: "Skills in this companion.",
+    vault: "Every file in the Companion Repository.",
+    specs: "Capabilities by Area, with their requirements.",
+    reports: "Reports agents published for this companion.",
+  },
+};

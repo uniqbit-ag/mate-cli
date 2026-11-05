@@ -483,6 +483,192 @@ describe("vault manager", () => {
     manager.stop();
   });
 
+  test("adds directory watchers without stalling other work", async () => {
+    const root = await fs.realpath(await fixture());
+    const directories = Array.from({ length: 1_500 }, (_unused, index) => `d${index}`);
+    await Promise.all(
+      directories.map(async (directory) => {
+        await fs.mkdir(path.join(root, directory));
+        await fs.writeFile(path.join(root, directory, "note.md"), "x");
+      }),
+    );
+    const recorder = recordingWatch();
+    const manager = createVaultManager({
+      watch: (directory, listener) => {
+        const until = performance.now() + 1;
+        while (performance.now() < until);
+        return recorder.watch(directory, listener);
+      },
+    });
+    const { generation } = await manager.tree(root);
+    const scheduled = performance.now();
+    const fired = await new Promise<number>((resolve) =>
+      setTimeout(() => resolve(performance.now()), 0),
+    );
+    expect(fired - scheduled).toBeLessThan(250);
+    while (recorder.open.size < directories.length + 1) await settle(20);
+    await settle(20);
+    // Files written while watches were added are found by a new listing, once.
+    const relisted = (await manager.tree(root)).generation;
+    expect(relisted).toBeGreaterThan(generation);
+    await settle(50);
+    expect((await manager.tree(root)).generation).toBe(relisted);
+    manager.stop();
+  });
+
+  test("tries a failed watch again on refresh", async () => {
+    const root = await gitFixture();
+    await fs.mkdir(path.join(root, "docs"));
+    await fs.writeFile(path.join(root, "docs", "note.md"), "note");
+    let failing = true;
+    const recorder = recordingWatch((directory) => failing && directory !== root);
+    const manager = createVaultManager({ watch: recorder.watch });
+    await manager.tree(root);
+    await settle();
+    expect((await manager.tree(root)).warning).toContain("Live updates are unavailable");
+    failing = false;
+    await manager.refresh(root);
+    await settle();
+    const result = await manager.tree(root);
+    expect(result.watching).toBe(true);
+    expect(result.warning).toBeNull();
+    expect(recorder.open.has(path.join(root, "docs"))).toBe(true);
+    manager.stop();
+  });
+
+  test("keeps per-directory watches only for followed companions", async () => {
+    const first = await fs.realpath(await fixture());
+    const second = await fs.realpath(await fixture());
+    const third = await fs.realpath(await fixture());
+    const recorder = recordingWatch();
+    const manager = createVaultManager({ watch: recorder.watch, closeAfterMs: 60_000 });
+    await manager.tree(first);
+    await manager.tree(second);
+    expect(recorder.open.has(first)).toBe(false);
+    expect(recorder.open.has(second)).toBe(true);
+    const leave = manager.subscribeTree(second, () => {});
+    await settle(20);
+    await manager.tree(third);
+    expect(recorder.open.has(second)).toBe(true);
+    expect(recorder.open.has(third)).toBe(true);
+    leave();
+    manager.stop();
+  });
+
+  test("a listing finishing after the watch closed does not reopen it", async () => {
+    const root = await gitFixture();
+    await fs.writeFile(path.join(root, "note.md"), "note");
+    const { git: counting } = countingGit();
+    let watches = 0;
+    const recorder = recordingWatch();
+    const manager = createVaultManager({
+      git: async (args, input) => {
+        await settle(80);
+        return counting(args, input);
+      },
+      watch: (directory, listener) => {
+        watches += 1;
+        return recorder.watch(directory, listener);
+      },
+      closeAfterMs: 20,
+    });
+    expect(await manager.prefetch(root)).toBeNull();
+    await settle(400);
+    expect(watches).toBe(1);
+    expect(recorder.open.size).toBe(0);
+    manager.stop();
+  });
+
+  test("a removed file outside the listing keeps the tree", async () => {
+    const root = await gitFixture();
+    await fs.writeFile(path.join(root, "note.md"), "note");
+    let listener: Listener | undefined;
+    const manager = createVaultManager({
+      watch: recordingWatch().watch,
+      watchTree: (_root, next) => {
+        listener = next;
+        return { close() {} };
+      },
+    });
+    await manager.tree(root);
+    const generations: number[] = [];
+    manager.subscribeTree(root, (generation) => generations.push(generation));
+    await settle(20);
+    listener?.("rename", ".note.md.acme.tmp");
+    await settle(100);
+    expect(generations).toEqual([0]);
+    manager.stop();
+  });
+
+  test("keeps the watch while followed and closes it after the last follower", async () => {
+    const root = await fs.realpath(await fixture());
+    await fs.writeFile(path.join(root, "note.md"), "note");
+    const recorder = recordingWatch();
+    let watches = 0;
+    const manager = createVaultManager({
+      watch: (directory, listener) => {
+        watches += 1;
+        return recorder.watch(directory, listener);
+      },
+      closeAfterMs: 30,
+    });
+    const leave = manager.subscribeTree(root, () => {});
+    await settle(20);
+    await manager.tree(root);
+    expect(recorder.open.has(root)).toBe(true);
+    const leaveFile = manager.subscribe(root, "note.md", () => {});
+    leave();
+    await settle(60);
+    expect(recorder.open.has(root)).toBe(true);
+    leaveFile();
+    const again = manager.subscribeTree(root, () => {});
+    await settle(60);
+    expect(recorder.open.has(root)).toBe(true);
+    expect(watches).toBe(1);
+    again();
+    await settle(60);
+    expect(recorder.open.size).toBe(0);
+    manager.stop();
+  });
+
+  test("a recursive watch drops churn in ignored content without git", async () => {
+    const root = await gitFixture();
+    await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n");
+    await fs.mkdir(path.join(root, "docs"));
+    await fs.writeFile(path.join(root, "docs", "note.md"), "note");
+    const { git, calls } = countingGit();
+    let listener: Listener | undefined;
+    const directories = recordingWatch();
+    const manager = createVaultManager({
+      git,
+      watch: directories.watch,
+      watchTree: (_root, next) => {
+        listener = next;
+        return { close() {} };
+      },
+    });
+    await manager.tree(root);
+    await settle();
+    expect(directories.open.size).toBe(0);
+    const generations: number[] = [];
+    manager.subscribeTree(root, (generation) => generations.push(generation));
+    await settle(20);
+
+    const before = calls.length;
+    for (let index = 0; index < 1_000; index += 1) {
+      listener?.("change", path.join("node_modules", `pkg-${index % 10}`, `file-${index}.md`));
+    }
+    await settle(100);
+    expect(calls.length - before).toBeLessThanOrEqual(1);
+    expect(generations).toEqual([0]);
+
+    await fs.writeFile(path.join(root, "docs", "added.md"), "added");
+    listener?.("rename", path.join("docs", "added.md"));
+    await settle(100);
+    expect(flatten((await manager.tree(root)).tree)).toContain("docs/added.md");
+    manager.stop();
+  });
+
   test("refuses stale content and reports an observed overwritten version", async () => {
     const root = await fixture();
     await fs.writeFile(path.join(root, "note.md"), "one");

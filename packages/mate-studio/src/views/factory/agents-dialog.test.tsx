@@ -224,7 +224,9 @@ describe("the Agents button", () => {
       "acme-onboarding",
     );
     const doc = view.container.ownerDocument;
-    const links = doc.querySelectorAll<HTMLButtonElement>("dialog [data-open-agents]");
+    const links = doc.querySelectorAll<HTMLButtonElement>(
+      "[data-outcome-panel] [data-open-agents]",
+    );
     expect(links).toHaveLength(1);
     await act(async () => links[0]!.click());
     await settle();

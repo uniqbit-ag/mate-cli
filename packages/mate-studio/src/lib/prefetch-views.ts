@@ -1,4 +1,9 @@
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  type QueryExecuteOptions,
+  type QueryKey,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { type StudioMode, type StudioView, viewsFor } from "@uniqbit/mate-core/studio";
 import { useEffect } from "react";
@@ -6,7 +11,7 @@ import { useEffect } from "react";
 import type { CompanionView } from "../server/views";
 import { VIEW_PATHS } from "../shell/views";
 import type { StudioSearch } from "./search";
-import { companionViewQuery } from "./studio-queries";
+import { companionViewQuery, reportsQuery, vaultQuery } from "./studio-queries";
 
 /** Views read from the held snapshot; Factory, Vault and Reports load their own way. */
 const AHEAD: readonly CompanionView[] = ["dashboard", "workflow", "skills", "specs"];
@@ -35,11 +40,26 @@ export async function prefetchViews(
     if (queryClient.getQueryData(options.queryKey) === undefined) {
       // oxlint-disable-next-line no-await-in-loop -- one view at a time keeps the server quiet
       await queryClient.query(options).catch(() => {});
-      // Navigating to the Vault meanwhile must not be followed by another page read.
       if (cancelled()) return;
     }
     // oxlint-disable-next-line no-await-in-loop -- route code follows its data
     await preload?.(view).catch(() => {});
+  }
+}
+
+/** Loads each view's route code, one chunk at a time, until `cancelled`. */
+async function loadViewCode(
+  router: ReturnType<typeof useRouter>,
+  views: readonly StudioView[],
+  cancelled: () => boolean,
+): Promise<void> {
+  const routes = router.routesByPath as unknown as Record<string, unknown>;
+  for (const view of views) {
+    if (cancelled()) return;
+    const route = routes[VIEW_PATHS[view]];
+    if (!route) continue;
+    // oxlint-disable-next-line no-await-in-loop -- one chunk at a time
+    await Promise.resolve(router.loadRouteChunk(route as never)).catch(() => {});
   }
 }
 
@@ -53,29 +73,53 @@ const whenIdle = (run: () => void): (() => void) => {
 };
 
 /**
- * Loads the current mode's other companion views while the page is idle. Never runs while the
- * Vault is shown: every page read on the server deactivates the vault's watchers.
+ * While the page is idle, one item at a time: the code of every view the mode offers, the
+ * mode's companion views, the Vault's root listing and the Reports list, then each other
+ * enabled mode's Overview, so no first visit waits. Factory data is never loaded ahead: it
+ * refreshes on its own events.
  */
-export function usePrefetchViews(search: StudioSearch, studioMode: StudioMode, view: StudioView) {
+export function usePrefetchViews(
+  search: StudioSearch,
+  studioMode: StudioMode,
+  enabledModes: readonly StudioMode[] = [],
+) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { companion } = search;
   const requestedMode = search.studioMode;
-  const onVault = view === "vault";
+  // A string, so a new array with the same modes does not restart the effect.
+  const otherModes = enabledModes.filter((mode) => mode !== studioMode).join(",");
   useEffect(() => {
-    if (!companion || onVault) return;
+    if (!companion) return;
     let stopped = false;
     const viewSearch = { companion, studioMode: requestedMode };
+    const offered = viewsFor(studioMode);
+    const load = async <T, TKey extends QueryKey>(
+      options: QueryExecuteOptions<T, Error, T, T, TKey>,
+    ) => {
+      if (stopped || queryClient.getQueryData(options.queryKey) !== undefined) return;
+      await queryClient.query(options).catch(() => {});
+    };
     const cancel = whenIdle(() => {
-      void prefetchViews(queryClient, viewSearch, studioMode, {
-        preload: (next) =>
-          router.preloadRoute({ to: VIEW_PATHS[next], search: viewSearch } as never),
-        cancelled: () => stopped,
-      });
+      void (async () => {
+        await loadViewCode(router, offered, () => stopped);
+        if (stopped) return;
+        await prefetchViews(queryClient, viewSearch, studioMode, {
+          preload: (next) =>
+            router.preloadRoute({ to: VIEW_PATHS[next], search: viewSearch } as never),
+          cancelled: () => stopped,
+        });
+        if (offered.includes("vault")) await load(vaultQuery(companion, {}));
+        if (offered.includes("reports")) await load(reportsQuery(companion));
+        for (const mode of otherModes ? (otherModes.split(",") as StudioMode[]) : []) {
+          // oxlint-disable-next-line no-await-in-loop -- one view at a time keeps the server quiet
+          await load(companionViewQuery("dashboard", { companion, studioMode: mode }));
+        }
+      })();
     });
     return () => {
       stopped = true;
       cancel();
     };
-  }, [companion, requestedMode, studioMode, onVault, queryClient, router]);
+  }, [companion, requestedMode, studioMode, otherModes, queryClient, router]);
 }

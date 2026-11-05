@@ -8,7 +8,7 @@ import {
   clearAgentCredential,
   setAgentCredential,
 } from "../../lib/agent-credential";
-import { useModalDialog } from "./use-modal-dialog";
+import { Sheet, SheetClose, SheetContent, SheetTitle } from "../../components/ui/sheet";
 
 /** Each tab's form: what it asks for, and how to get it. */
 const TABS: { kind: CredentialKind; tab: string; label: string; hint: ReactNode }[] = [
@@ -101,7 +101,7 @@ function SecretForm({
   );
 }
 
-/** The Agents panel: sets the one Claude credential the factory's Workset agents use. */
+/** The Agents panel, sliding over the page: sets the one Claude credential the factory's Workset agents use. */
 export function AgentsDialog({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const status = useQuery(agentCredentialQuery());
@@ -119,68 +119,78 @@ export function AgentsDialog({ onClose }: { onClose: () => void }) {
       setSaved(false);
     },
   });
-  const ref = useModalDialog(onClose, (dialog) => dialog.showModal?.());
   return (
-    <dialog ref={ref} className="outcome-dialog agents-dialog" aria-labelledby="agents-title">
-      <header className="outcome-dialog-head">
-        <div className="outcome-dialog-heading">
-          <h2 id="agents-title">Workset agents</h2>
-          <p className="outcome-dialog-state" data-agents-status="">
-            {status.error ? status.error.message : statusText(status.data)}
-          </p>
-        </div>
-        <form method="dialog">
-          <button type="submit" className="outcome-dialog-close" aria-keyshortcuts="Escape">
-            Close <kbd>Esc</kbd>
-          </button>
-        </form>
-      </header>
-      <div className="agents-dialog-body">
-        <div role="tablist" aria-label="How to sign in" className="agents-tabs">
-          {TABS.map((entry) => (
-            <button
-              key={entry.kind}
-              type="button"
-              role="tab"
-              id={`agents-tab-${entry.kind}`}
-              aria-controls="agents-panel"
-              aria-selected={tab === entry.kind}
-              onClick={() => {
-                setTab(entry.kind);
-                setSaved(false);
-              }}
-            >
-              {entry.tab}
-            </button>
-          ))}
-        </div>
-        <div role="tabpanel" id="agents-panel" aria-labelledby={`agents-tab-${tab}`}>
-          <SecretForm
-            key={form.kind}
-            kind={form.kind}
-            label={form.label}
-            hint={form.hint}
-            onSaved={onSaved}
-          />
-        </div>
-        {saved ? (
-          <p className="note" role="status">
-            Saved. The next agent start uses it.
-          </p>
-        ) : null}
-        {status.data?.source === "studio" ? (
-          <div className="factory-sheet-actions agents-clear">
-            <button type="button" onClick={() => clear.mutate()} disabled={clear.isPending}>
-              Remove the credential set in Studio
-            </button>
-            {clear.error ? (
-              <p className="factory-problems" role="alert">
-                {clear.error.message}
-              </p>
-            ) : null}
+    <Sheet
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        className="agents-dialog"
+        aria-labelledby="agents-title"
+        initialFocus={() =>
+          document.querySelector<HTMLElement>(".agents-dialog .outcome-dialog-close")
+        }
+      >
+        <header className="outcome-dialog-head">
+          <div className="outcome-dialog-heading">
+            <SheetTitle id="agents-title">Workset agents</SheetTitle>
+            <p className="outcome-dialog-state" data-agents-status="">
+              {status.error ? status.error.message : statusText(status.data)}
+            </p>
           </div>
-        ) : null}
-      </div>
-    </dialog>
+          <SheetClose className="outcome-dialog-close" aria-keyshortcuts="Escape">
+            Close <kbd>Esc</kbd>
+          </SheetClose>
+        </header>
+        <div className="agents-dialog-body">
+          <div role="tablist" aria-label="How to sign in" className="agents-tabs">
+            {TABS.map((entry) => (
+              <button
+                key={entry.kind}
+                type="button"
+                role="tab"
+                id={`agents-tab-${entry.kind}`}
+                aria-controls="agents-panel"
+                aria-selected={tab === entry.kind}
+                onClick={() => {
+                  setTab(entry.kind);
+                  setSaved(false);
+                }}
+              >
+                {entry.tab}
+              </button>
+            ))}
+          </div>
+          <div role="tabpanel" id="agents-panel" aria-labelledby={`agents-tab-${tab}`}>
+            <SecretForm
+              key={form.kind}
+              kind={form.kind}
+              label={form.label}
+              hint={form.hint}
+              onSaved={onSaved}
+            />
+          </div>
+          {saved ? (
+            <p className="note" role="status">
+              Saved. The next agent start uses it.
+            </p>
+          ) : null}
+          {status.data?.source === "studio" ? (
+            <div className="factory-sheet-actions agents-clear">
+              <button type="button" onClick={() => clear.mutate()} disabled={clear.isPending}>
+                Remove the credential set in Studio
+              </button>
+              {clear.error ? (
+                <p className="factory-problems" role="alert">
+                  {clear.error.message}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

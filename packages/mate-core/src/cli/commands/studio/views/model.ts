@@ -32,11 +32,6 @@ export interface StudioPage {
   factoryRuns?: Record<string, FactoryRunView> | null;
   /** When the server rendered the page, for ages on the Factory view. */
   renderedAt?: number;
-  /**
-   * Hosted reports, newest first, listed at render time for the Analysis
-   * Overview only; `null` when the listing failed.
-   */
-  reports?: StudioReportSummary[] | null;
 }
 
 export type StudioReportSummary = Pick<StoredReport, "id" | "title" | "createdAt">;

@@ -99,8 +99,10 @@ describe("markdown tree safety", () => {
     expect(markup).not.toContain("example.com");
   });
 
-  it("keeps frontmatter as ordinary text", () => {
-    expect(render("---\ntitle: x\n---\n\nbody")).toContain("title: x");
+  it("shows frontmatter values as text, never as markup", () => {
+    expect(render('---\ntitle: "<script>x</script>"\n---\n\nbody')).toContain(
+      "<dd>&lt;script&gt;x&lt;/script&gt;</dd>",
+    );
   });
 });
 
@@ -131,5 +133,110 @@ describe("relative note links", () => {
     expect(resolveNoteLink("//evil.test/x.md", "note.md")).toBeNull();
     expect(resolveNoteLink("file:///etc/x.md", "note.md")).toBeNull();
     expect(resolveNoteLink("%2e%2e/%2e%2e/x.md", "a/note.md")).toBeNull();
+  });
+});
+
+describe("frontmatter", () => {
+  it("shows the leading YAML block as fields, lists as chips, before the text", () => {
+    const markup = render("---\nname: acme-login\ntags: [auth, web]\nempty:\n---\n# Title\n");
+    expect(markup).toStartWith('<div class="md-frontmatter"><dl>');
+    expect(markup).toContain("<dt>name</dt><dd>acme-login</dd>");
+    expect(markup).toContain(
+      '<dt>tags</dt><dd><span class="md-chip">auth</span><span class="md-chip">web</span></dd>',
+    );
+    expect(markup).toContain('<dt>empty</dt><dd><span class="md-field-empty">empty</span></dd>');
+    expect(markup).toContain("<h1>Title</h1>");
+    expect(markup).not.toContain("<hr>");
+  });
+
+  it("nests a mapping and shows text that is not a mapping as written", () => {
+    expect(render("---\nowner:\n  team: acme\n---\n")).toContain(
+      "<dt>owner</dt><dd><dl><dt>team</dt><dd>acme</dd></dl></dd>",
+    );
+    expect(render("---\njust text\n---\nBody")).toContain(
+      '<div class="md-frontmatter"><pre class="md-fence"><code>just text</code></pre></div>',
+    );
+  });
+
+  it("shows a spec delta's mate:delta header as fields, its scopes grouped by repository", () => {
+    const markup = render(
+      [
+        "<!-- mate:delta",
+        "change: acme-change",
+        "scopes:",
+        "  - repository: acme/web",
+        "    area: acme",
+        "  - repository: acme/web",
+        "    area: .",
+        "  - repository: acme/api",
+        "    area: docs",
+        "-->",
+        "",
+        "## ADDED Requirements",
+      ].join("\n"),
+    );
+    expect(markup).toStartWith(
+      '<div class="md-frontmatter"><dl><dt>change</dt><dd>acme-change</dd>',
+    );
+    expect(markup).toContain(
+      '<dt>scopes</dt><dd><div class="md-scope"><span class="md-scope-repo">acme/web</span><span class="md-chip">acme</span><span class="md-chip md-chip-root">root</span></div><div class="md-scope"><span class="md-scope-repo">acme/api</span><span class="md-chip">docs</span></div></dd>',
+    );
+    // Other small mappings stay one chip each.
+    expect(render("---\nowners:\n  - name: acme\n    team: web\n---\n")).toContain(
+      '<span class="md-chip">acme · web</span>',
+    );
+    expect(markup).not.toContain("mate:delta");
+    // Any other comment stays visible text.
+    expect(render("<!-- note -->\nBody")).toContain("&lt;!-- note --&gt;");
+  });
+
+  it("leaves a rule that does not open the file alone", () => {
+    expect(render("Intro\n\n---\n\nMore")).toContain("<hr>");
+  });
+});
+
+describe("OpenSpec requirements and scenarios", () => {
+  const spec = [
+    "### Requirement: Acme login",
+    "The system SHALL sign the user in and MUST NOT keep the password.",
+    "",
+    "#### Scenario: Valid credentials",
+    "- **GIVEN** a registered user",
+    "- **WHEN** they sign in",
+    "- **THEN** a session starts",
+    "- **AND** the password is dropped",
+    "",
+    "### Requirement: Acme logout",
+    "Plain text.",
+  ].join("\n");
+
+  it("groups a requirement with its label and marks SHALL and MUST", () => {
+    const markup = render(spec);
+    expect(markup).toContain(
+      '<div class="md-requirement"><h3 class="md-requirement-title"><span class="md-section-label">Requirement</span>Acme login</h3>',
+    );
+    expect(markup).toContain('<strong class="md-shall">SHALL</strong>');
+    expect(markup).toContain('<strong class="md-shall">MUST NOT</strong>');
+    expect(markup.match(/class="md-requirement"/g)).toHaveLength(2);
+  });
+
+  it("puts each scenario in a card of keyword steps", () => {
+    const markup = render(spec);
+    expect(markup).toContain(
+      '<div class="md-scenario"><p class="md-scenario-title"><span class="md-section-label">Scenario</span>Valid credentials</p><ul class="md-steps">',
+    );
+    expect(markup).toContain(
+      '<li class="md-step"><span class="md-step-key md-key-when">WHEN</span><span>they sign in</span></li>',
+    );
+    expect(markup).toContain('<span class="md-step-key md-key-and">AND</span>');
+    // The scenario closes before the next requirement opens.
+    expect(markup.indexOf("md-scenario")).toBeLessThan(markup.indexOf("Acme logout"));
+  });
+
+  it("keeps a list whose items are not all steps as a plain list", () => {
+    const markup = render("#### Scenario: Mixed\n- **WHEN** a thing\n- a note");
+    expect(markup).toContain('<div class="md-scenario">');
+    expect(markup).not.toContain("md-steps");
+    expect(markup).toContain("<ul><li>");
   });
 });

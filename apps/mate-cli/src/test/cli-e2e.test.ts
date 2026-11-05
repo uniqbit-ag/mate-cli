@@ -2790,13 +2790,13 @@ async function startStudio(scenario: E2EScenario, cwd: string): Promise<StudioPr
 }
 
 /**
- * The digest the served selector hands out for a companion path. Studio
- * addresses a companion by digest, so the page is the only place a URL for one
- * can be read from.
+ * The digest the served companion list hands out for a companion path, read from
+ * the page's data. Studio addresses a companion by digest, so the page is the
+ * only place a URL for one can be read from.
  */
 function companionDigestFrom(markup: string, companionPath: string): string {
   const match = markup.match(
-    new RegExp(`<option value="([0-9a-f]+)"[^>]*>${escapeRegex(companionPath)}`),
+    new RegExp(`digest:"([0-9a-f]+)",path:"${escapeRegex(companionPath)}"`),
   );
   if (!match?.[1]) throw new Error(`no companion option for ${companionPath}`);
   return match[1];
@@ -2830,10 +2830,11 @@ describe("mate studio e2e", () => {
       const markup = await document.text();
       expect(markup.toLowerCase()).toContain("<!doctype html>");
       expect(markup).toContain("Mate Studio");
-      expect(markup).toContain('aria-label="Companion Repository"');
+      expect(markup).toContain('aria-label="Companion Repositories"');
+      expect(markup).not.toContain('id="studio-companion"');
       expect(markup).toContain(scenario.companion);
       /** Nothing is named, so no companion state is assembled. */
-      expect(markup).toContain("<h3>Choose a Companion Repository</h3>");
+      expect(markup).toContain(">Choose a Companion Repository</h1>");
       expect(markup).not.toContain("add-acme-checkout");
     } finally {
       await studio.stop("SIGINT");
@@ -2855,16 +2856,16 @@ describe("mate studio e2e", () => {
       expect(dashboard.status).toBe(200);
       /** Views render in the browser; the first response carries each view's data. */
       const dashboardMarkup = await dashboard.text();
-      expect(dashboardMarkup).toContain("<h1>Overview</h1>");
+      expect(dashboardMarkup).toContain(">Overview</h1>");
       expect(dashboardMarkup).toContain(`["${digest}","view","dashboard"`);
       expect(dashboardMarkup).toContain('name:"add-acme-checkout"');
-      expect(dashboardMarkup).not.toContain("<h3>Choose a Companion Repository</h3>");
+      expect(dashboardMarkup).not.toContain("Choose a Companion Repository");
 
       /** Areas are their own view, read apart from the changes. */
       const specs = await fetch(`${studio.url}/specs?companion=${digest}`);
       expect(specs.status).toBe(200);
       const specsMarkup = await specs.text();
-      expect(specsMarkup).toContain("<h1>Specs</h1>");
+      expect(specsMarkup).toContain(">Specs</h1>");
       expect(specsMarkup).toContain(`["${digest}","view","specs"`);
       expect(specsMarkup).toContain('capability:"acme-checkout"');
       expect(specsMarkup).not.toContain('name:"add-acme-checkout"');
@@ -2872,7 +2873,7 @@ describe("mate studio e2e", () => {
       const workflow = await fetch(`${studio.url}/workflow?companion=${digest}`);
       expect(workflow.status).toBe(200);
       const workflowMarkup = await workflow.text();
-      expect(workflowMarkup).toContain("<h1>Workflow</h1>");
+      expect(workflowMarkup).toContain(">Workflow</h1>");
       expect(workflowMarkup).toContain(`["${digest}","view","workflow"`);
       expect(workflowMarkup).toContain('schemaName:"mate-v1"');
       expect(workflowMarkup).not.toContain('name:"add-acme-checkout"');
@@ -2891,9 +2892,9 @@ describe("mate studio e2e", () => {
       expect(response.status).toBe(200);
 
       const markup = await response.text();
-      expect(markup).toContain('aria-label="Companion Repository"');
+      expect(markup).toContain('aria-label="Companion Repositories"');
       expect(markup).toContain(scenario.companion);
-      expect(markup).toContain("<h3>Choose a Companion Repository</h3>");
+      expect(markup).toContain(">Choose a Companion Repository</h1>");
       expect(markup).not.toContain("Could not read this companion");
       /** The picker stands in for the view, so no view data is loaded. */
       expect(markup).not.toContain('["deadbeef00","view","dashboard"');

@@ -1,10 +1,15 @@
 import { describe, expect, it } from "bun:test";
+import { type StudioChange, type StudioCompanionPayload } from "@uniqbit/mate-core/studio";
 
-import { staticMarkup } from "../../../test/render";
+import type { WorkflowMapNode, WorkflowPath } from "./steps";
 
-import { type StudioCompanionPayload } from "@uniqbit/mate-core/studio";
-import { buildPath, type WorkflowMapNode, type WorkflowPath, workflowPlan } from "./steps";
-import { Workflow } from "./workflow-view";
+await import("../../../test/dom");
+const { act, render: mountDom } = await import("@testing-library/react");
+const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const router = await import("@tanstack/react-router");
+const { staticMarkup } = await import("../../../test/render");
+const { buildPath, workflowPlan } = await import("./steps");
+const { Workflow } = await import("./workflow-view");
 
 const ALL_SKILLS = [
   "mate-clarify-intent",
@@ -33,8 +38,44 @@ function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompani
   } as StudioCompanionPayload;
 }
 
-function render(data: StudioCompanionPayload = payload()): string {
-  return staticMarkup(<Workflow payload={data} />);
+function render(data: StudioCompanionPayload = payload(), changes: StudioChange[] = []): string {
+  return staticMarkup(<Workflow payload={data} changes={changes} />);
+}
+
+const change = (name: string, done: number, total: number): StudioChange => ({
+  name,
+  completedTasks: done,
+  totalTasks: total,
+  artifacts: [],
+});
+
+/** The Workflow view in a browser, for the stage panel. */
+async function mount(changes: StudioChange[] = []) {
+  const root = router.createRootRoute();
+  const route = router.createRoute({
+    getParentRoute: () => root,
+    path: "/workflow",
+    component: () => <Workflow payload={payload()} changes={changes} />,
+  });
+  const instance = router.createRouter({
+    routeTree: root.addChildren([route]),
+    history: router.createMemoryHistory({ initialEntries: ["/workflow"] }),
+  });
+  await instance.load();
+  const page = mountDom(
+    <QueryClientProvider client={new QueryClient()}>
+      <router.RouterProvider router={instance} />
+    </QueryClientProvider>,
+  );
+  await act(async () => {});
+  const doc = page.container.ownerDocument;
+  const open = async (stage: string) => {
+    const node = doc.querySelector<HTMLButtonElement>(`button[data-map-stage="${stage}"]`)!;
+    await act(async () => node.click());
+    await act(async () => new Promise((done) => setTimeout(done, 20)));
+    return doc.querySelector('[data-slot="sheet-content"]')!;
+  };
+  return { page, doc, open };
 }
 
 const labels = (path: WorkflowPath): string[] => path.steps.map((step) => step.label);
@@ -223,57 +264,39 @@ describe("workflowPlan phases and map", () => {
 });
 
 describe("Workflow view", () => {
-  it("renders the stages without a change picker", () => {
+  it("renders the graph on the page, without a change picker or a card around it", () => {
     const markup = render();
-    expect(markup).toContain('class="workflow-delivery-path"');
+    expect(markup).toContain("workflow-delivery-path");
     expect(markup).toContain("Archive change");
-    expect(markup).toContain("mate-archive-change");
-    expect(markup).toContain("Review specs yourself — no skill, no prompt");
     expect(markup).not.toContain('name="change"');
+    const graph = markup.indexOf('aria-label="Delivery Path map"');
+    expect(markup.lastIndexOf("list-card", graph)).toBe(-1);
   });
 
-  it("offers the schema paths in one select, without the prompts note", () => {
+  it("offers the schema paths as one filter, showing the first", () => {
     const markup = render();
     expect(markup).toContain("OpenSpec schema");
-    expect(markup).toContain('<select data-workflow-schema-select="true">');
-    expect(markup).toContain(
-      '<option value="mate-v1" selected="">mate-v1 – full planning</option>',
-    );
-    expect(markup).toContain(
-      '<option value="mate-minimal">mate-minimal – minimal planning</option>',
-    );
-    expect(markup).toContain('data-workflow-schema-panel="mate-minimal"');
-    expect(markup).not.toContain('role="tablist"');
+    expect(markup).toContain('aria-label="OpenSpec schema"');
+    expect(markup).toContain(">mate-v1<");
+    expect(markup).toContain(">mate-minimal<");
+    expect(markup).toContain('data-workflow-schema-panel="mate-v1"');
+    expect(markup).not.toContain('data-workflow-schema-panel="mate-minimal"');
     expect(markup).not.toContain("name the change after pasting");
   });
 
-  it("opens on a hint to select a node and offers no whole-run copy", () => {
+  it("describes the path beside the graph with a hint to choose a stage", () => {
     const markup = render();
-    expect(markup).toContain("Select a node in the graph");
+    expect(markup).toContain("Choose a stage");
+    expect(markup).toContain("A workset is one or more changes published together");
     expect(markup).not.toContain("the whole run");
   });
 
-  /** The markup of the mate-v1 panel alone. */
+  /** The markup of the mate-v1 path. */
   const fullPanel = (markup: string): string =>
-    markup.slice(
-      markup.indexOf('data-workflow-schema-panel="mate-v1"'),
-      markup.indexOf('data-workflow-schema-panel="mate-minimal"'),
-    );
+    markup.slice(markup.indexOf('data-workflow-schema-panel="mate-v1"'));
 
   const attributes = (markup: string, name: string): string[] =>
-    [...markup.matchAll(new RegExp(`${name}="([^"]+)"`, "g"))].map((match) => match[1]);
-
-  it("opens each path with a flow map whose boxes link to their cards in stage order", () => {
-    const panel = fullPanel(render());
-    const map = panel.slice(
-      panel.indexOf('aria-label="Delivery Path map"'),
-      panel.indexOf("</nav>"),
-    );
-    const stages = workflowPlan({ skills: ALL_SKILLS }).paths[0].steps.map((step) => step.id);
-    expect(attributes(map, "data-map-stage")).toEqual(stages);
-    expect(attributes(map, "href")).toEqual(stages.map((id) => `#workflow-mate-v1-${id}`));
-    for (const id of stages) expect(panel).toContain(`id="workflow-mate-v1-${id}"`);
-  });
+    [...markup.matchAll(new RegExp(`${name}="([^"]+)"`, "g"))].map((match) => match[1]!);
 
   /** The graph's markup within a panel. */
   const graphOf = (panel: string): string =>
@@ -285,6 +308,15 @@ describe("Workflow view", () => {
         new RegExp(`data-edge-kind="${kind}" data-edge-from="([^"]+)" data-edge-to="([^"]+)"`, "g"),
       ),
     ].map((match) => `${match[1]}>${match[2]}`);
+
+  it("draws a node per stage in stage order, each a button", () => {
+    const map = graphOf(fullPanel(render()));
+    const stages = workflowPlan({ skills: ALL_SKILLS }).paths[0]!.steps.map((step) => step.id);
+    expect(attributes(map, "data-map-stage")).toEqual(stages);
+    expect(map.match(/<button type="button" class="workflow-graph-link/g)).toHaveLength(
+      stages.length,
+    );
+  });
 
   it("lists the reviews inside one group node that names no skill", () => {
     const graph = graphOf(fullPanel(render()));
@@ -332,15 +364,15 @@ describe("Workflow view", () => {
   });
 
   it("marks OpenSpec nodes with a dot the legend explains, hidden from the accessible name", () => {
-    const graph = graphOf(fullPanel(render()));
+    const panel = fullPanel(render());
+    const graph = graphOf(panel);
     const node = (id: string) => {
       const start = graph.indexOf(`data-map-stage="${id}"`);
-      return graph.slice(start, graph.indexOf("</a>", start));
+      return graph.slice(start, graph.indexOf("</button>", start));
     };
     expect(node("propose")).toContain('class="workflow-graph-openspec" aria-hidden="true"');
     expect(node("refine-code")).not.toContain("workflow-graph-openspec");
     expect(node("publish")).not.toContain("workflow-graph-openspec");
-    const panel = fullPanel(render());
     const legend = panel.slice(
       panel.indexOf("workflow-graph-legend"),
       panel.indexOf("</ul>", panel.indexOf("workflow-graph-legend")),
@@ -357,7 +389,7 @@ describe("Workflow view", () => {
     expect(graph).toContain('<div class="workflow-graph-bands" aria-hidden="true">');
     const layers = [...graph.matchAll(/<svg class="workflow-graph-layer"[^>]*>/g)];
     expect(layers).toHaveLength(1);
-    expect(layers[0][0]).toContain('aria-hidden="true"');
+    expect(layers[0]![0]).toContain('aria-hidden="true"');
     expect(graph.lastIndexOf("</svg>")).toBeLessThan(nodes);
     expect(graph.slice(nodes)).not.toContain("data-band");
   });
@@ -369,55 +401,103 @@ describe("Workflow view", () => {
     expect(attributes(graph, "data-band")).toEqual(["plan", "build", "ship"]);
   });
 
-  it("puts every card in one side panel after the graph, opening on the path overview", () => {
-    const panel = fullPanel(render());
-    const aside = panel.slice(panel.indexOf("<aside"), panel.indexOf("</aside>"));
-    expect(panel.indexOf("</nav>")).toBeLessThan(panel.indexOf("<aside"));
-    const stages = workflowPlan({ skills: ALL_SKILLS }).paths[0].steps.map((step) => step.id);
-    expect(attributes(aside, "data-stage")).toEqual(stages);
-    expect(aside.indexOf('id="workflow-mate-v1-overview"')).toBeLessThan(aside.indexOf("<article"));
-    expect(attributes(aside, "href").filter((href) => href.endsWith("-overview"))).toHaveLength(
-      stages.length,
-    );
-  });
-
-  it("names each card's phase and marks the stages that start a new session", () => {
-    const panel = fullPanel(render());
-    const card = (id: string) => {
-      const start = panel.indexOf(`id="workflow-mate-v1-${id}"`);
-      return panel.slice(start, panel.indexOf("</article>", start));
-    };
-    expect(card("propose")).toContain(">Plan<");
-    expect(card("apply")).toContain("Build");
-    expect(card("apply")).toContain("New session / clean chat");
-    expect(card("inspect-outcome")).not.toContain("New session");
-    expect(card("archive")).not.toContain("New session");
-  });
-
-  it("keeps the stage content and copy controls on each card", () => {
-    const panel = fullPanel(render());
-    const card = panel.slice(
-      panel.indexOf('id="workflow-mate-v1-propose"'),
-      panel.indexOf("</article>", panel.indexOf('id="workflow-mate-v1-propose"')),
-    );
-    expect(card).toContain("mate-propose-change");
-    expect(card).toContain("/mate-propose-change for &lt;change-name&gt;");
-    expect(card).toContain('data-copy="/mate-propose-change for"');
-    expect(card).toContain("What");
-    expect(card).toContain("Why");
-    expect(panel).toContain('data-copy-label="mate-interview-me prompt"');
-  });
-
   it("puts no arrow text in the markup", () => {
     const markup = render();
     for (const arrow of ["→", "↓", "-->", "&rarr;"]) expect(markup).not.toContain(arrow);
     expect(markup).not.toContain("workflow-console-gutter");
   });
 
-  it("shows no Review band, group, or card when the schema has no reviews", () => {
+  it("shows no Review band or group when the schema has no reviews", () => {
     const markup = render(payload({ topology: { ...ACME_TOPOLOGY, artifacts: [] } }));
     expect(markup).not.toContain('data-map-group="human"');
     expect(markup).not.toContain('data-band="review"');
-    expect(markup).not.toContain('data-stage="review-');
+    expect(markup).not.toContain('data-map-stage="review-');
+  });
+
+  it("counts the changes waiting for review, building and ready, named for assistive technology", () => {
+    const changes = [
+      ...Array.from({ length: 6 }, (_, index) => change(`acme-review-${index}`, 0, 4)),
+      ...Array.from({ length: 3 }, (_, index) => change(`acme-build-${index}`, 1, 4)),
+      change("acme-ready-0", 4, 4),
+      change("acme-ready-1", 2, 2),
+    ];
+    const panel = fullPanel(render(payload(), changes));
+    const counts = [
+      ...graphOf(panel).matchAll(
+        /class="workflow-graph-count[^"]*" aria-label="([^"]+)" role="img">(\d+)</g,
+      ),
+    ].map((match) => [match[1], match[2]]);
+    expect(counts).toEqual([
+      ["6 changes wait for review", "6"],
+      ["3 changes at Apply change", "3"],
+      ["2 changes at Archive change", "2"],
+    ]);
+    expect(panel).toContain("Where your changes are");
+  });
+
+  it("places invalid and taskless changes at Propose change, as the Overview names them", () => {
+    const changes = [
+      { ...change("acme-invalid", 0, 4), valid: false },
+      change("acme-empty", 0, 0),
+      change("acme-review", 0, 4),
+    ];
+    const panel = fullPanel(render(payload(), changes));
+    const counts = [
+      ...graphOf(panel).matchAll(
+        /class="workflow-graph-count[^"]*" aria-label="([^"]+)" role="img">(\d+)</g,
+      ),
+    ].map((match) => [match[1], match[2]]);
+    expect(counts).toEqual([
+      ["2 changes at Propose change", "2"],
+      ["1 change waits for review", "1"],
+    ]);
+  });
+
+  it("shows no count without active changes", () => {
+    expect(render()).not.toContain("workflow-graph-count");
+    expect(render()).not.toContain("Where your changes are");
+  });
+
+  it("opens a review stage in the panel, marked current, saying it has no skill and no prompt", async () => {
+    const { page, doc, open } = await mount();
+    const panel = await open("review-specs");
+    expect(panel.textContent).toContain("Review specs yourself — no skill, no prompt");
+    expect(
+      doc.querySelector('button[data-map-stage="review-specs"]')?.getAttribute("aria-current"),
+    ).toBe("true");
+    expect(doc.querySelector('[data-map-group="human"]')?.getAttribute("data-current")).toBe(
+      "true",
+    );
+    page.unmount();
+  });
+
+  it("shows Apply change's phase, skill, new session, prompt and text, then steps to the next stage", async () => {
+    const { page, doc, open } = await mount([change("acme-build", 1, 3)]);
+    const panel = await open("apply");
+    const text = panel.textContent!;
+    expect(text).toContain("Build");
+    expect(text).toContain("mate-apply-change");
+    expect(text).toContain("New session / clean chat");
+    expect(text).toContain("/mate-apply-change for <change-name>");
+    expect(panel.querySelector('[data-copy-label="Apply change prompt"]')).not.toBeNull();
+    expect(text).toContain("What");
+    expect(text).toContain("Why");
+    expect(text).toContain("acme-build");
+    const next = panel.querySelector<HTMLButtonElement>('button[aria-label="Next"]')!;
+    await act(async () => next.click());
+    await act(async () => new Promise((done) => setTimeout(done, 20)));
+    expect(doc.querySelector('[data-slot="sheet-content"]')!.textContent).toContain(
+      "Inspect outcome",
+    );
+    page.unmount();
+  });
+
+  it("lists the Clarify intent alternatives, each with a copy control", async () => {
+    const { page, open } = await mount();
+    const panel = await open("clarify-intent");
+    for (const name of ["mate-clarify-intent", "mate-interview-me", "mate-grill-me"]) {
+      expect(panel.querySelector(`[data-copy-label="${name} prompt"]`)).not.toBeNull();
+    }
+    page.unmount();
   });
 });

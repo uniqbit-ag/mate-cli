@@ -14,9 +14,15 @@ import path from "node:path";
 
 /** Studio's stylesheet as the page carries it: the palette, then the application's own rules. */
 const STUDIO_STYLES = `${studioPaletteCss()}\n${readFileSync(
-  path.resolve(import.meta.dir, "studio.css"),
+  path.resolve(import.meta.dir, "app.css"),
   "utf8",
 )}`;
+
+/**
+ * Status colours the views draw as text on their own tint (`text-warn bg-warn-soft`). Accent
+ * and done fall short on theirs in light, so text on those tints uses --text.
+ */
+const TINTED = ["warn", "bad", "info", "why", "what"] as const;
 
 const APPEARANCES = [
   ["light", STUDIO_LIGHT_PALETTE],
@@ -109,6 +115,16 @@ describe("studio palette", () => {
       expect(contrastRatio(palette.onAccent, palette.accent)).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(palette.onAccent, palette.done)).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(palette.promptText, palette.promptBg)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`keeps each status colour legible on its own tint in ${name}`, () => {
+      for (const token of TINTED) {
+        const tint = mix(palette[token], palette.panel, TINT_PERCENT);
+        expect({ token, passes: contrastRatio(palette[token], tint) >= 4.5 }).toEqual({
+          token,
+          passes: true,
+        });
+      }
     });
 
     it(`keeps every coloured text legible on the tint drawn behind it in ${name}`, () => {

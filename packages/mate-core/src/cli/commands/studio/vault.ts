@@ -89,14 +89,24 @@ export interface VaultListingDeps {
   fs?: Partial<VaultListingFs>;
 }
 
+type WatchListener = (event: string, filename: string | Buffer | null) => void;
+
 export interface VaultDeps extends VaultListingDeps {
   /** Called once per directory; the watch is not recursive. */
-  watch?: (
-    directory: string,
-    listener: (event: string, filename: string | Buffer | null) => void,
-  ) => VaultWatcher;
+  watch?: (directory: string, listener: WatchListener) => VaultWatcher;
+  /**
+   * One watch over the whole root, reporting root-relative names; `null` watches per directory.
+   * Defaults to the platform's native recursive watch on macOS and Windows, unless `watch` is given.
+   */
+  watchTree?: ((root: string, listener: WatchListener) => VaultWatcher) | null;
+  /** How long a watch nobody follows is kept, so a reload does not set it up again. */
+  closeAfterMs?: number;
   beforeWrite?: (absolutePath: string) => Promise<void> | void;
 }
+
+const CLOSE_AFTER_MS = 30_000;
+/** Per-directory watches are added in slices this long, so requests are answered between them. */
+const WATCH_SLICE_MS = 20;
 
 const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
 
@@ -349,14 +359,21 @@ async function readVaultFile(companionRoot: string, requestedPath: string): Prom
   return { path: resolved.relative, content, token: versionToken(content) };
 }
 
-function defaultWatcher(
-  directory: string,
-  listener: (event: string, filename: string | Buffer | null) => void,
-): VaultWatcher {
+function defaultWatcher(directory: string, listener: WatchListener): VaultWatcher {
   const watcher: FSWatcher = fs.watch(directory, listener);
   /** A removed directory errors its watcher; the next listing drops it. */
   watcher.on("error", () => watcher.close());
   return { close: () => watcher.close() };
+}
+
+/** Native on macOS (FSEvents) and Windows; elsewhere a recursive watch walks every directory. */
+function nativeTreeWatcher(): VaultDeps["watchTree"] {
+  if (process.platform !== "darwin" && process.platform !== "win32") return null;
+  return (root, listener) => {
+    const watcher: FSWatcher = fs.watch(root, { recursive: true }, listener);
+    watcher.on("error", () => watcher.close());
+    return { close: () => watcher.close() };
+  };
 }
 
 /** The root, every directory holding a listed file, and their ancestors. */
@@ -410,12 +427,14 @@ export interface VaultManager {
   /** Reports the listing generation now and on every later invalidation; carries no paths or content. */
   subscribeTree(companionRoot: string, notify: (generation: number) => void): () => void;
   refresh(companionRoot: string): Promise<VaultTreeResult>;
-  deactivate(): void;
   stop(): void;
   getRecovery(companionRoot: string, requestedPath: string): VaultWatchEvent | null;
 }
 
-/** Owns one tree cache and one set of per-directory watchers per selected companion process. */
+/**
+ * Owns the tree cache and the watch of each followed companion: one recursive watch where the
+ * platform has a native one, else one per listed directory, added a slice at a time.
+ */
 export function createVaultManager(deps: VaultDeps = {}): VaultManager {
   const watch = deps.watch ?? defaultWatcher;
   const git = deps.git ?? runGit;
@@ -429,7 +448,17 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
   const reconciles = new Map<string, Set<string>>();
   /** Directories created since the last listing; they hold no listed file yet. */
   const adopted = new Map<string, Set<string>>();
-  let activeRoot: string | null = null;
+  const watchTree =
+    deps.watchTree !== undefined ? deps.watchTree : deps.watch ? null : nativeTreeWatcher();
+  const closeAfterMs = deps.closeAfterMs ?? CLOSE_AFTER_MS;
+  /** Roots held by one recursive watch rather than one watch per directory. */
+  const recursive = new Set<string>();
+  /** Directories holding listed files, and their ancestors: known not to be ignored. */
+  const listedDirectories = new Map<string, Set<string>>();
+  /** Per root, whether an unlisted directory is ignored; one Git question per directory. */
+  const ignoredDirectories = new Map<string, Map<string, Promise<boolean>>>();
+  const followers = new Map<string, number>();
+  const closeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const subscribers = new Map<string, Set<Subscriber>>();
   const pendingEvents = new Map<string, ReturnType<typeof setTimeout>>();
   const locks = new Map<string, Promise<unknown>>();
@@ -517,6 +546,113 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     watchers.delete(root);
     reconciles.delete(root);
     adopted.delete(root);
+    recursive.delete(root);
+  };
+
+  /**
+   * Ends an unfollowed root's watch. Unwatched, its tree could go stale: the held one is dropped
+   * and a listing still running is not kept.
+   */
+  const closeRoot = (root: string) => {
+    clearTimeout(closeTimers.get(root));
+    closeTimers.delete(root);
+    closeWatchers(root);
+    warnings.delete(root);
+    invalidate(root);
+    listed.delete(root);
+    listedDirectories.delete(root);
+    ignoredDirectories.delete(root);
+  };
+
+  /** Per-directory watches are scarce (inotify): only followed roots keep theirs. */
+  const closeIdleDirectoryWatches = (except: string) => {
+    for (const other of watchers.keys()) {
+      if (other !== except && !recursive.has(other) && !followers.has(other)) closeRoot(other);
+    }
+  };
+
+  const scheduleClose = (root: string) => {
+    if ((followers.get(root) ?? 0) > 0 || closeTimers.has(root)) return;
+    const timer = setTimeout(() => closeRoot(root), closeAfterMs);
+    timer.unref?.();
+    closeTimers.set(root, timer);
+  };
+
+  /** Holds the root's watch until the returned release; page reads never end it. */
+  const follow = (root: string): (() => void) => {
+    followers.set(root, (followers.get(root) ?? 0) + 1);
+    const timer = closeTimers.get(root);
+    if (timer) clearTimeout(timer);
+    closeTimers.delete(root);
+    startWatching(root);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const count = (followers.get(root) ?? 1) - 1;
+      if (count > 0) followers.set(root, count);
+      else {
+        followers.delete(root);
+        scheduleClose(root);
+      }
+    };
+  };
+
+  const ignoredDirectory = (root: string, relative: string): Promise<boolean> => {
+    const known = ignoredDirectories.get(root) ?? new Map<string, Promise<boolean>>();
+    ignoredDirectories.set(root, known);
+    let answer = known.get(relative);
+    if (!answer) {
+      answer = ignored(git, root, `${relative}${path.sep}`);
+      known.set(relative, answer);
+    }
+    return answer;
+  };
+
+  /** The outermost directory on the way to `relative` that holds no listed file, if any. */
+  const firstUnlisted = (root: string, relative: string): string | null => {
+    const known = listedDirectories.get(root);
+    const parts = path
+      .dirname(relative)
+      .split(path.sep)
+      .filter((part) => part && part !== ".");
+    let current = root;
+    for (const [index, part] of parts.entries()) {
+      current = path.join(current, part);
+      if (!known?.has(current)) return parts.slice(0, index + 1).join(path.sep);
+    }
+    return null;
+  };
+
+  /** A recursive watch's event; churn under an ignored directory ends at a cached answer. */
+  const onTreeEvent = (root: string, filename: string | Buffer | null) => {
+    if (!filename) {
+      invalidate(root);
+      return;
+    }
+    const relative = path.normalize(String(filename));
+    if (relative.startsWith("..") || relative.split(path.sep).includes(".git")) return;
+    const unlisted = firstUnlisted(root, relative);
+    if (unlisted === null) {
+      onDirectoryEvent(root, root, relative);
+      return;
+    }
+    void ignoredDirectory(root, unlisted).then((isIgnored) => {
+      if (!isIgnored) onDirectoryEvent(root, root, relative);
+    });
+  };
+
+  /** Under a recursive watch: a listed directory changed, or a new one may hold markdown. */
+  const changedDirectory = async (root: string, absolute: string): Promise<void> => {
+    if (listedDirectories.get(root)?.has(absolute)) {
+      invalidate(root);
+      return;
+    }
+    // A removed unlisted path held no listed file.
+    const stats = await fsp.stat(absolute).catch(() => null);
+    if (!stats?.isDirectory()) return;
+    if (await ignoredDirectory(root, path.relative(root, absolute))) return;
+    invalidate(root);
   };
 
   const unavailable = (root: string, error: unknown) => {
@@ -536,6 +672,10 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     const relative = path.relative(root, absolute);
     if (!relative || relative.startsWith("..") || relative.split(path.sep).includes(".git")) return;
     if (!isMarkdown(relative)) {
+      if (recursive.has(root)) {
+        void changedDirectory(root, absolute).catch(() => invalidate(root));
+        return;
+      }
       if (watchers.get(root)?.has(absolute)) {
         invalidate(root);
         return;
@@ -562,7 +702,7 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     if (await ignored(git, root, `${relative}${path.sep}`)) return;
     invalidate(root);
     const current = watchers.get(root);
-    if (!current || activeRoot !== root || current.has(absolute)) return;
+    if (!current || current.has(absolute)) return;
     try {
       current.set(absolute, watchDirectory(root, absolute));
     } catch (error) {
@@ -582,16 +722,23 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     );
   };
 
-  /** Synchronous for the root only, so a request learns at once whether it is watched. */
+  /**
+   * Synchronous for the root only, so a request learns at once whether it is watched. A watch
+   * nobody follows is closed a while later.
+   */
   const startWatching = (root: string) => {
-    if (activeRoot && activeRoot !== root) {
-      closeWatchers(activeRoot);
-      warnings.delete(root);
-    }
-    activeRoot = root;
+    scheduleClose(root);
     if (watchers.has(root) || warnings.has(root)) return;
     try {
-      watchers.set(root, new Map([[root, watchDirectory(root, root)]]));
+      let rootWatcher: VaultWatcher | null = null;
+      try {
+        rootWatcher = watchTree?.(root, (_event, filename) => onTreeEvent(root, filename)) ?? null;
+      } catch {
+        // A filesystem without a recursive watch falls back to one watch per directory.
+      }
+      watchers.set(root, new Map([[root, rootWatcher ?? watchDirectory(root, root)]]));
+      if (rootWatcher) recursive.add(root);
+      else closeIdleDirectoryWatches(root);
       warnings.set(root, null);
     } catch (error) {
       unavailable(root, error);
@@ -601,11 +748,39 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     if (files) scheduleReconcile(root, files);
   };
 
+  /**
+   * Adds watchers a slice at a time; a newer reconcile or a closed watch ends the run. A run that
+   * spanned slices may have missed files written meanwhile, so it ends by asking for a new listing.
+   */
+  const addWatchers = (
+    root: string,
+    current: Map<string, VaultWatcher>,
+    queue: string[],
+    start = 0,
+  ) => {
+    const began = performance.now();
+    let index = start;
+    while (index < queue.length && performance.now() - began < WATCH_SLICE_MS) {
+      if (reconciles.has(root) || watchers.get(root) !== current) return;
+      const directory = queue[index]!;
+      index += 1;
+      if (current.has(directory)) continue;
+      try {
+        current.set(directory, watchDirectory(root, directory));
+      } catch (error) {
+        unavailable(root, error);
+        return;
+      }
+    }
+    if (index < queue.length) setImmediate(() => addWatchers(root, current, queue, index));
+    else if (start > 0) invalidate(root);
+  };
+
   const reconcile = (root: string) => {
     const desired = reconciles.get(root);
     reconciles.delete(root);
     const current = watchers.get(root);
-    if (!desired || !current || activeRoot !== root) return;
+    if (!desired || !current) return;
     const kept = adopted.get(root);
     for (const [directory, watcher] of current) {
       if (desired.has(directory)) {
@@ -617,21 +792,19 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
       watcher.close();
       current.delete(directory);
     }
-    for (const directory of desired) {
-      if (current.has(directory)) continue;
-      try {
-        current.set(directory, watchDirectory(root, directory));
-      } catch (error) {
-        unavailable(root, error);
-        return;
-      }
-    }
+    addWatchers(
+      root,
+      current,
+      [...desired].filter((directory) => !current.has(directory)),
+    );
   };
 
   const scheduleReconcile = (root: string, files: string[]) => {
-    if (!watchers.has(root)) return;
+    const desired = watchedDirectories(root, files);
+    listedDirectories.set(root, desired);
+    if (!watchers.has(root) || recursive.has(root)) return;
     const pending = reconciles.has(root);
-    reconciles.set(root, watchedDirectories(root, files));
+    reconciles.set(root, desired);
     if (!pending) setImmediate(() => reconcile(root));
   };
 
@@ -644,7 +817,9 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
       try {
         const files = await listMarkdownFiles(root, deps);
         listed.set(root, files);
-        startWatching(root);
+        // A changed ignore file shows in the listing; directories are asked about again.
+        ignoredDirectories.delete(root);
+        // Watches are started by the caller; a root closed meanwhile stays closed.
         scheduleReconcile(root, files);
         const tree = asTree(files);
         if ((generations.get(root) ?? 0) === generation) trees.set(root, tree);
@@ -777,6 +952,8 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
       const result: ListedTree = cached
         ? { tree: cached, generation: generations.get(root) ?? 0 }
         : await listTree(root);
+      // The refresh offered while live updates are unavailable also tries the watch again.
+      if (refresh && warnings.get(root)) warnings.delete(root);
       startWatching(root);
       return {
         ...result,
@@ -809,12 +986,13 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     subscribe(companionRoot, requestedPath, notifySubscriber) {
       let active = true;
       let key = `${path.resolve(companionRoot)}\0${requestedPath}`;
+      let leave: (() => void) | null = null;
       const subscriber = { path: requestedPath, notify: notifySubscriber };
       const set = subscribers.get(key) ?? new Set<Subscriber>();
       set.add(subscriber);
       subscribers.set(key, set);
       const watchListed = (root: string) => {
-        startWatching(root);
+        leave = follow(root);
         if (!trees.has(root)) void listTree(root).catch(() => {});
       };
       void rootKey(companionRoot).then((root) => {
@@ -833,6 +1011,7 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
       });
       return () => {
         active = false;
+        leave?.();
         const currentSubscribers = subscribers.get(key);
         if (!currentSubscribers) return;
         currentSubscribers.delete(subscriber);
@@ -842,6 +1021,7 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     subscribeTree(companionRoot, notifyTree) {
       let active = true;
       let subscribedRoot: string | null = null;
+      let leave: (() => void) | null = null;
       void rootKey(companionRoot).then(
         (root) => {
           if (!active) return;
@@ -849,7 +1029,7 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
           const set = treeSubscribers.get(root) ?? new Set();
           set.add(notifyTree);
           treeSubscribers.set(root, set);
-          startWatching(root);
+          leave = follow(root);
           if (!trees.has(root)) void listTree(root).catch(() => {});
           notifyTree(generations.get(root) ?? 0);
         },
@@ -857,6 +1037,7 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
       );
       return () => {
         active = false;
+        leave?.();
         if (!subscribedRoot) return;
         const set = treeSubscribers.get(subscribedRoot);
         set?.delete(notifyTree);
@@ -866,19 +1047,12 @@ export function createVaultManager(deps: VaultDeps = {}): VaultManager {
     async refresh(companionRoot) {
       return this.tree(companionRoot, true);
     },
-    deactivate() {
-      if (activeRoot) {
-        closeWatchers(activeRoot);
-        warnings.delete(activeRoot);
-      }
-      activeRoot = null;
-      subscribers.clear();
-      treeSubscribers.clear();
-    },
     stop() {
       for (const root of watchers.keys()) closeWatchers(root);
       reconciles.clear();
-      activeRoot = null;
+      for (const timer of closeTimers.values()) clearTimeout(timer);
+      closeTimers.clear();
+      followers.clear();
       for (const timer of pendingEvents.values()) clearTimeout(timer);
       for (const record of recentSaves.values()) clearTimeout(record.expires);
       pendingEvents.clear();

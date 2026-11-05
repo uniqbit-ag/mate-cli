@@ -38,7 +38,13 @@ address names never goes into one.
 ## Conventions
 
 - File names are kebab-case; `routes/__root.tsx` is TanStack's own name.
-- Styles live in `src/styles/studio.css`; the colour tokens come from core's `studioPaletteCss()`,
-  shared with hosted reports, and are inlined before it. No CSS framework.
+- Styles are Tailwind v4 utilities; `src/styles/app.css` binds the theme to the colour tokens of
+  core's `studioPaletteCss()` (shared with hosted reports, inlined before it) and removes Tailwind's
+  own colour and shadow scales, so every colour is a token and `shadow-float` is the only shadow.
+  It also holds what utilities cannot reach: the frame grid, the terminal, the graph and markdown.
+- Components are shadcn on Base UI (`base-nova`), owned in `src/components/ui` and edited to the
+  tokens; `cn()` lives in `src/lib/cn.ts`. Item detail opens in the one slide-over panel
+  (`src/shell/panel.tsx`).
+- Global shortcuts listen in the capture phase: an open panel or dialog stops keys from bubbling.
 - The terminal is `@wterm/dom`, loaded as its own chunk the first time a terminal is shown; core
   serves only its WASM core.

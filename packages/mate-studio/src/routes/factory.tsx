@@ -50,8 +50,10 @@ function FactoryBoard({ companion, outcome }: { companion: string; outcome?: str
   const { data } = useSuspenseQuery(factoryQuery(companion));
   if (!data.payload) {
     return (
-      <section className="panel">
-        <p className="empty">{data.error ?? "No state collected for this companion."}</p>
+      <section className="mx-8 max-sm:mx-4">
+        <p className="empty m-0 rounded-card border border-dashed border-rule px-6 py-7 text-muted">
+          {data.error ?? "No state collected for this companion."}
+        </p>
       </section>
     );
   }

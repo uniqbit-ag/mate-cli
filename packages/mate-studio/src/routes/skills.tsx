@@ -8,6 +8,7 @@ import { Skills } from "../views/skills/skills-view";
 export const Route = createFileRoute("/skills")({
   staticData: { view: "skills" },
   loaderDeps: ({ search }) => ({ companion: search.companion, studioMode: search.studioMode }),
+  ssr: true,
   loader: async ({ context, deps }) =>
     (await registeredCompanion(context.queryClient, deps))
       ? loadView(context.queryClient, companionViewQuery("skills", deps))
@@ -16,7 +17,7 @@ export const Route = createFileRoute("/skills")({
     const search = Route.useSearch();
     return (
       <CompanionView view="skills" search={search}>
-        {(data) => <Skills skills={data.skillInventory} />}
+        {(data) => <Skills skills={data.skillInventory} companion={search.companion} />}
       </CompanionView>
     );
   },

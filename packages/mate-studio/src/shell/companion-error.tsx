@@ -9,10 +9,10 @@ interface CompanionErrorProps {
  */
 export function CompanionError({ companionPath, reason }: CompanionErrorProps) {
   return (
-    <section className="panel error">
-      <h3>Could not read this companion</h3>
-      <p className="mono">{companionPath}</p>
-      <p>{reason}</p>
+    <section className="error mx-8 grid gap-1.5 rounded-card border border-[color-mix(in_srgb,var(--bad)_40%,var(--border))] bg-bad-soft px-5 py-4 max-sm:mx-4">
+      <h2 className="m-0 text-md font-semibold text-bad">Could not read this companion</h2>
+      <p className="m-0 font-mono text-xs break-all">{companionPath}</p>
+      <p className="m-0 text-sm">{reason}</p>
     </section>
   );
 }

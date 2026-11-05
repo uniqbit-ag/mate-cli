@@ -4,15 +4,15 @@ import { factoryKeyHandler, matchesFilter, stepRow, titled } from "./factory-liv
 
 const blank = { closest: () => null, matches: () => false };
 
-/** A document whose open dialog answers `selectors` with a button recording its click. */
+/** A document whose open Outcome panel answers `selectors` with a button recording its click. */
 function withDialog(selectors: Record<string, string>, clicked: string[]): Document {
   const dialog = {
+    closest: () => null,
     querySelector: (selector: string) =>
       selector in selectors ? { click: () => clicked.push(selectors[selector]!) } : null,
   };
   return {
-    querySelector: (selector: string) =>
-      selector === "dialog.outcome-dialog[open]" ? dialog : null,
+    querySelector: (selector: string) => (selector === "[data-outcome-panel]" ? dialog : null),
   } as unknown as Document;
 }
 
@@ -20,6 +20,21 @@ const press = (doc: Document, key: string, target: unknown, init: object = {}) =
   factoryKeyHandler(doc)({ key, target, preventDefault: () => {}, ...init } as KeyboardEvent);
 
 describe("the live Factory view", () => {
+  it("leaves board keys alone while focus is in another modal, such as Agents", () => {
+    const focused: string[] = [];
+    const field = { focus: () => focused.push("filter") };
+    const doc = {
+      querySelector: (selector: string) => (selector === "[data-outcome-filter]" ? field : null),
+    } as unknown as Document;
+    press(doc, "/", blank);
+    expect(focused).toEqual(["filter"]);
+    focused.length = 0;
+    const sheet = { querySelector: () => null };
+    const inAgents = { closest: (selector: string) => (selector.includes("sheet") ? sheet : null) };
+    press(doc, "/", inAgents);
+    expect(focused).toEqual([]);
+  });
+
   it("counts decisions in the title and never stacks counts", () => {
     expect(titled("Mate Studio", 2)).toBe("(2) Mate Studio");
     expect(titled("(2) Mate Studio", 1)).toBe("(1) Mate Studio");
@@ -61,7 +76,7 @@ describe("the live Factory view", () => {
     expect(stepRow([], null, 1)).toBeUndefined();
   });
 
-  it("picks a numbered answer in the open dialog, but not while typing", () => {
+  it("picks a numbered answer in the open panel, but not while typing", () => {
     const clicked: string[] = [];
     const doc = withDialog({ '[data-option-key="2"]': "2" }, clicked);
     press(doc, "2", blank);
@@ -76,10 +91,14 @@ describe("the live Factory view", () => {
     expect(matchesFilter("Make onboarding easier", "onboarding billing")).toBe(false);
   });
 
-  it("steps to the next Outcome with J in an open dialog", () => {
+  it("steps to the next and previous Outcome with J and K in an open panel", () => {
     const clicked: string[] = [];
-    const doc = withDialog({ '[data-outcome-goto][aria-keyshortcuts="J"]': "next" }, clicked);
+    const doc = withDialog(
+      { 'button[aria-label="Next"]': "next", 'button[aria-label="Previous"]': "previous" },
+      clicked,
+    );
     press(doc, "j", blank);
-    expect(clicked).toEqual(["next"]);
+    press(doc, "k", blank);
+    expect(clicked).toEqual(["next", "previous"]);
   });
 });

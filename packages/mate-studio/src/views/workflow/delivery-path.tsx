@@ -1,4 +1,9 @@
 import { type StudioCompanionPayload } from "@uniqbit/mate-core/studio";
+import { useState, type CSSProperties, type ReactNode } from "react";
+
+import { CommandLine, Count, ListCard, PAGE_PAD, Pills } from "../../components/view-parts";
+import { cn } from "../../lib/cn";
+import { PanelHead, PanelSection, SidePanel } from "../../shell/panel";
 import {
   bandSpan,
   edgeMidpoint,
@@ -10,109 +15,141 @@ import {
   type WorkflowGraph,
   type WorkflowGraphEdge,
 } from "./graph";
-import {
-  PHASE_LABELS,
-  type WorkflowPath,
-  workflowPlan,
-  type WorkflowStep,
-  type WorkflowStepBadge,
-} from "./steps";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { PHASE_LABELS, type WorkflowPath, workflowPlan, type WorkflowStep } from "./steps";
+
+/** Changes at a graph node: `reviews` for the review group, else a stage id. */
+export type StageCounts = Partial<Record<string, number>>;
+
+const NO_COUNTS: StageCounts = {};
+const NO_STAGES: StageChanges[] = [];
+
+export interface StageChanges {
+  node: string;
+  label: string;
+  changes: string[];
+}
 
 export function DeliveryPathView({
   payload,
+  counts = NO_COUNTS,
+  changesByStage = NO_STAGES,
 }: {
   payload: Pick<StudioCompanionPayload, "skills" | "topology">;
+  counts?: StageCounts;
+  /** The companion's changes at each node, listed beside the graph. */
+  changesByStage?: StageChanges[];
 }) {
   const plan = workflowPlan({
     skills: payload.skills && payload.skills.length > 0 ? payload.skills : undefined,
     topology: payload.topology,
   });
-  const [schema, setSchema] = useState(plan.paths[0]?.schema);
+  const [schema, setSchema] = useState(plan.paths[0]!.schema);
+  const path = plan.paths.find((entry) => entry.schema === schema) ?? plan.paths[0]!;
 
   return (
-    <section className="workflow-delivery-path" aria-label="Delivery Path">
-      {plan.paths.length > 1 ? (
-        <div className="workflow-schema" data-workflow-schema-root>
-          <label className="view-choice">
-            <span>OpenSpec schema</span>
-            <select
-              data-workflow-schema-select
-              value={schema}
-              onChange={(event) => setSchema(event.target.value)}
-            >
-              {plan.paths.map((path) => (
-                <option key={path.schema} value={path.schema}>
-                  {path.label} – {path.tagline}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="workflow-schema-panels">
-            {plan.paths.map((path) => (
-              <section
-                key={path.schema}
-                data-workflow-schema-panel={path.schema}
-                data-active={path.schema === schema ? "true" : "false"}
-              >
-                <PathBody path={path} />
-              </section>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="workflow-schema">
-          <p className="view-choice">
-            <span>OpenSpec schema</span>
-            <code>
-              {plan.paths[0].label} – {plan.paths[0].tagline}
-            </code>
-          </p>
-          <PathBody path={plan.paths[0]} />
-        </div>
-      )}
+    <section
+      className="workflow-delivery-path @container grid content-start gap-2"
+      aria-label="Delivery Path"
+    >
+      <div className={cn(PAGE_PAD, "flex flex-wrap items-center gap-3")} data-workflow-schema-root>
+        <span className="text-sm text-muted">OpenSpec schema</span>
+        {plan.paths.length > 1 ? (
+          <Pills
+            label="OpenSpec schema"
+            value={schema}
+            onChange={setSchema}
+            options={plan.paths.map((entry) => ({ value: entry.schema, label: entry.label }))}
+          />
+        ) : (
+          <code className="font-mono text-sm">{path.label}</code>
+        )}
+        <span className="text-sm text-muted">{path.tagline}</span>
+      </div>
+      <PathBody key={path.schema} path={path} counts={counts} changesByStage={changesByStage} />
     </section>
   );
 }
 
-/**
- * The graph is the path; the side panel shows one stage at a time. A node link targets its
- * card, and CSS shows only the targeted card, so selection needs no script. With nothing
- * selected the panel shows the path overview.
- */
-function PathBody({ path }: { path: WorkflowPath }) {
+const nodeOf = (step: WorkflowStep): string => (step.kind === "human" ? "reviews" : step.id);
+
+/** The graph on the page; one stage's detail opens in the slide-over panel. */
+function PathBody({
+  path,
+  counts,
+  changesByStage,
+}: {
+  path: WorkflowPath;
+  counts: StageCounts;
+  changesByStage: StageChanges[];
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const step = path.steps.find((entry) => entry.id === selected) ?? null;
+  const placed = changesByStage.filter((group) => group.changes.length > 0);
   return (
-    <div className="workflow-path">
-      <div className="workflow-path-graph">
-        <WorkflowGraphView path={path} />
+    <div
+      className={cn(
+        PAGE_PAD,
+        "workflow-path grid grid-cols-[minmax(380px,520px)_minmax(260px,1fr)] items-start gap-10 pt-10 pb-12 @max-[880px]:grid-cols-1",
+      )}
+      data-workflow-schema-panel={path.schema}
+    >
+      <div className="workflow-path-graph grid min-w-0 justify-items-center gap-9 px-8">
+        <WorkflowGraphView path={path} selected={selected} onSelect={setSelected} counts={counts} />
         <GraphLegend />
       </div>
-      <aside className="workflow-detail" aria-label={`${path.label} stage details`}>
-        <div className="workflow-detail-overview" id={overviewId(path)}>
-          <p className="workflow-description">{path.description}</p>
+      <div className="workflow-detail-overview grid content-start gap-5" id={overviewId(path)}>
+        <div className="grid gap-2 text-sm leading-relaxed text-muted">
+          <p className="workflow-description m-0 text-text">{path.description}</p>
           {!path.reviewsKnown ? (
-            <p className="workflow-description">
+            <p className="workflow-description m-0">
               The schema&apos;s artifacts could not be read, so its review stages are unknown.
             </p>
           ) : null}
-          <p className="workflow-description">
+          <p className="workflow-description m-0">
             A workset is one or more changes published together: after Archive change, start again
             at the top for the next change, and publish once they are archived.
           </p>
-          <p className="workflow-detail-hint">
-            Select a node in the graph to see what that stage does and the prompt that runs it.
+          <p className="workflow-detail-hint m-0">
+            Choose a stage to see what it does and the prompt that runs it.
           </p>
         </div>
-        {path.steps.map((step) => (
-          <StageCard key={step.id} path={path} step={step} />
-        ))}
-      </aside>
+        {placed.length > 0 ? (
+          <ListCard title="Where your changes are">
+            <ul className="m-0 list-none p-0">
+              {placed.map((group) => (
+                <li
+                  key={group.node}
+                  className="grid gap-1 border-t border-rule-soft px-4 py-2 first:border-t-0"
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    {group.label}
+                    <Count value={group.changes.length} />
+                  </span>
+                  <span className="truncate font-mono text-xs text-muted">
+                    {group.changes.join(", ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </ListCard>
+        ) : null}
+      </div>
+      <SidePanel
+        items={path.steps.map((entry) => entry.id)}
+        current={step?.id ?? null}
+        onSelect={setSelected}
+        title={step ? `Stage ${step.label}` : "Stage"}
+      >
+        {step ? (
+          <StageDetail
+            step={step}
+            changes={changesByStage.find((group) => group.node === nodeOf(step))?.changes ?? []}
+          />
+        ) : null}
+      </SidePanel>
     </div>
   );
 }
-
-const cardId = (path: WorkflowPath, step: WorkflowStep): string =>
-  `workflow-${path.schema}-${step.id}`;
 
 const overviewId = (path: WorkflowPath): string => `workflow-${path.schema}-overview`;
 
@@ -152,22 +189,50 @@ function currentColumn(graph: WorkflowGraph, current: string): number {
   return -1;
 }
 
+const COUNT_NAMES: Record<string, (count: number) => string> = {
+  reviews: (count) => `${count} ${count === 1 ? "change waits" : "changes wait"} for review`,
+};
+
+const countName = (node: string, label: string, count: number): string =>
+  COUNT_NAMES[node]?.(count) ?? `${count} ${count === 1 ? "change" : "changes"} at ${label}`;
+
+/** How many of the companion's changes are at a node; named for assistive technology. */
+function CountBadge({ count, name }: { count: number | undefined; name: string }) {
+  if (!count) return null;
+  return (
+    <span
+      className="workflow-graph-count absolute -top-2.5 -right-2.5 z-1 inline-grid h-5 min-w-5 place-items-center rounded-full border border-[color-mix(in_srgb,var(--accent)_45%,var(--border))] bg-accent-soft px-1.5 font-sans text-2xs font-bold text-text"
+      aria-label={name}
+      role="img"
+    >
+      {count}
+    </span>
+  );
+}
+
 /**
- * Node links are the only announced part: their document order is the stage order. Bands,
+ * Stage buttons are the only announced part: their document order is the stage order. Bands,
  * edges, and marks are decorative and hidden from assistive technology. With `progress` the
- * map shows one item's position, and nodes are plain labels rather than stage-card links.
+ * map shows one item's position, and nodes are plain labels.
  */
 export function WorkflowGraphView({
   path,
   progress,
   label = "Delivery Path map",
+  selected = null,
+  onSelect,
+  counts = NO_COUNTS,
 }: {
   path: WorkflowPath;
   progress?: GraphProgress;
   label?: string;
+  selected?: string | null;
+  onSelect?: (stage: string) => void;
+  counts?: StageCounts;
 }) {
   const graph = workflowGraph(path);
   const stateOf = progressOf(graph, progress);
+  const plain = Boolean(progress) || !onSelect;
   return (
     <nav
       className="workflow-graph"
@@ -219,20 +284,51 @@ export function WorkflowGraphView({
               }
             >
               {node.kind === "stage" ? (
-                <NodeLink path={path} step={node.step} box plain={Boolean(progress)}>
-                  <ProgressNote progress={progress} state={stateOf(node)} />
-                </NodeLink>
+                <span className="relative max-w-full">
+                  <NodeLink
+                    step={node.step}
+                    box
+                    plain={plain}
+                    current={selected === node.step.id}
+                    onSelect={onSelect}
+                  >
+                    <ProgressNote progress={progress} state={stateOf(node)} />
+                  </NodeLink>
+                  {plain ? null : (
+                    <CountBadge
+                      count={counts[node.id]}
+                      name={countName(node.id, node.step.label, counts[node.id] ?? 0)}
+                    />
+                  )}
+                </span>
               ) : (
-                <div className="workflow-graph-box workflow-graph-group" data-map-group="human">
+                <div
+                  className="workflow-graph-box workflow-graph-group relative"
+                  data-map-group="human"
+                  data-current={
+                    node.steps.some((step) => step.id === selected) ? "true" : undefined
+                  }
+                >
                   <span className="workflow-graph-group-label">Human review</span>
                   <ol>
                     {node.steps.map((step) => (
                       <li key={step.id}>
-                        <NodeLink path={path} step={step} plain={Boolean(progress)} />
+                        <NodeLink
+                          step={step}
+                          plain={plain}
+                          current={selected === step.id}
+                          onSelect={onSelect}
+                        />
                       </li>
                     ))}
                   </ol>
                   <ProgressNote progress={progress} state={stateOf(node)} />
+                  {plain ? null : (
+                    <CountBadge
+                      count={counts.reviews}
+                      name={countName("reviews", "Human review", counts.reviews ?? 0)}
+                    />
+                  )}
                 </div>
               )}
             </li>
@@ -275,7 +371,7 @@ function ProgressNote({
   progress: GraphProgress | undefined;
   state: NodeProgress | undefined;
 }) {
-  if (state === "done") return <span className="visually-hidden">, done</span>;
+  if (state === "done") return <span className="sr-only">, done</span>;
   if (state !== "current" || !progress?.note) return null;
   return <span className="workflow-graph-note">{progress.note}</span>;
 }
@@ -337,32 +433,33 @@ function GraphLayer({
 }
 
 /**
- * `box` marks a standalone node; links inside the review group share its box. `plain` renders
- * a label without a link, for a map with no stage cards beside it.
+ * `box` marks a standalone node; stages inside the review group share its box. `plain` renders
+ * a label, for a map that opens nothing.
  */
 function NodeLink({
-  path,
   step,
   box,
   plain,
+  current,
+  onSelect,
   children,
 }: {
-  path: WorkflowPath;
   step: WorkflowStep;
   box?: boolean;
   plain?: boolean;
+  current?: boolean;
+  onSelect?: (stage: string) => void;
   children?: ReactNode;
 }) {
-  const Tag = plain ? "span" : "a";
-  return (
-    <Tag
-      className={box ? "workflow-graph-link workflow-graph-box" : "workflow-graph-link"}
-      href={plain ? undefined : `#${cardId(path, step)}`}
-      data-map-stage={step.id}
-      data-stage-kind={step.kind}
-      data-optional={step.optional ? "true" : undefined}
-      aria-label={step.kind === "human" ? step.label : undefined}
-    >
+  const className = box ? "workflow-graph-link workflow-graph-box" : "workflow-graph-link";
+  const shared = {
+    className,
+    "data-map-stage": step.id,
+    "data-stage-kind": step.kind,
+    "data-optional": step.optional ? "true" : undefined,
+  };
+  const body = (
+    <>
       {/* The legend explains the dot; the panel names the badge in words. */}
       {step.badges.includes("openspec") ? (
         <span className="workflow-graph-openspec" aria-hidden="true" />
@@ -370,52 +467,84 @@ function NodeLink({
       {/* Inside the review group the group names the action, so only the artifact shows. */}
       {step.kind === "human" ? step.artifact : step.label}
       {children}
-    </Tag>
+    </>
+  );
+  if (plain) return <span {...shared}>{body}</span>;
+  return (
+    <button
+      type="button"
+      {...shared}
+      aria-label={step.kind === "human" ? step.label : undefined}
+      aria-current={current ? "true" : undefined}
+      onClick={() => onSelect?.(step.id)}
+    >
+      {body}
+    </button>
   );
 }
 
-function StageCard({ path, step }: { path: WorkflowPath; step: WorkflowStep }) {
+/** One stage in the panel: what it does, how it runs, and the changes at it. */
+function StageDetail({ step, changes }: { step: WorkflowStep; changes: string[] }) {
   return (
     <article
       className="workflow-card"
-      id={cardId(path, step)}
       data-stage={step.id}
       data-stage-kind={step.kind}
       data-optional={step.optional ? "true" : undefined}
     >
-      <header className="workflow-card-header">
-        <div className="workflow-card-heading">
-          <h3>{step.label}</h3>
-          <WorkflowBadges badges={shownBadges(step)} />
-        </div>
-        <p className="workflow-card-meta">
-          <span>{PHASE_LABELS[step.phase]}</span>
-          {step.skill ? <code>{step.skill}</code> : null}
-          {step.sessionBreakBefore ? (
-            <span className="workflow-card-session">New session / clean chat</span>
-          ) : null}
-        </p>
-      </header>
-      <StageRun step={step} />
-      {step.missingSkill ? (
-        <p className="workflow-missing-skill" role="note">
-          Skill not reported for this companion: <code>{step.missingSkill}</code>. Run{" "}
-          <code>mate companion update</code>; this stage is not complete.
-        </p>
+      <PanelHead
+        title={step.label}
+        kicker={
+          <>
+            <span>{PHASE_LABELS[step.phase]}</span>
+            {step.optional ? <span>· optional</span> : null}
+            {step.kind === "human" ? <span className="text-why">· human review</span> : null}
+            {step.badges.includes("openspec") ? <span>· OpenSpec</span> : null}
+          </>
+        }
+      >
+        {step.skill || step.sessionBreakBefore ? (
+          <p className="m-0 flex flex-wrap items-center gap-2 text-sm text-muted">
+            {step.skill ? <code className="font-mono text-text">{step.skill}</code> : null}
+            {step.sessionBreakBefore ? (
+              <span className="workflow-card-session inline-flex items-center gap-1.5 text-accent">
+                <span
+                  className="size-2 rounded-full border-[1.5px] border-accent"
+                  aria-hidden="true"
+                />
+                New session / clean chat
+              </span>
+            ) : null}
+          </p>
+        ) : null}
+      </PanelHead>
+      <PanelSection title={step.kind === "human" ? "How it runs" : "Run"}>
+        <StageRun step={step} />
+        {step.missingSkill ? (
+          <p className="workflow-missing-skill m-0 text-sm text-warn" role="note">
+            Skill not reported for this companion:{" "}
+            <code className="font-mono">{step.missingSkill}</code>. Run{" "}
+            <code className="font-mono">mate companion update</code>; this stage is not complete.
+          </p>
+        ) : null}
+      </PanelSection>
+      <PanelSection title="What">
+        <p className="m-0 text-sm leading-relaxed">{step.what}</p>
+      </PanelSection>
+      <PanelSection title="Why">
+        <p className="m-0 text-sm leading-relaxed">{step.why}</p>
+      </PanelSection>
+      {changes.length > 0 ? (
+        <PanelSection title="Changes at this stage" aside={String(changes.length)}>
+          <ul className="m-0 grid list-none gap-1 p-0">
+            {changes.map((name) => (
+              <li key={name} className="truncate font-mono text-sm">
+                {name}
+              </li>
+            ))}
+          </ul>
+        </PanelSection>
       ) : null}
-      <dl className="workflow-card-explanation">
-        <div>
-          <dt>What</dt>
-          <dd>{step.what}</dd>
-        </div>
-        <div>
-          <dt>Why</dt>
-          <dd>{step.why}</dd>
-        </div>
-      </dl>
-      <footer className="workflow-card-footer">
-        <a href={`#${overviewId(path)}`}>Path overview</a>
-      </footer>
     </article>
   );
 }
@@ -424,58 +553,33 @@ function StageCard({ path, step }: { path: WorkflowPath; step: WorkflowStep }) {
 function StageRun({ step }: { step: WorkflowStep }) {
   if (step.kind === "human") {
     return (
-      <p className="workflow-card-human">Review {step.artifact} yourself — no skill, no prompt</p>
+      <p className="workflow-card-human m-0 text-sm">
+        Review {step.artifact} yourself — no skill, no prompt
+      </p>
     );
   }
-  if (step.alternatives?.length) return <WorkflowOptions step={step} />;
+  if (step.alternatives?.length) {
+    return (
+      <div className="workflow-option-list grid gap-3">
+        {step.alternatives.map((alternative) => (
+          <div key={alternative.name} className="workflow-option grid gap-1.5">
+            <CommandLine
+              text={alternative.prompt}
+              copy={alternative.copyPrompt}
+              label={`${alternative.name} prompt`}
+            />
+            <small className="text-xs text-muted">{alternative.description}</small>
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (!step.prompt) return null;
   return (
-    <div className="workflow-command">
-      <span className="workflow-command-label">Run</span>
-      <code>{step.prompt}</code>
-      <WorkflowCopy text={step.copyPrompt ?? step.prompt} label={`${step.label} prompt`} />
-    </div>
-  );
-}
-
-function WorkflowOptions({ step }: { step: WorkflowStep }) {
-  if (!step.alternatives?.length) return null;
-  return (
-    <div className="workflow-option-list">
-      {step.alternatives.map((alternative) => (
-        <div key={alternative.name} className="workflow-option">
-          <div className="workflow-command">
-            <span className="workflow-command-label">Option</span>
-            <code>{alternative.prompt}</code>
-            <WorkflowCopy text={alternative.copyPrompt} label={`${alternative.name} prompt`} />
-          </div>
-          <small>{alternative.description}</small>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function WorkflowCopy({ text, label }: { text: string; label: string }) {
-  return (
-    <button type="button" className="runway-step-copy" data-copy={text} data-copy-label={label}>
-      Copy
-    </button>
-  );
-}
-
-/** The skill name already says a stage is a skill stage, so that badge is not shown. */
-const shownBadges = (step: WorkflowStep): WorkflowStepBadge[] =>
-  step.badges.filter((badge) => badge !== "skill");
-
-function WorkflowBadges({ badges }: { badges: WorkflowStepBadge[] }) {
-  return (
-    <span className="workflow-badges">
-      {badges.map((badge) => (
-        <em key={badge} className={`runway-step-badge runway-step-badge-${badge}`}>
-          {badge === "human-review" ? "Human review" : badge}
-        </em>
-      ))}
-    </span>
+    <CommandLine
+      text={step.prompt}
+      copy={step.copyPrompt ?? step.prompt}
+      label={`${step.label} prompt`}
+    />
   );
 }

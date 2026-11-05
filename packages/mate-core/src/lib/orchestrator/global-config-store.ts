@@ -52,6 +52,17 @@ export class GlobalConfigStore extends YamlFileStore<GlobalConfig> {
     }
   }
 
+  /** Drops one entry; `false` when the path was not registered. */
+  async unregister(companionPath: string): Promise<boolean> {
+    const resolved = path.resolve(companionPath);
+    const config = await this.load();
+    const kept = config.companions.filter((c) => path.resolve(c.path) !== resolved);
+    if (kept.length === config.companions.length) return false;
+    config.companions = kept;
+    await this.save(config);
+    return true;
+  }
+
   /**
    * One-time/idempotent hygiene pass: drops entries whose path is not a
    * directory on disk (stale test-fixture pollution, removed companions).

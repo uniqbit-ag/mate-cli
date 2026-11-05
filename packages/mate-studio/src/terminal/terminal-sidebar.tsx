@@ -10,6 +10,12 @@ import type { ShellTerminal } from "../server/shell";
 import { useTerminalUi } from "../stores/terminal-ui";
 import { storedSession, TerminalClient, type TerminalState } from "./terminal-client";
 import { loadWTerm } from "./wterm";
+import { Icon } from "../components/icon";
+
+const ICON_BUTTON =
+  "grid size-7 flex-none place-items-center rounded-[6px] border border-transparent bg-transparent p-0 text-muted hover:border-rule hover:bg-surface hover:text-text";
+const SMALL_BUTTON =
+  "inline-flex h-7 items-center rounded-[6px] border border-rule bg-surface px-2.5 text-xs text-text hover:border-accent hover:bg-accent-soft";
 
 const AGENT_LABELS: Record<string, string> = { claude: "Claude Code", opencode: "OpenCode" };
 
@@ -188,14 +194,14 @@ export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
       <div className="terminal-strip">
         <button
           type="button"
-          className="terminal-icon-button"
+          className={ICON_BUTTON}
           id="terminal-expand"
           aria-controls="terminal-body"
           aria-expanded={!ui.collapsed}
           aria-label="Expand the terminal"
           onClick={() => ui.setCollapsed(false)}
         >
-          ‹
+          <Icon name="left" />
         </button>
         <span className="terminal-dot" aria-hidden="true" />
       </div>
@@ -203,39 +209,39 @@ export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
         <header className="terminal-head">
           <div className="terminal-title">
             <span className="terminal-dot" aria-hidden="true" />
-            <h2>Agent terminal</h2>
+            <h2 className="m-0 flex-1 text-sm font-semibold">Agent terminal</h2>
             <button
               type="button"
-              className="terminal-icon-button"
+              className={ICON_BUTTON}
               id="terminal-collapse"
               aria-controls="terminal-body"
               aria-expanded={!ui.collapsed}
               aria-label="Collapse the terminal"
               onClick={() => ui.setCollapsed(true)}
             >
-              ›
+              <Icon name="right" />
             </button>
             <button
               type="button"
-              className="terminal-icon-button"
+              className={ICON_BUTTON}
               id="terminal-drawer-close"
               aria-label="Close the terminal"
               onClick={() => closeDrawer(ui.setDrawerOpen)}
             >
-              ×
+              <Icon name="close" />
             </button>
           </div>
-          <p className="terminal-target">
+          <p className="terminal-target m-0 text-xs break-words text-muted">
             {target ? (
               <>
-                Launches against <code>{target.path}</code>
+                Launches against <code className="font-mono">{target.path}</code>
                 {terminal.pinned ? " (fixed when Studio started)" : null}
               </>
             ) : (
               "Select a registered companion to launch an agent."
             )}
           </p>
-          <div className="terminal-actions">
+          <div className="terminal-actions flex flex-wrap items-center gap-1.5">
             {target ? (
               <StartButtons
                 agents={terminal.agents}
@@ -244,7 +250,7 @@ export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
             ) : null}
             <button
               type="button"
-              className="button"
+              className={SMALL_BUTTON}
               id="terminal-reconnect"
               hidden={!reconnectable}
               onClick={() => client.current?.reconnect()}
@@ -253,7 +259,7 @@ export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
             </button>
           </div>
           <div
-            className="terminal-choice"
+            className="terminal-choice flex flex-wrap items-center gap-1.5 text-xs [&[hidden]]:hidden"
             id="terminal-action-choice"
             role="group"
             aria-label="Choose an agent"
@@ -266,7 +272,7 @@ export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
                   <button
                     key={agent}
                     type="button"
-                    className="button"
+                    className={SMALL_BUTTON}
                     onClick={() => {
                       setChoice(null);
                       client.current?.start(agent, choice);
@@ -275,19 +281,19 @@ export function TerminalSidebar({ terminal }: { terminal: ShellTerminal }) {
                     {AGENT_LABELS[agent]}
                   </button>
                 ))}
-                <button type="button" className="button" onClick={() => setChoice(null)}>
+                <button type="button" className={SMALL_BUTTON} onClick={() => setChoice(null)}>
                   Cancel
                 </button>
               </>
             ) : null}
           </div>
-          <p className="terminal-status" id="terminal-status" role="status">
+          <p className="terminal-status m-0 text-xs text-muted" id="terminal-status" role="status">
             {status}
           </p>
         </header>
         <div className="terminal-view" id="studio-terminal" ref={mount} />
         <footer className="terminal-sessions-footer">
-          <h3 className="terminal-sessions-title">Sessions</h3>
+          <h3 className="terminal-sessions-title m-0 text-xs font-semibold text-muted">Sessions</h3>
           <SessionList
             sessions={sessions}
             onAttach={(id) => client.current?.attach(id)}
@@ -307,13 +313,15 @@ function StartButtons({
   onStart: (agent: TerminalAgent) => void;
 }) {
   if (agents.length === 0) {
-    return <span className="empty">No agent this companion allows is installed.</span>;
+    return (
+      <span className="empty text-xs text-muted">No agent this companion allows is installed.</span>
+    );
   }
   return agents.map((agent) => (
     <button
       key={agent}
       type="button"
-      className="button"
+      className={SMALL_BUTTON}
       data-terminal-start={agent}
       onClick={() => onStart(agent)}
     >
@@ -334,24 +342,24 @@ function SessionList({
 }) {
   const mine = storedSession();
   return (
-    <ul className="terminal-sessions" id="terminal-sessions">
+    <ul className="terminal-sessions m-0 grid list-none gap-1.5 p-0" id="terminal-sessions">
       {sessions && sessions.length === 0 ? (
-        <li className="empty">No sessions are running.</li>
+        <li className="empty text-xs text-muted">No sessions are running.</li>
       ) : null}
       {sessions?.map((session) => (
-        <li key={session.id}>
-          <span>
+        <li key={session.id} className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="min-w-0 flex-1 basis-full">
             {session.workset
               ? `Workset ${session.workset.id} (${session.workset.title})`
               : `${session.agent} · ${session.companionPath}`}
             {` · ${viewedFrom(session, mine)} · ${age(session.ageSeconds)}`}
           </span>
           {session.id !== mine ? (
-            <button type="button" className="button" onClick={() => onAttach(session.id)}>
+            <button type="button" className={SMALL_BUTTON} onClick={() => onAttach(session.id)}>
               {session.attached ? "Take over" : "Attach"}
             </button>
           ) : null}
-          <button type="button" className="button" onClick={() => onEnd(session.id)}>
+          <button type="button" className={SMALL_BUTTON} onClick={() => onEnd(session.id)}>
             End
           </button>
         </li>
@@ -391,26 +399,5 @@ function ResizeHandle() {
         if (width.current > 0) setWidth(width.current, true);
       }}
     />
-  );
-}
-
-/** Outside `.shell`, so it never takes a grid cell; shown only below the side-by-side breakpoint. */
-export function TerminalDrawerButton() {
-  const drawerOpen = useTerminalUi((state) => state.drawerOpen);
-  const setDrawerOpen = useTerminalUi((state) => state.setDrawerOpen);
-  return (
-    <button
-      type="button"
-      className="terminal-drawer-open"
-      id="terminal-drawer-open"
-      aria-controls="studio-terminal-panel"
-      aria-expanded={drawerOpen}
-      onClick={() => {
-        setDrawerOpen(true);
-        requestAnimationFrame(() => document.getElementById("terminal-drawer-close")?.focus());
-      }}
-    >
-      Terminal
-    </button>
   );
 }

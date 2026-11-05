@@ -1,14 +1,17 @@
 import { describe, expect, it } from "bun:test";
-
-import { staticMarkup } from "../../../test/render";
-
 import {
   findAction,
   type SpecActionOffer,
   type StudioCompanionPayload,
 } from "@uniqbit/mate-core/studio";
-import { groupSpecsByArea } from "./spec-areas";
-import { Specs } from "./specs-view";
+
+await import("../../../test/dom");
+const { act, render: mountDom } = await import("@testing-library/react");
+const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const router = await import("@tanstack/react-router");
+const { staticMarkup } = await import("../../../test/render");
+const { groupSpecsByArea } = await import("./spec-areas");
+const { Specs } = await import("./specs-view");
 
 function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompanionPayload {
   return {
@@ -36,11 +39,14 @@ describe("Specs", () => {
       />,
     );
     expect(markup).toContain('aria-label="Specs by Area"');
+    expect(markup).toContain('<section class="list-card');
     expect(markup).toContain('aria-label="Area acme"');
     expect(markup).toContain('aria-label="Area docs"');
-    expect(markup).toContain('<h4 class="specs-area-name">acme</h4>');
-    expect(markup).toContain("2 specs · capabilities grouped by the Areas they serve");
-    expect(markup).not.toContain('class="panel');
+    expect(markup).toMatch(
+      /<h2[^>]*><span class="font-mono">acme<\/span><\/h2><span[^>]*>1<\/span>/,
+    );
+    // No sequence numbers before an Area.
+    expect(markup).not.toMatch(/>0?1\.? *<\/span><span class="font-mono">acme/);
     expect(markup).toContain("3 requirements");
     expect(markup).toContain("2 issues");
     expect(markup).not.toContain('aria-label="Changes"');
@@ -84,40 +90,85 @@ describe("groupSpecsByArea", () => {
   describe("skill actions", () => {
     const show = findAction("show-me")!;
     const specs = [{ capability: "acme-login", areas: ["acme"] }];
-    const render = (actions: SpecActionOffer[]) =>
-      staticMarkup(<Specs payload={payload({ specs })} actions={actions} />);
 
-    it("renders Show me and a copy icon button when a terminal and an agent qualify", () => {
-      const markup = render([
+    /** The spec's panel, opened from its row. */
+    async function openSpec(actions: SpecActionOffer[], capability = "acme-login") {
+      const root = router.createRootRoute();
+      const route = router.createRoute({
+        getParentRoute: () => root,
+        path: "/specs",
+        component: () => (
+          <Specs
+            payload={payload({ specs: [{ capability, areas: ["acme"] }] })}
+            actions={actions}
+          />
+        ),
+      });
+      const instance = router.createRouter({
+        routeTree: root.addChildren([route]),
+        history: router.createMemoryHistory({ initialEntries: ["/specs"] }),
+      });
+      await instance.load();
+      const page = mountDom(
+        <QueryClientProvider client={new QueryClient()}>
+          <router.RouterProvider router={instance} />
+        </QueryClientProvider>,
+      );
+      await act(async () => {});
+      const doc = page.container.ownerDocument;
+      await act(async () => doc.querySelector<HTMLButtonElement>("[data-spec]")!.click());
+      await act(async () => new Promise((done) => setTimeout(done, 20)));
+      const panel = doc.querySelector('[data-slot="sheet-content"]')!;
+      return { page, html: panel.innerHTML, wide: panel.hasAttribute("data-wide") };
+    }
+
+    it("opens a spec wide in the panel with Show me and Copy prompt when a terminal and an agent qualify", async () => {
+      const { page, html, wide } = await openSpec([
         { action: show, runAgents: ["claude", "opencode"], copyAgents: ["claude", "opencode"] },
       ]);
-      expect(markup).toContain('data-studio-action="show-me"');
-      expect(markup).toContain('data-studio-subject="acme-login"');
-      expect(markup).toContain('data-studio-agents="claude opencode"');
-      expect(markup).toContain("Show me");
-      expect(markup).toContain('aria-label="Copy prompt"');
-      expect(markup).toContain("<svg");
-      expect(markup).toContain('data-prompt-claude="/mate-show-me acme-login"');
-      expect(markup).toContain("Use the mate-show-me skill on spec acme-login.");
+      expect(wide).toBe(true);
+      expect(html).toContain('data-studio-action="show-me"');
+      expect(html).toContain('data-studio-subject="acme-login"');
+      expect(html).toContain('data-studio-agents="claude opencode"');
+      expect(html).toContain("Show me");
+      expect(html).toContain('aria-label="Copy prompt"');
+      expect(html).toContain('data-prompt-claude="/mate-show-me acme-login"');
+      expect(html).toContain("Use the mate-show-me skill on spec acme-login.");
+      expect(html).toContain("openspec%2Fspecs%2Facme-login%2Fspec.md");
+      page.unmount();
     });
 
-    it("renders copy only without a run agent", () => {
-      const markup = render([{ action: show, runAgents: [], copyAgents: ["opencode"] }]);
-      expect(markup).not.toContain("data-studio-action=");
-      expect(markup).toContain("data-studio-copy-prompt");
-      expect(markup).toContain("data-prompt-opencode=");
-      expect(markup).not.toContain("data-prompt-claude=");
+    it("offers copy only without a run agent", async () => {
+      const { page, html } = await openSpec([
+        { action: show, runAgents: [], copyAgents: ["opencode"] },
+      ]);
+      expect(html).not.toContain("data-studio-action=");
+      expect(html).toContain("data-studio-copy-prompt");
+      expect(html).toContain("data-prompt-opencode=");
+      expect(html).not.toContain("data-prompt-claude=");
+      page.unmount();
     });
 
-    it("renders nothing without offers or for an unsafe capability name", () => {
-      expect(render([])).not.toContain("data-studio-");
-      const unsafe = staticMarkup(
+    it("offers nothing without offers or for an unsafe capability name", async () => {
+      const none = await openSpec([]);
+      expect(none.html).not.toContain("data-studio-");
+      none.page.unmount();
+      const unsafe = await openSpec(
+        [{ action: show, runAgents: ["claude"], copyAgents: ["claude"] }],
+        '"><b>x',
+      );
+      expect(unsafe.html).not.toContain("data-studio-");
+      unsafe.page.unmount();
+    });
+
+    it("keeps the rows free of actions", () => {
+      const markup = staticMarkup(
         <Specs
-          payload={payload({ specs: [{ capability: '"><b>x', areas: ["acme"] }] })}
+          payload={payload({ specs })}
           actions={[{ action: show, runAgents: ["claude"], copyAgents: ["claude"] }]}
         />,
       );
-      expect(unsafe).not.toContain("data-studio-");
+      expect(markup).not.toContain("data-studio-");
     });
   });
 });

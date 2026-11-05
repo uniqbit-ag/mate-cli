@@ -7,7 +7,11 @@ import {
   type StudioAccess,
   type StudioInvocation,
 } from "./access";
+import { realpath } from "node:fs/promises";
+import path from "node:path";
+
 import { MERMAID_RUNTIME_URL } from "../report/renderer";
+import { CompanionRemovalError, deleteRegisteredCompanion } from "./companion-removal";
 import { collectStudioInventory, type StudioInventory } from "./inventory";
 import {
   assembleCompanionPayload,
@@ -53,7 +57,6 @@ import {
   resolveCompanion,
   type StudioModePolicy,
   type StudioProfile,
-  type StudioSelection,
 } from "./selection";
 import { errorMessage } from "../../../runtime/error-message";
 import { createStudioSnapshotCache, type StudioSnapshotCache } from "./snapshot";
@@ -478,15 +481,9 @@ export function createStudioFetch(
     });
   };
 
-  /** One document's model, with the factory, report and terminal state its address needs. */
+  /** One document's model, with the factory and terminal state its address needs. */
   const collectPage = async (url: URL): Promise<StudioPage> => {
-    const page = await collectStudioPage(url, policy, inventory, snapshots, vault, writable);
-    if (page.payload && page.companion && isAnalystOverview(page.selection)) {
-      page.reports = await reports.list(companionDigest(page.companion.path)).then(
-        (listed) => listed.map(({ id, title, createdAt }) => ({ id, title, createdAt })),
-        () => null,
-      );
-    }
+    const page = await collectStudioPage(url, policy, inventory, snapshots, writable);
     page.renderedAt = Date.now();
     page.factoryRuns = page.companion ? await outcomesFor(page.companion.path).runs() : null;
     if (terminal) {
@@ -555,9 +552,42 @@ export function createStudioFetch(
       const { vaultMatches } = await import("./views/vault/view");
       return vaultMatches(vault, await companionPathOf(digest), query);
     },
+    vaultPreview: async (digest, path, content) => {
+      await companionPathOf(digest);
+      const { markdownTree } = await import("./views/vault/markdown-tree");
+      return markdownTree(content, path);
+    },
     vaultSave: async (digest, path, content, token) => {
       if (!writable) throw new VaultPathError("start Studio with --writable to enable saving");
       return vault.save(await companionPathOf(digest), path, content, token);
+    },
+    reports: async (digest) => {
+      await companionPathOf(digest);
+      return reports.list(digest);
+    },
+    skillPreview: async (digest, agent, name, file) => {
+      const { readSkillPreview } = await import("./skill-files");
+      return readSkillPreview(await companionPathOf(digest), agent, name, file);
+    },
+    deleteCompanion: async (digest) => {
+      if (!writable) {
+        throw new CompanionRemovalError("start Studio with --writable to delete companions");
+      }
+      const companionPath = await companionPathOf(digest);
+      const pinned = [launchCompanion, outcomes?.companionPath].filter(
+        (entry): entry is string => typeof entry === "string" && entry !== "",
+      );
+      // Real paths, so a symlinked start path still protects its folder.
+      const real = (entry: string) => realpath(entry).catch(() => path.resolve(entry));
+      const target = await real(companionPath);
+      const pinnedReal = await Promise.all(pinned.map(real));
+      if (pinnedReal.includes(target)) {
+        throw new CompanionRemovalError(
+          "Studio was started for this companion; it is not deleted.",
+        );
+      }
+      const { deletedFolder } = await deleteRegisteredCompanion(companionPath);
+      return { deletedFolder };
     },
   };
   const app = options.app ?? null;
@@ -842,11 +872,6 @@ function vaultEvents(vault: VaultManager, companionPath: string, requestedPath: 
   );
 }
 
-/** Reports are not part of the snapshot: this Overview lists them at render time. */
-function isAnalystOverview(selection: StudioSelection): boolean {
-  return selection.studioMode === "analysis" && selection.view === "dashboard";
-}
-
 /**
  * One rendered document's worth of state. An absent or unresolvable companion
  * is not a failure: the page renders the selector and the server keeps serving.
@@ -856,7 +881,6 @@ async function collectStudioPage(
   policy: StudioModePolicy,
   collectInventory: () => Promise<StudioInventory>,
   snapshots: StudioSnapshotCache,
-  vault: VaultManager,
   writable: boolean,
 ): Promise<StudioPage> {
   const selection = parse(url, policy);
@@ -874,7 +898,6 @@ async function collectStudioPage(
     terminal: null,
   };
 
-  vault.deactivate();
   if (!companion) return page;
 
   try {
