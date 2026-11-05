@@ -64,8 +64,8 @@ protected branch unless it is recorded as a direct delivery.
      `enter.path` is now the Working Repository and continue at Step 3 there. On `handoff`
      or a declined move, report `enter.reason` and any warnings, write no code, and
      stop. `## Next steps`: name each `repositories[].path`, open a new session in this
-     repository's worktree, run `/mate-apply-change <change-name>` there. On failure, report its diagnostics and
-     offer the other options again.
+     repository's worktree, run `/mate-apply-change <change-name>` there. On failure,
+     report its diagnostics and offer the other options again.
   3. **Use an existing branch**: switch to the branch the user names and record it.
   4. **Work directly here** — only when the user explicitly chooses it. Record it as a
      direct delivery: `mate artifact link "<change-name>" --branch "<branch>" --direct --json`.
