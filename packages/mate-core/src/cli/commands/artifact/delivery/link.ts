@@ -5,7 +5,7 @@ import {
   type RecordDeliveryDeps,
 } from "../../../../lib/delivery/record-delivery";
 import { applyWarnings, type DependencyWarning } from "../../../../lib/delivery/overlap";
-import { isJiraKey, type MergeState } from "../../../../lib/delivery/record";
+import { isJiraKey, normalizeJiraKey, type MergeState } from "../../../../lib/delivery/record";
 import { type BooleanFlagSet, parseFlags, positionalArgs, stringFlag } from "../../../parse-flags";
 import {
   branchFlagsFrom,
@@ -57,7 +57,6 @@ function refusalMessage(refusal: DeliveryRefusal): string {
 
 function renderHuman(result: LinkResult): string[] {
   const lines = [`${result.change}: ${result.settlement.status}`];
-  if (result.record.ticket) lines.push(`  ticket: ${result.record.ticket}`);
   lines.push(...result.record.deliveries.map(renderDelivery));
   for (const repository of result.settlement.missing) {
     lines.push(`  ${repository}: no delivery recorded (named in the change's scopes)`);
@@ -79,8 +78,10 @@ function renderHuman(result: LinkResult): string[] {
  * - `--direct` — with `--branch`, record a direct delivery, settled only by the user's answer; required for a protected branch.
  * - `--not-applicable <reason>` — no branch delivers this change in the repository.
  * - `--pr <url>` — record the PR URL; with `--refresh`, picks that PR among several.
- * - `--ticket <KEY>` — record the change's Jira ticket (`ABC-123`), alone or with other edits;
- *   refused unless the companion's openspec capability sets `ticket: jira`.
+ * - `--ticket <KEY>` — record the Delivery Branch resolved with this Jira key (`ABC-123`, any
+ *   case): a new branch is named `workset/<TICKET>-<workset-id>`, while a recorded, inherited,
+ *   or existing branch is kept. The key is not stored. Excludes `--branch` and
+ *   `--not-applicable`; refused unless the openspec capability sets `ticket: jira`.
  * - `--refresh` — ask the forge (with `MATE_GIT_TOKEN`), then a local checkout, for the merge
  *   state of each recorded branch; a direct delivery is reported as needing the user's answer.
  * - `--fetch` — with `--refresh`, fetch the default and delivery branches first even when the
@@ -132,6 +133,11 @@ export async function runArtifactLinkCommand(
   if (ticket !== undefined && !isJiraKey(ticket)) {
     return refuse("mate: --ticket expects a Jira key such as ABC-123.");
   }
+  if (ticket !== undefined && (branch !== undefined || notApplicable !== undefined)) {
+    return refuse(
+      "mate: --ticket names the resolved branch; it excludes --branch and --not-applicable.",
+    );
+  }
   const requested = repositoryFlag(flags);
   if ("error" in requested) return refuse(requested.error);
 
@@ -150,7 +156,7 @@ export async function runArtifactLinkCommand(
         ...(delivery ? { delivery } : {}),
         ...(pr !== undefined ? { pr } : {}),
         ...(confirm ? { confirm } : {}),
-        ...(ticket !== undefined ? { ticket } : {}),
+        ...(ticket !== undefined ? { ticket: normalizeJiraKey(ticket) } : {}),
       },
       refresh: flags.refresh === true,
       fetch: flags.fetch === true,

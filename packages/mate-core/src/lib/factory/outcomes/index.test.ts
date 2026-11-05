@@ -207,11 +207,11 @@ describe("the runs view", () => {
 
   test("memory-only views retain idle defaults; execution views expose no resume", async () => {
     const { outcomes: o } = outcomes();
-    await runs.rememberPush("acme-login", "change/acme-login");
+    await runs.rememberPush("acme-login", "workset/acme-login");
     expect((await o.runs())["acme-login"]).toEqual({
       state: "idle",
       updatedAt: "",
-      pushedBranch: "change/acme-login",
+      pushedBranch: "workset/acme-login",
     });
     await runs.saveTurn("acme-login", {
       data: { claudeSessionId: "2a41e812-a0fa-4908-a871-6df87d4ea2bc" },
@@ -224,7 +224,7 @@ describe("the runs view", () => {
     const view = (await o.runs())["acme-login"]!;
     expect(view).toEqual({
       ...(await runs.facts("acme-login")).execution,
-      pushedBranch: "change/acme-login",
+      pushedBranch: "workset/acme-login",
       control: (await runs.facts("acme-login")).control,
       situations: (await runs.facts("acme-login")).memory.situations,
       conversation: true,
@@ -240,10 +240,10 @@ describe("the runs view", () => {
   });
 
   test("compare links keep GitHub branches and omit unsupported forges", () => {
-    expect(compareUrlFor("https://github.com/acme/web.git", "change/acme-login")).toBe(
-      "https://github.com/acme/web/compare/change/acme-login?expand=1",
+    expect(compareUrlFor("https://github.com/acme/web.git", "workset/acme-login")).toBe(
+      "https://github.com/acme/web/compare/workset/acme-login?expand=1",
     );
-    expect(compareUrlFor("https://gitlab.com/acme/web.git", "change/acme-login")).toBeUndefined();
+    expect(compareUrlFor("https://gitlab.com/acme/web.git", "workset/acme-login")).toBeUndefined();
   });
 
   test("drops review reports the store no longer keeps", async () => {

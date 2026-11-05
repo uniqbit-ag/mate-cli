@@ -967,6 +967,7 @@ button kbd {
 }
 .outcome-input textarea,
 .outcome-input select,
+.outcome-ticket,
 .factory-action textarea,
 .outcome-feedback textarea {
   font: inherit;
@@ -978,6 +979,7 @@ button kbd {
   resize: vertical;
 }
 .outcome-input textarea:focus-visible,
+.outcome-ticket:focus-visible,
 .factory-action textarea:focus-visible,
 .outcome-feedback textarea:focus-visible {
   outline: 2px solid var(--accent);
@@ -992,6 +994,10 @@ button kbd {
 }
 .outcome-input-actions select {
   width: auto;
+}
+.outcome-ticket {
+  width: 9rem;
+  font-family: var(--mono);
 }
 /** Outcome lists: one line per Outcome, the row opens its dialog. */
 .outcome-list-section {

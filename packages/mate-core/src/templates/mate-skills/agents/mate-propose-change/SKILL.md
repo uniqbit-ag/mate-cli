@@ -55,14 +55,8 @@ propose steps below.
 
 3. **Follow the OpenSpec workflow.** Read
    [references/openspec-propose.md](references/openspec-propose.md) and follow it with the
-   chosen schema (pass `--schema <schema>` when creating the change).
-
-   Once the run's first change exists, read `ticketFormat` from
-   `mate artifact link "<change-name>" --json`. Only when it is `jira`, ask once per run
-   for an optional Jira ticket (`ABC-123`) and record an answer on every change the run
-   created: `mate artifact link "<change-name>" --ticket "<KEY>" --json`. An empty answer
-   records nothing; a refused key is asked once more with the expected format. With
-   `none`, never ask.
+   chosen schema (pass `--schema <schema>` when creating the change). Never ask for a
+   ticket; apply asks when it creates the branch.
 
 4. **Hand off to human review.** Reviews are done by people, not by a skill.
    End the response with a final `## Next steps` section: numbered required actions in

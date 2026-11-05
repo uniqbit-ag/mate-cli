@@ -157,17 +157,21 @@ describe("mate artifact archive", () => {
     expect(result.record.deliveries[0]).toMatchObject({ branch: "main", direct: true });
   });
 
-  test("--skip-branch archives with an unlinked record marked skipped", async () => {
+  test("--skip-branch archives with an unlinked record", async () => {
     const result = await run(["x", "--skip-branch"]);
     expect(result).toMatchObject({ status: "archived", settlement: { status: "unlinked" } });
-    expect(await archivedRecord("x")).toContain("skipped: true\ndeliveries: []");
+    expect(await archivedRecord("x")).toBe("version: 1\nchange: x\ndeliveries: []\n");
   });
 
-  test("--skip-branch keeps a ticket-only record held back", async () => {
-    await writeDeliveryRecord(changeDir("x"), { ...unlinkedRecord("x"), ticket: "ABC-123" });
+  test("--skip-branch drops a canary ticket and skipped marker and stays held back", async () => {
+    await fs.mkdir(changeDir("x"), { recursive: true });
+    await fs.writeFile(
+      path.join(changeDir("x"), "delivery.yaml"),
+      "version: 1\nchange: x\nticket: ABC-123\nskipped: true\ndeliveries: []\n",
+    );
     const result = await run(["x", "--skip-branch"]);
     expect(result.settlement.status).toBe("unlinked");
-    expect(await archivedRecord("x")).toContain("ticket: ABC-123\nskipped: true");
+    expect(await archivedRecord("x")).toBe("version: 1\nchange: x\ndeliveries: []\n");
   });
 
   test("a not-applicable change is archived and publishable", async () => {

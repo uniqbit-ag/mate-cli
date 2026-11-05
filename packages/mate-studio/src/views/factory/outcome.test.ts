@@ -38,6 +38,7 @@ function payload(overrides: Partial<StudioCompanionPayload> = {}): StudioCompani
     topology: null,
     worksets: [],
     linkedRepositories: ["acme/web"],
+    ticketFormat: "none",
     worksetProblems: [],
     warnings: [],
     ...overrides,

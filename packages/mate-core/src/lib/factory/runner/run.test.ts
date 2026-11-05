@@ -109,7 +109,7 @@ describe("memory", () => {
         text: "Acme ready",
         checks: [{ name: "acme test", passed: true }],
       }),
-      runs.rememberPush("acme-a", "change/acme-a"),
+      runs.rememberPush("acme-a", "workset/acme-a"),
       runs.rememberReview("acme-a", "acme-one", "report-1"),
       runs.rememberReview("acme-a", "acme-two", "report-2"),
       runs.recordSituation("acme-a", { text: "Acme kept" }, "publish"),
@@ -118,7 +118,7 @@ describe("memory", () => {
     await runs.rememberReview("acme-a", "acme-one", "report-3");
     expect(await runs.resume("acme-a")).toEqual(resume);
     expect((await runs.facts("acme-a")).memory).toEqual({
-      pushedBranch: "change/acme-a",
+      pushedBranch: "workset/acme-a",
       reviewReports: { "acme-one": "report-3", "acme-two": "report-2" },
       situations: [
         { text: "Acme kept", stage: "publish", at: now },
