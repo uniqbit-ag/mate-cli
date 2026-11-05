@@ -26,6 +26,10 @@ const undocumented = new Set([
   "hub sync",
   "plugin install",
   "report",
+  // Machine Caller contract for editor plugins.
+  "session add",
+  "session list",
+  "session remove",
   "studio",
   "studio serve",
 ]);

@@ -21,6 +21,7 @@ import { runSessionCommand } from "./commands/session/prepare";
 import { runStudioCommand } from "./commands/studio";
 import { runUpdateCommand } from "./commands/update";
 import { runUnwrapCommand } from "./commands/unwrap";
+import { runVscodeCommand } from "./commands/vscode/setup";
 import { parseWrapArgs, runWrapCommand } from "./commands/wrap";
 import { runWorkingCommand } from "./commands/working/working";
 import { runFactoryCommand } from "./commands/factory/factory";
@@ -324,11 +325,17 @@ export async function main(argv = process.argv, deps: MainDeps = mainDeps): Prom
     }
     case "session":
       /**
-       * Spawned by the OpenCode plugin for a bare session: no update prompt,
-       * no companion picker, no install repair may block it.
+       * Spawned by the OpenCode plugin for a bare session and by editor plugins
+       * for the session registry: no update prompt, no companion picker, no
+       * install repair may block it.
        */
       if (!(await gate({}))) return;
       await runSessionCommand(subcommand, rest);
+      return;
+    case "vscode":
+      // Installs an editor extension: needs no companion, repository, or installation.
+      if (!(await gate({}))) return;
+      await runVscodeCommand(subcommand, rest);
       return;
     case "unwrap":
       // A recovery path: it withdraws what a wrap placed, so it must never be

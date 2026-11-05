@@ -104,6 +104,23 @@ export async function fetchPublicPackageVersion(
   return stdout.trim();
 }
 
+/** `npm pack` a package from the public registry into `destination`; returns the tarball path. */
+export async function packPublicPackage(
+  packageSpec: string,
+  destination: string,
+  registry = PUBLIC_NPM_REGISTRY,
+): Promise<string> {
+  const { stdout } = await withPublicNpmConfig(packageNameFromSpec(packageSpec), registry, (env) =>
+    publicNpmDeps.execFile("npm", ["pack", packageSpec, "--pack-destination", destination], {
+      timeout: 120_000,
+      env,
+    }),
+  );
+  const tarball = stdout.trim().split("\n").at(-1)?.trim();
+  if (!tarball) throw new Error(`npm pack ${packageSpec} printed no tarball name`);
+  return path.join(destination, tarball);
+}
+
 export function installPublicPackageSync(packageSpec: string, registry = PUBLIC_NPM_REGISTRY) {
   return withPublicNpmConfigSync(packageNameFromSpec(packageSpec), registry, (env) =>
     publicNpmDeps.spawnSync("npm", ["install", "-g", packageSpec], {

@@ -196,6 +196,32 @@ the companion `AGENTS.md`, not that text, so the warning names the file and
 suggests moving shared rules into `AGENTS.md`. The warning appears in the JSON
 output too and does not change the exit status.
 
+## Editor Extension
+
+| Command                                                     | Purpose                                             |
+| ----------------------------------------------------------- | --------------------------------------------------- |
+| `mate vscode setup [--editor code\|cursor] [--vsix <path>]` | Install the Mate extension into VS Code and Cursor. |
+
+`mate vscode setup` downloads `@uniqbit/mate-vscode` at the version of your
+Mate CLI and installs it into every editor whose CLI (`code`, `cursor`) it
+finds. `--editor` installs into one editor only; `--vsix` installs a local
+VSIX file instead of downloading. It needs no linked repository. Run it again
+after `mate update` so the extension matches the CLI.
+
+The extension adds a Mate sidebar for the Git repository open in the window:
+
+- **Sessions**: start a Claude or OpenCode session through Mate, park it (its
+  terminal closes and the agent stops), and resume the same conversation later.
+  Only sessions started from the sidebar are listed.
+- **Worktrees**: the repository's Git worktrees; Workset branches are marked.
+  Opening one opens a new window.
+- **Open changes**: the active changes of the linked Companion Repository with
+  their task progress.
+- **Ready to publish**: the archived changes `mate artifact pending` reports,
+  marked when they still wait for their merge.
+
+The sidebar reloads when it becomes visible and on **Refresh**.
+
 ## Comment Guidance
 
 Shared agent guidance prefers sparse, concise comments explaining non-obvious

@@ -7,6 +7,7 @@ import { readProjectionFile } from "../../../runtime/projection";
 import { readWrapState, WRAP_RUNTIMES } from "../../../runtime/wrap-state";
 import { writeJsonStdout } from "../../write-json-stdout";
 import { launchAmbiguityDeps } from "../shared/companion-selection";
+import { runSessionRegistryCommand } from "./registry";
 
 export interface SessionPrepareArgs {
   repo: string;
@@ -113,6 +114,10 @@ export async function runSessionPrepareCommand(
 export async function runSessionCommand(subcommand: string | undefined, rest: string[]) {
   if (subcommand === "prepare") {
     await runSessionPrepareCommand(rest);
+    return;
+  }
+  if (subcommand === "add" || subcommand === "list" || subcommand === "remove") {
+    await runSessionRegistryCommand(subcommand, rest);
     return;
   }
   fail(`unknown session subcommand: ${subcommand ?? ""}`.trimEnd(), true);

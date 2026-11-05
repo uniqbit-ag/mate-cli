@@ -22,6 +22,7 @@ const allowedSignersPath = path.join(repoRoot, ".github/allowed_signers");
 const PUBLISHED_PACKAGES = [
   ["packages/mate-core", "@uniqbit/mate-core"],
   ["apps/mate-cli", "@uniqbit/mate"],
+  ["apps/mate-vscode", "@uniqbit/mate-vscode"],
 ] as const;
 
 type ReleaseConfig = {
@@ -117,7 +118,7 @@ type PublishOptions = {
 
 async function createPublishFixture(
   version: string,
-  overrides: Partial<Record<"core" | "cli", string>> = {},
+  overrides: Partial<Record<"core" | "cli" | "extension", string>> = {},
 ): Promise<PublishFixture> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mate-publish-"));
   tempDirs.push(tempDir);
@@ -153,6 +154,15 @@ async function createPublishFixture(
       "utf8",
     );
   }
+
+  // Released in lockstep, but no image lock pins it.
+  const extensionDir = path.join(tempDir, "apps/mate-vscode");
+  await fs.mkdir(extensionDir, { recursive: true });
+  await fs.writeFile(
+    path.join(extensionDir, "package.json"),
+    `${JSON.stringify({ name: "@uniqbit/mate-vscode", version: overrides.extension ?? version })}\n`,
+    "utf8",
+  );
 
   const lockEntries = (names: string[]) =>
     Object.fromEntries(
@@ -480,6 +490,7 @@ describe("sync-release-versions", () => {
     const fixturePackages = [
       ["apps/mate-cli", { name: "@uniqbit/mate", version: "1.5.0-canary.2" }],
       ["packages/mate-core", { name: "@uniqbit/mate-core", version: "1.4.0" }],
+      ["apps/mate-vscode", { name: "@uniqbit/mate-vscode", version: "1.4.0" }],
     ] as const;
     for (const [dir, contents] of fixturePackages) {
       await fs.mkdir(path.join(workspaceDir, dir), { recursive: true });
@@ -511,8 +522,16 @@ describe("sync-release-versions", () => {
       await fs.readFile(path.join(workspaceDir, "packages/mate-core/package.json"), "utf8"),
     );
 
+    const vscodeExtension = JSON.parse(
+      await fs.readFile(path.join(workspaceDir, "apps/mate-vscode/package.json"), "utf8"),
+    );
+
     expect(core.version).toBe("1.5.0-canary.2");
     expect(cli.dependencies["@uniqbit/mate-core"]).toBe("1.5.0-canary.2");
+    // Versioned in lockstep, never a dependency of core or the CLI.
+    expect(vscodeExtension.version).toBe("1.5.0-canary.2");
+    expect(cli.dependencies["@uniqbit/mate-vscode"]).toBeUndefined();
+    expect(core.dependencies?.["@uniqbit/mate-vscode"]).toBeUndefined();
     expect(JSON.parse(await fs.readFile(manifestPath, "utf8"))).toEqual({
       name: "acme",
       version: "1.5.0-canary.2",
@@ -526,6 +545,7 @@ describe("sync-release-versions", () => {
     });
     expect(staged).toContain("apps/mate-cli/package.json");
     expect(staged).toContain("packages/mate-core/package.json");
+    expect(staged).toContain("apps/mate-vscode/package.json");
     expect(staged).toContain(MOD_MANIFEST);
   });
 });
@@ -545,6 +565,7 @@ describe("publish.sh", () => {
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-core");
       expect(calls).not.toContain("mate-opencode-plugin");
       expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate");
+      expect(calls).toContain("pack --dry-run --workspace @uniqbit/mate-vscode");
       for (const line of await publishCalls(fixture)) {
         expect(line).toMatch(
           new RegExp(
@@ -553,19 +574,21 @@ describe("publish.sh", () => {
         );
       }
 
-      // Core must publish before the CLI that pins it.
+      // The extension publishes first, so a released CLI never names a missing one;
+      // core must publish before the CLI that pins it.
       expect(await publishedTarballs(fixture)).toEqual([
+        `uniqbit-mate-vscode-${version}.tgz`,
         `uniqbit-mate-core-${version}.tgz`,
         `uniqbit-mate-${version}.tgz`,
       ]);
 
       // The verified tarball is what is published: one pack per package and image (appliance,
-      // then factory), all before any publish.
+      // then factory), plus the extension once, all before any publish.
       const lines = calls.split("\n");
       const packs = lines.flatMap((line, index) =>
         line.startsWith("pack --pack-destination") ? [index] : [],
       );
-      expect(packs).toHaveLength(4);
+      expect(packs).toHaveLength(5);
       const firstPublish = lines.findIndex((line) => line.startsWith("publish "));
       expect(Math.max(...packs)).toBeLessThan(firstPublish);
       expect(calls).not.toContain("publish --workspace");
@@ -657,12 +680,21 @@ describe("publish.sh", () => {
     }
   });
 
+  test("refuses an editor extension at another version before invoking npm", async () => {
+    const fixture = await createPublishFixture("1.2.3", { extension: "1.2.2" });
+    const result = runPublish(fixture, "latest");
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("apps/mate-vscode/package.json is at version '1.2.2'");
+    expect(await fs.stat(fixture.callsPath).catch(() => undefined)).toBeUndefined();
+  });
+
   test("takes the release tag from the argument when the run is not tag-triggered", async () => {
     const fixture = await createPublishFixture("1.2.3");
     const result = runPublish(fixture, "latest", { refName: "main", releaseTagArg: "1.2.3" });
 
     expect(result.status).toBe(0);
-    expect(await publishCalls(fixture)).toHaveLength(2);
+    expect(await publishCalls(fixture)).toHaveLength(3);
   });
 
   test("completes a partial publication by skipping packages already published with the same integrity", async () => {
@@ -673,7 +705,10 @@ describe("publish.sh", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Skipping @uniqbit/mate-core@1.2.3");
-    expect(await publishedTarballs(fixture)).toEqual(["uniqbit-mate-1.2.3.tgz"]);
+    expect(await publishedTarballs(fixture)).toEqual([
+      "uniqbit-mate-vscode-1.2.3.tgz",
+      "uniqbit-mate-1.2.3.tgz",
+    ]);
   });
 
   test("stops before publishing further packages when a published version has another integrity", async () => {
@@ -686,7 +721,10 @@ describe("publish.sh", () => {
     expect(result.stderr).toContain(
       `@uniqbit/mate@1.2.3 is already published as ${packIntegrity("acme-other")}`,
     );
-    expect(await publishedTarballs(fixture)).toEqual(["uniqbit-mate-core-1.2.3.tgz"]);
+    expect(await publishedTarballs(fixture)).toEqual([
+      "uniqbit-mate-vscode-1.2.3.tgz",
+      "uniqbit-mate-core-1.2.3.tgz",
+    ]);
   });
 
   test("names the trusted publisher when npm rejects a publication", async () => {
@@ -695,7 +733,10 @@ describe("publish.sh", () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("trusted publisher");
-    expect(await publishedTarballs(fixture)).toEqual(["uniqbit-mate-core-1.2.3.tgz"]);
+    expect(await publishedTarballs(fixture)).toEqual([
+      "uniqbit-mate-vscode-1.2.3.tgz",
+      "uniqbit-mate-core-1.2.3.tgz",
+    ]);
   });
 
   test("does not repeat release preparation checks or request the image", async () => {
