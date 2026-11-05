@@ -32,6 +32,7 @@ export function usage(): string {
     ` ${n} session add --runtime <claude|opencode> --id <id> --cwd <dir> --json`,
     ` ${n} session list --json`,
     ` ${n} session remove <id> --json`,
+    ` ${n} session stop <id> --json`,
     ` ${n} hub init [folder]`,
     ` ${n} hub add [source] [--id ID] [--path PATH]`,
     ` ${n} hub sync [--json] (companions + hub plugins)`,

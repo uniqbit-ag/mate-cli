@@ -9,6 +9,8 @@ import { repoLocalRegistryPath } from "../runtime/repo-local";
 import { manifestPath } from "../runtime/runtime-document-manifest";
 import type { PrepareRequest, PrepareRun } from "../runtime/session-prepare-runner";
 import { PROJECTED_FLAG } from "../runtime/projected-flag";
+import type { SessionInput } from "../runtime/session-registry";
+import type { SessionRegisterDeps } from "./session-register";
 import {
   runSessionPrepareHook,
   runSessionStartHook,
@@ -65,9 +67,37 @@ function fakeDeps(local: PrepareRun | Error = { ok: true, notes: [] }) {
       order.push("sync");
     }),
     timeoutMs: 1234,
+    registry: fakeRegistry().deps,
   };
   return { deps, requests, order };
 }
+
+function fakeRegistry(options: { wrapped?: boolean; fail?: boolean; known?: string[] } = {}) {
+  const registered: SessionInput[] = [];
+  const refreshed: SessionInput[] = [];
+  let branchCalls = 0;
+  const deps: SessionRegisterDeps = {
+    register: async (input) => {
+      if (options.fail) throw new Error("registry locked");
+      registered.push(input);
+    },
+    refresh: async (input) => {
+      refreshed.push(input);
+    },
+    registered: async (id) => options.known?.includes(id) ?? false,
+    end: async () => {},
+    patch: async () => {},
+    branch: async () => {
+      branchCalls += 1;
+      return "workset/acme";
+    },
+    wrappedForClaude: () => options.wrapped ?? true,
+    now: () => new Date("2026-03-01T00:00:00.000Z"),
+  };
+  return { deps, registered, refreshed, branchCalls: () => branchCalls };
+}
+
+const EDITOR = { MATE_SESSION_ORIGIN: "editor" };
 
 describe("session-prepare hook", () => {
   test("awaits the bounded local phase, then starts the sync", async () => {
@@ -401,5 +431,142 @@ describe("session-start hook", () => {
     };
     expect(order).toEqual([]);
     expect(payload.hookSpecificOutput.additionalContext).toContain("ACME-STALE");
+  });
+});
+
+describe("session registration from SessionStart", () => {
+  const start = {
+    hook_event_name: "SessionStart",
+    session_id: "0b7c-acme",
+    cwd: "",
+    transcript_path: "/t/0b7c-acme.jsonl",
+    source: "startup",
+  };
+
+  test("the wrap's copy registers a session an editor started", async () => {
+    const repo = projectedRepo("claude");
+    const { deps } = fakeDeps();
+    const registry = fakeRegistry();
+    deps.registry = registry.deps;
+
+    await runSessionStartHook(
+      {
+        env: { ...EDITOR, CLAUDE_PID: "4242" },
+        cwd: repo,
+        argv: [PROJECTED_FLAG],
+        input: { ...start, cwd: repo },
+      },
+      deps,
+    );
+
+    expect(registry.registered).toEqual([
+      {
+        id: "0b7c-acme",
+        runtime: "claude",
+        cwd: repo,
+        origin: "editor",
+        pid: 4242,
+        branch: "workset/acme",
+        transcript: "/t/0b7c-acme.jsonl",
+      },
+    ]);
+  });
+
+  test("registration runs beside the prepare, not before it", async () => {
+    const repo = projectedRepo("claude");
+    const { deps, order } = fakeDeps();
+    const registry = fakeRegistry();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    registry.deps.branch = async () => {
+      order.push("register");
+      await held;
+      return null;
+    };
+    deps.registry = registry.deps;
+    const outcome = runSessionStartHook(
+      { env: EDITOR, cwd: repo, argv: [PROJECTED_FLAG], input: { ...start, cwd: repo } },
+      deps,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual(["register", "local"]);
+    release();
+    await outcome;
+    expect(registry.registered.map((input) => input.id)).toEqual(["0b7c-acme"]);
+  });
+
+  test("the plugin's copy stays out where the wrap's copy runs", async () => {
+    const repo = projectedRepo("claude");
+    const { deps } = fakeDeps();
+    const registry = fakeRegistry({ wrapped: true });
+    deps.registry = registry.deps;
+
+    await runSessionStartHook(
+      {
+        env: { ...EDITOR, CLAUDE_PLUGIN_ROOT: "/p", MATE_REPO_PATH: repo },
+        cwd: repo,
+        argv: [],
+        input: start,
+      },
+      deps,
+    );
+
+    expect(registry.registered).toEqual([]);
+  });
+
+  test("any other session writes nothing and asks Git nothing; a registered one is refreshed", async () => {
+    const repo = projectedRepo("claude");
+    const { deps } = fakeDeps();
+    const registry = fakeRegistry({ known: ["resumed"] });
+    deps.registry = registry.deps;
+    const at = (id: string) => ({
+      env: { MATE_REPO_PATH: repo },
+      cwd: repo,
+      argv: [PROJECTED_FLAG],
+      input: { ...start, session_id: id, cwd: repo },
+    });
+
+    await runSessionStartHook(at("0b7c-acme"), deps);
+    expect(registry.registered).toEqual([]);
+    expect(registry.refreshed).toEqual([]);
+    expect(registry.branchCalls()).toBe(0);
+
+    await runSessionStartHook(at("resumed"), deps);
+    expect(registry.registered).toEqual([]);
+    expect(registry.refreshed.map((input) => input.id)).toEqual(["resumed"]);
+  });
+
+  test("the plugin's copy registers an editor launch in an unwrapped repository", async () => {
+    const { deps } = fakeDeps();
+    const registry = fakeRegistry({ wrapped: false });
+    deps.registry = registry.deps;
+
+    const outcome = await runSessionStartHook(
+      {
+        env: { ...EDITOR, CLAUDE_PLUGIN_ROOT: "/p", MATE_REPO_PATH: "/w/acme" },
+        cwd: "/w/acme",
+        argv: [],
+        input: start,
+      },
+      deps,
+    );
+
+    expect(outcome).toEqual({ exitCode: 0, stdout: "" });
+    expect(registry.registered.map((input) => input.origin)).toEqual(["editor"]);
+  });
+
+  test("a registry failure leaves the hook output unchanged", async () => {
+    const repo = projectedRepo("claude");
+    const ok = fakeDeps();
+    const failing = fakeDeps();
+    failing.deps.registry = fakeRegistry({ fail: true }).deps;
+    const call = { env: EDITOR, cwd: repo, argv: [PROJECTED_FLAG], input: { ...start, cwd: repo } };
+
+    const expected = await runSessionStartHook(call, ok.deps);
+    const actual = await runSessionStartHook(call, failing.deps);
+
+    expect(actual).toEqual(expected);
   });
 });

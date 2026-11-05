@@ -116,7 +116,12 @@ export async function runSessionCommand(subcommand: string | undefined, rest: st
     await runSessionPrepareCommand(rest);
     return;
   }
-  if (subcommand === "add" || subcommand === "list" || subcommand === "remove") {
+  if (
+    subcommand === "add" ||
+    subcommand === "list" ||
+    subcommand === "remove" ||
+    subcommand === "stop"
+  ) {
     await runSessionRegistryCommand(subcommand, rest);
     return;
   }

@@ -72,6 +72,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "mate.sessions",
+        "contents": "Sessions you start here are listed, so you can resume, attach, and stop them. Sessions started in a terminal are not.\n[New session](command:mate.newSession)\n[About sessions](command:mate.sessionsInfo)"
+      }
+    ],
     "commands": [
       {
         "command": "mate.newSession",
@@ -86,22 +92,40 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "mate.sessionsInfo",
+        "title": "About sessions",
+        "category": "Mate",
+        "icon": "$(info)"
+      },
+      {
         "command": "mate.resumeSession",
         "title": "Resume",
         "category": "Mate",
         "icon": "$(play)"
       },
       {
-        "command": "mate.parkSession",
-        "title": "Park",
-        "category": "Mate",
-        "icon": "$(debug-pause)"
-      },
-      {
         "command": "mate.removeSession",
         "title": "Remove",
         "category": "Mate",
         "icon": "$(trash)"
+      },
+      {
+        "command": "mate.resumeWorksetSession",
+        "title": "Resume latest session",
+        "category": "Mate",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "mate.attachSession",
+        "title": "Attach",
+        "category": "Mate",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "mate.stopSession",
+        "title": "Stop",
+        "category": "Mate",
+        "icon": "$(debug-stop)"
       }
     ],
     "menus": {
@@ -112,6 +136,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "mate.sessionsInfo",
+          "when": "view == mate.sessions",
+          "group": "navigation@2"
+        },
+        {
           "command": "mate.refresh",
           "when": "view =~ /^mate\\./",
           "group": "navigation@9"
@@ -120,18 +149,28 @@
       "view/item/context": [
         {
           "command": "mate.resumeSession",
-          "when": "view == mate.sessions && viewItem =~ /^session\\./",
+          "when": "view == mate.sessions && viewItem =~ /^session\\.parked\\./",
           "group": "inline@1"
         },
         {
-          "command": "mate.parkSession",
-          "when": "view == mate.sessions && viewItem == session.running",
+          "command": "mate.attachSession",
+          "when": "view == mate.sessions && viewItem =~ /^session\\.(here|elsewhere)\\..*\\.attachable$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "mate.stopSession",
+          "when": "view == mate.sessions && viewItem =~ /^session\\.(here|elsewhere)\\..*\\.attachable$/",
           "group": "inline@2"
         },
         {
           "command": "mate.removeSession",
           "when": "view == mate.sessions && viewItem =~ /^session\\./",
           "group": "inline@3"
+        },
+        {
+          "command": "mate.resumeWorksetSession",
+          "when": "view == mate.openChanges && viewItem == workset.sessions",
+          "group": "inline@1"
         }
       ],
       "commandPalette": [
@@ -140,11 +179,19 @@
           "when": "false"
         },
         {
-          "command": "mate.parkSession",
+          "command": "mate.removeSession",
           "when": "false"
         },
         {
-          "command": "mate.removeSession",
+          "command": "mate.resumeWorksetSession",
+          "when": "false"
+        },
+        {
+          "command": "mate.attachSession",
+          "when": "false"
+        },
+        {
+          "command": "mate.stopSession",
           "when": "false"
         }
       ]

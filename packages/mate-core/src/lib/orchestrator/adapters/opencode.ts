@@ -5,15 +5,19 @@ const fs = await import("node:fs/promises");
 const path = await import("node:path");
 
 import { MATE_ENV } from "../../../runtime/env";
+import { SESSION_ORIGIN_ENV } from "../../../runtime/session-registry";
+import { mainCheckoutOf } from "../../../runtime/git-layout";
+import { OPENCODE_PASSWORD } from "../../../runtime/opencode-server-record";
 import { validateGuidanceData, type MateGuidanceFile } from "../../../runtime/guidance";
 import { resolveSecretPolicy } from "../../../runtime/policy";
 
+import { ensureOpenCodeServer } from "../../opencode-server";
 import { validateOpenCodePluginAssets } from "../../package-paths";
 import { readOpenCodeConfig } from "../../../tools/setup/providers/opencode-format";
 import { buildOpenCodeGuidance } from "../opencode-guidance";
 import type { PrepareResult } from "../session-prepare";
 import { LaunchPreflightError } from "../types";
-import { type AdapterContext, LaunchAdapter, prepareFailure } from "./base";
+import { type AdapterContext, LaunchAdapter, type PreparedLaunch, prepareFailure } from "./base";
 
 /** The Mate plugin is a V2 plugin; an older host rejects it at load time. */
 const MIN_OPENCODE_MAJOR = 2;
@@ -23,6 +27,9 @@ const MIN_OPENCODE_MAJOR = 2;
  * config load in that server, so the per-launch Mate env never reaches it.
  */
 const STANDALONE_FLAG = "--standalone";
+
+/** Mate's own flag: run the TUI as a client of the repository's Mate OpenCode server. */
+const BACKGROUND_FLAG = "--bg";
 
 /** Raw `opencode --version` output, or `undefined` when the binary cannot run. */
 export type OpenCodeVersionProbe = () => string | undefined;
@@ -57,13 +64,57 @@ function readInvocation(launchWorkingDirectory: string, args: string[]): OpenCod
   return { command, rest, hostsPrivateServer: Boolean(hostsServer) && !choosesRemoteServer };
 }
 
+/** The server outlives the launch that started it; one launch's origin must not mark its other sessions. */
+function withoutSessionOrigin(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const { [SESSION_ORIGIN_ENV]: _origin, ...rest } = env;
+  return rest;
+}
+
 export class OpenCodeAdapter extends LaunchAdapter {
   readonly toolName = "opencode";
   readonly interactive = true;
   private readonly requiredRuntimeAssets = [path.join(".opencode", "opencode.json")] as const;
 
-  constructor(private readonly probeVersion: OpenCodeVersionProbe = probeOpenCodeVersion) {
+  constructor(
+    private readonly probeVersion: OpenCodeVersionProbe = probeOpenCodeVersion,
+    private readonly ensureServer: typeof ensureOpenCodeServer = ensureOpenCodeServer,
+  ) {
     super();
+  }
+
+  /**
+   * `--bg`: ensure the repository's Mate OpenCode server, built from its main
+   * checkout so every worktree shares one server and one stamp, then run the
+   * TUI as its client. The guidance goes to the server only; `--server` masks
+   * it for the client.
+   */
+  async prepareLaunch(context: AdapterContext, args: string[]): Promise<PreparedLaunch> {
+    if (!args.includes(BACKGROUND_FLAG)) return super.prepareLaunch(context, args);
+    const { repository } = context;
+    if (!repository) {
+      throw new LaunchPreflightError(
+        `\`${BACKGROUND_FLAG}\` needs a Working Repository; run \`mate opencode -- ${BACKGROUND_FLAG}\` inside one.`,
+      );
+    }
+    const main = mainCheckoutOf(repository.path);
+    const serverContext = {
+      ...context,
+      repository: { ...repository, path: main },
+      launchWorkingDirectory: main,
+    };
+    const server = await this.ensureServer({
+      repositoryId: repository.id,
+      cwd: main,
+      env: withoutSessionOrigin({
+        ...this.environment(serverContext),
+        ...this.extendEnvironment(serverContext),
+      }),
+      version: this.probeVersion(),
+    });
+    if (server.warning) process.stderr.write(`mate: ${server.warning}\n`);
+    const clientArgs = [...args.filter((arg) => arg !== BACKGROUND_FLAG), "--server", server.url];
+    const launch = await super.prepareLaunch(context, clientArgs);
+    return { ...launch, env: { ...launch.env, [OPENCODE_PASSWORD]: server.password } };
   }
 
   private validateOpenCodeVersion(): void {

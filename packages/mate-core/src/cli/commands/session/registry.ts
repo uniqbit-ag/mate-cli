@@ -1,22 +1,24 @@
 import { FRAMEWORK_NAME } from "../../../framework";
 import {
   addSession,
-  listSessions,
   removeSession,
   SessionRegistryError,
   sessionRegistryPath,
-} from "../../../lib/session-registry";
+} from "../../../runtime/session-registry";
+import { listSessionsWithState, type SessionStateDeps } from "../../../lib/session-state";
+import { stopSession, type SessionStopDeps } from "../../../lib/session-stop";
 import { writeJsonStdout } from "../../write-json-stdout";
 
 /**
- * `mate session add|list|remove`: Machine Caller contract for editor plugins.
+ * `mate session add|list|remove|stop`: Machine Caller contract for editor plugins.
  * Always JSON on stdout; errors on stderr with a non-zero exit.
  */
 
 const USAGE = [
-  `Usage: ${FRAMEWORK_NAME} session add --runtime <claude|opencode> --id <id> --cwd <dir> --json`,
+  `Usage: ${FRAMEWORK_NAME} session add --runtime <claude|opencode> --id <id> --cwd <dir> [--origin <editor|managed|unmanaged>] --json`,
   `       ${FRAMEWORK_NAME} session list --json`,
   `       ${FRAMEWORK_NAME} session remove <id> --json`,
+  `       ${FRAMEWORK_NAME} session stop <id> --json`,
 ].join("\n");
 
 function fail(message: string, usage = false): void {
@@ -50,28 +52,37 @@ function parseArgs(argv: string[], valueFlags: string[]): ParsedArgs | { error: 
 }
 
 export async function runSessionRegistryCommand(
-  subcommand: "add" | "list" | "remove",
+  subcommand: "add" | "list" | "remove" | "stop",
   argv: string[],
   file: string = sessionRegistryPath(),
+  stateDeps: SessionStateDeps = {},
+  stopDeps: SessionStopDeps = {},
 ): Promise<void> {
-  const parsed = parseArgs(argv, subcommand === "add" ? ["runtime", "id", "cwd"] : []);
+  const parsed = parseArgs(argv, subcommand === "add" ? ["runtime", "id", "cwd", "origin"] : []);
   if ("error" in parsed) return fail(parsed.error, true);
   try {
     if (subcommand === "add") {
-      const { runtime, id, cwd } = parsed.flags;
+      const { runtime, id, cwd, origin } = parsed.flags;
       if (!runtime || !id || !cwd || parsed.positionals.length > 0) {
         return fail("session add needs --runtime, --id, and --cwd", true);
       }
-      await writeJsonStdout(await addSession({ runtime, id, cwd }, { file }));
+      await writeJsonStdout(await addSession({ runtime, id, cwd, origin }, { file }));
       return;
     }
     if (subcommand === "list") {
       if (parsed.positionals.length > 0) return fail("session list takes no arguments", true);
-      await writeJsonStdout(await listSessions(file));
+      await writeJsonStdout(await listSessionsWithState({ file, ...stateDeps }));
       return;
     }
-    if (parsed.positionals.length !== 1) return fail("session remove needs one session id", true);
-    await writeJsonStdout(await removeSession(parsed.positionals[0]!, file));
+    if (parsed.positionals.length !== 1) {
+      return fail(`session ${subcommand} needs one session id`, true);
+    }
+    const id = parsed.positionals[0]!;
+    if (subcommand === "stop") {
+      await writeJsonStdout(await stopSession(id, { file, ...stopDeps }));
+      return;
+    }
+    await writeJsonStdout(await removeSession(id, file));
   } catch (error) {
     if (error instanceof SessionRegistryError) return fail(error.message);
     throw error;

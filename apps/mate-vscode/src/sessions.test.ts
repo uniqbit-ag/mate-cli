@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  attachable,
+  attachCommand,
+  daemonId,
   isSessionTerminal,
   launchCommand,
   opencodeSessionId,
@@ -55,8 +58,27 @@ describe("command lines", () => {
   test("launch and resume per runtime", () => {
     expect(launchCommand(claude)).toBe(`mate claude -- --session-id ${claude.id}`);
     expect(resumeCommand(claude)).toBe(`mate claude -- --resume ${claude.id}`);
-    expect(launchCommand(opencode)).toBe(`mate opencode -- --session ${opencode.id}`);
-    expect(resumeCommand(opencode)).toBe(`mate opencode -- --session ${opencode.id}`);
+    expect(launchCommand(opencode)).toBe(`mate opencode -- --bg --session ${opencode.id}`);
+    expect(resumeCommand(opencode)).toBe(`mate opencode -- --bg --session ${opencode.id}`);
+  });
+
+  test("attach per runtime", () => {
+    expect(attachCommand(claude)).toBe("claude attach 0b7c1d2e");
+    expect(attachCommand(opencode)).toBe(`mate opencode -- --bg --session ${opencode.id}`);
+  });
+
+  test("the daemon id Mate listed wins over the id's prefix", () => {
+    expect(daemonId(claude)).toBe("0b7c1d2e");
+    expect(daemonId({ ...claude, daemonId: "acme1234" })).toBe("acme1234");
+    expect(attachCommand({ ...claude, daemonId: "acme1234" })).toBe("claude attach acme1234");
+  });
+
+  test("only background sessions can be attached and stopped", () => {
+    const running = { ...claude, state: "running" as const };
+    expect(attachable({ ...running, kind: "background" })).toBe(true);
+    expect(attachable({ ...running, kind: "interactive" })).toBe(false);
+    expect(attachable({ ...opencode, state: "running" })).toBe(true);
+    expect(attachable({ ...opencode, state: "parked" })).toBe(false);
   });
 });
 

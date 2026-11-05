@@ -24,7 +24,7 @@ afterEach(async () => {
   await fs.rm(home, { recursive: true, force: true });
 });
 
-async function run(subcommand: "add" | "list" | "remove", argv: string[]) {
+async function run(subcommand: "add" | "list" | "remove" | "stop", argv: string[]) {
   const out: string[] = [];
   const err: string[] = [];
   const error = spyOn(console, "error").mockImplementation(
@@ -39,7 +39,13 @@ async function run(subcommand: "add" | "list" | "remove", argv: string[]) {
     return true;
   }) as never);
   try {
-    await runSessionRegistryCommand(subcommand, argv, file);
+    await runSessionRegistryCommand(
+      subcommand,
+      argv,
+      file,
+      { claudeAgents: async () => [], isMerged: async () => false },
+      { serversDir: path.join(home, "opencode-servers"), repositoryIdOf: () => "acme" },
+    );
   } finally {
     error.mockRestore();
     write.mockRestore();
@@ -54,19 +60,56 @@ describe("mate session add|list|remove", () => {
     expect(JSON.parse(added.out)).toMatchObject({ id: "s1", runtime: "claude", cwd: work });
 
     const listed = await run("list", ["--json"]);
-    expect(JSON.parse(listed.out)).toMatchObject({ version: 1, sessions: [{ id: "s1" }] });
+    expect(JSON.parse(listed.out)).toMatchObject({
+      version: 2,
+      sessions: [{ id: "s1", origin: "editor", state: "parked" }],
+    });
 
     const removed = await run("remove", ["s1", "--json"]);
     expect(removed.code).toBe(0);
     expect(JSON.parse((await run("list", ["--json"])).out).sessions).toEqual([]);
   });
 
-  test("duplicate id exits non-zero", async () => {
+  test("a registered id is refreshed, keeping its origin", async () => {
     await run("add", ["--runtime", "claude", "--id", "s1", "--cwd", work, "--json"]);
-    const again = await run("add", ["--runtime=claude", "--id=s1", `--cwd=${work}`, "--json"]);
-    expect(again.code).toBe(1);
-    expect(again.err).toContain("already registered");
-    expect(again.out).toBe("");
+    const again = await run("add", [
+      "--runtime=claude",
+      "--id=s1",
+      `--cwd=${work}`,
+      "--origin=managed",
+      "--json",
+    ]);
+    expect(again.code).toBe(0);
+    expect(JSON.parse(again.out)).toMatchObject({ id: "s1", origin: "editor" });
+    expect(JSON.parse((await run("list", ["--json"])).out).sessions).toHaveLength(1);
+  });
+
+  test("--origin is recorded for a new session and validated", async () => {
+    const added = await run("add", [
+      "--runtime",
+      "opencode",
+      "--id",
+      "s2",
+      "--cwd",
+      work,
+      "--origin",
+      "unmanaged",
+      "--json",
+    ]);
+    expect(JSON.parse(added.out)).toMatchObject({ origin: "unmanaged" });
+    process.exitCode = 0;
+    const bad = await run("add", [
+      "--runtime",
+      "claude",
+      "--id",
+      "s3",
+      "--cwd",
+      work,
+      "--origin",
+      "x",
+    ]);
+    expect(bad.code).toBe(1);
+    expect(bad.err).toContain("unknown origin");
   });
 
   test("unknown runtime, missing flags, and unknown id exit non-zero", async () => {
@@ -75,6 +118,17 @@ describe("mate session add|list|remove", () => {
     expect((await run("add", ["--id", "s1"])).err).toContain("--runtime");
     process.exitCode = 0;
     expect((await run("remove", ["nope", "--json"])).err).toContain("not registered");
+  });
+
+  test("stop exits non-zero for an unknown session or one without a server", async () => {
+    expect((await run("stop", ["nope", "--json"])).err).toContain("not registered");
+    process.exitCode = 0;
+    await run("add", ["--runtime", "opencode", "--id", "ses_1", "--cwd", work, "--json"]);
+    const stopped = await run("stop", ["ses_1", "--json"]);
+    expect(stopped.code).toBe(1);
+    expect(stopped.err).toContain("no Mate OpenCode server");
+    process.exitCode = 0;
+    expect((await run("stop", ["--json"])).err).toContain("session stop needs one session id");
   });
 
   test("invalid file exits non-zero naming it", async () => {

@@ -30,6 +30,7 @@ const undocumented = new Set([
   "session add",
   "session list",
   "session remove",
+  "session stop",
   "studio",
   "studio serve",
 ]);

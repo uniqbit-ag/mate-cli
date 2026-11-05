@@ -24,6 +24,7 @@ import {
   type PruneResult,
   type WorktreeResult,
 } from "../../../lib/workset/worktree";
+import { attributeCurrentSession } from "../../../lib/session-attribution";
 import { errorMessage } from "../../../runtime/error-message";
 import { gitEnvironment } from "../../../runtime/companion-git";
 import { resolveDeliveryEnvironment } from "../artifact/delivery/environment";
@@ -75,6 +76,8 @@ export interface WorkingWorktreeDeps {
   worksetStages?: typeof readCompanionWorksetStages;
   /** The companion's ticket setting; `--ticket` is refused unless it is `jira`. */
   ticketFormat?: (companion: string) => Promise<TicketFormat>;
+  /** Records the change, and the worktree it moves to, on the agent session this runs in. */
+  attribute?: typeof attributeCurrentSession;
 }
 
 async function canonicalPath(candidate: string): Promise<string> {
@@ -380,6 +383,13 @@ export async function runWorkingWorktreeCommand(
       const recorded = await record(companion, parsed.change, result, deps.cwd ?? process.cwd());
       if ("failed" in recorded) result.warnings.push(...recorded.failed);
       enter = enterInstruction(deps.env ?? process.env, recorded);
+      await (deps.attribute ?? attributeCurrentSession)(
+        {
+          change: parsed.change,
+          ...("path" in recorded ? { move: { cwd: recorded.path, branch: recorded.branch } } : {}),
+        },
+        deps.env ?? process.env,
+      );
     }
     reportProblems(result.diagnostics, result.warnings);
     if (parsed.json) {
