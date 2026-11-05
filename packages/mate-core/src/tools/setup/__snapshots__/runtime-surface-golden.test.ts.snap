@@ -56,6 +56,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 1`] = `
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -289,6 +290,7 @@ exports[`runtime surface golden fixtures setup graphify × claude 3`] = `
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -767,6 +769,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 1`] =
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -1091,6 +1094,7 @@ exports[`runtime surface golden fixtures setup graphify × claude+opencode 3`] =
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -1474,6 +1478,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 1`] = `
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -1737,6 +1742,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude 3`] = `
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -2274,6 +2280,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 1`] 
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -2616,6 +2623,7 @@ exports[`runtime surface golden fixtures setup tokensave × claude+opencode 3`] 
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -2989,6 +2997,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 1`] = `
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -3195,6 +3204,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude 3`] = `
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -3646,6 +3656,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -3914,6 +3925,7 @@ exports[`runtime surface golden fixtures setup context-mode × claude+opencode 3
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -4250,6 +4262,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 1`] = `
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -4457,6 +4470,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude 3`] = `
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -4891,6 +4905,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 1
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -5160,6 +5175,7 @@ exports[`runtime surface golden fixtures setup react-doctor × claude+opencode 3
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -5510,6 +5526,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 1`] = `
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -5756,6 +5773,7 @@ exports[`runtime surface golden fixtures setup openspec × claude 3`] = `
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -6229,6 +6247,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 1`] =
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -6561,6 +6580,7 @@ exports[`runtime surface golden fixtures setup openspec × claude+opencode 3`] =
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -6986,6 +7006,7 @@ Canonical Mate policy and any more specific tool-routing instructions remain aut
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -7458,6 +7479,7 @@ exports[`runtime surface golden fixtures setup all capabilities × claude+openco
         "values": [
           "EnterPlanMode",
           "DesignSync",
+          "SendFeedback",
           "Read(**/.env)",
           "Edit(**/.env)",
           "Read(**/.env.local)",
@@ -7830,6 +7852,7 @@ exports[`runtime surface golden fixtures teardown graphify × claude+opencode 1`
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -7929,6 +7952,7 @@ exports[`runtime surface golden fixtures teardown tokensave × claude+opencode 1
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -8029,6 +8053,7 @@ exports[`runtime surface golden fixtures teardown context-mode × claude+opencod
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -8128,6 +8153,7 @@ exports[`runtime surface golden fixtures teardown react-doctor × claude+opencod
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -8227,6 +8253,7 @@ exports[`runtime surface golden fixtures teardown openspec × claude+opencode 1`
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -8343,6 +8370,7 @@ exports[`runtime surface golden fixtures deselect opencode runtime with graphify
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",
@@ -8526,6 +8554,7 @@ exports[`working repo golden fixtures hub roots set up providers only without co
       "deny": [
         "EnterPlanMode",
         "DesignSync",
+        "SendFeedback",
         "Read(**/.env)",
         "Edit(**/.env)",
         "Read(**/.env.local)",

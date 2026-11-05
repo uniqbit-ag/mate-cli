@@ -3,6 +3,7 @@ import path from "node:path";
 import { FRAMEWORK_NAME } from "../../framework";
 import { ConfigStore, defaultConfig } from "../../lib/orchestrator/config-store";
 import { executeSetup } from "../../tools/setup";
+import { createStartupProgress } from "../../lib/components/startup-progress";
 import {
   inspectSetupPreflight,
   looksLikeWorkingRepo,
@@ -31,6 +32,7 @@ interface SetupCommandDependencies {
   selectCompanion?: typeof selectCompanion;
   selectSetupCompatibilities?: typeof selectSetupCompatibilities;
   executeSetup?: typeof executeSetup;
+  createProgress?: typeof createStartupProgress;
 }
 
 export const setupCommandDeps = {
@@ -94,6 +96,7 @@ async function runSetupFlow(
   const chooseCompanion = deps.selectCompanion ?? selectCompanion;
   const selectCompatibilities = deps.selectSetupCompatibilities ?? selectSetupCompatibilities;
   const runExecuteSetup = deps.executeSetup ?? executeSetup;
+  const createProgress = deps.createProgress ?? createStartupProgress;
 
   const preflight = await inspect(cwd);
   if (preflight.kind === "unrecognized") {
@@ -191,19 +194,26 @@ async function runSetupFlow(
     process.exit(1);
   }
 
-  const result = await runExecuteSetup(
-    {
-      allowedAgents: selections.allowedAgents,
-      packageManagers: selections.packageManagers,
-      // The ticket choice wins over the saved setting `keepCapabilitySettings` restores.
-      capabilities: withTicketSetting(
-        keepCapabilitySettings(selections.capabilities, currentSelections.capabilities),
-        selections.selectedTicket ?? "none",
-      ),
-      git: selections.selectedGitMode,
-    },
-    { cwd: targetCwd },
-  );
+  // Created only now: the wizard and every prompt above must own the terminal.
+  const progress = createProgress("Setting up companion");
+  let result: Awaited<ReturnType<typeof executeSetup>>;
+  try {
+    result = await runExecuteSetup(
+      {
+        allowedAgents: selections.allowedAgents,
+        packageManagers: selections.packageManagers,
+        // The ticket choice wins over the saved setting `keepCapabilitySettings` restores.
+        capabilities: withTicketSetting(
+          keepCapabilitySettings(selections.capabilities, currentSelections.capabilities),
+          selections.selectedTicket ?? "none",
+        ),
+        git: selections.selectedGitMode,
+      },
+      { cwd: targetCwd, progress },
+    );
+  } finally {
+    progress.stop();
+  }
 
   const { config } = result;
   const rows: [string, string][] = [];

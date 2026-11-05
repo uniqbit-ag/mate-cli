@@ -25,6 +25,7 @@ import {
 } from "./providers/opencode";
 import { normalizeRegistration, type NormalizedRegistration } from "./registry";
 import { projectionRepoRoot } from "./surface-target";
+import { emitWarning } from "../../lib/live-progress";
 
 export interface SetupInstallationPlanAction {
   phase: Plugin["kind"];
@@ -138,7 +139,7 @@ export async function executeSetupInstallationPlan(
     assetOverrideRoots: distribution.config.assetRoots,
     warn: (message) => {
       warnings.push(message);
-      process.stderr.write(`${message}\n`);
+      emitWarning(message);
     },
   });
 
@@ -166,7 +167,7 @@ export async function executeSetupInstallationPlan(
       skippedActions.push(action);
       const warning = `${action.pluginId} capability disabled: ${action.skipReason}`;
       warnings.push(warning);
-      process.stderr.write(`${warning}\n`);
+      emitWarning(warning);
     }
 
     // Track every planned plugin so bookkeeping reconciles entries the plugin

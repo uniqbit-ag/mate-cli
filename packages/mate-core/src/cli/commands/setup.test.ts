@@ -2,10 +2,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import type { ReactElement } from "react";
 
 import { FRAMEWORK_NAME } from "../../framework";
+import {
+  createStartupProgress,
+  type StartupProgressAppProps,
+  type StartupProgressDeps,
+} from "../../lib/components/startup-progress";
+import { emitWarning } from "../../lib/live-progress";
 import { ConfigStore } from "../../lib/orchestrator/config-store";
+import type { SetupDependencies } from "../../tools/setup";
 import { runSetupCommand, runSetupCommandWithDeps, setupCommandDeps } from "./setup";
 import type { SetupSelections } from "../../lib/orchestrator/setup-compatibilities";
 
@@ -534,7 +542,7 @@ describe("runSetupCommandWithDeps", () => {
         capabilities: [{ name: "graphify" }],
         git: "default",
       },
-      { cwd: companionPath },
+      expect.objectContaining({ cwd: companionPath }),
     );
   });
 
@@ -682,5 +690,137 @@ describe("runSetupCommandWithDeps", () => {
       expect.objectContaining({ allowedAgents: ["claude"] }),
       expect.objectContaining({ cwd: companionB }),
     );
+  });
+});
+
+describe("setup progress", () => {
+  const summaryConfig = {
+    config: { allowedAgents: ["claude"], packageManagers: ["bun"], capabilities: [] },
+  };
+
+  /** Plain progress and the summary's console.log share one transcript, in order. */
+  function captureTranscript() {
+    const chunks: string[] = [];
+    const stream = {
+      isTTY: false,
+      columns: 80,
+      write(chunk: string) {
+        chunks.push(chunk);
+        return true;
+      },
+    } as unknown as NodeJS.WriteStream;
+    const log = spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      chunks.push(`${args.join(" ")}\n`);
+    });
+    return {
+      createProgress: (title: string) => createStartupProgress(title, { stdout: stream }),
+      transcript: () => chunks.join(""),
+      restore: () => log.mockRestore(),
+    };
+  }
+
+  function runPhases(failAt?: string) {
+    return mock(async (_input: unknown, setupDeps?: SetupDependencies) => {
+      for (const [id, label] of [
+        ["plugins", "Installing plugins"],
+        ["capabilities", "Applying capabilities"],
+        ["register", "Registering companion"],
+      ]) {
+        await setupDeps?.progress?.step(id, label, () => {
+          if (id === failAt) throw new Error("acme broke");
+        });
+      }
+      return summaryConfig;
+    });
+  }
+
+  test("prints one line per phase before the summary", async () => {
+    const cwd = await makeTempDir("mate-setup-cli-progress-");
+    const capture = captureTranscript();
+    try {
+      await withCwd(cwd, () =>
+        runSetupCommandWithDeps(["--allowed-agent", "claude"], {
+          inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
+          executeSetup: runPhases() as never,
+          createProgress: capture.createProgress,
+        }),
+      );
+    } finally {
+      capture.restore();
+    }
+
+    const lines = capture.transcript().split("\n");
+    expect(lines.slice(0, 4)).toEqual([
+      "mate · Setting up companion",
+      "  ✓ Installing plugins",
+      "  ✓ Applying capabilities",
+      "  ✓ Registering companion",
+    ]);
+    expect(lines.findIndex((line) => line.includes("allowedAgents"))).toBeGreaterThan(3);
+  });
+
+  test("a failing phase ends with ✗ before the error propagates", async () => {
+    const cwd = await makeTempDir("mate-setup-cli-progress-fail-");
+    const capture = captureTranscript();
+    try {
+      await expect(
+        withCwd(cwd, () =>
+          runSetupCommandWithDeps(["--allowed-agent", "claude"], {
+            inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
+            executeSetup: runPhases("capabilities") as never,
+            createProgress: capture.createProgress,
+          }),
+        ),
+      ).rejects.toThrow("acme broke");
+    } finally {
+      capture.restore();
+    }
+
+    expect(capture.transcript()).toContain("  ✗ Applying capabilities failed\n");
+    expect(capture.transcript()).not.toContain("Registering companion");
+    expect(capture.transcript()).not.toContain("allowedAgents");
+  });
+
+  test("a skip-reason warning joins the log above the live line", async () => {
+    const cwd = await makeTempDir("mate-setup-cli-progress-warn-");
+    const renders: StartupProgressAppProps[] = [];
+    const render = ((element: ReactElement) => {
+      renders.push(element.props as StartupProgressAppProps);
+      return {
+        rerender: (next: ReactElement) => renders.push(next.props as StartupProgressAppProps),
+        unmount: () => {},
+      };
+    }) as unknown as NonNullable<StartupProgressDeps["render"]>;
+    const executeMock = mock(async (_input: unknown, setupDeps?: SetupDependencies) => {
+      await setupDeps?.progress?.step("capabilities", "Applying capabilities", () => {
+        emitWarning("tokensave capability disabled: requires uv package manager");
+      });
+      return summaryConfig;
+    });
+
+    const log = spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await withCwd(cwd, () =>
+        runSetupCommandWithDeps(["--allowed-agent", "claude"], {
+          inspectSetupPreflight: async () => ({ kind: "existing-companion" }),
+          executeSetup: executeMock as never,
+          createProgress: (title) => createStartupProgress(title, { render, interactive: true }),
+        }),
+      );
+    } finally {
+      log.mockRestore();
+    }
+
+    const warned = renders.find((props) => props.log.some((entry) => entry.kind === "warning"));
+    expect(warned?.log).toEqual([
+      {
+        key: "warning:0",
+        kind: "warning",
+        label: "tokensave capability disabled: requires uv package manager",
+      },
+    ]);
+    expect(warned?.steps).toEqual([
+      { id: "capabilities", label: "Applying capabilities", status: "running" },
+    ]);
   });
 });

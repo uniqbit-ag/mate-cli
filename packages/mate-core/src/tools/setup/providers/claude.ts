@@ -138,11 +138,16 @@ function getAllManagedPermissionEntries(companionPath: string): Set<string> {
 /**
  * Claude Code features Mate turns off because they compete with its own
  * workflow: plan mode writes plans outside the Companion Repository, the
- * Artifact tool competes with `mate report`, and DesignSync has no role in a
- * Mate session. `ExitPlanMode` stays allowed so a user who enters plan mode
+ * Artifact tool competes with `mate report`, DesignSync has no role in a
+ * Mate session, and SendFeedback drafts reports about Claude Code, not the
+ * session's work. `ExitPlanMode` stays allowed so a user who enters plan mode
  * by hand can still leave it. Fixed, not configurable.
  */
-export const MANAGED_CLAUDE_DENY_ENTRIES: readonly string[] = ["EnterPlanMode", "DesignSync"];
+export const MANAGED_CLAUDE_DENY_ENTRIES: readonly string[] = [
+  "EnterPlanMode",
+  "DesignSync",
+  "SendFeedback",
+];
 
 const SECRET_DENY_TOOLS = ["Read", "Edit"] as const;
 

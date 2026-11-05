@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { parse } from "yaml";
 
+import { createStartupProgress } from "../../../lib/components/startup-progress";
 import type { FrameworkConfig } from "../../../lib/orchestrator/types";
 import type { GitOps } from "../artifact/finish/git";
 import { defaultGitOps } from "../artifact/finish/git";
@@ -114,6 +115,7 @@ function setup(
       world.content.get(filePath) ?? DELETED,
     confirm,
     isInteractive: () => options.interactive ?? true,
+    createProgress: (title: string) => createStartupProgress(title, { interactive: false }),
   });
   return { world, git, sync, skills, floor, confirm, untrack };
 }
@@ -176,6 +178,39 @@ beforeEach(() => {
 afterEach(() => {
   Object.assign(companionUpdateDeps, original);
   process.exitCode = originalExitCode ?? 0;
+});
+
+describe("mate companion update — progress", () => {
+  test("prints both phases before the change report and the commit prompt", async () => {
+    setup({ sync: regenerateSkill, answers: [false] });
+    const { out } = await run();
+
+    expect(
+      out.startsWith(
+        [
+          "mate · Updating companion",
+          "  ✓ Checking registry",
+          "  ✓ Syncing companion files",
+          "",
+        ].join("\n"),
+      ),
+    ).toBe(true);
+    expect(out.indexOf("Syncing companion files")).toBeLessThan(out.indexOf("the update changed"));
+    expect(out).toContain("changes left uncommitted");
+  });
+
+  test("a failed sync ends with ✗ before the error", async () => {
+    setup({
+      sync: () => {
+        throw new Error("acme broke");
+      },
+    });
+    const { out, err } = await run();
+
+    expect(out).toContain("  ✗ Syncing companion files failed\n");
+    expect(err).toContain("companion file synchronization failed: acme broke");
+    expect(process.exitCode).toBe(1);
+  });
 });
 
 describe("mate companion update — companion resolution", () => {

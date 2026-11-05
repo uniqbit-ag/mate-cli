@@ -131,9 +131,11 @@ describe("the Claude delivery plan at launch", () => {
     expect(derived.permissions.deny).toEqual([
       "EnterPlanMode",
       "DesignSync",
+      "SendFeedback",
       ...renderSecretDenyEntries(),
     ]);
     expect(derived.enableArtifact).toBe(false);
+    expect("feedbackDrafts" in derived).toBe(false);
   });
 
   test("a launch carries the managed attribution unless the repository sets its own", async () => {

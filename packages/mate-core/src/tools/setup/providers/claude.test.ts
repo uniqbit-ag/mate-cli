@@ -184,7 +184,7 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.autoMemoryEnabled).toBe(false);
   });
 
-  test("disables plan mode, DesignSync and the Artifact tool", async () => {
+  test("disables plan mode, DesignSync, feedback drafts and the Artifact tool", async () => {
     const companionPath = await makeTempDir("mate-companion-disabled-features-");
     await syncCompanionClaudeSettings(companionPath, {
       allowedAgents: ["claude"],
@@ -195,9 +195,11 @@ describe("syncCompanionClaudeSettings", () => {
     expect(settings.permissions?.deny).toEqual([
       "EnterPlanMode",
       "DesignSync",
+      "SendFeedback",
       ...renderSecretDenyEntries(),
     ]);
     expect(settings.enableArtifact).toBe(false);
+    expect("feedbackDrafts" in settings).toBe(false);
   });
 
   test("suppresses commit and PR attribution in the object form, idempotently", async () => {
@@ -280,7 +282,12 @@ describe("syncCompanionClaudeSettings", () => {
     await syncCompanionClaudeSettings(companionPath, config);
 
     const settings = await readCompanionSettings(companionPath);
-    expect(settings.permissions?.deny).toEqual(["Bash(rm:*)", "EnterPlanMode", "DesignSync"]);
+    expect(settings.permissions?.deny).toEqual([
+      "Bash(rm:*)",
+      "EnterPlanMode",
+      "DesignSync",
+      "SendFeedback",
+    ]);
   });
 
   test("disables nothing beyond the fixed set", async () => {
@@ -326,6 +333,7 @@ describe("syncCompanionClaudeSettings", () => {
       "Bash(rm:*)",
       "EnterPlanMode",
       "DesignSync",
+      "SendFeedback",
       ...renderSecretDenyEntries(),
     ]);
   });

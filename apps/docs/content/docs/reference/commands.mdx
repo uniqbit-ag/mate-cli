@@ -162,6 +162,34 @@ it. Both flags repeat, and Mate remembers the choice per companion.
 For OpenSpec, `mate doctor` reports the CLI bundled with Mate, with its path
 and version, instead of looking for `openspec` on `PATH`.
 
+### Progress Output
+
+Commands that take a while show which step is running instead of waiting
+silently. At a terminal, a command prints a `mate · <title>` header, one `✓` or
+`✗` line per finished step, and a spinner on the step that is running:
+
+| Command                   | Steps                                                            |
+| ------------------------- | ---------------------------------------------------------------- |
+| `mate companion setup`    | Installing plugins, Applying capabilities, Registering companion |
+| `mate doctor`             | Running checks                                                   |
+| `mate update`             | Checking registry, then Upgrading to `<version>`                 |
+| `mate companion update`   | Checking registry, Syncing companion files                       |
+| `mate companion sync`     | Syncing companion Git                                            |
+| `mate companion link`     | Cloning companion, when it clones                                |
+| `mate cap index`          | Syncing graphify, Syncing tokensave                              |
+| `mate claude`, `opencode` | Syncing mate, Indexing graphify, Indexing tokensave              |
+
+Some steps run Git, npm, graphify or tokensave, which write to the terminal
+themselves or may ask for credentials. These steps show no spinner: Mate prints
+the step name before the tool runs and a `✓` or `✗` line after it. The same
+happens when a capability asks a question or runs an installer during
+`mate companion setup`. Warnings raised during a step print as `warning` lines
+above the spinner.
+
+When output is not a terminal, each finished step prints as one plain line,
+without a spinner or cursor control. With `--json`, a command prints no progress
+and its JSON output is unchanged.
+
 `mate doctor` also warns when the companion `CLAUDE.md` holds text besides
 `@AGENTS.md` and Mate-managed blocks. Claude sessions in your repositories receive
 the companion `AGENTS.md`, not that text, so the warning names the file and
@@ -333,8 +361,8 @@ preparation loads from the session after it. `mate doctor` lists the folders and
 whether plain sessions load each one.
 
 Mate's managed Claude settings turn off Claude Code features that compete with
-Mate's own workflow: they deny the `EnterPlanMode` and `DesignSync` tools and set
-`enableArtifact: false`, beside `autoMemoryEnabled: false`. Those tool denies are
+Mate's own workflow: they deny the `EnterPlanMode`, `DesignSync`, and
+`SendFeedback` tools and set `enableArtifact: false`, beside `autoMemoryEnabled: false`. Those tool denies are
 fixed. While secret guardrails are on, the managed deny list also carries `Read`
 and `Edit` deny rules for the default secret files (the `Edit` rule also covers
 `Write`); see
@@ -384,8 +412,8 @@ reinstalling).
 For Claude it writes `.claude/settings.local.json` regions (the artifact-path
 guard, banner, guidance and session-prepare hooks, the
 subagent companion-instructions hook, every enabled Capability's hooks, permissions, the secret-file deny rules while secret guardrails are on, and
-the same disabled features as a managed launch: the `EnterPlanMode` and
-`DesignSync` deny entries and `enableArtifact: false`) and the repository's MCP
+the same disabled features as a managed launch: the `EnterPlanMode`,
+`DesignSync`, and `SendFeedback` deny entries and `enableArtifact: false`) and the repository's MCP
 servers into `~/.claude.json`. That file is rewritten only when the servers
 change. An `enableArtifact` value you already set in
 `.claude/settings.local.json` is left as it is. The wrap also places the managed

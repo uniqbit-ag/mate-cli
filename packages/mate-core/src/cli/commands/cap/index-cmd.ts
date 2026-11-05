@@ -11,6 +11,10 @@ import {
   ensureTokensaveStoreExcluded,
   isTokensaveIndexed,
 } from "../../../tools/setup/capabilities/tokensave";
+import {
+  createStartupProgress,
+  type StartupProgressController,
+} from "../../../lib/components/startup-progress";
 import { ensureUnambiguousCompanion } from "../shared/companion-selection";
 import { runGraphifyCapCommand } from "./graphify";
 import { runTokensaveCapCommand } from "./tokensave";
@@ -30,9 +34,16 @@ export interface SyncCapDeps {
   ensureTokensaveBranchingPosture?: (repoPath: string) => Promise<void>;
   runGraphify?: CapRunner;
   runTokensave?: CapRunner;
+  /** Replace the default hand-over lines; launch passes its own progress screen. */
   onStepStart?: (step: SyncCapStep) => void;
   onStepDone?: (step: SyncCapStep, ok: boolean) => void;
+  createProgress?: typeof createStartupProgress;
 }
+
+const STEP_LABELS: Record<SyncCapStep, string> = {
+  graphify: "Syncing graphify",
+  tokensave: "Syncing tokensave",
+};
 
 /** The companion's live secret policy decides the secret-file excludes. */
 async function defaultEnsureBranchingPosture(repoPath: string): Promise<void> {
@@ -123,6 +134,42 @@ export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {})
 
   const loadCapabilities = deps.loadCapabilities ?? defaultLoadCapabilities;
   const ensureCompanion = deps.ensureUnambiguousCompanion ?? ensureUnambiguousCompanion;
+
+  if (!(await ensureCompanion(process.cwd()))) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const capabilities = await loadCapabilities();
+
+  // graphify and tokensave write straight to the terminal: labelled hand-overs, no spinner.
+  let progress: StartupProgressController | undefined;
+  const onStepStart =
+    deps.onStepStart ??
+    ((step: SyncCapStep) => {
+      progress ??= (deps.createProgress ?? createStartupProgress)("Indexing capabilities");
+      progress.handOver(step, STEP_LABELS[step]);
+    });
+  const onStepDone =
+    deps.onStepDone ??
+    ((step: SyncCapStep, ok: boolean) => {
+      if (ok) progress?.succeed(step);
+      else progress?.fail(step);
+    });
+
+  try {
+    await runSteps(options, capabilities, { onStepStart, onStepDone }, deps);
+  } finally {
+    progress?.stop();
+  }
+}
+
+async function runSteps(
+  options: { includeGraphify: boolean; includeTokensave: boolean },
+  capabilities: CapabilityConfig[],
+  { onStepStart, onStepDone }: Required<Pick<SyncCapDeps, "onStepStart" | "onStepDone">>,
+  deps: SyncCapDeps,
+): Promise<void> {
   const resolveRepositoryPath = deps.resolveRepositoryPath ?? defaultResolveRepositoryPath;
   const cwd = deps.cwd ?? (() => process.cwd());
   const isTokensaveInitialized = deps.isTokensaveInitialized ?? isTokensaveIndexed;
@@ -131,17 +178,7 @@ export async function runIndexCapCommand(args: string[], deps: SyncCapDeps = {})
     deps.ensureTokensaveBranchingPosture ?? defaultEnsureBranchingPosture;
   const runGraphify = deps.runGraphify ?? runGraphifyCapCommand;
   const runTokensave = deps.runTokensave ?? runTokensaveCapCommand;
-
-  if (!(await ensureCompanion(process.cwd()))) {
-    process.exitCode = 1;
-    return;
-  }
-
-  const capabilities = await loadCapabilities();
   let failed = false;
-
-  const onStepStart = deps.onStepStart ?? (() => {});
-  const onStepDone = deps.onStepDone ?? (() => {});
 
   if (hasGraphifyCapability(capabilities)) {
     if (

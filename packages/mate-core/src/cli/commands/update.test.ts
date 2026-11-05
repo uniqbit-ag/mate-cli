@@ -2,9 +2,11 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { createStartupProgress } from "../../lib/components/startup-progress";
 import { publicNpmDeps } from "../../lib/public-npm";
 import { runUpdateCommand, updateCommandDeps } from "./update";
 
+const realCreateProgress = updateCommandDeps.createProgress;
 const realIsNpmManagedInstall = updateCommandDeps.isNpmManagedInstall;
 const realRunPostInstall = updateCommandDeps.runPostInstall;
 
@@ -39,7 +41,19 @@ function captureLogs(): { chunks: string[]; restore: () => void } {
   };
 }
 
+/** Plain progress lines and prompt markers, in the order they happened. */
+let transcript: string[] = [];
+
 beforeEach(() => {
+  transcript = [];
+  const stream = {
+    isTTY: false,
+    write(chunk: string) {
+      transcript.push(chunk.replace(/\n$/, ""));
+      return true;
+    },
+  } as unknown as NodeJS.WriteStream;
+  updateCommandDeps.createProgress = (title) => createStartupProgress(title, { stdout: stream });
   process.exitCode = 0;
   updateCommandDeps.fetchLatestVersion = mock(async () => "9.9.9");
   updateCommandDeps.getCurrentVersion = mock(() => "1.0.0");
@@ -53,7 +67,80 @@ beforeEach(() => {
 
 afterEach(() => {
   mock.restore();
+  updateCommandDeps.createProgress = realCreateProgress;
   process.exitCode = 0;
+});
+
+describe("runUpdateCommand progress", () => {
+  test("prints the registry check above the confirm prompt", async () => {
+    updateCommandDeps.confirmPrompt = mock(async () => {
+      transcript.push("PROMPT");
+      return false;
+    });
+    const logs = captureLogs();
+    const stderr = captureStderr();
+    try {
+      await runUpdateCommand([]);
+    } finally {
+      logs.restore();
+      stderr.restore();
+    }
+
+    expect(transcript).toEqual(["mate · Checking for updates", "  ✓ Checking registry", "PROMPT"]);
+  });
+
+  test("labels the npm upgrade as a hand-over that ends with ✓", async () => {
+    updateCommandDeps.installLatest = mock(() => {
+      transcript.push("NPM");
+      return { status: 0, error: undefined } as never;
+    });
+    const logs = captureLogs();
+    try {
+      await runUpdateCommand(["--yes"]);
+    } finally {
+      logs.restore();
+    }
+
+    expect(transcript).toEqual([
+      "mate · Checking for updates",
+      "  ✓ Checking registry",
+      "  Upgrading to 9.9.9",
+      "NPM",
+      "  ✓ Upgrading to 9.9.9",
+    ]);
+  });
+
+  test("a failed upgrade ends with ✗ and keeps exit code 1", async () => {
+    updateCommandDeps.installLatest = mock(() => ({ status: 2, error: undefined }) as never);
+    const logs = captureLogs();
+    const stderr = captureStderr();
+    try {
+      await runUpdateCommand(["--yes"]);
+    } finally {
+      logs.restore();
+      stderr.restore();
+    }
+
+    expect(transcript.at(-1)).toBe("  ✗ Upgrading to 9.9.9 failed");
+    expect(stderr.chunks.join("")).toContain("upgrade command exited with status 2");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("an unreachable registry ends the check with ✗ before the error", async () => {
+    updateCommandDeps.fetchLatestVersion = mock(async () => {
+      throw new Error("offline");
+    });
+    const stderr = captureStderr();
+    try {
+      await runUpdateCommand([]);
+    } finally {
+      stderr.restore();
+    }
+
+    expect(transcript).toEqual(["mate · Checking for updates", "  ✗ Checking registry failed"]);
+    expect(stderr.chunks.join("")).toContain("could not reach registry");
+    expect(process.exitCode).toBe(1);
+  });
 });
 
 describe("runUpdateCommand", () => {

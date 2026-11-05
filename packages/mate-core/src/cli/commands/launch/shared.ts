@@ -8,7 +8,7 @@ import {
 } from "../../../lib/orchestrator/types";
 import { createStartupProgress } from "../../../lib/components/startup-progress";
 import { ensureUnambiguousCompanion, launchAmbiguityDeps } from "../shared/companion-selection";
-import { runIndexCapCommand } from "../cap/index-cmd";
+import { runIndexCapCommand, type SyncCapDeps } from "../cap/index-cmd";
 import type { LaunchTarget } from "../../launch-selector";
 import { writeJsonStdout } from "../../write-json-stdout";
 
@@ -101,8 +101,9 @@ export async function runLaunchToolCommand(
     : undefined;
 
   try {
-    progress?.start("sync", STEP_LABELS.sync);
-    progress?.stop();
+    // Git may ask for credentials and graphify/tokensave write straight to the
+    // terminal, so every launch step is a labelled hand-over, never a spinner.
+    progress?.handOver("sync", STEP_LABELS.sync);
     const prepared = await launchCommandDeps.createLauncher().prepare({
       tool,
       args,
@@ -111,17 +112,21 @@ export async function runLaunchToolCommand(
       interactiveGit,
     });
     progress?.succeed("sync");
-    // Stop the Ink UI before running index steps: they spawn graphify/tokensave
-    // with stdio "inherit", which writes straight to the terminal and desyncs
-    // Ink's line tracking, corrupting later re-renders (e.g. duplicated title).
-    progress?.stop();
 
     if (options.scope !== "companion") {
-      await launchCommandDeps.runIndexCapCommand([], {
-        onStepStart: (step) => process.stdout.write(`${STEP_LABELS[step]}...\n`),
-        onStepDone: (step, ok) => process.stdout.write(`${ok ? "✓" : "✗"} ${STEP_LABELS[step]}\n`),
-      });
+      const indexSteps: SyncCapDeps = progress
+        ? {
+            onStepStart: (step) => progress.handOver(step, STEP_LABELS[step]),
+            onStepDone: (step, ok) => (ok ? progress.succeed(step) : progress.fail(step)),
+          }
+        : {
+            onStepStart: (step) => process.stdout.write(`${STEP_LABELS[step]}...\n`),
+            onStepDone: (step, ok) =>
+              process.stdout.write(`${ok ? "✓" : "✗"} ${STEP_LABELS[step]}\n`),
+          };
+      await launchCommandDeps.runIndexCapCommand([], indexSteps);
     }
+    progress?.stop();
 
     const result = await prepared.execute();
     /**

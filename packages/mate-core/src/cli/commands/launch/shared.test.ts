@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { ReactElement } from "react";
+
+import {
+  createStartupProgress,
+  type StartupProgressAppProps,
+  type StartupProgressDeps,
+} from "../../../lib/components/startup-progress";
 import {
   ensureUnambiguousCompanion,
   launchAmbiguityDeps,
@@ -128,7 +135,63 @@ describe("parseDirectLaunchArgs", () => {
 });
 
 describe("runLaunchToolCommand", () => {
-  test("passes a two-stream TTY capability and stops progress before preparation", async () => {
+  test("hands the terminal over for sync and index steps without a spinner", async () => {
+    process.stdin.isTTY = true;
+    process.stdout.isTTY = true;
+    const renders: StartupProgressAppProps[] = [];
+    const render = ((element: ReactElement) => {
+      renders.push(element.props as StartupProgressAppProps);
+      return {
+        rerender: (next: ReactElement) => renders.push(next.props as StartupProgressAppProps),
+        unmount: () => {},
+      };
+    }) as unknown as NonNullable<StartupProgressDeps["render"]>;
+    const written: string[] = [];
+    const stdout = {
+      isTTY: true,
+      columns: 80,
+      write(chunk: string) {
+        written.push(chunk);
+        return true;
+      },
+    } as unknown as NodeJS.WriteStream;
+    const originalCreateLauncher = launchCommandDeps.createLauncher;
+    const originalCreateProgress = launchCommandDeps.createProgress;
+    const originalRunIndexCapCommand = launchCommandDeps.runIndexCapCommand;
+
+    launchCommandDeps.createLauncher = () => ({
+      prepare: async () => {
+        written.push("GIT\n");
+        return { execute: async () => ({ exitCode: 0, stdout: "", stderr: "" }) };
+      },
+    });
+    launchCommandDeps.createProgress = (title) =>
+      createStartupProgress(title, { render, stdout, interactive: true });
+    launchCommandDeps.runIndexCapCommand = async (_args, deps) => {
+      deps?.onStepStart?.("tokensave");
+      written.push("TOKENSAVE\n");
+      deps?.onStepDone?.("tokensave", true);
+    };
+
+    try {
+      await runLaunchToolCommand("claude", []);
+    } finally {
+      launchCommandDeps.createLauncher = originalCreateLauncher;
+      launchCommandDeps.createProgress = originalCreateProgress;
+      launchCommandDeps.runIndexCapCommand = originalRunIndexCapCommand;
+    }
+
+    // A running step is the only thing that renders a spinner frame.
+    expect(renders.flatMap((props) => props.steps)).toEqual([]);
+    expect(renders.at(-1)?.log.map(({ kind, label }) => [kind, label])).toEqual([
+      ["handover", "Syncing mate"],
+    ]);
+    expect(written.join("").replace(/\u001b\[[0-9;]*m/g, "")).toMatch(
+      /^GIT\n {2}✓ Syncing mate\n {2}Indexing tokensave\nTOKENSAVE\n {2}✓ Indexing tokensave\n/,
+    );
+  });
+
+  test("passes a two-stream TTY capability and hands over before preparation", async () => {
     process.stdin.isTTY = true;
     process.stdout.isTTY = true;
     const events: string[] = [];
@@ -154,6 +217,12 @@ describe("runLaunchToolCommand", () => {
       succeed: () => events.push("progress:succeed"),
       fail: () => events.push("progress:fail"),
       failCurrent: () => events.push("progress:fail-current"),
+      step: async (_id, _label, fn) => {
+        events.push("progress:step");
+        return fn();
+      },
+      handOver: () => events.push("progress:hand-over"),
+      warn: () => events.push("progress:warn"),
       stop: () => events.push("progress:stop"),
     });
     launchCommandDeps.runIndexCapCommand = async () => {
@@ -169,8 +238,9 @@ describe("runLaunchToolCommand", () => {
     }
 
     expect(requests[0]?.interactiveGit).toBe(true);
-    expect(events.indexOf("progress:stop")).toBeLessThan(events.indexOf("prepare"));
-    expect(events).toContain("execute");
+    expect(events.slice(0, 3)).toEqual(["progress:hand-over", "prepare", "progress:succeed"]);
+    expect(events).not.toContain("progress:start");
+    expect(events.indexOf("progress:stop")).toBeLessThan(events.indexOf("execute"));
   });
 
   test("uses captured Git mode and blocks launch failures without a two-stream TTY", async () => {

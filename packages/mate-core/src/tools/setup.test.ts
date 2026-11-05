@@ -21,6 +21,7 @@ import {
   executeSetup,
   syncCompanionFiles,
   updateProjectGitignore,
+  type SetupProgress,
 } from "./setup";
 import type { Plugin, SetupContext } from "./setup/plugin";
 
@@ -207,6 +208,38 @@ describe("executeSetup", () => {
     await expect(
       fs.readFile(path.join(memberConfigDir, "framework.yaml"), "utf8"),
     ).resolves.toContain("type: companion");
+  });
+
+  test("reports its phases through the progress reporter", async () => {
+    const root = await makeTempDir("mate-setup-progress-");
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", ".mate", "config.yaml"),
+    );
+    const configDir = path.join(root, `.${FRAMEWORK_NAME}`, "config");
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(
+      path.join(configDir, "framework.yaml"),
+      [
+        "type: companion",
+        "allowedAgents: []",
+        "packageManagers: [bun]",
+        "capabilities: []",
+        "migrations: [rtk-capability-split-v1]",
+        "",
+      ].join("\n"),
+    );
+    const phases: string[] = [];
+    const progress: SetupProgress = {
+      async step(_id, label, fn) {
+        phases.push(label);
+        return fn();
+      },
+    };
+
+    await executeSetup({}, { cwd: root, globalConfigStore, progress });
+
+    // No plugins are declared, so there is no install phase.
+    expect(phases).toEqual(["Applying capabilities", "Registering companion"]);
   });
 
   test("replaces saved providers and capabilities with the selected set", async () => {
@@ -1361,14 +1394,14 @@ describe("applySetupCompatibilities — graphify", () => {
     await applySetupCompatibilities(root, config, "sync");
     expect(git("diff", "--cached", "--name-only")).toBe("");
 
-    const stdout = spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
       await executeSetup({}, { cwd: root, globalConfigStore });
-      expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
+      expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
         "1 Mate skill copies are staged as deletions",
       );
     } finally {
-      stdout.mockRestore();
+      stderr.mockRestore();
     }
     expect(git("diff", "--cached", "--name-status", "--", ".claude/skills").split("\n")).toEqual([
       `D\t${copy}`,

@@ -4,6 +4,8 @@ import { accessSync, constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { releaseTerminal } from "../../lib/live-progress";
+
 // Merges src into dest: existing files are kept, but src wins on name clashes.
 export async function mergeDir(src: string, dest: string): Promise<void> {
   await fs.mkdir(dest, { recursive: true });
@@ -80,6 +82,7 @@ export async function runCommand(
   args: string[],
   options: RunCommandOptions = {},
 ): Promise<void> {
+  releaseTerminal();
   const child = spawn(command, args, { cwd: options.cwd, stdio: "inherit", ...childEnv(options) });
   await waitForClose(child, (code) => `${command} ${args.join(" ")} exited with code ${code}`);
 }
@@ -97,6 +100,7 @@ export async function runShellCommand(
   command: string,
   options: { cwd?: string } = {},
 ): Promise<void> {
+  releaseTerminal();
   const child = spawn(command, { cwd: options.cwd, stdio: "inherit", shell: true });
   await waitForClose(child, (code) => `Command failed: ${command} (exit ${code})`);
 }

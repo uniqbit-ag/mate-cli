@@ -43,6 +43,7 @@ import {
 import { resolveCommandOnPath } from "../../tools/setup/utils";
 import { isUvNeeded } from "../../tools/setup/package-managers/uv";
 import { writeJsonStdout } from "../write-json-stdout";
+import { createStartupProgress } from "../../lib/components/startup-progress";
 import { printSection, renderKeyValueTable, renderTable } from "./status";
 
 interface DoctorDeps {
@@ -60,6 +61,7 @@ interface DoctorDeps {
   ) => Promise<ClaudePluginDirectoryInspection>;
   /** Environment `MATE_AUDIENCE` is read from; defaults to the process environment. */
   env?: Record<string, string | undefined>;
+  createProgress?: typeof createStartupProgress;
 }
 
 export type DoctorKind = "core" | "working" | "companion" | "hub";
@@ -678,9 +680,20 @@ function renderHumanReport(report: DoctorReport): void {
  * Capability whose runtime contributions fail to load.
  * `--json` emits the same report as one JSON document.
  */
+/** One step: the checks run concurrently, so finer steps would finish in arbitrary order. */
+async function collectWithProgress(deps: DoctorDeps): Promise<DoctorReport> {
+  const progress = (deps.createProgress ?? createStartupProgress)("Checking setup");
+  try {
+    return await progress.step("checks", "Running checks", () => collectDoctorReport(deps));
+  } finally {
+    progress.stop();
+  }
+}
+
 export async function runDoctorCommand(argv: string[] = [], deps: DoctorDeps = {}): Promise<void> {
-  const report = await collectDoctorReport(deps);
-  if (argv.includes("--json")) await writeJsonStdout(report);
+  const json = argv.includes("--json");
+  const report = json ? await collectDoctorReport(deps) : await collectWithProgress(deps);
+  if (json) await writeJsonStdout(report);
   else renderHumanReport(report);
 
   const failures = report.pluginFailures ?? [];

@@ -157,6 +157,7 @@ describe("runUnwrapCommand", () => {
       "Bash(rm:*)",
       "EnterPlanMode",
       "DesignSync",
+      "SendFeedback",
       ...renderSecretDenyEntries(),
     ]);
 
@@ -185,10 +186,12 @@ describe("runUnwrapCommand", () => {
       await fs.readFile(path.join(repoPath, ".claude", "settings.local.json"), "utf8"),
     );
     expect(placed.enableArtifact).toBe(false);
+    expect("feedbackDrafts" in placed).toBe(false);
     expect(placed.attribution).toEqual({ commit: "", pr: "", sessionUrl: false });
     expect(placed.permissions.deny).toEqual([
       "EnterPlanMode",
       "DesignSync",
+      "SendFeedback",
       ...renderSecretDenyEntries(),
     ]);
   });
