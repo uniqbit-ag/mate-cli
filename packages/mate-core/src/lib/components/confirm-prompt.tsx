@@ -4,7 +4,19 @@ import readline from "node:readline";
 import { Box, Text, render as inkRender } from "ink";
 import { useEffect } from "react";
 
+import { BRAND_ACCENT } from "../../brand/palette";
 import { WizardFooter } from "./wizard-footer";
+
+function Choice({ label, selected }: { label: string; selected: boolean }) {
+  return (
+    <Text>
+      <Text color={BRAND_ACCENT}>{selected ? "▸" : " "}</Text>{" "}
+      <Text bold={selected} dimColor={!selected}>
+        {label}
+      </Text>
+    </Text>
+  );
+}
 
 interface ConfirmPromptAppProps {
   question: string;
@@ -19,15 +31,13 @@ export function ConfirmPromptApp({ question, yesSelected, onMounted }: ConfirmPr
 
   return (
     <Box flexDirection="column" width="100%">
-      <Box borderStyle="round" width="100%">
-        <Text bold>{question}</Text>
-      </Box>
-      <Box marginTop={1}>
-        <Text color={yesSelected ? "cyan" : undefined}>{yesSelected ? "▸" : " "} Yes</Text>
-        <Box marginLeft={3}>
-          <Text color={!yesSelected ? "cyan" : undefined}>{!yesSelected ? "▸" : " "} No</Text>
-        </Box>
-      </Box>
+      <Text>
+        <Text color={BRAND_ACCENT}>?</Text> <Text bold>{question}</Text>
+        {"  "}
+        <Choice label="Yes" selected={yesSelected} />
+        {"  "}
+        <Choice label="No" selected={!yesSelected} />
+      </Text>
       <WizardFooter hint="y yes · n no · ← → navigate · enter confirm · q cancel" />
     </Box>
   );

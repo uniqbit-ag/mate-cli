@@ -6,21 +6,18 @@ import { renderToString } from "ink";
 import { WizardHeader } from "./wizard-header";
 
 describe("WizardHeader", () => {
-  test("names mate above the title and step counter, without logo art", () => {
+  test("puts mate, the title and the step counter on one borderless line", () => {
     const output = renderToString(
       <WizardHeader title="Pick a companion" step={0} totalSteps={3} />,
       {
         columns: 80,
       },
     );
-    const rows = output.split("\n");
+    const rows = output.split("\n").filter((row) => row.trim() !== "");
 
-    expect(output).not.toMatch(/[█▀▄]/);
-    const mateRow = rows.findIndex((row) => row.includes("mate framework"));
-    const titleRow = rows.findIndex((row) => row.includes("Pick a companion"));
-    expect(mateRow).toBeGreaterThan(-1);
-    expect(titleRow).toBeGreaterThan(mateRow);
-    expect(rows[titleRow]).toContain("1 / 3");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatch(/^mate · Pick a companion\s+1 \/ 3$/);
+    expect(output).not.toMatch(/[╭╮╰╯│─█▀▄]/);
   });
 
   test("hides the step counter for single-step wizards", () => {

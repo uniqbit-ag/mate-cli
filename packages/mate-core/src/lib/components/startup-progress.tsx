@@ -1,9 +1,9 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource react */
-import { Box, Text, render as inkRender } from "ink";
+import { Box, Static, Text, render as inkRender } from "ink";
 
+import { BRAND_ACCENT } from "../../brand/palette";
 import { useSpinnerFrame } from "./spinner";
-import { MIDNIGHT_PURPLE_BRIGHT } from "./theme";
 
 export type StartupStepStatus = "running" | "done" | "error";
 
@@ -13,24 +13,28 @@ export interface StartupStep {
   status: StartupStepStatus;
 }
 
-function StepRow({ step }: { step: StartupStep }) {
-  const spinner = useSpinnerFrame(step.status === "running");
+/** A finished step as printed once; `key` stays unique when a step id runs again. */
+export interface StartupLogEntry extends StartupStep {
+  key: string;
+}
 
-  const icon =
-    step.status === "done" ? (
-      <Text color="green">✓</Text>
-    ) : step.status === "error" ? (
-      <Text color="red">✗</Text>
-    ) : (
-      <Text color={MIDNIGHT_PURPLE_BRIGHT}>{spinner}</Text>
-    );
-
+function FinishedRow({ step }: { step: StartupStep }) {
+  const failed = step.status === "error";
   return (
-    <Text>
-      {icon}{" "}
-      <Text color={step.status === "running" ? MIDNIGHT_PURPLE_BRIGHT : undefined}>
-        {step.label}
-      </Text>
+    <Text wrap="truncate-end">
+      {"  "}
+      {failed ? <Text color="red">✗</Text> : <Text color={BRAND_ACCENT}>✓</Text>} {step.label}
+      {failed ? <Text color="red"> failed</Text> : null}
+    </Text>
+  );
+}
+
+function LiveRow({ step }: { step: StartupStep }) {
+  const spinner = useSpinnerFrame(true);
+  return (
+    <Text wrap="truncate-end">
+      {"  "}
+      <Text color={BRAND_ACCENT}>{spinner}</Text> {step.label}
     </Text>
   );
 }
@@ -38,17 +42,33 @@ function StepRow({ step }: { step: StartupStep }) {
 export interface StartupProgressAppProps {
   title: string;
   steps: StartupStep[];
+  /** Append-only; Ink's Static prints each entry once. */
+  log: StartupLogEntry[];
 }
 
-function StartupProgressApp({ title, steps }: StartupProgressAppProps) {
+type HeaderItem = { key: "header"; title: string };
+
+function StartupProgressApp({ title, steps, log }: StartupProgressAppProps) {
+  // The newest running step is the one live line.
+  const running = steps.findLast((step) => step.status === "running");
+  const printed: (HeaderItem | StartupLogEntry)[] = [{ key: "header", title }, ...log];
   return (
     <Box flexDirection="column">
-      <Text bold color={MIDNIGHT_PURPLE_BRIGHT}>
-        {title}
-      </Text>
-      {steps.map((step) => (
-        <StepRow key={step.id} step={step} />
-      ))}
+      <Static items={printed}>
+        {(item) =>
+          "status" in item ? (
+            <FinishedRow key={item.key} step={item} />
+          ) : (
+            <Text key={item.key} wrap="truncate-end">
+              <Text bold color={BRAND_ACCENT}>
+                mate
+              </Text>{" "}
+              · {item.title}
+            </Text>
+          )
+        }
+      </Static>
+      {running ? <LiveRow step={running} /> : null}
     </Box>
   );
 }
@@ -74,16 +94,25 @@ export function createStartupProgress(
 ): StartupProgressController {
   const render = deps.render ?? inkRender;
   let steps: StartupStep[] = [];
+  let log: StartupLogEntry[] = [];
   let stopped = false;
 
-  const rendered = render(<StartupProgressApp title={title} steps={steps} />, {
+  const rendered = render(<StartupProgressApp title={title} steps={steps} log={log} />, {
     stdout: deps.stdout ?? process.stdout,
     stderr: deps.stderr ?? process.stderr,
   });
 
   const rerender = () => {
     if (stopped) return;
-    rendered.rerender(<StartupProgressApp title={title} steps={steps} />);
+    rendered.rerender(<StartupProgressApp title={title} steps={steps} log={log} />);
+  };
+
+  const finish = (id: string, status: "done" | "error") => {
+    const step = steps.find((candidate) => candidate.id === id);
+    if (!step) return;
+    steps = steps.map((candidate) => (candidate.id === id ? { ...candidate, status } : candidate));
+    log = [...log, { ...step, status, key: `${id}:${log.length}` }];
+    rerender();
   };
 
   return {
@@ -95,18 +124,15 @@ export function createStartupProgress(
       rerender();
     },
     succeed(id) {
-      steps = steps.map((step) => (step.id === id ? { ...step, status: "done" } : step));
-      rerender();
+      finish(id, "done");
     },
     fail(id) {
-      steps = steps.map((step) => (step.id === id ? { ...step, status: "error" } : step));
-      rerender();
+      finish(id, "error");
     },
     failCurrent() {
       const running = steps.find((step) => step.status === "running");
       if (!running) return;
-      steps = steps.map((step) => (step.id === running.id ? { ...step, status: "error" } : step));
-      rerender();
+      finish(running.id, "error");
     },
     stop() {
       if (stopped) return;
