@@ -1119,7 +1119,7 @@ describe("bundled Delivery Path stage skills", () => {
   test("Delivery Path handoffs end with an ordered Next steps section", async () => {
     const flat = (source: string) => source.replace(/\s+/g, " ");
     const closingRule =
-      "End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it.";
+      "End the response with a final `## Next steps` section: numbered required actions in execution order, with exact commands and known change names, prerequisites first. Summaries, evidence, warnings, optional work, and deferred context go above it; nothing follows it. Listing an action never invokes it. Never offer the user an optional command, in or above the section; optional work appears above it only as a skill invocation labelled optional.";
     const stages = {
       "mate-clarify-intent": ["1. /mate-explore-change"],
       "mate-explore-change": [
@@ -1146,6 +1146,7 @@ describe("bundled Delivery Path stage skills", () => {
         "list merging it before `/mate-publish-artifact`",
         "publication, not archive, waits for the merge",
         "Never commit, push, open a PR, or merge for the user.",
+        "An open or unknown merge is information, not a failure and not an action: never offer to record it",
       ],
       "mate-publish-artifact": [
         "no `Next steps` section, no invented command",
@@ -1160,6 +1161,23 @@ describe("bundled Delivery Path stage skills", () => {
       const source = flat(claude);
       expect(source).toContain(closingRule);
       for (const phrase of phrases) expect(source).toContain(phrase);
+    }
+  });
+
+  test("no Next steps example offers a mate command", async () => {
+    for (const root of bothRoots) {
+      for (const name of await listSkillNames(root)) {
+        const dir = path.join(root, name);
+        const files = await fs.readdir(dir, { recursive: true });
+        for (const file of files.filter((entry) => entry.endsWith(".md"))) {
+          const source = await fs.readFile(path.join(dir, file), "utf8");
+          for (const block of source.match(/```[a-z]*\n[\s\S]*?```/g) ?? []) {
+            if (!block.includes("## Next steps")) continue;
+            const steps = block.slice(block.indexOf("## Next steps"));
+            expect(steps, `${name}/${file}`).not.toMatch(/(^|[\s`])mate\s/m);
+          }
+        }
+      }
     }
   });
 
