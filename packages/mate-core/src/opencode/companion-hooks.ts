@@ -216,7 +216,8 @@ interface ToolCallEvent {
 /**
  * Points a tokensave call at the linked worktree the calling session works in.
  * The session's directory is read per call: `mate_enter_worktree` moves a
- * session after the plugin, and `api.location`, were set up.
+ * session after the plugin, and `api.location`, were set up. `api.location`
+ * is the checkout the MCP server serves, which is never routed.
  */
 async function routeTokensaveCall(api: Context, event: ToolCallEvent): Promise<void> {
   if (!TOKENSAVE_TOOL.test(event.tool)) return;
@@ -224,6 +225,7 @@ async function routeTokensaveCall(api: Context, event: ToolCallEvent): Promise<v
     event.tool,
     await sessionDirectory(api, event.sessionID),
     event.input,
+    { servedDirectory: api.location.directory },
   );
   if (routed) event.input = routed;
 }

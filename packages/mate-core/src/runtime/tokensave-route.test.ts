@@ -141,6 +141,49 @@ describe("routeTokensaveInput", () => {
   });
 });
 
+describe("routeTokensaveInput with a served directory", () => {
+  function served(directory: string, servedDirectory: string, refresh = () => {}) {
+    return routeTokensaveInput(SEARCH, directory, { query: "alpha" }, { refresh, servedDirectory });
+  }
+
+  test("the served worktree passes unchanged and is not refreshed, from any folder inside", async () => {
+    const { main, worktree } = await checkouts();
+    await indexed(main);
+    await indexed(worktree);
+    const nested = path.join(worktree, "src", "acme");
+    await fs.mkdir(nested, { recursive: true });
+    const refreshed: string[] = [];
+    const refresh = (root: string) => refreshed.push(root);
+
+    expect(served(worktree, worktree, refresh)).toBeUndefined();
+    expect(served(nested, worktree, refresh)).toBeUndefined();
+    expect(served(worktree, nested, refresh)).toBeUndefined();
+    expect(refreshed).toEqual([]);
+  });
+
+  test("a symlink to the served worktree counts as the served worktree", async () => {
+    const { main, worktree } = await checkouts();
+    await indexed(main);
+    await indexed(worktree);
+    const link = path.join(await tempRoot(), "acme-link");
+    await fs.symlink(worktree, link);
+
+    expect(served(worktree, link)).toBeUndefined();
+    expect(served(link, worktree)).toBeUndefined();
+  });
+
+  test("a session served from the main checkout or another worktree is routed", async () => {
+    const { main, worktree } = await checkouts();
+    await indexed(main);
+    await indexed(worktree);
+    const other = addWorktree(main, path.join(path.dirname(main), "acme.worktrees", "other"));
+
+    expect(served(worktree, main)).toEqual({ query: "alpha", graph_root: worktree });
+    expect(served(worktree, other)).toEqual({ query: "alpha", graph_root: worktree });
+    expect(served(worktree, "")).toEqual({ query: "alpha", graph_root: worktree });
+  });
+});
+
 describe("isRoutableTokensaveTool", () => {
   test("names outside tokensave are not routable", () => {
     expect(isRoutableTokensaveTool("mcp__tokensave__tokensave_search")).toBe(true);
