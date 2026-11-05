@@ -73,6 +73,15 @@ interface SetupSelectionFixture {
   capabilities?: string[];
 }
 
+/** `mate companion open`'s document, named after the working repo root. */
+function workspaceDocument(scenario: E2EScenario): string {
+  return path.join(
+    scenario.working,
+    ".mate",
+    `${path.basename(scenario.working)}.mate.code-workspace`,
+  );
+}
+
 // Returns a PATH string with any directory containing the given command removed.
 function pathWithoutCommand(command: string, pathEnv: string): string {
   return pathEnv
@@ -1972,21 +1981,51 @@ describe("mate CLI e2e", () => {
     await waitForFile(capturePath);
     const invocation = await readJson<{ cwd: string; argv: string[] }>(capturePath);
     expect(invocation.cwd).toBe(scenario.working);
-    expect(invocation.argv).toEqual([
-      path.join(scenario.working, ".mate", "workspace.code-workspace"),
-    ]);
-    expect(
-      await readJson(path.join(scenario.working, ".mate", "workspace.code-workspace")),
-    ).toEqual({
+    expect(invocation.argv).toEqual([workspaceDocument(scenario)]);
+    expect(await readJson(workspaceDocument(scenario))).toEqual({
       folders: [{ path: scenario.working }, { path: scenario.companion }],
       settings: { "git.detectWorktrees": true, "scm.alwaysShowRepositories": true },
     });
   });
 
+  test("companion open renames a legacy workspace file and opens it", async () => {
+    const scenario = await createScenario("mate-cli-e2e-workspace-open-legacy-");
+    const capturePath = await writeEditorStub(scenario, "code");
+    const legacyPath = path.join(scenario.working, ".mate", "workspace.code-workspace");
+    const extraPath = path.join(scenario.root, "acme-extra");
+
+    expect((await setupCompanion(scenario)).exitCode).toBe(0);
+    expect((await linkRepository(scenario)).exitCode).toBe(0);
+    await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+    await fs.writeFile(
+      legacyPath,
+      `{\n  // acme\n  "folders": [{ "path": "${extraPath}" }],\n}\n`,
+      "utf8",
+    );
+
+    const result = await runMate(scenario, {
+      cwd: scenario.working,
+      args: ["companion", "open"],
+      env: { MATE_E2E_EDITOR_CAPTURE_PATH: capturePath },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(
+      `Workspace: opened .mate/${path.basename(scenario.working)}.mate.code-workspace in the editor`,
+    );
+    await waitForFile(capturePath);
+    const invocation = await readJson<{ argv: string[] }>(capturePath);
+    expect(invocation.argv).toEqual([workspaceDocument(scenario)]);
+    expect(await fs.stat(legacyPath).catch(() => null)).toBeNull();
+    const text = await fs.readFile(workspaceDocument(scenario), "utf8");
+    expect(text).toContain("// acme");
+    expect(text).toContain(extraPath);
+  });
+
   test("companion open leaves a broken workspace file alone and spawns no editor", async () => {
     const scenario = await createScenario("mate-cli-e2e-workspace-open-broken-");
     const capturePath = await writeEditorStub(scenario, "code");
-    const workspacePath = path.join(scenario.working, ".mate", "workspace.code-workspace");
+    const workspacePath = workspaceDocument(scenario);
 
     expect((await setupCompanion(scenario)).exitCode).toBe(0);
     expect((await linkRepository(scenario)).exitCode).toBe(0);
@@ -2034,15 +2073,9 @@ describe("mate CLI e2e", () => {
 
     await waitForFile(capturePath);
     const invocation = await readJson<{ argv: string[] }>(capturePath);
-    expect(invocation.argv).toEqual([
-      path.join(scenario.working, ".mate", "workspace.code-workspace"),
-    ]);
+    expect(invocation.argv).toEqual([workspaceDocument(scenario)]);
     expect(
-      (
-        await readJson<{ folders: Array<{ path: string }> }>(
-          path.join(scenario.working, ".mate", "workspace.code-workspace"),
-        )
-      ).folders,
+      (await readJson<{ folders: Array<{ path: string }> }>(workspaceDocument(scenario))).folders,
     ).toEqual([
       { path: scenario.working },
       { path: scenario.companion },
@@ -2072,9 +2105,7 @@ describe("mate CLI e2e", () => {
 
     await waitForFile(capturePath);
     const invocation = await readJson<{ argv: string[] }>(capturePath);
-    expect(invocation.argv).toEqual([
-      path.join(scenario.working, ".mate", "workspace.code-workspace"),
-    ]);
+    expect(invocation.argv).toEqual([workspaceDocument(scenario)]);
   });
 
   test("opencode rejects disallowed tools before any adapter binary is spawned", async () => {

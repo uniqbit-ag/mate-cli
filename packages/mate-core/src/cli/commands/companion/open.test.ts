@@ -48,6 +48,17 @@ describe("runWorkspaceOpenCommand", () => {
     expect(openEditorWorkspace).toHaveBeenCalledWith(["/tmp/companion"], "/tmp/repo-a", "cursor");
   });
 
+  test("names the opened document after the repository", async () => {
+    workspaceOpenCommandDeps.resolveCompanions = async () => [match("/tmp/companion")];
+    const log = spyOn(console, "log").mockImplementation(() => {});
+
+    await runWorkspaceOpenCommand();
+
+    expect(log).toHaveBeenCalledWith(
+      `Workspace: opened .${FRAMEWORK_NAME}/repo-a.mate.code-workspace in the editor`,
+    );
+  });
+
   test("passes every Linked Companion, sorted by resolved path", async () => {
     workspaceOpenCommandDeps.resolveCompanions = async () => [
       match("/tmp/companion-c"),
@@ -184,7 +195,7 @@ describe("runWorkspaceOpenCommand", () => {
     }
 
     const workspaceFile = (repoPath: string) =>
-      path.join(repoPath, `.${FRAMEWORK_NAME}`, "workspace.code-workspace");
+      path.join(repoPath, `.${FRAMEWORK_NAME}`, "working.mate.code-workspace");
 
     test("skips a stale pointer with a warning and still opens the rest", async () => {
       const { repoPath, companionPaths } = await makeLinkedRepo(["companion-a", "companion-b"]);

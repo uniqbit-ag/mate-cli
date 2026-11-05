@@ -1104,13 +1104,14 @@ describe("workspace-document entry", () => {
   const workspaceState = (result: Awaited<ReturnType<typeof project>>) =>
     result.outcomes.find((entry) => entry.id === "workspace-document")?.state;
 
+  // Fixture repos are named `working`, so the document is `working.mate.code-workspace`.
+  const namedPath = (repoPath: string) =>
+    path.join(repoPath, `.${FRAMEWORK_NAME}`, "working.mate.code-workspace");
+  const legacyPath = (repoPath: string) =>
+    path.join(repoPath, `.${FRAMEWORK_NAME}`, "workspace.code-workspace");
+
   const readFolders = async (repoPath: string) =>
-    JSON.parse(
-      await fs.readFile(
-        path.join(repoPath, `.${FRAMEWORK_NAME}`, "workspace.code-workspace"),
-        "utf8",
-      ),
-    ).folders;
+    JSON.parse(await fs.readFile(namedPath(repoPath), "utf8")).folders;
 
   test("lists the repository and every workspace companion in the given order", async () => {
     const [repoPath, companionB, companionA] = await makeFolders("workspace-many-", [
@@ -1161,7 +1162,7 @@ describe("workspace-document entry", () => {
       "companion",
       "extra",
     ]);
-    const target = path.join(repoPath!, `.${FRAMEWORK_NAME}`, "workspace.code-workspace");
+    const target = namedPath(repoPath!);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(
       target,
@@ -1187,7 +1188,7 @@ describe("workspace-document entry", () => {
       "working",
       "companion",
     ]);
-    const target = path.join(repoPath!, `.${FRAMEWORK_NAME}`, "workspace.code-workspace");
+    const target = namedPath(repoPath!);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, '{ "folders": {} }');
 
@@ -1200,5 +1201,95 @@ describe("workspace-document entry", () => {
     expect(outcome?.state).toBe("failed");
     expect(outcome?.error?.message).toBe('"folders" is not an array');
     expect(await fs.readFile(target, "utf8")).toBe('{ "folders": {} }');
+  });
+
+  test("names the document after the repository root", async () => {
+    const [repoPath, companionPath] = await makeFolders("workspace-named-", [
+      "working",
+      "companion",
+    ]);
+
+    await project("workspace", { repoPath: repoPath!, companionPath: companionPath! });
+
+    expect(await readFolders(repoPath!)).toEqual([{ path: repoPath }, { path: companionPath }]);
+    expect(await fs.stat(legacyPath(repoPath!)).catch(() => null)).toBeNull();
+  });
+
+  test("renames a legacy document and keeps its comments and folders", async () => {
+    const [repoPath, companionPath, extraPath] = await makeFolders("workspace-legacy-", [
+      "working",
+      "companion",
+      "extra",
+    ]);
+    const legacy = legacyPath(repoPath!);
+    await fs.mkdir(path.dirname(legacy), { recursive: true });
+    await fs.writeFile(legacy, `{\n  // acme\n  "folders": [{ "path": "${extraPath}" }],\n}\n`);
+
+    const result = await project("workspace", {
+      repoPath: repoPath!,
+      companionPath: companionPath!,
+    });
+
+    expect(workspaceState(result)).toBe("written");
+    expect(await fs.stat(legacy).catch(() => null)).toBeNull();
+    const text = await fs.readFile(namedPath(repoPath!), "utf8");
+    expect(text).toContain("// acme");
+    expect(parseJsonc(text).folders).toEqual([
+      { path: extraPath },
+      { path: repoPath },
+      { path: companionPath },
+    ]);
+  });
+
+  test("prefers the named document and leaves a legacy one untouched", async () => {
+    const [repoPath, companionPath] = await makeFolders("workspace-both-", [
+      "working",
+      "companion",
+    ]);
+    const legacy = legacyPath(repoPath!);
+    await fs.mkdir(path.dirname(legacy), { recursive: true });
+    await fs.writeFile(legacy, "// acme legacy\n{}\n");
+    await fs.writeFile(namedPath(repoPath!), "{}\n");
+
+    await project("workspace", { repoPath: repoPath!, companionPath: companionPath! });
+
+    expect(await fs.readFile(legacy, "utf8")).toBe("// acme legacy\n{}\n");
+    expect(await readFolders(repoPath!)).toEqual([{ path: repoPath }, { path: companionPath }]);
+  });
+
+  test("reports a failed legacy rename and leaves the legacy file in place", async () => {
+    const [repoPath, companionPath] = await makeFolders("workspace-rename-fail-", [
+      "working",
+      "companion",
+    ]);
+    const legacy = legacyPath(repoPath!);
+    await fs.mkdir(path.dirname(legacy), { recursive: true });
+    await fs.writeFile(legacy, "{}\n");
+    await fs.chmod(path.dirname(legacy), 0o555);
+
+    const result = await project("workspace", {
+      repoPath: repoPath!,
+      companionPath: companionPath!,
+    });
+
+    const outcome = result.outcomes.find((entry) => entry.id === "workspace-document");
+    expect(outcome?.state).toBe("failed");
+    expect(outcome?.error?.message).toContain(legacy);
+    expect(outcome?.error?.message).toContain(namedPath(repoPath!));
+    expect(await fs.readFile(legacy, "utf8")).toBe("{}\n");
+  });
+
+  test("is present only when the named document exists", async () => {
+    const [repoPath] = await makeFolders("workspace-present-", ["working"]);
+    const presence = async () =>
+      (await describeProjection(repoPath!)).entries.find(
+        (entry) => entry.id === "workspace-document",
+      )?.present;
+    await fs.mkdir(path.dirname(legacyPath(repoPath!)), { recursive: true });
+    await fs.writeFile(legacyPath(repoPath!), "{}\n");
+
+    expect(await presence()).toBe(false);
+    await fs.writeFile(namedPath(repoPath!), "{}\n");
+    expect(await presence()).toBe(true);
   });
 });

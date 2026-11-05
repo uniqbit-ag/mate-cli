@@ -73,7 +73,7 @@ export const editorWorkspacePath = workspaceDocumentPath;
 
 /**
  * Merges the working repository and each companion, in the given order, into
- * `.mate/workspace.code-workspace` and returns its path, or the error that
+ * `.mate/<repo>.mate.code-workspace` and returns its path, or the error that
  * left the document unchanged. Backs `openEditorWorkspace`.
  */
 async function writeWorkspaceDocument(
