@@ -6,7 +6,7 @@ import type { MateSlotClaim, MateTuiApi } from "../src/opencode/tui";
 const opentuiSolid = path.dirname(Bun.resolveSync("@opentui/solid", import.meta.dir));
 const { createStore, produce } = await import(Bun.resolveSync("solid-js/store", opentuiSolid));
 const { testRender } = await import("@opentui/solid");
-const { default: plugin } = await import("../src/opencode/tui");
+const { default: plugin } = await import(process.argv[2] ?? "../src/opencode/tui");
 
 type Notes = { lines: string[] };
 

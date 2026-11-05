@@ -1,13 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @opentui/solid */
-/* oxlint-disable react/no-unknown-property, react/react-in-jsx-scope, react/jsx-key, react-doctor/jsx-key */
-/**
- * OpenCode V2 TUI plugin module (`{ id, setup }`), OpenCode 2.x only.
- * Solid JSX, not React: `key` is not a reconciliation prop here and `TextProps`
- * does not accept it, so the jsx-key rules cannot be satisfied — only suppressed.
- * The line list is a function child: Solid re-runs its `.map` whole on a store change, fine for a few lines.
- */
-import type { JSX } from "@opentui/solid";
+// OpenCode scans source imports to bind host modules; implicit JSX imports are missed in node_modules.
+import { jsx } from "@opentui/solid/jsx-runtime";
 
 import { BRAND_ACCENT } from "../brand/palette";
 import { mateVersion } from "../runtime/install";
@@ -68,25 +62,21 @@ function SessionContext({
   const text = api.theme.text;
   const warning = text.feedback?.warning?.base ?? text.muted;
 
-  return (
-    <box
-      width="100%"
-      maxWidth={sidebar ? undefined : 75}
-      paddingLeft={sidebar ? 0 : 2}
-      paddingRight={sidebar ? 0 : 2}
-      paddingBottom={sidebar ? 1 : 0}
-      flexShrink={0}
-    >
-      <text fg={MATE_VERSION_COLOR}>mate v{MATE_VERSION}</text>
-      <text fg={text.muted}>repo: {context.repositoryPath}</text>
-      <text fg={text.muted}>mate: {context.companionPath}</text>
-      {/* OpenTUI's Solid transform skips node_modules, so only a function child stays reactive; its children types omit functions. */}
-      {
-        (() =>
-          notes.lines.map((note) => <text fg={warning}>{note}</text>)) as unknown as JSX.Element
-      }
-    </box>
-  );
+  return jsx("box", {
+    width: "100%",
+    maxWidth: sidebar ? undefined : 75,
+    paddingLeft: sidebar ? 0 : 2,
+    paddingRight: sidebar ? 0 : 2,
+    paddingBottom: sidebar ? 1 : 0,
+    flexShrink: 0,
+    children: [
+      jsx("text", { fg: MATE_VERSION_COLOR, children: `mate v${MATE_VERSION}` }),
+      jsx("text", { fg: text.muted, children: `repo: ${context.repositoryPath}` }),
+      jsx("text", { fg: text.muted, children: `mate: ${context.companionPath}` }),
+      // A function child keeps late staleness updates reactive without the Solid transform.
+      () => notes.lines.map((note) => jsx("text", { fg: warning, children: note })),
+    ],
+  });
 }
 
 /** Polls the session lines; a line that appears after startup is also raised as a toast. */
@@ -116,11 +106,11 @@ function setup(api: MateTuiApi): (() => void) | undefined {
 
   api.ui.slot({
     prepend: "home.footer",
-    render: () => <SessionContext api={api} notes={notes} />,
+    render: () => SessionContext({ api, notes }),
   });
   api.ui.slot({
     append: "sidebar.content",
-    render: () => <SessionContext api={api} notes={notes} sidebar />,
+    render: () => SessionContext({ api, notes, sidebar: true }),
   });
   return () => clearInterval(timer);
 }
