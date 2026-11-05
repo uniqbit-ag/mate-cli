@@ -114,6 +114,7 @@ Under `--all` the output is a JSON array of these objects rather than one object
 
 - `conflictedPaths` lists files with rebase conflicts.
 - `local` tells you exactly what exists locally: `committed`, `tagged`, `pushed`.
+- `worktrees`, only on an `ok` change result whose publication made its Workset Done: the cleanup that followed, as `removed` (`workset`, `repository`, `path`), `kept` (the same plus `reason`), and `warnings`. It is best effort and never changes `status`. A kept worktree stays; its branch and commits are untouched.
 
 ## Artifact-Scoped Guard Workflow
 

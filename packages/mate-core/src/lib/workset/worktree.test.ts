@@ -225,6 +225,35 @@ describe("createWorksetWorktrees", () => {
     expect(calls).toHaveLength(1);
   });
 
+  test("a worktree whose checkout is gone is not reused and its folder is left alone", async () => {
+    link(checkout("web"));
+    workset("acme-login", "acme/web");
+    const target = path.join(root, "src", "web.worktrees", "acme-login");
+    await createWorksetWorktrees(companion, "acme-login", options);
+    // What a hand-cleaned worktree leaves behind: the folder without its checkout.
+    for (const entry of fs.readdirSync(target)) {
+      if (entry !== ".mate") fs.rmSync(path.join(target, entry), { recursive: true, force: true });
+    }
+    fs.mkdirSync(path.join(target, ".mate"), { recursive: true });
+    const result = await createWorksetWorktrees(companion, "acme-login", options);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.join("\n")).toContain("stale worktree entry");
+    expect(result.diagnostics.join("\n")).toContain("git worktree prune");
+    expect(fs.readdirSync(target)).toEqual([".mate"]);
+  });
+
+  test("a stale entry whose folder is gone names the repair", async () => {
+    link(checkout("web"));
+    workset("acme-login", "acme/web");
+    const target = path.join(root, "src", "web.worktrees", "acme-login");
+    await createWorksetWorktrees(companion, "acme-login", options);
+    fs.rmSync(target, { recursive: true, force: true });
+    const result = await createWorksetWorktrees(companion, "acme-login", options);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.join("\n")).toContain("stale worktree entry");
+    expect(fs.existsSync(target)).toBe(false);
+  });
+
   test("a foreign directory at the target path is left unchanged", async () => {
     link(checkout("web"));
     workset("acme-login", "acme/web");
@@ -410,11 +439,18 @@ describe("createChangeWorktrees", () => {
   });
 });
 
+/** A Workset of one change whose Delivery Record names `workset/<id>` in `acme/web`. */
+function delivered(id: string): void {
+  listing(id, ["acme/web"], [id]);
+  change(id, "acme/web");
+  record(id, `deliveries:\n  - repository: acme/web\n    branch: workset/${id}\n`);
+}
+
 describe("pruneWorksetWorktrees", () => {
   async function prepared(): Promise<{ web: string; target: string }> {
     const web = checkout("web");
     link(web);
-    workset("acme-login", "acme/web");
+    delivered("acme-login");
     await createWorksetWorktrees(companion, "acme-login", options);
     return { web, target: path.join(root, "src", "web.worktrees", "acme-login") };
   }
@@ -422,6 +458,87 @@ describe("pruneWorksetWorktrees", () => {
   async function done(...ids: string[]) {
     return (await readWorksets(companion)).worksets.filter((record) => ids.includes(record.id));
   }
+
+  test("removes a worktree outside Mate's path that has the Delivery Branch", async () => {
+    const web = checkout("web");
+    link(web);
+    delivered("acme-login");
+    const scratch = path.join(root, "src", "acme-scratch");
+    git(web, "worktree", "add", "-q", "-b", "workset/acme-login", scratch, "origin/HEAD");
+    const result = await pruneWorksetWorktrees(companion, await done("acme-login"));
+    expect(result.removed).toEqual([
+      { workset: "acme-login", repository: "acme/web", path: scratch },
+    ]);
+    expect(fs.existsSync(scratch)).toBe(false);
+  });
+
+  test("finds the Delivery Branch in an archived change", async () => {
+    const { target } = await prepared();
+    const archive = path.join(companion, "openspec", "changes", "archive");
+    fs.mkdirSync(archive, { recursive: true });
+    fs.renameSync(
+      path.join(companion, "openspec", "changes", "acme-login"),
+      path.join(archive, "2026-11-05-acme-login"),
+    );
+    const result = await pruneWorksetWorktrees(companion, await done("acme-login"));
+    expect(result.removed.map((entry) => entry.path)).toEqual([target]);
+  });
+
+  test("leaves the main checkout on the Delivery Branch", async () => {
+    const web = checkout("web");
+    link(web);
+    delivered("acme-login");
+    git(web, "switch", "-q", "-c", "workset/acme-login");
+    const result = await pruneWorksetWorktrees(companion, await done("acme-login"));
+    expect(result).toEqual({ removed: [], kept: [], warnings: [] });
+    expect(fs.existsSync(web)).toBe(true);
+  });
+
+  test("leaves worktrees on another branch or a detached HEAD", async () => {
+    const web = checkout("web");
+    link(web);
+    delivered("acme-login");
+    const other = path.join(root, "src", "acme-other");
+    const detached = path.join(root, "src", "acme-detached");
+    git(web, "worktree", "add", "-q", "-b", "workset/acme-other", other, "origin/HEAD");
+    git(web, "worktree", "add", "-q", "--detach", detached, "origin/HEAD");
+    const result = await pruneWorksetWorktrees(companion, await done("acme-login"));
+    expect(result).toEqual({ removed: [], kept: [], warnings: [] });
+    expect(fs.existsSync(other)).toBe(true);
+    expect(fs.existsSync(detached)).toBe(true);
+  });
+
+  test("keeps a worktree that holds the working directory", async () => {
+    const { target } = await prepared();
+    const result = await pruneWorksetWorktrees(companion, await done("acme-login"), {
+      cwd: () => path.join(target, "src"),
+    });
+    expect(result.kept).toEqual([
+      {
+        workset: "acme-login",
+        repository: "acme/web",
+        path: target,
+        reason: "in use (current directory)",
+      },
+    ]);
+    expect(fs.existsSync(target)).toBe(true);
+  });
+
+  test("keeps a stale worktree entry and names the repair", async () => {
+    const { target } = await prepared();
+    fs.rmSync(target, { recursive: true, force: true });
+    const result = await pruneWorksetWorktrees(companion, await done("acme-login"));
+    expect(result.removed).toEqual([]);
+    expect(result.kept[0]?.reason).toContain("stale worktree entry");
+  });
+
+  test("a not-applicable delivery names no branch", async () => {
+    const { target } = await prepared();
+    record("acme-login", "deliveries:\n  - repository: acme/web\n    notApplicable: docs only\n");
+    const result = await pruneWorksetWorktrees(companion, await done("acme-login"));
+    expect(result).toEqual({ removed: [], kept: [], warnings: [] });
+    expect(fs.existsSync(target)).toBe(true);
+  });
 
   test("removes a clean worktree of a Done Workset and keeps its branch", async () => {
     const { web, target } = await prepared();
@@ -637,7 +754,7 @@ describe("wrapping worktrees", () => {
 
   test("prune removes the wrap with the worktree", async () => {
     await wrappedMain();
-    workset("acme-login", "acme/web");
+    delivered("acme-login");
     await createWorksetWorktrees(companion, "acme-login", options);
     expect(claudeProjects()[target()]).toBeDefined();
     const done = (await readWorksets(companion)).worksets;
@@ -649,7 +766,7 @@ describe("wrapping worktrees", () => {
 
   test("a worktree git refuses to remove is wrapped again", async () => {
     await wrappedMain();
-    workset("acme-login", "acme/web");
+    delivered("acme-login");
     await createWorksetWorktrees(companion, "acme-login", options);
     const done = (await readWorksets(companion)).worksets;
     const wrapped: string[] = [];
@@ -666,7 +783,7 @@ describe("wrapping worktrees", () => {
 
   test("a failed unwrap keeps the worktree and names the reason", async () => {
     await wrappedMain();
-    workset("acme-login", "acme/web");
+    delivered("acme-login");
     await createWorksetWorktrees(companion, "acme-login", options);
     const done = (await readWorksets(companion)).worksets;
     const result = await pruneWorksetWorktrees(companion, done, {

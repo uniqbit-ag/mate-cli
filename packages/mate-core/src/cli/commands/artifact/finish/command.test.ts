@@ -7,9 +7,13 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { LaunchContext } from "../../../../lib/orchestrator/framework-context";
 import type { CapabilityConfig } from "../../../../lib/orchestrator/types";
 import { WorkingRepoRequiredError } from "../../../../lib/orchestrator/types";
+import type { WorksetRecord } from "../../../../lib/workset/record";
+import type { PruneResult, PruneTarget } from "../../../../lib/workset/worktree";
 import { runArtifactPublishCommand, type PublishCommandDeps } from "./command";
+import type { FinishResult } from "./engine";
 import type { ArtifactFinisher, FinisherFactory } from "./finisher";
 import { type GitOps, RemoteFetchError } from "./git";
+import type { WorktreeCleanupDeps } from "./worktree-cleanup";
 
 const COMPANION = "/companion";
 
@@ -703,5 +707,238 @@ describe("runArtifactPublishCommand — --all sequencing", () => {
     await runArtifactPublishCommand(["--all", "--json"], d);
 
     expect(record).toEqual(["change:2026-09-14-widget"]);
+  });
+
+  test("cleans up completed Worksets once, after every publication", async () => {
+    const companion = await companionWithArchives(["2026-09-10-alpha", "2026-09-14-beta"]);
+    const record: string[] = [];
+    const changed = [
+      "openspec/changes/archive/2026-09-10-alpha/",
+      "openspec/changes/archive/2026-09-14-beta/",
+    ];
+    const { deps: d, stdout } = deps(record, companion, changed);
+    d.worktreeCleanup = {
+      readWorksets: async () => ({ worksets: [], problems: [] }),
+      pruneWorktrees: async (_companion, targets) => {
+        record.push(`prune:${targets.map((target) => target.id).join(",")}`);
+        return { removed: [], kept: [], warnings: [] };
+      },
+    };
+
+    await runArtifactPublishCommand(["--all", "--json"], d);
+
+    expect(record).toEqual([
+      "change:2026-09-10-alpha",
+      "change:2026-09-14-beta",
+      "prune:alpha",
+      "prune:beta",
+    ]);
+    const results = JSON.parse(stdout[0] ?? "[]") as FinishResult[];
+    expect(results.map((result) => result.worktrees)).toEqual([
+      { removed: [], kept: [], warnings: [] },
+      { removed: [], kept: [], warnings: [] },
+    ]);
+  });
+});
+
+describe("runArtifactPublishCommand — worktree cleanup", () => {
+  const ANCHOR = "2026-07-14-x";
+  const EMPTY: PruneResult = { removed: [], kept: [], warnings: [] };
+
+  function worksetRecord(id: string, changes: string[]): WorksetRecord {
+    return {
+      id,
+      title: id,
+      intent: "",
+      repositories: ["acme/web"],
+      changes,
+      createdAt: "2026-07-01T00:00:00.000Z",
+      extra: {},
+    } as unknown as WorksetRecord;
+  }
+
+  /** A companion where `x` is in Workset `acme-login`, whose derived stage is `stage`. */
+  function explicit(stage: string, calls: PruneTarget[][]): WorktreeCleanupDeps {
+    const record = worksetRecord("acme-login", ["x", "y"]);
+    return {
+      readWorksets: async () => ({ worksets: [record], problems: [] }),
+      worksetStages: async () =>
+        ({
+          worksets: [{ record, derived: { stage, label: stage, turn: "agent", problems: [] } }],
+          problems: [],
+        }) as unknown as Awaited<ReturnType<NonNullable<WorktreeCleanupDeps["worksetStages"]>>>,
+      pruneWorktrees: async (_companion, targets) => {
+        calls.push([...targets]);
+        return EMPTY;
+      },
+    };
+  }
+
+  function implicit(calls: PruneTarget[][], result: PruneResult = EMPTY): WorktreeCleanupDeps {
+    return {
+      readWorksets: async () => ({ worksets: [], problems: [] }),
+      pruneWorktrees: async (_companion, targets) => {
+        calls.push([...targets]);
+        return result;
+      },
+    };
+  }
+
+  test("a single --json publication prints one object that carries the worktrees", async () => {
+    const calls: PruneTarget[][] = [];
+    const { deps, stdout } = makeDeps([]);
+    deps.worktreeCleanup = implicit(calls, {
+      removed: [{ workset: "x", repository: "acme/web", path: "/acme/web.worktrees/x" }],
+      kept: [],
+      warnings: [],
+    });
+
+    await runArtifactPublishCommand(["x", "--json"], deps);
+
+    expect(stdout).toHaveLength(1);
+    const result = JSON.parse(stdout[0]!) as FinishResult;
+    expect(result.status).toBe("ok");
+    expect(result.worktrees?.removed[0]?.path).toBe("/acme/web.worktrees/x");
+  });
+
+  test("an implicit Workset is cleaned up as soon as its change is published", async () => {
+    const calls: PruneTarget[][] = [];
+    const { deps } = makeDeps([]);
+    deps.worktreeCleanup = implicit(calls);
+
+    await runArtifactPublishCommand(["x", "--json"], deps);
+
+    expect(calls).toEqual([[{ id: "x", changes: [ANCHOR] }]]);
+  });
+
+  test("the last change of an explicit Workset cleans up the whole Workset", async () => {
+    const calls: PruneTarget[][] = [];
+    const { deps } = makeDeps([]);
+    deps.worktreeCleanup = explicit("done", calls);
+
+    await runArtifactPublishCommand(["x", "--json"], deps);
+
+    expect(calls).toEqual([[{ id: "acme-login", changes: ["x", "y"] }]]);
+  });
+
+  test("one of two changes of a Workset cleans up nothing", async () => {
+    const calls: PruneTarget[][] = [];
+    const { deps, stdout } = makeDeps([]);
+    deps.worktreeCleanup = explicit("publish", calls);
+
+    await runArtifactPublishCommand(["x", "--json"], deps);
+
+    expect(calls).toEqual([]);
+    expect((JSON.parse(stdout[0]!) as FinishResult).worktrees).toBeUndefined();
+  });
+
+  test("a failing cleanup keeps the publication ok and reports a warning", async () => {
+    const { deps, stdout } = makeDeps([]);
+    deps.worktreeCleanup = {
+      readWorksets: async () => ({ worksets: [], problems: [] }),
+      pruneWorktrees: async () => {
+        throw new Error("cannot list the worktrees of acme/web");
+      },
+    };
+
+    await runArtifactPublishCommand(["x", "--json"], deps);
+
+    const result = JSON.parse(stdout[0]!) as FinishResult;
+    expect(result.status).toBe("ok");
+    expect(result.worktrees?.warnings).toEqual([
+      "worktree cleanup failed: cannot list the worktrees of acme/web",
+    ]);
+    expect(process.exitCode).toBe(0);
+  });
+
+  test("human output names removed and kept worktrees after the result", async () => {
+    const { deps, stdout, stderr } = makeDeps([]);
+    deps.worktreeCleanup = implicit([], {
+      removed: [{ workset: "x", repository: "acme/web", path: "/acme/a" }],
+      kept: [
+        {
+          workset: "x",
+          repository: "acme/web",
+          path: "/acme/b",
+          reason: "uncommitted changes or untracked files",
+        },
+      ],
+      warnings: [],
+    });
+
+    await runArtifactPublishCommand(["x"], deps);
+
+    expect(stdout).toHaveLength(1);
+    expect(stderr).toEqual([
+      "mate: removed worktree /acme/a",
+      "mate: kept worktree /acme/b (uncommitted changes or untracked files)",
+    ]);
+  });
+
+  test("an error never cleans up", async () => {
+    const calls: PruneTarget[][] = [];
+    const { deps, stdout } = makeDeps([], { resolveFailure: "mate: x is still active." });
+    deps.worktreeCleanup = implicit(calls);
+
+    await runArtifactPublishCommand(["x", "--json"], deps);
+
+    expect(calls).toEqual([]);
+    expect((JSON.parse(stdout[0]!) as FinishResult).worktrees).toBeUndefined();
+  });
+
+  test("a conflict never cleans up", async () => {
+    const calls: PruneTarget[][] = [];
+    const { deps } = makeDeps([]);
+    deps.git = () => ({
+      ...stubGit(),
+      async hasUpstream() {
+        return true;
+      },
+      async rebaseOntoUpstream() {
+        return { ok: false, conflictedPaths: ["openspec/x.md"] };
+      },
+    });
+    deps.worktreeCleanup = implicit(calls);
+
+    await runArtifactPublishCommand(["x", "--json"], deps);
+
+    expect(calls).toEqual([]);
+  });
+
+  test("a deferred publication never cleans up", async () => {
+    const calls: PruneTarget[][] = [];
+    const { deps, stdout } = makeDeps([]);
+    deps.git = () => ({
+      ...stubGit(),
+      async hasUpstream() {
+        return true;
+      },
+      async fetch() {
+        throw new RemoteFetchError("git fetch failed: Permission denied (publickey).", true);
+      },
+    });
+    deps.worktreeCleanup = implicit(calls);
+
+    await runArtifactPublishCommand(["x", "--json"], deps);
+
+    expect((JSON.parse(stdout[0]!) as FinishResult).status).toBe("deferred");
+    expect(calls).toEqual([]);
+  });
+
+  test("--specs never cleans up", async () => {
+    const calls: PruneTarget[][] = [];
+    const { deps } = makeDeps([]);
+    deps.git = () => ({
+      ...stubGit(),
+      async changedPaths() {
+        return ["openspec/specs/widget-api/spec.md"];
+      },
+    });
+    deps.specsFinisher = () => recordingFinisher([]);
+    deps.worktreeCleanup = implicit(calls);
+
+    await runArtifactPublishCommand(["--specs", "--json"], deps);
+
+    expect(calls).toEqual([]);
   });
 });
