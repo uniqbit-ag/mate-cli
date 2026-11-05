@@ -17,7 +17,11 @@ import {
   isNewer,
 } from "../../../lib/update-checker";
 import { resolveCompanionRuntime } from "../../../runtime/env";
-import { syncCompanionFiles, type CompanionSyncOptions } from "../../../tools/setup";
+import {
+  syncCompanionFiles,
+  untrackManagedSkillCopies,
+  type CompanionSyncOptions,
+} from "../../../tools/setup";
 import type { ManagedOutputOwner, ManagedOutputReport } from "../../../tools/setup/plugin";
 import { runCommand } from "../../../tools/setup/utils";
 import { confirm } from "../../confirm";
@@ -96,6 +100,8 @@ export interface CompanionUpdateDeps {
     config: FrameworkConfig,
     options: CompanionSyncOptions,
   ) => Promise<ManagedOutputReport>;
+  /** Removes the Mate skill copies the managed `.gitignore` lists from the index; returns their paths. */
+  untrackSkillCopies: (companionPath: string, config: FrameworkConfig) => Promise<string[]>;
   /** Returns true when the file was rewritten. */
   writeEngineFloor: (companionPath: string, range: string) => Promise<boolean>;
   /** Re-links the companion's Claude skills and commands into its wrapped Working Repositories. */
@@ -122,6 +128,7 @@ export const companionUpdateDeps: CompanionUpdateDeps = {
   async syncCompanionFiles(companionPath, config, options) {
     return (await syncCompanionFiles(companionPath, config, undefined, options)).managedOutput;
   },
+  untrackSkillCopies: untrackManagedSkillCopies,
   async writeEngineFloor(companionPath, range) {
     const store = new RawFrameworkConfigStore(frameworkConfigPath(companionPath));
     const raw = (await store.load()) ?? {};
@@ -163,13 +170,18 @@ export async function snapshotChangedPaths(
   return before;
 }
 
-/** Paths the update wrote, and the subset that already carried local edits (design D4). */
+/**
+ * Paths the update wrote, and the subset that already carried local edits (design D4).
+ * `untracked` skill copies are Mate output: committed as deletions, never a conflict.
+ */
 export async function diffChangedPaths(
   companionPath: string,
   git: GitOps,
   before: Map<string, string>,
   report: ManagedOutputReport,
+  untracked: readonly string[] = [],
 ): Promise<UpdateChanges> {
+  const removals = new Set(untracked);
   const written: string[] = [];
   const conflict: string[] = [];
   const overwritten: string[] = [];
@@ -183,6 +195,11 @@ export async function diffChangedPaths(
     }),
   );
   for (const { changed, owner, unchanged } of preexisting) {
+    if (removals.has(changed)) {
+      written.push(changed);
+      if (owner === "mate" && !unchanged) overwritten.push(changed);
+      continue;
+    }
     // Reported output is committed even when a local edit preceded the sync.
     if (!owner && unchanged) continue;
     written.push(changed);
@@ -259,6 +276,7 @@ async function checkVersion(): Promise<string | undefined> {
 async function commitAndPush(
   git: GitOps,
   written: string[],
+  removed: readonly string[],
   version: string,
   yes: boolean,
 ): Promise<void> {
@@ -276,7 +294,7 @@ async function commitAndPush(
   }
   try {
     await git.add(written);
-    await git.commit(message, written);
+    await git.commit(message, written, { removed });
   } catch (error) {
     fail(`commit failed: ${errorMessage(error)}`);
     return;
@@ -335,12 +353,15 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
 
   let config: FrameworkConfig;
   let report: ManagedOutputReport;
+  let untracked: string[];
   try {
     config = await companionUpdateDeps.loadConfig(companionPath);
     // Only this command and setup regenerate OpenSpec output; launches leave it alone.
     report = await companionUpdateDeps.syncCompanionFiles(companionPath, config, {
       regenerateOpenSpec: true,
     });
+    // After the sync wrote the managed `.gitignore`; a declined commit leaves the removals staged.
+    untracked = await companionUpdateDeps.untrackSkillCopies(companionPath, config);
   } catch (error) {
     fail(`companion file synchronization failed: ${errorMessage(error)}`);
     return;
@@ -371,6 +392,7 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
     git,
     before,
     report,
+    untracked,
   );
   if (written.length === 0) {
     process.stdout.write(
@@ -383,6 +405,11 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
       [
         "the update rewrote files that already had uncommitted changes; local edits and update output can no longer be separated, so nothing is committed:",
         listPaths(conflict),
+        ...(untracked.length > 0
+          ? [
+              "Mate skill copies were removed from the Git index and stay staged as deletions; the files are still on disk.",
+            ]
+          : []),
       ].join("\n"),
     );
     return;
@@ -400,5 +427,5 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
   process.stdout.write(
     [`${FRAMEWORK_NAME}: the update changed ${companionPath}:`, listPaths(written), ""].join("\n"),
   );
-  await commitAndPush(git, written, version, yes);
+  await commitAndPush(git, written, untracked, version, yes);
 }

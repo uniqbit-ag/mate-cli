@@ -3,8 +3,9 @@ import path from "node:path";
 
 import { getReactDoctorBinPath } from "../../../lib/package-paths";
 import type { CapabilityPlugin, RuntimeContributionsByRuntime, SetupContext } from "../plugin";
+import { skillIgnoreEntries } from "../mate-skill-copies";
 import { removeLegacyOpenCodeSkills, removeSharedSkills } from "../providers/agents-skill-root";
-import { pruneEmptyAncestors } from "../utils";
+import { mergeDir, pruneEmptyAncestors } from "../utils";
 
 const SKILL_NAME = "mate-react-doctor";
 // The upstream skill earlier releases installed under its own name.
@@ -14,6 +15,11 @@ const SKILL_SRC = path.join(
   import.meta.dirname,
   "../../../templates/capabilities/react-doctor/mate-react-doctor",
 );
+
+/** Writes the skill copy into `skillsDir`, as a provider sync does. */
+export async function deployReactDoctorSkill(skillsDir: string): Promise<void> {
+  await mergeDir(SKILL_SRC, path.join(skillsDir, SKILL_NAME));
+}
 
 /** Removes the skill copies earlier releases installed under the upstream name. */
 async function removeLegacySkills(companionPath: string): Promise<void> {
@@ -52,6 +58,7 @@ export function createReactDoctorPlugin(): CapabilityPlugin {
         opencode: { skillTrees },
       };
     },
+    gitignoreEntries: () => skillIgnoreEntries([SKILL_NAME]),
     async apply(ctx: SetupContext) {
       await removeLegacySkills(ctx.companionPath);
     },

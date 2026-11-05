@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { FactoryClient } from "../client";
+import { readCompanionConfig } from "../../orchestrator/config-store";
 import { findWorkset } from "../../workset/record";
 import { createWorksetSandbox } from "../sandbox";
 import { companionSession, companionSkills } from "./companion-context";
@@ -181,12 +182,14 @@ export function createHarnessStageAgent(options: HarnessStageAgentOptions): Stag
       });
       const worktree = options.worktreeOf(worksetId);
       const record = await findWorkset(options.companionPath, worksetId);
+      const config = await readCompanionConfig(options.companionPath);
       const [skills, { instructions, env }] = await Promise.all([
-        companionSkills(options.companionPath),
-        companionSession(options.companionPath, {
-          id: record?.repositories[0] ?? worksetId,
-          path: worktree,
-        }),
+        companionSkills(options.companionPath, config),
+        companionSession(
+          options.companionPath,
+          { id: record?.repositories[0] ?? worksetId, path: worktree },
+          config,
+        ),
       ]);
       const agent = new HarnessAgent({
         // Any credential named here would reach the bridge per session and override the

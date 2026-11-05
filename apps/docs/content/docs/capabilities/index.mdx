@@ -60,7 +60,9 @@ A wrapped working repository gets a link to each companion skill folder and
 command folder under its own `.claude/`, because Claude does not load commands
 from the companion directly.
 Mate only manages the skills it installs, so your own skills and third-party
-skills in `.agents/skills/` stay untouched. Companions created by earlier Mate
+skills in `.agents/skills/` stay untouched. The skills Mate installs are
+regenerated on every sync and listed by name in the managed `.gitignore` block,
+so they are not committed; your own skills are. Companions created by earlier Mate
 versions kept OpenCode skills in `.opencode/skills/`. Run
 `mate companion update` once to move them, then commit the result.
 

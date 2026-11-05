@@ -3,12 +3,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { MATE_SKILLS } from "../../../tools/setup/mate";
 import { companionSession, companionSkills } from "./companion-context";
 
 let companion: string;
 
+const config = (capabilities: string) =>
+  `type: companion\nallowedAgents: [claude]\ncapabilities: [${capabilities}]\n`;
+
 beforeEach(() => {
   companion = fs.mkdtempSync(path.join(os.tmpdir(), "mate-companion-context-"));
+  // No capability deploys Mate skills unless a test enables one.
+  write(".mate/config/framework.yaml", config(""));
 });
 
 afterEach(() => fs.rmSync(companion, { recursive: true, force: true }));
@@ -61,6 +67,38 @@ describe("companion skills", () => {
 
   test("a companion without skills has none", async () => {
     expect(await companionSkills(companion)).toEqual([]);
+  });
+
+  describe("Mate skills", () => {
+    test("come from the installed Mate for enabled capabilities; the companion is not written", async () => {
+      write(".mate/config/framework.yaml", config("{ name: openspec }, { name: react-doctor }"));
+
+      const names = (await companionSkills(companion)).map((entry) => entry.name);
+      expect(names).toEqual(
+        [...MATE_SKILLS, "mate-react-doctor"].toSorted((a, b) => a.localeCompare(b)),
+      );
+      expect(fs.readdirSync(companion)).toEqual([".mate"]);
+    });
+
+    test("replace a stale companion copy of the same name", async () => {
+      write(".mate/config/framework.yaml", config("{ name: react-doctor }"));
+      write(".claude/skills/mate-react-doctor/SKILL.md", skill("mate-react-doctor", "Stale acme."));
+      write(".claude/skills/acme-review/SKILL.md", skill("acme-review", "Review acme."));
+
+      const skills = await companionSkills(companion);
+      expect(skills.map((entry) => entry.name)).toEqual(["acme-review", "mate-react-doctor"]);
+      expect(skills[1]?.description).not.toBe('"Stale acme."');
+    });
+
+    test("a disabled capability leaves the companion's copy as it is", async () => {
+      write(
+        ".claude/skills/mate-react-doctor/SKILL.md",
+        skill("mate-react-doctor", "Verify acme."),
+      );
+
+      const [loaded] = await companionSkills(companion);
+      expect(loaded?.description).toBe('"Verify acme."');
+    });
   });
 });
 

@@ -1,9 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { parse as parseYaml } from "yaml";
 
 import { FRAMEWORK_NAME } from "../framework";
@@ -1296,6 +1297,86 @@ describe("applySetupCompatibilities — graphify", () => {
     expect(gitignore).toContain(".obsidian/");
   });
 
+  test("setup ignores the deployed Mate skill copies by exact name", async () => {
+    const root = await makeTempDir("mate-setup-skill-gitignore-");
+    await installOpenSpecStub(root);
+    await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
+
+    await applySetupCompatibilities(
+      root,
+      {
+        allowedAgents: ["claude"],
+        packageManagers: ["bun"],
+        capabilities: [{ name: "openspec" }, { name: "react-doctor" }],
+      },
+      "setup",
+    );
+
+    const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
+    expect(gitignore).toContain(".claude/skills/mate-propose-change/\n");
+    expect(gitignore).toContain(".agents/skills/mate-propose-change/\n");
+    expect(gitignore).toContain(".claude/skills/mate-react-doctor/\n");
+    expect(gitignore).toContain(".agents/skills/mate-react-doctor/\n");
+    expect(gitignore).not.toContain("mate-*");
+  });
+
+  test("setup untracks committed Mate skill copies and keeps them on disk; sync leaves the index alone", async () => {
+    const root = await makeTempDir("mate-setup-skill-untrack-");
+    const globalConfigStore = new GlobalConfigStore(
+      path.join(root, "home", `.${FRAMEWORK_NAME}`, "config.yaml"),
+    );
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-c", "user.email=acme@example.test", "-c", "user.name=acme", ...args], {
+        cwd: root,
+        encoding: "utf8",
+      }).trim();
+    const copy = ".claude/skills/mate-propose-change/SKILL.md";
+    const team = ".claude/skills/mate-acme/SKILL.md";
+    const config = {
+      allowedAgents: ["claude"],
+      packageManagers: ["bun"],
+      capabilities: [{ name: "openspec" }],
+    };
+    await fs.mkdir(path.join(root, `.${FRAMEWORK_NAME}`, "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, `.${FRAMEWORK_NAME}`, "config", "framework.yaml"),
+      [
+        "type: companion",
+        "allowedAgents: [claude]",
+        "packageManagers: [bun]",
+        "capabilities: [{ name: openspec }]",
+        "migrations: [rtk-capability-split-v1]",
+        "",
+      ].join("\n"),
+    );
+    for (const file of [copy, team]) {
+      await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true });
+      await fs.writeFile(path.join(root, file), "committed\n");
+    }
+    git("init", "-q");
+    git("add", ".");
+    git("commit", "-qm", "init");
+    await installOpenSpecStub(root);
+
+    await applySetupCompatibilities(root, config, "sync");
+    expect(git("diff", "--cached", "--name-only")).toBe("");
+
+    const stdout = spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await executeSetup({}, { cwd: root, globalConfigStore });
+      expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
+        "1 Mate skill copies are staged as deletions",
+      );
+    } finally {
+      stdout.mockRestore();
+    }
+    expect(git("diff", "--cached", "--name-status", "--", ".claude/skills").split("\n")).toEqual([
+      `D\t${copy}`,
+    ]);
+    expect(git("ls-files", "--", ".claude/skills")).toBe(team);
+    await fs.access(path.join(root, copy));
+  });
+
   test("graphify gitignore entries remain managed even when graphify is disabled", async () => {
     const root = await makeTempDir("mate-setup-graphify-gitignore-persist-");
     await installOpenSpecStub(root);
@@ -1723,6 +1804,23 @@ describe("updateProjectGitignore", () => {
     expect(gitignore).not.toContain("managed: uv start");
     expect(gitignore.match(new RegExp(`# ${FRAMEWORK_NAME} managed: start`, "g"))?.length).toBe(1);
     expect(gitignore).toContain(".venv/");
+  });
+
+  test("sync lists Mate skill copies without an active runtime and drops them once disabled", async () => {
+    const root = await makeTempDir("mate-sync-skill-gitignore-");
+    await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
+    const gitignore = () => fs.readFile(path.join(root, ".gitignore"), "utf8");
+
+    await updateProjectGitignore(root, {
+      allowedAgents: [],
+      capabilities: [{ name: "openspec" }, { name: "react-doctor" }],
+    });
+    expect(await gitignore()).toContain(".claude/skills/mate-propose-change/\n");
+    expect(await gitignore()).toContain(".agents/skills/mate-react-doctor/\n");
+
+    await updateProjectGitignore(root, { allowedAgents: [], capabilities: [] });
+    expect(await gitignore()).not.toContain("skills/mate-");
+    expect(await gitignore()).toContain(".openspec-store/");
   });
 
   test("adds capability entries to the unified managed block", async () => {

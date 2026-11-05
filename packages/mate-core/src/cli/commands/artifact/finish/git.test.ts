@@ -173,6 +173,69 @@ describe("defaultGitOps", () => {
     expect(gitOutput(root, ["diff", "--cached", "--name-only"])).toBe("unrelated.txt");
   });
 
+  test("commit keeps a cached removal deleted although its file stays on disk", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-git-"));
+    tempRoots.push(root);
+    const copy = path.join(root, ".claude", "skills", "mate-acme", "SKILL.md");
+    await fs.mkdir(path.dirname(copy), { recursive: true });
+    await fs.writeFile(copy, "acme\n", "utf8");
+    await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n", "utf8");
+    await fs.writeFile(path.join(root, "unrelated.txt"), "before\n", "utf8");
+    git(root, ["init", "-q"]);
+    configureGit(root);
+    git(root, ["add", "."]);
+    git(root, ["commit", "-qm", "initial"]);
+
+    await fs.writeFile(path.join(root, ".gitignore"), ".claude/skills/mate-acme/\n", "utf8");
+    await fs.writeFile(path.join(root, "unrelated.txt"), "unrelated\n", "utf8");
+    git(root, ["add", "unrelated.txt"]);
+    git(root, ["rm", "--cached", "-q", ".claude/skills/mate-acme/SKILL.md"]);
+
+    const ops = defaultGitOps(root);
+    const removed = [".claude/skills/mate-acme/SKILL.md"];
+    const written = [...removed, ".gitignore"];
+    await ops.add(written);
+    // `.gitignore` is not re-added: its working-tree content is still committed.
+    await fs.writeFile(path.join(root, ".gitignore"), ".claude/skills/mate-acme/\nacme/\n", "utf8");
+    await ops.commit("untrack", written, { removed });
+    expect(gitOutput(root, ["show", "HEAD:.gitignore"])).toBe(".claude/skills/mate-acme/\nacme/");
+
+    expect(gitOutput(root, ["show", "--format=", "--name-status", "HEAD"]).split("\n")).toEqual([
+      "D\t.claude/skills/mate-acme/SKILL.md",
+      "M\t.gitignore",
+    ]);
+    expect(gitOutput(root, ["diff", "--cached", "--name-only"])).toBe("unrelated.txt");
+    expect(gitOutput(root, ["status", "--porcelain"])).toBe("M  unrelated.txt");
+    await expect(fs.readFile(copy, "utf8")).resolves.toBe("acme\n");
+  });
+
+  test("commit with removals refuses an index with unresolved conflicts", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mate-finish-git-"));
+    tempRoots.push(root);
+    const copy = ".claude/skills/mate-acme/SKILL.md";
+    await fs.mkdir(path.join(root, ".claude", "skills", "mate-acme"), { recursive: true });
+    await fs.writeFile(path.join(root, copy), "acme\n", "utf8");
+    await fs.writeFile(path.join(root, "acme.txt"), "base\n", "utf8");
+    git(root, ["init", "-q", "-b", "main"]);
+    configureGit(root);
+    git(root, ["add", "."]);
+    git(root, ["commit", "-qm", "initial"]);
+    git(root, ["switch", "-qc", "side"]);
+    await fs.writeFile(path.join(root, "acme.txt"), "side\n", "utf8");
+    git(root, ["commit", "-qam", "side"]);
+    git(root, ["switch", "-q", "main"]);
+    await fs.writeFile(path.join(root, "acme.txt"), "main\n", "utf8");
+    git(root, ["commit", "-qam", "main"]);
+    spawnSync("git", ["merge", "-q", "side"], { cwd: root });
+    git(root, ["rm", "--cached", "-q", copy]);
+
+    const ops = defaultGitOps(root);
+    await expect(ops.commit("untrack", [copy, "acme.txt"], { removed: [copy] })).rejects.toThrow(
+      "unresolved conflicts",
+    );
+    expect(gitOutput(root, ["log", "-1", "--format=%s"])).toBe("main");
+  });
+
   test("commit tolerates a pathspec for a never-tracked path that was moved away", async () => {
     // Reproduces a finish over a change dir that was created and archived within one
     // session: the active dir was never committed, so after `openspec archive` moves it,

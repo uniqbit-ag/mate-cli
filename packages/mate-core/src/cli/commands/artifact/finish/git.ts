@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { FRAMEWORK_NAME } from "../../../../framework";
 import {
   companionGit,
   isTransientRemoteFailure,
@@ -51,8 +53,16 @@ export interface GitOps {
   add(paths: string[]): Promise<void>;
   /** True when the index has staged changes, optionally limited to pathspecs. */
   hasStagedChanges(paths?: string[]): Promise<boolean>;
-  /** Commit only the supplied pathspecs, leaving unrelated staged work untouched. */
-  commit(message: string, paths?: string[]): Promise<void>;
+  /**
+   * Commit only the supplied pathspecs, leaving unrelated staged work untouched.
+   * `removed`: cached removals (`git rm --cached`) committed as deletions although
+   * their files stay on disk.
+   */
+  commit(
+    message: string,
+    paths?: string[],
+    options?: { removed?: readonly string[] },
+  ): Promise<void>;
   hasUpstream(): Promise<boolean>;
   /** Throws `RemoteFetchError` once transient failures have used up their retries. */
   fetch(): Promise<void>;
@@ -131,6 +141,18 @@ function parsePorcelainKind(line: string): WorkingTreeChange {
   return status.includes("?") || status.includes("A") ? "new" : "modified";
 }
 
+/** `ls-files --stage -z` output (`<mode> <sha> <stage>\t<path>`) as `update-index` arguments. */
+function cacheInfoArgs(stageOutput: string): string[] {
+  return stageOutput
+    .split("\0")
+    .filter(Boolean)
+    .flatMap((line) => {
+      const tab = line.indexOf("\t");
+      const [mode, sha] = line.slice(0, tab).split(" ");
+      return ["--cacheinfo", `${mode},${sha},${line.slice(tab + 1)}`];
+    });
+}
+
 /** Read-only index queries, so they may run concurrently; input order is kept. */
 async function filterPaths(
   paths: string[],
@@ -158,6 +180,58 @@ export function defaultGitOps(
       throw new Error(`git ${args.join(" ")} failed: ${res.err || res.out}`);
     }
     return res;
+  };
+  /**
+   * `git commit -- <paths>` restages each path from the working tree, so it would
+   * commit a cached removal's file again. This stages the other paths as that would,
+   * then commits a temporary index: HEAD plus the real index's state of `paths`.
+   * Other staged work stays staged.
+   */
+  const commitWithRemovals = async (message: string, paths: string[], removed: Set<string>) => {
+    const unmerged = (await execOrThrow(["ls-files", "--unmerged", "--", ...paths])).out;
+    if (unmerged.length > 0) {
+      throw new Error("git commit failed: the index has unresolved conflicts");
+    }
+    // A path gone from disk and index is already staged; `git add` would reject it.
+    const others = await filterPaths(
+      paths.filter((filePath) => !removed.has(filePath)),
+      async (filePath) =>
+        fs.existsSync(path.join(companionPath, filePath)) ||
+        (await exec(["ls-files", "--cached", "--", filePath])).out.length > 0,
+    );
+    if (others.length > 0) await execOrThrow(["add", "-A", "--", ...others]);
+    const entries = cacheInfoArgs(
+      (await execOrThrow(["ls-files", "--stage", "-z", "--", ...paths])).out,
+    );
+    const indexFile = path.resolve(
+      companionPath,
+      (
+        await execOrThrow([
+          "rev-parse",
+          "--git-path",
+          `${FRAMEWORK_NAME}-commit-index-${randomUUID()}`,
+        ])
+      ).out,
+    );
+    const indexGit = companionGit(companionPath, {
+      prompt: "never",
+      env: options.env,
+      indexFile,
+    });
+    const runOrThrow = async (args: string[]) => {
+      const res = await indexGit.run(args);
+      if (res.status !== 0) {
+        throw new Error(`git ${args[0]} failed: ${res.stderr.trim() || res.stdout.trim()}`);
+      }
+    };
+    try {
+      await runOrThrow(["read-tree", "HEAD"]);
+      await runOrThrow(["rm", "--cached", "-r", "-q", "--ignore-unmatch", "--", ...paths]);
+      if (entries.length > 0) await runOrThrow(["update-index", "--add", ...entries]);
+      await runOrThrow(["commit", "-m", message]);
+    } finally {
+      fs.rmSync(indexFile, { force: true });
+    }
   };
   return {
     async currentBranch() {
@@ -212,7 +286,7 @@ export function defaultGitOps(
       const pathspec = paths && paths.length > 0 ? ["--", ...paths] : [];
       return (await exec(["diff", "--cached", "--quiet", ...pathspec])).status !== 0;
     },
-    async commit(message, paths) {
+    async commit(message, paths, { removed = [] } = {}) {
       // A produced path can be unknown to git entirely — e.g. an active change dir that
       // was never committed and has just been moved into the archive. `git commit` rejects
       // such pathspecs ("did not match any file(s) known to git"), so keep only paths that
@@ -225,6 +299,10 @@ export function defaultGitOps(
       );
       const pathspec = known.length > 0 ? ["--", ...known] : [];
       if (paths && paths.length > 0 && known.length === 0) return;
+      if (known.length > 0 && removed.some((filePath) => known.includes(filePath))) {
+        await commitWithRemovals(message, known, new Set(removed));
+        return;
+      }
       await execOrThrow(["commit", "-m", message, ...pathspec]);
     },
     async hasUpstream() {
