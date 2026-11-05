@@ -32,30 +32,45 @@ afterEach(async () => {
 });
 
 describe("renderBanner", () => {
-  test("includes title and paths", () => {
-    const banner = renderBanner("/path/to/repo", "/path/to/companion");
-    expect(banner).toContain(`mate v${version}`);
-    expect(banner).not.toContain("MATE | managed companion terminal");
-    expect(banner).toContain("/path/to/repo");
-    expect(banner).toContain("/path/to/companion");
+  test("prints the version and aligned path lines without a box", () => {
+    const banner = renderBanner("/path/to/repo", "/path/to/companion", { color: false });
+    expect(banner.split("\n")).toEqual([
+      `mate v${version}`,
+      "  repo  /path/to/repo",
+      "  mate  /path/to/companion",
+    ]);
+    expect(banner).not.toMatch(/[╭╮╰╯│─]/);
   });
 
-  test("aligns all content lines to same width", () => {
-    const banner = renderBanner("/short", "/very-long-companion-path-that-should-align");
-    const contentLines = banner.split("\n").filter((l) => l.startsWith("│"));
-    expect(contentLines.every((l) => l.length === contentLines[0].length)).toBe(true);
+  test("never pads or truncates long paths", () => {
+    const long = `/acme/${"very-long-segment/".repeat(12)}companion`;
+    const banner = renderBanner("/short", long, { color: false });
+    expect(banner).toContain(`  mate  ${long}`);
+    expect(banner.split("\n").every((line) => line === line.trimEnd())).toBe(true);
   });
 
-  test("uses unicode box-drawing characters", () => {
-    const banner = renderBanner("/repo", "/companion");
-    expect(banner).toMatch(/╭.*╮/);
-    expect(banner).toMatch(/╰.*╯/);
+  test("accents mate only when colour is on", () => {
+    const colored = renderBanner("/repo", "/companion", { color: true });
+    expect(colored.split("\n")[0]).toBe(`\u001b[38;2;46;125;91mmate\u001b[39m v${version}`);
+    expect(colored.split("\n").slice(1).join("")).not.toContain("\u001b");
   });
 
-  test("border rows match content row width", () => {
-    const banner = renderBanner("/short", "/very-long-companion-path-that-should-align");
-    const rows = banner.split("\n");
-    expect(new Set(rows.map((r) => r.length)).size).toBe(1);
+  test("prints no escape codes with NO_COLOR or a non-TTY stdout", () => {
+    const originalIsTTY = process.stdout.isTTY;
+    const originalNoColor = process.env.NO_COLOR;
+    try {
+      process.stdout.isTTY = true;
+      process.env.NO_COLOR = "1";
+      expect(renderBanner("/repo", "/companion")).not.toContain("\u001b");
+
+      delete process.env.NO_COLOR;
+      process.stdout.isTTY = false;
+      expect(renderBanner("/repo", "/companion")).not.toContain("\u001b");
+    } finally {
+      process.stdout.isTTY = originalIsTTY;
+      if (originalNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = originalNoColor;
+    }
   });
 });
 

@@ -156,6 +156,34 @@ it. Both flags repeat, and Mate remembers the choice per companion.
 For OpenSpec, `mate doctor` reports the CLI bundled with Mate, with its path
 and version, instead of looking for `openspec` on `PATH`.
 
+### Progress Output
+
+Commands that take a while show which step is running instead of waiting
+silently. At a terminal, a command prints a `mate · <title>` header, one `✓` or
+`✗` line per finished step, and a spinner on the step that is running:
+
+| Command                   | Steps                                                            |
+| ------------------------- | ---------------------------------------------------------------- |
+| `mate companion setup`    | Installing plugins, Applying capabilities, Registering companion |
+| `mate doctor`             | Running checks                                                   |
+| `mate update`             | Checking registry, then Upgrading to `<version>`                 |
+| `mate companion update`   | Checking registry, Syncing companion files                       |
+| `mate companion sync`     | Syncing companion Git                                            |
+| `mate companion link`     | Cloning companion, when it clones                                |
+| `mate cap index`          | Syncing graphify, Syncing tokensave                              |
+| `mate claude`, `opencode` | Syncing mate, Indexing graphify, Indexing tokensave              |
+
+Some steps run Git, npm, graphify or tokensave, which write to the terminal
+themselves or may ask for credentials. These steps show no spinner: Mate prints
+the step name before the tool runs and a `✓` or `✗` line after it. The same
+happens when a capability asks a question or runs an installer during
+`mate companion setup`. Warnings raised during a step print as `warning` lines
+above the spinner.
+
+When output is not a terminal, each finished step prints as one plain line,
+without a spinner or cursor control. With `--json`, a command prints no progress
+and its JSON output is unchanged.
+
 `mate doctor` also warns when the companion `CLAUDE.md` holds text besides
 `@AGENTS.md` and Mate-managed blocks. Claude sessions in your repositories receive
 the companion `AGENTS.md`, not that text, so the warning names the file and

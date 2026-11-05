@@ -20,6 +20,7 @@ import type {
 } from "../../tools/setup/plugin";
 import { inspectClaudePluginDirectories } from "../../tools/setup";
 import { createClaudePlugin } from "../../tools/setup/providers/claude";
+import { createStartupProgress } from "../../lib/components/startup-progress";
 import { runDoctorCommand, type DoctorReport } from "./doctor";
 
 const tempRoots: string[] = [];
@@ -110,6 +111,26 @@ describe("runDoctorCommand", () => {
     expect(output).toContain("Allowed Agents");
     expect(output).toContain("claude");
     expect(output).toContain("openspec");
+  });
+
+  test("shows a Running checks step before the human report", async () => {
+    const root = await makeTempDir("doctor-progress-");
+    const repoPath = path.join(root, "working");
+    await fs.mkdir(repoPath, { recursive: true });
+    const companionPath = await setupCompanion(root, repoPath);
+    const globalConfigStore = new GlobalConfigStore(path.join(root, "config.yaml"));
+    await globalConfigStore.register(companionPath);
+
+    const output = await captureStdout(() =>
+      runDoctorCommand([], {
+        cwd: repoPath,
+        globalConfigStore,
+        createProgress: (title) => createStartupProgress(title, { interactive: false }),
+      }),
+    );
+
+    expect(output.startsWith("mate · Checking setup\n  ✓ Running checks")).toBe(true);
+    expect(output).toMatch(/\| State {2,}\| working +\|/);
   });
 
   test("checks installations for selected package managers and capabilities only", async () => {

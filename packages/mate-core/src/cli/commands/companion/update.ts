@@ -3,6 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { FRAMEWORK_NAME } from "../../../framework";
+import {
+  createStartupProgress,
+  type StartupProgressController,
+} from "../../../lib/components/startup-progress";
 import { ConfigStore } from "../../../lib/orchestrator/config-store";
 import {
   refreshWorkingClaudeLinks,
@@ -115,6 +119,7 @@ export interface CompanionUpdateDeps {
   snapshotPath: (companionPath: string, relativePath: string) => Promise<string>;
   confirm: (question: string) => Promise<boolean>;
   isInteractive: () => boolean;
+  createProgress: typeof createStartupProgress;
 }
 
 export const companionUpdateDeps: CompanionUpdateDeps = {
@@ -149,6 +154,7 @@ export const companionUpdateDeps: CompanionUpdateDeps = {
   snapshotPath,
   confirm,
   isInteractive: () => !!(process.stdin.isTTY && process.stdout.isTTY),
+  createProgress: createStartupProgress,
 };
 
 export interface UpdateChanges {
@@ -246,9 +252,10 @@ function reportLinkRefresh(results: LinkRefreshResult[]): void {
 }
 
 /** Version precondition; returns the running version when the update may proceed. */
-async function checkVersion(): Promise<string | undefined> {
+async function checkVersion(progress: StartupProgressController): Promise<string | undefined> {
   const current = companionUpdateDeps.getCurrentVersion();
   if (isCanaryVersion(current)) {
+    progress.stop();
     fail(
       `\`${FRAMEWORK_NAME} companion update\` requires a stable ${FRAMEWORK_NAME}; ${current} is a prerelease.`,
     );
@@ -256,12 +263,16 @@ async function checkVersion(): Promise<string | undefined> {
   }
   let latest: string;
   try {
-    latest = await companionUpdateDeps.fetchLatestVersion();
+    latest = await progress.step("registry", "Checking registry", () =>
+      companionUpdateDeps.fetchLatestVersion(),
+    );
   } catch (error) {
+    progress.stop();
     fail(`could not check the registry for the newest version: ${errorMessage(error)}`);
     return undefined;
   }
   if (isNewer(latest, current)) {
+    progress.stop();
     fail(
       [
         `${current} is installed, but the newest stable version is ${latest}.`,
@@ -338,7 +349,20 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
     return;
   }
 
-  const version = await checkVersion();
+  const progress = companionUpdateDeps.createProgress("Updating companion");
+  try {
+    await updateCompanion(companionPath, yes, progress);
+  } finally {
+    progress.stop();
+  }
+}
+
+async function updateCompanion(
+  companionPath: string,
+  yes: boolean,
+  progress: StartupProgressController,
+): Promise<void> {
+  const version = await checkVersion(progress);
   if (!version) return;
 
   let git: GitOps;
@@ -347,6 +371,7 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
     git = companionUpdateDeps.createGitOps(companionPath);
     before = await snapshotChangedPaths(companionPath, git);
   } catch (error) {
+    progress.stop();
     fail(errorMessage(error));
     return;
   }
@@ -355,17 +380,27 @@ export async function runCompanionUpdateCommand(argv: string[]): Promise<void> {
   let report: ManagedOutputReport;
   let untracked: string[];
   try {
-    config = await companionUpdateDeps.loadConfig(companionPath);
-    // Only this command and setup regenerate OpenSpec output; launches leave it alone.
-    report = await companionUpdateDeps.syncCompanionFiles(companionPath, config, {
-      regenerateOpenSpec: true,
-    });
-    // After the sync wrote the managed `.gitignore`; a declined commit leaves the removals staged.
-    untracked = await companionUpdateDeps.untrackSkillCopies(companionPath, config);
+    ({ config, report, untracked } = await progress.step(
+      "sync",
+      "Syncing companion files",
+      async () => {
+        const loaded = await companionUpdateDeps.loadConfig(companionPath);
+        // Only this command and setup regenerate OpenSpec output; launches leave it alone.
+        const synced = await companionUpdateDeps.syncCompanionFiles(companionPath, loaded, {
+          regenerateOpenSpec: true,
+        });
+        // After the sync wrote the managed `.gitignore`; a declined commit leaves the removals staged.
+        const removed = await companionUpdateDeps.untrackSkillCopies(companionPath, loaded);
+        return { config: loaded, report: synced, untracked: removed };
+      },
+    ));
   } catch (error) {
+    progress.stop();
     fail(`companion file synchronization failed: ${errorMessage(error)}`);
     return;
   }
+  // The reports, the skills refresh and the commit confirm below own the terminal.
+  progress.stop();
 
   if (await companionUpdateDeps.hasSkillsLock(companionPath)) {
     try {

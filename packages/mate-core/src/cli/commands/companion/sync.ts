@@ -1,4 +1,5 @@
 import { FRAMEWORK_NAME } from "../../../framework";
+import { createStartupProgress } from "../../../lib/components/startup-progress";
 import { syncCompanionGit } from "../../../lib/orchestrator/companion-git-sync";
 import { LaunchPreflightError } from "../../../lib/orchestrator/types";
 import { resolveCompanionRuntime } from "../../../runtime/env";
@@ -11,6 +12,7 @@ export interface CompanionSyncDeps {
   resolveRepoPath: typeof resolveRepoPath;
   readCompanionPolicy: typeof readCompanionPolicy;
   syncCompanionGit: typeof syncCompanionGit;
+  createProgress: typeof createStartupProgress;
 }
 
 export const companionSyncDeps: CompanionSyncDeps = {
@@ -20,6 +22,7 @@ export const companionSyncDeps: CompanionSyncDeps = {
   resolveRepoPath,
   readCompanionPolicy,
   syncCompanionGit,
+  createProgress: createStartupProgress,
 };
 
 /**
@@ -66,12 +69,16 @@ export async function runCompanionSyncCommand(): Promise<void> {
 
   const repoPath = await companionSyncDeps.resolveRepoPath(cwd);
 
+  const progress = companionSyncDeps.createProgress("Syncing companion");
   try {
+    // Git may ask for credentials: a labelled hand-over, never a spinner.
+    progress.handOver("git", "Syncing companion Git");
     const result = await companionSyncDeps.syncCompanionGit(
       companionPath,
       repoPath === companionPath ? undefined : repoPath,
       true,
     );
+    progress.succeed("git");
     if (result.skipped) {
       process.stdout.write(
         `${FRAMEWORK_NAME}: ${companionPath} is not a Git working tree; nothing to synchronize.\n`,
@@ -82,11 +89,14 @@ export async function runCompanionSyncCommand(): Promise<void> {
       `${FRAMEWORK_NAME}: synchronized ${companionPath} (${result.changed ? "updated" : "no changes"}).\n`,
     );
   } catch (error) {
+    progress.fail("git");
     if (error instanceof LaunchPreflightError) {
       process.stderr.write(`${error.message}\n`);
       process.exitCode = 1;
       return;
     }
     throw error;
+  } finally {
+    progress.stop();
   }
 }

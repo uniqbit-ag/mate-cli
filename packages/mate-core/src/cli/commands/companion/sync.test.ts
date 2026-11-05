@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
+import { createStartupProgress } from "../../../lib/components/startup-progress";
 import { CompanionGitSyncError } from "../../../lib/orchestrator/companion-git-sync";
 import { emptyCompanionPolicy, type CompanionPolicy } from "../../../runtime/policy";
 import { companionSyncDeps, runCompanionSyncCommand } from "./sync";
@@ -38,6 +39,8 @@ let originalExitCode: number | undefined;
 beforeEach(() => {
   originalExitCode = process.exitCode;
   process.exitCode = 0;
+  companionSyncDeps.createProgress = (title) =>
+    createStartupProgress(title, { interactive: false });
 });
 
 afterEach(() => {
@@ -67,6 +70,11 @@ describe("mate companion sync", () => {
     }
 
     expect(syncCompanionGit).toHaveBeenCalledWith("/tmp/acme-companion", "/tmp/acme", true);
+    expect(captured.out.slice(0, 3)).toEqual([
+      "mate · Syncing companion\n",
+      "  Syncing companion Git\n",
+      "  ✓ Syncing companion Git\n",
+    ]);
     expect(captured.out.join("")).toContain("/tmp/acme-companion");
     expect(captured.out.join("")).toContain("updated");
     expect(process.exitCode ?? 0).toBe(0);
@@ -114,6 +122,7 @@ describe("mate companion sync", () => {
       captured.restore();
     }
 
+    expect(captured.out.at(-1)).toBe("  ✗ Syncing companion Git failed\n");
     expect(captured.err.join("")).toContain("The merge left conflicts.");
     expect(captured.err.join("")).toContain("openspec/changes/acme/proposal.md");
     expect(process.exitCode).toBe(1);

@@ -66,6 +66,14 @@ These workflows are interactive:
 Run them from a local terminal. Setup can accept explicit selection flags, but
 initializing an unrecognized directory may still ask for confirmation.
 
+## A Command Waits On A Step
+
+A step without a spinner, such as `Syncing mate` or `Syncing companion Git`,
+has handed the terminal to Git or another tool. That tool may be waiting for
+you, for example for credentials or an SSH passphrase. Answer its prompt, or
+check its output above the step line. The step ends with `✓` or `✗` when the
+tool exits.
+
 ## Agent Launch Fails
 
 Launch only from the linked working repository:

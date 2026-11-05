@@ -1,21 +1,31 @@
 import { spawn } from "node:child_process";
 import { accessSync } from "node:fs";
 
+import { accentText, colorEnabled } from "../../../brand/terminal";
 import { getActiveDistribution } from "../../../distribution";
 import { FRAMEWORK_NAME } from "../../../framework";
 import { resolveFrameworkContext } from "../../../lib/orchestrator/framework-context";
 import { findRepoLocalLinkedRepository } from "../../../lib/orchestrator/repository-link";
 import { ensureUnambiguousCompanion } from "../launch/shared";
 
-export function renderBanner(repoPath: string, companionPath: string): string {
+/** Plain lines, no box: paths are never padded or cut and wrap when wider than the terminal. */
+export function renderBanner(
+  repoPath: string,
+  companionPath: string,
+  options: { color?: boolean } = {},
+): string {
   const { version } = getActiveDistribution().config;
   const name = FRAMEWORK_NAME;
-  const lines = [`${name} v${version}`, "", `repo: ${repoPath}`, `${name}: ${companionPath}`];
-  const contentWidth = Math.max(...lines.map((l) => l.length));
-  const pad = (text: string) => `│ ${text.padEnd(contentWidth)} │`;
-  const border = `─`.repeat(contentWidth + 2);
-
-  return [`╭${border}╮`, ...lines.map(pad), `╰${border}╯`].join("\n");
+  const color = options.color ?? colorEnabled(process.stdout.isTTY === true, process.env);
+  const rows: [string, string][] = [
+    ["repo", repoPath],
+    [name, companionPath],
+  ];
+  const labelWidth = Math.max(...rows.map(([label]) => label.length));
+  return [
+    `${color ? accentText(name) : name} v${version}`,
+    ...rows.map(([label, value]) => `  ${label.padEnd(labelWidth)}  ${value}`),
+  ].join("\n");
 }
 
 export function resolveShell(): string {
