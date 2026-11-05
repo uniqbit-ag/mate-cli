@@ -6,8 +6,10 @@ import { checkoutRootOf, isSameClone, readGitLayout } from "./git-layout";
 
 /**
  * Routes tokensave tool calls to a linked worktree's own index. The MCP server
- * stays bound to the checkout the session started in; a per-call `graph_root`
- * is tokensave's own way to query another initialised project, read-only.
+ * stays bound to the checkout the session started in, which may itself be a
+ * linked worktree; a per-call `graph_root` is tokensave's own way to query
+ * another initialised project, read-only. tokensave rejects a `graph_root`
+ * naming the served project, so that checkout is never routed.
  */
 
 /** The tokensave store's database, relative to a checkout root. */
@@ -91,6 +93,8 @@ export function isRoutableTokensaveTool(tool: string): boolean {
 export interface RouteDeps {
   /** Brings the worktree's index up to date; the default runs `tokensave sync`, throttled. */
   refresh?: (root: string) => void;
+  /** The session's start directory: its checkout is the one the MCP server serves. */
+  servedDirectory?: string;
 }
 
 /**
@@ -109,9 +113,9 @@ export function refreshWorktreeIndex(root: string): void {
 
 /**
  * `input` with `graph_root` set to the linked worktree containing `directory`,
- * when `tool` takes `graph_root`, that worktree holds a tokensave index and
- * `input` names no `graph_root`; the index is refreshed first. Otherwise, and
- * on any error, `undefined`: the call passes unchanged.
+ * when `tool` takes `graph_root`, `input` names none, the worktree holds a
+ * tokensave index and is not the served checkout; the index is refreshed
+ * first. Otherwise, and on any error, `undefined`: the call passes unchanged.
  */
 export function routeTokensaveInput(
   tool: string,
@@ -130,6 +134,7 @@ export function routeTokensaveInput(
     if (!root || readGitLayout(root)?.kind !== "linked") return undefined;
     if (!fs.statSync(path.join(root, TOKENSAVE_DB), { throwIfNoEntry: false })?.isFile())
       return undefined;
+    if (deps.servedDirectory && checkoutRootOf(deps.servedDirectory) === root) return undefined;
     try {
       (deps.refresh ?? refreshWorktreeIndex)(root);
     } catch {

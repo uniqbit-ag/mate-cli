@@ -10,9 +10,12 @@ import { ROUTE_SYNC_MARKER, TOKENSAVE_DB } from "../runtime/tokensave-route";
 import { buildTokensaveRoute } from "./tokensave-route";
 
 const roots: string[] = [];
+const projectDir = process.env.CLAUDE_PROJECT_DIR;
 const SHIM = path.resolve(import.meta.dirname, "../../claude-plugin/hooks/tokensave-route.mjs");
 
 afterEach(async () => {
+  if (projectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+  else process.env.CLAUDE_PROJECT_DIR = projectDir;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -59,6 +62,23 @@ describe("tokensave route hook", () => {
     expect(buildTokensaveRoute(payload(main))).toEqual({ exitCode: 0, stdout: "" });
     expect(buildTokensaveRoute({ tool_input: {} })).toEqual({ exitCode: 0, stdout: "" });
     expect(buildTokensaveRoute(null)).toEqual({ exitCode: 0, stdout: "" });
+  });
+
+  test("a session started in the worktree is served there and stays silent", async () => {
+    const { main, worktree } = await indexedWorktree();
+
+    process.env.CLAUDE_PROJECT_DIR = worktree;
+    expect(buildTokensaveRoute(payload(worktree)).stdout).toBe("");
+
+    process.env.CLAUDE_PROJECT_DIR = main;
+    expect(JSON.parse(buildTokensaveRoute(payload(worktree)).stdout)).toMatchObject({
+      hookSpecificOutput: { updatedInput: { query: "alpha", graph_root: worktree } },
+    });
+
+    delete process.env.CLAUDE_PROJECT_DIR;
+    expect(JSON.parse(buildTokensaveRoute(payload(worktree)).stdout)).toMatchObject({
+      hookSpecificOutput: { updatedInput: { query: "alpha", graph_root: worktree } },
+    });
   });
 
   test("a second loaded copy adds nothing to a routed call", async () => {
