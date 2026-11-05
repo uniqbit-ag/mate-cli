@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource react */
 import { describe, expect, test } from "bun:test";
+import { renderToString } from "ink";
 import type { ReactElement } from "react";
 
 import {
@@ -123,5 +124,34 @@ describe("createStartupProgress", () => {
     const countAfterStop = renders.length;
     progress.succeed("sync");
     expect(renders.length).toBe(countAfterStop);
+  });
+
+  test("renders finished steps as a log and only the running step with a spinner", () => {
+    let element!: ReactElement;
+    const render = ((next: ReactElement) => {
+      element = next;
+      return {
+        rerender: (rerendered: ReactElement) => {
+          element = rerendered;
+        },
+        unmount: () => {},
+      };
+    }) as unknown as NonNullable<StartupProgressDeps["render"]>;
+    const progress = createStartupProgress("Starting claude", { render });
+
+    progress.start("sync", "Syncing mate");
+    progress.succeed("sync");
+    progress.start("graphify", "Indexing graphify");
+    progress.fail("graphify");
+    progress.start("tokensave", "Indexing tokensave");
+
+    const rows = renderToString(element, { columns: 80 })
+      .split("\n")
+      .filter((row) => row.trim() !== "");
+    expect(rows[0]).toBe("mate · Starting claude");
+    expect(rows[1]).toMatch(/✓ Syncing mate$/);
+    expect(rows[2]).toMatch(/✗ Indexing graphify failed$/);
+    expect(rows[3]).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Indexing tokensave$/);
+    expect(rows.filter((row) => /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(row))).toHaveLength(1);
   });
 });

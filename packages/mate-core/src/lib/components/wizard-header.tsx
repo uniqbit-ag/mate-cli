@@ -14,20 +14,20 @@ export function WizardHeader({ title, step, totalSteps }: WizardHeaderProps) {
   const showStepCounter = totalSteps > 1;
 
   return (
-    <Box borderStyle="round" width="100%">
-      <Box flexDirection="column" flexGrow={1} marginLeft={1}>
+    <Box width="100%" justifyContent="space-between">
+      <Text wrap="truncate-end">
         <Text bold color={BRAND_ACCENT}>
-          mate framework
+          mate
         </Text>
-        <Box justifyContent="space-between">
-          <Text dimColor>· {title}</Text>
-          {showStepCounter ? (
-            <Text dimColor>
-              {step + 1} / {totalSteps}{" "}
-            </Text>
-          ) : null}
+        <Text dimColor> · {title}</Text>
+      </Text>
+      {showStepCounter ? (
+        <Box flexShrink={0} marginLeft={2}>
+          <Text dimColor>
+            {step + 1} / {totalSteps}
+          </Text>
         </Box>
-      </Box>
+      ) : null}
     </Box>
   );
 }

@@ -2,6 +2,8 @@
 /** @jsxImportSource react */
 import { Text } from "ink";
 
+import { BRAND_ACCENT } from "../../brand/palette";
+
 export interface SelectMenuItem {
   key: string;
   label: string;
@@ -23,9 +25,12 @@ export function SelectMenu({ items, activeIndex, mode = "multi" }: SelectMenuPro
         const active = i === activeIndex;
         const indicator = item.indicator ?? (mode === "radio" ? "○" : undefined);
         return (
-          <Text key={item.key} color={active ? "cyan" : undefined} dimColor={item.dimColor}>
-            {active ? "▸" : " "}
-            {indicator !== undefined ? ` ${indicator}` : ""} {item.label}
+          <Text key={item.key} dimColor={item.dimColor} wrap="truncate-end">
+            <Text color={active ? BRAND_ACCENT : undefined}>
+              {active ? "▸" : " "}
+              {indicator !== undefined ? ` ${indicator}` : ""}
+            </Text>{" "}
+            <Text bold={active}>{item.label}</Text>
             {item.description ? <Text dimColor> {item.description}</Text> : null}
           </Text>
         );
